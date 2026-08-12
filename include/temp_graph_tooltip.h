@@ -15,6 +15,8 @@
 
 #include "ui_temp_graph.h"
 
+#include "temp_graph_internal.h"
+
 #include <cstdint>
 #include <optional>
 
@@ -84,5 +86,14 @@ void temp_graph_tooltip_on_series_hidden(ui_temp_graph_t* graph, int series_id);
 
 /// Free tooltip state. Called from ui_temp_graph_destroy.
 void temp_graph_tooltip_destroy(ui_temp_graph_t* graph);
+
+/// Placement of the caption box for a point at (px, py), clamped inside the plot
+/// and flipped below the point when it sits in the top third. Pure, so the
+/// clamp/flip logic is testable without a render pass.
+lv_area_t temp_graph_tooltip_box_area(const temp_graph_geometry_t& geo, int32_t px, int32_t py,
+                                      int32_t box_w, int32_t box_h);
+
+/// LV_EVENT_DRAW_POST handler. No-op unless a sample is pinned.
+void temp_graph_tooltip_draw_cb(lv_event_t* e);
 
 } // namespace helix::temp_graph_internal

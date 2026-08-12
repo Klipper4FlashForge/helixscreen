@@ -3,13 +3,20 @@
 
 #include "temp_graph_tooltip.h"
 
+#include "ui_format_utils.h"
+
 #include "temp_graph_internal.h"
+#include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
 #include <limits>
 #include <new>
+#include <string>
 
 // State definition. Kept out of ui_temp_graph.h on purpose.
 struct temp_graph_tooltip_t {
@@ -103,6 +110,175 @@ std::optional<TempGraphHit> tooltip_hit_test(ui_temp_graph_t* graph, int32_t x, 
     return best;
 }
 
+lv_area_t temp_graph_tooltip_box_area(const temp_graph_geometry_t& geo, int32_t px, int32_t py,
+                                      int32_t box_w, int32_t box_h) {
+    constexpr int32_t GAP = 8;
+    const int32_t plot_x2 = geo.cx1 + geo.cw;
+    const int32_t plot_y2 = geo.cy1 + geo.ch;
+
+    lv_area_t a;
+    a.x1 = px - box_w / 2;
+    a.x2 = a.x1 + box_w;
+    if (a.x2 > plot_x2) {
+        a.x1 -= (a.x2 - plot_x2);
+        a.x2 = plot_x2;
+    }
+    if (a.x1 < geo.cx1) {
+        a.x1 = geo.cx1;
+        a.x2 = a.x1 + box_w;
+    }
+
+    // Flip below when the point sits in the top third of the plot.
+    const bool below = py < geo.cy1 + geo.ch / 3;
+    a.y1 = below ? (py + GAP) : (py - GAP - box_h);
+    a.y2 = a.y1 + box_h;
+    if (a.y2 > plot_y2) {
+        a.y1 -= (a.y2 - plot_y2);
+        a.y2 = plot_y2;
+    }
+    if (a.y1 < geo.cy1) {
+        a.y1 = geo.cy1;
+        a.y2 = a.y1 + box_h;
+    }
+    return a;
+}
+
+void temp_graph_tooltip_draw_cb(lv_event_t* e) {
+    auto* graph = static_cast<ui_temp_graph_t*>(lv_event_get_user_data(e));
+    const TempGraphHit* pin = temp_graph_tooltip_pinned(graph);
+    if (!pin) {
+        return;
+    }
+    lv_layer_t* layer = lv_event_get_layer(e);
+    if (!layer) {
+        return;
+    }
+    temp_graph_geometry_t geo{};
+    if (!temp_graph_compute_geometry(graph, &geo)) {
+        return;
+    }
+    const ui_temp_series_meta_t* meta = &graph->series_meta[pin->series_id];
+    if (!meta->chart_series || !meta->visible) {
+        return;
+    }
+
+    const int32_t pc = static_cast<int32_t>(geo.point_count);
+    const int32_t px = geo.cx1 + pin->logical_index * (geo.cw - 1) / (pc - 1);
+    const int32_t py = (geo.cy1 + geo.ch) - lv_map(pin->deci_temp, geo.y_min, geo.y_max, 0, geo.ch);
+
+    // Line 1: "<name>   <temp>"   Line 2: "<time>   [<target>]"
+    static char l1_name[32];
+    static char l1_temp[16];
+    static char l2_time[16];
+    static char l2_target[16];
+    strncpy(l1_name, meta->name, sizeof(l1_name) - 1);
+    l1_name[sizeof(l1_name) - 1] = '\0';
+    snprintf(l1_temp, sizeof(l1_temp), "%.1f°", pin->deci_temp / 10.0f);
+
+    time_t sec = static_cast<time_t>(pin->timestamp_ms / 1000);
+    struct tm* tm_info = localtime(&sec);
+    std::string t = helix::ui::format_time_with_seconds(tm_info);
+    strncpy(l2_time, t.c_str(), sizeof(l2_time) - 1);
+    l2_time[sizeof(l2_time) - 1] = '\0';
+
+    const bool has_target = pin->deci_target != 0;
+    if (has_target) {
+        snprintf(l2_target, sizeof(l2_target), "%.0f°", pin->deci_target / 10.0f);
+    }
+
+    // ---- measure ----
+    const lv_font_t* font = theme_manager_get_font("font_xs");
+    const int32_t font_h = theme_manager_get_font_height(font);
+    const int32_t pad = theme_manager_get_spacing("space_xs");
+    const int32_t col_gap = pad * 2;
+
+    auto text_w = [&](const char* s) {
+        lv_point_t sz;
+        lv_text_get_size(&sz, s, font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        return sz.x;
+    };
+    const int32_t left_w = LV_MAX(text_w(l1_name), text_w(l2_time));
+    const int32_t right_w = LV_MAX(text_w(l1_temp), has_target ? text_w(l2_target) : 0);
+    const int32_t box_w = pad + left_w + col_gap + right_w + pad;
+    const int32_t box_h = pad + font_h * 2 + 2 + pad;
+
+    const lv_area_t box = temp_graph_tooltip_box_area(geo, px, py, box_w, box_h);
+
+    // ---- marker dot on the sampled point ----
+    lv_draw_rect_dsc_t dot;
+    lv_draw_rect_dsc_init(&dot);
+    dot.bg_color = meta->color;
+    dot.bg_opa = LV_OPA_COVER;
+    dot.radius = LV_RADIUS_CIRCLE;
+    dot.border_color = graph->cached_graph_bg;
+    dot.border_width = 1;
+    dot.border_opa = LV_OPA_COVER;
+    constexpr int32_t DOT_R = 4;
+    lv_area_t dot_area = {px - DOT_R, py - DOT_R, px + DOT_R, py + DOT_R};
+    lv_draw_rect(layer, &dot, &dot_area);
+
+    // ---- tail, only when the clamped box still spans the point ----
+    const lv_color_t box_bg = theme_manager_get_color("card_bg");
+    constexpr int32_t TAIL_W = 6;
+    const bool box_above = box.y2 <= py;
+    if (px - TAIL_W >= box.x1 && px + TAIL_W <= box.x2) {
+        lv_draw_triangle_dsc_t tail;
+        lv_draw_triangle_dsc_init(&tail);
+        tail.color = box_bg;
+        tail.opa = LV_OPA_COVER;
+        const int32_t base_y = box_above ? box.y2 : box.y1;
+        const int32_t tip_y = box_above ? (py - DOT_R) : (py + DOT_R);
+        tail.p[0].x = px - TAIL_W;
+        tail.p[0].y = base_y;
+        tail.p[1].x = px + TAIL_W;
+        tail.p[1].y = base_y;
+        tail.p[2].x = px;
+        tail.p[2].y = tip_y;
+        lv_draw_triangle(layer, &tail);
+    }
+
+    // ---- box ----
+    lv_draw_rect_dsc_t r;
+    lv_draw_rect_dsc_init(&r);
+    r.bg_color = box_bg;
+    r.bg_opa = LV_OPA_COVER;
+    r.radius = pad;
+    r.border_color = meta->color;
+    r.border_width = 1;
+    r.border_opa = LV_OPA_COVER;
+    lv_draw_rect(layer, &r, &box);
+
+    // ---- text ----
+    lv_draw_label_dsc_t ld;
+    lv_draw_label_dsc_init(&ld);
+    ld.font = font;
+    ld.opa = LV_OPA_COVER;
+
+    const int32_t l1_y = box.y1 + pad;
+    const int32_t l2_y = l1_y + font_h + 2;
+    const int32_t left_x = box.x1 + pad;
+    const int32_t right_x2 = box.x2 - pad;
+
+    auto draw_text = [&](const char* s, int32_t x1, int32_t x2, int32_t y, lv_text_align_t align,
+                         lv_color_t color) {
+        ld.text = s;
+        ld.align = align;
+        ld.color = color;
+        lv_area_t a = {x1, y, x2, y + font_h};
+        lv_draw_label(layer, &ld, &a);
+    };
+
+    const lv_color_t text_c = theme_manager_get_color("text");
+    const lv_color_t muted_c = theme_manager_get_color("text_muted");
+
+    draw_text(l1_name, left_x, left_x + left_w, l1_y, LV_TEXT_ALIGN_LEFT, meta->color);
+    draw_text(l1_temp, right_x2 - right_w, right_x2, l1_y, LV_TEXT_ALIGN_RIGHT, text_c);
+    draw_text(l2_time, left_x, left_x + left_w, l2_y, LV_TEXT_ALIGN_LEFT, muted_c);
+    if (has_target) {
+        draw_text(l2_target, right_x2 - right_w, right_x2, l2_y, LV_TEXT_ALIGN_RIGHT, muted_c);
+    }
+}
+
 static void tooltip_press_cb(lv_event_t* e) {
     auto* graph = static_cast<ui_temp_graph_t*>(lv_event_get_user_data(e));
     if (!ui_temp_graph_is_valid(graph) || !graph->tooltip) {
@@ -175,14 +351,18 @@ void temp_graph_tooltip_destroy(ui_temp_graph_t* graph) {
     if (!graph) {
         return;
     }
-    // Sever the press callback before the chart's deferred deletion. The chart
-    // outlives `graph` by one async tick (lv_obj_delete_async in
+    // Sever the press and draw callbacks before the chart's deferred deletion.
+    // The chart outlives `graph` by one async tick (lv_obj_delete_async in
     // ui_temp_graph_destroy), so a CLICKED landing in that window would fire
-    // tooltip_press_cb with a freed graph. Unconditional: remove_event_cb is a
-    // no-op when the tooltip was never enabled. Mirrors the severance block in
-    // ui_temp_graph_destroy, which exists for exactly this reason.
+    // tooltip_press_cb, or a pending redraw would fire temp_graph_tooltip_draw_cb,
+    // against a freed graph. Unconditional: remove_event_cb is a no-op when the
+    // callback was never registered (draw_cb is registered unconditionally at
+    // create time; press_cb only when the tooltip was enabled). Mirrors the
+    // severance block in ui_temp_graph_destroy, which exists for exactly this
+    // reason.
     if (graph->chart) {
         lv_obj_remove_event_cb(graph->chart, tooltip_press_cb);
+        lv_obj_remove_event_cb(graph->chart, temp_graph_tooltip_draw_cb);
     }
     if (!graph->tooltip) {
         return;

@@ -12,6 +12,7 @@
 
 using helix::temp_graph_internal::temp_graph_compute_geometry;
 using helix::temp_graph_internal::temp_graph_geometry_t;
+using helix::temp_graph_internal::temp_graph_tooltip_box_area;
 using helix::temp_graph_internal::TEMP_GRAPH_TOOLTIP_HIT_RADIUS_PX;
 using helix::temp_graph_internal::tooltip_hit_test;
 
@@ -361,6 +362,11 @@ TEST_CASE_METHOD(TooltipTestFixture, "removing the pinned series dismisses it",
 // descriptor on the still-alive chart may carry the freed `g` pointer as its
 // user_data. That is exactly, and only, what temp_graph_tooltip_destroy's
 // severance call must guarantee.
+//
+// This loop is not scoped to tooltip_press_cb — it checks every descriptor on
+// the chart — so it also covers temp_graph_tooltip_draw_cb (registered
+// unconditionally at graph creation, same freed-`g` user_data hazard) without
+// needing a second test.
 TEST_CASE_METHOD(TooltipTestFixture, "destroy severs the press callback before chart deletion",
                  "[ui][tooltip][lifecycle][crash]") {
     ui_temp_graph_t* g = make_graph();
@@ -379,4 +385,40 @@ TEST_CASE_METHOD(TooltipTestFixture, "destroy severs the press callback before c
         lv_event_dsc_t* dsc = lv_obj_get_event_dsc(chart, i);
         CHECK(lv_event_dsc_get_user_data(dsc) != static_cast<void*>(g));
     }
+}
+
+TEST_CASE("caption sits above the point when there is room", "[ui][tooltip][layout]") {
+    helix::temp_graph_internal::temp_graph_geometry_t geo{};
+    geo.cx1 = 100;
+    geo.cy1 = 50;
+    geo.cw = 400;
+    geo.ch = 200;
+
+    lv_area_t a = temp_graph_tooltip_box_area(geo, 300, 200, 120, 34);
+    CHECK(a.y2 < 200);               // above the point
+    CHECK((a.x1 + a.x2) / 2 == 300); // horizontally centered on it
+}
+
+TEST_CASE("caption flips below a point near the top", "[ui][tooltip][layout]") {
+    helix::temp_graph_internal::temp_graph_geometry_t geo{};
+    geo.cx1 = 100;
+    geo.cy1 = 50;
+    geo.cw = 400;
+    geo.ch = 200;
+
+    lv_area_t a = temp_graph_tooltip_box_area(geo, 300, 60, 120, 34);
+    CHECK(a.y1 > 60);
+}
+
+TEST_CASE("caption clamps inside the plot horizontally", "[ui][tooltip][layout]") {
+    helix::temp_graph_internal::temp_graph_geometry_t geo{};
+    geo.cx1 = 100;
+    geo.cy1 = 50;
+    geo.cw = 400;
+    geo.ch = 200;
+
+    lv_area_t right = temp_graph_tooltip_box_area(geo, 498, 200, 120, 34);
+    CHECK(right.x2 <= 500);
+    lv_area_t left = temp_graph_tooltip_box_area(geo, 102, 200, 120, 34);
+    CHECK(left.x1 >= 100);
 }

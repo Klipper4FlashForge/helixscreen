@@ -1424,6 +1424,14 @@ ui_temp_graph_t* ui_temp_graph_create(lv_obj_t* parent) {
     // Register legend draw callback (renders color-coded series chips in upper-left)
     lv_obj_add_event_cb(graph->chart, draw_legend_cb, LV_EVENT_DRAW_POST, graph);
 
+    // Register tap-to-caption draw callback. Registered unconditionally (like the
+    // other draw callbacks above) rather than gated on tooltip-enabled: it no-ops
+    // whenever nothing is pinned, and nothing can be pinned while the tooltip is
+    // disabled, so there is no behavior difference — only one fewer add/remove
+    // pair to keep in sync with ui_temp_graph_set_tooltip_enabled.
+    lv_obj_add_event_cb(graph->chart, helix::temp_graph_internal::temp_graph_tooltip_draw_cb,
+                        LV_EVENT_DRAW_POST, graph);
+
     // Subscribe to theme changes for live color updates
     lv_subject_t* theme_subject = theme_manager_get_changed_subject();
     if (theme_subject) {
@@ -1484,6 +1492,9 @@ void ui_temp_graph_destroy(ui_temp_graph_t* graph) {
         lv_obj_remove_event_cb(chart, draw_y_axis_labels_cb);
         lv_obj_remove_event_cb(chart, draw_target_lines_cb);
         lv_obj_remove_event_cb(chart, draw_legend_cb);
+        // temp_graph_tooltip_draw_cb and tooltip_press_cb are severed by
+        // temp_graph_tooltip_destroy(), called unconditionally above — before this
+        // block runs — so both are already gone here.
         lv_obj_set_user_data(chart, nullptr);
 
         // Theme observer's user_data points at `graph`; auto-removal does not fire
