@@ -12,7 +12,11 @@
  * configured macro or falling back to raw gcode — had begun to diverge the
  * same way across surfaces before this file existed. Extracted from
  * PrintStatusWidget::dispatch_load(), which was the first duplicate of
- * FilamentRunoutHandler's version.
+ * FilamentRunoutHandler's version. FilamentRunoutHandler was converted onto
+ * this file too, so both callers now share this execution; FilamentPanel and
+ * AmsOperationSidebar still answer the same plan_load()/plan_unload()
+ * decision but each run their own independent execution ladder — unconverted
+ * follow-up.
  */
 
 #pragma once

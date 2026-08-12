@@ -303,10 +303,13 @@ void FilamentRunoutHandler::show_runout_guidance_modal() {
 
 void FilamentRunoutHandler::dispatch_load() {
     // Shared three-tier ladder (AMS backend, then the configured LOAD_FILAMENT
-    // macro, then raw gcode) via execute_filament_load() — the same ladder
-    // FilamentPanel and AmsOperationSidebar use. Before this the runout dialog
-    // only ever reached the backend, and with no backend it navigated the user
-    // to the Filament panel — out from under the very dialog they were working in.
+    // macro, then raw gcode) via execute_filament_load() — the same execution
+    // this dialog and PrintStatusWidget now share. FilamentPanel and
+    // AmsOperationSidebar still answer the same plan_load() decision but each
+    // carry their own independent execution ladder — unconverted follow-up.
+    // Before this the runout dialog only ever reached the backend, and with no
+    // backend it navigated the user to the Filament panel — out from under the
+    // very dialog they were working in.
     AmsBackend* backend = AmsState::instance().get_backend();
     // The runout is on whatever lane is currently feeding, so that lane is the
     // target — there is no slot picker under a runout dialog.
