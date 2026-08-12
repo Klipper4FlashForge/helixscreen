@@ -346,8 +346,10 @@ void WiFiManager::start_scan(
 
     // A fresh scan session (e.g. the user opening network settings) is a
     // manual refresh: clear any suppression/backoff left over from a prior
-    // session and start this one's timer at the base interval. Safe to call
-    // directly — start_scan() runs on the main/LVGL thread.
+    // session and start this one's timer at the base interval. Touching
+    // scan_scheduler_ directly is safe because start_scan() is LVGL-thread-only
+    // — it creates the scan lv_timer below, and stop_scan() deletes it. Callers
+    // on any other thread must marshal via helix::ui::queue_update().
     scan_scheduler_.on_user_refresh();
 
     // Create timer for periodic scanning

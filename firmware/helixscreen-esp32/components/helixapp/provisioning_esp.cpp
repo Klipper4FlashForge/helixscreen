@@ -244,21 +244,52 @@ void hide_instructions_modal() {
 std::vector<std::string> scan_networks_bounded(std::shared_ptr<helix::WiFiManager> wifi) {
     constexpr int kScanWaitMs = 3000;
     constexpr int kScanPollMs = 200;
+    constexpr int kStopScanWaitMs = 3000;
 
     auto results = std::make_shared<std::vector<std::string>>();
     auto done = std::make_shared<std::atomic<bool>>(false);
-    wifi->start_scan([results, done](const std::vector<WiFiNetwork>& networks) {
-        results->clear();
-        for (const auto& n : networks) {
-            results->push_back(n.ssid);
-        }
-        done->store(true);
+
+    // start_scan()/stop_scan() create and delete an lv_timer and are therefore
+    // LVGL-thread-only; we are on app_net_thread_main. Hop both.
+    helix::ui::queue_update("provisioning::start_scan", [wifi, results, done]() {
+        wifi->start_scan([results, done](const std::vector<WiFiNetwork>& networks) {
+            results->clear();
+            for (const auto& n : networks) {
+                results->push_back(n.ssid);
+            }
+            done->store(true);
+        });
     });
 
     for (int waited = 0; waited < kScanWaitMs && !done->load(); waited += kScanPollMs) {
         vTaskDelay(pdMS_TO_TICKS(kScanPollMs));
     }
-    wifi->stop_scan();
+
+    // The timeout path can expire while a scan-complete dispatch is still queued,
+    // so `done` alone does not make *results safe to read. stop_scan() clears
+    // scan_callback_ under callback_mutex_, and WiFiManager's queued
+    // scan-complete lambda re-reads that callback before touching anything
+    // (wifi_manager.cpp handle_scan_complete) — both on the LVGL thread, so once
+    // stop_scan() has returned there, no later dispatch can write *results.
+    // Waiting for that specific point is what makes the read below safe.
+    auto stopped = std::make_shared<std::atomic<bool>>(false);
+    helix::ui::queue_update("provisioning::stop_scan", [wifi, stopped]() {
+        wifi->stop_scan();
+        stopped->store(true);
+    });
+
+    for (int waited = 0; waited < kStopScanWaitMs && !stopped->load(); waited += kScanPollMs) {
+        vTaskDelay(pdMS_TO_TICKS(kScanPollMs));
+    }
+    if (!stopped->load()) {
+        // The UI thread never drained the stop. *results may still be written,
+        // so return nothing rather than read it — the shared_ptr keeps the
+        // vector alive for whatever is still holding it. The portal's SSID
+        // field falls back to typed entry.
+        ESP_LOGW(TAG, "scan: stop_scan did not run within %d ms — dropping results",
+                 kStopScanWaitMs);
+        return {};
+    }
     return *results;
 }
 
@@ -469,9 +500,15 @@ esp_err_t save_post_handler(httpd_req_t* req) {
 
     s_connect_state.store(JoinState::PENDING);
     auto wifi = helix::get_wifi_manager();
-    wifi->connect(ssid, password, [](bool success, const std::string& error) {
-        s_connect_error = error;
-        s_connect_state.store(success ? JoinState::CONNECTED : JoinState::FAILED);
+    // We are on an esp_http_server task; connect() deletes the auth-fail grace
+    // lv_timer (wifi_manager.cpp cancel_auth_fail_grace), so it has to run on
+    // the LVGL thread. The poll below is unchanged — s_connect_state is already
+    // PENDING, so a not-yet-drained hop just reads as "still connecting".
+    helix::ui::queue_update("provisioning::connect", [wifi, ssid, password]() {
+        wifi->connect(ssid, password, [](bool success, const std::string& error) {
+            s_connect_error = error;
+            s_connect_state.store(success ? JoinState::CONNECTED : JoinState::FAILED);
+        });
     });
 
     int waited = 0;
