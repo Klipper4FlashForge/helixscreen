@@ -672,10 +672,20 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             if (!entry.enabled || !entry.has_grid_position()) {
                 continue;
             }
-            if (entry.colspan == TPC && entry.rowspan == TPC) {
+            // A merge candidate must be one whole cell AND sit on a cell
+            // boundary. Widgets whose registry def supports half-cell
+            // resolution snap on a single track (GridEditMode::snap_step_for),
+            // so a user can drop one on an odd track; dividing that position
+            // into cell coordinates would truncate and lay the card half a cell
+            // away from the widget it belongs to. Off-boundary widgets take the
+            // multi-cell path: they block merges through the cells they touch
+            // and keep their own background.
+            const bool cell_aligned = entry.col % TPC == 0 && entry.row % TPC == 0;
+            if (cell_aligned && entry.colspan == TPC && entry.rowspan == TPC) {
                 single_cells.insert({entry.col / TPC, entry.row / TPC});
             } else {
-                // Mark all cells covered by this multi-cell widget
+                // Mark every cell this widget touches, rounding a partial cell
+                // up at both edges so a half-cell overhang still blocks.
                 for (int r = entry.row / TPC; r < (entry.row + entry.rowspan + TPC - 1) / TPC;
                      r++) {
                     for (int c = entry.col / TPC; c < (entry.col + entry.colspan + TPC - 1) / TPC;
