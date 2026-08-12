@@ -120,11 +120,16 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
         while (timer_in_flight_.load()) {
             vTaskDelay(1);
         }
-        esp_websocket_client_stop(ws_);
-        esp_websocket_client_destroy(ws_);
-        ws_ = nullptr;
+        esp_websocket_client_handle_t old_ws = ws_.exchange(nullptr);
+        esp_websocket_client_stop(old_ws);
+        esp_websocket_client_destroy(old_ws);
         if (housekeeping_timer_) {
-            esp_timer_start_periodic(housekeeping_timer_, kHousekeepingPeriodUs);
+            // A silent restart failure would kill the housekeeping heartbeat:
+            // no reconnects, no request timeouts, ever again.
+            esp_err_t err = esp_timer_start_periodic(housekeeping_timer_, kHousekeepingPeriodUs);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "failed to restart housekeeping timer: %s", esp_err_to_name(err));
+            }
         }
     }
 
@@ -224,7 +229,10 @@ void EspMoonrakerClient::disconnect() {
 }
 
 bool EspMoonrakerClient::is_connected() const {
-    return ws_ && esp_websocket_client_is_connected(ws_);
+    // Single load: two separate reads of ws_ could straddle a concurrent
+    // exchange(nullptr) in connect().
+    esp_websocket_client_handle_t ws = ws_;
+    return ws && esp_websocket_client_is_connected(ws);
 }
 
 void EspMoonrakerClient::arm_reconnect_intent() {

@@ -259,7 +259,13 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     void discovery_fail(const DiscoveryFail& fail, MoonrakerEventType ev, const std::string& reason,
                         uint64_t generation);
 
-    esp_websocket_client_handle_t ws_ = nullptr;
+    // Written on the LVGL thread (connect()/destructor), read on the
+    // ESP_TIMER_TASK housekeeping path. Atomic so the timer-task null checks
+    // carry a real happens-before edge on the dual-core S3 — the quiesce in
+    // connect() closes the reachable race window, but the esp_timer dispatch
+    // handoff (list-unlock before callback entry) leaves a residual sliver
+    // where a stale pass can start; it must observe the fresh nullptr.
+    std::atomic<esp_websocket_client_handle_t> ws_{nullptr};
     esp_timer_handle_t housekeeping_timer_ = nullptr;
     std::string url_;
 
