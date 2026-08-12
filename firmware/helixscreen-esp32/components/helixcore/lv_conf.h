@@ -170,7 +170,17 @@
 	#define LV_DRAW_SW_SUPPORT_L8			1
 	#define LV_DRAW_SW_SUPPORT_AL88			1
 	#define LV_DRAW_SW_SUPPORT_A8			1
-	#define LV_DRAW_SW_SUPPORT_I1			1
+	/* I1 (1-bit indexed) and RGB565_SWAPPED are both OFF on this panel. The
+	 * GT911/ST7701 board runs native little-endian RGB565 at 16 bpp with no
+	 * byte-swap (main/board_display.c `.bits_per_pixel = 16`, no swap flag), and
+	 * nothing in the tree renders an I1 source — LV_COLOR_FORMAT_I1 appears
+	 * nowhere in src/ or the firmware. Both must be spelled out here: LVGL's
+	 * lv_conf_internal.h defaults each to 1 when LV_KCONFIG_PRESENT is unset,
+	 * which is our case (LV_KCONFIG_IGNORE). Neither format is touched by the
+	 * S3 PIE SIMD path — simd/esp_lvgl_port_lv_blend.h only overrides the
+	 * RGB565/RGB888/ARGB8888 blend macros. */
+	#define LV_DRAW_SW_SUPPORT_I1			0
+	#define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED	0
 
 	/* Set the number of draw unit.
      * > 1 requires an operating system enabled in `LV_USE_OS`
