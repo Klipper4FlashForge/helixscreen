@@ -11,9 +11,18 @@
 // detectors), which asserts on a raw FreeRTOS task, so a pthread context is
 // mandatory (proven by the Plan 2 native-audit app slice).
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// Record whether the touch controller came up, so app_boot_ui() can surface a
+// warning when it did not. Called from the display bring-up in main/ before
+// app_boot_ui() runs. The result is pushed down rather than helixapp querying
+// main/touch_input.c directly: main depends on helixapp, not the reverse, and
+// helixapp does not have main/ on its include path.
+void app_boot_set_touch_available(bool available);
 
 // Build the shell. Runs once on the UI thread before the render loop starts.
 void app_boot_ui(void);

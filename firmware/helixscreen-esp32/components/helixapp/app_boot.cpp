@@ -676,6 +676,15 @@ extern "C" void helix_boot_yield(void) {
     vTaskDelay(1);
 }
 
+// Set by main/ during display bring-up, which probes the GT911 before this
+// runs. Defaults to true so any build that never reports stays silent rather
+// than warning about touch it never checked.
+static bool s_touch_available = true;
+
+extern "C" void app_boot_set_touch_available(bool available) {
+    s_touch_available = available;
+}
+
 extern "C" void app_boot_ui(void) {
     log_heap_milestone("boot-ui-start");
 
@@ -854,6 +863,16 @@ extern "C" void app_boot_ui(void) {
     // how error feedback (failed gcode, connection loss, E-STOP) went missing.
     helix::ui::notification_manager_init();
     ToastManager::instance().init();
+
+    // A touch controller that failed to probe no longer aborts boot, so the
+    // only thing telling the user why the panel is unresponsive is this
+    // warning. Enqueued immediately before the drain below so it goes out
+    // through the same toast path as the pre-UI backend warnings.
+    if (!s_touch_available) {
+        helix::PendingStartupWarnings::instance().enqueue(
+            helix::PendingStartupWarnings::Severity::ERROR,
+            "Touchscreen not detected - display only");
+    }
 
     // init() does NOT drain the queue: warnings enqueued during pre-UI boot
     // (display/asset backends) stay stranded unless drained explicitly.
