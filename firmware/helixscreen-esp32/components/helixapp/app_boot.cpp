@@ -42,11 +42,13 @@
 #include "ui_icon.h"
 #include "ui_keyboard_manager.h"
 #include "ui_nav_manager.h"
+#include "ui_notification_manager.h"
 #include "ui_panel_home.h"
 #include "ui_severity_card.h"
 #include "ui_status_pill.h"
 #include "ui_switch.h"
 #include "ui_temp_display.h"
+#include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
 #include "ams_state.h"
@@ -68,6 +70,7 @@
 #include "moonraker_manager.h"
 #include "moonraker_types.h" // FileInfo/FileMetadata/ThumbnailInfo/resolve_thumbnail_path — HTTP HIL probe
 #include "panel_factory.h"
+#include "pending_startup_warnings.h"
 #include "printer_discovery.h" // helix::PrinterDiscovery + init_subsystems (discovery callback args)
 #include "printer_fan_state.h" // helix::FanRoleConfig for the non-mock fan-role resolve
 #include "printer_state.h"
@@ -781,6 +784,38 @@ extern "C" void app_boot_ui(void) {
     // depend on it. show() move-foregrounds itself, so creating it before
     // build_shell() below is z-order safe.
     KeyboardManager::instance().init(lv_screen_active());
+
+    // Notification + toast systems. Mirrors desktop's Application::init_ui()
+    // (application.cpp: notification_manager_init(), ToastManager::init(), then
+    // the startup-warning drain). Neither needs a parent widget — the toast
+    // stack is created lazily on first show() — but both must run before any
+    // panel can raise a message, i.e. before build_shell() below. Without them
+    // every ToastManager::show() on the device is silently dropped, which is
+    // how error feedback (failed gcode, connection loss, E-STOP) went missing.
+    helix::ui::notification_manager_init();
+    ToastManager::instance().init();
+
+    // init() does NOT drain the queue: warnings enqueued during pre-UI boot
+    // (display/asset backends) stay stranded unless drained explicitly.
+    helix::PendingStartupWarnings::instance().drain(
+        [](helix::PendingStartupWarnings::Severity sev, const std::string& msg) {
+            ToastSeverity toast_sev = ToastSeverity::INFO;
+            switch (sev) {
+            case helix::PendingStartupWarnings::Severity::INFO:
+                toast_sev = ToastSeverity::INFO;
+                break;
+            case helix::PendingStartupWarnings::Severity::SUCCESS:
+                toast_sev = ToastSeverity::SUCCESS;
+                break;
+            case helix::PendingStartupWarnings::Severity::WARNING:
+                toast_sev = ToastSeverity::WARNING;
+                break;
+            case helix::PendingStartupWarnings::Severity::ERROR:
+                toast_sev = ToastSeverity::ERROR;
+                break;
+            }
+            ToastManager::instance().show(toast_sev, msg.c_str(), 8000);
+        });
 
 #if CONFIG_HELIX_MOCK_PRINTER
     // Before the shell builds: seed READY/CONNECTED + the printer identity so the
