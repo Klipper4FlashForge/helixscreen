@@ -3,13 +3,18 @@
 #include "z_offset_utils.h"
 
 #include "ui_emergency_stop.h"
+#include "ui_error_reporting.h"
 #include "ui_toast_manager.h"
 
+#include "config.h"
 #include "i_moonraker_api.h"
+#include "toolhead_homing.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <lvgl.h>
 
@@ -56,7 +61,21 @@ void format_offset_compact(int microns, char* buf, size_t buf_size) {
 
 void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
                     std::function<void()> on_success,
-                    std::function<void(const std::string& error)> on_error) {
+                    std::function<void(const std::string& error)> on_error, PrinterState* ps) {
+    // Both success paths below (the FIRMWARE_MANAGED early return and the
+    // APPLY -> SAVE_CONFIG chain) funnel through this wrapper, so the pending
+    // Z-offset delta is cleared exactly once, wherever the save actually
+    // completed — including firmware-managed printers, where the offset is
+    // genuinely persisted even though HelixScreen sent nothing.
+    auto on_saved = [ps, on_success = std::move(on_success)]() {
+        if (ps) {
+            ps->clear_pending_z_offset_delta();
+        }
+        if (on_success) {
+            on_success();
+        }
+    };
+
     if (!api) {
         spdlog::error("[ZOffsetUtils] apply_and_save called with null API");
         if (on_error)
@@ -67,8 +86,7 @@ void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
     if (strategy == ZOffsetCalibrationStrategy::FIRMWARE_MANAGED) {
         // Firmware/macros handle persistence — nothing for us to do
         spdlog::debug("[ZOffsetUtils] apply_and_save: firmware_managed strategy — auto-saved");
-        if (on_success)
-            on_success();
+        on_saved();
         return;
     }
 
@@ -84,7 +102,7 @@ void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
 
     api->execute_gcode(
         apply_cmd,
-        [api, apply_cmd, on_success, on_error]() {
+        [api, apply_cmd, on_saved, on_error]() {
             spdlog::info("[ZOffsetUtils] {} success, executing SAVE_CONFIG", apply_cmd);
 
             // Suppress disconnect modal — SAVE_CONFIG triggers a Klipper restart
@@ -92,10 +110,9 @@ void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
 
             api->execute_gcode(
                 "SAVE_CONFIG",
-                [on_success]() {
+                [on_saved]() {
                     spdlog::info("[ZOffsetUtils] SAVE_CONFIG success — Klipper restarting");
-                    if (on_success)
-                        on_success();
+                    on_saved();
                 },
                 [on_error](const MoonrakerError& err) {
                     std::string msg = fmt::format(
@@ -115,12 +132,87 @@ void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
         });
 }
 
+int persisted_step_index() {
+    Config* config = Config::get_instance();
+    if (!config) {
+        return kZStepDefaultIndex;
+    }
+    int idx = config->get<int>(config->df() + "z_offset/step_index", kZStepDefaultIndex);
+    if (idx < 0 || idx >= static_cast<int>(std::size(kZStepAmountsMm))) {
+        return kZStepDefaultIndex;
+    }
+    return idx;
+}
+
+void set_persisted_step_index(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(std::size(kZStepAmountsMm))) {
+        // Reject rather than clamp-and-write: the read path (persisted_step_index())
+        // already fully defends against a corrupt on-disk value, so clamping here
+        // buys no safety — it would just give a future caller bug a way to silently
+        // overwrite the user's real setting with the default.
+        spdlog::warn("[zoffset] rejecting out-of-range step index {} — leaving persisted "
+                     "value unchanged",
+                     idx);
+        return;
+    }
+    Config* config = Config::get_instance();
+    if (!config) {
+        return;
+    }
+    config->set<int>(config->df() + "z_offset/step_index", idx);
+    config->save();
+}
+
 bool should_extend_save_timeout(bool restart_latched, unsigned extensions_used,
                                 unsigned max_extensions) {
     // Only stall the clock if this save actually triggered a restart. A save
     // that never restarted Klipper and still has not completed is a real hang
     // and must be reported.
     return restart_latched && extensions_used < max_extensions;
+}
+
+AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_mm,
+                    double delta_mm) {
+    double new_offset = current_offset_mm + delta_mm;
+    if (new_offset < kZOffsetMinMm || new_offset > kZOffsetMaxMm) {
+        spdlog::warn("[zoffset] {:.3f}mm clamped to [{}, {}]", new_offset, kZOffsetMinMm,
+                     kZOffsetMaxMm);
+        new_offset = std::clamp(new_offset, kZOffsetMinMm, kZOffsetMaxMm);
+        delta_mm = new_offset - current_offset_mm;
+        if (std::abs(delta_mm) < 0.0005) {
+            return AdjustResult{0.0, current_offset_mm, false, true};
+        }
+    }
+
+    // Round to the micron so repeated additions cannot drift.
+    new_offset = std::round(new_offset * 1000.0) / 1000.0;
+
+    if (ps) {
+        ps->add_pending_z_offset_delta(static_cast<int>(std::lround(delta_mm * 1000.0)));
+        // Publish immediately rather than waiting for Moonraker to broadcast.
+        if (auto* subj = ps->get_gcode_z_offset_subject()) {
+            lv_subject_set_int(subj, static_cast<int>(std::lround(new_offset * 1000.0)));
+        }
+    }
+
+    if (!api) {
+        return AdjustResult{delta_mm, new_offset, false, false};
+    }
+
+    const bool all_homed = ps && helix::toolhead_is_homed(*ps);
+
+    char gcode[96];
+    std::snprintf(gcode, sizeof(gcode), "SET_GCODE_OFFSET Z_ADJUST=%.3f%s", delta_mm,
+                  all_homed ? " MOVE=1" : "");
+    const double sent_delta = delta_mm;
+    api->execute_gcode(
+        gcode, [sent_delta]() { spdlog::debug("[zoffset] adjusted {:+.3f}mm", sent_delta); },
+        [](const MoonrakerError& err) {
+            spdlog::error("[zoffset] adjust failed: {}", err.message);
+            NOTIFY_ERROR(lv_tr("Z-offset failed: {}"), err.user_message());
+        });
+
+    return AdjustResult{delta_mm, new_offset, true, false};
 }
 
 } // namespace helix::zoffset

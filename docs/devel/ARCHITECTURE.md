@@ -451,24 +451,13 @@ For the chamber-specific details — M141 routing, decidegree precision, and the
 
 ## Panel Widget System
 
-The home panel exposes a row of modular "widgets" — small cards that each display one aspect of printer state: fan speeds, temperatures, LED, power, network, thermistors, and more. Each widget is a self-contained C++ object that owns its own XML component and observer lifecycle.
+The home panel exposes a multi-page grid of modular "widgets" — small cards that each display one aspect of printer state: fan speeds, temperatures, LED, power, network, thermistors, and more. Up to 8 pages (`kMaxPages`, `include/panel_widget_config.h`), with a long-press edit mode for drag-to-move and edge-drag resize on a half-cell track grid — see [LAYOUT_SYSTEM.md](LAYOUT_SYSTEM.md) for the grid mechanics. Each widget is a self-contained C++ object that owns its own XML component and observer lifecycle.
 
 ### What Are PanelWidgets?
 
-PanelWidgets live in `src/ui/panel_widgets/` (implementations) and headers alongside each `.cpp`. Current widgets:
+PanelWidgets live in `src/ui/panel_widgets/` (implementations) and headers alongside each `.cpp`. The authoritative widget list is `s_widget_defs` in `src/ui/panel_widget_registry.cpp` — a `PanelWidgetDef` per entry carrying its ID, display name, icon, default/min/max grid span, and hardware gate. Treat that array as ground truth rather than any table here; it currently holds 37 entries and grows as new widgets ship.
 
-| Widget ID | Class | Displays |
-|-----------|-------|---------|
-| `fan_stack` | `FanStackWidget` | Part / hotend / aux fan speeds with spinning icon animations |
-| `temp_stack` | `TempStackWidget` | Nozzle and bed temperatures |
-| `temperature` | `TemperatureWidget` | Single temperature display |
-| `thermistor` | `ThermistorWidget` | Temperature sensor readings |
-| `led` | `LedWidget` | LED on/off toggle with brightness-reactive icon |
-| `power_device` | `PowerDeviceWidget` | Power device toggle |
-| `network` | `NetworkWidget` | Network connection status |
-| `active_spool` | `ActiveSpoolWidget` | Currently loaded Spoolman spool — color, material, brand, weight |
-
-Widgets that are pure XML data binding (filament, probe, humidity, etc.) do NOT need a `PanelWidget` subclass — they work via subject bindings defined in their XML component alone.
+Not every entry has its own C++ class — some are config-driven instances of a shared one. `temperature`, `bed_temperature`, and `chamber_temperature` are all `HeaterTempWidget`, distinguished by the `HeaterTempWidget::Config` passed to their factory (`src/ui/panel_widgets/heater_temp_widget.cpp`). Widgets that are pure XML data binding (`filament`, `ams`, etc.) don't need a `PanelWidget` subclass at all — they work via subject bindings defined in their XML component alone.
 
 ### PanelWidget Base Class
 
@@ -492,25 +481,23 @@ public:
 
 ### Widget Factory Pattern
 
-Each widget registers a factory function at startup via `register_widget_factory()`. The registry (`include/panel_widget_registry.h`) pairs an ID string with a factory lambda:
+Each widget registers a factory function at startup via `register_widget_factory()`. The registry (`include/panel_widget_registry.h`) pairs an ID string with a factory — a `WidgetFactory`, i.e. `std::function<std::unique_ptr<PanelWidget>(const std::string& instance_id)>` — not a zero-argument lambda; the instance ID matters for multi-instance widgets (e.g. `favorite_macro:2`) and gets threaded through to the constructor:
 
 ```cpp
-// From fan_stack_widget.cpp — called once at startup
-void register_fan_stack_widget() {
-    register_widget_factory("fan_stack", []() {
-        auto& ps = get_printer_state();
-        return std::make_unique<FanStackWidget>(ps);
-    });
+// From temp_graph_widget.cpp — called once at startup
+void register_temp_graph_widget() {
+    register_widget_factory(
+        "temp_graph", [](const std::string& id) { return std::make_unique<TempGraphWidget>(id); });
 
-    // XML event callbacks must be registered before any XML is parsed
-    lv_xml_register_event_cb(nullptr, "on_fan_stack_clicked", FanStackWidget::on_fan_stack_clicked);
+    lv_xml_register_event_cb(nullptr, "on_temp_graph_widget_clicked",
+                             TempGraphWidget::on_temp_graph_widget_clicked);
 }
 ```
 
 `PanelWidgetManager` (`include/panel_widget_manager.h`) is the central coordinator:
 - `init_widget_subjects()` — calls each widget's `init_subjects()` before XML creation
-- `populate_widgets(panel_id, container, reuse={})` — creates XML components and calls `attach()` for each enabled widget; accepts an optional `WidgetReuseMap` to reuse existing C++ instances
-- `setup_gate_observers(panel_id, rebuild_cb)` — observes hardware availability subjects; rebuilds the widget row when capabilities change
+- `populate_widgets(panel_id, container, page_index=0, reuse={})` — creates XML components and calls `attach()` for each enabled widget on that page; accepts an optional `WidgetReuseMap` to reuse existing C++ instances
+- `setup_gate_observers(panel_id, rebuild_cb)` — observes hardware availability subjects; rebuilds the widget grid when capabilities change
 - `notify_config_changed(panel_id)` — triggers a rebuild after config changes (e.g., widget reorder)
 
 ### HomePanel Integration
@@ -533,11 +520,11 @@ void HomePanel::populate_widgets() {
 
     // Manager reuses existing instances or creates new ones via factory
     active_widgets_ = PanelWidgetManager::instance().populate_widgets(
-        "home", container, std::move(reuse));
+        "home", container, /*page_index=*/0, std::move(reuse));
 }
 ```
 
-Gate observers call `populate_widgets()` automatically when hardware capabilities or klippy state change, so the widget row adapts to the connected printer without any manual dispatch.
+Gate observers call `populate_widgets()` automatically when hardware capabilities or klippy state change, so the widget grid adapts to the connected printer without any manual dispatch.
 
 ### Widget Instance Reuse Across Rebuilds
 

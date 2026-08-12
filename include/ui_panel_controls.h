@@ -382,11 +382,8 @@ class ControlsPanel : public PanelBase {
     //
 
     lv_subject_t speed_override_subject_{};
-    lv_subject_t flow_override_subject_{};
     char speed_override_buf_[16] = {};
-    char flow_override_buf_[16] = {};
     ObserverGuard speed_factor_observer_;
-    // Note: Flow factor observer uses extrude_factor from helix::PrinterState
 
     //
     // === Macro Slots 3 & 4 ===
@@ -503,12 +500,7 @@ class ControlsPanel : public PanelBase {
     // === Speed/Flow Override Handlers ===
     //
 
-    void handle_speed_up();
-    void handle_speed_down();
-    void handle_flow_up();
-    void handle_flow_down();
     void update_speed_display();
-    void update_flow_display();
 
     //
     // === Z-Offset Control Handlers ===
@@ -577,10 +569,6 @@ class ControlsPanel : public PanelBase {
     static void on_macro(lv_event_t* e);
     static void on_fan_slider_changed(lv_event_t* e);
     static void on_save_z_offset(lv_event_t* e);
-    static void on_speed_up(lv_event_t* e);
-    static void on_speed_down(lv_event_t* e);
-    static void on_flow_up(lv_event_t* e);
-    static void on_flow_down(lv_event_t* e);
 
     //
     // === Z-Offset Trampolines (XML event_cb - global accessor) ===

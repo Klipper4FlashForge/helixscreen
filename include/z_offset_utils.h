@@ -10,6 +10,10 @@
 
 class IMoonrakerAPI;
 
+namespace helix {
+class PrinterState;
+} // namespace helix
+
 namespace helix::zoffset {
 
 /// Returns true and shows toast if strategy auto-persists (FIRMWARE_MANAGED).
@@ -25,6 +29,64 @@ void format_offset(int microns, char* buf, size_t buf_size);
 /// Compact variant: drops leading zero for |value| < 1.0 → "+.050mm".
 void format_offset_compact(int microns, char* buf, size_t buf_size);
 
+/// Safe clamp for a baby-stepped Z offset, in millimetres.
+inline constexpr double kZOffsetMinMm = -2.0;
+inline constexpr double kZOffsetMaxMm = 2.0;
+
+/// Z baby-step increments, largest first. Index 2 (0.01mm) is the default.
+inline constexpr double kZStepAmountsMm[] = {0.05, 0.025, 0.01, 0.005};
+inline constexpr int kZStepDefaultIndex = 2;
+
+/// Read the user's last-chosen step index from Config, clamped to a valid
+/// index. Out-of-range or unset returns kZStepDefaultIndex.
+int persisted_step_index();
+
+/// Persist the chosen step index (per-printer). Out-of-range values are
+/// rejected outright — the previously persisted value is left untouched and
+/// a warning is logged — rather than clamped and written. The read path
+/// (persisted_step_index()) already fully defends against a corrupt on-disk
+/// value, so clamping on write would only give a future caller bug a way to
+/// silently overwrite the user's real setting with the default.
+void set_persisted_step_index(int idx);
+
+struct AdjustResult {
+    double applied_delta_mm; ///< delta actually applied after clamping
+    double new_offset_mm;    ///< resulting offset, rounded to the micron
+    bool sent;               ///< false when clamped to a no-op or api was null
+    bool clamped_to_noop;    ///< true when the requested delta was clamped away to
+                             ///< nothing (already at +/-2mm limit) — disambiguates
+                             ///< that case from `sent == false` meaning a null api.
+                             ///< Only one of the two reasons for `sent == false` can
+                             ///< be true at once: a clamped-to-noop call returns
+                             ///< before the null-api check ever runs.
+};
+
+/// Apply a Z baby-step: clamp to +/-2mm, round to the micron, accumulate the
+/// pending delta, optimistically publish gcode_z_offset, and send
+/// SET_GCODE_OFFSET Z_ADJUST.
+///
+/// MOVE=1 is appended only when x, y and z are all homed — it makes the toolhead
+/// move immediately, which is the point of baby-stepping during a print, but
+/// Klipper errors on it when the axes are not homed. A null `ps` is treated as
+/// not homed.
+///
+/// The caller owns any UI mirror of the offset and should update it from
+/// `AdjustResult::new_offset_mm` rather than tracking its own running total.
+///
+/// @warning Side effects happen before the null-`api` check: the pending delta
+/// (`PrinterState::add_pending_z_offset_delta()`) and the optimistic
+/// `gcode_z_offset` subject write both happen unconditionally whenever `ps` is
+/// non-null, even when `api` is null and no gcode is ever sent. A null-api call
+/// therefore still publishes a new offset the printer never actually received
+/// — `AdjustResult::sent` is `false` in that case, so callers that care must
+/// check it rather than assuming the subject reflects reality. This is
+/// intentional carried-over behaviour from the original overlay code, not a
+/// bug to fix incidentally.
+///
+/// @warning Main thread only — reads and writes LVGL subjects.
+AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_mm,
+                    double delta_mm);
+
 /// Execute strategy-aware save sequence:
 ///   PROBE_CALIBRATE -> Z_OFFSET_APPLY_PROBE -> SAVE_CONFIG
 ///   ENDSTOP -> Z_OFFSET_APPLY_ENDSTOP -> SAVE_CONFIG
@@ -34,9 +96,12 @@ void format_offset_compact(int microns, char* buf, size_t buf_size);
 /// @param strategy      Calibration strategy determining command sequence
 /// @param on_success    Called after SAVE_CONFIG succeeds (Klipper will restart)
 /// @param on_error      Called with user-facing message on any failure
+/// @param ps            When non-null, cleared via clear_pending_z_offset_delta()
+///                      once the save actually succeeds (either success path).
 void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
                     std::function<void()> on_success,
-                    std::function<void(const std::string& error)> on_error);
+                    std::function<void(const std::string& error)> on_error,
+                    PrinterState* ps = nullptr);
 
 /// Tracks Klipper restart activity observed while a SAVE_CONFIG is in flight.
 ///
