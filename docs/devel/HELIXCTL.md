@@ -114,6 +114,14 @@ no extra environment variable is needed — you'll see
 `SDL_RENDER_DRIVER=software` yourself also works and skips the failed first
 attempt.)
 
+Audio is silenced the same way automatically: `main()` notices
+`SDL_VIDEODRIVER=dummy` and forces `SDL_AUDIODRIVER=dummy` (unless you've
+exported `SDL_AUDIODRIVER` yourself — that wins). Without it, a headless
+run still opens the real PulseAudio/PipeWire/ALSA device and audibly beeps
+through the desktop speakers on every `ctl click`. The `[SDLSound]` log
+line names the driver actually in use, so `driver 'dummy'` is the visible
+signal it took effect.
+
 Screenshots are fully rendered in headless mode: capture goes through
 `lv_snapshot_take()`, which re-renders the object tree into its own buffer
 rather than reading back the display surface.

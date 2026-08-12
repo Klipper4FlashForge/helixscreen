@@ -1,9 +1,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # helixapp source manifest — the curated Core+AMS app core compiled UNMODIFIED
-# from ../../src for Xtensa. Exact repo-relative paths, one per line; CMake reads
-# every non-comment line ending in .cpp/.c. `# MOCK:` lines are added only under
-# CONFIG_HELIX_MOCK_PRINTER (see CMakeLists.txt).
+# from ../../src for Xtensa. Exact repo-relative paths, one per line.
+#
+# LINE FORMAT — CMake reads this file with
+#     file(STRINGS app_srcs.txt APP_SRCS_REL REGEX "^[^#].*\.(cpp|c)$")
+# so a path line MUST start at column 0 and END at the suffix. A trailing
+# `# reason`, or even a trailing space, makes the regex miss the line and the
+# file is silently DROPPED from the build — the link then fails ~25 min into
+# esp32-build CI on a line that reads as present. Leading whitespace is the
+# mirror image: the regex matches and CMake builds the path `<repo>/ src/…`.
+# Put explanations on their own `#` comment line above the path (this file's
+# whole derivation ledger is written that way). scripts/check_esp32_app_srcs.py
+# rejects any other shape.
+#
+# `# MOCK:` lines are commented-out documentation of the desktop mock set, NOT
+# build input. Only ams_backend_mock.cpp is actually compiled under
+# CONFIG_HELIX_MOCK_PRINTER, and CMakeLists.txt names it directly (MOCK_SRCS) —
+# the rest are unlinkable on ESP32. See the MOCK_SRCS comment there.
 #
 # DERIVATION (see esp32p4-task-5-report.md for the full ledger):
 #   Base: Plan 2 native-audit manifest (478 src/lib/assets entries, proven
@@ -100,6 +114,7 @@ src/printer/ams_bypass_policy.cpp
 src/printer/ams_backend_qidi.cpp
 src/printer/ams_backend_snapmaker.cpp
 src/printer/ams_backend_toolchanger.cpp
+src/printer/ams_endless_spool.cpp
 src/printer/ams_state.cpp
 src/printer/ams_subscription_backend.cpp
 src/printer/consumption_sink.cpp

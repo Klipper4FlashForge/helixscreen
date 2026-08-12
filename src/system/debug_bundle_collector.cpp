@@ -20,6 +20,9 @@
 #include "system/moonraker_local_probe.h"
 #include "system/telemetry_manager.h"
 #include "system/update_checker.h"
+#ifdef __ANDROID__
+#include "system/http_android.h"
+#endif
 
 #include <spdlog/spdlog.h>
 
@@ -427,11 +430,25 @@ json DebugBundleCollector::collect_printer_info() {
 // Log tail — cascades file → syslog → journal (see helix::logs for ordering)
 // =============================================================================
 
+size_t DebugBundleCollector::resolve_log_tail_lines(int requested, size_t ring_capacity) {
+    // Historical fixed size, and logging_init's own floor (kMinRingLines). Used
+    // when there is no ring to measure, so the file/syslog cascade still gets a
+    // bound rather than an open-ended read.
+    constexpr size_t kFallbackLogTailLines = 2000;
+
+    if (requested > 0) {
+        return static_cast<size_t>(requested);
+    }
+    return ring_capacity > 0 ? ring_capacity : kFallbackLogTailLines;
+}
+
 std::string DebugBundleCollector::collect_log_tail(int num_lines) {
+    const size_t lines = resolve_log_tail_lines(num_lines, helix::logging::ring_buffer_capacity());
+
     // Sanitized here rather than at the call site so every consumer of the log
     // tail is covered. The ring captures at debug regardless of the user's
     // configured verbosity, so this text leaves the machine on every bundle.
-    return sanitize_text_block(helix::logs::tail_best(num_lines));
+    return sanitize_text_block(helix::logs::tail_best(static_cast<int>(lines)));
 }
 
 // =============================================================================
@@ -1097,6 +1114,90 @@ static std::string line_shape(const std::string& line) {
     return shape;
 }
 
+/// Klipper's config dump markers (klippy/configfile.py, PrinterConfig::log_config).
+/// The whole of printer.cfg is written between them on every start and on every
+/// log rollover.
+static constexpr const char* kKlipperConfigHeader = "===== Config file =====";
+static constexpr const char* kKlipperConfigFooter = "=======================";
+
+/// How far into the window a lone footer may sit and still be read as the tail
+/// of a config dump the Range fetch cut through. A full AD5X+ZMOD dump is ~1300
+/// lines; 5000 covers a pathological config while staying far short of the
+/// ~40k-line window a 4 MiB fetch produces, so a stray rule line deep in the log
+/// can never take the events before it with it.
+static constexpr size_t kOrphanFooterMaxIndex = 5000;
+
+/// Drop Klipper's config dump(s) from a raw log window, in place.
+///
+/// Every line of printer.cfg is a distinct shape, so shape-collapse keeps all of
+/// them and the dump crowds out the events the bundle was uploaded to explain.
+/// It is not incidental: pressing "Restart Klipper" on HelixScreen's own Klipper
+/// recovery dialog re-dumps the config, so the bundles most likely to carry a
+/// shutdown are the ones most likely to have buried it.
+///
+/// Two shapes, both real:
+///   - Paired: header and footer both in the window. Drop the span.
+///   - Head-truncated: the fetch starts mid-dump, so only the footer survives.
+///     This is what actually ships — all three AD5X bundles measured
+///     (4QA7SZAM 84%, LYGVE39Y 63%, XSNN7PX5 58% of the payload) look like this,
+///     and a paired-only rule would have recovered nothing from any of them.
+///
+/// A header with no footer is left alone: the dump runs past the end of the
+/// window, and dropping to end-of-input would discard the newest lines, which is
+/// where the shutdown lives.
+static void strip_klipper_config_dumps(std::vector<std::string>& lines) {
+    std::vector<std::string> out;
+    out.reserve(lines.size());
+
+    size_t header_at = std::string::npos; // index of an open, unterminated header
+    size_t dumps_closed = 0;
+    auto note_elision = [&out](size_t count) {
+        if (count == 0)
+            return;
+        out.push_back("[helix] elided " + std::to_string(count) + " lines of Klipper config dump");
+    };
+
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const std::string& line = lines[i];
+
+        if (header_at != std::string::npos) {
+            if (line == kKlipperConfigFooter) {
+                note_elision(i - header_at + 1);
+                header_at = std::string::npos;
+                ++dumps_closed;
+            }
+            continue; // inside the dump: header, body, and footer all go
+        }
+
+        if (line == kKlipperConfigHeader) {
+            header_at = i;
+            continue;
+        }
+
+        // Orphan footer: only the head of the window can hold one, and only
+        // because the byte-range fetch cut the header off mid-dump. Everything
+        // before it is therefore config body. Requiring that no dump has closed
+        // yet keeps this strictly a head-of-window rule, so it can never reach
+        // back across a real event.
+        if (line == kKlipperConfigFooter && dumps_closed == 0 && i <= kOrphanFooterMaxIndex) {
+            out.clear();
+            note_elision(i + 1);
+            ++dumps_closed;
+            continue;
+        }
+
+        out.push_back(line);
+    }
+
+    // Header with no footer: the dump runs past the end of the window. Ship its
+    // body rather than drop the newest lines, which is where the shutdown lives.
+    if (header_at != std::string::npos) {
+        out.insert(out.end(), lines.begin() + static_cast<std::ptrdiff_t>(header_at), lines.end());
+    }
+
+    lines = std::move(out);
+}
+
 std::string DebugBundleCollector::condense_klipper_log(const std::string& raw, int max_repeats,
                                                        int tail_lines) {
     std::vector<std::string> lines;
@@ -1107,6 +1208,13 @@ std::string DebugBundleCollector::condense_klipper_log(const std::string& raw, i
             lines.push_back(std::move(line));
         }
     }
+    if (lines.empty()) {
+        return {};
+    }
+
+    // Before shape-collapse: the dump is pure unique shapes, so it survives the
+    // collapse intact and would spend the whole line budget on printer.cfg.
+    strip_klipper_config_dumps(lines);
     if (lines.empty()) {
         return {};
     }
@@ -1487,23 +1595,41 @@ void DebugBundleCollector::upload_async(const BundleOptions& options, ResultCall
             spdlog::info("[DebugBundle] Uploading {} bytes (compressed from {})...",
                          compressed.size(), json_str.size());
 
+            std::string ua = std::string("HelixScreen/") + HELIX_VERSION;
+            int status;
+            std::string response_body;
+
+#ifdef __ANDROID__
+            // libhv is built without SSL on Android (no NDK OpenSSL), so route
+            // the gzip-compressed bundle through the platform TLS stack via JNI.
+            // The binary bridge avoids corrupting gzip bytes through a Java
+            // String — the existing httpsPost takes String body and would
+            // mangle arbitrary binary. Same pattern as update_checker and
+            // crash_reporter.
+            auto [s, body] = helix::android::https_post_binary(
+                WORKER_URL, compressed, "application/json", "gzip", ua, INGEST_API_KEY, 30);
+            status = s;
+            response_body = body;
+#else
             auto req = std::make_shared<HttpRequest>();
             req->method = HTTP_POST;
             req->url = WORKER_URL;
             req->timeout = 30;
             req->headers["Content-Type"] = "application/json";
             req->headers["Content-Encoding"] = "gzip";
-            req->headers["User-Agent"] = std::string("HelixScreen/") + HELIX_VERSION;
+            req->headers["User-Agent"] = ua;
             req->headers["X-API-Key"] = INGEST_API_KEY;
             req->body.assign(reinterpret_cast<const char*>(compressed.data()), compressed.size());
 
             auto resp = requests::request(req);
-            int status = resp ? static_cast<int>(resp->status_code) : 0;
+            status = resp ? static_cast<int>(resp->status_code) : 0;
+            response_body = resp ? resp->body : "";
+#endif
 
-            if (resp && status >= 200 && status < 300) {
+            if (status >= 200 && status < 300) {
                 // Parse share_code from response
                 try {
-                    json resp_json = json::parse(resp->body);
+                    json resp_json = json::parse(response_body);
                     if (resp_json.contains("share_code")) {
                         result.share_code = resp_json["share_code"].get<std::string>();
                     }
@@ -1514,8 +1640,9 @@ void DebugBundleCollector::upload_async(const BundleOptions& options, ResultCall
                 spdlog::info("[DebugBundle] Upload successful (HTTP {}), share_code: {}", status,
                              result.share_code);
             } else {
-                result.error_message = "HTTP " + std::to_string(status) +
-                                       (resp ? ": " + resp->body.substr(0, 200) : ": no response");
+                result.error_message =
+                    "HTTP " + std::to_string(status) +
+                    (response_body.empty() ? ": no response" : ": " + response_body.substr(0, 200));
                 spdlog::warn("[DebugBundle] Upload failed: {}", result.error_message);
             }
         } catch (const std::exception& e) {

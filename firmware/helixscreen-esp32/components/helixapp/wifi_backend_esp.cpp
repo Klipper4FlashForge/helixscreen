@@ -42,6 +42,7 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "log_redact.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
@@ -395,7 +396,7 @@ class WifiBackendEsp : public WifiBackend {
                              "Invalid network name or password");
         }
 
-        spdlog::info("[WifiBackend] esp32: connecting to '{}'", ssid);
+        spdlog::info("[WifiBackend] esp32: connecting to '{}'", helix::redact::ssid(ssid));
 
         {
             std::lock_guard<std::mutex> lock(cfg_mutex_);
@@ -516,16 +517,18 @@ class WifiBackendEsp : public WifiBackend {
                 nvs_commit(h);
                 spdlog::info("[WifiBackend] esp32: seeded first-boot WiFi SSID from Kconfig "
                              "default ('{}')",
-                             ssid);
+                             helix::redact::ssid(ssid));
             } else {
                 spdlog::info("[WifiBackend] esp32: no stored WiFi credentials and no Kconfig "
                              "seed — station will wait for Settings > Network");
             }
         } else if (ssid_rc == ESP_OK) {
             nvs_read_string(h, kNvsKeyPsk, psk); // best-effort; empty = open network
-            spdlog::info("[WifiBackend] esp32: using stored WiFi SSID '{}' from NVS", ssid);
+            spdlog::info("[WifiBackend] esp32: using stored WiFi SSID '{}' from NVS",
+                         helix::redact::ssid(ssid));
         } else {
             spdlog::warn("[WifiBackend] esp32: nvs_get_str(ssid) failed: {}",
+                         // PII_OK: an esp_err_t name, not the SSID itself
                          esp_err_to_name(ssid_rc));
         }
         nvs_close(h);

@@ -54,66 +54,6 @@ namespace {
            helix::PrintJobState::PAUSED;
 }
 
-/// XML subjects publishing the AD5X auto-switchover plugin situation.
-///
-/// Owned here rather than by AmsState because they are AD5X-specific and the
-/// backend is the only thing that can know the answer. Process-lifetime storage
-/// (a function-local static) because an XML binding outlives any one backend
-/// instance - backends are constructed and destroyed on every printer switch,
-/// and a subject whose storage died under a live observer is a use-after-free.
-struct Ad5xIfsPluginSubjects {
-    lv_subject_t plugin{}; ///< AmsBackendAd5xIfs::IfsPlugin as int
-    lv_subject_t backup{}; ///< BACKUP_UNKNOWN / BACKUP_OFF / BACKUP_ON
-    bool initialized = false;
-};
-
-Ad5xIfsPluginSubjects& plugin_subjects() {
-    static Ad5xIfsPluginSubjects s;
-    return s;
-}
-
-void deinit_plugin_subjects() {
-    auto& s = plugin_subjects();
-    if (!s.initialized) {
-        return;
-    }
-    lv_subject_deinit(&s.plugin);
-    lv_subject_deinit(&s.backup);
-    s.initialized = false;
-}
-
-/// Publish the plugin state. Main thread only - handle_status_update() is
-/// marshalled there by AmsSubscriptionBackend's token.defer(), and setting a
-/// subject fires observers that touch widgets.
-///
-/// MUST be called with mutex_ NOT held: an observer can call straight back into
-/// get_system_info(), which takes the same non-recursive mutex_.
-///
-/// Registration is lazy and guarded on lv_is_initialized() because ~200 AD5X
-/// unit tests construct this backend with no LVGL at all; the guard makes the
-/// publish a no-op there instead of a crash.
-void publish_plugin_subjects(int plugin_value, int backup_value) {
-    if (!lv_is_initialized()) {
-        return;
-    }
-    auto& s = plugin_subjects();
-    if (!s.initialized) {
-        lv_subject_init_int(&s.plugin, static_cast<int>(AmsBackendAd5xIfs::IfsPlugin::None));
-        lv_subject_init_int(&s.backup, AmsBackendAd5xIfs::BACKUP_UNKNOWN);
-        lv_xml_register_subject(nullptr, "ams_ifs_plugin", &s.plugin);
-        lv_xml_register_subject(nullptr, "ams_ifs_backup_enabled", &s.backup);
-        StaticSubjectRegistry::instance().register_deinit("Ad5xIfsPlugin",
-                                                          []() { deinit_plugin_subjects(); });
-        s.initialized = true;
-    }
-    if (lv_subject_get_int(&s.plugin) != plugin_value) {
-        lv_subject_set_int(&s.plugin, plugin_value);
-    }
-    if (lv_subject_get_int(&s.backup) != backup_value) {
-        lv_subject_set_int(&s.backup, backup_value);
-    }
-}
-
 /// Fallback purge for a runout recovery: 50 mm of fresh filament at 10 mm/s.
 /// Same numbers the filament panel's purge fallback uses
 /// (ui_panel_filament.cpp, ui_filament_runout_handler.cpp) - deliberately a
@@ -144,7 +84,10 @@ AmsBackendAd5xIfs::AmsBackendAd5xIfs(IMoonrakerAPI* api, helix::IMoonrakerClient
     system_info_.total_slots = NUM_PORTS;
     system_info_.supports_bypass = true;
     system_info_.supports_tool_mapping = true;
-    system_info_.supports_endless_spool = false;
+    // The ENABLE bit only; AVAILABILITY comes from
+    // get_endless_spool_capabilities(), which reads the _IFS_VARS latch. False
+    // until a plugin's variable_backup is actually seen.
+    system_info_.endless_spool_enabled = false;
     system_info_.supports_purge = false;
 }
 
@@ -601,17 +544,12 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
     // flip to ERROR with no EVENT_STATE_CHANGED to carry it to the UI.
     const bool runout_changed = evaluate_runout_locked();
 
-    // Snapshot the plugin publication under the lock; the actual subject writes
-    // happen after unlock (an observer can re-enter get_system_info()).
-    const int plugin_value = static_cast<int>(
-        has_ifs_vars_ ? (var_prefix_ == "bambufy" ? IfsPlugin::Bambufy : IfsPlugin::LessWaste)
-                      : IfsPlugin::None);
-    const int backup_value = backup_subject_value_locked();
-
     lock.unlock();
 
-    publish_plugin_subjects(plugin_value, backup_value);
-
+    // No AD5X-specific plugin subjects to publish: the auto-switchover state is
+    // now carried by the backend-neutral `ams_endless_state` / `ams_endless_text`
+    // subjects, which AmsState derives from get_endless_spool_capabilities() when
+    // it handles the EVENT_STATE_CHANGED below.
     if (state_changed || indet_toggled || runout_changed) {
         emit_event(EVENT_STATE_CHANGED);
     }
@@ -840,6 +778,16 @@ void AmsBackendAd5xIfs::parse_head_sensor(bool detected) {
                       detected ? "filament detected" : "no filament");
     }
     head_filament_ = detected;
+}
+
+bool AmsBackendAd5xIfs::head_empty_for_unload_routing_locked() const {
+    // Positive switch evidence is required to claim "empty". See the header for
+    // the full rationale, the error asymmetry, and the `filamentValue` ADC that
+    // is the firmware's actual predicate.
+    if (head_switch_seen_) {
+        return !head_switch_present_;
+    }
+    return !head_filament_;
 }
 
 void AmsBackendAd5xIfs::update_slot_from_state(int slot_index) {
@@ -1398,7 +1346,7 @@ AmsSystemInfo AmsBackendAd5xIfs::get_system_info() const {
     info.operation_indeterminate = system_info_.operation_indeterminate;
     info.supports_bypass = system_info_.supports_bypass;
     info.supports_tool_mapping = system_info_.supports_tool_mapping;
-    info.supports_endless_spool = system_info_.supports_endless_spool;
+    info.endless_spool_enabled = system_info_.endless_spool_enabled;
     info.supports_purge = system_info_.supports_purge;
 
     // Replace registry's tool map with IFS-specific 16-entry mapping
@@ -1458,6 +1406,15 @@ bool AmsBackendAd5xIfs::can_unload_from_toolhead(int slot_index) const {
     // opposite negative-index convention here vs. unload_filament(), where
     // slot_index < 0 deliberately means "unload whatever is active." This is a
     // per-slot capability query, so a negative index is simply out of range.
+    //
+    // Deliberately still the conflated head_filament_, NOT the switch pair the
+    // unload router uses. This gate only decides whether the Unload affordance
+    // is OFFERED; slot_unloads_to_toolhead() / do_unload_filament() then decide
+    // heated-vs-cold, so a false "loaded" here cannot grind anything - it just
+    // reaches a router that routes it correctly. The error that would hurt is a
+    // false "empty", which hides the #995 recovery affordance while filament is
+    // physically seated, and head_filament_ is the more permissive of the two
+    // readings in exactly the case #995 is about (firmware dropped its pointer).
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (slot_index >= 0 && (system_info_.current_slot == slot_index ||
@@ -1563,7 +1520,7 @@ AmsError AmsBackendAd5xIfs::do_load_filament(int slot_index) {
 }
 
 AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
-    bool head_loaded;
+    bool head_empty;
     int current_slot;
     int seated_slot; // 0-based slot of the IFS_STATUS-seated port (-1 = none)
     {
@@ -1575,7 +1532,11 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
         // toolhead. The stamp is what stops the runout detector reading that as
         // an unattended runout (#1250).
         note_filament_op_dispatch_locked();
-        head_loaded = head_filament_;
+        // Snapshot the routing decision under the lock, then act unlocked (the
+        // eject/gcode paths re-acquire mutex_). NOT head_filament_ on its own:
+        // the motion sensor also writes it and false-negatives on a loaded-idle
+        // lane, and reading that as "empty" cold-ejects seated filament.
+        head_empty = head_empty_for_unload_routing_locked();
         current_slot = system_info_.current_slot;
         seated_slot = seated_chan_ > 0 ? seated_chan_ - 1 : -1;
     }
@@ -1628,8 +1589,9 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
     // (zmod_ifs.py:1149), so ZMOD homes (_G28) and then does nothing: raza616's
     // "homes and nothing happens." The filament is still in the lane, not the
     // toolhead, so route to the cold per-lane retract instead of a guaranteed
-    // no-op (7AC4SDEX: head_switch_sensor empty, ifs_motion_sensor present).
-    if (!head_loaded) {
+    // no-op (7AC4SDEX: head_switch_sensor empty, ifs_motion_sensor present — the
+    // switch pair still calls that empty, so 7AC4SDEX keeps this branch).
+    if (head_empty) {
         // "Unload whatever is active" (slot_index < 0) needs a concrete lane for
         // the cold eject — resolve through the seated channel, then the active
         // slot. Passing -1 through to eject_lane() fails validate_slot_index()
@@ -1676,8 +1638,8 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
     // the trash drop and leaves the nozzle hot. Verified against the device cfg
     // and ZMOD v1.7.1.
     spdlog::info("{} Unloading filament from toolhead (slot {}, current_slot {}, seated_slot {}, "
-                 "head_loaded {})",
-                 backend_log_tag(), slot_index, current_slot, seated_slot, head_loaded);
+                 "head_empty {})",
+                 backend_log_tag(), slot_index, current_slot, seated_slot, head_empty);
     // Finalize on the macro's own completion (its gcode ack). The synthesized
     // Retract phase has no sensor event, and the IFS_STATUS Chan==0 / GET_ZCOLOR
     // confirm can silently fail on native ZMOD — leaving the op stuck at Retract
@@ -1700,12 +1662,12 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
 bool AmsBackendAd5xIfs::slot_unloads_to_toolhead(int slot_index, bool /*loaded_hint*/) const {
     int current_slot;
     int seated_slot;
-    bool head_loaded;
+    bool head_empty;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         current_slot = system_info_.current_slot;
         seated_slot = seated_chan_ > 0 ? seated_chan_ - 1 : -1;
-        head_loaded = head_filament_;
+        head_empty = head_empty_for_unload_routing_locked();
     }
     // MUST mirror unload_filament()'s eject-vs-toolhead routing so the context
     // menu labels and dispatches the action correctly (Eject vs Unload). Any
@@ -1718,7 +1680,7 @@ bool AmsBackendAd5xIfs::slot_unloads_to_toolhead(int slot_index, bool /*loaded_h
         return false; // cold lane eject (existing #981 guard)
     if (slot_index >= 0 && current_slot < 0 && seated_slot >= 0 && slot_index != seated_slot)
         return false; // firmware dropped pointer, seated known -> cold eject (5HR3HHS6)
-    if (!head_loaded)
+    if (head_empty)
         return false; // empty toolhead -> cold lane eject
     return true;      // heated toolhead unload (cut)
 }
@@ -1830,9 +1792,17 @@ AmsError AmsBackendAd5xIfs::eject_lane(int slot_index) {
 
         // Refuse to cold-eject the lane currently seated at the toolhead: the
         // backward retract would fight the loaded filament. Mirror AFC's wording
-        // so the UI surfaces a consistent message across backends. current_slot
-        // + head_filament_ are the same members unload_filament() reads.
-        if (system_info_.current_slot == slot_index && head_filament_) {
+        // so the UI surfaces a consistent message across backends.
+        //
+        // Shares head_empty_for_unload_routing_locked() with unload_filament()'s
+        // router by necessity, not tidiness: the router sends an empty-head
+        // unload HERE, so a refusal keyed on a different notion of "empty" could
+        // reject the very call it just routed, and tell the user to "unload from
+        // the toolhead first" for an unload that is already trying. Sharing the
+        // predicate also closes the direct-Eject-tap half of the grinding hazard:
+        // a motion-sensor false negative used to let head_filament_ read false on
+        // a seated lane and wave the cold retract straight through.
+        if (system_info_.current_slot == slot_index && !head_empty_for_unload_routing_locked()) {
             return AmsError(AmsResult::WRONG_STATE, "Lane is loaded in toolhead",
                             "Unload from toolhead first", "Use Unload before Eject");
         }
@@ -2078,11 +2048,12 @@ bool AmsBackendAd5xIfs::runout_active() const {
     return runout_active_;
 }
 
-int AmsBackendAd5xIfs::backup_subject_value_locked() const {
-    // No plugin means no backup mechanism at all - that is a definite OFF, not an
-    // unknown, and it is the answer the #1247 reporter needed to see.
+int AmsBackendAd5xIfs::backup_state_locked() const {
+    // Stock zMod's ANALOG_PRUTOK is always-on — there is no toggle, so this is
+    // a definite ON, not Unknown. The runout log already includes `plugin=none`
+    // for context, so `backup=1` on that line reads correctly.
     if (!has_ifs_vars_) {
-        return BACKUP_OFF;
+        return BACKUP_ON;
     }
     if (!ifs_backup_variable_.has_value()) {
         return BACKUP_UNKNOWN;
@@ -2113,6 +2084,10 @@ bool AmsBackendAd5xIfs::parse_ifs_vars_macro_locked(const json& macro_status) {
         return false;
     }
     ifs_backup_variable_ = parsed;
+    // Mirror into the snapshot so get_system_info() agrees with the capabilities.
+    // ifs_backup_variable_ stays the source of truth - it can be nullopt, which
+    // the bool cannot express and which caps.enabled reports as Unknown.
+    system_info_.endless_spool_enabled = *parsed;
     spdlog::info("{} _IFS_VARS variable_backup = {} (automatic backup-spool switching on runout)",
                  backend_log_tag(), *parsed ? "on" : "off");
     return true;
@@ -3798,6 +3773,7 @@ void AmsBackendAd5xIfs::recheck_ifs_vars_macro() {
                                 // variable_backup would be a claim about software that is
                                 // no longer installed.
                                 ifs_backup_variable_.reset();
+                                system_info_.endless_spool_enabled = false;
                             }
                         });
         });
@@ -5234,11 +5210,14 @@ void AmsBackendAd5xIfs::note_filament_op_dispatch_locked() {
 }
 
 std::chrono::seconds AmsBackendAd5xIfs::runout_confirm_delay_locked() const {
-    // lessWaste's own backup switchover pauses the print, unloads the spent lane
-    // and loads a matching one - minutes during which the toolhead is legitimately
-    // empty on a paused job. Wait it out rather than talking over the recovery the
-    // printer is already performing.
-    if (has_ifs_vars_ && ifs_backup_variable_.value_or(false)) {
+    // Any of the three switchover paths — stock zMod's ANALOG_PRUTOK,
+    // lessWaste's _RUNOUT_HEAD, bambufy's _RUNOUT_HEAD — pauses the print,
+    // unloads the spent lane and loads a matching one. Minutes during which the
+    // toolhead is legitimately empty on a paused job. Wait it out rather than
+    // talking over the recovery the printer is already performing. Stock zMod
+    // is always-on (no toggle), so the !has_ifs_vars_ path always qualifies;
+    // plugins qualify only when variable_backup reads true.
+    if (!has_ifs_vars_ || ifs_backup_variable_.value_or(false)) {
         return kRunoutConfirmDelayWithBackup;
     }
     return kRunoutConfirmDelay;
@@ -5323,7 +5302,7 @@ bool AmsBackendAd5xIfs::evaluate_runout_locked() {
                  backend_log_tag(),
                  std::chrono::duration_cast<std::chrono::seconds>(now - *head_empty_since_).count(),
                  runout_slot_, has_ifs_vars_ ? var_prefix_ : std::string("none"),
-                 backup_subject_value_locked());
+                 backup_state_locked());
     return true;
 }
 
@@ -5346,41 +5325,83 @@ void AmsBackendAd5xIfs::clear_runout_locked(const char* why) {
     }
 }
 
-int AmsBackendAd5xIfs::find_backup_slot_locked(int runout_slot) const {
-    if (runout_slot < 0 || runout_slot >= NUM_PORTS) {
-        return -1;
+bool AmsBackendAd5xIfs::backup_eligible_locked(int slot, int candidate) const {
+    if (slot < 0 || slot >= NUM_PORTS || candidate < 0 || candidate >= NUM_PORTS ||
+        slot == candidate) {
+        return false;
     }
-    const auto src = static_cast<size_t>(runout_slot);
+    const auto src = static_cast<size_t>(slot);
     if (materials_[src].empty() || colors_[src].empty()) {
-        return -1; // Nothing to match against; claim nothing.
+        return false; // Nothing to match against; claim nothing.
     }
     const auto lower = [](std::string s) {
         std::transform(s.begin(), s.end(), s.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return s;
     };
-    const std::string want_material = lower(materials_[src]);
-    const std::string want_color = lower(colors_[src]);
+    const auto idx = static_cast<size_t>(candidate);
+    // All three conditions, no partial credit: this is the rule the hint text
+    // states, and lessWaste's own switchover is type+colour matched. Offering
+    // a "close enough" lane would print the wrong colour.
+    return port_presence_[idx] && lower(materials_[idx]) == lower(materials_[src]) &&
+           lower(colors_[idx]) == lower(colors_[src]);
+}
+
+int AmsBackendAd5xIfs::find_backup_slot_locked(int runout_slot) const {
     for (int i = 0; i < NUM_PORTS; ++i) {
-        if (i == runout_slot) {
-            continue;
+        if (backup_eligible_locked(runout_slot, i)) {
+            return i;
         }
-        const auto idx = static_cast<size_t>(i);
-        // All three conditions, no partial credit: this is the rule the hint text
-        // states, and lessWaste's own switchover is type+colour matched. Offering
-        // a "close enough" lane would print the wrong colour.
-        if (!port_presence_[idx]) {
-            continue;
-        }
-        if (lower(materials_[idx]) != want_material) {
-            continue;
-        }
-        if (lower(colors_[idx]) != want_color) {
-            continue;
-        }
-        return i;
     }
     return -1;
+}
+
+bool AmsBackendAd5xIfs::is_endless_spool_backup_eligible(int slot_index, int backup_slot) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return backup_eligible_locked(slot_index, backup_slot);
+}
+
+helix::printer::EndlessSpoolCapabilities AmsBackendAd5xIfs::get_endless_spool_capabilities() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    using namespace helix::printer;
+
+    EndlessSpoolCapabilities caps;
+    if (!has_ifs_vars_) {
+        // Stock zMod's "Infinite Spool Mode" — `ANALOG_PRUTOK`
+        // (zmod_ifs.py:cmd_ANALOG_PRUTOK), wired to head_switch_sensor's
+        // runout_gcode in ad5x_display_off.cfg. No enable flag — it fires
+        // unconditionally on head runout and switches to a slot whose ffmType
+        // AND ffmColor both match AND whose port sensor reads present. There is
+        // nothing for HelixScreen to write, so FirmwareManaged + ReadOnly.
+        // Confirmed from zmod 1.7.1 source + corroborated on-device (raza616).
+        caps.availability = EndlessSpoolAvailability::Available;
+        caps.provider = "zmod";
+        caps.enabled = EndlessSpoolEnabled::On;
+        caps.editability = EndlessSpoolEditability::ReadOnly;
+        caps.restriction = EndlessSpoolRestriction::FirmwareManaged;
+        return caps;
+    }
+
+    caps.availability = EndlessSpoolAvailability::Available;
+    caps.provider = (var_prefix_ == "bambufy") ? "bambufy" : "lessWaste";
+    // Mapped from backup_state_locked() rather than re-derived, so the tri-state
+    // the runout log reports and the tri-state the UI renders are one rule.
+    // nullopt stays Unknown: flattening it to Off would tell the user no swap
+    // will happen when we simply never read the setting.
+    switch (backup_state_locked()) {
+    case BACKUP_ON:
+        caps.enabled = EndlessSpoolEnabled::On;
+        break;
+    case BACKUP_OFF:
+        caps.enabled = EndlessSpoolEnabled::Off;
+        break;
+    default:
+        caps.enabled = EndlessSpoolEnabled::Unknown;
+        break;
+    }
+    caps.editability = EndlessSpoolEditability::ReadOnly;
+    caps.restriction = EndlessSpoolRestriction::PluginReadOnly;
+    return caps;
 }
 
 std::string AmsBackendAd5xIfs::build_runout_detail_locked() const {
@@ -5388,11 +5409,28 @@ std::string AmsBackendAd5xIfs::build_runout_detail_locked() const {
         lv_tr("Filament ran out - nothing at the toolhead and the print is paused.");
     detail += " ";
 
+    // The "what will switch" suffix is identical across all three modes because
+    // the firmware-side rule is identical: ANALOG_PRUTOK (stock zMod) and
+    // _RUNOUT_HEAD (lessWaste/bambufy) both require exact material AND exact
+    // colour AND port-present. Only the subject of the sentence differs.
+    const auto append_switchover_rule = [&](const std::string& who) {
+        detail += who + " ";
+        detail += lv_tr("will switch to a slot whose filament type AND colour both match "
+                        "the active spool and whose own port sensor reads filament present.");
+        const int backup = find_backup_slot_locked(runout_slot_);
+        detail += " ";
+        if (backup >= 0) {
+            detail += lv_tr("Slot");
+            detail += " " + std::to_string(backup + 1) + " ";
+            detail += lv_tr("matches.");
+        } else {
+            detail += lv_tr("No slot currently matches.");
+        }
+    };
+
     if (!has_ifs_vars_) {
-        // The #1247 misexpectation, answered head-on: stock zMod has no
-        // switchover mechanism at all, so nothing is going to happen by itself.
-        detail += lv_tr("No auto-switchover plugin (lessWaste or bambufy) is installed, so this "
-                        "printer will not change to a backup spool on its own.");
+        // Stock zMod "Infinite Spool Mode" (ANALOG_PRUTOK) — always on, no toggle.
+        append_switchover_rule(lv_tr("Infinite Spool Mode"));
         return detail;
     }
 
@@ -5410,19 +5448,7 @@ std::string AmsBackendAd5xIfs::build_runout_detail_locked() const {
         return detail;
     }
 
-    detail += plugin_name + " ";
-    detail += lv_tr("backup-spool switching is on. It only switches to a port whose filament type "
-                    "AND colour both match the active spool and whose own port sensor reads "
-                    "filament present.");
-    const int backup = find_backup_slot_locked(runout_slot_);
-    detail += " ";
-    if (backup >= 0) {
-        detail += lv_tr("Slot");
-        detail += " " + std::to_string(backup + 1) + " ";
-        detail += lv_tr("matches.");
-    } else {
-        detail += lv_tr("No slot currently matches.");
-    }
+    append_switchover_rule(plugin_name);
     return detail;
 }
 

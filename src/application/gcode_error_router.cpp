@@ -11,6 +11,7 @@
 #include "app_globals.h"
 #include "error_classify.h"
 #include "error_event.h"
+#include "error_modal_view.h"
 #include "fault_surface_correlation.h"
 #include "i_moonraker_api.h"
 #include "i_moonraker_client.h"
@@ -58,32 +59,6 @@ struct RecoverToastCtx {
     std::string gcode;
     std::string log_tag;
 };
-
-/// Maps RecoveryAction.style to PromptButton.color.
-/// "primary" -> "primary", "danger" -> "error", anything else -> "" (neutral).
-std::string color_for_style(const std::string& style) {
-    if (style == "primary")
-        return "primary";
-    if (style == "danger")
-        return "error";
-    return ""; // neutral / theme default
-}
-
-/// Title for a plain CRITICAL modal (no recovery action): the event's own
-/// title, falling back to "Filament System Error" for an untitled CFS fault and
-/// "Printer Error" otherwise. error_classify::classify() leaves title empty for
-/// every key8xx code, which is what the CFS fallback is for; a backend that does
-/// name its fault (AmsBackendCfs::classify_error's "Filament runout") keeps that
-/// name rather than being relabelled a generic system error.
-/// NOTE: twin of modal_title_for() in recovery_modal_presenter.cpp (the
-/// MODAL_WITH_RECOVER arm) — keep the CFS title rule in sync across both.
-const char* modal_title_for(const ErrorEvent& e) {
-    if (!e.title.empty())
-        return e.title.c_str();
-    if (e.source == ErrorSource::CFS)
-        return lv_tr("Filament System Error");
-    return lv_tr("Printer Error");
-}
 
 /// Replay age gate: a latched `!!` older than this in the gcode_store is
 /// considered stale and is NOT re-surfaced on reconnect.
@@ -302,7 +277,7 @@ PromptData build_recovery_prompt(const ErrorEvent& e) {
         PromptButton b;
         b.label = a.label;
         b.gcode = a.gcode;
-        b.color = color_for_style(a.style);
+        b.color = helix::ui::color_for_style(a.style);
         p.buttons.push_back(std::move(b));
     }
     return p;
@@ -528,8 +503,9 @@ void GcodeErrorRouter::process_line(const std::string& line) {
     bool surfaced = true;
     switch (how) {
     case PresentAs::MODAL:
-        // CRITICAL without a recovery action -- see modal_title_for().
-        ui_notification_error(modal_title_for(*ev), ev->detail.c_str(), /*modal=*/true);
+        // CRITICAL without a recovery action -- see helix::ui::modal_title_for().
+        ui_notification_error(helix::ui::modal_title_for(*ev), ev->detail.c_str(),
+                              /*modal=*/true);
         break;
     case PresentAs::MODAL_WITH_RECOVER:
         present_recovery_modal(*ev);

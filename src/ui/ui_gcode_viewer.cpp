@@ -271,6 +271,9 @@ class GCodeViewerState {
     void* object_long_press_user_data{nullptr};
     gcode_viewer_load_callback_t load_callback{nullptr};
     void* load_callback_user_data{nullptr};
+    gcode_viewer_load_callback_t first_frame_callback{nullptr};
+    void* first_frame_callback_user_data{nullptr};
+    bool first_frame_fired_{false};
     ui_gcode_viewer_clear_cb_t clear_callback{nullptr};
     void* clear_callback_user_data{nullptr};
 
@@ -727,6 +730,50 @@ static void gcode_viewer_draw_cb(lv_event_t* e) {
                 obj, [](void* data) { lv_obj_invalidate(static_cast<lv_obj_t*>(data)); }, obj);
         }
 #endif
+    }
+
+    // Fire the one-shot first-frame callback once the viewer has produced real
+    // pixels (not during VBO upload, not on a skipped/failed frame). Callers
+    // (e.g. PrintSelectDetailView) use this to defer hiding the thumbnail until
+    // the viewer actually has something to show, avoiding a gray flash.
+    if (!st->first_frame_fired_ && st->first_frame_callback) {
+        bool frame_complete = true;
+        if (st->is_using_2d_mode()) {
+            // The 2D renderer paints progressively — the ghost and solid caches
+            // finish over several frames, which is exactly when the "Building
+            // preview: N%" label is up. Reporting completion here drops the
+            // thumbnail onto a half-drawn view, the gray gap this callback
+            // exists to prevent. This is every non-GLES device, plus GLES once
+            // budget_forced_2d_ flips.
+            if (st->layer_renderer_2d_ && (st->layer_renderer_2d_->needs_more_frames() ||
+                                           st->layer_renderer_2d_->is_ghost_build_running())) {
+                frame_complete = false;
+            }
+        } else {
+#ifdef ENABLE_3D_RENDERER
+            // is_uploading() (VBO upload in progress) exists only on GCode3DRenderer;
+            // the non-GLES base GCodeRenderer has no such concept.
+            if (st->renderer_ && st->renderer_->is_uploading())
+                frame_complete = false;
+#endif
+        }
+        if (frame_complete) {
+            st->first_frame_fired_ = true;
+            // Defer the callback out of the draw pass. It drives subject writes
+            // that hide widgets (bind_flag_if_eq → lv_obj_invalidate +
+            // mark_layout_as_dirty), and LVGL rejects invalidation while a
+            // render is in progress: lv_refr.c asserts and lv_inv_area returns
+            // without marking the area, so stale thumbnail pixels stay painted
+            // over the viewer. Resolve state at callback time so a viewer torn
+            // down in between (which clears first_frame_callback) is a no-op.
+            helix::ui::queue_widget_update(obj, [](lv_obj_t* viewer) {
+                auto* state = get_state(viewer);
+                if (!state || !state->first_frame_callback) {
+                    return;
+                }
+                state->first_frame_callback(viewer, state->first_frame_callback_user_data, true);
+            });
+        }
     }
 
     auto render_end = std::chrono::high_resolution_clock::now();
@@ -1377,8 +1424,9 @@ static void ui_gcode_viewer_load_file_async(lv_obj_t* obj, const char* file_path
 
     spdlog::info("[GCode Viewer] Loading file async: {}", file_path);
     st->viewer_state = GcodeViewerState::Loading;
-    st->first_render = true;       // Reset for new file
-    st->budget_forced_2d_ = false; // Reset budget 2D override for new file
+    st->first_render = true;        // Reset for new file
+    st->first_frame_fired_ = false; // Reset first-frame callback for new file
+    st->budget_forced_2d_ = false;  // Reset budget 2D override for new file
 
     // Bump generation so any in-flight async callbacks from a prior load are rejected
     const uint64_t gen = st->bump_generation();
@@ -1898,6 +1946,18 @@ void ui_gcode_viewer_set_load_callback(lv_obj_t* obj, gcode_viewer_load_callback
     st->load_callback = callback;
     st->load_callback_user_data = user_data;
     spdlog::debug("[GCode Viewer] Load callback registered");
+}
+
+void ui_gcode_viewer_set_first_frame_callback(lv_obj_t* obj, gcode_viewer_load_callback_t callback,
+                                              void* user_data) {
+    gcode_viewer_state_t* st = get_state(obj);
+    if (!st) {
+        return;
+    }
+
+    st->first_frame_callback = callback;
+    st->first_frame_callback_user_data = user_data;
+    st->first_frame_fired_ = false;
 }
 
 void ui_gcode_viewer_clear(lv_obj_t* obj) {
@@ -2678,6 +2738,8 @@ lv_obj_t* ui_gcode_viewer_create(lv_obj_t* parent) {
 void ui_gcode_viewer_load_file(lv_obj_t*, const char*) {}
 
 void ui_gcode_viewer_set_load_callback(lv_obj_t*, gcode_viewer_load_callback_t, void*) {}
+
+void ui_gcode_viewer_set_first_frame_callback(lv_obj_t*, gcode_viewer_load_callback_t, void*) {}
 
 void ui_gcode_viewer_set_gcode_data(lv_obj_t*, void*) {}
 

@@ -329,20 +329,32 @@ void NavigationManager::overlay_slide_out_complete_cb(lv_anim_t* anim) {
             deferred);
     }
 
-    // Lifecycle: Activate what's now visible after animation completes
-    // Stack was already modified in go_back(), so check what's now at top
-    if (mgr.panel_stack_.size() == 1) {
+    // Lifecycle: activate what's now visible. go_back() consumes the latch
+    // itself before it returns, so this is the fallback for any close path that
+    // armed it without reaching that point — a no-op once consumed.
+    mgr.activate_restored_target();
+}
+
+void NavigationManager::activate_restored_target() {
+    if (!restore_activation_pending_) {
+        return;
+    }
+    // Clear BEFORE dispatching: on_activate() may navigate (PrintSelectPanel's
+    // Print-Last flow calls set_active()), which can queue another go_back().
+    restore_activation_pending_ = false;
+
+    if (panel_stack_.size() == 1) {
         // Back to main panel - activate it
-        if (mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]) {
+        if (panel_instances_[static_cast<int>(active_panel_)]) {
             spdlog::trace("[NavigationManager] Activating main panel {} after overlay closed",
-                          static_cast<int>(mgr.active_panel_));
-            mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]->on_activate();
+                          static_cast<int>(active_panel_));
+            panel_instances_[static_cast<int>(active_panel_)]->on_activate();
         }
-    } else if (mgr.panel_stack_.size() > 1) {
+    } else if (panel_stack_.size() > 1) {
         // Back to previous overlay - activate it
-        lv_obj_t* now_visible = mgr.panel_stack_.back();
-        auto overlay_it = mgr.overlay_instances_.find(now_visible);
-        if (overlay_it != mgr.overlay_instances_.end() && overlay_it->second) {
+        lv_obj_t* now_visible = panel_stack_.back();
+        auto overlay_it = overlay_instances_.find(now_visible);
+        if (overlay_it != overlay_instances_.end() && overlay_it->second) {
             spdlog::trace("[NavigationManager] Activating previous overlay {}",
                           overlay_it->second->get_name());
             overlay_it->second->on_activate();
@@ -444,22 +456,12 @@ void NavigationManager::overlay_animate_slide_out(lv_obj_t* panel) {
             callback();
         }
 
-        // Lifecycle: Activate what's now visible (same logic as animation callback)
-        if (mgr.panel_stack_.size() == 1) {
-            if (mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]) {
-                spdlog::trace("[NavigationManager] Activating main panel {} after overlay closed",
-                              static_cast<int>(mgr.active_panel_));
-                mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]->on_activate();
-            }
-        } else if (mgr.panel_stack_.size() > 1) {
-            lv_obj_t* now_visible = mgr.panel_stack_.back();
-            auto overlay_it = mgr.overlay_instances_.find(now_visible);
-            if (overlay_it != mgr.overlay_instances_.end() && overlay_it->second) {
-                spdlog::trace("[NavigationManager] Activating previous overlay {}",
-                              overlay_it->second->get_name());
-                overlay_it->second->on_activate();
-            }
-        }
+        // Deliberately NO activation here. This runs from inside go_back(),
+        // which un-hides the restored panel *after* this returns; an
+        // on_activate() that navigates (PrintSelectPanel's Print-Last flow
+        // calls set_active(Home)) would be silently undone by that un-hide.
+        // go_back() owns the restored panel's activation via
+        // activate_restored_target(), fired once, below its un-hide.
         return;
     }
 
@@ -657,18 +659,8 @@ void NavigationManager::overlay_animate_zoom_out(lv_obj_t* panel, lv_area_t sour
             callback();
         }
 
-        // Lifecycle: Activate what's now visible
-        if (panel_stack_.size() == 1) {
-            if (panel_instances_[static_cast<int>(active_panel_)]) {
-                panel_instances_[static_cast<int>(active_panel_)]->on_activate();
-            }
-        } else if (panel_stack_.size() > 1) {
-            lv_obj_t* now_visible = panel_stack_.back();
-            auto overlay_it = overlay_instances_.find(now_visible);
-            if (overlay_it != overlay_instances_.end() && overlay_it->second) {
-                overlay_it->second->on_activate();
-            }
-        }
+        // No activation here — see overlay_animate_slide_out()'s no-animation
+        // path: go_back() activates the restored target once, after its un-hide.
         return;
     }
 
@@ -798,15 +790,33 @@ void NavigationManager::handle_connection_state_change(int state) {
     bool is_connected = (state == static_cast<int>(ConnectionState::CONNECTED));
 
     // Only redirect if we were previously connected and are now disconnected
-    if (was_connected && !is_connected && panel_requires_connection(active_panel_)) {
-        spdlog::info("[NavigationManager] Connection lost on panel {} - navigating to home",
-                     static_cast<int>(active_panel_));
+    if (was_connected && !is_connected) {
+        if (disconnect_expected_) {
+            // Consume the one-shot ON THE FALLING EDGE, not on entry. The latch
+            // cannot live in previous_connection_state_: every deferred
+            // connection apply writes that field, so a CONNECTED apply still
+            // undrained when the app backgrounds would overwrite it and the
+            // synthetic DISCONNECTED behind it would read as real (#1245).
+            disconnect_expected_ = false;
+            spdlog::debug("[NavigationManager] Expected disconnect on panel {} - staying put",
+                          static_cast<int>(active_panel_));
+        } else if (panel_requires_connection(active_panel_)) {
+            spdlog::info("[NavigationManager] Connection lost on panel {} - navigating to home",
+                         static_cast<int>(active_panel_));
 
-        clear_overlay_stack();
-        set_active(PanelId::Home);
+            clear_overlay_stack();
+            set_active(PanelId::Home);
+        }
     }
 
     previous_connection_state_ = state;
+}
+
+void NavigationManager::mark_disconnect_expected() {
+    // Arm a one-shot that the next CONNECTED→DISCONNECTED transition consumes,
+    // so the disconnect queued by on_enter_background() doesn't clear the
+    // overlay stack when it drains on resume (#1245).
+    disconnect_expected_ = true;
 }
 
 void NavigationManager::handle_klippy_state_change(int state) {
@@ -2126,6 +2136,13 @@ bool NavigationManager::go_back() {
                               it->second->get_name());
                 it->second->on_deactivate();
             }
+
+            // Arm the exactly-once activation latch for this close. Consumed
+            // below (after the restored panel is un-hidden) regardless of which
+            // animation path ran, so the panel is activated exactly once —
+            // on_activate() handlers are not all idempotent (PrintSelectPanel's
+            // Print-Last counter, FirstRunTour::maybe_start).
+            mgr.restore_activation_pending_ = true;
         }
 
         // Pop stack and clean up backdrop BEFORE animation — the no-animation path
@@ -2216,6 +2233,7 @@ bool NavigationManager::go_back() {
                 mgr.active_panel_ = PanelId::Home;
                 lv_subject_set_int(&mgr.active_panel_subject_, static_cast<int>(PanelId::Home));
             }
+            mgr.activate_restored_target();
             return;
         }
 
@@ -2234,13 +2252,15 @@ bool NavigationManager::go_back() {
         }
         lv_obj_remove_flag(prev, LV_OBJ_FLAG_HIDDEN);
 
-        // Lifecycle: Re-activate the panel being restored
-        auto it = mgr.overlay_instances_.find(prev);
-        if (it != mgr.overlay_instances_.end() && it->second) {
-            spdlog::trace("[NavigationManager] Re-activating restored overlay {}",
-                          it->second->get_name());
-            it->second->on_activate();
-        }
+        // Lifecycle: re-activate what the close restored — the main panel or the
+        // overlay beneath. Runs LAST, after the un-hide above, so an
+        // on_activate() that navigates away (set_active) cannot be undone by it,
+        // and runs unconditionally so live resources restart even when the
+        // close animation's completion callback never fires (on Android the
+        // overlay widget can be freed first, so that callback bails at its
+        // lv_obj_is_valid check and the camera stayed dead until a tab
+        // switch — #1245). The latch makes it exactly once per close.
+        mgr.activate_restored_target();
     });
     return true;
 }
@@ -2417,6 +2437,8 @@ void NavigationManager::deinit_subjects() {
     active_panel_ = PanelId::Home;
     previous_connection_state_ = -1;
     previous_klippy_state_ = -1;
+    disconnect_expected_ = false;
+    restore_activation_pending_ = false;
 
     // Allow re-initialization after soft restart (shutdown() sets this to true)
     shutting_down_ = false;

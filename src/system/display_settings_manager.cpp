@@ -22,6 +22,8 @@
 #include <cstdlib>
 
 #ifdef __ANDROID__
+#include "system/android_jni.h"
+
 #include <SDL_system.h>
 #include <jni.h>
 
@@ -32,21 +34,18 @@ static void android_set_navbar_always_visible(bool enabled) {
     if (!env)
         return;
 
-    jclass cls = env->FindClass("org/helixscreen/app/HelixActivity");
-    if (!cls) {
-        env->ExceptionClear();
+    // Cached global ref owned by helix_activity_class() — never released here.
+    jclass cls = helix::android::helix_activity_class(env);
+    if (!cls)
         return;
-    }
 
     jmethodID method = env->GetStaticMethodID(cls, "setNavBarAlwaysVisible", "(Z)V");
     if (!method) {
-        env->DeleteLocalRef(cls);
         env->ExceptionClear();
         return;
     }
 
     env->CallStaticVoidMethod(cls, method, static_cast<jboolean>(enabled));
-    env->DeleteLocalRef(cls);
 }
 #endif // __ANDROID__
 

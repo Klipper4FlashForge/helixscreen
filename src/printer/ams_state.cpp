@@ -309,6 +309,18 @@ void AmsState::init_subjects(bool register_xml) {
 
     INIT_SUBJECT_STRING(ams_current_tool_text, "---", subjects_, register_xml);
 
+    // Endless-spool status. Starts Hidden with no text so a printer whose
+    // backend never reports the feature renders nothing rather than flashing a
+    // default sentence before the first sync.
+    INIT_SUBJECT_INT(ams_endless_state,
+                     static_cast<int>(helix::printer::EndlessSpoolStatusKind::Hidden), subjects_,
+                     register_xml);
+    lv_subject_init_string(&ams_endless_text_, ams_endless_text_buf_, nullptr,
+                           sizeof(ams_endless_text_buf_), "");
+    subjects_.register_subject(&ams_endless_text_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, "ams_endless_text", &ams_endless_text_);
+
     // Tool change progress subjects
     INIT_SUBJECT_INT(toolchange_visible, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(ams_current_toolchange, -1, subjects_, register_xml);
@@ -1807,6 +1819,10 @@ void AmsState::sync_from_backend() {
     // Sync "Currently Loaded" display subjects (pass info to avoid re-fetching)
     sync_current_loaded_from_backend(info);
 
+    // Sync the endless-spool status line (backend-neutral; every backend answers
+    // the same capability question)
+    sync_endless_spool_from_backend(backend);
+
     spdlog::trace("[AMS State] Synced from backend - type={}, slots={}, action={}, segment={}",
                   ams_type_to_string(info.type), info.total_slots,
                   ams_action_to_string(info.action),
@@ -1940,6 +1956,30 @@ void AmsState::on_backend_event(int backend_index, const std::string& event,
         // User intervention needed
         queue_sync(true, -1);
         spdlog::warn("[AMS State] Attention required - {}", data);
+    }
+}
+
+void AmsState::sync_endless_spool_from_backend(AmsBackend* backend) {
+    using helix::printer::EndlessSpoolStatus;
+    using helix::printer::EndlessSpoolStatusKind;
+
+    // Capabilities take the backend's own mutex_, which is the lock order
+    // sync_from_backend() already established with get_system_info().
+    EndlessSpoolStatus status;
+    if (backend != nullptr) {
+        status = helix::printer::endless_spool_status(backend->get_endless_spool_capabilities());
+    }
+
+    const int kind = static_cast<int>(status.kind);
+    if (lv_subject_get_int(&ams_endless_state_) != kind) {
+        spdlog::debug("[AmsState] endless spool status -> kind={} text='{}'", kind, status.text);
+        lv_subject_set_int(&ams_endless_state_, kind);
+    }
+    // The kind can hold while the sentence changes (a CFS box that keeps
+    // auto-refill on but gains a restriction reason), so the text is compared
+    // independently rather than gated on the kind having moved.
+    if (strcmp(lv_subject_get_string(&ams_endless_text_), status.text.c_str()) != 0) {
+        lv_subject_copy_string(&ams_endless_text_, status.text.c_str());
     }
 }
 

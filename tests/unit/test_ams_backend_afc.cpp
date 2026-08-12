@@ -414,8 +414,10 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         return get_system_info().tool_to_slot_map;
     }
 
-    std::vector<helix::printer::EndlessSpoolConfig> get_endless_spool_configs() const {
-        return get_endless_spool_config();
+    /// Per-slot backup edges, via the one shared group-to-edge projection.
+    std::vector<int> get_endless_spool_edges() const {
+        return helix::printer::endless_spool_backup_edges(get_endless_spool_config(),
+                                                          get_system_info().total_slots);
     }
 
     // Get mapped_tool from a slot
@@ -1550,13 +1552,19 @@ TEST_CASE("AFC reset_endless_spool clears all slots", "[ams][afc][endless_spool]
     REQUIRE(helper.has_gcode("SET_RUNOUT LANE=lane4 RUNOUT=NONE"));
 }
 
-TEST_CASE("AFC reset_endless_spool with zero slots is no-op", "[ams][afc][endless_spool][reset]") {
+TEST_CASE("AFC reset_endless_spool with no lanes yet refuses instead of silently succeeding",
+          "[ams][afc][endless_spool][reset]") {
     AmsBackendAfcTestHelper helper;
-    // Don't initialize any lanes or configs
+    // Don't initialize any lanes or configs — AFC always advertises the mapping as
+    // editable, so without a slot-count guard the loop is skipped and the caller is
+    // told the wipe succeeded. The UI confirms a destructive warning before calling
+    // this, so a silent no-op is worse than a refusal.
 
     auto result = helper.reset_endless_spool();
 
-    REQUIRE(result.success());
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.result == AmsResult::NOT_SUPPORTED);
+    REQUIRE_FALSE(result.user_msg.empty());
     REQUIRE(helper.captured_gcodes.empty());
 }
 
@@ -1750,9 +1758,9 @@ TEST_CASE("AFC endless spool from runout_lane field", "[ams][afc][endless_spool]
     helper.feed_afc_stepper("lane1", {{"runout_lane", "lane2"}});
 
     // runout_lane should update endless spool backup config
-    auto configs = helper.get_endless_spool_configs();
-    REQUIRE(configs.size() == 4);
-    REQUIRE(configs[0].backup_slot == 1); // lane1's backup is lane2 (slot 1)
+    auto edges = helper.get_endless_spool_edges();
+    REQUIRE(edges.size() == 4);
+    REQUIRE(edges[0] == 1); // lane1's backup is lane2 (slot 1)
 }
 
 TEST_CASE("AFC endless spool null runout_lane clears backup", "[ams][afc][endless_spool][phase1]") {
@@ -1770,8 +1778,7 @@ TEST_CASE("AFC endless spool null runout_lane clears backup", "[ams][afc][endles
     helper.feed_afc_stepper("lane1", stepper_data);
 
     // null runout_lane should clear the backup
-    auto configs = helper.get_endless_spool_configs();
-    REQUIRE(configs[0].backup_slot == -1); // Cleared
+    REQUIRE(helper.get_endless_spool_edges()[0] == -1); // Cleared
 }
 
 TEST_CASE("AFC message sets operation detail", "[ams][afc][message][phase1]") {

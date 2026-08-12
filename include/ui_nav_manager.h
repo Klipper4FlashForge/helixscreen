@@ -466,6 +466,17 @@ class NavigationManager {
     bool take_backdrop_keyboard_dismiss();
 
     /**
+     * @brief Mark that the next DISCONNECTED is expected (e.g. app backgrounding)
+     *
+     * Arms a one-shot consumed by the next CONNECTED→DISCONNECTED transition, so
+     * the disconnect queued by disconnect() (drained on resume) does not clear
+     * the overlay stack and bounce to Home (#1245). Immune to callback ordering:
+     * a still-undrained CONNECTED apply cannot clear it, because it is not
+     * carried in previous_connection_state_.
+     */
+    void mark_disconnect_expected();
+
+    /**
      * @brief Shutdown navigation system during application exit
      *
      * Deactivates current overlay/panel and clears all registries.
@@ -560,6 +571,13 @@ class NavigationManager {
     // Zoom animation helpers
     void overlay_animate_zoom_in(lv_obj_t* panel, lv_area_t source_rect);
     void overlay_animate_zoom_out(lv_obj_t* panel, lv_area_t source_rect);
+
+    // Activate the panel/overlay an overlay close restored, at most once per
+    // close. go_back() arms restore_activation_pending_ and consumes it after
+    // un-hiding the restored panel; the animation-completion callback consumes
+    // it only if that never happened. Clears the latch before dispatching, so a
+    // re-entrant navigation from on_activate() can arm a fresh close cleanly.
+    void activate_restored_target();
 
     // Observer handlers (used by factory-created observers)
     void handle_active_panel_change(int32_t new_active_panel);
@@ -701,6 +719,14 @@ class NavigationManager {
     // Track previous states for detecting transitions
     int previous_connection_state_ = -1;
     int previous_klippy_state_ = -1;
+
+    // One-shot: the next CONNECTED→DISCONNECTED transition is expected and must
+    // not clear the overlay stack. Set by mark_disconnect_expected().
+    bool disconnect_expected_ = false;
+
+    // Exactly-once latch for the restored panel/overlay activation of one
+    // overlay close. See activate_restored_target().
+    bool restore_activation_pending_ = false;
 
     // Animation constants
     static constexpr uint32_t OVERLAY_ANIM_DURATION_MS = 200;

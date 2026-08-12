@@ -446,3 +446,49 @@ TEST_CASE_METHOD(TempGraphControllerFixture,
     // raw is now a dangling pointer — don't touch it. unique_ptr is empty.
     REQUIRE(controller == nullptr);
 }
+
+// ============================================================================
+// Regression: series built before extruder discovery must still go live
+// ============================================================================
+//
+// get_extruder_temp_subject() is a plain map lookup that returns nullptr until
+// PrinterTemperatureState::init_extruders() runs. Persistent graphs (the home
+// temp_graph widget) are constructed at app startup, before the WebSocket
+// connects, so every nozzle series silently got no observer and stayed frozen
+// on backfilled history for the whole session. The controller only rebuilt on
+// disconnect->reconnect, never on discovery.
+
+TEST_CASE_METHOD(TempGraphControllerFixture,
+                 "Series resolves extruder subjects discovered after construction",
+                 "[controller][temp_graph_controller][multi_tool]") {
+    auto& ps = get_printer_state();
+    auto& queue = helix::ui::UpdateQueue::instance();
+
+    // PrinterState is a process-global here and other cases discover tools into
+    // it, so reset to the pre-discovery state this case is about.
+    ps.init_extruders({});
+    queue.drain();
+
+    // Given: a graph built BEFORE discovery — "extruder1" does not exist yet
+    REQUIRE(ps.get_extruder_temp_subject("extruder1") == nullptr);
+
+    TempGraphControllerConfig cfg;
+    cfg.series = {
+        {"extruder1", lv_color_hex(0xFF4444), true},
+    };
+    auto controller = std::make_unique<TempGraphController>(screen, cfg);
+    REQUIRE(controller->is_valid());
+    REQUIRE(controller->series_id_for("extruder1") >= 0);
+
+    // When: discovery lands and extruder1 reports a temperature
+    ps.init_extruders({"extruder", "extruder1"});
+    queue.drain();
+    lv_timer_handler_safe();
+
+    lv_subject_set_int(ps.get_extruder_temp_subject("extruder1"), 2295);
+    queue.drain();
+    lv_timer_handler_safe();
+
+    // Then: the live sample reaches the chart instead of being dropped
+    REQUIRE(count_series_points_eq(controller->graph(), 2295) > 0);
+}

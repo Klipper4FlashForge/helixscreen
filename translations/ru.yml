@@ -170,6 +170,7 @@ translations:
   All axes homed: Все оси запаркованы
   All fields are required: Все поля обязательны для заполнения
   All plugins loaded successfully: Все плагины успешно загружены
+  Allow Home Screen Editing: ''
   Allow cold load/unload: Разрешить загрузку/выгрузку без нагрева
   Allow display to sleep during active prints: Разрешить спящий режим дисплея во время
     печати
@@ -254,6 +255,7 @@ translations:
   Back: Назад
   Back to Results: Назад к результатам
   'Backtrace: {} frames': 'Трассировка: {} кадров'
+  Backup spool switching state unknown: 'Резервная катушка: состояние неизвестно'
   Barcode Scanner: Сканер штрих-кодов
   Base: Опорный
   Beacon auto-calibrate sent: Beacon автокалибровка отправлена
@@ -389,6 +391,7 @@ translations:
   Cancel Print: Отменить печать
   Cancel macro not configured: Макрос отмены не настроен
   Cancelled: Отменено
+  Cannot be changed from here on a multi-unit MMU: Нельзя изменить здесь на MMU с несколькими блоками
   'Cannot control timelapse: printer not connected': 'Невозможно управлять таймлапсом:
     принтер не подключён'
   'Cannot delete file: printer not connected': 'Невозможно удалить файл: принтер не
@@ -485,6 +488,7 @@ translations:
   Clear All Events: Очистить все события
   Clear Console?: Очистить консоль?
   Clear Spool: Убрать катушку
+  Clear all spool failover assignments: ''
   Clear failed: Ошибка очистки
   Cleared from settings — system unpair failed, may need OS Bluetooth: Удалено из
     настроек; не удалось отменить сопряжение в системе, возможно нужен Bluetooth ОС
@@ -534,6 +538,7 @@ translations:
     макросы
   Configure timelapse recording: Настроить запись таймлапса
   Configure your printer's cooling fans: Настройте вентиляторы охлаждения принтера
+  Configured in the backup-spool package, not from here: Настраивается в плагине резервной катушки, не здесь
   Configuring Moonraker...: Настройка Moonraker...
   Confirm PIN: Подтвердите PIN
   Confirm before running macros: Подтверждать перед запуском макросов
@@ -780,6 +785,7 @@ translations:
   Enabled: Включено
   Encoder: Энкодер
   Ended: Завершено
+  Endless spool failover cleared for every slot: ''
   Enhanced {} operation in PRINT_START: Улучшена {} операция в PRINT_START
   Enhanced {} operations in PRINT_START: Улучшено {} операций в PRINT_START
   Enhancement Complete!: Улучшение завершено!
@@ -815,6 +821,7 @@ translations:
   'Error: Verification failed': 'Ошибка: проверка не удалась'
   'Error: Wrong architecture': 'Ошибка: неверная архитектура'
   'Error: `unzip` not installed': 'Ошибка: `unzip` не установлен'
+  Errors only: ''
   Escalate to emergency stop if cancel doesn't respond: Эскалация до аварийной остановки,
     если отмена не отвечает
   Escalation Timeout: Тайм-аут эскалации
@@ -1149,6 +1156,8 @@ translations:
   How Z-axis movement is displayed: Как отображается движение по оси Z
   How far filament is pushed back into the box on eject (mm): Насколько глубоко филамент
     задвигается обратно в коробку при извлечении (мм)
+  ? How long to hold before a press counts as a long-press, in ms (raise if edit mode or other long-press actions trigger by accident)
+  : ''
   How many labels to print: Сколько этикеток напечатать
   How the toolhead icon appears: Как отображается значок печатающей головки
   Hub: Хаб
@@ -1178,6 +1187,7 @@ translations:
   'Incompatible materials: {} cannot use {} as backup': 'Несовместимые материалы:
     {} не может использовать {} в качестве резерва'
   Indexing G-code...: Индексация G-code...
+  Infinite Spool Mode: ''
   Info: Инфо
   Initialized: Инициализировано
   Initializing...: Инициализация...
@@ -1345,6 +1355,8 @@ translations:
   Locked during print: Заблокировано во время печати
   Log Level: Уровень журнала
   Logs: Журналы
+  Long Press Time: ''
+  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): ''
   Longest Disconnect: Самое долгое отключение
   Loosen Path A belt.: Ослабьте ремень Пути A.
   Loosen Path B belt.: Ослабьте ремень Пути B.
@@ -1353,6 +1365,7 @@ translations:
   'Lot # (optional)': 'Партия # (необязательно)'
   Lot/Batch Nr: Nr. партии/серии
   Low Memory: Мало памяти
+  Lowest notification level that interrupts with a toast: ''
   M to toggle: M для переключения
   'MAC:': 'MAC:'
   MACRO DEVICES: МАКРО-УСТРОЙСТВА
@@ -1481,6 +1494,7 @@ translations:
   Named actions in the LED control panel (long-press).: Именованные действия в панели
     управления LED (долгое нажатие).
   Needs adjustment: Требуется регулировка
+  Needs the {} package to switch spools: 'Для смены катушки нужен плагин {}'
   Net Weight (g): Вес нетто (г)
   Network: Сеть
   Network Address: Сетевой адрес
@@ -1523,6 +1537,7 @@ translations:
   No USB printers found: USB-принтеры не найдены
   ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
   : ''
+  No automatic backup-spool package is installed: Плагин автоматической резервной катушки не установлен
   No buffer data available: Данные буфера недоступны
   No camera — use USB barcode scanner: Нет камеры — используйте USB сканер штрих-кодов
   No changes selected.\n\nClick Cancel to close.: Изменения не выбраны.\n\nНажмите
@@ -1631,6 +1646,7 @@ translations:
   'On': Вкл
   On and Off macros must be different: Макросы включения и выключения должны отличаться
   On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
+  On-screen Alerts: ''
   On/Off: Вкл/Выкл
   On/Off (state-aware): Вкл/Выкл (с отслеживанием)
   'On:': 'Вкл:'
@@ -1974,9 +1990,12 @@ translations:
   Resend write failed at chunk {}: Не удалось повторно отправить запись в блоке {}
   Reset: Сброс
   Reset CFS: Сброс CFS
+  Reset Endless Spool: ''
+  Reset Endless Spool?: ''
   Reset Home Screen?: Сбросить главный экран?
   Reset Speed & Flow to 100%: Сбросить скорость и поток на 100%
   Reset all settings and restart wizard: Сбросить все настройки и перезапустить мастер
+  Reset endless spool failed: ''
   Reset failed: Ошибка сброса
   Reset to Default: Сбросить до умолчания
   Reset to defaults: Сбросить по умолчанию
@@ -2349,6 +2368,7 @@ translations:
   Switch Printer: Переключить принтер
   Switch between light and dark themes: Переключение между светлой и тёмной темами
   Switched to T{}: Переключено на T{}
+  Switches to a backup spool on runout: При обрыве переключится на резервную катушку
   Switching heater control to MPC. Klipper will restart.: Переключение управления
     нагревом на MPC. Klipper перезапустится.
   Switching to MPC requires a config change and Klipper restart.: Переход на MPC требует
@@ -2417,6 +2437,7 @@ translations:
     использования помогают улучшить HelixScreen.
   Thanks! TOTALLY anonymous usage data helps improve HelixScreen.: Спасибо! ПОЛНОСТЬЮ
     анонимные данные использования помогают улучшить HelixScreen.
+  That slot cannot stand in for this one: Этот слот не может заменить текущий
   That tool is already loaded: Этот инструмент уже загружен
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
@@ -2448,6 +2469,7 @@ translations:
   The printer lost power while printing {}. The resumed layer may not line up exactly.: Принтер потерял питание при печати {}. Возобновлённый слой может не совпасть точно.
   The printer rejected the filament configuration. The print was not started.: Принтер
     отклонил конфигурацию филамента. Печать не была запущена.
+  The printer's firmware chooses the backup spool itself: Прошивка принтера сама выбирает резервную катушку
   The runout sensor indicates no filament is loaded. Start print anyway?: Датчик окончания
     филамента показывает, что филамент не загружен. Всё равно начать печать?
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: Датчик
@@ -2470,6 +2492,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Эта калибровка
     использует метод трения бумаги об сопло для установки Z-смещения.
   This cannot be undone.: Это действие нельзя отменить.
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: У этого устройства нет проводного подключения к сети. Если выключить WiFi, включить его обратно можно будет только с этого экрана.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может
@@ -2698,10 +2721,12 @@ translations:
   Waiting for Moonraker...: Ожидание Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: Ожидание нагрева
     стола для точной калибровки.
+  Waiting for the filament system to report its state: Ожидание состояния системы филамента
   Warm Bed: Прогреть стол
   Warming Bed...: Прогрев стола...
   Warn: Предупреждение
   Warning: Предупреждение
+  Warnings & errors: ''
   Watch the belt under the strobe LED. Adjust frequency until the belt appears stationary — that is the resonant frequency.: Наблюдайте
     за ремнём под стробоскопическим LED. Регулируйте частоту, пока ремень не будет
     казаться неподвижным — это и есть резонансная частота.
@@ -2740,6 +2765,7 @@ translations:
   Widget Labels: Подписи виджетов
   Width: Ширина
   Wifi: Wi-Fi
+  Will not switch spools on runout: При обрыве катушка не переключится
   Wizard Error: Ошибка мастера
   Working...: Выполнение...
   Write failed at chunk {}: Не удалось записать в блоке {}
@@ -2885,6 +2911,8 @@ translations:
   v%s available: Доступна v%s
   v{} installed! Restarting...: v{} установлена! Перезапуск...
   v{} is available. Tap to update.: v{} доступна. Нажмите для обновления.
+  ? will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   you have: у вас
   '{} LED strips available': 'Доступно светодиодных лент: {}'
   '{} axis homed': Ось {} запаркована

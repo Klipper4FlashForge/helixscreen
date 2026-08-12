@@ -538,9 +538,9 @@ void BedMeshPanel::apply_portrait_canvas_height() {
         return;
     }
 
-    lv_obj_t* screen = lv_obj_get_screen(overlay_root_);
-    if (!helix::is_portrait_layout(
-            helix::detect_layout_type(lv_obj_get_width(screen), lv_obj_get_height(screen)))) {
+    // Visual decision: canvas height follows the effective layout so a
+    // --layout override reshapes this the same way it reshapes the XML. #1255.
+    if (!helix::is_portrait_layout(helix::LayoutManager::instance().type())) {
         return;
     }
 

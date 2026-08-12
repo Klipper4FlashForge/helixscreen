@@ -62,6 +62,7 @@ bool provisioning_run_portal() {
 #include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "log_redact.h"
 #include "lwip/inet.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
@@ -454,8 +455,8 @@ esp_err_t save_post_handler(httpd_req_t* req) {
         config->save();
     }
 
-    spdlog::info("[provisioning] portal: attempting join to '{}' (password {})", ssid,
-                 password.empty() ? "none" : "provided");
+    spdlog::info("[provisioning] portal: attempting join to '{}' (password {})",
+                 helix::redact::ssid(ssid), password.empty() ? "none" : "provided");
 
     s_connect_state.store(JoinState::PENDING);
     auto wifi = helix::get_wifi_manager();

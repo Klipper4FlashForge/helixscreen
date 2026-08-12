@@ -917,47 +917,39 @@ void AmsPanel::update_endless_arrows_from_backend() {
 
     // Check if endless spool is supported
     auto capabilities = backend->get_endless_spool_capabilities();
-    if (!capabilities.supported) {
+    if (!capabilities.available()) {
         ui_endless_spool_arrows_clear(endless_arrows_);
         lv_obj_add_flag(endless_arrows_, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
-    // Get the endless spool configuration
-    auto configs = backend->get_endless_spool_config();
-    if (configs.empty()) {
+    // Get the endless spool relation and flatten it to one arrow per slot. The
+    // group-to-edge projection lives in helix::printer, shared with the context
+    // menu's dropdown, so a Happy Hare group and an AFC chain cannot disagree
+    // about which arrow to draw.
+    static constexpr int MAX_ARROW_SLOTS = 16;
+    const auto config = backend->get_endless_spool_config();
+    int slot_count = std::min(backend->get_system_info().total_slots, MAX_ARROW_SLOTS);
+    if (config.empty() || slot_count <= 0) {
         ui_endless_spool_arrows_clear(endless_arrows_);
         lv_obj_add_flag(endless_arrows_, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
-    // Check if any backup is configured
-    bool has_any_backup = false;
-    for (const auto& config : configs) {
-        if (config.backup_slot >= 0) {
-            has_any_backup = true;
-            break;
-        }
-    }
-
-    if (!has_any_backup) {
+    const std::vector<int> edges = helix::printer::endless_spool_backup_edges(config, slot_count);
+    if (std::none_of(edges.begin(), edges.end(), [](int backup) { return backup >= 0; })) {
         spdlog::trace("[{}] No endless spool backups configured - hiding arrows", get_name());
         ui_endless_spool_arrows_clear(endless_arrows_);
         lv_obj_add_flag(endless_arrows_, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
-    spdlog::trace("[{}] Endless spool has {} configs with backups", get_name(), configs.size());
-
-    // Build backup slots array
-    int backup_slots[16] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
-    int slot_count = 0;
-    for (const auto& config : configs) {
-        if (config.slot_index >= 0 && config.slot_index < 16) {
-            backup_slots[config.slot_index] = config.backup_slot;
-            slot_count = std::max(slot_count, config.slot_index + 1);
-        }
+    int backup_slots[MAX_ARROW_SLOTS];
+    for (int i = 0; i < slot_count; ++i) {
+        backup_slots[i] = edges[static_cast<size_t>(i)];
     }
+    spdlog::trace("[{}] Endless spool relation has {} group(s) over {} slots", get_name(),
+                  config.groups.size(), slot_count);
 
     // Get slot width and overlap from current layout
     int32_t slot_width = DEFAULT_SLOT_WIDTH;

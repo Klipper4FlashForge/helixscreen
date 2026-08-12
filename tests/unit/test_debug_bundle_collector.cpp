@@ -1115,3 +1115,175 @@ TEST_CASE("DebugBundleCollector: condense_klipper_log handles degenerate input",
     auto all = helix::DebugBundleCollector::condense_klipper_log(stats_lines(5), 1, 999);
     REQUIRE(count_lines_with(all, "Stats ") == 5);
 }
+
+// ============================================================================
+// resolve_log_tail_lines — ship the whole ring, not the floor
+// ============================================================================
+
+TEST_CASE("DebugBundleCollector: log_tail ships the whole ring, not the 2000-line floor",
+          "[debug-bundle][klippy]") {
+    // ring_capacity_for_ram() scales the ring at 16 lines/MB clamped to
+    // [2000, 20000]; the collector used to ask for the floor regardless, so a
+    // 473 MB AD5X retained 7568 lines and shipped 2000 of them.
+    REQUIRE(helix::DebugBundleCollector::resolve_log_tail_lines(0, 7568) == 7568);
+    REQUIRE(helix::DebugBundleCollector::resolve_log_tail_lines(0, 20000) == 20000);
+
+    SECTION("smallest boards are unchanged — the ring floor IS 2000") {
+        REQUIRE(helix::DebugBundleCollector::resolve_log_tail_lines(0, 2000) == 2000);
+    }
+
+    SECTION("no ring installed falls back to a bound, never unbounded") {
+        // Watchdog build / before logging init. tail_best() would otherwise read
+        // the on-disk cascade with no line limit at all.
+        REQUIRE(helix::DebugBundleCollector::resolve_log_tail_lines(0, 0) == 2000);
+        REQUIRE(helix::DebugBundleCollector::resolve_log_tail_lines(-1, 0) == 2000);
+    }
+
+    SECTION("an explicit request wins over the ring in both directions") {
+        REQUIRE(helix::DebugBundleCollector::resolve_log_tail_lines(50, 7568) == 50);
+        REQUIRE(helix::DebugBundleCollector::resolve_log_tail_lines(30000, 7568) == 30000);
+    }
+}
+
+// ============================================================================
+// condense_klipper_log — Klipper config-dump elision
+// ============================================================================
+
+namespace {
+
+/// Klipper's startup config dump (configfile.py log_config): the whole printer
+/// config bracketed by a header line and a 23-'=' terminator. Every line is a
+/// distinct shape, so shape-collapse keeps all of them.
+std::string config_dump(int body_lines, bool with_header = true) {
+    std::string s;
+    if (with_header)
+        s += "===== Config file =====\n";
+    for (int i = 0; i < body_lines; ++i)
+        s += "cfg_key_" + std::to_string(i) + " = value_" + std::to_string(i) + "\n";
+    s += "=======================\n";
+    return s;
+}
+
+} // namespace
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log elides the Klipper config dump",
+          "[debug-bundle][klippy]") {
+    // A user who presses "Restart Klipper" on our own recovery dialog before
+    // uploading a bundle makes Klipper re-dump printer.cfg. Measured on three
+    // real AD5X bundles (4QA7SZAM / LYGVE39Y / XSNN7PX5), that dump ate 84% /
+    // 63% / 58% of the shipped klipper_log, evicting the pre-shutdown window
+    // the bundle was uploaded to explain.
+    std::string raw = "MCU 'mcu' shutdown: Timer too close\n" + stats_lines(20) +
+                      "Restarting printer\n" + config_dump(1300) + "mcu 'mcu': Starting serial\n";
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+    REQUIRE(count_lines_with(out, "cfg_key_") == 0);
+    REQUIRE(count_lines_with(out, "Timer too close") == 1);
+    REQUIRE(count_lines_with(out, "Restarting printer") == 1);
+    REQUIRE(count_lines_with(out, "Starting serial") == 1);
+    // The elision leaves a breadcrumb so a reader knows why the config is absent.
+    REQUIRE(count_lines_with(out, "config dump") == 1);
+    REQUIRE(line_count(out) < 60);
+}
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log elides a HEAD-TRUNCATED config dump",
+          "[debug-bundle][klippy]") {
+    // The case that actually ships. The 4 MiB Range fetch starts mid-dump, so
+    // the "===== Config file =====" header is never in the payload — only the
+    // orphan terminator is. All three real AD5X bundles look like this, so the
+    // paired-marker path alone would have recovered nothing.
+    std::string raw = config_dump(1300, /*with_header=*/false) + "mcu 'mcu': Starting serial\n" +
+                      "Loaded MCU 'mcu' 132 commands\n";
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+    REQUIRE(count_lines_with(out, "cfg_key_") == 0);
+    REQUIRE(count_lines_with(out, "Starting serial") == 1);
+    REQUIRE(count_lines_with(out, "Loaded MCU") == 1);
+}
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log elides every config dump in the window",
+          "[debug-bundle][klippy]") {
+    // Two restarts inside one window: a head-truncated dump followed by a
+    // complete one. Both must go, and the event between them must survive.
+    std::string raw = config_dump(400, /*with_header=*/false) +
+                      "MCU 'mcu' shutdown: Timer too close\n" + config_dump(400) +
+                      "mcu 'mcu': Starting serial\n";
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+    REQUIRE(count_lines_with(out, "cfg_key_") == 0);
+    REQUIRE(count_lines_with(out, "Timer too close") == 1);
+    REQUIRE(count_lines_with(out, "Starting serial") == 1);
+    REQUIRE(count_lines_with(out, "config dump") == 2);
+}
+
+TEST_CASE("DebugBundleCollector: config-dump elision does not eat unrelated content",
+          "[debug-bundle][klippy]") {
+    SECTION("an orphan terminator deep in the window is left alone") {
+        // The head-truncated rule drops everything BEFORE the terminator, so it
+        // must only fire near the start of the window. A bare '=' rule line
+        // thousands of lines in is somebody else's output, not a cut-off dump.
+        std::string raw = stats_lines(6000) + "MCU 'mcu' shutdown: Timer too close\n" +
+                          "=======================\n" + "after\n";
+
+        auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+        REQUIRE(count_lines_with(out, "Timer too close") == 1);
+        REQUIRE(count_lines_with(out, "after") == 1);
+        REQUIRE(count_lines_with(out, "config dump") == 0);
+    }
+
+    SECTION("a header with no terminator in the window is not treated as a dump") {
+        // Tail-truncated the other way: the dump runs past the end of what we
+        // fetched. Dropping to end-of-input would discard the newest lines,
+        // which is exactly where the shutdown lives. Leave it.
+        std::string raw = "MCU 'mcu' shutdown: Timer too close\n===== Config file =====\ncfg = 1\n";
+
+        auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+        REQUIRE(count_lines_with(out, "Timer too close") == 1);
+        REQUIRE(count_lines_with(out, "cfg = 1") == 1);
+    }
+
+    SECTION("a '=' run that is not Klipper's 23-char terminator is ignored") {
+        std::string raw = "==========\nreal event\n";
+        auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+        REQUIRE(count_lines_with(out, "real event") == 1);
+        REQUIRE(count_lines_with(out, "==========") == 1);
+    }
+}
+
+TEST_CASE("DebugBundleCollector: config-dump elision buys back the line budget",
+          "[debug-bundle][klippy]") {
+    // The payoff, stated as the caller sees it. collect_klipper_log_tail()
+    // condenses a 4 MiB window and then keeps only the LAST num_lines, so the
+    // dump does its damage at that final cap: on bundle LYGVE39Y the header was
+    // inside the fetched window but the 2000-line cap sliced through the body,
+    // leaving 1264 lines of printer.cfg and no pre-shutdown log at all.
+    auto last_n = [](const std::string& s, int n) {
+        std::vector<std::string> lines;
+        std::istringstream st(s);
+        std::string l;
+        while (std::getline(st, l))
+            lines.push_back(l);
+        if (static_cast<int>(lines.size()) > n)
+            lines.erase(lines.begin(), lines.end() - n);
+        std::string out;
+        for (auto& x : lines)
+            out += x + "\n";
+        return out;
+    };
+
+    std::string raw = "MCU 'mcu' shutdown: Timer too close\n" + stats_lines(20) +
+                      "Restarting printer\n" + config_dump(1300) +
+                      "mcu 'mcu': Starting serial connect\n";
+
+    // Without elision the cap lands deep inside the config body.
+    REQUIRE(count_lines_with(last_n(raw, 200), "Timer too close") == 0);
+
+    auto condensed = helix::DebugBundleCollector::condense_klipper_log(raw);
+    REQUIRE(count_lines_with(last_n(condensed, 200), "Timer too close") == 1);
+    REQUIRE(count_lines_with(last_n(condensed, 200), "Starting serial connect") == 1);
+}

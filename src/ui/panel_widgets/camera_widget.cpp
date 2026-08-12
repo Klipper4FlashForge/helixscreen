@@ -603,6 +603,11 @@ void CameraWidget::open_fullscreen() {
         spdlog::debug("[CameraWidget] Fullscreen overlay closed");
     });
 
+    // Fullscreen camera is width-unmanaged: it fills the entire screen via
+    // its own XML (width="100%" height="100%") and must NOT go through the
+    // standard overlay geometry calculator, which would give it a partial
+    // transient width and offset it to one side.
+    NavigationManager::instance().set_overlay_width_unmanaged(overlay);
     NavigationManager::instance().push_overlay(overlay);
 
     spdlog::info("[CameraWidget] Opened fullscreen camera");
@@ -773,6 +778,11 @@ void open_standalone_camera_fullscreen(lv_obj_t* parent_screen) {
         spdlog::debug("[CameraWidget] Standalone fullscreen closed");
     });
 
+    // Same width-unmanaged marking as CameraWidget::open_fullscreen(): this is
+    // the identical camera_fullscreen component, and without this it goes
+    // through the overlay geometry calculator and renders at a partial
+    // transient width offset to one side.
+    NavigationManager::instance().set_overlay_width_unmanaged(overlay);
     NavigationManager::instance().push_overlay(overlay);
     spdlog::info("[CameraWidget] Standalone fullscreen opened (stream={}, snapshot={})", stream_url,
                  snapshot_url);

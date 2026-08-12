@@ -54,6 +54,7 @@
 #ifdef HELIX_ENABLE_REMOTE_CONTROL
 #include "remote_control_server.h"
 #endif
+#include "audio_settings_manager.h"
 #include "rpc_error_correlation.h"
 #include "screenshot.h"
 #include "sensor_state.h"
@@ -807,6 +808,11 @@ int Application::run(int argc, char** argv) {
     SoundManager::instance().initialize();
     SoundManager::instance().play("startup", SoundPriority::EVENT);
 
+    // Backend is now picked: seed the audio-device-available subject so the
+    // Display/Sound overlay's device-row binding resolves correctly. Subjects
+    // init before SoundManager, so the value is stale until this refresh.
+    AudioSettingsManager::instance().refresh_audio_device_available();
+
     // Show sound settings immediately if a local backend exists,
     // without waiting for hardware discovery / Klipper connection.
     if (SoundManager::instance().has_backend()) {
@@ -1363,6 +1369,39 @@ bool Application::init_display() {
     m_screen_width = m_display->width();
     m_screen_height = m_display->height();
 
+    // Reconnect the WebSocket when the display wakes from sleep. The app
+    // background/foreground path (on_enter_foreground) already force-reconnects,
+    // but on Android the SDL background/foreground event pair is unreliable for
+    // the display-off/on round trip — the Activity may not get a clean
+    // onPause/onResume, so m_backgrounded never flips and the reconnect is
+    // skipped. This sleep callback closes that gap (#1245).
+    //
+    // Registered here, alongside the DisplayManager that owns the callback list,
+    // rather than in connect_moonraker(): that runs again on every printer
+    // switch, and register_sleep_callback() only appends — there is no
+    // unregister — so each switch would stack another copy and fire one extra
+    // force_reconnect() per wake. init_display() runs once per process, and the
+    // captured `this` owns m_display, so the callback list cannot outlive it.
+    // m_moonraker is read lazily at wake time and need not exist yet.
+    m_display->register_sleep_callback([this](bool sleeping) {
+        if (!sleeping && m_moonraker && m_moonraker->client()) {
+            // Debounce: on_enter_foreground() may have already called
+            // force_reconnect for the same wake event. Skip if it ran
+            // within the last 5 seconds — the second call would bump
+            // the connection generation and make the first discovery's
+            // subscription stale (#1245).
+            auto now = std::chrono::steady_clock::now();
+            if (now - m_last_force_reconnect < std::chrono::seconds(5)) {
+                spdlog::debug("[Application] Display woke — skipping reconnect (debounced, "
+                              "on_enter_foreground ran recently)");
+                return;
+            }
+            spdlog::info("[Application] Display woke — reconnecting WebSocket");
+            m_last_force_reconnect = now;
+            m_moonraker->client()->force_reconnect();
+        }
+    });
+
 #ifdef __ANDROID__
     {
         float ddpi = 0, hdpi = 0, vdpi = 0;
@@ -1429,8 +1468,12 @@ bool Application::init_display() {
         const int h = dm->height();
         auto& layout = helix::LayoutManager::instance();
 
-        theme_manager_refresh_layout_constants(disp);
+        // LayoutManager first: theme_manager_refresh_layout_constants() now
+        // derives ui_is_portrait from LayoutManager::type() (override-aware),
+        // so the type must reflect the new geometry before refresh reads it.
+        // #1255.
         layout.init(w, h);
+        theme_manager_refresh_layout_constants(disp);
 
         // Overlays cache their root widget across show/hide cycles, so the
         // width applied at push time goes stale when the canvas changes size
@@ -1628,6 +1671,11 @@ void Application::run_rotation_probe_and_layout() {
         }
     }
     layout_mgr.init(m_screen_width, m_screen_height);
+    // LayoutManager just resolved any --layout override. Republish
+    // ui_is_portrait from it so XML visual decisions match the C++ ones; the
+    // startup seed (theme_manager_init) and the rotation-probe refresh both ran
+    // before this point and could only see detect_layout_type(). #1255.
+    theme_manager_refresh_orientation();
     spdlog::info("[Application] Layout: {} ({})", layout_mgr.name(),
                  layout_mgr.is_standard() ? "default" : "override");
 }
@@ -3210,7 +3258,10 @@ bool Application::connect_moonraker() {
         http_base_url = "http://" + host + ":" + std::to_string(port);
     }
 
-    // Discovery callbacks are already registered (setup_discovery_callbacks in init_moonraker)
+    // Discovery callbacks are already registered (setup_discovery_callbacks in init_moonraker).
+    // The display-wake reconnect callback is registered once in init_display(), not here —
+    // connect_moonraker() re-runs on every printer switch and DisplayManager has no
+    // unregister path.
 
     // Set HTTP base URL for API
     IMoonrakerAPI* api = m_moonraker->api();
@@ -3893,6 +3944,10 @@ void Application::on_enter_background() {
 
     // 2. Disconnect WebSocket (stops all status updates and reconnect timer)
     if (m_moonraker) {
+        // Mark the disconnect as expected so the DISCONNECTED notification
+        // (queued here, drained on resume) doesn't clear the overlay stack
+        // and bounce the user to home (#1245).
+        NavigationManager::instance().mark_disconnect_expected();
         m_moonraker->client()->disconnect();
     }
 
@@ -3919,6 +3974,7 @@ void Application::on_enter_foreground() {
 
     // 3. Reconnect WebSocket (triggers discovery + full state refresh)
     if (m_moonraker && m_moonraker->client()) {
+        m_last_force_reconnect = std::chrono::steady_clock::now();
         m_moonraker->client()->force_reconnect();
     }
 

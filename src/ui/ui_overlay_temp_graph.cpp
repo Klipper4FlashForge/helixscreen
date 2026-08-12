@@ -25,6 +25,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <utility>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -75,6 +76,24 @@ struct VisibilitySnapshot {
     std::vector<std::string> klipper_names;
 };
 std::optional<VisibilitySnapshot> s_visibility_snapshot;
+
+/**
+ * The user's chip toggles, remembered across a deactivate/reactivate cycle.
+ *
+ * This cannot live on the overlay: on_deactivate() clears series_ (and
+ * suspend_active() calls on_deactivate() when the app backgrounds), so by the
+ * time on_activate() runs again there is no per-series state left to read a
+ * previous visibility off. Tagged with the printer AND the mode the toggles
+ * were made in — a different printer, or opening the overlay as the Bed view
+ * after toggling chips in the Nozzle view, falls back to that mode's defaults
+ * rather than restoring a selection that was never about this view.
+ */
+struct VisibilityOverride {
+    std::string printer_name;
+    int mode = -1;
+    std::vector<std::pair<std::string, bool>> per_series;
+};
+std::optional<VisibilityOverride> s_visibility_override;
 
 std::string current_printer_name() {
     auto* subj = ::get_printer_state().get_active_printer_name_subject();
@@ -161,7 +180,6 @@ void TempGraphOverlay::on_activate() {
     bed_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Bed);
     chamber_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Chamber);
 
-    // Discover series metadata (populates series_ with display info)
     discover_series();
 
     // Build TempGraphSeriesSpec vector from discovered series
@@ -184,7 +202,8 @@ void TempGraphOverlay::on_activate() {
         }
 
         helix::TempGraphControllerConfig cfg;
-        // Default point_count (1200 = 20 min) — overlay is the detailed full-screen view
+        // Default point_count (UI_TEMP_GRAPH_DEFAULT_POINTS = 400 points at one
+        // per 3 s = a 20 min window) — the overlay is the detailed full-screen view
         cfg.axis_size = "sm";
         cfg.initial_features = TEMP_GRAPH_FEATURE_LINES | TEMP_GRAPH_FEATURE_TARGET_LINES |
                                TEMP_GRAPH_FEATURE_Y_AXIS | TEMP_GRAPH_FEATURE_X_AXIS |
@@ -205,8 +224,26 @@ void TempGraphOverlay::on_activate() {
         }
     }
 
-    // Apply mode-specific visibility and chips (every activation)
+    // Visibility: lay down this mode's defaults, then re-apply the user's chip
+    // toggles over the top when they were made on this printer in this mode.
+    // Order matters — the defaults establish a baseline for any series that
+    // appeared since the toggles were recorded (a sensor discovered late, a
+    // second tool), and the override only touches names it actually knows.
     apply_default_visibility();
+    if (s_visibility_override && s_visibility_override->mode == static_cast<int>(mode_) &&
+        s_visibility_override->printer_name == current_printer_name()) {
+        for (auto& s : series_) {
+            for (const auto& [name, vis] : s_visibility_override->per_series) {
+                if (name == s.klipper_name) {
+                    s.visible = vis;
+                    break;
+                }
+            }
+        }
+        publish_visibility_snapshot();
+        spdlog::debug("[TempGraphOverlay] Restored {} saved chip toggles",
+                      s_visibility_override->per_series.size());
+    }
     create_chips();
     configure_control_strip();
 
@@ -532,6 +569,18 @@ void TempGraphOverlay::toggle_series_visibility(size_t series_idx) {
     }
     update_chip_style(series_idx);
     publish_visibility_snapshot();
+
+    // Persist the whole toggle set outside the overlay. on_deactivate() clears
+    // series_, so without this the next activation — including the one that
+    // resuming from background performs — has nothing to restore from.
+    VisibilityOverride ov;
+    ov.printer_name = current_printer_name();
+    ov.mode = static_cast<int>(mode_);
+    ov.per_series.reserve(series_.size());
+    for (const auto& si : series_) {
+        ov.per_series.emplace_back(si.klipper_name, si.visible);
+    }
+    s_visibility_override = std::move(ov);
 
     spdlog::debug("[TempGraphOverlay] {} series '{}' (idx={})", s.visible ? "Showed" : "Hid",
                   s.display_name, series_idx);

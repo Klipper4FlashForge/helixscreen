@@ -23,7 +23,6 @@ namespace helix::ui {
 
 // Static member initialization
 bool AmsContextMenu::callbacks_registered_ = false;
-AmsContextMenu* AmsContextMenu::s_active_instance_ = nullptr;
 
 // ============================================================================
 // Construction / Destruction
@@ -42,11 +41,6 @@ AmsContextMenu::AmsContextMenu() {
 }
 
 AmsContextMenu::~AmsContextMenu() {
-    // Clear active instance before base destructor calls hide()
-    if (s_active_instance_ == this) {
-        s_active_instance_ = nullptr;
-    }
-
     // Clean up subjects
     if (subject_initialized_ && lv_is_initialized()) {
         lv_subject_deinit(&slot_is_loaded_subject_);
@@ -66,10 +60,6 @@ AmsContextMenu::AmsContextMenu(AmsContextMenu&& other) noexcept
         slot_is_loaded_subject_ = other.slot_is_loaded_subject_;
         slot_can_load_subject_ = other.slot_can_load_subject_;
     }
-    // Update static instance
-    if (s_active_instance_ == &other) {
-        s_active_instance_ = this;
-    }
     other.backend_ = nullptr;
     other.total_slots_ = 0;
     other.tool_dropdown_ = nullptr;
@@ -79,12 +69,7 @@ AmsContextMenu::AmsContextMenu(AmsContextMenu&& other) noexcept
 
 AmsContextMenu& AmsContextMenu::operator=(AmsContextMenu&& other) noexcept {
     if (this != &other) {
-        // Clear our active instance before base hide()
-        if (s_active_instance_ == this) {
-            s_active_instance_ = nullptr;
-        }
-
-        // Let base class handle its state
+        // Let base class handle its state, including the active-menu registry
         ContextMenu::operator=(std::move(other));
 
         action_callback_ = std::move(other.action_callback_);
@@ -100,10 +85,6 @@ AmsContextMenu& AmsContextMenu::operator=(AmsContextMenu&& other) noexcept {
             slot_can_load_subject_ = other.slot_can_load_subject_;
         }
         subject_initialized_ = other.subject_initialized_;
-
-        if (s_active_instance_ == &other) {
-            s_active_instance_ = this;
-        }
 
         other.backend_ = nullptr;
         other.total_slots_ = 0;
@@ -139,14 +120,9 @@ bool AmsContextMenu::show_near_widget(lv_obj_t* parent, int slot_index, lv_obj_t
         total_slots_ = 0;
     }
 
-    // Set as active instance for static callbacks
-    s_active_instance_ = this;
-
-    // Base class handles: XML creation, on_created callback, positioning
+    // Base class handles: XML creation, on_created callback, positioning, and
+    // claiming the active-menu slot the static callbacks resolve through.
     bool result = ContextMenu::show_near_widget(parent, slot_index, near_widget);
-    if (!result) {
-        s_active_instance_ = nullptr;
-    }
 
     spdlog::debug("[AmsContextMenu] Shown for slot {}", slot_index);
     return result;
@@ -162,13 +138,10 @@ bool AmsContextMenu::show_for_external_spool(lv_obj_t* parent, lv_obj_t* anchor_
     total_slots_ = 0;
     external_spool_mode_ = true;
 
-    // Set as active instance for static callbacks
-    s_active_instance_ = this;
-
-    // Base class handles: XML creation, on_created callback, positioning
+    // Base class handles: XML creation, on_created callback, positioning, and
+    // claiming the active-menu slot the static callbacks resolve through.
     bool result = ContextMenu::show_near_widget(parent, -2, anchor_widget);
     if (!result) {
-        s_active_instance_ = nullptr;
         external_spool_mode_ = false;
     }
 
@@ -434,9 +407,6 @@ void AmsContextMenu::dispatch_ams_action(MenuAction action) {
     int slot = get_item_index();
     ActionCallback callback_copy = action_callback_;
 
-    if (s_active_instance_ == this) {
-        s_active_instance_ = nullptr;
-    }
     hide();
 
     if (callback_copy) {
@@ -444,7 +414,7 @@ void AmsContextMenu::dispatch_ams_action(MenuAction action) {
     }
 }
 
-void AmsContextMenu::handle_backdrop_clicked() {
+void AmsContextMenu::on_backdrop_clicked() {
     spdlog::debug("[AmsContextMenu] Backdrop clicked");
     dispatch_ams_action(MenuAction::CANCELLED);
 }
@@ -585,7 +555,6 @@ void AmsContextMenu::register_callbacks() {
     }
 
     register_xml_callbacks({
-        {"ams_context_backdrop_cb", on_backdrop_cb},
         {"ams_context_load_cb", on_load_cb},
         {"ams_context_unload_cb", on_unload_cb},
         {"ams_context_gate_select_cb", on_gate_select_cb},
@@ -603,21 +572,15 @@ void AmsContextMenu::register_callbacks() {
 }
 
 // ============================================================================
-// Static Callbacks (Instance Lookup via Static Pointer)
+// Static Callbacks (Instance Lookup via ContextMenu::active())
 // ============================================================================
 
 AmsContextMenu* AmsContextMenu::get_active_instance() {
-    if (!s_active_instance_) {
+    auto* self = ContextMenu::active_as<AmsContextMenu>();
+    if (!self) {
         spdlog::warn("[AmsContextMenu] No active instance for event");
     }
-    return s_active_instance_;
-}
-
-void AmsContextMenu::on_backdrop_cb(lv_event_t* /*e*/) {
-    auto* self = get_active_instance();
-    if (self) {
-        self->handle_backdrop_clicked();
-    }
+    return self;
 }
 
 void AmsContextMenu::on_load_cb(lv_event_t* /*e*/) {
@@ -752,27 +715,32 @@ void AmsContextMenu::handle_backup_changed() {
         }
     }
 
-    // Validate material compatibility if a backup slot was selected
-    if (backup_slot >= 0 && get_item_index() >= 0) {
-        std::string current_material = backend_->get_slot_info(get_item_index()).material;
-        std::string backup_material = backend_->get_slot_info(backup_slot).material;
+    // Ask the BACKEND whether this pairing is allowed. Same rule that tagged the
+    // option "(incompatible)" in build_backup_options(), so the label and the
+    // refusal cannot disagree.
+    if (decide_backup_refused(get_item_index(), backup_slot, backend_eligible_fn())) {
+        const std::string current_material = backend_->get_slot_info(get_item_index()).material;
+        const std::string backup_material = backend_->get_slot_info(backup_slot).material;
+        spdlog::warn("[AmsContextMenu] Backend rejected backup slot {} for slot {} ({} / {})",
+                     backup_slot, get_item_index(), current_material, backup_material);
 
-        // Only check compatibility if both slots have materials set
+        // Name the materials only when they are in fact the problem. A backend
+        // with a stricter rule (AD5X IFS matches colour and port presence too)
+        // can refuse two slots holding the same material, and a message saying
+        // "PLA cannot use PLA as backup" would be nonsense.
+        std::string msg;
         if (!current_material.empty() && !backup_material.empty() &&
             !filament::are_materials_compatible(current_material, backup_material)) {
-            spdlog::warn("[AmsContextMenu] Incompatible backup: {} cannot use {} as backup",
-                         current_material, backup_material);
-
-            // Show toast error
-            std::string msg =
-                fmt::format(lv_tr("Incompatible materials: {} cannot use {} as backup"),
-                            current_material, backup_material);
-            ToastManager::instance().show(ToastSeverity::ERROR, msg.c_str());
-
-            // Reset dropdown to "None" (index 0)
-            lv_dropdown_set_selected(backup_dropdown_, 0);
-            return;
+            msg = fmt::format(lv_tr("Incompatible materials: {} cannot use {} as backup"),
+                              current_material, backup_material);
+        } else {
+            msg = lv_tr("That slot cannot stand in for this one");
         }
+        ToastManager::instance().show(ToastSeverity::ERROR, msg.c_str());
+
+        // Reset dropdown to "None" (index 0)
+        lv_dropdown_set_selected(backup_dropdown_, 0);
+        return;
     }
 
     spdlog::info("[AmsContextMenu] Backup slot changed for slot {}: backup {}", get_item_index(),
@@ -827,20 +795,25 @@ void AmsContextMenu::configure_dropdowns() {
     // }
     (void)tool_row;
 
-    // Configure endless spool dropdown
+    // Configure endless spool dropdown — see decide_show_backup_row().
     if (backend_) {
         auto es_caps = backend_->get_endless_spool_capabilities();
-        if (es_caps.supported) {
+        const bool has_relation = !backend_->get_endless_spool_config().empty();
+        if (decide_show_backup_row(es_caps, has_relation)) {
             populate_backup_dropdown();
             if (backup_row) {
                 lv_obj_remove_flag(backup_row, LV_OBJ_FLAG_HIDDEN);
             }
             // Disable dropdown if not editable
-            if (backup_dropdown_ && !es_caps.editable) {
+            if (backup_dropdown_ && !es_caps.editable()) {
                 lv_obj_add_state(backup_dropdown_, LV_STATE_DISABLED);
             }
             show_any_dropdown = true;
-            spdlog::debug("[AmsContextMenu] Endless spool enabled (editable={})", es_caps.editable);
+            spdlog::debug("[AmsContextMenu] Endless spool row shown (editable={})",
+                          es_caps.editable());
+        } else if (es_caps.available()) {
+            spdlog::debug("[AmsContextMenu] Endless spool available but has no per-slot "
+                          "relation to show - row stays hidden");
         }
     }
 
@@ -848,6 +821,15 @@ void AmsContextMenu::configure_dropdowns() {
     if (divider && show_any_dropdown) {
         lv_obj_remove_flag(divider, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+bool AmsContextMenu::decide_show_backup_row(const helix::printer::EndlessSpoolCapabilities& caps,
+                                            bool has_relation) {
+    if (!caps.available()) {
+        return false;
+    }
+    // Editable implies there is something to write even before anything is set.
+    return caps.editable() || has_relation;
 }
 
 void AmsContextMenu::populate_tool_dropdown() {
@@ -904,35 +886,49 @@ std::string AmsContextMenu::build_tool_options() const {
     return options;
 }
 
+AmsContextMenu::BackupEligibleFn AmsContextMenu::backend_eligible_fn() const {
+    AmsBackend* backend = backend_;
+    if (backend == nullptr) {
+        // No backend: tag nothing and refuse nothing. Matches the old code, which
+        // skipped every compatibility check when backend_ was null.
+        return [](int, int) { return true; };
+    }
+    return [backend](int slot, int candidate) {
+        return backend->is_endless_spool_backup_eligible(slot, candidate);
+    };
+}
+
 std::string AmsContextMenu::build_backup_options() const {
+    return build_backup_options_for(total_slots_, get_item_index(), backend_eligible_fn());
+}
+
+std::string AmsContextMenu::build_backup_options_for(int total_slots, int item_index,
+                                                     const BackupEligibleFn& eligible) {
     std::string options = lv_tr("None");
 
-    // Get current slot's material for compatibility checking
-    std::string current_material;
-    if (backend_ && get_item_index() >= 0) {
-        current_material = backend_->get_slot_info(get_item_index()).material;
-    }
-
-    // Add slot options Slot 1, Slot 2... based on total slots
-    // Skip the current slot (can't be backup for itself)
-    // Mark incompatible materials
-    for (int i = 0; i < total_slots_; ++i) {
-        if (i != get_item_index()) {
-            std::string slot_option = "\n" + fmt::format(lv_tr("Slot {}"), i + 1);
-
-            // Check material compatibility if we have a current material
-            if (backend_ && !current_material.empty()) {
-                std::string other_material = backend_->get_slot_info(i).material;
-                if (!other_material.empty() &&
-                    !filament::are_materials_compatible(current_material, other_material)) {
-                    slot_option += std::string(" ") + lv_tr("(incompatible)");
-                }
-            }
-
-            options += slot_option;
+    // Add slot options Slot 1, Slot 2... based on total slots.
+    // Skip the current slot (can't be backup for itself).
+    for (int i = 0; i < total_slots; ++i) {
+        if (i == item_index) {
+            continue;
+        }
+        options += "\n" + fmt::format(lv_tr("Slot {}"), i + 1);
+        // The base virtual is the old are_materials_compatible() rule, with an
+        // unknown material on either side counting as eligible, so nothing is
+        // tagged that was not tagged before on AFC / Happy Hare / CFS.
+        if (item_index >= 0 && eligible && !eligible(item_index, i)) {
+            options += std::string(" ") + lv_tr("(incompatible)");
         }
     }
     return options;
+}
+
+bool AmsContextMenu::decide_backup_refused(int item_index, int backup_slot,
+                                           const BackupEligibleFn& eligible) {
+    if (backup_slot < 0 || item_index < 0) {
+        return false; // "None" clears a backup; nothing to be compatible with.
+    }
+    return eligible && !eligible(item_index, backup_slot);
 }
 
 int AmsContextMenu::get_current_tool_for_slot() const {
@@ -955,13 +951,12 @@ int AmsContextMenu::get_current_backup_for_slot() const {
         return -1;
     }
 
-    auto configs = backend_->get_endless_spool_config();
-    for (const auto& config : configs) {
-        if (config.slot_index == get_item_index()) {
-            return config.backup_slot;
-        }
-    }
-    return -1; // No backup configured
+    // One shared projection for the group relation — see
+    // helix::printer::endless_spool_backup_for(). A backend with no per-slot
+    // relation at all (CFS) yields -1 here, which is why configure_dropdowns()
+    // hides the row rather than rendering a permanent "None".
+    return helix::printer::endless_spool_backup_for(backend_->get_endless_spool_config(),
+                                                    get_item_index());
 }
 
 } // namespace helix::ui

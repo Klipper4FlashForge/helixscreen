@@ -18,6 +18,7 @@
 #include "app_constants.h"
 #include "app_globals.h"
 #include "first_run_tour.h"
+#include "input_settings_manager.h"
 #include "lock_manager.h"
 #include "observer_factory.h"
 #include "panel_widget_config.h"
@@ -844,6 +845,11 @@ void HomePanel::ams_clicked_cb(lv_event_t* e) {
 /// of finger movement, so we must check for these interactions to prevent false
 /// edit mode entry.
 static bool should_suppress_edit_mode(lv_event_t* e) {
+    // Global kill-switch: when the user has disabled home-screen edit mode
+    // (Touch & Input settings), no long-press enters it (#1245).
+    if (!helix::InputSettingsManager::instance().get_home_edit_mode_enabled())
+        return true;
+
     // A hold that reaches the grid while the lock screen is up was never a
     // request to rearrange widgets — the panel is not even the thing the user
     // is looking at. Waking an Android device with a resting finger used to

@@ -55,7 +55,24 @@ class DebugBundleCollector {
     /// Individual collectors (public for testing)
     static nlohmann::json collect_system_info();
     static nlohmann::json collect_printer_info();
-    static std::string collect_log_tail(int num_lines = 2000);
+    /// `num_lines <= 0` (the default) ships the whole ring — see
+    /// resolve_log_tail_lines().
+    static std::string collect_log_tail(int num_lines = 0);
+
+    /// How many lines collect_log_tail() actually asks for (public for testing).
+    ///
+    /// The ring's capacity scales with device RAM (logging_init.cpp
+    /// ring_capacity_for_ram(): 16 lines/MB, clamped to [2000, 20000]), but the
+    /// collector used to ask for a hardcoded 2000 — the *floor* of that range.
+    /// So every device above the smallest boards paid the RAM to retain lines
+    /// the bundle then discarded: on a 473 MB AD5X the ring holds 7568 and we
+    /// shipped 26% of it, which on bundle LYGVE39Y meant 12 minutes of history
+    /// against a 9-minute stall that started before the window opened.
+    ///
+    /// A positive `requested` is honoured verbatim. Otherwise ship the whole
+    /// ring, falling back to the floor when no ring is installed (watchdog
+    /// build, or before logging init) so the on-disk cascade stays bounded.
+    static size_t resolve_log_tail_lines(int requested, size_t ring_capacity);
 
     /// Metadata about the log pipeline so a bundle reader knows whether debug
     /// was being captured: { target, level, ring_lines, log_tail_source }.

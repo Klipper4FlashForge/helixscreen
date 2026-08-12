@@ -11,6 +11,7 @@
 #include "ui_button.h"
 #include "ui_carousel.h"
 #include "ui_confetti.h"
+#include "ui_context_menu.h"
 #include "ui_event_safety.h"
 #include "ui_fan_dial.h"
 #include "ui_fonts.h"
@@ -329,6 +330,16 @@ void register_xml_components() {
                              [](lv_event_t*) { get_global_home_panel().exit_grid_edit_mode(); });
     lv_xml_register_event_cb(nullptr, "on_edit_add_widget_clicked",
                              [](lv_event_t*) { get_global_home_panel().open_widget_catalog(); });
+
+    // Backdrop tap and close/Done for every context menu — one pair, routed through
+    // ContextMenu::active(), rather than a callback per menu.
+    helix::ui::ContextMenu::register_shared_callbacks();
+    // <context_menu_backdrop> shared dimmed backdrop root. Every context menu
+    // extends it, so it must be registered before any of them.
+    register_xml("components/context_menu_backdrop.xml");
+    // <context_menu_card> the card every context menu nests inside that backdrop:
+    // elevated panel, title + close/Done header, and the rule under it.
+    register_xml("components/context_menu_card.xml");
     lv_subject_init_int(&s_noop_subject, 0);
     lv_xml_register_subject(nullptr, "", &s_noop_subject);
     s_noop_subject_initialized = true;
@@ -474,6 +485,10 @@ void register_xml_components() {
     register_xml("components/filament_slot_picker_row.xml");
     register_xml("components/filament_mapping_tool_row.xml");
     register_xml("components/compact_toggle_row.xml");
+    // Endless-spool status line. Registered here, ahead of filament_panel.xml,
+    // because the AMS panel registers itself lazily and would otherwise be the
+    // only consumer guaranteed to find it.
+    register_xml("components/ams_endless_status.xml");
     register_xml("print_file_detail.xml");
 
     // Panel widget components (dynamic instantiation from PanelWidgetConfig)
@@ -533,6 +548,8 @@ void register_xml_components() {
     register_xml("components/buffer_status_modal.xml");
     register_xml("job_queue_modal.xml");
     register_xml("fan_picker.xml");
+    register_xml("fan_stack_picker.xml");
+    register_xml("tool_switcher_picker.xml");
     register_xml("thermistor_sensor_picker.xml");
     register_xml("thermistor_configure_picker.xml");
     register_xml("print_status_configure_picker.xml");

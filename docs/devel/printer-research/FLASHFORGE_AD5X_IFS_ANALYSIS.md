@@ -236,17 +236,36 @@ Available from `save_variables`:
 
 ## 9. Macro Packages: bambufy vs lessWaste
 
-Two IFS macro packages exist for ZMOD. Both use the same `save_variables` schema.
+Two IFS macro packages exist for ZMOD. Both use the same `save_variables` schema, and both
+include automatic backup/failover (`variable_backup`). Stock zMod also has its own switchover
+**before any plugin is loaded** — `ANALOG_PRUTOK` (`zmod_ifs.py:cmd_ANALOG_PRUTOK`), wired
+to `head_switch_sensor`'s `runout_gcode` in `ad5x_display_off.cfg:39-44`. zmod's user-facing
+name for it is **"Infinite Spool Mode"**. The match rule is identical across all three paths
+(stock zMod, bambufy, lessWaste): exact material AND exact colour AND port-present.
+
+### Stock zMod (no plugin)
+- `ANALOG_PRUTOK` runs always-on; no toggle. Confirmed from zmod 1.7.1 source and on-device
+  by raza616.
 
 ### bambufy (Original)
 - **Repo**: [function3d/bambufy](https://github.com/function3d/bambufy)
-- Stock IFS macro package, 4 tools (T0-T3), basic load/unload/purge
+- IFS macro package, 4 tools (T0-T3)
+- **Backup/failover**: `variable_backup` (**default on** = `1`); `_RUNOUT_HEAD` performs the
+  slot swap. Same type+colour+present match as stock zMod.
+- Overrides stock `head_switch_sensor` runout_gcode with its own `_RUNOUT_HEAD` (the only
+  sensible design — running both paths in parallel would double-handle every runout).
+- `PAUSE REASON` values emitted: `jam`, `broken`, `runout`, `empty`, `backup`, `nobackup`,
+  `loading` (`nobackup` is bambufy-only — `bambufy.cfg:149`, on a backup-enabled runout with
+  no same-type+colour match).
 
 ### lessWaste (Enhanced Fork)
 - **Repo**: [Hrybmo/lessWaste](https://github.com/Hrybmo/lesswaste)
 - Based on bambufy V1.2.10, adds significant features:
   - **16 virtual tools** (T0-T15) mapped to 4 physical ports via `variable_tools`
-  - **Backup/failover**: `variable_backup` + `variable_backup_filament_spent` — auto-switch to matching color/type on runout
+  - **Backup/failover**: `variable_backup` (**default off** = `0`); same `_RUNOUT_HEAD` shape
+    as bambufy. There is **no** `variable_backup_filament_spent` in source
+    (`lesswaste_src.cfg` 1995 lines, zero matches) — "consumed" slots are inferred from
+    `filament_detected == false` on the port sensor, not tracked in a variable.
   - **Virtual channel mode**: `variable_is_virtual_mode` — allows more slicer tools than physical slots
   - **Purge control**: in-tower (`_NOPOOP`) or out-the-back, configurable flush volumes
   - **Same-filament purge skip**: `variable_same_filament_purge`
@@ -287,7 +306,6 @@ variable_line_purge: 0
 variable_backup: 0
 variable_types: ['PLA','PLA','PLA','PLA', ...]  # 16 entries
 variable_colors: ['000000','000000','000000','000000', ...]  # 16 entries
-variable_backup_filament_spent: [0,0,0,0]
 variable_start: 0
 variable_sbros_trash_speed: 4000
 variable_info_dialog: 1
@@ -380,7 +398,19 @@ The `prutok == 0 → return` and empty-extruder-sensor early-returns are confirm
 
 **`head_filament_` is not the switch sensor.** `parse_head_sensor()` is called from *both* sensor branches of `handle_status_update()`: the switch branch (`filament_switch_sensor head_switch_sensor` / `zmod_ifs_switch_sensor head_switch_sensor`) and the motion branch (`filament_motion_sensor ifs_motion_sensor` / `zmod_ifs_motion_sensor ifs_motion_sensor`). The motion sensor is device-confirmed to read `filament_detected=false` on a lane that is loaded but idle, which the class-header NOTE and the `head_filament_` member comment in `include/ams_backend_ad5x_ifs.h` both spell out. So "a head-sensor false-negative" is not a hypothetical here; it is the ordinary reading whenever the last frame to write `head_filament_` came from the motion sensor. The consequence is unchanged - firmware's toolhead unload would itself no-op in that same state, so cold eject remains the best available action - but the empty-head branch is taken far more often than "false negative" implies.
 
-Everywhere an *authoritative* empty head is required, the code uses the switch pair instead: `head_switch_seen_ && !head_switch_present_`, spelled `head_empty_authoritative` at the two `apply_zcolor_result` seated-channel gates, and fed to the #1250 unattended-runout detector by `note_head_switch_reading_locked()`, which only the switch branch calls. `do_unload_filament()` and its context-menu mirror `slot_unloads_to_toolhead()` still read `head_filament_` and have not been moved onto the switch pair. **Needs raza616 field re-test** (we ship AD5X blind — no test device).
+Everywhere an *authoritative* empty head is required, the code uses the switch pair instead: `head_switch_seen_ && !head_switch_present_`, spelled `head_empty_authoritative` at the two `apply_zcolor_result` seated-channel gates, and fed to the #1250 unattended-runout detector by `note_head_switch_reading_locked()`, which only the switch branch calls.
+
+**The unload router now uses the switch pair too.** `head_empty_for_unload_routing_locked()` is the single predicate behind `do_unload_filament()`'s eject-vs-cut branch, its context-menu mirror `slot_unloads_to_toolhead()`, and `eject_lane()`'s seated-lane refusal:
+
+```
+head_switch_seen_ ? !head_switch_present_ : !head_filament_
+```
+
+Positive switch evidence is required to claim "empty", because the errors are not symmetric. A false *empty* sends seated, un-cut filament to the cold `IFS_F11` retract and grinds it (raza616 #981; `5HR3HHS6` is the same hazard reached via the dropped active pointer). A false *loaded* only reaches `_IFS_REMOVE_CURRENT_PRUTOK`, which early-returns on the extruder sensor — "homes and nothing happens", annoying and harmless. `head_filament_`'s known failure mode (the motion-sensor false negative) produces the dangerous direction, so it can no longer claim "empty" by itself. On motion-only firmware `head_switch_seen_` stays false and the fallback is exactly the historical `!head_filament_` — no silent behaviour change on a device that never publishes a switch. Bundle `7AC4SDEX` (switch empty, motion present) still routes to the cold eject, now for a stronger reason: switch-absent is authoritative regardless of what motion says.
+
+All three sites share the one predicate by necessity: the router hands an empty-head unload to `eject_lane()`, so a refusal keyed on a different notion of "empty" would bounce the very call the router just made ("Unload from toolhead first" in answer to an unload). `can_unload_from_toolhead()` deliberately stays on `head_filament_` — it decides only whether the Unload affordance is *offered*, and its dangerous direction is the opposite one (a false "empty" hides the #995 recovery affordance while filament is physically seated).
+
+> **Still a proxy, not the firmware's gate.** `cmd_IFS_REMOVE_CURRENT_PRUTOK` early-returns on `get_extruder_sensor()` (`zmod_ifs.py:1149`), which is neither sensor: it reads the `temperature_sensor filamentValue` ADC, `result = value >= 0.72` when `value > 0.3`, and `True` otherwise — a missing reading counts as loaded (`zmod_ifs.py:353-361`). HelixScreen does not subscribe to `filamentValue` anywhere. Subscribing to it is the proper fix and would make the predicate exact; it needs a real AD5X to confirm the object is published, and we have neither hardware nor an `ad5x` mock profile. **Needs raza616 field re-test** (we ship AD5X blind — no test device).
 
 ### Other consequences (unchanged, still valid)
 - A cold per-lane reverse-jog **IS available at the gcode layer** via `IFS_F11 PRUTOK={n} LEN={mm} SPEED={s} CHECK=0` — a thin wrapper over raw serial `F11 C{port}…` with zero heating logic.

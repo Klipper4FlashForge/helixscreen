@@ -27,9 +27,8 @@ AmsBackendToolChanger::AmsBackendToolChanger(IMoonrakerAPI* api, IMoonrakerClien
     system_info_.type_name = "Tool Changer";
 
     // Tool changer capabilities
-    system_info_.supports_endless_spool = false; // Not applicable
-    system_info_.supports_tool_mapping = true;   // Via klipper-toolchanger ASSIGN_TOOL
-    system_info_.supports_bypass = false;        // No bypass on tool changers
+    system_info_.supports_tool_mapping = true; // Via klipper-toolchanger ASSIGN_TOOL
+    system_info_.supports_bypass = false;      // No bypass on tool changers
     system_info_.has_hardware_bypass_sensor = false;
 
     spdlog::debug("[AMS ToolChanger] Backend created");

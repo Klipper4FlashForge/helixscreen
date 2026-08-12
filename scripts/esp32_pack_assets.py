@@ -5,10 +5,15 @@ Pack the ESP32 staging tree (scripts/esp32_stage_assets.py's output) into a
 single frogfs (jkent/frogfs) compressed container image for the `storage`
 partition, and gate on the real partition size.
 
-Usage:
-    python3 -m venv /tmp/esp32pack-venv && . /tmp/esp32pack-venv/bin/activate
-    pip install pyyaml
-    python3 scripts/esp32_pack_assets.py
+Usage (call the venv's interpreter by path — do NOT `activate` it):
+    python3 -m venv /tmp/esp32pack-venv
+    /tmp/esp32pack-venv/bin/pip install pyyaml
+    /tmp/esp32pack-venv/bin/python scripts/esp32_pack_assets.py
+
+`activate` prepends the venv to PATH, which shadows the ESP-IDF python that
+`export.sh` put there — mkfrogfs.py is then run by the wrong interpreter. CI
+does it the by-path way for exactly this reason (see .github/workflows/
+esp32-build.yml).
 
 Requires `firmware/helixscreen-esp32/managed_components/jkent__frogfs/` to
 already exist (fetched by ESP-IDF's component manager the first time
@@ -46,6 +51,15 @@ FIRMWARE_DIR = REPO_ROOT / "firmware" / "helixscreen-esp32"
 DEFAULT_STAGING_DIR = FIRMWARE_DIR / "build" / "littlefs_staging"
 DEFAULT_CONFIG = FIRMWARE_DIR / "frogfs.yaml"
 DEFAULT_CACHE_DIR = FIRMWARE_DIR / "build" / "frogfs_cache"
+# In build/ even though it is a build INPUT (main/CMakeLists.txt FATAL_ERRORs
+# when it is missing), and so an `idf.py fullclean` deletes it. That is
+# deliberate, not an oversight: its own input — build/littlefs_staging, written
+# by esp32_stage_assets.py — lives in build/ too, so a fullclean invalidates
+# both halves together and re-staging is required regardless. The missing case
+# is loud, not silent: CMake stops at configure time naming both re-run
+# commands. Moving the image outside build/ would need main/CMakeLists.txt's
+# STORAGE_IMAGE to follow, and would leave a multi-MB untracked artifact in the
+# firmware source dir.
 DEFAULT_OUTPUT = FIRMWARE_DIR / "build" / "storage_frogfs.bin"
 MKFROGFS = FIRMWARE_DIR / "managed_components" / "jkent__frogfs" / "tools" / "mkfrogfs.py"
 
@@ -92,9 +106,11 @@ def main() -> int:
     try:
         import yaml  # noqa: F401
     except ImportError:
-        print("FAIL: pyyaml not installed. Use a venv:\n"
-              "  python3 -m venv /tmp/esp32pack-venv && "
-              ". /tmp/esp32pack-venv/bin/activate && pip install pyyaml",
+        print("FAIL: pyyaml not installed. Use a venv, called BY PATH — do not\n"
+              "'activate' it, that shadows the ESP-IDF python:\n"
+              "  python3 -m venv /tmp/esp32pack-venv\n"
+              "  /tmp/esp32pack-venv/bin/pip install pyyaml\n"
+              "  /tmp/esp32pack-venv/bin/python scripts/esp32_pack_assets.py",
               file=sys.stderr)
         return 1
 

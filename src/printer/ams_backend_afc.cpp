@@ -189,7 +189,9 @@ AmsBackendAfc::AmsBackendAfc(IMoonrakerAPI* api, IMoonrakerClient* client)
     system_info_.type_name = "AFC";
     // AFC capabilities from shared defaults
     auto caps = helix::printer::afc_default_capabilities();
-    system_info_.supports_endless_spool = caps.supports_endless_spool;
+    // AFC has no on/off switch for endless spool: present means on. Sourced
+    // from the shared defaults so the mock's AFC scenario cannot drift.
+    system_info_.endless_spool_enabled = caps.supports_endless_spool;
     system_info_.supports_tool_mapping = caps.supports_tool_mapping;
     system_info_.supports_bypass = caps.supports_bypass;
     system_info_.supports_purge = caps.supports_purge;
@@ -396,7 +398,7 @@ AmsSystemInfo AmsBackendAfc::get_system_info() const {
     info.position_saved = system_info_.position_saved;
     info.spoolman_url = system_info_.spoolman_url;
     info.filament_loaded = system_info_.filament_loaded;
-    info.supports_endless_spool = system_info_.supports_endless_spool;
+    info.endless_spool_enabled = system_info_.endless_spool_enabled;
     info.supports_tool_mapping = system_info_.supports_tool_mapping;
     info.supports_bypass = system_info_.supports_bypass;
     info.has_hardware_bypass_sensor = system_info_.has_hardware_bypass_sensor;
@@ -5143,8 +5145,14 @@ bool AmsBackendAfc::is_bypass_active() const {
 // ============================================================================
 
 helix::printer::EndlessSpoolCapabilities AmsBackendAfc::get_endless_spool_capabilities() const {
-    // AFC supports per-slot backup configuration via SET_RUNOUT G-code
-    return {true, true, "AFC per-slot backup"};
+    // AFC has no global on/off switch: a lane either names a runout lane or it
+    // does not, so the feature is On whenever it is present. Editing is per-slot
+    // via SET_RUNOUT, one lane at a time, with no side effects on other lanes.
+    // provider stays empty: AFC implements this itself, there is no optional
+    // package to name.
+    return {.availability = helix::printer::EndlessSpoolAvailability::Available,
+            .enabled = helix::printer::EndlessSpoolEnabled::On,
+            .editability = helix::printer::EndlessSpoolEditability::PerSlot};
 }
 
 // ============================================================================
@@ -5161,59 +5169,35 @@ std::vector<int> AmsBackendAfc::get_tool_mapping() const {
     return slots_.build_system_info().tool_to_slot_map;
 }
 
-std::vector<helix::printer::EndlessSpoolConfig> AmsBackendAfc::get_endless_spool_config() const {
+helix::printer::EndlessSpoolConfig AmsBackendAfc::get_endless_spool_config() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::vector<helix::printer::EndlessSpoolConfig> configs;
-    for (int i = 0; i < slots_.slot_count(); ++i) {
-        configs.push_back({i, slots_.backup_for_slot(i)});
-    }
-    return configs;
+    return helix::printer::endless_spool_config_from_edges(slots_.backup_edges());
 }
 
-AmsError AmsBackendAfc::set_endless_spool_backup(int slot_index, int backup_slot) {
+AmsError AmsBackendAfc::apply_endless_spool_backup(int slot_index, int backup_slot) {
     std::string lane_name;
     std::string backup_lane_name;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        int lane_count = slots_.slot_count();
-
-        // Validate slot_index
-        if (!slots_.is_valid_index(slot_index)) {
-            return AmsErrorHelper::invalid_slot(slot_index, lane_count > 0 ? lane_count - 1 : 0);
-        }
-
-        // Validate backup_slot (-1 or valid index, not equal to slot_index)
-        if (backup_slot != -1) {
-            if (!slots_.is_valid_index(backup_slot)) {
-                return AmsErrorHelper::invalid_slot(backup_slot,
-                                                    lane_count > 0 ? lane_count - 1 : 0);
-            }
-            if (backup_slot == slot_index) {
-                return AmsError(AmsResult::INVALID_SLOT, "Cannot use slot as its own backup",
-                                "A slot cannot be set as its own endless spool backup",
-                                "Select a different backup slot");
-            }
-        }
-
-        // Get lane names from registry
+        // Ranges are the base's job; this only resolves names. A registry that
+        // has not caught up with the slot count the base validated against still
+        // yields an empty name, which the injection screen below rejects.
         lane_name = slots_.name_of(slot_index);
         if (backup_slot >= 0) {
             backup_lane_name = slots_.name_of(backup_slot);
         }
-
-        // Update registry backup config
-        slots_.set_backup(slot_index, backup_slot);
     }
 
-    // Validate lane names to prevent command injection
-    if (!IMoonrakerAPI::is_safe_gcode_param(lane_name)) {
+    // Validate lane names to prevent command injection. Empty counts as unsafe:
+    // `SET_RUNOUT LANE=` is a malformed command, not a no-op.
+    if (lane_name.empty() || !IMoonrakerAPI::is_safe_gcode_param(lane_name)) {
         spdlog::warn("[AMS AFC] Unsafe lane name characters in endless spool config");
         return AmsError(AmsResult::MAPPING_ERROR, "Invalid lane name",
                         "Lane name contains invalid characters", "Check AFC configuration");
     }
-    if (backup_slot >= 0 && !IMoonrakerAPI::is_safe_gcode_param(backup_lane_name)) {
+    if (backup_slot >= 0 &&
+        (backup_lane_name.empty() || !IMoonrakerAPI::is_safe_gcode_param(backup_lane_name))) {
         spdlog::warn("[AMS AFC] Unsafe backup lane name characters");
         return AmsError(AmsResult::MAPPING_ERROR, "Invalid backup lane name",
                         "Backup lane name contains invalid characters", "Check AFC configuration");
@@ -5231,7 +5215,17 @@ AmsError AmsBackendAfc::set_endless_spool_backup(int slot_index, int backup_slot
         spdlog::info("[AMS AFC] Disabling endless spool backup for {}", lane_name);
     }
 
-    return execute_gcode(gcode);
+    AmsError result = execute_gcode(gcode);
+    if (!result.success()) {
+        // Leave the registry alone: the printer did not take the change, and a
+        // desynced mirror would render an arrow the hardware will not honour.
+        return result;
+    }
+    // Optimistic mirror so the arrows and the dropdown update before the next
+    // AFC status frame lands; that frame is authoritative and will overwrite it.
+    std::lock_guard<std::mutex> lock(mutex_);
+    slots_.set_backup(slot_index, backup_slot);
+    return result;
 }
 
 AmsError AmsBackendAfc::reset_tool_mappings() {
@@ -5244,31 +5238,9 @@ AmsError AmsBackendAfc::reset_tool_mappings() {
     return result;
 }
 
-AmsError AmsBackendAfc::reset_endless_spool() {
-    spdlog::info("[AMS AFC] Resetting endless spool mappings");
-
-    int slot_count = 0;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        slot_count = slots_.slot_count();
-    }
-
-    // AFC has no command to reset only runout lanes, iterate through slots
-    // Continue on failure to reset as many as possible, return first error
-    AmsError first_error = AmsErrorHelper::success();
-    for (int slot = 0; slot < slot_count; slot++) {
-        AmsError result = set_endless_spool_backup(slot, -1);
-        if (!result.success()) {
-            spdlog::error("[AMS AFC] Failed to reset slot {} endless spool: {}", slot,
-                          result.technical_msg);
-            if (first_error.success()) {
-                first_error = result;
-            }
-        }
-    }
-
-    return first_error;
-}
+// reset_endless_spool() is not overridden: AFC has no command that resets only
+// the runout lanes, and the "loop the setter with -1" fallback that used to live
+// here is now AmsBackend::reset_endless_spool() for every editable backend.
 
 // ============================================================================
 // AFC Config File Management

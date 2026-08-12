@@ -96,20 +96,26 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
     /// Which auto-switchover macro package is driving the IFS, if any.
     ///
-    /// The numeric values are published verbatim on the `ams_ifs_plugin` XML
-    /// subject, so they are part of the UI contract - append, never renumber.
-    /// `None` is the stock-zMod case and is the one that matters most to the
-    /// user: with no plugin there is no backup-spool switching at all, so a
-    /// runout stops the print until a human intervenes (#1247).
+    /// `None` is stock zMod, whose own `ANALOG_PRUTOK` (zmod_ifs.py) handles
+    /// runout-triggered switchover with no plugin required — zmod's user-facing
+    /// name is "Infinite Spool Mode". `get_endless_spool_capabilities()`
+    /// reports it as `Available`/`FirmwareManaged`/`provider="zmod"`/always-on,
+    /// NOT through any AD5X-specific subject. `LessWaste`/`Bambufy` add a
+    /// `variable_backup` toggle (default off / on respectively) on top of the
+    /// same type+colour+present rule, surfaced as `PluginReadOnly`.
     enum class IfsPlugin : int {
-        None = 0,      ///< Stock zMod - no _IFS_VARS macro, no auto switchover
+        None = 0,      ///< Stock zMod - no _IFS_VARS macro; ANALOG_PRUTOK runs switchover
         LessWaste = 1, ///< Hrybmo/lessWaste (`less_waste_*` save_variables)
         Bambufy = 2    ///< function3d/bambufy (`bambufy_*` save_variables)
     };
 
-    /// Published on the `ams_ifs_backup_enabled` XML subject. Tri-state because
-    /// "we could not read it" is a different answer from "it is off", and only
-    /// the latter justifies telling the user switchover will not happen.
+    /// The live switchover state as a tri-state, returned by
+    /// backup_state_locked(). Stock zMod is always ON (ANALOG_PRUTOK has no
+    /// toggle); the plugin path is the variable_backup value, with UNKNOWN
+    /// covering "macro exists but the key was never carried" — and only a
+    /// definite OFF justifies telling the user switchover will not happen.
+    /// Maps onto helix::printer::EndlessSpoolEnabled in
+    /// get_endless_spool_capabilities().
     static constexpr int BACKUP_UNKNOWN = -1;
     static constexpr int BACKUP_OFF = 0;
     static constexpr int BACKUP_ON = 1;
@@ -280,16 +286,68 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     /// "installed", which is exactly what the latch exists to prevent.
     [[nodiscard]] IfsPlugin get_plugin() const;
 
-    /// The plugin's `variable_backup` setting, or nullopt when the macro's
-    /// get_status() dict never carried the key (no plugin, or a version that
-    /// does not declare it). nullopt means UNKNOWN and must never be reported
-    /// as "off" - see BACKUP_UNKNOWN.
+    /// The plugin's `variable_backup` setting, or nullopt when there is no
+    /// plugin (stock zMod) or the macro's get_status() dict never carried the
+    /// key (a version that does not declare it). Distinct from
+    /// backup_state_locked(): stock zMod returns nullopt here but backup_state
+    /// reports ON, because ANALOG_PRUTOK is always-on regardless of any plugin.
+    /// nullopt means UNKNOWN for the plugin path and must never be reported as
+    /// "off" - see BACKUP_UNKNOWN.
     [[nodiscard]] std::optional<bool> plugin_backup_enabled() const;
 
     /// True while the backend is holding an unattended-runout fault (see
     /// evaluate_runout_locked). Distinct from `action == ERROR`, which the
     /// operation-timeout backstop also produces.
     [[nodiscard]] bool runout_active() const;
+
+    // === Endless spool ===
+    //
+    // The cross-backend view of what get_plugin() / plugin_backup_enabled()
+    // already know, and the ONLY path this state takes to the UI. The
+    // AD5X-specific `ams_ifs_plugin` / `ams_ifs_backup_enabled` subjects are
+    // gone: AmsState now publishes `ams_endless_state` / `ams_endless_text` from
+    // these capabilities for every backend, so a per-firmware subject could only
+    // ever have described one printer's answer.
+
+    /**
+     * @brief IFS auto-switchover as a shared capability.
+     *
+     * Three modes, all `Available` — switchover exists in stock zMod too:
+     *   - stock zMod (`!has_ifs_vars_`): `ANALOG_PRUTOK` runs unconditionally
+     *     on head runout. `FirmwareManaged` / `provider="zmod"` / always-on.
+     *   - bambufy: `variable_backup` (default on) gates `_RUNOUT_HEAD`.
+     *     `PluginReadOnly` / `provider="bambufy"`.
+     *   - lessWaste: `variable_backup` (default off) gates `_RUNOUT_HEAD`.
+     *     `PluginReadOnly` / `provider="lessWaste"`.
+     * `enabled` mirrors `variable_backup` including its genuine Unknown on the
+     * two plugin paths; stock zMod has no toggle, so it reports a definite On.
+     *
+     * Deliberately **read-only** rather than editable: `backup` is never written
+     * today, and `write_ifs_var()` rides the same `_IFS_VARS` unknown-command
+     * latch that has already been seen to drop out from under us mid-session -
+     * an editable toggle would silently stop working with no way to tell.
+     *
+     * get_endless_spool_config() is deliberately NOT overridden either: the
+     * firmware computes the match at runout time (find_backup_slot_locked) and
+     * stores no per-slot relation, so the base's empty relation is the honest
+     * answer. is_endless_spool_backup_eligible() is where the rule is exposed.
+     *
+     * @note Takes `mutex_`; callers must NOT hold it.
+     */
+    [[nodiscard]] helix::printer::EndlessSpoolCapabilities
+    get_endless_spool_capabilities() const override;
+
+    /**
+     * @brief The AD5X switchover rule, not the generic material-compatibility one.
+     *
+     * Exact material AND exact colour AND the port reporting filament present -
+     * the same three conditions find_backup_slot_locked() applies, sharing one
+     * implementation so the advertised rule and the enforced rule cannot drift.
+     *
+     * @note Takes `mutex_`; callers must NOT hold it.
+     */
+    [[nodiscard]] bool is_endless_spool_backup_eligible(int slot_index,
+                                                        int backup_slot) const override;
 
   protected:
     /// The recovery buttons for whichever fault is currently latched.
@@ -475,6 +533,38 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // often parks in the lane after an unload, leaving the silk sensor present, so
     // that path would leave the slot stuck LOADED. Caller MUST hold mutex_.
     void clear_head_loaded_after_unload_locked();
+    /// Is the toolhead empty, for the purpose of choosing between the heated
+    /// toolhead unload and a cold per-lane eject?
+    ///
+    /// Single source of truth for three sites that MUST agree —
+    /// do_unload_filament()'s router, its context-menu mirror
+    /// slot_unloads_to_toolhead(), and eject_lane()'s seated-lane refusal. If
+    /// they disagreed, "Unload" could route to eject_lane() only for eject_lane()
+    /// to refuse it with "Unload from toolhead first."
+    ///
+    /// The SWITCH pair is the authority when it has ever reported, never the
+    /// conflated head_filament_: parse_head_sensor() writes head_filament_ from
+    /// BOTH the switch AND ifs_motion_sensor, and the motion sensor is
+    /// device-confirmed to read filament_detected=false on a lane that is loaded
+    /// but idle (class-header NOTE). Claiming "empty" off that false negative
+    /// sends seated, un-cut filament to a cold eject, which grinds it (raza616
+    /// #981, bundle 5HR3HHS6). The opposite error - claiming loaded when empty -
+    /// only wastes a firmware no-op, so the predicate is deliberately biased
+    /// toward "loaded."
+    ///
+    /// On motion-only firmware head_switch_seen_ stays false and this falls back
+    /// to !head_filament_ - exactly the historical behaviour, no silent change.
+    ///
+    /// PROXY, not the firmware's own gate. cmd_IFS_REMOVE_CURRENT_PRUTOK
+    /// early-returns on get_extruder_sensor() (zmod_ifs.py:1149), which reads an
+    /// ADC - `temperature_sensor filamentValue`, result = value >= 0.72 when
+    /// value > 0.3, and True otherwise, i.e. a missing reading counts as loaded
+    /// (zmod_ifs.py:353-361). HelixScreen does not subscribe to `filamentValue`
+    /// anywhere. Subscribing to it is the proper fix and would make this
+    /// predicate exact; it needs a real AD5X to confirm the object is actually
+    /// published, and we have neither hardware nor an `ad5x` mock profile.
+    /// Caller MUST hold mutex_.
+    [[nodiscard]] bool head_empty_for_unload_routing_locked() const;
     // One-shot fetch of /mod_data/user.cfg. Parses the [zmod_ifs] section for
     // `filament_<NAME>: <TEMP>` entries — zmod's mechanism for user-defined
     // material types beyond the AD5X firmware whitelist (e.g., PLA+, RPLA,
@@ -713,6 +803,12 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     /// misexpectation. Caller must hold mutex_.
     [[nodiscard]] int find_backup_slot_locked(int runout_slot) const;
 
+    /// The single-pair form of find_backup_slot_locked()'s rule: could
+    /// @p candidate stand in for @p slot? Both that scan and the public
+    /// is_endless_spool_backup_eligible() run through here, so what the UI would
+    /// offer and what the firmware would pick cannot diverge. Caller holds mutex_.
+    [[nodiscard]] bool backup_eligible_locked(int slot, int candidate) const;
+
     /// How long the toolhead must read authoritatively empty, while paused and
     /// idle, before the fault is raised. Longer when a plugin with backup
     /// switching is installed: that plugin's own recovery pauses, unloads and
@@ -725,9 +821,10 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     /// Caller must hold mutex_.
     bool parse_ifs_vars_macro_locked(const nlohmann::json& macro_status);
 
-    /// Value for the `ams_ifs_backup_enabled` subject (BACKUP_*). Caller holds
-    /// mutex_.
-    [[nodiscard]] int backup_subject_value_locked() const;
+    /// The `variable_backup` tri-state (BACKUP_*). Feeds both the runout warning
+    /// log and get_endless_spool_capabilities()' `enabled` axis, so the number in
+    /// the log and the sentence on screen cannot disagree. Caller holds mutex_.
+    [[nodiscard]] int backup_state_locked() const;
 
     // === Live load/unload progress phase tracker ===
     //

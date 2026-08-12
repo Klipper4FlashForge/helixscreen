@@ -3,9 +3,20 @@ on:
   pull_request:
   push:
     branches: [main]
+
+# A ~25 min job. Superseded pushes to the same PR/branch are cancelled rather
+# than queued behind each other; main is keyed per-SHA so pushes there still
+# each get a build.
+concurrency:
+  group: esp32-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The build itself runs ~25 min; the ceiling is for a hung idf.py/docker
+    # pull, which would otherwise hold a runner for the 6h default.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -13,11 +24,32 @@ jobs:
       - name: Apply submodule patches
         run: make apply-patches
       - name: Build firmware
-        uses: espressif/esp-idf-ci-action@v1
+        # Pinned to a commit, not the rolling @v1 major tag: @v1 moves, and this
+        # action's whole job is choosing and running a toolchain container, so a
+        # silent update to it is a silent toolchain change. This SHA is what @v1
+        # resolved to on 2026-08-11 (one commit past the v1.2.0 release), so the
+        # pin is a no-op today and stops the drift from here on.
+        uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d
         with:
-          esp_idf_version: v5.5
+          esp_idf_version: v5.5.4
           target: esp32s3
           path: firmware/helixscreen-esp32
+          # storage_frogfs.bin is a BUILD INPUT, not output: main/CMakeLists.txt
+          # FATAL_ERRORs if it is missing. But the packer needs jkent/frogfs's
+          # mkfrogfs.py, which the ESP-IDF component manager fetches during the
+          # first `idf.py reconfigure`. So: reconfigure once (expected to fail on
+          # the missing-image guard, AFTER populating managed_components/), stage
+          # + pack the frogfs image, then build for real. Runs inside the action's
+          # container (cwd = path).
+          command: |
+            set -e
+            idf.py reconfigure || true
+            test -f managed_components/jkent__frogfs/tools/mkfrogfs.py
+            python3 ../../scripts/esp32_stage_assets.py
+            python3 -m venv /tmp/esp32pack-venv
+            /tmp/esp32pack-venv/bin/pip install --quiet pyyaml
+            /tmp/esp32pack-venv/bin/python ../../scripts/esp32_pack_assets.py
+            idf.py build
       - name: Size budget gate
         run: |
           python3 scripts/check_esp32_size.py \
