@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.110] - 2026-08-11
+
+**0.99.109 was tagged but never shipped.** A compile error in its own release commit broke
+every device cross-build and macOS, so no artifacts were published. 0.99.110 supersedes it and
+contains everything 0.99.109 added, plus the fixes below. If you are on 0.99.108, this is your
+next upgrade.
+
+### Fixed
+
+- **The Android APK shipped the packager's own configuration** - a working `settings.json` with a
+  real printer address, an active printer and `wizard_completed=true` was being packaged, so a
+  fresh install skipped first-run setup and pointed itself at someone else's network. Crash dumps
+  excluded in 0.99.109 were still shipping too, because the packaging step only ever added files
+  and never removed what an earlier build had left behind. Nothing needs a shipped seed: defaults
+  are synthesized when the file is absent. No private data ever reached the git repository, only
+  built APKs.
+- **Android background network calls silently failed** - debug-bundle uploads and update checks
+  resolved their Java bridge in a way that cannot see the app's own classes from a background
+  thread, so both failed as "HTTP 0" with no diagnosis. A bodyless HTTP error also erased the real
+  status code, making an expired key and a dead network look identical.
+- **Closing an overlay could leave two panels on screen at once** - the restored panel was
+  activated before it was made visible again, and by up to three different code paths, so a panel
+  whose activation navigates elsewhere corrupted the panel stack. The double activation also
+  tripped Print Last's retry counter and could start two first-run tours.
+- **A dismissed AMS recovery modal came back** - any later cosmetic update to the same fault
+  re-opened the dialog the user had just answered, and after a recovery tap it put live buttons
+  over an in-flight preheat. A genuinely new fault still re-presents.
+- **Reset Endless Spool reported success without doing anything** - on a system that had not yet
+  reported its slot count, the confirmation was accepted and nothing was cleared. It now refuses,
+  and a successful reset says so instead of looking identical to a no-op.
+- **The temperature graph on reconnect** - resuming drew a phantom spike bridging the whole gap,
+  chip toggles reset themselves, and a Klipper restart collapsed a 20 minute graph to a few
+  seconds. Grid lines and time labels now line up.
+- **The G-code preview dropped its thumbnail too early on every non-GPU device**, leaving a grey
+  gap while "Building preview" was still running.
+- **Two Japanese characters rendered blank** in the new AD5X spool-switchover strings.
+- **Debug bundles dropped the incident itself** from `klipper_log` and `log_tail`.
+
+### Internal
+
+- The ESP32 source manifest gate accepted lines the firmware build then silently discarded, so it
+  could pass while the build broke. It now enforces exactly what the build consumes, and detects
+  stale and duplicated entries.
+- The home-screen edit-mode toggle and long-press slider shipped in 0.99.109 with no tests;
+  deleting either check failed nothing. Both are now covered, along with the reconnect and
+  endless-spool fixes above.
+
 ## [0.99.109] - 2026-08-10
 
 ### Added
@@ -4972,6 +5019,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.110]: https://github.com/prestonbrown/helixscreen/compare/v0.99.109...v0.99.110
 [0.99.109]: https://github.com/prestonbrown/helixscreen/compare/v0.99.108...v0.99.109
 [0.99.108]: https://github.com/prestonbrown/helixscreen/compare/v0.99.107...v0.99.108
 [0.99.107]: https://github.com/prestonbrown/helixscreen/compare/v0.99.106...v0.99.107
