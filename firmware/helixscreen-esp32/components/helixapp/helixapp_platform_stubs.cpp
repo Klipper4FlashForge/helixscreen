@@ -5,9 +5,11 @@
 // docs/devel/ESP32_NATIVE_AUDIT.md, with the reason it is legitimately
 // platform-bound (or a note that Phase 2 must port it for real).
 
+#include "panel_widget_manager.h"
 #include "printer_state.h"
 #include "system/crash_handler.h"
 #include "system/telemetry_manager.h"
+#include "temperature_controller.h"
 #include "usb_manager.h"
 
 // --- app_globals.cpp seam -------------------------------------------------
@@ -135,11 +137,11 @@ class PrintHistoryManager;
 PrintHistoryManager* get_print_history_manager() {
     return nullptr;
 }
-namespace helix {
-class TemperatureController;
-}
+// Real accessor (mirrors src/app_globals.cpp): SubjectInitializer constructs the
+// controller in init_panel_subjects() and registers it as a PanelWidgetManager
+// shared resource, so the lookup works on ESP32 exactly as it does on Linux.
 helix::TemperatureController* get_temperature_controller() {
-    return nullptr;
+    return helix::PanelWidgetManager::instance().shared_resource<helix::TemperatureController>();
 }
 void app_request_restart_service() {} // systemd restart request — no-op on ESP
 class TemperatureHistoryManager;
