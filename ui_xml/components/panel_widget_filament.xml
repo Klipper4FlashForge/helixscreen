@@ -9,7 +9,7 @@
     <!-- Hardware gate (filament_sensor_count) checked in C++ populate_widgets().
          filament_tile_state mirrors whichever role subject the user selected;
          it is owned by FilamentSensorWidget. -->
-    <filament_sensor_indicator size="#icon_size" clickable="false" event_bubble="true"/>
+    <filament_sensor_indicator size="#icon_size" subject="filament_tile_state" clickable="false" event_bubble="true"/>
     <text_tiny text="Loaded" translation_tag="Loaded" style_text_align="center" clickable="false" event_bubble="true">
       <bind_flag_if_not_eq subject="filament_tile_state" flag="hidden" ref_value="1"/>
     </text_tiny>

@@ -36,13 +36,17 @@ void FilamentSensorWidget::init_static_subjects() {
     lv_subject_init_int(&tile_state_subject_, -1);
     lv_subject_init_int(&advisory_subject_, 0);
 
-    auto* scope = lv_xml_component_get_scope("panel_widget_filament");
-    if (scope) {
-        lv_xml_register_subject(scope, "filament_tile_state", &tile_state_subject_);
-    } else {
-        spdlog::warn("[FilamentSensorWidget] panel_widget_filament scope not found - "
-                     "ensure the component is registered first");
-    }
+    // Global scope (not the "panel_widget_filament" component scope): the
+    // mirror is also read as a `subject`-type prop by the nested
+    // <filament_sensor_indicator> component, which resolves that prop via
+    // lv_xml_get_subject() against its OWN scope, falling back only to
+    // "globals" - never to the parent component's private scope. A
+    // component-scoped registration here left that lookup unresolved (8x "No
+    // subject was found" warnings) despite the same-component label bindings
+    // resolving it fine, since those short-circuit against the local scope
+    // before ever needing the fallback. lv_xml_register_subject(nullptr, ...)
+    // routes to "globals" (lib/helix-xml/src/xml/lv_xml.c:689).
+    lv_xml_register_subject(nullptr, "filament_tile_state", &tile_state_subject_);
 
     auto* modal_scope = lv_xml_component_get_scope("runout_guidance_modal");
     if (modal_scope) {
