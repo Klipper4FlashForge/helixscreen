@@ -36,7 +36,15 @@
 #   +1    src/api/moonraker_api_controls.cpp, un-stubbed once its HTTP half was
 #         split into moonraker_api_power.cpp (E-STOP and temperature control were
 #         no-ops on-device until then).
-#   = 432 source files.
+#
+#   The deltas above are the narrative of how this set was chosen; they do NOT
+#   sum to the total and never did. The base they subtract from is the audit
+#   manifest, which has been edited independently since, and this file has since
+#   dropped the 34 assets/fonts/*.c entries it shipped with (fonts are staged as
+#   binary assets now, not compiled here). Do not trust a running total — count
+#   what CMake actually reads:
+#       grep -cE '^[^#].*\.(cpp|c)$' app_srcs.txt
+#   Today that is 443 src/ + 3 lib/ = 446 source files.
 #
 # EXCLUDED, and why (NOT in the list below):
 #   Moonraker transport/HTTP:

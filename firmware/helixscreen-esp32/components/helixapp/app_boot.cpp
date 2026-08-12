@@ -37,6 +37,7 @@
 #include "ui_card.h"
 #include "ui_component_header_bar.h"
 #include "ui_dialog.h"
+#include "ui_emergency_stop.h"
 #include "ui_gcode_viewer.h"
 #include "ui_gradient_canvas.h"
 #include "ui_icon.h"
@@ -51,6 +52,7 @@
 #include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
+#include "abort_manager.h"
 #include "ams_state.h"
 #include "app_globals.h"
 #include "asset_manager.h"
@@ -77,6 +79,7 @@
 #include "printer_fan_state.h" // helix::FanRoleConfig for the non-mock fan-role resolve
 #include "printer_state.h"
 #include "runtime_config.h"
+#include "safety_settings_manager.h"
 #include "sdkconfig.h"
 #include "setting_group.h"
 #include "src/xml/lv_xml.h"
@@ -778,8 +781,11 @@ extern "C" void app_boot_ui(void) {
     // home/print-status panels instantiate in build_shell() — print_status_panel
     // and panel_widget_led bind both. Registration is scope-sensitive, so this
     // has to sit exactly here, matching desktop (application.cpp, same call and
-    // same phase). init() is idempotent on the subject path and overwrites
-    // api_/client_, so a later init(api, client) still binds the real API.
+    // same phase). This is the only LedController::init() the ESP image ever
+    // makes: the re-init that binds a real API lives in printer_discovery.cpp,
+    // which is excluded from the image, and setup_discovery_callbacks_esp()
+    // below does not wire LED. api_/client_ therefore stay null for the life of
+    // the process — the call registers subjects, it does not enable LED control.
     helix::led::LedController::instance().init(nullptr, nullptr);
 
     // Phase 9: MoonrakerManager — ESP factory arm builds EspMoonrakerClient +
@@ -801,6 +807,23 @@ extern "C" void app_boot_ui(void) {
     // Phase 10: panel subjects, now that the API pointer exists.
     subjects.init_panels(manager.api(), rc);
     subjects.init_post(rc);
+
+    // E-STOP and smart print cancellation. Mirrors desktop's
+    // Application::init_panel_subjects() (application.cpp, same order). Both
+    // singletons had their subjects registered by init_panels() above but their
+    // API/PrinterState pointers left null, because the desktop-only
+    // application.cpp is the tree's sole init() call site — so every
+    // emergency_stop() bailed out at the `!api_` guard and the estop_visible
+    // subject, which nine XML files bind as a visibility flag, never left 0.
+    // create() installs observers on print/klippy state and early-returns unless
+    // init() has run and subjects exist, so this ordering is required, and all of
+    // it must precede build_shell() below.
+    EmergencyStopOverlay::instance().init(get_printer_state(), manager.api());
+    EmergencyStopOverlay::instance().create();
+    EmergencyStopOverlay::instance().set_require_confirmation(
+        helix::SafetySettingsManager::instance().get_estop_require_confirmation());
+
+    helix::AbortManager::instance().init(manager.api(), &get_printer_state());
 
     // Job queue state — owns the `job_queue_count` subject the home panel's
     // queue widget binds, so it must construct before build_shell(). Mirrors
