@@ -524,7 +524,7 @@ void HomePanel::populate_widgets() {
 }
 ```
 
-Gate observers call `populate_widgets()` automatically when hardware capabilities or klippy state change, so the widget row adapts to the connected printer without any manual dispatch.
+Gate observers call `populate_widgets()` automatically when hardware capabilities or klippy state change, so the widget grid adapts to the connected printer without any manual dispatch.
 
 ### Widget Instance Reuse Across Rebuilds
 
