@@ -220,3 +220,112 @@ TEST_CASE_METHOD(TooltipTestFixture, "heater off reports no target", "[ui][toolt
 
     ui_temp_graph_destroy(g);
 }
+
+using helix::temp_graph_internal::temp_graph_tooltip_on_sample_pushed;
+using helix::temp_graph_internal::temp_graph_tooltip_pin;
+using helix::temp_graph_internal::temp_graph_tooltip_pinned;
+
+TEST_CASE_METHOD(TooltipTestFixture, "tooltip is off by default", "[ui][tooltip][lifecycle]") {
+    ui_temp_graph_t* g = make_graph();
+    CHECK_FALSE(ui_temp_graph_tooltip_is_enabled(g));
+    CHECK(temp_graph_tooltip_pinned(g) == nullptr);
+    ui_temp_graph_destroy(g);
+}
+
+TEST_CASE_METHOD(TooltipTestFixture, "pin rides left and dismisses off the edge",
+                 "[ui][tooltip][lifecycle]") {
+    ui_temp_graph_t* g = make_graph();
+    ui_temp_graph_set_tooltip_enabled(g, true);
+    int id = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    for (int i = 0; i < 5; i++) {
+        ui_temp_graph_update_series_with_time(g, id, 150.0f, 1000000000000LL + i * 3000);
+    }
+    lv_point_t p = point_pos(g, id, g->point_count - 1);
+    auto hit = tooltip_hit_test(g, p.x, p.y);
+    REQUIRE(hit.has_value());
+    temp_graph_tooltip_pin(g, *hit);
+
+    const int pinned_at = temp_graph_tooltip_pinned(g)->logical_index;
+    REQUIRE(pinned_at == g->point_count - 1);
+
+    // Each push to THIS series walks the pin one slot left.
+    ui_temp_graph_update_series_with_time(g, id, 151.0f, 1000000000000LL + 5 * 3000);
+    REQUIRE(temp_graph_tooltip_pinned(g) != nullptr);
+    CHECK(temp_graph_tooltip_pinned(g)->logical_index == pinned_at - 1);
+    // Text never changes: it still describes the original sample.
+    CHECK(temp_graph_tooltip_pinned(g)->deci_temp == 1500);
+
+    // Walk it off the left edge.
+    for (int i = 0; i < g->point_count + 2; i++) {
+        ui_temp_graph_update_series_with_time(g, id, 152.0f, 1000000000000LL + (6 + i) * 3000);
+    }
+    CHECK(temp_graph_tooltip_pinned(g) == nullptr);
+
+    ui_temp_graph_destroy(g);
+}
+
+TEST_CASE_METHOD(TooltipTestFixture, "a push to another series does not move the pin",
+                 "[ui][tooltip][lifecycle]") {
+    ui_temp_graph_t* g = make_graph();
+    ui_temp_graph_set_tooltip_enabled(g, true);
+    int a = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    int b = ui_temp_graph_add_series(g, "Bed", lv_color_hex(0x44FF44));
+    for (int i = 0; i < 5; i++) {
+        int64_t ts = 1000000000000LL + i * 3000;
+        ui_temp_graph_update_series_with_time(g, a, 200.0f, ts);
+        ui_temp_graph_update_series_with_time(g, b, 60.0f, ts);
+    }
+    lv_point_t p = point_pos(g, a, g->point_count - 1);
+    auto hit = tooltip_hit_test(g, p.x, p.y);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->series_id == a);
+    temp_graph_tooltip_pin(g, *hit);
+    const int before = temp_graph_tooltip_pinned(g)->logical_index;
+
+    ui_temp_graph_update_series_with_time(g, b, 61.0f, 1000000000000LL + 5 * 3000);
+    CHECK(temp_graph_tooltip_pinned(g)->logical_index == before);
+
+    ui_temp_graph_destroy(g);
+}
+
+TEST_CASE_METHOD(TooltipTestFixture, "hiding the pinned series dismisses it",
+                 "[ui][tooltip][lifecycle]") {
+    ui_temp_graph_t* g = make_graph();
+    ui_temp_graph_set_tooltip_enabled(g, true);
+    int a = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    int b = ui_temp_graph_add_series(g, "Bed", lv_color_hex(0x44FF44));
+    for (int i = 0; i < 5; i++) {
+        int64_t ts = 1000000000000LL + i * 3000;
+        ui_temp_graph_update_series_with_time(g, a, 200.0f, ts);
+        ui_temp_graph_update_series_with_time(g, b, 60.0f, ts);
+    }
+    lv_point_t p = point_pos(g, a, g->point_count - 1);
+    temp_graph_tooltip_pin(g, *tooltip_hit_test(g, p.x, p.y));
+    REQUIRE(temp_graph_tooltip_pinned(g) != nullptr);
+
+    ui_temp_graph_show_series(g, b, false); // unrelated series
+    CHECK(temp_graph_tooltip_pinned(g) != nullptr);
+
+    ui_temp_graph_show_series(g, a, false); // the pinned one
+    CHECK(temp_graph_tooltip_pinned(g) == nullptr);
+
+    ui_temp_graph_destroy(g);
+}
+
+TEST_CASE_METHOD(TooltipTestFixture, "disabling clears the pin", "[ui][tooltip][lifecycle]") {
+    ui_temp_graph_t* g = make_graph();
+    ui_temp_graph_set_tooltip_enabled(g, true);
+    int id = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    for (int i = 0; i < 5; i++) {
+        ui_temp_graph_update_series_with_time(g, id, 150.0f, 1000000000000LL + i * 3000);
+    }
+    lv_point_t p = point_pos(g, id, g->point_count - 1);
+    temp_graph_tooltip_pin(g, *tooltip_hit_test(g, p.x, p.y));
+    REQUIRE(temp_graph_tooltip_pinned(g) != nullptr);
+
+    ui_temp_graph_set_tooltip_enabled(g, false);
+    CHECK(temp_graph_tooltip_pinned(g) == nullptr);
+    CHECK_FALSE(ui_temp_graph_tooltip_is_enabled(g));
+
+    ui_temp_graph_destroy(g);
+}

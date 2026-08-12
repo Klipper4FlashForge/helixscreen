@@ -65,4 +65,24 @@ int16_t target_deci_at(const ui_temp_series_meta_t* meta, int point_count, int l
  */
 std::optional<TempGraphHit> tooltip_hit_test(ui_temp_graph_t* graph, int32_t x, int32_t y);
 
+/// Pin a resolved hit as the displayed caption, replacing any current one.
+void temp_graph_tooltip_pin(ui_temp_graph_t* graph, const TempGraphHit& hit);
+
+/// @return the pinned hit, or nullptr when nothing is displayed.
+const TempGraphHit* temp_graph_tooltip_pinned(const ui_temp_graph_t* graph);
+
+/// Dismiss any pinned caption. Safe when the tooltip is disabled.
+void temp_graph_tooltip_clear(ui_temp_graph_t* graph);
+
+/// Called after a sample is pushed to `series_id`. Walks the pin one slot left
+/// when it belongs to that series, dismissing it once it falls off the edge.
+/// Per-series because each lv_chart_series_t carries its own start_point.
+void temp_graph_tooltip_on_sample_pushed(ui_temp_graph_t* graph, int series_id);
+
+/// Called when `series_id` is hidden. Dismisses the caption if it was pinned there.
+void temp_graph_tooltip_on_series_hidden(ui_temp_graph_t* graph, int series_id);
+
+/// Free tooltip state. Called from ui_temp_graph_destroy.
+void temp_graph_tooltip_destroy(ui_temp_graph_t* graph);
+
 } // namespace helix::temp_graph_internal

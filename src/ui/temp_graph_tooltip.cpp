@@ -5,8 +5,17 @@
 
 #include "temp_graph_internal.h"
 
+#include <spdlog/spdlog.h>
+
 #include <cstdint>
 #include <limits>
+#include <new>
+
+// State definition. Kept out of ui_temp_graph.h on purpose.
+struct temp_graph_tooltip_t {
+    bool has_pin = false;
+    helix::temp_graph_internal::TempGraphHit pin{};
+};
 
 namespace helix::temp_graph_internal {
 
@@ -94,4 +103,113 @@ std::optional<TempGraphHit> tooltip_hit_test(ui_temp_graph_t* graph, int32_t x, 
     return best;
 }
 
+static void tooltip_press_cb(lv_event_t* e) {
+    auto* graph = static_cast<ui_temp_graph_t*>(lv_event_get_user_data(e));
+    if (!ui_temp_graph_is_valid(graph) || !graph->tooltip) {
+        return;
+    }
+    lv_indev_t* indev = lv_indev_active();
+    if (!indev) {
+        return;
+    }
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+
+    auto hit = tooltip_hit_test(graph, p.x, p.y);
+    if (hit.has_value()) {
+        temp_graph_tooltip_pin(graph, *hit);
+    } else {
+        temp_graph_tooltip_clear(graph); // tap-away dismisses
+    }
+}
+
+void temp_graph_tooltip_pin(ui_temp_graph_t* graph, const TempGraphHit& hit) {
+    if (!ui_temp_graph_is_valid(graph) || !graph->tooltip) {
+        return;
+    }
+    graph->tooltip->pin = hit;
+    graph->tooltip->has_pin = true;
+    spdlog::debug("[TempGraph] Caption pinned: series={} idx={} {}d {}ms", hit.series_id,
+                  hit.logical_index, hit.deci_temp, hit.timestamp_ms);
+    lv_obj_invalidate(graph->chart);
+}
+
+const TempGraphHit* temp_graph_tooltip_pinned(const ui_temp_graph_t* graph) {
+    if (!graph || !graph->tooltip || !graph->tooltip->has_pin) {
+        return nullptr;
+    }
+    return &graph->tooltip->pin;
+}
+
+void temp_graph_tooltip_clear(ui_temp_graph_t* graph) {
+    if (!graph || !graph->tooltip || !graph->tooltip->has_pin) {
+        return;
+    }
+    graph->tooltip->has_pin = false;
+    if (graph->chart) {
+        lv_obj_invalidate(graph->chart);
+    }
+}
+
+void temp_graph_tooltip_on_sample_pushed(ui_temp_graph_t* graph, int series_id) {
+    const TempGraphHit* pin = temp_graph_tooltip_pinned(graph);
+    if (!pin || pin->series_id != series_id) {
+        return;
+    }
+    if (graph->tooltip->pin.logical_index <= 0) {
+        temp_graph_tooltip_clear(graph); // scrolled off the left edge
+        return;
+    }
+    graph->tooltip->pin.logical_index--;
+    lv_obj_invalidate(graph->chart);
+}
+
+void temp_graph_tooltip_on_series_hidden(ui_temp_graph_t* graph, int series_id) {
+    const TempGraphHit* pin = temp_graph_tooltip_pinned(graph);
+    if (pin && pin->series_id == series_id) {
+        temp_graph_tooltip_clear(graph);
+    }
+}
+
+void temp_graph_tooltip_destroy(ui_temp_graph_t* graph) {
+    if (!graph || !graph->tooltip) {
+        return;
+    }
+    delete graph->tooltip;
+    graph->tooltip = nullptr;
+}
+
 } // namespace helix::temp_graph_internal
+
+void ui_temp_graph_set_tooltip_enabled(ui_temp_graph_t* graph, bool enabled) {
+    if (!ui_temp_graph_is_valid(graph)) {
+        return;
+    }
+    if (enabled == (graph->tooltip != nullptr)) {
+        return;
+    }
+    if (enabled) {
+        graph->tooltip = new (std::nothrow) temp_graph_tooltip_t();
+        if (!graph->tooltip) {
+            spdlog::error("[TempGraph] Failed to allocate tooltip state");
+            return;
+        }
+        lv_obj_add_flag(graph->chart, LV_OBJ_FLAG_CLICKABLE);
+        // CLICKED (release without scroll), not PRESSED, so a scroll gesture that
+        // happens to begin over the chart does not raise a caption.
+        // DECLARATIVE_OK: the chart is a C++-created widget with no XML layer,
+        // and the handler needs the raw indev coordinates.
+        lv_obj_add_event_cb(graph->chart, helix::temp_graph_internal::tooltip_press_cb,
+                            LV_EVENT_CLICKED, graph);
+    } else {
+        helix::temp_graph_internal::temp_graph_tooltip_clear(graph);
+        lv_obj_remove_event_cb_with_user_data(graph->chart,
+                                              helix::temp_graph_internal::tooltip_press_cb, graph);
+        lv_obj_remove_flag(graph->chart, LV_OBJ_FLAG_CLICKABLE);
+        helix::temp_graph_internal::temp_graph_tooltip_destroy(graph);
+    }
+}
+
+bool ui_temp_graph_tooltip_is_enabled(const ui_temp_graph_t* graph) {
+    return graph && graph->tooltip != nullptr;
+}

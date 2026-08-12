@@ -7,6 +7,7 @@
 
 #include "system/crash_handler.h"
 #include "temp_graph_internal.h"
+#include "temp_graph_tooltip.h"
 #include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -1443,6 +1444,9 @@ void ui_temp_graph_destroy(ui_temp_graph_t* graph) {
     if (!graph)
         return;
 
+    // Unconditional — runs regardless of which teardown branch below fires.
+    helix::temp_graph_internal::temp_graph_tooltip_destroy(graph);
+
     // Transfer ownership to RAII wrapper - automatic cleanup
     std::unique_ptr<ui_temp_graph_t> graph_ptr(graph);
 
@@ -1638,6 +1642,8 @@ void ui_temp_graph_remove_series(ui_temp_graph_t* graph, int series_id) {
     // Removing a series drops its gradient band.
     mark_gradient_cache_dirty(graph);
 
+    helix::temp_graph_internal::temp_graph_tooltip_on_series_hidden(graph, series_id);
+
     spdlog::trace("[TempGraph] Removed series {} ({} series remaining)", series_id,
                   graph->series_count);
 }
@@ -1657,6 +1663,10 @@ void ui_temp_graph_show_series(ui_temp_graph_t* graph, int series_id, bool visib
 
     // Visibility change adds/removes a series' gradient band.
     mark_gradient_cache_dirty(graph);
+
+    if (!visible) {
+        helix::temp_graph_internal::temp_graph_tooltip_on_series_hidden(graph, series_id);
+    }
 
     lv_obj_invalidate(graph->chart);
     spdlog::trace("[TempGraph] Series {} '{}' {}", series_id, meta->name,
@@ -1692,6 +1702,8 @@ void ui_temp_graph_update_series(ui_temp_graph_t* graph, int series_id, float te
     // Add point to series (shifts old data left, stored as deci-degrees)
     lv_chart_set_next_value(graph->chart, meta->chart_series,
                             static_cast<int32_t>(temp * TEMP_SCALE));
+
+    helix::temp_graph_internal::temp_graph_tooltip_on_sample_pushed(graph, series_id);
 
     // Mirror the push into the parallel target buffer.
     push_target_sample(graph, meta);
@@ -1749,6 +1761,8 @@ void ui_temp_graph_update_series_with_time(ui_temp_graph_t* graph, int series_id
     // Add point to series (shifts old data left, stored as deci-degrees)
     lv_chart_set_next_value(graph->chart, meta->chart_series,
                             static_cast<int32_t>(temp * TEMP_SCALE));
+
+    helix::temp_graph_internal::temp_graph_tooltip_on_sample_pushed(graph, series_id);
 
     // Mirror the push into the parallel target buffer.
     push_target_sample(graph, meta);
