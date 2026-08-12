@@ -274,6 +274,7 @@ src/ui/print_control_view.cpp
 src/ui/setting_group.cpp
 src/ui/style_configs.cpp
 src/ui/temp_graph_controller.cpp
+src/ui/temp_graph_tooltip.cpp
 src/ui/temperature_controller.cpp
 src/ui/temperature_service.cpp
 src/ui/theme_loader.cpp
