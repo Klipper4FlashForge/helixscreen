@@ -13,7 +13,6 @@
 #include "moonraker_api.h"
 #include "standard_macros.h"
 
-#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <string>
@@ -229,20 +228,9 @@ void execute_filament_purge(const char* log_tag) {
     }
 
     spdlog::info("{} No purge macro configured — raw gcode fallback", log_tag);
-    // NOTE: this duplicates FilamentRunoutHandler's local purge_fallback_gcode()
-    // and FilamentPanel::execute_purge()'s open-coded copy of the same two
-    // constants. ui_filament_runout_handler.cpp already carries a TODO to move
-    // all of these into filament_op_router.h beside filament_load_fallback_gcode()
-    // / filament_unload_fallback_gcode() "when that header is not off-limits" —
-    // this is a third copy for that same follow-up, not a new decision. Left
-    // local here rather than touching filament_op_router.h, which is outside
-    // this change's file list.
-    constexpr int PURGE_FALLBACK_MM = 50;
-    constexpr int PURGE_FALLBACK_SPEED_MM_MIN = 10 * 60; // 10 mm/s -> 600 mm/min
-    const std::string gcode =
-        fmt::format("M83\nG1 E{} F{}", PURGE_FALLBACK_MM, PURGE_FALLBACK_SPEED_MM_MIN);
     api->execute_gcode(
-        gcode, [log_tag]() { spdlog::info("{} Purge fallback gcode sent", log_tag); },
+        helix::ui::filament_purge_fallback_gcode(),
+        [log_tag]() { spdlog::info("{} Purge fallback gcode sent", log_tag); },
         [log_tag](const MoonrakerError& err) {
             spdlog::error("{} Purge fallback failed: {}", log_tag, err.message);
             NOTIFY_ERROR(lv_tr("Failed to purge: {}"), err.user_message());

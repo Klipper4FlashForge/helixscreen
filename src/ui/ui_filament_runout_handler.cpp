@@ -28,25 +28,6 @@
 
 namespace helix::ui {
 
-namespace {
-
-/**
- * @brief Tier-3 purge fallback: extrude a fixed 50mm at 10mm/s. M83 = relative.
- *
- * TODO: this belongs beside filament_load_fallback_gcode() /
- * filament_unload_fallback_gcode() in filament_op_router.h — it is the same kind
- * of constant and FilamentPanel::execute_purge() open-codes its own copy of
- * exactly these two numbers. Left local only because that header was off-limits
- * for this change; move all three together and delete both copies.
- */
-std::string purge_fallback_gcode() {
-    constexpr int PURGE_FALLBACK_MM = 50;
-    constexpr int PURGE_FALLBACK_SPEED_MM_MIN = 10 * 60; // 10 mm/s → 600 mm/min
-    return fmt::format("M83\nG1 E{} F{}", PURGE_FALLBACK_MM, PURGE_FALLBACK_SPEED_MM_MIN);
-}
-
-} // namespace
-
 // ============================================================================
 // FilamentRunoutHandler Implementation
 // ============================================================================
@@ -554,7 +535,7 @@ void FilamentRunoutHandler::dispatch_purge() {
 
     spdlog::info("[FilamentRunoutHandler] No purge macro configured — raw gcode fallback");
     api_->execute_gcode(
-        purge_fallback_gcode(),
+        filament_purge_fallback_gcode(),
         []() { spdlog::info("[FilamentRunoutHandler] Purge fallback gcode sent"); },
         [](const MoonrakerError& err) {
             spdlog::error("[FilamentRunoutHandler] Purge fallback failed: {}", err.message);

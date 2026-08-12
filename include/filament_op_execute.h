@@ -36,14 +36,14 @@ void execute_filament_load(AmsBackend* backend, int slot, const char* log_tag);
 void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loaded,
                              const char* log_tag);
 
-/// Purge counterpart. Two tiers only (the configured macro, then a fixed
-/// raw-gcode extrude) — no AmsBackend exposes a purge entry point, so there is
-/// no plan_purge() to route through. Mirrors FilamentRunoutHandler::dispatch_purge(),
-/// the one existing purge dispatch that is NOT entangled with panel UI state.
-/// FilamentPanel::execute_purge() was deliberately not the source: it drives
-/// that panel's operation_guard_ spinner and a macro-parameter modal with
-/// active-material temperature prefill, none of which apply here. See
-/// filament_op_execute.cpp for the follow-up this split leaves.
+/// Purge counterpart. Two tiers only (the configured macro, then
+/// filament_purge_fallback_gcode() from filament_op_router.h) — no AmsBackend
+/// exposes a purge entry point, so there is no plan_purge() to route through.
+/// Mirrors FilamentRunoutHandler::dispatch_purge(), the one existing purge
+/// dispatch that is NOT entangled with panel UI state. FilamentPanel::execute_purge()
+/// was deliberately not the source: it drives that panel's operation_guard_
+/// spinner and a macro-parameter modal with active-material temperature
+/// prefill, none of which apply here.
 void execute_filament_purge(const char* log_tag);
 
 } // namespace helix::ui
