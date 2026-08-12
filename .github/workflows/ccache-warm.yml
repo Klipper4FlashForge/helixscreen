@@ -18,9 +18,18 @@ name: Warm release ccache
 # cached objects match.
 #
 # Only the three heavy platforms are warmed: they are the only ones near the
-# timeout, and three ccaches (~1.7 GB each ≈ 5 GB) stay comfortably inside
-# GitHub's 10 GB per-repo cache budget. The light platforms (~35-47 min) have
-# ample headroom and are intentionally left to build cold.
+# timeout. The light platforms (~35-47 min) have ample headroom and are
+# intentionally left to build cold.
+#
+# Three ccaches at ~1.7 GB each do NOT "stay comfortably inside" GitHub's 10 GB
+# per-repo budget, which is what this comment used to claim. That figure counted
+# only this workflow's own caches. Measured right after v0.99.111 the repo sat at
+# 10.77 GB and was actively evicting: 8.6 GB of it was per-SHA PR-CI ccaches
+# (three ubuntu generations, two macOS), and seven of the nine ccache-release-*
+# caches had already been evicted. That is why the v0.99.111 pi build ran cold
+# and hit the OOM. cache-prune.yml keeps only the newest generation of each
+# per-SHA family, and runs as the `prune` job below so that warming on demand
+# before a release frees the room it is about to need.
 #
 # depend_mode is intentionally NOT enabled. The global -DHELIX_VERSION define
 # changes every release, which sinks ccache direct-mode hits; ccache's
@@ -41,10 +50,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Free the budget BEFORE the matrix below tries to save ~1.6 GB x 3. Without
+  # this, a warm run started right before cutting a release can push the repo
+  # over 10 GB and have GitHub evict, LRU, the very caches it just wrote.
+  prune:
+    name: Prune stale ccaches
+    uses: ./.github/workflows/cache-prune.yml
+    permissions:
+      actions: write
+
   warm:
     name: Warm (${{ matrix.display_name }})
-    # Upstream only — forks neither release nor share this repo's cache budget.
-    if: github.repository == 'prestonbrown/helixscreen'
+    needs: [prune]
+    # always() so a transient cache-API failure in the prune job degrades the
+    # warm to "runs without the extra headroom" rather than skipping it entirely.
+    # Upstream only - forks neither release nor share this repo's cache budget.
+    if: always() && github.repository == 'prestonbrown/helixscreen'
     runs-on: ubuntu-22.04
     # This job is the one that MUST tolerate a fully cold build, because a cold
     # build is the only kind it ever does: its whole purpose is to produce the
