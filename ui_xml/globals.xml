@@ -805,12 +805,5 @@
     <str name="icon_z_farther" value="󰜷"/>
     <!-- END GENERATED ICON CONSTS -->
   </consts>
-  <styles>
-    <!-- Icon-to-label gap: wider on tiny breakpoint (labels hidden/cramped, icons
-         too close), tighter once the layout has room. Shared across any row that
-         switches gap by breakpoint (controls_panel.xml, temp_card_unified.xml). -->
-    <style name="temp_row_gap_standard" pad_column="#space_xs"/>
-    <style name="temp_row_gap_tiny" pad_column="#space_md"/>
-  </styles>
   <view extends="lv_obj"/>
 </component>
