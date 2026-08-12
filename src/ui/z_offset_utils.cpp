@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "i_moonraker_api.h"
+#include "toolhead_homing.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -15,7 +16,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <lvgl.h>
 
 namespace helix::zoffset {
@@ -146,8 +146,14 @@ int persisted_step_index() {
 
 void set_persisted_step_index(int idx) {
     if (idx < 0 || idx >= static_cast<int>(std::size(kZStepAmountsMm))) {
-        spdlog::warn("[zoffset] out-of-range step index {} — persisting default instead", idx);
-        idx = kZStepDefaultIndex;
+        // Reject rather than clamp-and-write: the read path (persisted_step_index())
+        // already fully defends against a corrupt on-disk value, so clamping here
+        // buys no safety — it would just give a future caller bug a way to silently
+        // overwrite the user's real setting with the default.
+        spdlog::warn("[zoffset] rejecting out-of-range step index {} — leaving persisted "
+                     "value unchanged",
+                     idx);
+        return;
     }
     Config* config = Config::get_instance();
     if (!config) {
@@ -174,7 +180,7 @@ AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_
         new_offset = std::clamp(new_offset, kZOffsetMinMm, kZOffsetMaxMm);
         delta_mm = new_offset - current_offset_mm;
         if (std::abs(delta_mm) < 0.0005) {
-            return AdjustResult{0.0, current_offset_mm, false};
+            return AdjustResult{0.0, current_offset_mm, false, true};
         }
     }
 
@@ -190,14 +196,10 @@ AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_
     }
 
     if (!api) {
-        return AdjustResult{delta_mm, new_offset, false};
+        return AdjustResult{delta_mm, new_offset, false, false};
     }
 
-    bool all_homed = false;
-    if (ps) {
-        const char* axes = lv_subject_get_string(ps->get_homed_axes_subject());
-        all_homed = axes && strchr(axes, 'x') && strchr(axes, 'y') && strchr(axes, 'z');
-    }
+    const bool all_homed = ps && helix::toolhead_is_homed(*ps);
 
     char gcode[96];
     std::snprintf(gcode, sizeof(gcode), "SET_GCODE_OFFSET Z_ADJUST=%.3f%s", delta_mm,
@@ -210,7 +212,7 @@ AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_
             NOTIFY_ERROR(lv_tr("Z-offset failed: {}"), err.user_message());
         });
 
-    return AdjustResult{delta_mm, new_offset, true};
+    return AdjustResult{delta_mm, new_offset, true, false};
 }
 
 } // namespace helix::zoffset

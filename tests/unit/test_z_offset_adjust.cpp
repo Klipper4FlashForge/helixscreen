@@ -55,7 +55,25 @@ TEST_CASE_METHOD(ZOffsetFixture, "adjust refuses a no-op move at the limit",
     auto r = helix::zoffset::adjust(api.get(), &state, 2.0, 0.05);
 
     REQUIRE(r.sent == false);
+    REQUIRE(r.clamped_to_noop == true);
     REQUIRE(last_sent().find("Z_ADJUST") == std::string::npos);
+}
+
+TEST_CASE_METHOD(ZOffsetFixture,
+                 "a clamped-to-noop result is distinguishable from a null-api "
+                 "result",
+                 "[z_offset][adjust][mock]") {
+    // Both cases share sent == false; clamped_to_noop is what tells them apart
+    // (see AdjustResult in z_offset_utils.h). A caller that used float equality
+    // on applied_delta_mm to infer "nothing happened" could not tell these
+    // apart without it.
+    auto clamped = helix::zoffset::adjust(api.get(), &state, 2.0, 0.05);
+    REQUIRE(clamped.sent == false);
+    REQUIRE(clamped.clamped_to_noop == true);
+
+    auto null_api = helix::zoffset::adjust(nullptr, &state, 0.0, 0.05);
+    REQUIRE(null_api.sent == false);
+    REQUIRE(null_api.clamped_to_noop == false);
 }
 
 TEST_CASE_METHOD(ZOffsetFixture, "adjust rounds to the nearest micron",
@@ -126,11 +144,13 @@ TEST_CASE_METHOD(LVGLTestFixture, "the z step index round-trips through Config",
     helix::zoffset::set_persisted_step_index(3);
     REQUIRE(helix::zoffset::persisted_step_index() == 3);
 
-    // Out-of-range values must fall back to the default rather than index a
-    // kZStepAmountsMm entry that does not exist.
+    // Out-of-range writes are rejected outright, not clamped-and-stored: the
+    // previously persisted value (3) must survive untouched. Clamping on write
+    // would let a future caller bug silently destroy the user's real setting;
+    // the read path already defends against a corrupt on-disk value on its own.
     helix::zoffset::set_persisted_step_index(99);
-    REQUIRE(helix::zoffset::persisted_step_index() == 2);
+    REQUIRE(helix::zoffset::persisted_step_index() == 3);
 
     helix::zoffset::set_persisted_step_index(-1);
-    REQUIRE(helix::zoffset::persisted_step_index() == 2);
+    REQUIRE(helix::zoffset::persisted_step_index() == 3);
 }

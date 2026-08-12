@@ -434,7 +434,7 @@ void PrintTuneOverlay::handle_reset() {
 
 void PrintTuneOverlay::handle_z_offset_changed(double delta) {
     const auto r = helix::zoffset::adjust(api_, printer_state_, current_z_offset_, delta);
-    if (r.applied_delta_mm == 0.0 && !r.sent) {
+    if (r.clamped_to_noop) {
         return; // already at the limit
     }
     current_z_offset_ = r.new_offset_mm;
