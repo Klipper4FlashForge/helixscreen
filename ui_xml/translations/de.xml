@@ -709,6 +709,7 @@
   <translation tag="Enter printer IP address first" de="Zuerst Drucker-IP-Adresse eingeben"/>
   <translation tag="Enter the IP address and port of your Spoolman server." de="Geben Sie die IP-Adresse und den Port Ihres Spoolman-Servers ein."/>
   <translation tag="Entry" de="Eingang"/>
+  <translation tag="Entry Sensor"/>
   <translation tag="Error" de="Fehler"/>
   <translation tag="Error at chunk {} (code={})" de="Fehler bei Block {} (code={})"/>
   <translation tag="Error loading file" de="Fehler beim Laden der Datei"/>
@@ -879,6 +880,7 @@
   <translation tag="Filament Used" de="Filament verwendet"/>
   <translation tag="Filament already exists" de="Filament bereits vorhanden"/>
   <translation tag="Filament by Type" de="Filament nach Typ"/>
+  <translation tag="Filament controls are unavailable while printing."/>
   <translation tag="Filament deleted" de="Filament gelöscht"/>
   <translation tag="Filament diameter sensors for flow compensation" de="Filamentdurchmessersensoren für Flusskompensation"/>
   <translation tag="Filament is loose" de="Filament ist locker"/>
@@ -1161,6 +1163,7 @@
   <translation tag="Load" de="Laden"/>
   <translation tag="Load Filament" de="Filament laden"/>
   <translation tag="Load may still be running — response timed out" de="Laden läuft möglicherweise noch — Zeitüberschreitung"/>
+  <translation tag="Load or unload filament."/>
   <translation tag="Load the required filaments or start anyway?" de="Benötigte Filamente laden oder trotzdem starten?"/>
   <translation tag="Loaded" de="Geladen"/>
   <translation tag="Loading" de="Laden"/>
@@ -1931,6 +1934,7 @@
   <translation tag="Sending..." de="Wird gesendet..."/>
   <translation tag="Sensor" de="Sensor"/>
   <translation tag="Sensor Response" de="Sensor-Reaktion"/>
+  <translation tag="Sensor Source"/>
   <translation tag="Sensor Temperature" de="Sensortemperatur"/>
   <translation tag="Sensors" de="Sensoren"/>
   <translation tag="Separate on/off macros. HelixScreen tracks the state." de="Separate Ein-/Aus-Makros. HelixScreen verfolgt den Status."/>
@@ -2232,6 +2236,7 @@
   <translation tag="Tool swap" de="Werkzeugwechsel"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." de="Werkzeug {} → Spur {}: kein Filament geladen."/>
   <translation tag="Toolhead" de="Werkzeugkopf"/>
+  <translation tag="Toolhead Sensor"/>
   <translation tag="Toolhead Style" de="Toolhead-Stil"/>
   <translation tag="Toolhead jam" de="Werkzeugkopf-Stau"/>
   <translation tag="Toolhead, G-code, limits, and materials" de="Druckkopf, G-Code, Grenzen und Materialien"/>

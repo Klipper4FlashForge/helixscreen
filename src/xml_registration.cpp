@@ -484,6 +484,7 @@ void register_xml_components() {
     register_xml("components/filament_swatch.xml");
     register_xml("components/filament_slot_picker_row.xml");
     register_xml("components/filament_mapping_tool_row.xml");
+    register_xml("components/filament_source_row.xml");
     register_xml("components/compact_toggle_row.xml");
     // Endless-spool status line. Registered here, ahead of filament_panel.xml,
     // because the AMS panel registers itself lazily and would otherwise be the
@@ -552,6 +553,7 @@ void register_xml_components() {
     register_xml("tool_switcher_picker.xml");
     register_xml("thermistor_sensor_picker.xml");
     register_xml("thermistor_configure_picker.xml");
+    register_xml("filament_source_picker.xml");
     register_xml("print_status_configure_picker.xml");
     register_xml("print_status_nozzle_tool_picker.xml");
     register_xml("favorite_macro_config_modal.xml");

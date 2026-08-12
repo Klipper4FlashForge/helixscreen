@@ -709,6 +709,7 @@
   <translation tag="Enter printer IP address first" ja="先にプリンターのIPアドレスを入力してください"/>
   <translation tag="Enter the IP address and port of your Spoolman server." ja="Spoolman サーバーのIPアドレスとポートを入力してください。"/>
   <translation tag="Entry" ja="入口"/>
+  <translation tag="Entry Sensor"/>
   <translation tag="Error" ja="エラー"/>
   <translation tag="Error at chunk {} (code={})" ja="チャンク {} でエラー (code={})"/>
   <translation tag="Error loading file" ja="ファイルの読み込みエラー"/>
@@ -879,6 +880,7 @@
   <translation tag="Filament Used" ja="使用済みフィラメント"/>
   <translation tag="Filament already exists" ja="フィラメントはすでに存在します"/>
   <translation tag="Filament by Type" ja="種類別フィラメント"/>
+  <translation tag="Filament controls are unavailable while printing."/>
   <translation tag="Filament deleted" ja="フィラメントを削除しました"/>
   <translation tag="Filament diameter sensors for flow compensation" ja="フロー補正用フィラメント直径センサー"/>
   <translation tag="Filament is loose" ja="フィラメントが緩んでいます"/>
@@ -1161,6 +1163,7 @@
   <translation tag="Load" ja="装填"/>
   <translation tag="Load Filament" ja="フィラメントを装填"/>
   <translation tag="Load may still be running — response timed out" ja="装填がまだ実行中の可能性があります — 応答タイムアウト"/>
+  <translation tag="Load or unload filament."/>
   <translation tag="Load the required filaments or start anyway?" ja="必要なフィラメントを装填しますか？それともこのまま開始しますか？"/>
   <translation tag="Loaded" ja="装填済み"/>
   <translation tag="Loading" ja="ロード中"/>
@@ -1931,6 +1934,7 @@
   <translation tag="Sending..." ja="送信中..."/>
   <translation tag="Sensor" ja="センサー"/>
   <translation tag="Sensor Response" ja="センサー応答"/>
+  <translation tag="Sensor Source"/>
   <translation tag="Sensor Temperature" ja="センサー温度"/>
   <translation tag="Sensors" ja="センサー"/>
   <translation tag="Separate on/off macros. HelixScreen tracks the state." ja="個別のオン/オフマクロ。HelixScreenが状態を追跡します。"/>
@@ -2232,6 +2236,7 @@
   <translation tag="Tool swap" ja="ツール交換"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." ja="ツール {} → レーン {}: フィラメントが装填されていません。"/>
   <translation tag="Toolhead" ja="ツールヘッド"/>
+  <translation tag="Toolhead Sensor"/>
   <translation tag="Toolhead Style" ja="ツールヘッドスタイル"/>
   <translation tag="Toolhead jam" ja="ツールヘッドの詰まり"/>
   <translation tag="Toolhead, G-code, limits, and materials" ja="ツールヘッド、Gコード、制限、材料"/>

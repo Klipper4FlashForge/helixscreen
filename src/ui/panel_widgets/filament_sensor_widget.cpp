@@ -18,6 +18,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cstdlib>
+
 namespace helix {
 
 void register_filament_sensor_widget() {
@@ -28,7 +30,19 @@ void register_filament_sensor_widget() {
 
     lv_xml_register_event_cb(nullptr, "filament_widget_clicked_cb",
                              FilamentSensorWidget::clicked_cb);
+    lv_xml_register_event_cb(nullptr, "on_filament_source_selected",
+                             FilamentSensorWidget::on_filament_source_selected);
 }
+
+// filament_source_picker.xml's four rows are written out with fixed
+// value="0..3" attributes rather than generated from this enum, so a reordered
+// FilamentTileSource would silently point every row's check icon and every tap
+// at the wrong role. This breaks the build instead.
+static_assert(static_cast<int>(helix::ui::FilamentTileSource::Auto) == 0 &&
+                  static_cast<int>(helix::ui::FilamentTileSource::Runout) == 1 &&
+                  static_cast<int>(helix::ui::FilamentTileSource::Toolhead) == 2 &&
+                  static_cast<int>(helix::ui::FilamentTileSource::Entry) == 3,
+              "FilamentTileSource enum order must match filament_source_picker.xml's row values");
 
 void FilamentSensorWidget::init_static_subjects() {
     if (subjects_initialized_) {
@@ -40,6 +54,7 @@ void FilamentSensorWidget::init_static_subjects() {
     // reads "hidden" until the first real value arrives rather than "empty".
     lv_subject_init_int(&tile_state_subject_, -1);
     lv_subject_init_int(&advisory_subject_, 0);
+    lv_subject_init_int(&source_subject_, static_cast<int>(ui::FilamentTileSource::Auto));
 
     // Global scope (not the "panel_widget_filament" component scope): the
     // mirror is also read as a `subject`-type prop by the nested
@@ -52,6 +67,14 @@ void FilamentSensorWidget::init_static_subjects() {
     // before ever needing the fallback. lv_xml_register_subject(nullptr, ...)
     // routes to "globals" (lib/helix-xml/src/xml/lv_xml.c:689).
     lv_xml_register_subject(nullptr, "filament_tile_state", &tile_state_subject_);
+
+    // Same reasoning, same fallback trap: the check icons that bind this live in
+    // filament_source_row, a different component from filament_source_picker, and
+    // lv_xml_get_subject() only falls back from a component scope to "globals" -
+    // never into another component's private scope
+    // (lib/helix-xml/src/xml/lv_xml.c:689,757-778). Register globally or the
+    // check icons silently never resolve it.
+    lv_xml_register_subject(nullptr, "filament_tile_source", &source_subject_);
 
     auto* modal_scope = lv_xml_component_get_scope("runout_guidance_modal");
     if (modal_scope) {
@@ -66,6 +89,7 @@ void FilamentSensorWidget::init_static_subjects() {
         }
         lv_subject_deinit(&tile_state_subject_);
         lv_subject_deinit(&advisory_subject_);
+        lv_subject_deinit(&source_subject_);
         subjects_initialized_ = false;
     });
 }
@@ -106,9 +130,42 @@ void FilamentSensorWidget::set_config(const nlohmann::json& config) {
 }
 
 bool FilamentSensorWidget::on_edit_configure() {
-    // The source picker (Auto/Runout/Toolhead/Entry) lands in a follow-up task;
-    // the gear is present per has_edit_configure() but inert until then.
-    return false;
+    spdlog::info("[FilamentSensorWidget] Configure requested - showing source picker");
+    if (source_picker_.is_visible() || !parent_screen_ || !widget_obj_) {
+        return false;
+    }
+    lv_subject_set_int(&source_subject_, static_cast<int>(source_));
+    source_picker_.show_below_widget(parent_screen_, widget_obj_,
+                                     helix::ui::ContextMenu::AnchorAlign::Center);
+    return false; // no rebuild - the picker saves on selection
+}
+
+void FilamentSensorWidget::on_filament_source_selected(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[FilamentSensorWidget] on_filament_source_selected");
+    auto* picker = helix::ui::ContextMenu::active_as<SourcePicker>();
+    if (!picker) {
+        spdlog::warn("[FilamentSensorWidget] No active source picker for row click");
+        return;
+    }
+
+    // user_data comes off the XML engine as a heap C-string (lv_strdup of the
+    // resolved "$value" attribute, e.g. "2"), never an int - confirmed against
+    // ui_panel_calibration_zoffset.cpp's identical user_data="0.005" handling.
+    // Logged once here rather than asserted, since a bad row value degrades to
+    // Auto instead of crashing.
+    const char* value_str = static_cast<const char*>(lv_event_get_user_data(e));
+    spdlog::debug("[FilamentSensorWidget] source row user_data raw='{}'",
+                  value_str ? value_str : "(null)");
+    const int value = value_str ? std::atoi(value_str) : 0;
+
+    FilamentSensorWidget& self = picker->owner();
+    self.source_ = static_cast<ui::FilamentTileSource>(value);
+    self.config_["source"] = ui::tile_source_to_string(self.source_);
+    self.save_widget_config(self.config_);
+    self.rebind_source();
+    lv_subject_set_int(&source_subject_, value);
+    picker->hide();
+    LVGL_SAFE_EVENT_CB_END();
 }
 
 void FilamentSensorWidget::clicked_cb(lv_event_t* e) {

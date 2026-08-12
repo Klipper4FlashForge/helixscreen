@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "ui_context_menu.h"
 #include "ui_observer_guard.h"
 #include "ui_runout_guidance_modal.h"
 
@@ -45,6 +46,35 @@ class FilamentSensorWidget : public PanelWidget {
     static void clicked_cb(lv_event_t* e);
 
   private:
+    /// Edit-mode gear picker: Auto/Runout/Toolhead/Entry. Holds a reference back
+    /// to the widget so the row-click callback (on_filament_source_selected, a
+    /// free-standing XML-registered function - ContextMenu row callbacks are
+    /// static) can reach source_/config_ after resolving the active picker via
+    /// ContextMenu::active_as<SourcePicker>(). Same shape as ThermistorWidget's
+    /// SensorPicker/ConfigurePicker.
+    class SourcePicker : public helix::ui::ContextMenu {
+      public:
+        explicit SourcePicker(FilamentSensorWidget& owner) : owner_(owner) {}
+        FilamentSensorWidget& owner() {
+            return owner_;
+        }
+
+      protected:
+        const char* xml_component_name() const override {
+            return "filament_source_picker";
+        }
+        // The card is width="content" but its rows are width="100%" - without a
+        // stated policy the row can never resolve (100% of a content-sized parent
+        // is circular) and the card collapses to ~0px wide. Same fix as
+        // ThermistorWidget's SensorPicker.
+        helix::ui::ContextMenu::CardWidth card_width() const override {
+            return {30, 160, 240};
+        }
+
+      private:
+        FilamentSensorWidget& owner_;
+    };
+
     void handle_click();
     /// `status_only` selects the modal copy: mid-print the manual Load/Unload/Purge
     /// row is hidden by XML, so "Load or unload filament." would be nonsense there.
@@ -69,6 +99,7 @@ class FilamentSensorWidget : public PanelWidget {
     nlohmann::json config_;
 
     RunoutGuidanceModal tap_modal_;
+    SourcePicker source_picker_{*this};
     ObserverGuard source_observer_;
     /// Death signal for the role subject rebind_source() observes. No
     /// FilamentSensorManager accessor hands back an owner-backed lifetime today
@@ -92,9 +123,22 @@ class FilamentSensorWidget : public PanelWidget {
     static inline lv_subject_t tile_state_subject_{};
     /// 1 = opened by a deliberate tap (neutral icon), 0 = a real runout.
     static inline lv_subject_t advisory_subject_{};
+    /// Which row the source picker's check icon sits on; mirrors source_ so the
+    /// picker reflects the current selection whenever it is reopened. int, 0-3,
+    /// matching ui::FilamentTileSource's enum order - see the static_assert next
+    /// to init_static_subjects().
+    static inline lv_subject_t source_subject_{};
     static inline bool subjects_initialized_ = false;
 
     static void init_static_subjects();
+
+    /// Row-tap handler for filament_source_picker.xml's four filament_source_row
+    /// instances. A free function (not a SourcePicker method) because XML event
+    /// callbacks are always static/free - resolves the live picker via
+    /// ContextMenu::active_as<SourcePicker>() the same way the row's check icon
+    /// resolves filament_tile_source: through global lookup, never a captured
+    /// pointer.
+    static void on_filament_source_selected(lv_event_t* e);
 
     friend void register_filament_sensor_widget();
 };

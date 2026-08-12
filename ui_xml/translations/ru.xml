@@ -709,6 +709,7 @@
   <translation tag="Enter printer IP address first" ru="Сначала введите IP-адрес принтера"/>
   <translation tag="Enter the IP address and port of your Spoolman server." ru="Введите IP-адрес и порт вашего сервера Spoolman."/>
   <translation tag="Entry" ru="Вход"/>
+  <translation tag="Entry Sensor"/>
   <translation tag="Error" ru="Ошибка"/>
   <translation tag="Error at chunk {} (code={})" ru="Ошибка в блоке {} (код={})"/>
   <translation tag="Error loading file" ru="Ошибка загрузки файла"/>
@@ -879,6 +880,7 @@
   <translation tag="Filament Used" ru="Использовано филамента"/>
   <translation tag="Filament already exists" ru="Такой филамент уже существует"/>
   <translation tag="Filament by Type" ru="Филамент по типу"/>
+  <translation tag="Filament controls are unavailable while printing."/>
   <translation tag="Filament deleted" ru="Филамент удалён"/>
   <translation tag="Filament diameter sensors for flow compensation" ru="Датчики диаметра филамента для компенсации потока"/>
   <translation tag="Filament is loose" ru="Филамент ослаблен"/>
@@ -1161,6 +1163,7 @@
   <translation tag="Load" ru="Загрузить"/>
   <translation tag="Load Filament" ru="Загрузить филамент"/>
   <translation tag="Load may still be running — response timed out" ru="Загрузка может ещё выполняться — время ожидания истекло"/>
+  <translation tag="Load or unload filament."/>
   <translation tag="Load the required filaments or start anyway?" ru="Загрузить нужные филаменты или начать без них?"/>
   <translation tag="Loaded" ru="Загружен"/>
   <translation tag="Loading" ru="Загрузка"/>
@@ -1931,6 +1934,7 @@
   <translation tag="Sending..." ru="Отправка..."/>
   <translation tag="Sensor" ru="Датчик"/>
   <translation tag="Sensor Response" ru="Отклик датчика"/>
+  <translation tag="Sensor Source"/>
   <translation tag="Sensor Temperature" ru="Температура датчика"/>
   <translation tag="Sensors" ru="Датчики"/>
   <translation tag="Separate on/off macros. HelixScreen tracks the state." ru="Отдельные макросы вкл/выкл. HelixScreen отслеживает состояние."/>
@@ -2232,6 +2236,7 @@
   <translation tag="Tool swap" ru="Смена инструмента"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." ru="Инструмент {} → Слот {}: филамент не загружен."/>
   <translation tag="Toolhead" ru="Печатающая головка"/>
+  <translation tag="Toolhead Sensor"/>
   <translation tag="Toolhead Style" ru="Стиль печатающей головки"/>
   <translation tag="Toolhead jam" ru="Замятие в печатающей головке"/>
   <translation tag="Toolhead, G-code, limits, and materials" ru="Печатающая головка, G-code, лимиты и материалы"/>

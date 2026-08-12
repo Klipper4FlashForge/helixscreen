@@ -785,6 +785,7 @@ translations:
   Enter the IP address and port of your Spoolman server.: Enter the IP address and
     port of your Spoolman server.
   Entry: Entry
+  Entry Sensor: Entry Sensor
   Error: Error
   Error at chunk {} (code={}): Error at chunk {} (code={})
   Error loading file: Error loading file
@@ -967,6 +968,7 @@ translations:
   Filament Used: Filament Used
   Filament already exists: Filament already exists
   Filament by Type: Filament by Type
+  Filament controls are unavailable while printing.: Filament controls are unavailable while printing.
   Filament deleted: Filament deleted
   Filament diameter sensors for flow compensation: Filament diameter sensors for flow
     compensation
@@ -1305,6 +1307,7 @@ translations:
   Load Filament: Load Filament
   Load may still be running — response timed out: Load may still be running — response
     timed out
+  Load or unload filament.: Load or unload filament.
   Load the required filaments or start anyway?: Load the required filaments or start
     anyway?
   Loaded: Loaded
@@ -2154,6 +2157,7 @@ translations:
   Sending...: Sending...
   Sensor: Sensor
   Sensor Response: Sensor Response
+  Sensor Source: Sensor Source
   Sensor Temperature: Sensor Temperature
   Sensors: Sensors
   Separate on/off macros. HelixScreen tracks the state.: Separate on/off macros. HelixScreen
@@ -2539,6 +2543,7 @@ translations:
   Tool swap: Tool swap
   'Tool {} → Lane {}: no filament loaded.': 'Tool {} → Lane {}: no filament loaded.'
   Toolhead: Toolhead
+  Toolhead Sensor: Toolhead Sensor
   Toolhead Style: Toolhead Style
   Toolhead jam: Toolhead jam
   Toolhead, G-code, limits, and materials: Toolhead, G-code, limits, and materials

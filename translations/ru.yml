@@ -803,6 +803,7 @@ translations:
   Enter the IP address and port of your Spoolman server.: Введите IP-адрес и порт
     вашего сервера Spoolman.
   Entry: 'Вход'
+  Entry Sensor: ''
   Error: Ошибка
   Error at chunk {} (code={}): Ошибка в блоке {} (код={})
   Error loading file: Ошибка загрузки файла
@@ -988,6 +989,7 @@ translations:
   Filament Used: Использовано филамента
   Filament already exists: Такой филамент уже существует
   Filament by Type: Филамент по типу
+  Filament controls are unavailable while printing.: ''
   Filament deleted: Филамент удалён
   Filament diameter sensors for flow compensation: Датчики диаметра филамента для
     компенсации потока
@@ -1329,6 +1331,7 @@ translations:
   Load Filament: Загрузить филамент
   Load may still be running — response timed out: Загрузка может ещё выполняться —
     время ожидания истекло
+  Load or unload filament.: ''
   Load the required filaments or start anyway?: Загрузить нужные филаменты или начать
     без них?
   Loaded: Загружен
@@ -2184,6 +2187,7 @@ translations:
   Sending...: Отправка...
   Sensor: Датчик
   Sensor Response: Отклик датчика
+  Sensor Source: ''
   Sensor Temperature: Температура датчика
   Sensors: Датчики
   Separate on/off macros. HelixScreen tracks the state.: Отдельные макросы вкл/выкл.
@@ -2578,6 +2582,7 @@ translations:
   'Tool {} → Lane {}: no filament loaded.': 'Инструмент {} → Слот {}: филамент не
     загружен.'
   Toolhead: 'Печатающая головка'
+  Toolhead Sensor: ''
   Toolhead Style: Стиль печатающей головки
   Toolhead jam: Замятие в печатающей головке
   Toolhead, G-code, limits, and materials: Печатающая головка, G-code, лимиты и материалы
