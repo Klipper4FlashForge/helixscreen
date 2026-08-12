@@ -111,6 +111,40 @@ class DebugBundleCollector {
     /// is what binds, not an arbitrary line count.
     static std::string collect_moonraker_log_tail(int num_lines = 8000);
 
+    /// One entry from Moonraker's `logs` file root.
+    struct LogFileEntry {
+        std::string path; ///< relative to the logs root, may contain '/'
+        uint64_t size = 0;
+        double modified = 0.0;
+    };
+
+    /// Newest rotated predecessor of `stems` in a Moonraker `logs` listing, or ""
+    /// (public for testing).
+    ///
+    /// Why this exists: a printer that just crashed is a printer that is about to
+    /// be rebooted, and the reboot starts a fresh log. On bundle LYGVE39Y the
+    /// incident lived entirely in the ROTATED moonraker.log.2026-08-11 while the
+    /// active moonraker.log held nothing but the restart. We only ever fetched
+    /// the active file, so the evidence was one HTTP GET away and we never made
+    /// it.
+    ///
+    /// `stems` is a list because the klippy log is not called the same thing
+    /// everywhere: Raspberry Pi installs use klippy.log, while AD5M/AD5X (and
+    /// Vger1700's box) use printer.log. Rotated suffixes vary too — dated
+    /// (`.2026-08-11`), dated+hour (`.2026-06-13_15`), and numeric (`.1`) all
+    /// occur on real devices.
+    ///
+    /// Selection is deliberately narrow. A logs root holds other daemons' files,
+    /// and on a live Pi `crowsnest.log.2026-08-11` is 940 KB and NEWER than every
+    /// klippy rotation — so "newest rotated log" would ship a webcam log instead
+    /// of the crash. Only `<stem>.<suffix>` at the root matches; nested paths
+    /// (`mod/init.log.1`) and the active file itself never do.
+    static std::string pick_rotated_sibling(const std::vector<LogFileEntry>& listing,
+                                            const std::vector<std::string>& stems);
+
+    /// GET /server/files/list?root=logs, parsed. Empty on any failure.
+    static std::vector<LogFileEntry> fetch_log_listing(const std::string& base_url);
+
     /// Read crash_report.txt from config_dir (persists after crash.txt consumed)
     static std::string collect_crash_report_txt(const std::string& config_dir);
 
@@ -237,6 +271,14 @@ class DebugBundleCollector {
     static std::string fetch_log_tail(const std::string& base_url, const std::string& endpoint,
                                       int num_lines, int tail_bytes = 524288,
                                       int condense_max_repeats = 0);
+
+    /// Prepend the newest rotated predecessor when the active log is too short to
+    /// have used its byte budget. See the definition for why that predicate is
+    /// the right trigger.
+    static std::string prepend_rotated_predecessor(const std::string& base_url,
+                                                   const std::vector<std::string>& stems,
+                                                   const std::string& active_body, int tail_bytes,
+                                                   int num_lines, int condense_max_repeats);
 
     /// Check if a key name matches a sensitive pattern
     static bool is_sensitive_key(const std::string& key);

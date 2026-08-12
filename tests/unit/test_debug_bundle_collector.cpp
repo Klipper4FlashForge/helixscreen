@@ -1146,6 +1146,118 @@ TEST_CASE("DebugBundleCollector: log_tail ships the whole ring, not the 2000-lin
 }
 
 // ============================================================================
+// pick_rotated_sibling — reach the log the crash actually landed in
+// ============================================================================
+
+namespace {
+
+using LFE = helix::DebugBundleCollector::LogFileEntry;
+
+/// Verbatim from a live Raspberry Pi's /server/files/list?root=logs. Note
+/// crowsnest.log.2026-08-11 (940 KB) is NEWER than every klippy rotation.
+std::vector<LFE> pi_logs_root() {
+    return {
+        {"moonraker.log", 5800, 1786499650.12},
+        {"crowsnest.log.2026-08-11", 940700, 1786420807.17},
+        {"crowsnest.log.2026-08-10", 940700, 1786334411.19},
+        {"moonraker.log.2026-08-09", 6048, 1786312964.48},
+        {"moonraker.log.2026-08-08", 5923, 1786212464.31},
+        {"mainsail-access.log", 0, 1785988807.40},
+        {"crowsnest.log", 940700, 1781891605.91},
+        {"klippy.log", 2604, 1781891557.42},
+        {"klippy.log.2026-06-08", 2604, 1780931356.03},
+        {"klippy.log.2026-05-22", 2604, 1779449296.39},
+    };
+}
+
+/// Verbatim from a live AD5M — same family as Vger1700's AD5X. The klippy log is
+/// printer.log here, rotations carry an hour suffix, and nested mod/ files exist.
+std::vector<LFE> ad5m_logs_root() {
+    return {
+        {"moonraker.log", 4674, 1786499650.14},
+        {"moonraker.log.2026-08-11", 6634, 1786434810.86},
+        {"moonraker.log.2026-08-10", 23304, 1786373729.02},
+        {"printer.log", 187010, 1786369835.39},
+        {"boot.log", 3335, 1786369831.22},
+        {"mod/init.log", 6960, 1786369118.39},
+        {"printer.log.2026-06-13_15", 180687, 1781379596.73},
+        {"mod/init.log.1", 7082, 1781379419.38},
+        {"printer.log.2026-06-12_12", 95071, 1781282495.09},
+        {"printer.log.2026-05-21_14", 7961683, 1779386713.19},
+    };
+}
+
+const std::vector<std::string> kKlippyStems = {"klippy.log", "printer.log"};
+const std::vector<std::string> kMoonrakerStems = {"moonraker.log"};
+
+} // namespace
+
+TEST_CASE("DebugBundleCollector: pick_rotated_sibling finds the crash's real log",
+          "[debug-bundle][klippy]") {
+    SECTION("Pi layout: klippy rotation, NOT the newer crowsnest log") {
+        // The trap. crowsnest.log.2026-08-11 is 940 KB and ~5 days newer than the
+        // newest klippy rotation, so any "newest rotated file" rule ships a
+        // webcam log in place of the crash.
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(pi_logs_root(), kKlippyStems) ==
+                "klippy.log.2026-06-08");
+    }
+
+    SECTION("Pi layout: moonraker rotation") {
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(
+                    pi_logs_root(), kMoonrakerStems) == "moonraker.log.2026-08-09");
+    }
+
+    SECTION("AD5M/AD5X layout: klippy's log is printer.log, with an hour suffix") {
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(ad5m_logs_root(), kKlippyStems) ==
+                "printer.log.2026-06-13_15");
+    }
+
+    SECTION("AD5M layout: the moonraker rotation that held the LYGVE39Y incident") {
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(
+                    ad5m_logs_root(), kMoonrakerStems) == "moonraker.log.2026-08-11");
+    }
+
+    SECTION("never the active file, however it sorts") {
+        std::vector<LFE> only_active = {{"moonraker.log", 999999, 9999999999.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(only_active, kMoonrakerStems)
+                    .empty());
+    }
+
+    SECTION("never a nested path — mod/init.log.1 is not klippy's") {
+        std::vector<LFE> nested = {{"mod/printer.log.1", 9999, 9999999999.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(nested, kKlippyStems).empty());
+    }
+
+    SECTION("never a different daemon that merely shares the suffix shape") {
+        std::vector<LFE> other = {{"crowsnest.log.2026-08-11", 940700, 9999999999.0},
+                                  {"mainsail-error.log.1", 10, 9999999999.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(other, kKlippyStems).empty());
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(other, kMoonrakerStems).empty());
+    }
+
+    SECTION("numeric rotation suffixes count too") {
+        std::vector<LFE> numeric = {{"moonraker.log", 100, 500.0},
+                                    {"moonraker.log.1", 100, 400.0},
+                                    {"moonraker.log.2", 100, 300.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(numeric, kMoonrakerStems) ==
+                "moonraker.log.1"); // newest of the rotations
+    }
+
+    SECTION("a stem that is a prefix of another name does not bleed across") {
+        // "printer.log" must not match "printer.log_backup.1" or "printer.logger.2"
+        std::vector<LFE> tricky = {{"printer.log_backup.1", 500, 9999999999.0},
+                                   {"printer.logger.2", 500, 9999999999.0},
+                                   {"printer.log.2026-01-01", 500, 100.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(tricky, kKlippyStems) ==
+                "printer.log.2026-01-01");
+    }
+
+    SECTION("empty listing is not a crash") {
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling({}, kKlippyStems).empty());
+    }
+}
+
+// ============================================================================
 // condense_klipper_log — threshold tuning for moonraker.log
 // ============================================================================
 

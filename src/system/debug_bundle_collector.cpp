@@ -1403,6 +1403,100 @@ std::string DebugBundleCollector::collect_local_log_tail(const std::string& log_
     return condense_max_repeats > 0 ? condense_klipper_log(body, condense_max_repeats) : body;
 }
 
+std::string DebugBundleCollector::pick_rotated_sibling(const std::vector<LogFileEntry>& listing,
+                                                       const std::vector<std::string>& stems) {
+    const LogFileEntry* best = nullptr;
+
+    for (const auto& e : listing) {
+        // Root-level only. A nested "mod/init.log.1" is another component's file
+        // even when the basename would match.
+        if (e.path.find('/') != std::string::npos)
+            continue;
+
+        for (const auto& stem : stems) {
+            // Exactly "<stem>." + a non-empty suffix. The trailing dot is what
+            // keeps "printer.log" from claiming "printer.log_backup.1" or
+            // "printer.logger.2", and requiring a suffix excludes the active file.
+            if (e.path.size() <= stem.size() + 1)
+                continue;
+            if (e.path.compare(0, stem.size(), stem) != 0 || e.path[stem.size()] != '.')
+                continue;
+
+            if (best == nullptr || e.modified > best->modified)
+                best = &e;
+            break;
+        }
+    }
+
+    return best ? best->path : std::string{};
+}
+
+std::vector<DebugBundleCollector::LogFileEntry>
+DebugBundleCollector::fetch_log_listing(const std::string& base_url) {
+    std::vector<LogFileEntry> out;
+    if (base_url.empty())
+        return out;
+
+    try {
+        auto resp = moonraker_get(base_url, "/server/files/list?root=logs");
+        if (!resp.is_object() || !resp.contains("result") || !resp["result"].is_array())
+            return out;
+
+        for (const auto& item : resp["result"]) {
+            if (!item.is_object() || !item.contains("path") || !item["path"].is_string())
+                continue;
+            LogFileEntry e;
+            e.path = item["path"].get<std::string>();
+            if (item.contains("size") && item["size"].is_number())
+                e.size = item["size"].get<uint64_t>();
+            if (item.contains("modified") && item["modified"].is_number())
+                e.modified = item["modified"].get<double>();
+            out.push_back(std::move(e));
+        }
+    } catch (const std::exception& e) {
+        spdlog::debug("[DebugBundle] Log listing failed: {}", e.what());
+    }
+    return out;
+}
+
+/// Prepend the newest rotated predecessor when the active log is too short to
+/// have used its byte budget.
+///
+/// The predicate is the point: if the active log already fills the window we
+/// were willing to spend, it reaches as far back as we can afford and there is
+/// nothing to gain. It is only when the active log is SHORT that the window has
+/// unspent room — and a short active log is exactly the fingerprint of the case
+/// that burned us, a restart or reboot after the incident. So the extra GET
+/// costs nothing in the common case and fires precisely when the evidence has
+/// moved next door.
+std::string DebugBundleCollector::prepend_rotated_predecessor(const std::string& base_url,
+                                                              const std::vector<std::string>& stems,
+                                                              const std::string& active_body,
+                                                              int tail_bytes, int num_lines,
+                                                              int condense_max_repeats) {
+    const auto used = static_cast<int>(active_body.size());
+    if (used >= tail_bytes)
+        return active_body; // window already spent; nothing older is affordable
+
+    auto listing = fetch_log_listing(base_url);
+    const std::string sibling = pick_rotated_sibling(listing, stems);
+    if (sibling.empty())
+        return active_body;
+
+    const int remaining = tail_bytes - used;
+    auto older = fetch_log_tail(base_url, "/server/files/logs/" + sibling, num_lines, remaining,
+                                condense_max_repeats);
+    if (older.empty())
+        return active_body;
+
+    spdlog::info("[DebugBundle] Active log short ({} B); prepended {} ({} B)", used, sibling,
+                 older.size());
+    // Older first: the two halves are contiguous in time, and a reader scanning
+    // downward should move forward through the incident, not backward.
+    return older + "\n[helix] ---- rotated boundary: " + sibling +
+           " above, active log below ----\n" + active_body;
+}
+
 std::string DebugBundleCollector::collect_klipper_log_tail(int num_lines) {
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
@@ -1413,11 +1507,20 @@ std::string DebugBundleCollector::collect_klipper_log_tail(int num_lines) {
     // ballpark as before while reaching far enough back to contain the incident
     // (bundle UJCCQP6S: 615 of 635 captured lines were Stats, and the MCU
     // shutdown being investigated had scrolled off hours earlier).
-    auto body = fetch_log_tail(base_url, "/server/files/klippy.log", num_lines,
-                               /*tail_bytes=*/4 * 1024 * 1024, kKlipperCondenseMaxRepeats);
+    constexpr int kKlipperTailBytes = 4 * 1024 * 1024;
+    auto body = fetch_log_tail(base_url, "/server/files/klippy.log", num_lines, kKlipperTailBytes,
+                               kKlipperCondenseMaxRepeats);
     if (body.empty())
-        body = collect_local_log_tail("klippy.log", num_lines, kKlipperCondenseMaxRepeats);
-    return body;
+        return collect_local_log_tail("klippy.log", num_lines, kKlipperCondenseMaxRepeats);
+
+    // klippy.log is the fragile one. Klipper's handler rotates on a clock jump,
+    // and an RTC-less printer jumps its clock on every boot — Vger1700's device
+    // carried both printer.log.1970-01-01 and printer.log.2025-12-31 as proof.
+    // "klippy.log" is a Moonraker alias; on AD5M/AD5X the real file is
+    // printer.log, so rotations must be matched under both names.
+    static const std::vector<std::string> kStems = {"klippy.log", "printer.log"};
+    return prepend_rotated_predecessor(base_url, kStems, body, kKlipperTailBytes, num_lines,
+                                       kKlipperCondenseMaxRepeats);
 }
 
 std::string DebugBundleCollector::collect_moonraker_log_tail(int num_lines) {
@@ -1440,8 +1543,11 @@ std::string DebugBundleCollector::collect_moonraker_log_tail(int num_lines) {
     auto body = fetch_log_tail(base_url, "/server/files/moonraker.log", num_lines,
                                kMoonrakerTailBytes, kMoonrakerCondenseMaxRepeats);
     if (body.empty())
-        body = collect_local_log_tail("moonraker.log", num_lines, kMoonrakerCondenseMaxRepeats);
-    return body;
+        return collect_local_log_tail("moonraker.log", num_lines, kMoonrakerCondenseMaxRepeats);
+
+    static const std::vector<std::string> kStems = {"moonraker.log"};
+    return prepend_rotated_predecessor(base_url, kStems, body, kMoonrakerTailBytes, num_lines,
+                                       kMoonrakerCondenseMaxRepeats);
 }
 
 // =============================================================================
