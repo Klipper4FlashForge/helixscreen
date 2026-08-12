@@ -520,7 +520,7 @@ void HomePanel::populate_widgets() {
 
     // Manager reuses existing instances or creates new ones via factory
     active_widgets_ = PanelWidgetManager::instance().populate_widgets(
-        "home", container, std::move(reuse));
+        "home", container, /*page_index=*/0, std::move(reuse));
 }
 ```
 
