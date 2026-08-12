@@ -46,6 +46,18 @@ class TempGraphReattachFixture : public LVGLTestFixture {
   public:
     TempGraphReattachFixture() {
         get_printer_state().init_subjects(false);
+
+        // Zero the bed subject before any controller attaches to it. The
+        // subject is process-global and keeps whatever the previous test left
+        // in it; a non-zero value passes the handler's validity filter, so the
+        // attach fire at construction lands a real point AND arms that series'
+        // SAMPLE_INTERVAL_SEC throttle. The follow-up reading these tests push
+        // would then be throttled away, and the assertion would blame the
+        // suppression flag for a co-tenant's leftover state.
+        if (auto* bed = get_printer_state().get_bed_temp_subject()) {
+            lv_subject_set_int(bed, 0);
+        }
+        settle();
     }
 
     ~TempGraphReattachFixture() override {
@@ -86,6 +98,10 @@ std::unique_ptr<TempGraphController> make_stale_controller(lv_obj_t* parent, int
     auto controller = std::make_unique<TempGraphController>(parent, cfg);
     REQUIRE(controller->is_valid());
     TempGraphReattachFixture::settle();
+
+    // Pin the precondition the throttle reasoning depends on: nothing has been
+    // sampled yet, so a later reading cannot be rejected for arriving too soon.
+    REQUIRE(controller->graph()->visible_point_count == 0);
 
     auto* bed = get_printer_state().get_bed_temp_subject();
     REQUIRE(bed != nullptr);
