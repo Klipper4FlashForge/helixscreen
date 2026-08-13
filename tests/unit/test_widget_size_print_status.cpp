@@ -7,7 +7,7 @@
  * colspan/rowspan — the last and most entangled widget in the migration set.
  * `on_size_changed` (print_status_widget.cpp:447-497) derives a three-way
  * width band (compact/normal/wide) from `width_px` against
- * `widget_size::W_NORMAL`/`W_WIDE`, and every one of its five span-reading
+ * `widget_size::w_normal()`/`w_wide()`, and every one of its five span-reading
  * predicates now reads that band (or `height_px` directly) instead of the
  * `colspan`/`rowspan` arguments, which are ignored.
  *
@@ -142,17 +142,17 @@ TEST_CASE_METHOD(LVGLUITestFixture, "print_status width band follows pixels, not
 
         // Compact: below the normal floor. Contradicting span (colspan=5 —
         // makes the point that width, not span, decides).
-        h.resize(5, 5, W_NORMAL - 1, 300);
+        h.resize(5, 5, w_normal() - 1, 300);
         CHECK(width_band() == 0);
 
         // Normal band. Contradicting span (colspan=1 — old code's colspan==2
         // default-gap bind would not have applied at colspan=1).
-        h.resize(1, 1, W_NORMAL, 300);
+        h.resize(1, 1, w_normal(), 300);
         CHECK(width_band() == 1);
 
         // Wide band. Contradicting span (colspan=1 — old code's colspan==3
         // wide-gap bind would not have applied at colspan=1).
-        h.resize(1, 1, W_WIDE, 300);
+        h.resize(1, 1, w_wide(), 300);
         CHECK(width_band() == 2);
     }
     PrintStatusWidget::destroy_formatter_for_test();
@@ -174,19 +174,19 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
         // Below the normal floor. Contradicting span (colspan=5 — old
         // predicate colspan>=2 would have activated here).
-        h.resize(5, 5, W_NORMAL - 1, 300);
+        h.resize(5, 5, w_normal() - 1, 300);
         CHECK(lv_subject_get_int(PrintStatusWidget::layout_effective_subject_for_test()) == 0);
 
         // At/over the normal floor. Contradicting span (colspan=1 — old
         // predicate colspan>=2 would NOT have activated here).
-        h.resize(1, 1, W_NORMAL, 300);
+        h.resize(1, 1, w_normal(), 300);
         CHECK(lv_subject_get_int(PrintStatusWidget::layout_effective_subject_for_test()) == 1);
 
         // Switching back to library must revert effective to 0 regardless of
         // width — re-run on_size_changed at the SAME pixels (set_config
         // alone doesn't recompute this subject; only on_size_changed does).
         h.widget().set_config({{"layout_style", "library"}});
-        h.resize(1, 1, W_NORMAL, 300);
+        h.resize(1, 1, w_normal(), 300);
         CHECK(lv_subject_get_int(PrintStatusWidget::layout_effective_subject_for_test()) == 0);
     }
     PrintStatusWidget::destroy_formatter_for_test();
@@ -214,7 +214,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
         // Wide band, not compact. Contradicting span (colspan=1 — old
         // predicate colspan<=1 would have gone compact here).
-        h.resize(1, 5, W_WIDE, 300);
+        h.resize(1, 5, w_wide(), 300);
         process_lvgl(30);
         CHECK(lv_subject_get_int(PrintStatusWidget::view_subject_for_test()) == 2); // idle_detailed
         CHECK_FALSE(lv_obj_has_flag(idle_detailed, LV_OBJ_FLAG_HIDDEN));
@@ -222,7 +222,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
         // Compact band. Contradicting span (colspan=5 — old predicate
         // colspan<=1 would NOT have gone compact here).
-        h.resize(5, 5, W_NORMAL - 1, 300);
+        h.resize(5, 5, w_normal() - 1, 300);
         process_lvgl(30);
         CHECK(lv_subject_get_int(PrintStatusWidget::view_subject_for_test()) ==
               1); // idle_library_compact
@@ -256,7 +256,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "print_status column/row card layout follows
         // Column: normal band + tall enough. Contradicting span (colspan=3 —
         // old predicate required colspan==2 exactly, so 3 would have stayed
         // row).
-        h.resize(3, 1, W_NORMAL, H_TALL);
+        h.resize(3, 1, w_normal(), h_tall());
         process_lvgl(30);
         CHECK(lv_obj_get_style_flex_flow(layout, LV_PART_MAIN) == LV_FLEX_FLOW_COLUMN);
         CHECK(column_mode() == 1);
@@ -264,7 +264,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "print_status column/row card layout follows
 
         // Row: wide band. Contradicting span (colspan=2, rowspan=3 — old
         // predicate colspan==2 && rowspan>=2 would have gone column).
-        h.resize(2, 3, W_WIDE, H_TALL);
+        h.resize(2, 3, w_wide(), h_tall());
         process_lvgl(30);
         CHECK(lv_obj_get_style_flex_flow(layout, LV_PART_MAIN) == LV_FLEX_FLOW_ROW);
         CHECK(column_mode() == 0);
@@ -273,7 +273,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "print_status column/row card layout follows
         // Row: normal band but too short. Contradicting span (colspan=2,
         // rowspan=5 — old predicate colspan==2 && rowspan>=2 would have gone
         // column).
-        h.resize(2, 5, W_NORMAL, H_TALL - 1);
+        h.resize(2, 5, w_normal(), h_tall() - 1);
         process_lvgl(30);
         CHECK(lv_obj_get_style_flex_flow(layout, LV_PART_MAIN) == LV_FLEX_FLOW_ROW);
         CHECK(column_mode() == 0);
@@ -322,7 +322,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
         // Wide band, no filament yet: hidden. Contradicting span (colspan=1
         // — old predicate colspan>=3 would not have shown it here).
-        h.resize(1, 1, W_WIDE, 400);
+        h.resize(1, 1, w_wide(), 400);
         CHECK(lv_subject_get_int(PrintStatusWidget::show_filament_active_subject_for_test()) == 0);
         CHECK(lv_obj_has_flag(filament_label, LV_OBJ_FLAG_HIDDEN));
 
@@ -331,19 +331,19 @@ TEST_CASE_METHOD(LVGLUITestFixture,
         // pixels so its own recomputation also agrees with the new used_mm.
         lv_subject_set_int(ps.get_print_filament_used_subject(), 1500);
         UpdateQueueTestAccess::drain_all(UpdateQueue::instance());
-        h.resize(1, 1, W_WIDE, 400);
+        h.resize(1, 1, w_wide(), 400);
         CHECK(lv_subject_get_int(PrintStatusWidget::show_filament_active_subject_for_test()) == 1);
         CHECK_FALSE(lv_obj_has_flag(filament_label, LV_OBJ_FLAG_HIDDEN));
 
         // Normal (not wide) band, filament still used: hidden again.
         // Contradicting span (colspan=5 — old predicate colspan>=3 would
         // have kept it shown).
-        h.resize(5, 1, W_NORMAL, 400);
+        h.resize(5, 1, w_normal(), 400);
         CHECK(lv_subject_get_int(PrintStatusWidget::show_filament_active_subject_for_test()) == 0);
         CHECK(lv_obj_has_flag(filament_label, LV_OBJ_FLAG_HIDDEN));
 
         // --- Mirror (:1712): back to wide band via one resize call...
-        h.resize(1, 1, W_WIDE, 400);
+        h.resize(1, 1, w_wide(), 400);
         CHECK(lv_subject_get_int(PrintStatusWidget::show_filament_active_subject_for_test()) == 1);
 
         // ...then flip used_mm twice with NO further on_size_changed call.

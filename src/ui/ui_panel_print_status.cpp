@@ -29,6 +29,7 @@
 #include "ams_state.h"
 #include "app_constants.h"
 #include "app_globals.h"
+#include "bed_dimensions.h"
 #include "config.h"
 #include "display_manager.h"
 #include "display_settings_manager.h"
@@ -1428,16 +1429,8 @@ void PrintStatusPanel::show_exclude_map_view() {
 
     if (thumbnail_mode && thumbnail_section) {
         // Bed dimensions for the overhead map view (thumbnail mode only).
-        float bed_w = 235.0f, bed_h = 235.0f;
-        if (api_) {
-            const auto& vol = api_->hardware().build_volume();
-            float w = vol.x_max - vol.x_min;
-            float h = vol.y_max - vol.y_min;
-            if (w > 0.0f && h > 0.0f) {
-                bed_w = w;
-                bed_h = h;
-            }
-        }
+        const auto bed = helix::bed_dimensions(api_, &printer_state_);
+        float bed_w = bed.w_mm, bed_h = bed.h_mm;
 
         // XML bindings on print_thumbnail/gradient_background hide them when
         // exclude_map_active == 1 — set before creating the map to avoid one

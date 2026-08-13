@@ -1745,7 +1745,11 @@
       "inherits": "lv_obj"
     },
     "ams_mini_status": {
-      "attributes": {},
+      "attributes": {
+        "card": {
+          "type": "bool"
+        }
+      },
       "inherits": "lv_obj"
     },
     "spool_canvas": {
@@ -3293,6 +3297,8 @@
     "nav_width_micro",
     "nav_width_small",
     "nav_width_tiny",
+    "nav_width_xlarge",
+    "nav_width_xxlarge",
     "notes_height",
     "notes_height_large",
     "notes_height_medium",

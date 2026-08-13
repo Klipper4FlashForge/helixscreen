@@ -965,8 +965,21 @@ const std::map<std::string, TrackBudget> kPortraitBudget = {
 };
 
 const std::map<std::string, TrackBudget> kLandscapeBudget = {
-    {"micro", {12, 8}},  {"tiny", {10, 8}},   {"small", {10, 10}},
-    {"medium", {12, 8}}, {"large", {16, 10}}, {"xlarge", {16, 10}},
+    {"micro", {12, 8}},
+    {"tiny", {10, 8}},
+    {"small", {10, 10}},
+    {"medium", {12, 8}},
+    {"large", {16, 10}},
+    {"xlarge", {16, 10}},
+    // 1920x1080, measured. Not 26x16: the track formula adds half a cell and
+    // then truncates, so 1764px of content over a 144px cell is 12 cells.
+    {"xxlarge", {24, 14}},
+};
+
+/// The two shipping ultrawide panels, measured the same way.
+const std::map<std::string, TrackBudget> kUltrawideBudget = {
+    {"tiny", {36, 8}},  // 1480x320
+    {"small", {46, 10}} // 1920x440
 };
 
 struct AnchorRect {
@@ -1015,6 +1028,100 @@ void check_anchor_table(const nlohmann::json& anchors, const std::string& bp_nam
     }
 }
 
+/// Mirror of choose_breakpoint_key() in panel_widget_config.cpp. Duplicated
+/// rather than exported because the point is to check the shipped tables
+/// against the resolution rule as written; sharing the function would let both
+/// drift together.
+const char* resolve_key(const nlohmann::json& by_bp, int bp_idx) {
+    static const char* fallback[][3] = {
+        {"micro", "tiny", "small"},     {"tiny", "small", nullptr},  {"small", nullptr, nullptr},
+        {"medium", nullptr, nullptr},   {"large", nullptr, nullptr}, {"xlarge", "large", nullptr},
+        {"xxlarge", "xlarge", "large"},
+    };
+    for (int i = 0; i < 3 && fallback[bp_idx][i]; ++i) {
+        if (by_bp.contains(fallback[bp_idx][i])) {
+            return fallback[bp_idx][i];
+        }
+    }
+    return nullptr;
+}
+
+/// Widget ids the table switches off at this tier.
+std::set<std::string> disabled_at(const nlohmann::json& table, int bp_idx) {
+    std::set<std::string> off;
+    auto d = table.find("disabled");
+    if (d == table.end() || !d->is_object()) {
+        return off;
+    }
+    if (const char* key = resolve_key(*d, bp_idx)) {
+        for (const auto& id : (*d)[key]) {
+            off.insert(id.get<std::string>());
+        }
+    }
+    return off;
+}
+
+/// Resolve one table at one tier the way the loader does, and hold it to two
+/// invariants.
+///
+/// The first is geometric and only runs when `budget` is given: every effective
+/// placement fits both axes and overlaps no sibling.
+///
+/// The second is the one arithmetic on a single tier cannot see. A tier may
+/// author no placements at all and let every widget inherit from a wider key —
+/// that is how ultrawide micro works. What it must never do is author
+/// placements for SOME widgets while others silently inherit a wider key's
+/// coordinates, because those coordinates were written for a wider grid: the
+/// widget lands off the edge, gets slid back into a collision, and is evicted
+/// with a "grid full" toast, taking whatever would have auto-placed with it.
+/// Shipped twice during this rework — temp_graph at micro, then macros and
+/// active_spool at ultrawide tiny.
+void check_table_at_tier(const nlohmann::json& table, int bp_idx, const std::string& bp_name,
+                         const TrackBudget* budget) {
+    const auto& anchors = table.contains("anchors") ? table["anchors"] : table;
+    const std::set<std::string> off = disabled_at(table, bp_idx);
+
+    std::vector<AnchorRect> placed;
+    std::set<std::string> keys_used;
+    for (const auto& anchor : anchors) {
+        const std::string id = anchor.value("id", std::string{});
+        if (off.count(id)) {
+            continue;
+        }
+        INFO("anchor " << id << " bp " << bp_name);
+        REQUIRE(anchor.contains("placements"));
+        const char* key = resolve_key(anchor["placements"], bp_idx);
+        if (!key) {
+            continue;
+        }
+        keys_used.insert(key);
+        if (!budget) {
+            continue;
+        }
+        const auto& p = anchor["placements"][key];
+        const AnchorRect r{id, p.value("col", 0), p.value("row", 0), p.value("colspan", 1),
+                           p.value("rowspan", 1)};
+        CHECK(r.col >= 0);
+        CHECK(r.row >= 0);
+        CHECK(r.col + r.colspan <= budget->cols);
+        CHECK(r.row + r.rowspan <= budget->rows);
+        for (const auto& other : placed) {
+            INFO("overlaps anchor " << other.id);
+            CHECK_FALSE(anchors_overlap(r, other));
+        }
+        placed.push_back(r);
+    }
+
+    std::string joined;
+    for (const auto& k : keys_used) {
+        joined += (joined.empty() ? "" : ", ") + k;
+    }
+    INFO("tier " << bp_name << " resolves placements from key(s): " << joined);
+    CHECK(keys_used.size() <= 1);
+}
+
+const char* kBpNames[] = {"micro", "tiny", "small", "medium", "large", "xlarge", "xxlarge"};
+
 } // namespace
 
 // The shipped table itself, not a synthetic one: every portrait anchor has to
@@ -1029,7 +1136,11 @@ TEST_CASE("default_layout: the shipped portrait anchors fit a portrait grid",
 
     REQUIRE(layout.contains("variants"));
     REQUIRE(layout["variants"].contains("portrait"));
-    const auto& portrait = layout["variants"]["portrait"];
+    // A variant is either a bare anchor array or an object carrying "anchors"
+    // plus optional "disabled". The loader accepts both, so this does too.
+    const auto& portrait_node = layout["variants"]["portrait"];
+    const nlohmann::json& portrait =
+        portrait_node.is_object() ? portrait_node.at("anchors") : portrait_node;
     REQUIRE(portrait.is_array());
     REQUIRE_FALSE(portrait.empty());
 
@@ -1038,17 +1149,139 @@ TEST_CASE("default_layout: the shipped portrait anchors fit a portrait grid",
     for (const auto& anchor : portrait) {
         const std::string id = anchor.value("id", std::string{});
         INFO("anchor " << id);
-        REQUIRE(helix::find_widget_def(id) != nullptr);
+        const auto* def = helix::find_widget_def(id);
+        REQUIRE(def != nullptr);
         REQUIRE(anchor.contains("placements"));
         for (auto it = anchor["placements"].begin(); it != anchor["placements"].end(); ++it) {
             INFO("anchor " << id << " breakpoint " << it.key());
             CHECK(kPortraitBudget.count(it.key()) == 1);
+            // A span past the widget's registry maximum is not a layout the grid
+            // can honour — grid_edit_mode would clamp it the moment the user
+            // touched it, and nothing else checks the shipped table against the
+            // registry. A print_status colspan of 10 against a max of 8 reached a
+            // draft of this table by exactly this gap.
+            CHECK(it.value().value("colspan", def->colspan) <= def->effective_max_colspan());
+            CHECK(it.value().value("rowspan", def->rowspan) <= def->effective_max_rowspan());
         }
     }
 
     for (const auto& [bp_name, budget] : kPortraitBudget) {
         check_anchor_table(portrait, bp_name, budget, /*require_bp=*/false);
     }
+}
+
+// A variant's "disabled" list is the only way to say "not on this tier". Leaving
+// a widget out of the anchors does NOT switch it off: parse_widget_array()
+// appends every registry widget that is absent, at its default_enabled, and the
+// placement engine then seats it wherever it fits.
+TEST_CASE("default_layout: a variant disables a widget per breakpoint",
+          "[default_layout][portrait]") {
+    TempCwdGuard guard;
+    guard.write_layout(R"({
+        "anchors": [],
+        "variants": {
+            "portrait": {
+                "anchors": [
+                    { "id": "printer_image",
+                      "placements": { "tiny": { "col": 0, "row": 0, "colspan": 4, "rowspan": 4 } } }
+                ],
+                "disabled": { "tiny": ["tips"] }
+            }
+        }
+    })");
+
+    LayoutTypeGuard portrait(480, 800);
+    auto entries = PanelWidgetConfig::build_default_grid();
+
+    // tips is default_enabled in the registry, so only the disabled list can
+    // switch it off — and it must be unplaced, not merely hidden in place.
+    auto* tips = find_entry(entries, "tips");
+    REQUIRE(tips);
+    CHECK_FALSE(tips->enabled);
+    CHECK(tips->col == -1);
+    CHECK(tips->row == -1);
+
+    // Everything else the variant did not name is untouched.
+    auto* pi = find_entry(entries, "printer_image");
+    REQUIRE(pi);
+    CHECK(pi->enabled);
+}
+
+// The legacy bare-array variant shape must keep working — shipped copies of
+// default_layout.json predate the object form and the file is runtime-editable.
+TEST_CASE("default_layout: a variant accepts both the array and object shapes",
+          "[default_layout][portrait]") {
+    const char* as_array = R"({
+        "anchors": [],
+        "variants": { "portrait": [
+            { "id": "printer_image",
+              "placements": { "tiny": { "col": 1, "row": 2, "colspan": 4, "rowspan": 4 } } }
+        ] }
+    })";
+    const char* as_object = R"({
+        "anchors": [],
+        "variants": { "portrait": { "anchors": [
+            { "id": "printer_image",
+              "placements": { "tiny": { "col": 1, "row": 2, "colspan": 4, "rowspan": 4 } } }
+        ] } }
+    })";
+
+    for (const char* doc : {as_array, as_object}) {
+        TempCwdGuard guard;
+        guard.write_layout(doc);
+        LayoutTypeGuard portrait(480, 800);
+        auto entries = PanelWidgetConfig::build_default_grid();
+        auto* pi = find_entry(entries, "printer_image");
+        REQUIRE(pi);
+        CHECK(pi->col == 1);
+        CHECK(pi->row == 2);
+        CHECK(pi->colspan == 4);
+    }
+}
+
+// An anchor may carry per-widget config, which is how portrait ships
+// print_status in its Detailed layout without a C++ branch per widget.
+TEST_CASE("default_layout: an anchor carries per-widget config", "[default_layout][portrait]") {
+    TempCwdGuard guard;
+    guard.write_layout(R"({
+        "anchors": [],
+        "variants": { "portrait": { "anchors": [
+            { "id": "print_status",
+              "config": { "layout_style": "detailed" },
+              "placements": { "tiny": { "col": 0, "row": 0, "colspan": 8, "rowspan": 4 } } }
+        ] } }
+    })");
+
+    LayoutTypeGuard portrait(480, 800);
+    auto entries = PanelWidgetConfig::build_default_grid();
+    auto* ps = find_entry(entries, "print_status");
+    REQUIRE(ps);
+    REQUIRE(ps->config.is_object());
+    CHECK(ps->config.value("layout_style", std::string{}) == "detailed");
+}
+
+// The shipped portrait table must actually ship Detailed — the whole reason the
+// anchor config plumbing exists. Library clips its last action row at every
+// measured geometry.
+TEST_CASE("default_layout: the shipped portrait print_status is Detailed",
+          "[default_layout][portrait][shipped]") {
+    std::string path = helix::find_readable("default_layout.json");
+    std::ifstream in(path);
+    REQUIRE(in.is_open());
+    nlohmann::json layout = nlohmann::json::parse(in);
+
+    const auto& node = layout["variants"]["portrait"];
+    const nlohmann::json& anchors = node.is_object() ? node.at("anchors") : node;
+    bool seen = false;
+    for (const auto& a : anchors) {
+        if (a.value("id", std::string{}) != "print_status") {
+            continue;
+        }
+        seen = true;
+        REQUIRE(a.contains("config"));
+        CHECK(a["config"].value("layout_style", std::string{}) == "detailed");
+    }
+    CHECK(seen);
 }
 
 // The shipped landscape anchors must fit each breakpoint's grid on both axes
@@ -1068,7 +1301,52 @@ TEST_CASE("default_layout: the shipped landscape anchors fit their grid",
     nlohmann::json layout = nlohmann::json::parse(in);
     REQUIRE(layout.contains("anchors"));
 
-    for (const auto& [bp_name, budget] : kLandscapeBudget) {
-        check_anchor_table(layout["anchors"], bp_name, budget, /*require_bp=*/true);
+    for (int i = 0; i < 7; i++) {
+        auto it = kLandscapeBudget.find(kBpNames[i]);
+        check_table_at_tier(layout, i, kBpNames[i],
+                            it == kLandscapeBudget.end() ? nullptr : &it->second);
+    }
+}
+
+TEST_CASE("default_layout: the shipped ultrawide anchors fit their grid",
+          "[default_layout][shipped][ultrawide]") {
+    std::string path = helix::find_readable("default_layout.json");
+    std::ifstream in(path);
+    REQUIRE(in.is_open());
+    nlohmann::json layout = nlohmann::json::parse(in);
+    REQUIRE(layout.contains("variants"));
+    REQUIRE(layout["variants"].contains("ultrawide"));
+
+    for (int i = 0; i < 7; i++) {
+        auto it = kUltrawideBudget.find(kBpNames[i]);
+        check_table_at_tier(layout["variants"]["ultrawide"], i, kBpNames[i],
+                            it == kUltrawideBudget.end() ? nullptr : &it->second);
+    }
+}
+
+// The invariant that pure per-tier arithmetic cannot see. Every shipped table,
+// every tier: a widget either resolves to the tier's own key along with all its
+// siblings, or the whole tier inherits, or it is explicitly disabled. Mixing
+// them hands one widget coordinates authored for a wider grid.
+TEST_CASE("default_layout: no shipped table mixes authored and inherited placements",
+          "[default_layout][shipped]") {
+    std::string path = helix::find_readable("default_layout.json");
+    std::ifstream in(path);
+    REQUIRE(in.is_open());
+    nlohmann::json layout = nlohmann::json::parse(in);
+
+    for (int i = 0; i < 7; i++) {
+        INFO("base (landscape) table");
+        check_table_at_tier(layout, i, kBpNames[i], nullptr);
+    }
+    REQUIRE(layout.contains("variants"));
+    for (auto v = layout["variants"].begin(); v != layout["variants"].end(); ++v) {
+        if (!v->is_object() || !v->contains("anchors")) {
+            continue; // "_comment", or a bare-array variant
+        }
+        for (int i = 0; i < 7; i++) {
+            INFO("variant " << v.key());
+            check_table_at_tier(*v, i, kBpNames[i], nullptr);
+        }
     }
 }

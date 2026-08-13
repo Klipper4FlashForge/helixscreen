@@ -1,89 +1,1171 @@
 {
-  "_comment": "Default widget layout anchors in half-cell tracks (TRACKS_PER_CELL = 2). Every position and span is the pre-square-cell layout doubled — same visual arrangement, finer coordinate system. Widgets not listed here are auto-placed. 'anchors' is the base (landscape) table; 'variants' holds per-layout overrides. Breakpoint keys: micro(0), tiny(1), small(2), medium(3), large(4), xlarge(5), xxlarge(6). See include/ui_breakpoint.h.",
+  "_comment": "Default widget layout anchors in half-cell tracks (TRACKS_PER_CELL = 2). Spans are authored per tier against the square-cell track counts (each axis derived independently from the content box), NOT the pre-square-cell values doubled. Widgets not listed for a tier are auto-placed at their registry default_enabled, so switching one off needs an explicit entry in 'disabled'. 'anchors' is the base (landscape) table; 'variants' holds per-layout overrides keyed by LayoutManager::variant_chain(). Breakpoint keys: micro(0), tiny(1), small(2), medium(3), large(4), xlarge(5), xxlarge(6). See include/ui_breakpoint.h.",
   "anchors": [
     {
       "id": "printer_image",
       "placements": {
-        "micro":   { "col": 0, "row": 0, "colspan": 4, "rowspan": 4 },
-        "tiny":    { "col": 0, "row": 0, "colspan": 4, "rowspan": 4 },
-        "small":   { "col": 0, "row": 0, "colspan": 4, "rowspan": 4 },
-        "medium":  { "col": 0, "row": 0, "colspan": 4, "rowspan": 4 },
-        "large":   { "col": 0, "row": 0, "colspan": 6, "rowspan": 6 },
-        "xlarge":  { "col": 0, "row": 0, "colspan": 6, "rowspan": 6 }
-      }
-    },
-    {
-      "id": "print_status",
-      "placements": {
-        "micro":   { "col": 0, "row": 4, "colspan": 4, "rowspan": 4 },
-        "tiny":    { "col": 0, "row": 4, "colspan": 4, "rowspan": 4 },
-        "small":   { "col": 0, "row": 4, "colspan": 4, "rowspan": 4 },
-        "medium":  { "col": 0, "row": 4, "colspan": 6, "rowspan": 4 },
-        "large":   { "col": 0, "row": 6, "colspan": 6, "rowspan": 4 },
-        "xlarge":  { "col": 0, "row": 6, "colspan": 6, "rowspan": 4 }
-      }
-    },
-    {
-      "id": "tips",
-      "placements": {
-        "micro":   { "col": 4, "row": 0, "colspan": 4, "rowspan": 4 },
-        "tiny":    { "col": 4, "row": 0, "colspan": 4, "rowspan": 4 },
-        "small":   { "col": 4, "row": 0, "colspan": 4, "rowspan": 4 },
-        "medium":  { "col": 4, "row": 0, "colspan": 8, "rowspan": 4 },
-        "large":   { "col": 6, "row": 0, "colspan": 10, "rowspan": 4 },
-        "xlarge":  { "col": 6, "row": 0, "colspan": 10, "rowspan": 4 }
+        "micro": {
+          "col": 0,
+          "row": 0,
+          "colspan": 6,
+          "rowspan": 4
+        },
+        "medium": {
+          "col": 0,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 4
+        },
+        "tiny": {
+          "col": 0,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 4
+        },
+        "small": {
+          "col": 0,
+          "row": 0,
+          "colspan": 4,
+          "rowspan": 4
+        },
+        "large": {
+          "col": 0,
+          "row": 0,
+          "colspan": 6,
+          "rowspan": 4
+        },
+        "xxlarge": {
+          "col": 0,
+          "row": 0,
+          "colspan": 6,
+          "rowspan": 6
+        },
+        "xlarge": {
+          "col": 0,
+          "row": 0,
+          "colspan": 6,
+          "rowspan": 4
+        }
       }
     },
     {
       "id": "temperature",
       "placements": {
-        "micro":   { "col": 4, "row": 4, "colspan": 2, "rowspan": 2 },
-        "tiny":    { "col": 4, "row": 4, "colspan": 2, "rowspan": 2 },
-        "small":   { "col": 4, "row": 4, "colspan": 2, "rowspan": 2 },
-        "medium":  { "col": 6, "row": 4, "colspan": 2, "rowspan": 2 },
-        "large":   { "col": 6, "row": 4, "colspan": 2, "rowspan": 2 },
-        "xlarge":  { "col": 6, "row": 4, "colspan": 2, "rowspan": 2 }
+        "micro": {
+          "col": 6,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "medium": {
+          "col": 4,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "tiny": {
+          "col": 4,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "small": {
+          "col": 4,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "large": {
+          "col": 6,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xxlarge": {
+          "col": 14,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xlarge": {
+          "col": 6,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        }
       }
     },
     {
       "id": "bed_temperature",
       "placements": {
-        "micro":   { "col": 4, "row": 6, "colspan": 2, "rowspan": 2 },
-        "tiny":    { "col": 4, "row": 6, "colspan": 2, "rowspan": 2 },
-        "small":   { "col": 4, "row": 6, "colspan": 2, "rowspan": 2 },
-        "medium":  { "col": 6, "row": 6, "colspan": 2, "rowspan": 2 },
-        "large":   { "col": 6, "row": 6, "colspan": 2, "rowspan": 2 },
-        "xlarge":  { "col": 6, "row": 6, "colspan": 2, "rowspan": 2 }
+        "micro": {
+          "col": 8,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "medium": {
+          "col": 6,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "tiny": {
+          "col": 6,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "small": {
+          "col": 6,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "large": {
+          "col": 8,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xxlarge": {
+          "col": 14,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xlarge": {
+          "col": 8,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        }
+      }
+    },
+    {
+      "id": "notifications",
+      "placements": {
+        "micro": {
+          "col": 10,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "medium": {
+          "col": 10,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "tiny": {
+          "col": 8,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "small": {
+          "col": 8,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "large": {
+          "col": 14,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xxlarge": {
+          "col": 16,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xlarge": {
+          "col": 14,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        }
+      }
+    },
+    {
+      "id": "fan_stack",
+      "placements": {
+        "micro": {
+          "col": 6,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "medium": {
+          "col": 4,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "tiny": {
+          "col": 4,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "small": {
+          "col": 4,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "large": {
+          "col": 6,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xxlarge": {
+          "col": 14,
+          "row": 4,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xlarge": {
+          "col": 6,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        }
+      }
+    },
+    {
+      "id": "led",
+      "placements": {
+        "micro": {
+          "col": 8,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "medium": {
+          "col": 8,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "tiny": {
+          "col": 6,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "small": {
+          "col": 6,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "large": {
+          "col": 10,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xxlarge": {
+          "col": 16,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xlarge": {
+          "col": 10,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        }
+      }
+    },
+    {
+      "id": "filament",
+      "placements": {
+        "micro": {
+          "col": 10,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "medium": {
+          "col": 6,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "tiny": {
+          "col": 8,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "small": {
+          "col": 8,
+          "row": 2,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "large": {
+          "col": 12,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xxlarge": {
+          "col": 16,
+          "row": 4,
+          "colspan": 2,
+          "rowspan": 2
+        },
+        "xlarge": {
+          "col": 12,
+          "row": 0,
+          "colspan": 2,
+          "rowspan": 2
+        }
+      }
+    },
+    {
+      "id": "print_status",
+      "config": {
+        "layout_style": "detailed"
+      },
+      "placements": {
+        "micro": {
+          "col": 0,
+          "row": 4,
+          "colspan": 12,
+          "rowspan": 4
+        },
+        "medium": {
+          "col": 0,
+          "row": 4,
+          "colspan": 8,
+          "rowspan": 4
+        },
+        "tiny": {
+          "col": 0,
+          "row": 4,
+          "colspan": 10,
+          "rowspan": 4
+        },
+        "small": {
+          "col": 0,
+          "row": 4,
+          "colspan": 10,
+          "rowspan": 4
+        },
+        "large": {
+          "col": 0,
+          "row": 4,
+          "colspan": 8,
+          "rowspan": 4
+        },
+        "xxlarge": {
+          "col": 6,
+          "row": 0,
+          "colspan": 8,
+          "rowspan": 6
+        },
+        "xlarge": {
+          "col": 0,
+          "row": 4,
+          "colspan": 8,
+          "rowspan": 4
+        }
+      }
+    },
+    {
+      "id": "temp_graph",
+      "placements": {
+        "medium": {
+          "col": 8,
+          "row": 2,
+          "colspan": 4,
+          "rowspan": 6
+        },
+        "large": {
+          "col": 8,
+          "row": 2,
+          "colspan": 8,
+          "rowspan": 6
+        },
+        "xxlarge": {
+          "col": 0,
+          "row": 8,
+          "colspan": 18,
+          "rowspan": 4
+        },
+        "xlarge": {
+          "col": 8,
+          "row": 2,
+          "colspan": 8,
+          "rowspan": 6
+        }
+      }
+    },
+    {
+      "id": "tips",
+      "placements": {
+        "small": {
+          "col": 0,
+          "row": 8,
+          "colspan": 10,
+          "rowspan": 2
+        },
+        "large": {
+          "col": 0,
+          "row": 8,
+          "colspan": 16,
+          "rowspan": 2
+        },
+        "xxlarge": {
+          "col": 0,
+          "row": 6,
+          "colspan": 18,
+          "rowspan": 2
+        },
+        "xlarge": {
+          "col": 0,
+          "row": 8,
+          "colspan": 16,
+          "rowspan": 2
+        }
       }
     }
   ],
   "variants": {
-    "_comment": "PORTRAIT. Bands stacked top to bottom. Spans are authored per tier against the square-cell track counts, which derive each axis independently — they are not the landscape values doubled, and they do not all reach the right edge.",
-    "portrait": [
-      {
-        "id": "printer_image",
-        "placements": {
-          "micro":   { "col": 0, "row": 0, "colspan": 4, "rowspan": 4 },
-          "tiny":    { "col": 0, "row": 0, "colspan": 4, "rowspan": 6 },
-          "small":   { "col": 0, "row": 0, "colspan": 4, "rowspan": 4 },
-          "medium":  { "col": 0, "row": 0, "colspan": 6, "rowspan": 4 },
-          "large":   { "col": 0, "row": 0, "colspan": 6, "rowspan": 4 },
-          "xlarge":  { "col": 0, "row": 0, "colspan": 8, "rowspan": 6 },
-          "xxlarge": { "col": 0, "row": 0, "colspan": 8, "rowspan": 6 }
+    "_comment": "PORTRAIT. Full-width bands: printer image beside a 2x2 block of small widgets, tips, print_status, then a bottom row. Spans are authored per tier against the square-cell track counts (each axis derived independently), NOT the landscape values doubled. 'disabled' switches a widget off on tiers with no room for it.",
+    "ultrawide": {
+      "_comment": "ULTRAWIDE (1480x320 -> 36x8 tracks, 1920x440 -> 46x10). Printer image, print status and the temperature graph run left to right with the small readouts blocked at the right edge, tips as a footer band. Only tiny and small are authored: micro falls back to tiny, and every shipping ultrawide panel has a narrow axis of 320 or 440.",
+      "anchors": [
+        {
+          "id": "printer_image",
+          "placements": {
+            "tiny": {
+              "col": 0,
+              "row": 0,
+              "colspan": 8,
+              "rowspan": 4
+            },
+            "small": {
+              "col": 0,
+              "row": 0,
+              "colspan": 8,
+              "rowspan": 4
+            }
+          }
+        },
+        {
+          "id": "print_status",
+          "config": {
+            "layout_style": "detailed"
+          },
+          "placements": {
+            "tiny": {
+              "col": 8,
+              "row": 0,
+              "colspan": 14,
+              "rowspan": 4
+            },
+            "small": {
+              "col": 8,
+              "row": 0,
+              "colspan": 16,
+              "rowspan": 4
+            }
+          }
+        },
+        {
+          "id": "temperature",
+          "placements": {
+            "tiny": {
+              "col": 28,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 36,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "bed_temperature",
+          "placements": {
+            "tiny": {
+              "col": 30,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 38,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "fan_stack",
+          "placements": {
+            "tiny": {
+              "col": 32,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 40,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "notifications",
+          "placements": {
+            "tiny": {
+              "col": 34,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 44,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "filament",
+          "placements": {
+            "tiny": {
+              "col": 28,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 36,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "led",
+          "placements": {
+            "tiny": {
+              "col": 30,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 42,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "clock",
+          "placements": {
+            "tiny": {
+              "col": 32,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 38,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "motion",
+          "placements": {
+            "tiny": {
+              "col": 34,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 40,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "tips",
+          "placements": {
+            "tiny": {
+              "col": 0,
+              "row": 4,
+              "colspan": 36,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 0,
+              "row": 4,
+              "colspan": 46,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "temp_graph",
+          "placements": {
+            "tiny": {
+              "col": 0,
+              "row": 6,
+              "colspan": 36,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 0,
+              "row": 6,
+              "colspan": 46,
+              "rowspan": 4
+            }
+          }
+        },
+        {
+          "id": "active_spool",
+          "placements": {
+            "small": {
+              "col": 42,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "macros",
+          "placements": {
+            "small": {
+              "col": 44,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
         }
-      },
-      {
-        "id": "print_status",
-        "placements": {
-          "micro":   { "col": 0, "row": 4, "colspan": 4, "rowspan": 4 },
-          "tiny":    { "col": 0, "row": 6, "colspan": 4, "rowspan": 4 },
-          "small":   { "col": 0, "row": 4, "colspan": 4, "rowspan": 4 },
-          "medium":  { "col": 0, "row": 4, "colspan": 6, "rowspan": 4 },
-          "large":   { "col": 0, "row": 4, "colspan": 6, "rowspan": 4 },
-          "xlarge":  { "col": 0, "row": 6, "colspan": 8, "rowspan": 4 },
-          "xxlarge": { "col": 0, "row": 6, "colspan": 8, "rowspan": 6 }
-        }
+      ],
+      "disabled": {
+        "tiny": [
+          "active_spool",
+          "macros"
+        ]
       }
+    },
+    "portrait": {
+      "anchors": [
+        {
+          "id": "printer_image",
+          "placements": {
+            "micro": {
+              "col": 0,
+              "row": 0,
+              "colspan": 4,
+              "rowspan": 4
+            },
+            "tiny": {
+              "col": 0,
+              "row": 0,
+              "colspan": 4,
+              "rowspan": 4
+            },
+            "small": {
+              "col": 0,
+              "row": 0,
+              "colspan": 4,
+              "rowspan": 4
+            },
+            "medium": {
+              "col": 0,
+              "row": 0,
+              "colspan": 4,
+              "rowspan": 4
+            },
+            "large": {
+              "col": 0,
+              "row": 0,
+              "colspan": 4,
+              "rowspan": 4
+            },
+            "xlarge": {
+              "col": 0,
+              "row": 0,
+              "colspan": 4,
+              "rowspan": 4
+            },
+            "xxlarge": {
+              "col": 0,
+              "row": 0,
+              "colspan": 4,
+              "rowspan": 4
+            }
+          }
+        },
+        {
+          "id": "print_status",
+          "config": {
+            "layout_style": "detailed"
+          },
+          "placements": {
+            "micro": {
+              "col": 0,
+              "row": 6,
+              "colspan": 8,
+              "rowspan": 4
+            },
+            "tiny": {
+              "col": 0,
+              "row": 4,
+              "colspan": 8,
+              "rowspan": 4
+            },
+            "small": {
+              "col": 0,
+              "row": 6,
+              "colspan": 10,
+              "rowspan": 4
+            },
+            "medium": {
+              "col": 0,
+              "row": 6,
+              "colspan": 8,
+              "rowspan": 4
+            },
+            "large": {
+              "col": 0,
+              "row": 6,
+              "colspan": 10,
+              "rowspan": 6
+            },
+            "xlarge": {
+              "col": 0,
+              "row": 6,
+              "colspan": 10,
+              "rowspan": 6
+            },
+            "xxlarge": {
+              "col": 0,
+              "row": 6,
+              "colspan": 10,
+              "rowspan": 6
+            }
+          }
+        },
+        {
+          "id": "tips",
+          "placements": {
+            "micro": {
+              "col": 0,
+              "row": 4,
+              "colspan": 8,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 0,
+              "row": 4,
+              "colspan": 10,
+              "rowspan": 2
+            },
+            "medium": {
+              "col": 0,
+              "row": 4,
+              "colspan": 8,
+              "rowspan": 2
+            },
+            "large": {
+              "col": 0,
+              "row": 4,
+              "colspan": 10,
+              "rowspan": 2
+            },
+            "xlarge": {
+              "col": 0,
+              "row": 4,
+              "colspan": 10,
+              "rowspan": 2
+            },
+            "xxlarge": {
+              "col": 0,
+              "row": 4,
+              "colspan": 10,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "temp_graph",
+          "placements": {
+            "micro": {
+              "col": 4,
+              "row": 10,
+              "colspan": 4,
+              "rowspan": 2
+            },
+            "tiny": {
+              "col": 4,
+              "row": 8,
+              "colspan": 4,
+              "rowspan": 2
+            },
+            "medium": {
+              "col": 4,
+              "row": 10,
+              "colspan": 4,
+              "rowspan": 2
+            },
+            "large": {
+              "col": 0,
+              "row": 12,
+              "colspan": 10,
+              "rowspan": 2
+            },
+            "xlarge": {
+              "col": 0,
+              "row": 12,
+              "colspan": 10,
+              "rowspan": 4
+            },
+            "xxlarge": {
+              "col": 0,
+              "row": 12,
+              "colspan": 10,
+              "rowspan": 4
+            }
+          }
+        },
+        {
+          "id": "temperature",
+          "placements": {
+            "micro": {
+              "col": 4,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "tiny": {
+              "col": 4,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 4,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "medium": {
+              "col": 4,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "large": {
+              "col": 4,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xlarge": {
+              "col": 4,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xxlarge": {
+              "col": 4,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "bed_temperature",
+          "placements": {
+            "micro": {
+              "col": 4,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "tiny": {
+              "col": 4,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 4,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "medium": {
+              "col": 4,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "large": {
+              "col": 4,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xlarge": {
+              "col": 4,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xxlarge": {
+              "col": 4,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "fan_stack",
+          "placements": {
+            "micro": {
+              "col": 6,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "tiny": {
+              "col": 6,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 6,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "medium": {
+              "col": 6,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "large": {
+              "col": 6,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xlarge": {
+              "col": 6,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xxlarge": {
+              "col": 6,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "notifications",
+          "placements": {
+            "micro": {
+              "col": 6,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "tiny": {
+              "col": 6,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 8,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "medium": {
+              "col": 6,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "large": {
+              "col": 8,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xlarge": {
+              "col": 8,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xxlarge": {
+              "col": 8,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "led",
+          "placements": {
+            "micro": {
+              "col": 0,
+              "row": 10,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "tiny": {
+              "col": 0,
+              "row": 8,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 6,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "medium": {
+              "col": 0,
+              "row": 10,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "large": {
+              "col": 6,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xlarge": {
+              "col": 6,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xxlarge": {
+              "col": 6,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "filament",
+          "placements": {
+            "micro": {
+              "col": 2,
+              "row": 10,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "tiny": {
+              "col": 2,
+              "row": 8,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 8,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "medium": {
+              "col": 2,
+              "row": 10,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "large": {
+              "col": 8,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xlarge": {
+              "col": 8,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xxlarge": {
+              "col": 8,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        }
+      ],
+      "disabled": {
+        "tiny": [
+          "tips"
+        ]
+      }
+    }
+  },
+  "disabled": {
+    "micro": [
+      "tips",
+      "temp_graph"
+    ],
+    "tiny": [
+      "tips",
+      "temp_graph"
+    ],
+    "small": [
+      "temp_graph"
+    ],
+    "medium": [
+      "tips"
     ]
   }
 }

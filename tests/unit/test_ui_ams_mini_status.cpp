@@ -54,7 +54,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: set_width applies its width argum
     REQUIRE(spools != nullptr);
     REQUIRE_FALSE(lv_obj_has_flag(spools, LV_OBJ_FLAG_HIDDEN));
 
-    // Dropping below W_NORMAL hides the spool view rather than deleting it (the
+    // Dropping below w_normal() hides the spool view rather than deleting it (the
     // container is built once and recycled), so assert on the flag.
     ui_ams_mini_status_set_width(w, 130);
     helix::ui::UpdateQueue::instance().drain();
@@ -69,7 +69,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: set_width applies its width argum
     lv_obj_delete(w);
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: width_px >= W_NORMAL selects spool mode",
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: width_px >= w_normal() selects spool mode",
                  "[ui][ams_mini][mode]") {
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);

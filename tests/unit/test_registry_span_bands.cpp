@@ -71,20 +71,27 @@ const std::vector<Geometry> kGeometries = {
 };
 // clang-format on
 
+/// The tier a panel's own widgets are laid out against.
+UiBreakpoint tier_of(const Geometry& g) {
+    return breakpoint_for(std::min(g.panel_w, g.panel_h));
+}
+
 /// 0 = compact, 1 = normal, 2 = wide. Compared the way the widgets compare:
-/// `>=` against the truncated integer pixel extent they are handed.
-int width_band(int px) {
-    if (px >= W_WIDE)
+/// `>=` against the truncated integer pixel extent they are handed, and
+/// against the bands of the panel the widget is on — the bands scale with the
+/// type ladder, so a band is only meaningful next to its own tier.
+int width_band(int px, UiBreakpoint bp) {
+    if (px >= w_wide(bp))
         return 2;
-    if (px >= W_NORMAL)
+    if (px >= w_normal(bp))
         return 1;
     return 0;
 }
 
-int height_band(int px) {
-    if (px >= H_TALLER)
+int height_band(int px, UiBreakpoint bp) {
+    if (px >= h_taller(bp))
         return 2;
-    if (px >= H_TALL)
+    if (px >= h_tall(bp))
         return 1;
     return 0;
 }
@@ -92,8 +99,7 @@ int height_band(int px) {
 /// Track geometry for one tier, taken from the same helpers PanelWidgetManager
 /// uses so the two cannot drift.
 CellMetrics metrics_for(const Geometry& g) {
-    const UiBreakpoint bp = breakpoint_for(std::min(g.panel_w, g.panel_h));
-    auto d = GridLayout::get_dimensions(bp, g.content_w, g.content_h);
+    auto d = GridLayout::get_dimensions(tier_of(g), g.content_w, g.content_h);
     return grid_cell_metrics(g.content_w, g.content_h, d.cols, d.rows, g.gutter);
 }
 
@@ -156,58 +162,53 @@ TEST_CASE("registry spans: authored spans land in the intended pixel band",
     // Keyed by registry id. Widgets compiled out on this build (camera, behind
     // HELIX_HAS_CAMERA) simply never get looked up.
     //
-    // Where the zeroes at micro portrait come from. A track is half a cell, so
-    // a span of n tracks on a grid of 2m tracks covers the same fraction of the
-    // content box as a span of n/2 on a grid of m cells — exactly, gutters
-    // included. `micro portrait 272x480` is the one geometry whose column count
-    // is not simply twice what the grid used to have in cells: it gains a
-    // column, so a two-cell widget is proportionally narrower there than it was
-    // and lands below W_NORMAL. Widening the authored span to compensate would
-    // widen it on every geometry that is already correct, so the span stays and
-    // the loss is recorded here instead.
-    //
-    // Consequence on that panel, for the widgets that read a band: print_status,
-    // job_queue, camera and clock select their compact layout where they
-    // previously selected the next one up.
+    // Every row is uniform across the eight geometries, and that is the point
+    // of the mechanism rather than a coincidence: a track is half a cell,
+    // GridLayout::GRID_CELL keeps the cell growing with the type ladder, and
+    // the bands are scaled off that same ladder - so an authored span lands in
+    // one band, on every panel, in every orientation. A row that stops being
+    // uniform is a widget whose span reads as one layout on one panel and a
+    // different one elsewhere, which is exactly the surprise this file exists
+    // to catch.
     using Bands = std::vector<std::pair<int, int>>;
     const std::map<std::string, Bands> expected = {
-        {"printer_image", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
-        {"print_status", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
-        {"shutdown", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"lock", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"power_device", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"network", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"firmware_restart", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"tool_switcher", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"led", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"led_controls", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"fan_stack", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"fan", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"temperature", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"nozzle_temps", {{0, 1}, {0, 1}, {0, 1}, {0, 2}, {0, 2}, {0, 2}, {0, 0}, {0, 2}}},
-        {"bed_temperature", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"chamber_temperature", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"temp_stack", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"thermistor", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"temp_graph", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
-        {"preheat", {{2, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 1}, {1, 0}, {2, 0}}},
-        {"ams", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"active_spool", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"filament", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"humidity", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"width_sensor", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"favorite_macro", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"macros", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"motion", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"clock", {{1, 0}, {1, 0}, {1, 0}, {2, 0}, {2, 0}, {2, 1}, {0, 0}, {2, 0}}},
-        {"control_buttons", {{1, 0}, {1, 0}, {1, 0}, {2, 0}, {2, 0}, {2, 1}, {0, 0}, {2, 0}}},
-        {"job_queue", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
-        {"tips", {{2, 1}, {2, 1}, {2, 1}, {2, 2}, {2, 2}, {2, 2}, {2, 0}, {2, 2}}},
-        {"clog_detection", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"print_stats", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
-        {"gcode_console", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"camera", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
-        {"notifications", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
+        {"printer_image", {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}},
+        {"print_status", {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}},
+        {"shutdown", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"lock", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"power_device", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"network", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"firmware_restart", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"tool_switcher", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"led", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"led_controls", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"fan_stack", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"fan", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"temperature", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"nozzle_temps", {{0, 1}, {0, 1}, {0, 1}, {0, 1}, {0, 1}, {0, 1}, {0, 1}, {0, 1}}},
+        {"bed_temperature", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"chamber_temperature", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"temp_stack", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"thermistor", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"temp_graph", {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}},
+        {"preheat", {{2, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 0}}},
+        {"ams", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"active_spool", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"filament", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"humidity", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"width_sensor", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"favorite_macro", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"macros", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"motion", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"clock", {{1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}}},
+        {"control_buttons", {{1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}}},
+        {"job_queue", {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}},
+        {"tips", {{2, 1}, {2, 1}, {2, 1}, {2, 1}, {2, 1}, {2, 1}, {2, 1}, {2, 1}}},
+        {"clog_detection", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"print_stats", {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}},
+        {"gcode_console", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        {"camera", {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}},
+        {"notifications", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
     };
 
     for (size_t gi = 0; gi < kGeometries.size(); ++gi) {
@@ -227,8 +228,8 @@ TEST_CASE("registry spans: authored spans land in the intended pixel band",
             REQUIRE(it->second.size() == kGeometries.size());
             INFO(g.name << " " << def.id << " span " << def.colspan << "x" << def.rowspan << " -> "
                         << w << "x" << h << "px");
-            CHECK(width_band(w) == it->second[gi].first);
-            CHECK(height_band(h) == it->second[gi].second);
+            CHECK(width_band(w, tier_of(g)) == it->second[gi].first);
+            CHECK(height_band(h, tier_of(g)) == it->second[gi].second);
         }
     }
 }

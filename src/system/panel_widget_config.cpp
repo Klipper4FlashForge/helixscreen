@@ -526,6 +526,68 @@ std::string PanelWidgetConfig::generate_page_id() {
     return "page_" + std::to_string(next_page_id_++);
 }
 
+namespace {
+
+/// Most specific breakpoint key present in `by_bp`, or nullptr.
+///
+/// Both the per-anchor `placements` map and a variant's `disabled` map are keyed
+/// by breakpoint name and resolve through the same chain theme_manager uses, so
+/// they share this lookup rather than each carrying a copy of the table.
+const char* choose_breakpoint_key(const nlohmann::json& by_bp, UiBreakpoint breakpoint) {
+    // Fallback chain: micro→tiny→small, xlarge→large (matches theme_manager)
+    static const char* fallback_order[][3] = {
+        {"micro", "tiny", "small"},     // bp=0 Micro
+        {"tiny", "small", nullptr},     // bp=1 Tiny
+        {"small", nullptr},             // bp=2 Small
+        {"medium", nullptr},            // bp=3 Medium
+        {"large", nullptr},             // bp=4 Large
+        {"xlarge", "large", nullptr},   // bp=5 XLarge
+        {"xxlarge", "xlarge", "large"}, // bp=6 XXLarge
+    };
+    static_assert(std::size(fallback_order) == to_int(UiBreakpoint::XXLarge) + 1,
+                  "fallback_order must cover every UiBreakpoint tier");
+
+    const int bp_idx = to_int(breakpoint);
+    if (bp_idx < 0 || bp_idx >= static_cast<int>(std::size(fallback_order))) {
+        return nullptr;
+    }
+    for (int i = 0; i < 3 && fallback_order[bp_idx][i]; ++i) {
+        if (by_bp.contains(fallback_order[bp_idx][i])) {
+            return fallback_order[bp_idx][i];
+        }
+    }
+    return nullptr;
+}
+
+/// Read a table's `disabled` map — `{ "<breakpoint>": ["id", ...] }` — into `out`.
+///
+/// The base table and every variant carry the same optional key, so both go
+/// through this rather than the variant branch owning a private copy. `table` is
+/// the object holding `anchors`: the top-level document for the base table, the
+/// variant object otherwise.
+void collect_disabled(const nlohmann::json& table, UiBreakpoint breakpoint,
+                      std::set<std::string>& out) {
+    auto d = table.find("disabled");
+    if (d == table.end() || !d->is_object()) {
+        return;
+    }
+    const char* key = choose_breakpoint_key(*d, breakpoint);
+    if (!key) {
+        return;
+    }
+    const auto& ids = (*d)[key];
+    if (!ids.is_array()) {
+        return;
+    }
+    for (const auto& id : ids) {
+        if (id.is_string()) {
+            out.insert(id.get<std::string>());
+        }
+    }
+}
+
+} // namespace
+
 std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
     const auto& defs = get_all_widget_defs();
 
@@ -559,8 +621,15 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
     struct AnchorPlacement {
         std::string id;
         int col, row, colspan, rowspan;
+        nlohmann::json config; // per-widget config carried by the anchor, may be null
     };
     std::vector<AnchorPlacement> anchors;
+
+    // Widgets the chosen variant switches off at this breakpoint. Leaving a
+    // widget out of the anchor list does NOT disable it — parse_widget_array()
+    // appends every registry widget that is missing, at its default_enabled — so
+    // "not on this tier" needs saying explicitly.
+    std::set<std::string> disabled_ids;
 
     std::ifstream layout_file(helix::find_readable("default_layout.json"));
     if (layout_file.is_open()) {
@@ -579,18 +648,48 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
 
             // Most-specific variant table wins; the base "anchors" array is the
             // final fallback, exactly as ui_xml/ resolves an override.
+            //
+            // A variant is either a bare anchor array (the original shape) or an
+            // object carrying "anchors" plus optional "disabled". Both are
+            // accepted: the file is runtime-editable and shipped copies predate
+            // the object form.
             std::string variant_used = "base";
             auto variants_it = layout.is_object() ? layout.find("variants") : layout.end();
             if (variants_it != layout.end() && variants_it->is_object()) {
                 for (const auto& dir : LayoutManager::instance().variant_chain()) {
                     auto v = variants_it->find(dir);
-                    if (v != variants_it->end() && v->is_array() && !v->empty()) {
+                    if (v == variants_it->end()) {
+                        continue;
+                    }
+                    if (v->is_array() && !v->empty()) {
                         anchor_list = &*v;
                         variant_used = dir;
                         break;
                     }
+                    if (!v->is_object()) {
+                        continue;
+                    }
+                    auto va = v->find("anchors");
+                    if (va == v->end() || !va->is_array() || va->empty()) {
+                        continue;
+                    }
+                    anchor_list = &*va;
+                    variant_used = dir;
+
+                    collect_disabled(*v, breakpoint, disabled_ids);
+                    break;
                 }
             }
+            // Whichever table won owns the disable list. Without the base case a
+            // landscape tier could never switch a widget off: LayoutType
+            // STANDARD has an empty variant chain, so no variant object is ever
+            // consulted, and leaving a widget out of the anchors does not
+            // disable it — parse_widget_array() appends it at its registry
+            // default_enabled.
+            if (variant_used == "base") {
+                collect_disabled(layout, breakpoint, disabled_ids);
+            }
+
             for (const auto& anchor : *anchor_list) {
                 if (!anchor.is_object())
                     continue;
@@ -604,28 +703,7 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
                     continue;
                 const nlohmann::json& placements = *placements_it;
 
-                // Fallback chain: micro→tiny→small, xlarge→large (matches theme_manager)
-                static const char* fallback_order[][3] = {
-                    {"micro", "tiny", "small"},     // bp=0 Micro
-                    {"tiny", "small", nullptr},     // bp=1 Tiny
-                    {"small", nullptr},             // bp=2 Small
-                    {"medium", nullptr},            // bp=3 Medium
-                    {"large", nullptr},             // bp=4 Large
-                    {"xlarge", "large", nullptr},   // bp=5 XLarge
-                    {"xxlarge", "xlarge", "large"}, // bp=6 XXLarge
-                };
-                static_assert(std::size(fallback_order) == to_int(UiBreakpoint::XXLarge) + 1,
-                              "fallback_order must cover every UiBreakpoint tier");
-                const char* chosen_name = nullptr;
-                int bp_idx = to_int(breakpoint);
-                if (bp_idx >= 0 && bp_idx < static_cast<int>(std::size(fallback_order))) {
-                    for (int i = 0; i < 3 && fallback_order[bp_idx][i]; ++i) {
-                        if (placements.contains(fallback_order[bp_idx][i])) {
-                            chosen_name = fallback_order[bp_idx][i];
-                            break;
-                        }
-                    }
-                }
+                const char* chosen_name = choose_breakpoint_key(placements, breakpoint);
                 if (chosen_name) {
                     // find, not operator[]: `placements` is a const reference
                     // now, and const operator[] on a missing key is only
@@ -639,10 +717,25 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
                     // widget now declares as its minimum, and this file is
                     // runtime-editable, so a hand-authored placement can leave
                     // the spans out. Matches parse_widget_array().
+                    //
+                    // "config" rides on the anchor so a default layout can pick a
+                    // widget's variant — portrait print_status ships Detailed —
+                    // without a C++ branch per widget. Anchor-level first, then
+                    // placement-level so a single tier can override.
+                    nlohmann::json cfg;
+                    if (auto ac = anchor.find("config"); ac != anchor.end() && ac->is_object()) {
+                        cfg = *ac;
+                    }
+                    if (auto pc = p.find("config"); pc != p.end() && pc->is_object()) {
+                        for (auto it2 = pc->begin(); it2 != pc->end(); ++it2) {
+                            cfg[it2.key()] = it2.value();
+                        }
+                    }
                     anchors.push_back({id, helix::json_util::safe_int(p, "col", 0),
                                        helix::json_util::safe_int(p, "row", 0),
                                        helix::json_util::safe_int(p, "colspan", def->colspan),
-                                       helix::json_util::safe_int(p, "rowspan", def->rowspan)});
+                                       helix::json_util::safe_int(p, "rowspan", def->rowspan),
+                                       std::move(cfg)});
                 }
             }
             spdlog::debug(
@@ -681,7 +774,8 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
     for (const auto& a : anchors) {
         if (!find_widget_def(a.id))
             continue;
-        result.push_back({a.id, true, {}, a.col, a.row, a.colspan, a.rowspan});
+        result.push_back({a.id, true, a.config.is_object() ? a.config : nlohmann::json{}, a.col,
+                          a.row, a.colspan, a.rowspan});
         fixed_ids.insert(a.id);
     }
 
@@ -693,6 +787,23 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
         if (fixed_ids.count(def.id) > 0)
             continue;
         result.push_back({def.id, def.default_enabled, {}, -1, -1, def.colspan, def.rowspan});
+    }
+
+    // Variant-scoped disable: a widget the layout switches off at this
+    // breakpoint. Applied after the registry pass so it reaches widgets that
+    // were appended by default rather than anchored, and before the AMS swap so
+    // that swap still has the final say on filament vs ams.
+    if (!disabled_ids.empty()) {
+        for (auto& entry : result) {
+            if (disabled_ids.count(entry.id) == 0) {
+                continue;
+            }
+            entry.enabled = false;
+            entry.col = -1;
+            entry.row = -1;
+            spdlog::debug("[PanelWidgetConfig] '{}' disabled by layout variant at bp={}", entry.id,
+                          bp_name);
+        }
     }
 
     bool ams_present = false;

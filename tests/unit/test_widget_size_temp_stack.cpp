@@ -7,7 +7,7 @@
  * rowspan.
  *
  * `on_size_changed` (temp_stack_widget.cpp, near :239) computes
- * `size = (height_px >= H_TALL) ? "sm" : "xs"` and reuses the same predicate
+ * `size = (height_px >= h_tall()) ? "sm" : "xs"` and reuses the same predicate
  * for the icon font (`mdi_icons_24` vs `mdi_icons_16`). It restyles three
  * kinds of object, all asserted here as real widget state (applied fonts),
  * since the "xs"/"sm" token itself is only a local variable — there is no
@@ -89,11 +89,11 @@ TEST_CASE_METHOD(LVGLUITestFixture, "temp_stack text and icon fonts follow heigh
     };
 
     // Below threshold, rowspan agrees (1): "xs" / mdi_icons_16.
-    h.resize(1, 1, 150, H_TALL - 1);
+    h.resize(1, 1, 150, h_tall() - 1);
     check_size("font_xs", &mdi_icons_16);
 
     // At threshold, rowspan agrees (2): "sm" / mdi_icons_24.
-    h.resize(1, 2, 150, H_TALL);
+    h.resize(1, 2, 150, h_tall());
     check_size("font_small", &mdi_icons_24);
 
     // Contradicting rowspan: rowspan=1 (old predicate -> "xs") but tall

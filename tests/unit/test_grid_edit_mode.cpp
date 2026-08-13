@@ -228,12 +228,15 @@ TEST_CASE("GridEditMode: clamp_span unknown widget returns at least one track",
 }
 
 TEST_CASE("GridEditMode: clamp_span tips widget respects range", "[grid_edit][resize]") {
-    // tips: colspan default=8, min=4, max=12; rowspan default=4, min=2, max=4 tracks
+    // tips: colspan default=8, min=4; rowspan default=4, min=2, max=4 tracks.
+    // It is a band widget, so max_colspan is MAX_TRACKS — the input has to clear
+    // the widest grid the engine will ever build for the clamp to bite.
     const auto* def = find_widget_def("tips");
     REQUIRE(def != nullptr);
     REQUIRE(def->is_scalable());
+    REQUIRE(def->effective_max_colspan() == GridLayout::MAX_TRACKS);
 
-    auto [c, r] = GridEditMode::clamp_span("tips", 20, 10);
+    auto [c, r] = GridEditMode::clamp_span("tips", GridLayout::MAX_TRACKS + 8, 10);
     CHECK(c == def->effective_max_colspan());
     CHECK(r == def->effective_max_rowspan());
 
@@ -284,12 +287,13 @@ TEST_CASE("build_default_grid only sets positions for anchor widgets", "[grid]")
     CHECK(print_status->rowspan >= 2);
     CHECK(print_status->has_grid_position());
 
+    // tips is switched off on the 480-class tiers this runs at (the breakpoint
+    // subject is zero-initialised to Micro here), and a disabled widget is
+    // unplaced. Naming it is the point: it used to be one of five hardcoded
+    // anchors, and this assertion is what noticed the shipped table changed.
     REQUIRE(tips != nullptr);
-    CHECK(tips->col >= 0);
-    CHECK(tips->row >= 0);
-    CHECK(tips->colspan >= 1);
-    CHECK(tips->rowspan >= 1);
-    CHECK(tips->has_grid_position());
+    CHECK_FALSE(tips->enabled);
+    CHECK_FALSE(tips->has_grid_position());
 
     REQUIRE(temperature != nullptr);
     CHECK(temperature->has_grid_position());
@@ -297,16 +301,22 @@ TEST_CASE("build_default_grid only sets positions for anchor widgets", "[grid]")
     REQUIRE(bed_temperature != nullptr);
     CHECK(bed_temperature->has_grid_position());
 
-    // All non-anchor entries must have col=-1, row=-1 (auto-place)
+    // Positions are all-or-nothing. Which widgets the shipped table anchors is
+    // the table's business and changes per tier, but no entry may come back
+    // half-placed: a col with no row (or either one set on a widget that
+    // reports no grid position) would be placed by one code path and
+    // auto-placed by another.
     for (const auto& e : entries) {
-        if (e.id == "printer_image" || e.id == "print_status" || e.id == "tips" ||
-            e.id == "temperature" || e.id == "bed_temperature") {
-            continue;
+        INFO("Widget '" << e.id << "' col=" << e.col << " row=" << e.row);
+        if (e.has_grid_position()) {
+            CHECK(e.col >= 0);
+            CHECK(e.row >= 0);
+            CHECK(e.colspan >= 1);
+            CHECK(e.rowspan >= 1);
+        } else {
+            CHECK(e.col == -1);
+            CHECK(e.row == -1);
         }
-        INFO("Widget '" << e.id << "' should be auto-place (col=-1, row=-1)");
-        CHECK(e.col == -1);
-        CHECK(e.row == -1);
-        CHECK_FALSE(e.has_grid_position());
     }
 }
 
@@ -1319,14 +1329,20 @@ TEST_CASE("clamp_span: non-scalable widget stays fixed", "[grid_edit][sizing]") 
 }
 
 TEST_CASE("clamp_span: asymmetric constraints", "[grid_edit][sizing]") {
-    // "tips" is 8x4 tracks, min 4x2, max 12x4 — wide and moderately tall.
+    // "tips" is 8x4 tracks, min 4x2. The asymmetry is the point: it is a band
+    // widget, so the colspan is capped only by the widest grid the engine
+    // builds, while the rowspan stays pinned at 4 tracks.
     auto [c1, r1] = GridEditMode::clamp_span("tips", 1, 1);
     CHECK(c1 == 4); // Clamped to min_colspan
     CHECK(r1 == 2); // Clamped to min_rowspan
 
     auto [c2, r2] = GridEditMode::clamp_span("tips", 12, 6);
-    CHECK(c2 == 12); // At max_colspan
+    CHECK(c2 == 12); // Well inside max_colspan, passed through
     CHECK(r2 == 4);  // Clamped to max_rowspan
+
+    auto [c3, r3] = GridEditMode::clamp_span("tips", GridLayout::MAX_TRACKS + 8, 6);
+    CHECK(c3 == GridLayout::MAX_TRACKS); // Clamped to max_colspan
+    CHECK(r3 == 4);
 }
 
 TEST_CASE("All registered widgets have valid sizing constraints", "[grid_edit][sizing]") {

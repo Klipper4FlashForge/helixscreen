@@ -25,6 +25,7 @@
 #include "grid_layout.h"
 #include "panel_widget_config.h"
 #include "panel_widget_manager.h"
+#include "panel_widget_registry.h"
 #include "theme_manager.h"
 
 #include <cmath>
@@ -157,12 +158,13 @@ TEST_CASE_METHOD(XMLTestFixture, "GridEditMode: real drag lands on the gutter-aw
     lv_obj_set_style_pad_column(container, gutter, 0);
     lv_obj_set_style_pad_row(container, gutter, 0);
 
-    // Dragged widget: 2x2 cells at the origin. Big enough (2*30+gutter ~= 65px
-    // per side) that its center sits comfortably outside the 18px resize-edge
-    // margin (EDGE_HIT_INWARD/EDGE_HIT_MARGIN in grid_edit_mode.cpp) — this
-    // test wants a plain move, not a resize.
-    constexpr int kColspan = 2;
-    constexpr int kRowspan = 2;
+    // Dragged widget: one authored cell at the origin, which is TRACKS_PER_CELL
+    // tracks on each axis (spans are in tracks everywhere below). At 2*55+gutter
+    // = 115px per side its center sits far outside the 18px resize-edge margin
+    // (EDGE_HIT_INWARD/EDGE_HIT_MARGIN in grid_edit_mode.cpp) — this test wants
+    // a plain move, not a resize.
+    constexpr int kColspan = GridLayout::TRACKS_PER_CELL;
+    constexpr int kRowspan = GridLayout::TRACKS_PER_CELL;
     lv_obj_t* widget = lv_obj_create(container);
     lv_obj_set_name(widget, "temperature");
     lv_obj_remove_flag(widget, LV_OBJ_FLAG_SCROLLABLE);
@@ -223,25 +225,41 @@ TEST_CASE_METHOD(XMLTestFixture, "GridEditMode: real drag lands on the gutter-aw
     // build the expectation could not tell a correct helper from a broken
     // one.
     //
-    // Column target = 3, landing point picked so the CORRECT pitch rounds it
-    // down to 3 with real margin from the 3/4 cell boundary, while the
-    // GUTTER-BLIND pitch (m.gutter treated as 0, content/cols instead of
-    // (content-(n-1)*gutter)/n + gutter) rounds the SAME pixel up to 4 —
-    // exactly the mutation Step 6 introduces. Both 3 and 4 are <= the max
-    // valid target_col (ncols - colspan), so neither result gets clamped back
-    // to the other — the mutation is genuinely observable, not masked.
+    // Snap resolution: "temperature" halves on neither axis, so
+    // snap_step_for() hands round_to_grid_cell() a step of TRACKS_PER_CELL and
+    // every reachable target is an EVEN track index. Assert that here — if the
+    // registry ever grants this widget half-cell support the step drops to 1,
+    // every expectation below shifts, and the test must be re-derived rather
+    // than left to fail on an arithmetic mismatch that looks like a geometry
+    // regression.
+    const auto* drag_def = helix::find_widget_def("temperature");
+    REQUIRE(drag_def != nullptr);
+    REQUIRE_FALSE(drag_def->supports_half_col);
+    REQUIRE_FALSE(drag_def->supports_half_row);
+    constexpr int kStep = GridLayout::TRACKS_PER_CELL;
+
+    // Column target = track 8. With step 2 the decision boundary between
+    // landing on 8 and on 10 sits at track 9, so the landing point is placed
+    // midway between where the CORRECT pitch puts track 9 (9*60 = 540px) and
+    // where the GUTTER-BLIND pitch puts it (m.gutter treated as 0, content/cols
+    // instead of (content-(n-1)*gutter)/n + gutter: 9*59.58 = 536.25px). That
+    // single pixel is below the correct boundary and above the buggy one, so
+    // the mutation flips the result from 8 to 10 — exactly what Step 6
+    // introduces. Both 8 and 10 are <= the max valid target_col
+    // (ncols - colspan == 10), so neither gets clamped back onto the other and
+    // the mutation stays observable rather than masked.
     const float pitch_correct_col =
         static_cast<float>(content_w + gutter) / static_cast<float>(ncols);
     const float pitch_buggy_col = static_cast<float>(content_w) / static_cast<float>(ncols);
-    constexpr int kExpectedCol = 3;
+    constexpr int kExpectedCol = 4 * kStep;
     const int target_px_x = static_cast<int>(
-        std::lround((kExpectedCol + 0.5f) * (pitch_correct_col + pitch_buggy_col) / 2.0f));
+        std::lround((kExpectedCol + kStep * 0.5f) * (pitch_correct_col + pitch_buggy_col) / 2.0f));
 
-    // Row target = 1, landing exactly on the correct track origin. The row
-    // axis isn't the boundary-straddling case above (that needs only one
-    // axis to prove the point) but it still exercises real gutter-aware
-    // pixel math, and a bug that only broke rows would still fail it.
-    constexpr int kExpectedRow = 1;
+    // Row target = track 2, landing exactly on the correct track origin. The
+    // row axis isn't the boundary-straddling case above (that needs only one
+    // axis to prove the point) but it still exercises real gutter-aware pixel
+    // math, and a bug that only broke rows would still fail it.
+    constexpr int kExpectedRow = 1 * kStep;
     const int target_px_y = kExpectedRow * (kCellPx + gutter);
 
     lv_area_t content_area;
@@ -296,12 +314,12 @@ TEST_CASE_METHOD(XMLTestFixture,
                  "[grid_edit][grid_edit_drag]") {
     // PanelWidgetManager sizes the row axis from rows actually IN USE
     // (max_row_used, floored by a cached count), not from the breakpoint
-    // table (panel_widget_manager.cpp:585-608). A page holding one widget at
-    // row 0 gets a container built with a single row track even though the
-    // Medium breakpoint's table says 4. current_metrics() must read that
-    // single-row descriptor back off the container rather than asking
-    // GridLayout for the breakpoint's row count, or the snap target it
-    // computes describes a lattice the live grid does not have.
+    // table. A page holding one widget at row 0 gets a container built with a
+    // single row track even though the breakpoint table asks for many more.
+    // current_metrics() must read that single-row descriptor back off the
+    // container rather than asking GridLayout for the breakpoint's row count,
+    // or the snap target it computes describes a lattice the live grid does
+    // not have.
     const int gutter = theme_manager_get_spacing("space_xs");
     REQUIRE(gutter > 0);
 
@@ -414,9 +432,9 @@ TEST_CASE_METHOD(XMLTestFixture,
     // final std::min(target_row, nrows - rowspan) clamp, so this lands
     // squarely at whatever the LAST valid row index is. With the container's
     // real row count (1), that final clamp is min(_, 1 - 1) == 0: the snap
-    // target can only ever be row 0. Reading the breakpoint's row count (4)
-    // instead would clamp to min(_, 4 - 1) == 3 — a row this grid does not
-    // have.
+    // target can only ever be row 0. Reading breakpoint_rows instead would
+    // clamp to min(_, breakpoint_rows - 1), which is >= 1 by the REQUIRE above
+    // — a row this grid does not have.
     const int target_x = sel_area.x1;
     const int target_y = content_area.y1 + content_h + 500;
     indev.send(target_x, target_y, LV_INDEV_STATE_PRESSED);

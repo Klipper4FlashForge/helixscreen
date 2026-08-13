@@ -15,6 +15,7 @@
 #include "ams_state.h"
 #include "config.h"
 #include "helix-xml/src/xml/lv_xml_parser.h"
+#include "helix-xml/src/xml/lv_xml_utils.h"
 #include "helix-xml/src/xml/parsers/lv_xml_obj_parser.h"
 #include "observer_factory.h"
 #include "panel_widget_size.h"
@@ -183,8 +184,12 @@ struct AmsMiniStatusData {
     int unit_count = 0;       // Number of AMS units (0 or 1 = single row, 2+ = stacked rows)
     UnitRowInfo unit_rows[8]; // Max 8 units
 
-    // Render mode selection (BAR for narrow, SPOOL for width_px >= W_NORMAL)
+    // Render mode selection (BAR for narrow, SPOOL for width_px >= w_normal())
     AmsMiniMode mode = AmsMiniMode::BAR;
+
+    // Draw the spool view on its own card surface (XML attribute "card").
+    // Hosts that already supply a surface set it false.
+    bool card = true;
 
     // Child objects
     lv_obj_t* container = nullptr;        // Main container
@@ -586,7 +591,37 @@ static void rebuild_bars(AmsMiniStatusData* data) {
 }
 
 /**
- * @brief Render the wide spool view (width_px >= W_NORMAL).
+ * @brief Add or remove the spool container's card surface per the "card" attribute.
+ *
+ * Default (card="true"): layer the shared Card style (bg_color, bg_opa, border, radius -
+ * reactive to theme changes) over the flex layout rather than setting transparent locals,
+ * plus a small inset that keeps cells off the card's corners.
+ *
+ * card="false": the host already paints a surface behind the widget - the home grid draws
+ * one fused card behind a whole group of widgets - and a second card inside it reads as a
+ * visible box within a box. Plain lv_obj containers are transparent with zero padding by
+ * default (StyleRole::ObjBase, applied by the theme), so dropping the Card style and the
+ * inset leaves the spool cells sitting directly on the host's surface.
+ *
+ * Safe to call on a container that already has the style applied - the attribute can be
+ * parsed after the container exists, so toggling must add or remove, not only build.
+ */
+static void apply_spools_card_surface(AmsMiniStatusData* data) {
+    if (!data || !data->spools_container)
+        return;
+    lv_obj_t* sc = data->spools_container;
+    lv_style_t* card_style = ThemeManager::instance().get_style(StyleRole::Card);
+    if (data->card) {
+        lv_obj_add_style(sc, card_style, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(sc, theme_manager_get_spacing("space_xs"), LV_PART_MAIN);
+    } else {
+        lv_obj_remove_style(sc, card_style, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(sc, 0, LV_PART_MAIN);
+    }
+}
+
+/**
+ * @brief Render the wide spool view (width_px >= w_normal()).
  *
  * Lazily creates the horizontally-scrollable spool container, then renders one
  * cell per entry in data->spool_cells (spool graphic with lane badge, material
@@ -619,16 +654,12 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         lv_obj_set_flex_flow(sc, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(sc, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(sc, theme_manager_get_spacing("space_xxs"), LV_PART_MAIN);
-        // Card surface for the wide multi-cell view: layer the shared Card style (bg_color,
-        // bg_opa, border, radius — reactive to theme changes) over the flex layout set above
-        // rather than setting transparent locals. A small inset keeps cells off the corners.
-        lv_obj_add_style(sc, ThemeManager::instance().get_style(StyleRole::Card), LV_PART_MAIN);
-        lv_obj_set_style_pad_all(sc, theme_manager_get_spacing("space_xs"), LV_PART_MAIN);
+        data->spools_container = sc;
+        apply_spools_card_surface(data);
         lv_obj_add_flag(sc, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(sc, LV_DIR_HOR);
         lv_obj_set_scrollbar_mode(sc, LV_SCROLLBAR_MODE_AUTO);
         lv_obj_add_flag(sc, LV_OBJ_FLAG_EVENT_BUBBLE); // tap/long-press bubble to widget root
-        data->spools_container = sc;
     }
     lv_obj_t* sc = data->spools_container;
     lv_obj_remove_flag(sc, LV_OBJ_FLAG_HIDDEN);
@@ -813,7 +844,7 @@ static void rebuild_spools(AmsMiniStatusData* data) {
 /**
  * @brief Render dispatcher: select bar vs. spool mode by physical width.
  *
- * width_px >= W_NORMAL (the same "has room for two columns" threshold every
+ * width_px >= w_normal() (the same "has room for two columns" threshold every
  * other home widget migrated to) selects the wide spool view; otherwise the
  * narrow bar view. The inactive mode's container is hidden so only one is
  * visible at a time.
@@ -822,7 +853,7 @@ static void rebuild(AmsMiniStatusData* data) {
     if (!data)
         return;
     data->mode =
-        (data->width_px >= helix::widget_size::W_NORMAL) ? AmsMiniMode::SPOOL : AmsMiniMode::BAR;
+        (data->width_px >= helix::widget_size::w_normal()) ? AmsMiniMode::SPOOL : AmsMiniMode::BAR;
     if (data->mode == AmsMiniMode::SPOOL) {
         if (data->bars_container)
             lv_obj_add_flag(data->bars_container, LV_OBJ_FLAG_HIDDEN);
@@ -1340,6 +1371,18 @@ static void* ui_ams_mini_status_xml_create(lv_xml_parser_state_t* state, const c
 static void ui_ams_mini_status_xml_apply(lv_xml_parser_state_t* state, const char** attrs) {
     // Apply standard object attributes (width, height, align, etc.)
     lv_xml_obj_apply(state, attrs);
+
+    auto* obj = static_cast<lv_obj_t*>(lv_xml_state_get_item(state));
+    AmsMiniStatusData* data = obj ? get_data(obj) : nullptr;
+    if (!data)
+        return;
+
+    // Parse card attribute (default: true - the spool view carries its own card)
+    const char* card_str = lv_xml_get_value_of(attrs, "card");
+    if (card_str) {
+        data->card = lv_xml_to_bool(card_str);
+        apply_spools_card_surface(data);
+    }
 }
 
 void ui_ams_mini_status_init(void) {

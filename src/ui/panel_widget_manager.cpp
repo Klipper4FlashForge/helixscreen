@@ -31,6 +31,34 @@
 
 namespace helix {
 
+namespace {
+
+/// A saved placement clamped into the grid the panel actually has.
+struct ClampedCell {
+    int col, row, colspan, rowspan;
+};
+
+/// Fit a saved span and origin to `cols` x `rows`.
+///
+/// A span saved against a different grid cannot exist on this one, so the span
+/// is clamped first and the origin is then pushed back far enough for it to fit
+/// (#1216). Placement and the merged-card pass must agree on this: the card pass
+/// reasons about every enabled config entry, not just the placed ones, and an
+/// unclamped span there marks cells occupied that the widget does not cover —
+/// which then subtracts those cells from a neighbour's card.
+ClampedCell clamp_to_grid(int col, int row, int colspan, int rowspan, int cols, int rows) {
+    ClampedCell c{col, row, std::clamp(colspan, 1, cols), std::clamp(rowspan, 1, rows)};
+    if (c.row + c.rowspan > rows) {
+        c.row = std::max(0, rows - c.rowspan);
+    }
+    if (c.col + c.colspan > cols) {
+        c.col = std::max(0, cols - c.colspan);
+    }
+    return c;
+}
+
+} // namespace
+
 PanelWidgetManager& PanelWidgetManager::instance() {
     static PanelWidgetManager instance;
     return instance;
@@ -334,22 +362,16 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                          [&](const PanelWidgetEntry& e) { return e.id == slot.widget_id; });
 
         if (entry_it != entries.end() && entry_it->has_grid_position()) {
-            int col = entry_it->col;
-            int row = entry_it->row;
             // Clamp the SPAN to the grid before clamping the position. A span
             // saved on a 6-column landscape grid cannot exist on a 2-column
             // portrait one; leaving it unclamped made can_place() fail, dropped
             // the widget into auto-place, and ultimately disabled it (#1216).
-            int colspan = std::clamp(entry_it->colspan, 1, grid.cols());
-            int rowspan = std::clamp(entry_it->rowspan, 1, grid.rows());
-
-            // Clamp: if widget overflows the grid, push it to fit
-            if (row + rowspan > grid.rows()) {
-                row = std::max(0, grid.rows() - rowspan);
-            }
-            if (col + colspan > grid.cols()) {
-                col = std::max(0, grid.cols() - colspan);
-            }
+            const auto fitted = clamp_to_grid(entry_it->col, entry_it->row, entry_it->colspan,
+                                              entry_it->rowspan, grid.cols(), grid.rows());
+            int col = fitted.col;
+            int row = fitted.row;
+            int colspan = fitted.colspan;
+            int rowspan = fitted.rowspan;
 
             // Pin print_status to bottom row on first layout (no user edit yet).
             // Skip pinning if the grid edit mode is active — user is positioning manually.
@@ -672,24 +694,57 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             if (!entry.enabled || !entry.has_grid_position()) {
                 continue;
             }
-            // A merge candidate must be one whole cell AND sit on a cell
-            // boundary. Widgets whose registry def supports half-cell
-            // resolution snap on a single track (GridEditMode::snap_step_for),
-            // so a user can drop one on an odd track; dividing that position
-            // into cell coordinates would truncate and lay the card half a cell
-            // away from the widget it belongs to. Off-boundary widgets take the
-            // multi-cell path: they block merges through the cells they touch
-            // and keep their own background.
-            const bool cell_aligned = entry.col % TPC == 0 && entry.row % TPC == 0;
-            if (cell_aligned && entry.colspan == TPC && entry.rowspan == TPC) {
-                single_cells.insert({entry.col / TPC, entry.row / TPC});
+            // Fit the authored placement to this grid the same way placement
+            // does, so at minimum the two agree on the clamp and no out-of-grid
+            // cell enters the occupancy set.
+            //
+            // KNOWN GAP, not fixed here: the clamp is not the only way these two
+            // diverge. When placement cannot seat a widget at all it auto-places
+            // it at a different position AND size, and this pass never learns —
+            // so an overflowing entry still marks cells it does not cover, and
+            // those cells are subtracted from a neighbour's card. That is what
+            // cost two widgets their background beside an unanchored `tips` at
+            // 480x800. Closing it needs the placed geometry, which is a larger
+            // change than it looks: this deliberately walks ALL enabled entries,
+            // not just placed ones, so hardware-gated widgets reserve their card
+            // on the first frame instead of making the grid jump later.
+            const auto fitted = clamp_to_grid(entry.col, entry.row, entry.colspan, entry.rowspan,
+                                              grid.cols(), grid.rows());
+
+            // Whether a widget wants the shared card is a property of the
+            // widget, not of its size — `merges_into_card` in the registry. It
+            // used to be inferred from "is this exactly one cell", which
+            // conflated wanting a card with being small and was wrong both
+            // ways: a 2x1 fan_stack paints nothing of its own and got no
+            // background, while a one-cell ams brings its own and got two.
+            //
+            // Geometry still has a say, but only about arithmetic. The
+            // footprint must be a whole number of cells sitting on cell
+            // boundaries, because the merge works in cell coordinates. Widgets
+            // whose registry def supports half-cell resolution snap on a single
+            // track (GridEditMode::snap_step_for), so a user can drop one on an
+            // odd track; dividing that position into cells would truncate and
+            // lay the card half a cell from the widget it belongs to.
+            //
+            // Anything excluded takes the multi-cell path: it blocks merges
+            // through the cells it touches, and it is on its own for a
+            // background.
+            const auto* def = find_widget_def(entry.id);
+            const bool cell_aligned = fitted.col % TPC == 0 && fitted.row % TPC == 0 &&
+                                      fitted.colspan % TPC == 0 && fitted.rowspan % TPC == 0;
+            if (def && def->merges_into_card && cell_aligned) {
+                for (int r = fitted.row / TPC; r < (fitted.row + fitted.rowspan) / TPC; r++) {
+                    for (int c = fitted.col / TPC; c < (fitted.col + fitted.colspan) / TPC; c++) {
+                        single_cells.insert({c, r});
+                    }
+                }
             } else {
                 // Mark every cell this widget touches, rounding a partial cell
                 // up at both edges so a half-cell overhang still blocks.
-                for (int r = entry.row / TPC; r < (entry.row + entry.rowspan + TPC - 1) / TPC;
+                for (int r = fitted.row / TPC; r < (fitted.row + fitted.rowspan + TPC - 1) / TPC;
                      r++) {
-                    for (int c = entry.col / TPC; c < (entry.col + entry.colspan + TPC - 1) / TPC;
-                         c++) {
+                    for (int c = fitted.col / TPC;
+                         c < (fitted.col + fitted.colspan + TPC - 1) / TPC; c++) {
                         occupied_by_large.insert({c, r});
                     }
                 }
@@ -738,7 +793,21 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 max_row_card = std::max(max_row_card, r);
             }
 
-            // All cells in bounding box except those occupied by larger widgets
+            // Cover the component's bounding box, minus any cell a non-merging
+            // widget sits in, then split what is left into maximal rectangles.
+            //
+            // Both halves of that matter. Running the bounding box straight
+            // over a non-merging widget makes the card butt against that
+            // widget's own card with no gutter, and two abutting Card surfaces
+            // read as one continuous slab — a readout block and the graph below
+            // it stop looking like separate things. Carving the cells out is
+            // what keeps the gutter.
+            //
+            // Every emitted piece is still a rectangle. The ragged look this
+            // used to have came from carving a hole in the MIDDLE of a run:
+            // ams sat one cell into the readout row while painting its own
+            // card, which split that row into three pieces of differing
+            // heights. It merges now, so a carve-out only ever trims an edge.
             std::unordered_set<std::pair<int, int>, CellHash> remaining;
             for (int r = min_row; r <= max_row_card; r++) {
                 for (int c = min_col; c <= max_col; c++) {
@@ -748,10 +817,8 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 }
             }
 
-            // Decompose into maximal rectangles (greedy). Picks the top-left
-            // remaining cell, extends right then down, and removes covered cells.
             while (!remaining.empty()) {
-                // Find top-left cell (min row, then min col)
+                // Top-left of what is left: min row, then min col.
                 auto top_left = *std::min_element(
                     remaining.begin(), remaining.end(), [](const auto& a, const auto& b) {
                         return a.second < b.second || (a.second == b.second && a.first < b.first);
@@ -760,13 +827,13 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 int start_col = top_left.first;
                 int start_row = top_left.second;
 
-                // Extend right as far as possible
                 int end_col = start_col;
                 while (remaining.count({end_col + 1, start_row})) {
                     end_col++;
                 }
 
-                // Extend down as far as all columns in the run are present
+                // Extend down only while every column in the run is present, so
+                // the result is always a full rectangle.
                 int end_row = start_row;
                 for (;;) {
                     bool can_extend = true;
@@ -776,12 +843,12 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                             break;
                         }
                     }
-                    if (!can_extend)
+                    if (!can_extend) {
                         break;
+                    }
                     end_row++;
                 }
 
-                // Remove covered cells
                 for (int r = start_row; r <= end_row; r++) {
                     for (int c = start_col; c <= end_col; c++) {
                         remaining.erase({c, r});

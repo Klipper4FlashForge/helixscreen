@@ -948,7 +948,15 @@ const char* nav_width_suffix(int32_t hor_res, int32_t ver_res) {
         return "_small";
     if (hor_res <= 1100)
         return "_medium";
-    return "_large";
+    if (hor_res <= 1400)
+        return "_large";
+    // Above 1400 the ladder used to stop, so a 1080p or 4K panel got the same
+    // 132px strip as a 1280x720 one while its icon rung scaled up — a 128px
+    // glyph in a 132px strip. The nav strip has to keep climbing with the tier
+    // that sizes the glyphs inside it.
+    if (hor_res <= 1600)
+        return "_xlarge";
+    return "_xxlarge";
 }
 
 OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t nav_width,

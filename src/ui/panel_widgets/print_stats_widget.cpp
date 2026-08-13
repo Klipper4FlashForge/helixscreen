@@ -190,18 +190,26 @@ void PrintStatsWidget::detach() {
     spdlog::debug("[PrintStatsWidget] Detached");
 }
 
+int PrintStatsWidget::mode_for_size(int width_px, int height_px) {
+    return mode_for_size(width_px, height_px, widget_size::current_breakpoint());
+}
+
+int PrintStatsWidget::mode_for_size(int width_px, int height_px, UiBreakpoint bp) {
+    if (height_px < widget_size::h_tall(bp) && width_px < widget_size::w_wide(bp)) {
+        return 0; // narrow compact: time · success
+    }
+    if (height_px < widget_size::h_tall(bp)) {
+        return 3; // wide compact: prints · time · success · weekly
+    }
+    if (width_px < widget_size::w_wide(bp)) {
+        return 1; // 2x2 grid
+    }
+    return 2; // 3x2 full
+}
+
 void PrintStatsWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
                                        int height_px) {
-    int mode;
-    if (height_px < widget_size::H_TALL && width_px < widget_size::W_WIDE) {
-        mode = 0; // narrow compact: time · success
-    } else if (height_px < widget_size::H_TALL) {
-        mode = 3; // wide compact: prints · time · success · weekly
-    } else if (width_px < widget_size::W_WIDE) {
-        mode = 1; // 2x2 grid
-    } else {
-        mode = 2; // 3x2 full
-    }
+    const int mode = mode_for_size(width_px, height_px);
     spdlog::debug("[PrintStatsWidget] on_size_changed {}x{}px -> mode {}", width_px, height_px,
                   mode);
     lv_subject_set_int(&s_size_mode, mode);

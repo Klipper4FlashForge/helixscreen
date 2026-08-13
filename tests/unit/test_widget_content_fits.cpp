@@ -43,6 +43,7 @@
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
 #include "printer_state.h"
+#include "runtime_config.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
 #include "theme_manager.h"
 #include "tool_state.h"
@@ -191,6 +192,30 @@ bool is_known(const std::string& widget, const std::string& geometry) {
         return widget == k.widget && (geometry == k.geometry || std::string("*") == k.geometry);
     });
 }
+
+/// Forces mock backends for the widget-construction sweep below.
+///
+/// Without this, get_runtime_config()->test_mode defaults to false in the
+/// unit-test binary (it is only ever flipped on by the real app's --test CLI
+/// parsing, which this binary never runs). NetworkWidget's attach() calls
+/// get_wifi_manager(), a process-lifetime singleton that is created lazily on
+/// first use; with test_mode false, WifiBackend::create() built the REAL
+/// NetworkManager/wpa_supplicant backend against this machine's actual WiFi
+/// state and spawned a genuine, unjoined init thread — a correctness problem
+/// (a "unit" test touching live system network state) as well as the
+/// [ISOLATION-LEAK] thread leak that first surfaced it. RAII so REQUIRE-driven
+/// early exits still restore the previous value for later tests in this
+/// process.
+struct TestModeGuard {
+    RuntimeConfig* rc;
+    bool prev;
+    explicit TestModeGuard(RuntimeConfig* r) : rc(r), prev(r->test_mode) {
+        rc->test_mode = true;
+    }
+    ~TestModeGuard() {
+        rc->test_mode = prev;
+    }
+};
 
 /// Fixture teardown for the singletons this file seeds. ToolState is outside
 /// LVGLUITestFixture's own init/deinit chain, so a file that populates it must
@@ -422,6 +447,8 @@ TEST_CASE_METHOD(ContentFitsFixture,
                  "[content_fits][sweep]") {
     lv_display_t* disp = lv_display_get_default();
     REQUIRE(disp != nullptr);
+
+    TestModeGuard test_mode_guard(get_runtime_config());
 
     PanelWidgetManager::instance().init_widget_subjects();
     require_font_tokens_distinct();

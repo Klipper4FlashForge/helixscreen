@@ -217,8 +217,8 @@ void FavoriteMacroWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int 
     if (!widget_obj_)
         return;
 
-    bool tall = (height_px >= widget_size::H_TALL);
-    bool wide = (width_px >= widget_size::W_NORMAL);
+    bool tall = (height_px >= widget_size::h_tall());
+    bool wide = (width_px >= widget_size::w_normal());
 
     // Scale badge and icon: 48px/md at 1×1, 64px/lg when tall or 2×2
     int badge_size = tall ? 64 : 48;

@@ -114,17 +114,21 @@
     <!-- Responsive Badge Sizes (badge_size)                                   -->
     <!-- ===================================================================== -->
     <!-- Small round badge for tool numbers, counts, etc. overlaid on icons.
-         Scales with the BREAKPOINT, not with the icon it sits on - the icon_size
-         ladder (xs16/sm24/md32/lg48/xl64) is fixed per call site and does not move
-         with breakpoint, so these values only make sense on a roomy icon
-         (size="lg"/"xl"). A call site using a smaller icon must pass an explicit
-         badge size; see badge_size_on_sm_icon_* below. -->
+         These only make sense on a roomy icon (size="lg"/"xl"); a call site using
+         a smaller icon must pass an explicit badge size, see
+         badge_size_on_sm_icon_* below.
+
+         Hold each rung near a third of the icon it sits on. The xl icon rung is
+         NOT constant across breakpoints - icon_font_xl runs 64 at large, 80 at
+         xlarge and 96 at xxlarge - so a badge ladder that climbs more slowly
+         than the icon ladder shrinks in proportion as the screen grows.
+         Changing icon_font_xl_* means revisiting the matching rung here. -->
     <px name="badge_size_tiny" value="10"/>
     <px name="badge_size_small" value="16"/>
     <px name="badge_size_medium" value="18"/>
     <px name="badge_size_large" value="20"/>
     <px name="badge_size_xlarge" value="24"/>
-    <px name="badge_size_xxlarge" value="28"/>
+    <px name="badge_size_xxlarge" value="32"/>
 
     <!-- Badge sized to sit on a size="sm" (24px) icon. A badge disc can never be
          smaller than the line height of the font inside it without clipping the
@@ -434,7 +438,7 @@
     <string name="icon_font_lg_medium" value="mdi_icons_48"/>
     <string name="icon_font_lg_large" value="mdi_icons_48"/>
     <string name="icon_font_lg_xlarge" value="mdi_icons_64"/>
-    <string name="icon_font_lg_xxlarge" value="mdi_icons_96"/>
+    <string name="icon_font_lg_xxlarge" value="mdi_icons_80"/>
     <!-- NO BASE icon_font_lg - registered at runtime -->
     <!-- icon_font_xl: Navigation/hero icons (nav bar, large displays) -->
     <string name="icon_font_xl_micro" value="mdi_icons_32"/>
@@ -443,7 +447,7 @@
     <string name="icon_font_xl_medium" value="mdi_icons_64"/>
     <string name="icon_font_xl_large" value="mdi_icons_64"/>
     <string name="icon_font_xl_xlarge" value="mdi_icons_80"/>
-    <string name="icon_font_xl_xxlarge" value="mdi_icons_128"/>
+    <string name="icon_font_xl_xxlarge" value="mdi_icons_96"/>
     <!-- NO BASE icon_font_xl - registered at runtime -->
     <!-- icon_font_hero: Card-filling empty-state icons (thumbnail placeholders etc.) -->
     <!-- mdi_icons_96/128 live only in the xxlarge font tier (mk/fonts.mk). On -->

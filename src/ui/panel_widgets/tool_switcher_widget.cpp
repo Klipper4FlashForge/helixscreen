@@ -52,16 +52,18 @@ ToolSwitcherWidget::~ToolSwitcherWidget() {
 }
 
 // Compact mode: too small on both axes for pills (was colspan==1 &&
-// rowspan==1). W_NORMAL/H_TALL are the pixel floors below which the old
+// rowspan==1). w_normal()/h_tall() are the pixel floors below which the old
 // predicate's colspan/rowspan==1 held.
 bool ToolSwitcherWidget::is_compact_size() const {
-    return current_width_px_ < widget_size::W_NORMAL && current_height_px_ < widget_size::H_TALL;
+    return current_width_px_ < widget_size::w_normal() &&
+           current_height_px_ < widget_size::h_tall();
 }
 
 // Narrow but tall: single vertical column of pills (was colspan==1 &&
 // rowspan>=2) — the legacy 1x2 layout.
 bool ToolSwitcherWidget::is_narrow_tall_size() const {
-    return current_width_px_ < widget_size::W_NORMAL && current_height_px_ >= widget_size::H_TALL;
+    return current_width_px_ < widget_size::w_normal() &&
+           current_height_px_ >= widget_size::h_tall();
 }
 
 void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {

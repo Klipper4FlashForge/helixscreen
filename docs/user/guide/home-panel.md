@@ -12,7 +12,9 @@ The Home Panel is your printer dashboard — a fully customizable grid of widget
 
 Your dashboard is built from **widgets** — individual cards that display printer information and controls. Widgets live on a flexible grid:
 
-- The grid is **8 columns by 5 rows** on standard and large screens (6x4 on small screens)
+- The grid is sized from your screen so that **cells come out square** — how many you get
+  depends on the screen, from 6x4 on a small 800x480 panel up to 8x5 on a 1024x600 or
+  1280x720 one
 - Each widget occupies one or more grid cells
 - Widgets cannot overlap — the grid enforces clean layouts
 - **Everything saves automatically** and persists across restarts and updates
@@ -21,16 +23,22 @@ When you first launch HelixScreen, a default layout is created with your printer
 
 ### On ultrawide and portrait screens
 
-Unusually shaped screens don't use the fixed grid above — HelixScreen works out the column and row counts from the screen itself, aiming for cells roughly 160px wide and 120px tall.
+There is no fixed grid to fall off. Both directions are worked out from the screen with the
+same square cell, so an unusually shaped screen simply gets an unusually shaped grid.
 
-- **Ultrawide** (e.g. 1920x480): extra columns, same number of rows — a 1920x480 panel gets 12 columns by 4 rows instead of 6x4.
-- **Portrait** (e.g. 480x800, 320x1480): both directions are recalculated. A 480x800 panel gets 3 columns by 6 rows; a tall, narrow 320x1480 panel gets 2 columns by 12 rows.
+- **Ultrawide** (e.g. 1920x440): a lot more columns, the same handful of rows — 23 columns by 5 rows.
+- **Portrait** (e.g. 480x800): the grid turns with the screen — 4 columns by 6 rows. A tall,
+  narrow 320x1480 panel gets 4 columns by 17 rows.
 
-Portrait screens also start from **their own default widget set**, not the landscape one. **Tips** is not one of them: it is a wide widget, and on a 2- or 3-column grid it would eat a third to a half of a row for rotating hints. You can still add it yourself from the Widget Catalog if you want it.
+Ultrawide and portrait screens each start from **their own default layout**, not a stretched
+landscape one. **Tips** is part of the portrait layout, running full width above the print
+status card; it is left out only on the shortest portrait panels, where a band of rotating
+hints costs more of the screen than it earns. Any widget left out of a default layout is
+still in the Widget Catalog if you want it.
 
 Buttons, input fields, and headers are sized from the screen's *height* on portrait panels, so a tall screen gets taller, easier-to-hit controls rather than the cramped ones its narrow width would otherwise imply.
 
-> Portrait overall is still alpha — only the home dashboard adapts this way. Other panels still fall back to the landscape layout. See [Ultrawide or portrait screen looks stretched, cramped, or clipped](../TROUBLESHOOTING.md#ultrawide-or-portrait-screen-looks-stretched-cramped-or-clipped).
+> Portrait overall is still alpha, but the home dashboard is not the only panel that adapts — Print Status, Print Tune, Motion, Bed Mesh and the temperature graph rearrange for a tall screen too. Panels outside that set fall back to the landscape layout. See [Ultrawide or portrait screen looks stretched, cramped, or clipped](../TROUBLESHOOTING.md#ultrawide-or-portrait-screen-looks-stretched-cramped-or-clipped).
 
 ---
 
@@ -134,13 +142,18 @@ There are two ways to add widgets:
 1. While in Edit Mode, **long-press on an empty area** of the grid
 2. The Widget Catalog opens
 
-**The Widget Catalog** shows all available widgets in a scrollable list. Each entry shows:
+**The Widget Catalog** opens on a list of **5 categories** - Print & Status, Temperature & Cooling, Filament, Controls, and System. Tap a category to see the widgets inside it. A **back button** in the header returns you to the category list, so you can browse another category without closing the catalog.
+
+Inside a category, each widget entry shows:
 - Widget name and description
 - Size badge (e.g., "2x1")
 - Widgets already on your dashboard are **dimmed** and labeled "Placed"
 
 Tap any available widget to add it. HelixScreen places it near where you long-pressed, or finds the best available spot if that area is occupied. If the grid is completely full, you'll need to remove a widget first.
 
+The **Reset** action lives in the catalog header.
+
+<!-- TODO(#1016): screenshot is stale - it shows the old flat 37-row list. Regenerate for the category drill-in catalog. -->
 ![Widget Catalog — scrollable list with size badges and dimmed "Placed" entries](../../images/user/home-widget-catalog.png)
 
 ### Removing a Widget
@@ -208,21 +221,20 @@ On a portrait screen the defaults differ: Printer Image and Print Status stack f
 
 > **Sizes** are listed as columns x rows. For example, "2x1" means 2 columns wide and 1 row tall.
 
-### Printer Info & Status
+These are the same 5 groups the Widget Catalog uses on the device.
+
+### Print & Status
 
 | Widget | Description | Default | Min | Max | Resizable | Hardware Required |
 |--------|-------------|---------|-----|-----|-----------|-------------------|
 | **Printer Image** | Your printer's photo. Tap to open the Printer Manager overlay where you can change the name, image, and see hardware info. | 2x2 | 1x1 | 4x3 | Yes | — |
-| **Print Status** | Current print progress with filename, percentage, ETA, and elapsed time. Tap to open the full Print Status overlay when printing, or navigate to the file browser when idle. | 2x2 | 2x1 | 4x3 | Yes | — |
+| **Print Status** | Current print progress with filename, percentage, ETA, and elapsed time. Tap to open the full Print Status overlay when printing, or navigate to the file browser when idle. | 2x2 | 2x1 | Full width x3 | Yes | — |
+| **Print Controls** | Pause, resume, and stop buttons for the running print, right on the dashboard. | 2x1 | 2x1 | 2x1 | No | — |
 | **Print Stats** | Print history statistics — total prints, success rate, and total print time. Tap to open the full print history overlay. | 2x2 | 2x1 | 3x2 | Yes | — |
 | **Job Queue** | Shows the number of queued print jobs. Tap to open the Job Queue Manager modal (see [Job Queue Manager](#job-queue-manager) below). | 2x2 | 2x1 | 4x3 | Yes | — |
-| **Digital Clock** | Current time and date. Respects your 12/24-hour preference from display settings. Content adapts to size: time only at 1x1, time + date at 2x1, time + date + system uptime at 2x2+. | 2x1 | 1x1 | 3x3 | Yes | — |
-| **Notifications** | Shows pending notification count with a severity badge (info/warning/error). Tap to open the notification history overlay. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
-| **Tips** | Rotating helpful tips about 3D printing and HelixScreen features. Tap any tip to see the full article. Tips rotate automatically. | 4x2 | 2x1 | 6x2 | Horizontal only | — |
-| **Network** | Current network connection status — WiFi signal strength (with bar indicator) or Ethernet. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
 | **Camera** | Live webcam feed from your MJPEG stream. Tap to go fullscreen. Automatically detects webcams configured in Moonraker. See [Camera Widget](#camera-widget) below for setup tips. | 2x2 | 1x1 | 4x3 | Yes | Webcam configured |
 
-### Temperature & Climate
+### Temperature & Cooling
 
 | Widget | Description | Default | Min | Max | Resizable | Hardware Required |
 |--------|-------------|---------|-----|-----|-----------|-------------------|
@@ -232,18 +244,12 @@ On a portrait screen the defaults differ: Printer Image and Print Status stack f
 | **Chamber Temperature** | Live chamber temperature with current and target readings, shown with a chamber icon and an animated heating indicator. Tap to open the temperature graph overlay focused on the chamber. Only available on printers with a chamber temperature sensor or heater. | 1x1 | 1x1 | 2x2 | Yes | Chamber sensor or heater |
 | **Temperatures** | Stacked view showing nozzle, bed, and chamber temperatures in one widget. Each row shows current temp and target. Also available in Carousel mode (see [Display Modes](#display-modes-stack-vs-carousel) below). Tap any reading to open the temperature graph. | 1x1 | 1x1 | 3x2 | Yes | — |
 | **Temperature Sensors** | Monitor additional temperature sensors (chamber, enclosure heater, etc.) in a single-sensor or carousel view. You can add multiple instances, each configured to a different sensor. Also available in Carousel mode. | 1x1 | 1x1 | 2x1 | Horizontal only | Extra temp sensors |
-| **Temperature Graph** | Live temperature chart with configurable sensor series. Shows colored lines for each sensor with optional target setpoint lines. Content adapts to size — larger sizes show legends, axis labels, gradients, and temperature readouts. Tap to open the full-screen graph overlay. Configure which sensors to display via the gear icon in Edit Mode. You can add multiple instances. | 2x2 | 1x1 | 6x4 | Yes | — |
+| **Temperature Graph** | Live temperature chart with configurable sensor series. Shows colored lines for each sensor with optional target setpoint lines. Content adapts to size — larger sizes show legends, axis labels, gradients, and temperature readouts. Tap to open the full-screen graph overlay. Configure which sensors to display via the gear icon in Edit Mode. You can add multiple instances. | 2x2 | 1x1 | Full width x4 | Yes | — |
 | **Preheat** | Quick preheat buttons with material selection. Tap a material to instantly set nozzle and bed temperatures to that material's profile. | 3x1 | 2x1 | 4x1 | Horizontal only | — |
-| **Humidity** | Enclosure humidity reading from a connected sensor. | 1x1 | 1x1 | 2x2 | Yes | Humidity sensor |
-
-### Fans
-
-| Widget | Description | Default | Min | Max | Resizable | Hardware Required |
-|--------|-------------|---------|-----|-----|-----------|-------------------|
 | **Fan Speeds** | Part cooling, hotend, and auxiliary fan speeds at a glance. Fan icons spin when running. Also available in Carousel mode with arc slider controls. Tap to open the Fan Control overlay. You can add multiple instances. | 1x1 | 1x1 | 3x2 | Yes | — |
 | **Fan** | Monitor a single fan's speed. Tap to open a fan picker to choose which fan to display. You can add multiple instances, each showing a different fan. Configure via the gear icon in Edit Mode. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
 
-### Filament & Material
+### Filament
 
 | Widget | Description | Default | Min | Max | Resizable | Hardware Required |
 |--------|-------------|---------|-----|-----|-----------|-------------------|
@@ -252,28 +258,29 @@ On a portrait screen the defaults differ: Printer Image and Print Status stack f
 | **Filament Sensor** | Filament runout detection status. Tap to load, unload, or purge filament - what happens depends on what's going on: if the sensor is turned off, tapping opens its settings instead; while a print is running the modal is a status readout only. Configurable via the gear icon in Edit Mode - choose which sensor the tile follows. See [Configuring a Widget](#configuring-a-widget) above. | 1x1 | 1x1 | 2x1 | Horizontal only | Filament sensor |
 | **Width Sensor** | Live filament width reading from a diameter sensor. | 1x1 | 1x1 | 2x2 | Yes | Width sensor |
 | **Clog Detection** | Filament clog and flow health monitor. Shows a clog/flow arc meter, and a buffer sync meter on Happy Hare printers. Tap to open the Buffer Status detail modal. Configurable via the gear icon in Edit Mode. See [Clog Detection Widget](#clog-detection-widget) below. | 1x1 | 1x1 | 2x2 | Yes | AMS/MMU detected |
+| **Humidity** | Enclosure humidity reading from a connected sensor. | 1x1 | 1x1 | 2x2 | Yes | Humidity sensor |
 
-### Lighting
-
-| Widget | Description | Default | Min | Max | Resizable | Hardware Required |
-|--------|-------------|---------|-----|-----|-----------|-------------------|
-| **LED Light** | Quick on/off toggle for your printer's LEDs. Tap to open the full LED Control Overlay with color picker, brightness, effects, and WLED controls. | 1x1 | 1x1 | 2x1 | Horizontal only | LEDs configured |
-| **LED Controls** | One-tap shortcut to open the LED color and brightness controls overlay directly. | 1x1 | 1x1 | 1x1 | No | LEDs configured |
-
-### Controls & Automation
+### Controls
 
 | Widget | Description | Default | Min | Max | Resizable | Hardware Required |
 |--------|-------------|---------|-----|-----|-----------|-------------------|
 | **Macro Button** | One-tap buttons to run configured macros. Add as many Macro Button widgets as you like, each independently configurable — assign a macro to each via the gear icon in Edit Mode. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
 | **Macros** | One-tap shortcut to open the [Macros](advanced.md#macro-execution) panel for browsing and executing Klipper macros. | 1x1 | 1x1 | 1x1 | No | — |
 | **G-code Console** | One-tap shortcut to open the [G-code Console](advanced.md#g-code-console) overlay for sending commands and viewing Klipper responses. See [G-code Console Widget](#g-code-console-widget) below. | 1x1 | 1x1 | 1x1 | No | — |
+| **Motion** | One-tap shortcut to open the [Motion](motion.md) panel for jogging the toolhead and homing. | 1x1 | 1x1 | 1x1 | No | — |
 | **Tool Switcher** | Quick tool switching for multi-tool printers (IDEX, toolchangers, multi-head). Shows the available tools and lets you switch the active tool with one tap. See [Tool Switcher Widget](#tool-switcher-widget) below. | 1x1 | 1x1 | 2x2 | Yes | Multi-tool printer |
 | **Power** | Toggle a Moonraker power device (PSU, lights, etc.) with one tap. You can add multiple instances, each bound to a different device. Shows the device name, state, and a customizable icon. | 1x1 | 1x1 | 1x1 | No | Power devices |
+| **LED Light** | Quick on/off toggle for your printer's LEDs. Tapping it switches the lights on or off — nothing else. For color, brightness, and effects, use the **LED Controls** widget below. | 1x1 | 1x1 | 2x1 | Horizontal only | LEDs configured |
+| **LED Controls** | One-tap shortcut to open the LED color and brightness controls overlay directly. | 1x1 | 1x1 | 1x1 | No | LEDs configured |
 
 ### System
 
 | Widget | Description | Default | Min | Max | Resizable | Hardware Required |
 |--------|-------------|---------|-----|-----|-----------|-------------------|
+| **Network** | Current network connection status — WiFi signal strength (with bar indicator) or Ethernet. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
+| **Notifications** | Shows pending notification count with a severity badge (info/warning/error). Tap to open the notification history overlay. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
+| **Digital Clock** | Current time and date. Respects your 12/24-hour preference from display settings. Content adapts to size: time only at 1x1, time + date at 2x1, time + date + system uptime at 2x2+. | 2x1 | 1x1 | 3x3 | Yes | — |
+| **Tips** | Rotating helpful tips about 3D printing and HelixScreen features. Tap any tip to see the full article. Tips rotate automatically. | 4x2 | 2x1 | Full width x2 | Horizontal only | — |
 | **Shutdown/Reboot** | Shutdown or reboot your printer's host system. Shows a confirmation dialog before acting. | 1x1 | 1x1 | 1x1 | No | — |
 | **Firmware Restart** | Restart the Klipper firmware. Useful when Klipper enters SHUTDOWN state. This widget automatically appears during firmware errors even if disabled. | 1x1 | 1x1 | 1x1 | No | — |
 | **Lock Screen** | Locks the screen immediately with PIN protection. Only appears in the Widget Catalog after setting a PIN in Settings > Security. | 1x1 | 1x1 | 1x1 | No | PIN set in Settings |
@@ -283,7 +290,7 @@ On a portrait screen the defaults differ: Printer Image and Print Status stack f
 
 Some widgets depend on specific hardware being detected by Klipper. If the hardware isn't present:
 
-- The widget **won't appear** in the Widget Catalog
+- The widget still **appears** in the Widget Catalog, but it is **dimmed and can't be tapped**, and the reason is added to its name in parentheses — for example "Humidity (No humidity sensor detected)"
 - If hardware is detected later (plugged in, configured), the widget becomes available automatically
 - If hardware is removed after placing a widget, the widget **hides automatically** but keeps its grid position — it reappears if the hardware returns
 
@@ -335,6 +342,7 @@ While **not** in Edit Mode, widgets respond to taps and other gestures:
 |--------|------------|
 | Printer Image | Opens Printer Manager overlay |
 | Print Status | Opens Print Status overlay (printing) or File Browser (idle) |
+| Print Controls | Pauses, resumes, or stops the print — one button each |
 | Print Stats | Opens print history overlay |
 | Job Queue | Opens Job Queue Manager modal |
 | Digital Clock | — (display only) |
@@ -358,11 +366,12 @@ While **not** in Edit Mode, widgets respond to taps and other gestures:
 | Filament Sensor | Opens a load/unload/purge dialog (idle or paused), a status-only dialog (printing), or the sensor's settings (sensor turned off) |
 | Width Sensor | — (display only) |
 | Clog Detection | Opens the Buffer Status detail modal |
-| LED Light | Opens LED Control Overlay |
+| LED Light | Toggles the printer lights on or off |
 | LED Controls | Opens LED Control Overlay |
 | Macro Button | Runs the configured macro immediately |
 | Macros | Opens the Macros panel overlay |
 | G-code Console | Opens the G-code Console overlay |
+| Motion | Opens the Motion panel overlay |
 | Tool Switcher | Switches the active tool (compact size opens a tool picker; larger sizes show tappable tool pills) |
 | Power | Toggles the bound power device |
 | Shutdown/Reboot | Shows confirmation, then shuts down/reboots |
@@ -532,14 +541,24 @@ Tapping the tool that's already active does nothing.
 
 ### Grid Dimensions
 
-The grid adapts to your screen **height** (not width):
+There is no fixed grid size. HelixScreen divides your screen by a target cell size, so cells
+come out roughly square and you get as many of them as the screen can hold. A bigger screen
+means more cells, not bigger ones — which is the point: a widget takes up about the same
+share of a 480x272 panel as it does of a 1280x720 one.
 
-| Screen Height | Grid Size | Total Cells |
-|-------------|-----------|-------------|
-| 550px and below | 6 columns x 4 rows | 24 |
-| 551px and above | 8 columns x 5 rows | 40 |
+| Screen | Grid | Total Cells |
+|--------|------|-------------|
+| 480x272 | 6 columns x 4 rows | 24 |
+| 480x320 | 5 columns x 4 rows | 20 |
+| 800x480 | 6 columns x 4 rows | 24 |
+| 1024x600 | 8 columns x 5 rows | 40 |
+| 1280x720 | 8 columns x 5 rows | 40 |
+| 480x800 (portrait) | 4 columns x 6 rows | 24 |
+| 1920x440 (ultrawide) | 23 columns x 5 rows | 115 |
 
-The choice is driven by height alone. For example, an 800x480 panel gets the 6x4 grid because its height (480) is 550px or less.
+Rotating a screen turns the grid with it, give or take a cell: 1024x600 gives 8x5, and the
+same panel mounted portrait gives 5x7. It is not an exact swap, because the space left over
+after the navigation bar and margins is not the same in both orientations.
 
 ### Auto-Placement
 
@@ -581,7 +600,7 @@ The red **Emergency Stop** button in the top bar halts all printer motion immedi
 
 ## LED Controls
 
-Tap the **LED** widget to open the LED Control Overlay — a full control panel for all your printer's lighting. What you see depends on your hardware.
+Tap the **LED Controls** widget to open the LED Control Overlay — a full control panel for all your printer's lighting. What you see depends on your hardware. (The **LED Light** widget is a plain on/off toggle and does not open this overlay.)
 
 ### Strip Selector
 

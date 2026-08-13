@@ -2011,7 +2011,7 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
     if (gcode.find("SAVE_CONFIG") != std::string::npos) {
         spdlog::info("[MoonrakerClientMock] SAVE_CONFIG - simulating config save + restart");
         dispatch_gcode_response("ok");
-        return 1;
+        return 0; // Success - results come asynchronously via gcode_response
     }
 
     // Bed mesh commands

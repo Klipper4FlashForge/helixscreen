@@ -16,6 +16,7 @@
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
+#include "tune_controller.h"
 #include "z_offset_utils.h"
 
 #include <spdlog/spdlog.h>
@@ -195,10 +196,17 @@ void PrintTuneOverlay::init_subjects_internal() {
                               "tune_z_farther_icon", subjects_);
 
     // Z-offset step amount boolean subjects (L040: one per button for bind_style radio pattern)
-    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[0], 0, "z_step_0_active", subjects_);
-    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[1], 0, "z_step_1_active", subjects_);
-    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[2], 1, "z_step_2_active", subjects_); // default
-    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[3], 0, "z_step_3_active", subjects_);
+    // Seed from the last-persisted choice rather than a hardcoded default so
+    // the panel reopens on the same step the user left it on.
+    selected_z_step_idx_ = helix::zoffset::persisted_step_index();
+    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[0], selected_z_step_idx_ == 0 ? 1 : 0,
+                           "z_step_0_active", subjects_);
+    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[1], selected_z_step_idx_ == 1 ? 1 : 0,
+                           "z_step_1_active", subjects_);
+    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[2], selected_z_step_idx_ == 2 ? 1 : 0,
+                           "z_step_2_active", subjects_);
+    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[3], selected_z_step_idx_ == 3 ? 1 : 0,
+                           "z_step_3_active", subjects_);
 
     // Register XML event callbacks
     register_xml_callbacks({
@@ -405,141 +413,65 @@ void PrintTuneOverlay::update_actual_flow_display() {
 // ============================================================================
 
 void PrintTuneOverlay::handle_speed_adjust(int delta) {
-    speed_percent_ = std::clamp(speed_percent_ + delta, 50, 200);
+    speed_percent_ = helix::tune::clamp_speed_percent(speed_percent_ + delta);
     update_display();
-
-    if (api_) {
-        int value = speed_percent_;
-        std::string gcode = "M220 S" + std::to_string(value);
-        api_->execute_gcode(
-            gcode, [value]() { spdlog::debug("[PrintTuneOverlay] Speed set to {}%", value); },
-            [](const MoonrakerError& err) {
-                spdlog::error("[PrintTuneOverlay] Failed to set speed: {}", err.message);
-                NOTIFY_ERROR(lv_tr("Failed to set print speed: {}"), err.user_message());
-            });
-    }
+    helix::tune::set_speed_percent(api_, speed_percent_);
 }
 
 void PrintTuneOverlay::handle_flow_adjust(int delta) {
-    flow_percent_ = std::clamp(flow_percent_ + delta, 75, 125);
+    flow_percent_ = helix::tune::clamp_flow_percent(flow_percent_ + delta);
     update_display();
-
-    if (api_) {
-        int value = flow_percent_;
-        std::string gcode = "M221 S" + std::to_string(value);
-        api_->execute_gcode(
-            gcode, [value]() { spdlog::debug("[PrintTuneOverlay] Flow set to {}%", value); },
-            [](const MoonrakerError& err) {
-                spdlog::error("[PrintTuneOverlay] Failed to set flow: {}", err.message);
-                NOTIFY_ERROR(lv_tr("Failed to set flow rate: {}"), err.user_message());
-            });
-    }
+    helix::tune::set_flow_percent(api_, flow_percent_);
 }
 
 void PrintTuneOverlay::handle_reset() {
     speed_percent_ = 100;
     flow_percent_ = 100;
     update_display();
-
-    if (api_) {
-        api_->execute_gcode(
-            "M220 S100", []() { spdlog::debug("[PrintTuneOverlay] Speed reset to 100%"); },
-            [](const MoonrakerError& err) {
-                NOTIFY_ERROR(lv_tr("Failed to reset speed: {}"), err.user_message());
-            });
-        api_->execute_gcode(
-            "M221 S100", []() { spdlog::debug("[PrintTuneOverlay] Flow reset to 100%"); },
-            [](const MoonrakerError& err) {
-                NOTIFY_ERROR(lv_tr("Failed to reset flow: {}"), err.user_message());
-            });
-    }
+    helix::tune::set_speed_percent(api_, 100);
+    helix::tune::set_flow_percent(api_, 100);
 }
 
 void PrintTuneOverlay::handle_z_offset_changed(double delta) {
-    // Clamp to safe range to prevent accidental bed crashes or huge offsets
-    double new_offset = current_z_offset_ + delta;
-    if (new_offset < Z_OFFSET_MIN || new_offset > Z_OFFSET_MAX) {
-        spdlog::warn("[PrintTuneOverlay] Z-offset {:.3f}mm clamped to [{}, {}]", new_offset,
-                     Z_OFFSET_MIN, Z_OFFSET_MAX);
-        new_offset = std::clamp(new_offset, Z_OFFSET_MIN, Z_OFFSET_MAX);
-        delta = new_offset - current_z_offset_;
-        if (std::abs(delta) < 0.0005)
-            return; // Already at limit
+    const auto r = helix::zoffset::adjust(api_, printer_state_, current_z_offset_, delta);
+    if (r.clamped_to_noop) {
+        return; // already at the limit
     }
+    current_z_offset_ = r.new_offset_mm;
 
-    // Round to nearest micron to prevent floating-point drift from repeated additions
-    current_z_offset_ = std::round(new_offset * 1000.0) / 1000.0;
     helix::format::format_distance_mm(current_z_offset_, 3, tune_z_offset_buf_,
                                       sizeof(tune_z_offset_buf_));
     lv_subject_copy_string(&tune_z_offset_subject_, tune_z_offset_buf_);
 
-    // Track pending delta for "unsaved adjustment" notification in Controls panel
-    if (printer_state_) {
-        int delta_microns = static_cast<int>(std::lround(delta * 1000.0));
-        printer_state_->add_pending_z_offset_delta(delta_microns);
-
-        // Immediately update the gcode_z_offset subject so Controls panel reflects the change
-        // (otherwise it waits for Moonraker to broadcast the status update)
-        int current_microns = static_cast<int>(std::lround(current_z_offset_ * 1000.0));
-        if (auto* subj = printer_state_->get_gcode_z_offset_subject()) {
-            lv_subject_set_int(subj, current_microns);
-        }
-    }
-
-    spdlog::debug("[PrintTuneOverlay] Z-offset adjust: {:+.3f}mm (total: {:.3f}mm)", delta,
-                  current_z_offset_);
-
-    // Update the visual indicator
     if (tune_panel_) {
         lv_obj_t* indicator = lv_obj_find_by_name(tune_panel_, "z_offset_indicator");
         if (indicator) {
-            int microns = static_cast<int>(current_z_offset_ * 1000.0);
-            ui_z_offset_indicator_set_value(indicator, microns);
-            ui_z_offset_indicator_flash_direction(indicator, delta > 0 ? 1 : -1);
+            ui_z_offset_indicator_set_value(indicator,
+                                            static_cast<int>(current_z_offset_ * 1000.0));
+            ui_z_offset_indicator_flash_direction(indicator, r.applied_delta_mm > 0 ? 1 : -1);
         }
-    }
-
-    // Send SET_GCODE_OFFSET Z_ADJUST command to Klipper.
-    // MOVE=1 makes the toolhead physically move to the new offset immediately,
-    // which is essential for baby stepping during a print. Without it, the offset
-    // only takes effect on the next Z move in gcode. Only add MOVE=1 when all
-    // axes are homed (matching Mainsail behavior) to avoid Klipper errors.
-    if (api_) {
-        bool all_homed = false;
-        if (printer_state_) {
-            const char* axes = lv_subject_get_string(printer_state_->get_homed_axes_subject());
-            all_homed = axes && strchr(axes, 'x') && strchr(axes, 'y') && strchr(axes, 'z');
-        }
-
-        char gcode[96];
-        std::snprintf(gcode, sizeof(gcode), "SET_GCODE_OFFSET Z_ADJUST=%.3f%s", delta,
-                      all_homed ? " MOVE=1" : "");
-        api_->execute_gcode(
-            gcode, [delta]() { spdlog::debug("[PrintTuneOverlay] Z adjusted {:+.3f}mm", delta); },
-            [](const MoonrakerError& err) {
-                spdlog::error("[PrintTuneOverlay] Z-offset adjust failed: {}", err.message);
-                NOTIFY_ERROR(lv_tr("Z-offset failed: {}"), err.user_message());
-            });
     }
 }
 
 void PrintTuneOverlay::handle_z_step_select(int idx) {
-    if (idx < 0 || idx >= static_cast<int>(std::size(Z_STEP_AMOUNTS))) {
+    if (idx < 0 || idx >= static_cast<int>(std::size(helix::zoffset::kZStepAmountsMm))) {
         spdlog::warn("[PrintTuneOverlay] Invalid step index: {}", idx);
         return;
     }
     selected_z_step_idx_ = idx;
+    helix::zoffset::set_persisted_step_index(idx);
 
     // Update boolean subjects (only one active at a time, like filament panel)
-    for (int i = 0; i < static_cast<int>(std::size(Z_STEP_AMOUNTS)); i++) {
+    for (int i = 0; i < static_cast<int>(std::size(helix::zoffset::kZStepAmountsMm)); i++) {
         lv_subject_set_int(&z_step_active_subjects_[i], i == idx ? 1 : 0);
     }
 
-    spdlog::debug("[PrintTuneOverlay] Z-offset step selected: {}mm", Z_STEP_AMOUNTS[idx]);
+    spdlog::debug("[PrintTuneOverlay] Z-offset step selected: {}mm",
+                  helix::zoffset::kZStepAmountsMm[idx]);
 }
 
 void PrintTuneOverlay::handle_z_adjust(int direction) {
-    double amount = Z_STEP_AMOUNTS[selected_z_step_idx_];
+    double amount = helix::zoffset::kZStepAmountsMm[selected_z_step_idx_];
     handle_z_offset_changed(direction * amount);
 }
 
@@ -565,7 +497,8 @@ void PrintTuneOverlay::handle_save_z_offset() {
             [](const std::string& error) {
                 spdlog::error("[PrintTuneOverlay] Save failed: {}", error);
                 NOTIFY_ERROR(lv_tr("Save failed: {}"), error);
-            });
+            },
+            printer_state_);
     });
     save_z_offset_modal_.show(lv_screen_active());
 }

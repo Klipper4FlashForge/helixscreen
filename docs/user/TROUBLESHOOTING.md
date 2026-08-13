@@ -589,9 +589,9 @@ Adjust in steps (e.g. 110, 100, 90 or 160, 200, 240) until the interface looks r
 
 **This is expected — ultrawide and portrait layouts are alpha at best.**
 
-HelixScreen detects both orientations and adjusts the navigation bar and grid sizing, but the per-panel layouts do not exist yet: there are no ultrawide panel layouts at all, and portrait has only the app shell and navigation bar. Every other panel falls back to the standard landscape layout, which is what you are seeing. Neither orientation has been tested on real hardware.
+HelixScreen detects both orientations and adjusts the navigation bar and grid sizing. Portrait is the better covered of the two: besides the app shell and navigation bar, the home dashboard, Print Status, Print Tune, Motion, Bed Mesh, the temperature graph and the Advanced panel's E-stop bar all rearrange themselves for a tall screen. Ultrawide has a home dashboard layout and nothing else. Any panel not in that list falls back to the standard landscape layout, which is what you are seeing on it. Neither orientation has been tested much on real hardware.
 
-**The home dashboard is the exception.** Its widget grid is sized from the actual screen — a 480x800 portrait panel gets a 3x6 grid, a 320x1480 one gets 2x12 — and portrait has its own default widget set (Tips is left out; it is too wide to earn a row on a narrow grid). Buttons, inputs, and headers on a portrait panel are sized from the screen's height, so they come out taller rather than cramped. Every other panel is still the landscape fallback.
+**The home dashboard is the exception, in both orientations.** Its grid is sized from the actual screen so the cells come out square — a 480x800 portrait panel gets 4 columns by 6 rows, a 320x1480 one gets 4x17, a 1920x440 ultrawide gets 23x5 — and portrait and ultrawide each have their own default layout rather than a stretched landscape one. Buttons, inputs, and headers on a portrait panel are sized from the screen's height, so they come out taller rather than cramped.
 
 **What you can do:**
 

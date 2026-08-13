@@ -163,7 +163,7 @@ void TipsWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
         return;
 
     // Below wide-tier width, use smaller text and icon
-    bool compact = (width_px < widget_size::W_WIDE);
+    bool compact = (width_px < widget_size::w_wide());
     const char* font_token = compact ? "font_body" : "font_heading";
     const lv_font_t* text_font = theme_manager_get_font(font_token);
     if (!text_font)

@@ -117,6 +117,7 @@ src/printer/ams_backend_toolchanger.cpp
 src/printer/ams_endless_spool.cpp
 src/printer/ams_state.cpp
 src/printer/ams_subscription_backend.cpp
+src/printer/bed_dimensions.cpp
 src/printer/consumption_sink.cpp
 src/printer/filament_catalog.cpp
 src/printer/filament_consumption_tracker.cpp
@@ -218,6 +219,7 @@ src/temperature/thermal_rate_model.cpp
 src/ui/action_prompt_manager.cpp
 src/ui/ams_drawing_utils.cpp
 src/ui/backdrop_blur.cpp
+src/ui/bed_coord_mapper.cpp
 src/ui/console_filter_engine.cpp
 src/ui/fan_spin_animation.cpp
 src/ui/filament_op_execute.cpp
@@ -287,6 +289,7 @@ src/ui/touch_calibration_session.cpp
 src/ui/tour/first_run_tour.cpp
 src/ui/tour/tour_overlay.cpp
 src/ui/tour/tour_steps.cpp
+src/ui/tune_controller.cpp
 src/ui/ui_ams_context_menu.cpp
 src/ui/ui_ams_current_tool.cpp
 src/ui/ui_ams_device_operations_overlay.cpp
