@@ -9,6 +9,7 @@
 #include "ui_utils.h"
 
 #include "config.h"
+#include "grid_edit_mode.h"
 #include "grid_layout.h"
 #include "layout_manager.h"
 #include "observer_factory.h"
@@ -46,13 +47,33 @@ struct ClampedCell {
 /// reasons about every enabled config entry, not just the placed ones, and an
 /// unclamped span there marks cells occupied that the widget does not cover —
 /// which then subtracts those cells from a neighbour's card.
-ClampedCell clamp_to_grid(int col, int row, int colspan, int rowspan, int cols, int rows) {
-    ClampedCell c{col, row, std::clamp(colspan, 1, cols), std::clamp(rowspan, 1, rows)};
+///
+/// `col_step` / `row_step` are the track boundaries the widget may occupy. A
+/// saved layout can carry an origin or span off those boundaries — written by a
+/// build where the widget still declared half-cell support, or edited by hand —
+/// and the load path used to honour it verbatim, so the straddle survived every
+/// restart (#1126). Snapping DOWN keeps the widget's top-left where the user put
+/// it to within half a cell; if the snapped position now collides, the caller's
+/// existing fallback re-seats it through auto-placement.
+ClampedCell clamp_to_grid(int col, int row, int colspan, int rowspan, int cols, int rows,
+                          int col_step = GridLayout::TRACKS_PER_CELL,
+                          int row_step = GridLayout::TRACKS_PER_CELL) {
+    col_step = std::max(1, col_step);
+    row_step = std::max(1, row_step);
+
+    // Round the span UP and the origin DOWN, so the widget never ends up
+    // covering less than it was saved with.
+    auto ceil_to = [](int v, int step) { return ((v + step - 1) / step) * step; };
+    auto floor_to = [](int v, int step) { return v >= 0 ? (v / step) * step : v; };
+
+    ClampedCell c{floor_to(col, col_step), floor_to(row, row_step),
+                  std::clamp(ceil_to(colspan, col_step), std::min(col_step, cols), cols),
+                  std::clamp(ceil_to(rowspan, row_step), std::min(row_step, rows), rows)};
     if (c.row + c.rowspan > rows) {
-        c.row = std::max(0, rows - c.rowspan);
+        c.row = std::max(0, floor_to(rows - c.rowspan, row_step));
     }
     if (c.col + c.colspan > cols) {
-        c.col = std::max(0, cols - c.colspan);
+        c.col = std::max(0, floor_to(cols - c.colspan, col_step));
     }
     return c;
 }
@@ -366,8 +387,11 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             // saved on a 6-column landscape grid cannot exist on a 2-column
             // portrait one; leaving it unclamped made can_place() fail, dropped
             // the widget into auto-place, and ultimately disabled it (#1216).
-            const auto fitted = clamp_to_grid(entry_it->col, entry_it->row, entry_it->colspan,
-                                              entry_it->rowspan, grid.cols(), grid.rows());
+            const auto [anchor_col_step, anchor_row_step] =
+                GridEditMode::snap_step_for(slot.widget_id);
+            const auto fitted =
+                clamp_to_grid(entry_it->col, entry_it->row, entry_it->colspan, entry_it->rowspan,
+                              grid.cols(), grid.rows(), anchor_col_step, anchor_row_step);
             int col = fitted.col;
             int row = fitted.row;
             int colspan = fitted.colspan;
@@ -480,16 +504,22 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             const int grow_rows = def ? std::min(want_rows, def->effective_max_rowspan()) : 1;
             const int min_cols = def ? std::min(def->effective_min_colspan(), want_cols) : 1;
             const int min_rows = def ? std::min(def->effective_min_rowspan(), want_rows) : 1;
+            // The boundaries this widget may sit on — a whole cell unless it
+            // declares half-cell support. Same source edit mode snaps drags and
+            // resizes to, so the two paths cannot disagree (#1126).
+            const auto [col_step, row_step] = GridEditMode::snap_step_for(slot.widget_id);
 
-            auto fit = minimum_first ? grid.find_available_bottom_min(min_cols, min_rows)
-                                     : grid.find_available_bottom_min(want_cols, want_rows);
+            auto fit =
+                minimum_first
+                    ? grid.find_available_bottom_min(min_cols, min_rows, col_step, row_step)
+                    : grid.find_available_bottom_min(want_cols, want_rows, col_step, row_step);
 
             if (fit.placed() &&
                 grid.place({slot.widget_id, fit.col, fit.row, fit.colspan, fit.rowspan})) {
                 placed.push_back(
                     {slot_idx, fit.col, fit.row, fit.colspan, fit.rowspan, want_cols, want_rows});
                 if (minimum_first) {
-                    growth.push_back({slot.widget_id, grow_cols, grow_rows});
+                    growth.push_back({slot.widget_id, grow_cols, grow_rows, col_step, row_step});
                 }
             } else {
                 // A found-but-unplaceable position can only mean the free run
@@ -500,12 +530,18 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             }
         }
 
-        // Pack 1x1 widgets into remaining free cells, bottom-right first.
+        // Pack one-cell widgets into the remaining free cells, bottom-right
+        // first. Spans here are in TRACKS, so one cell is TRACKS_PER_CELL of
+        // them on each axis — a literal 1 would hand out a quarter of a cell.
+        // Only an id with no registry definition reaches this block: every real
+        // definition spans at least one whole cell, so the classification above
+        // routes them all through the multi-cell path.
         {
+            constexpr int kCell = GridLayout::TRACKS_PER_CELL;
             std::vector<std::pair<int, int>> free_cells;
-            for (int r = grid.rows() - 1; r >= 0; --r) {
-                for (int c = grid.cols() - 1; c >= 0; --c) {
-                    if (!grid.is_occupied(c, r)) {
+            for (int r = grid.rows() - kCell; r >= 0; r -= kCell) {
+                for (int c = grid.cols() - kCell; c >= 0; c -= kCell) {
+                    if (grid.can_place(c, r, kCell, kCell)) {
                         free_cells.push_back({c, r});
                     }
                 }
@@ -521,19 +557,21 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 size_t cell_idx = n_single - 1 - i;
                 if (cell_idx < n_cells) {
                     auto [col, row] = free_cells[cell_idx];
-                    if (grid.place({slot.widget_id, col, row, 1, 1})) {
-                        placed.push_back({slot_idx, col, row, 1, 1, 1, 1});
+                    if (grid.place({slot.widget_id, col, row, kCell, kCell})) {
+                        placed.push_back({slot_idx, col, row, kCell, kCell, kCell, kCell});
                         continue;
                     }
                 }
 
                 // Fallback
-                auto pos = grid.find_available_bottom(1, 1);
-                if (pos && grid.place({slot.widget_id, pos->first, pos->second, 1, 1})) {
-                    placed.push_back({slot_idx, pos->first, pos->second, 1, 1, 1, 1});
+                auto pos = grid.find_available_bottom(kCell, kCell);
+                if (pos && grid.place({slot.widget_id, pos->first, pos->second, kCell, kCell})) {
+                    placed.push_back(
+                        {slot_idx, pos->first, pos->second, kCell, kCell, kCell, kCell});
                 } else {
-                    // A 1x1 widget fits any grid by definition, so the only way
-                    // to get here is that every cell is taken.
+                    // A one-cell widget fits any grid by definition — MIN_TRACKS
+                    // is a whole number of cells — so the only way to get here
+                    // is that every cell is taken.
                     failures.push_back({slot.widget_id, GridLayout::PlacementFailure::GridFull});
                 }
             }
@@ -715,8 +753,10 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             // change than it looks: this deliberately walks ALL enabled entries,
             // not just placed ones, so hardware-gated widgets reserve their card
             // on the first frame instead of making the grid jump later.
-            const auto fitted = clamp_to_grid(entry.col, entry.row, entry.colspan, entry.rowspan,
-                                              grid.cols(), grid.rows());
+            const auto [card_col_step, card_row_step] = GridEditMode::snap_step_for(entry.id);
+            const auto fitted =
+                clamp_to_grid(entry.col, entry.row, entry.colspan, entry.rowspan, grid.cols(),
+                              grid.rows(), card_col_step, card_row_step);
 
             // Whether a widget wants the shared card is a property of the
             // widget, not of its size — `merges_into_card` in the registry. It
