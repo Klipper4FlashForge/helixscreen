@@ -4,10 +4,12 @@
 // GCC rejects an extern "C" variable named _ZTI<class> in any TU where the
 // real class declaration is visible (conflicting implicit declaration).
 //
-// Rationale (see audit_stubs.cpp history): PanelWidgetManager's
-// register_shared_resource<T>() keys a type_index map with typeid(T), which
-// needs the typeinfo SYMBOL. Emitting the real one would drag each class's
-// full vtable — 100+ virtuals on classes the slice never instantiates (the
+// Rationale: audit_moonraker_stub.cpp defines out-of-line methods of these
+// classes, so their vtables get emitted here, and a vtable's second slot is a
+// reference to the class typeinfo SYMBOL. The remaining dynamic_casts on
+// MoonrakerClientMock / helix::MoonrakerClient (moonraker_manager.cpp,
+// ams_backend.cpp) want the same symbols. Emitting the real one would drag
+// each class's full vtable - 100+ virtuals on classes the slice never instantiates (the
 // API/client pointers stay nullptr; dynamic_cast on a null pointer never
 // consults typeinfo). The struct mimics the {vptr, name} ABI layout that
 // libstdc++'s non-virtual type_info ops (hash_code/operator==/name) read.
