@@ -169,8 +169,9 @@ Tap any available widget to add it. HelixScreen places it near where you long-pr
 
 The **Reset** button in the catalog header resets your whole dashboard — see [Resetting to Defaults](#resetting-to-defaults).
 
-![Widget Catalog — the five category rows, each with its widget count](../../images/user/home-widget-catalog.png)
-![Inside a category — widget rows with size badges and dimmed "Placed" entries](../../images/user/home-widget-catalog-category.png)
+![Widget Catalog - the five category rows, each with its widget count](../../images/user/home-widget-catalog.png)
+
+![Inside a category - widget rows with size badges and dimmed "Placed" entries](../../images/user/home-widget-catalog-category.png)
 
 ### Removing a Widget
 

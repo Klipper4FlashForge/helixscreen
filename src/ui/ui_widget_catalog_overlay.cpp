@@ -220,8 +220,13 @@ lv_obj_t* WidgetCatalogOverlay::create_row(lv_obj_t* parent, const char* name, c
     }
 
     // Left side: name + description column
+    // Width comes from flex_grow, not from the content: the name can be much
+    // wider than the row. A gated widget carries its reason in the name
+    // ("Humidity (No humidity sensor detected)"), which is longer than any
+    // widget name, and sizing to content ran that straight through the size
+    // badge and the "Placed" label on a 480px panel.
     lv_obj_t* text_col = lv_obj_create(row);
-    lv_obj_set_width(text_col, LV_SIZE_CONTENT);
+    lv_obj_set_width(text_col, 0);
     lv_obj_set_height(text_col, LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(text_col, 0, 0);
     lv_obj_set_style_bg_opa(text_col, LV_OPA_TRANSP, 0);
@@ -232,14 +237,20 @@ lv_obj_t* WidgetCatalogOverlay::create_row(lv_obj_t* parent, const char* name, c
     lv_obj_remove_flag(text_col, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(text_col, LV_OBJ_FLAG_SCROLLABLE);
 
+    // Wrap rather than ellipsize. The gate reason lives at the end of the name,
+    // so clipping it is exactly the half that explains why the row is greyed out.
     lv_obj_t* name_label = lv_label_create(text_col);
     lv_label_set_text(name_label, name);
+    lv_obj_set_width(name_label, LV_PCT(100));
+    lv_label_set_long_mode(name_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(name_label, &noto_sans_16, 0);
     lv_obj_set_style_text_color(name_label, theme_manager_get_color("text"), 0);
 
     if (description && description[0] != '\0') {
         lv_obj_t* desc_label = lv_label_create(text_col);
         lv_label_set_text(desc_label, description);
+        lv_obj_set_width(desc_label, LV_PCT(100));
+        lv_label_set_long_mode(desc_label, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_font(desc_label, &noto_sans_12, 0);
         lv_obj_set_style_text_color(desc_label, theme_manager_get_color("text_muted"), 0);
     }

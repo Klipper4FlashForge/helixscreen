@@ -283,7 +283,7 @@ To customize:
 4. Select a widget and tap the **trash icon** to remove it, or the **gear icon** to configure it
 5. Tap **Done** when you are finished
 
-How many widgets fit depends on your screen — the grid is sized from it. Some widgets only appear if the relevant hardware is detected. See the [Home Panel guide](guide/home-panel.md#available-widgets) for the full widget list.
+How many widgets fit depends on your screen - the grid is sized from it, so a bigger screen gives you more cells rather than bigger ones. Widgets that need hardware you don't have still show up in the Widget Catalog, but they are dimmed, can't be tapped, and carry the reason in parentheses - for example "Humidity (No humidity sensor detected)" or "Chamber Temperature (No chamber temperature sensor detected)". They become available on their own once the hardware is detected. See the [Home Panel guide](guide/home-panel.md#available-widgets) for the full widget list.
 
 ### Can I customize the colors or layout?
 
