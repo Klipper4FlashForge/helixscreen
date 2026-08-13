@@ -1,0 +1,194 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file test_widget_size_clog_detection.cpp
+ * @brief clog_detection ships as a 2x1 FlowGuard bar, and the bar's pieces land
+ *        where clog_bar_geometry() says (prestonbrown/helixscreen#1017).
+ *
+ * The widget used to default to one cell with an arc, its value and its mode
+ * text stacked inside it, which was reported as showing nothing useful. It is
+ * now authored two cells wide and one tall, and draws the horizontal scale from
+ * clog_bar_page.xml.
+ *
+ * Two things are worth pinning. The registry half — the default and minimum
+ * really are 2x1 in tracks, so a fresh placement cannot come up cramped and a
+ * drag cannot take it back there. And the widget half — the bar's fill, marker,
+ * ticks and danger shading are positioned from the track's measured width, so a
+ * layout that silently failed to find them (a renamed object in the XML) would
+ * leave everything stacked at x=0 rather than erroring.
+ */
+
+#include "ui_buffer_meter.h"
+#include "ui_clog_bar.h"
+
+#include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/panel_widget_size_harness.h"
+#include "ams_state.h"
+#include "clog_detection_config_modal.h"
+#include "clog_meter_geometry.h"
+#include "grid_layout.h"
+#include "panel_widget_manager.h"
+#include "panel_widget_registry.h"
+#include "src/ui/panel_widgets/clog_detection_widget.h"
+
+#include "../catch_amalgamated.hpp"
+
+using namespace helix;
+
+namespace {
+constexpr int kCell = GridLayout::TRACKS_PER_CELL;
+
+/// x of a named child, in track-local pixels, or -1 when it is hidden — which
+/// is how the bar says "this piece has nothing to show".
+int piece_x(lv_obj_t* track, const char* name) {
+    lv_obj_t* obj = lv_obj_find_by_name(track, name);
+    REQUIRE(obj != nullptr);
+    if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
+        return -1;
+    }
+    return lv_obj_get_x(obj);
+}
+
+int piece_w(lv_obj_t* track, const char* name) {
+    lv_obj_t* obj = lv_obj_find_by_name(track, name);
+    REQUIRE(obj != nullptr);
+    return lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) ? 0 : lv_obj_get_width(obj);
+}
+
+/// Push one sample through the subjects the bar observes.
+void publish(int mode, int value, int danger, int peak, int warning = 0) {
+    auto set = [](const char* name, int v) {
+        lv_subject_t* s = lv_xml_get_subject(nullptr, name);
+        REQUIRE(s != nullptr);
+        lv_subject_set_int(s, v);
+    };
+    set("clog_meter_mode", mode);
+    set("clog_meter_value", value);
+    set("clog_meter_danger_pct", danger);
+    set("clog_meter_peak_pct", peak);
+    set("clog_meter_warning", warning);
+}
+} // namespace
+
+TEST_CASE("clog_detection is authored two cells wide and one tall",
+          "[widget_size][clog_detection][1017]") {
+    const auto* def = find_widget_def("clog_detection");
+    REQUIRE(def != nullptr);
+
+    // Spans are tracks; a cell is TRACKS_PER_CELL of them.
+    CHECK(def->colspan == 2 * kCell);
+    CHECK(def->rowspan == 1 * kCell);
+
+    // The minimum matches the default on the width axis, so the cramped size
+    // the issue was filed about is not reachable by dragging either.
+    CHECK(def->effective_min_colspan() == 2 * kCell);
+    CHECK(def->effective_min_rowspan() == 1 * kCell);
+
+    // Still growable — the scale gets better with width, it does not stop
+    // being useful.
+    CHECK(def->effective_max_colspan() > def->colspan);
+    CHECK(def->effective_max_rowspan() > def->rowspan);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection lays the bar out from the measured track",
+                 "[widget_size][clog_detection][1017]") {
+    PanelWidgetManager::instance().init_widget_subjects();
+    // The bar reads AmsState's clog_meter_* subjects, and clog_bar_page.xml
+    // binds its labels to them, so they must exist before the page is built.
+    AmsState::instance().init_subjects(true);
+
+    const auto* def = find_widget_def("clog_detection");
+    REQUIRE(def != nullptr);
+
+    PanelWidgetHarness<ClogDetectionWidget> h(test_screen());
+    REQUIRE(h.root() != nullptr);
+
+    // The 2x1 default at a mid-tier cell.
+    h.resize(def->colspan, def->rowspan, /*width_px=*/240, /*height_px=*/112);
+
+    lv_obj_t* track = h.child("clog_bar_track");
+    REQUIRE(track != nullptr);
+    const int track_w = lv_obj_get_content_width(track);
+    REQUIRE(track_w > 0);
+
+    SECTION("a linear mode fills from the left and shades the far end") {
+        publish(static_cast<int>(ui::ClogMeterMode::Encoder), /*value=*/40, /*danger=*/75,
+                /*peak=*/60);
+        lv_obj_update_layout(track);
+
+        const auto g = ui::clog_bar_geometry(static_cast<int>(ui::ClogMeterMode::Encoder), 40, 75,
+                                             60, track_w);
+        CHECK(piece_x(track, "clog_bar_fill") == g.fill_x);
+        CHECK(piece_w(track, "clog_bar_fill") == g.fill_w);
+        CHECK(piece_x(track, "clog_bar_marker") == g.marker_x);
+        CHECK(piece_x(track, "clog_bar_peak") == g.peak_x);
+
+        // Only the far end is dangerous in a 0..100 mode.
+        CHECK(piece_x(track, "clog_bar_danger_lo") == -1);
+        CHECK(piece_w(track, "clog_bar_danger_hi") == g.danger_hi_w);
+    }
+
+    SECTION("Flowguard grows out from the centre and shades both ends") {
+        const int mode = static_cast<int>(ui::ClogMeterMode::Flowguard);
+        publish(mode, /*value=*/-45, /*danger=*/80, /*peak=*/62);
+        lv_obj_update_layout(track);
+
+        const auto g = ui::clog_bar_geometry(mode, -45, 80, 62, track_w);
+        // Fill ends at the centre and runs back toward the tangle end.
+        CHECK(piece_x(track, "clog_bar_fill") == g.fill_x);
+        CHECK(piece_x(track, "clog_bar_fill") + piece_w(track, "clog_bar_fill") == track_w / 2);
+
+        // Both ends shaded, by the same amount.
+        CHECK(piece_w(track, "clog_bar_danger_lo") == g.danger_lo_w);
+        CHECK(piece_w(track, "clog_bar_danger_hi") == g.danger_hi_w);
+        CHECK(piece_w(track, "clog_bar_danger_lo") == piece_w(track, "clog_bar_danger_hi"));
+
+        // The peak went to the side the reading is leaning toward.
+        CHECK(piece_x(track, "clog_bar_peak") < track_w / 2);
+    }
+
+    SECTION("nothing to report draws no fill and no peak") {
+        publish(static_cast<int>(ui::ClogMeterMode::Buffer), /*value=*/0, /*danger=*/75,
+                /*peak=*/0);
+        lv_obj_update_layout(track);
+
+        CHECK(piece_w(track, "clog_bar_fill") == 0);
+        CHECK(piece_x(track, "clog_bar_marker") == -1); // no fill to lead
+        CHECK(piece_x(track, "clog_bar_peak") == -1);   // no worst case recorded
+    }
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection relays out when the widget is widened",
+                 "[widget_size][clog_detection][1017]") {
+    // Growing the widget widens the track, and every position is a fraction of
+    // it — a bar that only measured once would keep the narrow geometry.
+    PanelWidgetManager::instance().init_widget_subjects();
+    AmsState::instance().init_subjects(true);
+
+    const auto* def = find_widget_def("clog_detection");
+    REQUIRE(def != nullptr);
+
+    PanelWidgetHarness<ClogDetectionWidget> h(test_screen());
+    REQUIRE(h.root() != nullptr);
+
+    const int mode = static_cast<int>(ui::ClogMeterMode::Encoder);
+    publish(mode, /*value=*/50, /*danger=*/75, /*peak=*/50);
+
+    h.resize(def->colspan, def->rowspan, 240, 112);
+    lv_obj_t* track = h.child("clog_bar_track");
+    REQUIRE(track != nullptr);
+    lv_obj_update_layout(track);
+    const int narrow_track = lv_obj_get_content_width(track);
+    const int narrow_fill = piece_w(track, "clog_bar_fill");
+
+    h.resize(def->effective_max_colspan(), def->rowspan, 480, 112);
+    lv_obj_update_layout(track);
+    const int wide_track = lv_obj_get_content_width(track);
+    const int wide_fill = piece_w(track, "clog_bar_fill");
+
+    REQUIRE(wide_track > narrow_track);
+    CHECK(wide_fill > narrow_fill);
+    // Still half the track at 50%, which is what "it re-measured" means.
+    CHECK(wide_fill == ui::clog_bar_geometry(mode, 50, 75, 50, wide_track).fill_w);
+}

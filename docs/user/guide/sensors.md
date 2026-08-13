@@ -75,7 +75,7 @@ There are three kinds of flow-monitoring hardware HelixScreen understands:
 
 ### Where it shows up
 
-Clog and flow detection surface through the **Clog Detection** dashboard widget — an arc gauge that stays green while flow is healthy and shifts toward orange and red as trouble builds. You add and configure it from the Home Panel rather than this Sensors screen. See **[Clog Detection Widget](home-panel.md#clog-detection-widget)** for the full widget walkthrough, and the [Filament guide](filament.md) for the same meter shown in the filament sidebar.
+Clog and flow detection surface through the **Clog Detection** dashboard widget — a horizontal FlowGuard bar that stays green while flow is healthy and shifts toward orange and red as trouble builds, with a label at each end naming the fault that direction leads to. You add and configure it from the Home Panel rather than this Sensors screen. See **[Clog Detection Widget](home-panel.md#clog-detection-widget)** for the full widget walkthrough, and the [Filament guide](filament.md) for the same reading drawn as an arc in the filament sidebar.
 
 **What happens on a real clog:** the meter turns red and shows a warning, but the actual pause is handled by your printer's firmware (Happy Hare or AFC). HelixScreen visualizes the problem; the firmware stops the print.
 

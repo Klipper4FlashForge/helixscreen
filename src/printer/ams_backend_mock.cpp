@@ -1159,6 +1159,29 @@ void AmsBackendMock::set_unit_buffer_health(int unit_index, std::optional<Buffer
     }
 }
 
+void AmsBackendMock::set_encoder_clog_info(EncoderClogInfo info, int detection_mode_flag) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    system_info_.encoder_info = info;
+    system_info_.clog_detection = detection_mode_flag;
+    // encoder_flow_rate is the legacy top-level mirror of the same reading; the
+    // legacy fallback branch in sync_clog_meter_from_info() reads it when there
+    // is no encoder_info, so leaving it stale shows two different flow numbers.
+    system_info_.encoder_flow_rate = info.enabled ? info.flow_rate : -1;
+    spdlog::debug("[AmsBackendMock] Encoder clog: enabled={} flow={}% headroom={:.1f}/{:.1f}mm "
+                  "min={:.1f} desired={:.1f} detection={}",
+                  info.enabled, info.flow_rate, info.headroom, info.detection_length,
+                  info.min_headroom, info.desired_headroom, detection_mode_flag);
+}
+
+void AmsBackendMock::set_flowguard_info(FlowguardInfo info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    system_info_.flowguard_info = info;
+    spdlog::debug("[AmsBackendMock] Flowguard: enabled={} active={} level={:.2f} trigger='{}' "
+                  "max_clog={:.2f} max_tangle={:.2f}",
+                  info.enabled, info.active, info.level, info.trigger, info.max_clog,
+                  info.max_tangle);
+}
+
 void AmsBackendMock::inject_mock_errors() {
     std::lock_guard<std::mutex> lock(mutex_);
 

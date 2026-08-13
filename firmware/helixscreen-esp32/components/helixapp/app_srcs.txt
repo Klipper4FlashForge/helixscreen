@@ -249,6 +249,7 @@ src/ui/overlay_base.cpp
 src/ui/page_scroll_auto_inject.cpp
 src/ui/page_scroll_controller.cpp
 src/ui/panel_widget_manager.cpp
+src/ui/clog_meter_geometry.cpp
 src/ui/panel_widget_registry.cpp
 src/ui/panel_widgets/active_spool_widget.cpp
 src/ui/panel_widgets/camera_widget.cpp
@@ -317,6 +318,7 @@ src/ui/ui_bypass_spool_widget.cpp
 src/ui/ui_card.cpp
 src/ui/ui_carousel.cpp
 src/ui/ui_change_host_modal.cpp
+src/ui/ui_clog_bar.cpp
 src/ui/ui_clog_meter.cpp
 src/ui/ui_color_picker.cpp
 src/ui/ui_component_header_bar.cpp

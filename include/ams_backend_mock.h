@@ -268,6 +268,31 @@ class AmsBackendMock : public AmsBackend {
     void set_unit_buffer_health(int unit_index, std::optional<BufferHealth> health);
 
     /**
+     * @brief Set the encoder clog-detection state the meter derives from.
+     *
+     * The constructor seeds one healthy reading and nothing moves it, so every
+     * mock run showed the same 85%. This is what the `ams_clog_*` scenarios
+     * drive to walk the meter through healthy, warning and blocked.
+     *
+     * @param info Encoder state; `enabled = false` takes encoder out of the
+     *             running so a lower-priority source (AFC buffer) can be seen.
+     * @param detection_mode_flag Mirrors `clog_detection` on the system info —
+     *             0 = off, 1 = manual, 2 = auto. Kept explicit because the two
+     *             are separate fields on the wire and the UI reads both.
+     */
+    void set_encoder_clog_info(EncoderClogInfo info, int detection_mode_flag);
+
+    /**
+     * @brief Set the Flowguard clog/tangle state.
+     *
+     * Never seeded before, so mode 2 — the only symmetrical one, and the only
+     * one whose two ends mean different faults — was unreachable under --test.
+     * Flowguard outranks the encoder and AFC when enabled, so setting this is
+     * enough to select it.
+     */
+    void set_flowguard_info(FlowguardInfo info);
+
+    /**
      * @brief Inject error states for visual testing (HELIX_MOCK_AMS_STATE=error)
      *
      * Adds lane errors and buffer fault warnings to existing units for

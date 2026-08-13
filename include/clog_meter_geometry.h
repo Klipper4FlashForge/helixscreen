@@ -1,0 +1,83 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include "lvgl/lvgl.h"
+
+#include <cstdint>
+
+namespace helix::ui {
+
+/// The presentations `clog_meter_mode` selects between. Populated by
+/// AmsState::update_clog_meter_subjects(); 0 means no detection backend is
+/// available and the meter hides itself.
+enum class ClogMeterMode : int {
+    None = 0,
+    Encoder = 1,   ///< 0..100 clog percentage, gradient safe -> clogged
+    Flowguard = 2, ///< -100..+100, tangle at one end and clog at the other
+    Buffer = 3,    ///< 0..100 AFC buffer fault proximity
+};
+
+/// Indicator colour as two design-token names plus a mix fraction, rather than
+/// a resolved `lv_color_t`.
+///
+/// The rule is shared by the arc and the bar and is worth testing on its own,
+/// but resolving a token needs a loaded theme. Naming the tokens keeps the
+/// decision pure — the caller does `lv_color_mix(get(a), get(b), mix_a)`, which
+/// is what LVGL's own argument order means: `mix_a` of 0 yields all `b`.
+struct ClogMeterTint {
+    const char* a;
+    const char* b;
+    uint8_t mix_a;
+};
+
+/// Which colour the indicator takes for a given mode/value/warning triple.
+///
+/// A warning is unconditional danger whatever the mode. Otherwise the linear
+/// modes ramp primary -> warning -> danger across their 0..100 range, and
+/// Flowguard stays primary: its extremes are already labelled at both ends of
+/// the scale, so tinting the middle of a symmetrical range says nothing.
+ClogMeterTint clog_meter_tint(int mode, int value, int warning);
+
+/// clog_meter_tint() with its tokens resolved against the live theme, for the
+/// two widgets that actually paint. Kept beside the rule so the arc and the bar
+/// cannot drift into resolving it differently.
+lv_color_t resolve_clog_tint(int mode, int value, int warning);
+
+/// Width of the value marker and the peak tick, in px. Both are deliberately
+/// thin: the fill carries the reading, and these two only say "here" and
+/// "worst so far". clog_bar_geometry() keeps both inside the track by this
+/// width, and clog_bar_page.xml authors the same figure.
+constexpr int kClogBarTickW = 2;
+
+/// Pixel geometry of the horizontal FlowGuard bar, in track-local coordinates.
+///
+/// Every field is an x/width pair inside a track `track_w` px wide. A zero
+/// width means "draw nothing" — the caller hides that piece rather than
+/// drawing a degenerate rectangle.
+struct ClogBarGeometry {
+    int fill_x = 0;
+    int fill_w = 0;
+    /// Leading edge of the fill, where the value marker sits.
+    int marker_x = 0;
+    int peak_x = 0;
+    /// Danger shading. Symmetrical modes shade both ends, linear modes only
+    /// the far one, in which case `lo_w` is 0.
+    int danger_lo_x = 0;
+    int danger_lo_w = 0;
+    int danger_hi_x = 0;
+    int danger_hi_w = 0;
+};
+
+/// Lay the bar out for one sample.
+///
+/// `value` is the raw `clog_meter_value` — signed for Flowguard, 0..100
+/// otherwise. `danger_pct` is the magnitude at which the reading is
+/// dangerous, and `peak_pct` the worst magnitude seen this print. Both are
+/// magnitudes even in the symmetrical mode, where the peak is drawn on the
+/// side the current reading leans toward because the sample it came from
+/// (max of |clog| and |tangle|) does not record which end produced it.
+ClogBarGeometry clog_bar_geometry(int mode, int value, int danger_pct, int peak_pct, int track_w);
+
+} // namespace helix::ui

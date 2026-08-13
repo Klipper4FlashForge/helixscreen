@@ -204,7 +204,11 @@ TEST_CASE("registry spans: authored spans land in the intended pixel band",
         {"control_buttons", {{1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}}},
         {"job_queue", {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}},
         {"tips", {{2, 1}, {2, 1}, {2, 1}, {2, 1}, {2, 1}, {2, 1}, {2, 1}, {2, 1}}},
-        {"clog_detection", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+        // 2x1 since #1017. Width band 1 (>= w_normal) on every geometry is the
+        // point of that change: the FlowGuard bar puts an end label either side
+        // of the scale, which is the same "room for two columns" threshold
+        // control_buttons sits at — and is what the one-cell arc never had.
+        {"clog_detection", {{1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}}},
         {"print_stats", {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}},
         {"gcode_console", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
         {"camera", {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}}},

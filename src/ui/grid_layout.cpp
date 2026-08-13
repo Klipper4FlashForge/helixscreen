@@ -154,13 +154,33 @@ bool GridLayout::remove(const std::string& widget_id) {
     return true;
 }
 
-std::optional<std::pair<int, int>> GridLayout::find_available(int colspan, int rowspan) const {
+namespace {
+/// Largest multiple of `step` that is <= `value`. The scans below start from the
+/// last origin that fits and walk back, so they have to start on a legal
+/// boundary too — `ncols - colspan` is only even when both operands are.
+///
+/// A negative `value` means the span does not fit the axis at all; it is
+/// returned as-is so the caller's `>= 0` guard still ends the scan before it
+/// starts (C++ truncates -1/2 toward zero, which would otherwise read as 0).
+int floor_to_step(int value, int step) {
+    if (value < 0) {
+        return value;
+    }
+    return step > 1 ? (value / step) * step : value;
+}
+} // namespace
+
+std::optional<std::pair<int, int>> GridLayout::find_available(int colspan, int rowspan,
+                                                              int col_step, int row_step) const {
     int ncols = cols();
     int nrows = rows();
+    col_step = std::max(1, col_step);
+    row_step = std::max(1, row_step);
 
-    // Scan top-to-bottom, left-to-right
-    for (int r = 0; r <= nrows - rowspan; ++r) {
-        for (int c = 0; c <= ncols - colspan; ++c) {
+    // Scan top-to-bottom, left-to-right, visiting only origins the widget is
+    // allowed to occupy (#1126).
+    for (int r = 0; r <= nrows - rowspan; r += row_step) {
+        for (int c = 0; c <= ncols - colspan; c += col_step) {
             if (can_place(c, r, colspan, rowspan)) {
                 return std::make_pair(c, r);
             }
@@ -169,14 +189,16 @@ std::optional<std::pair<int, int>> GridLayout::find_available(int colspan, int r
     return std::nullopt;
 }
 
-std::optional<std::pair<int, int>> GridLayout::find_available_bottom(int colspan,
-                                                                     int rowspan) const {
+std::optional<std::pair<int, int>>
+GridLayout::find_available_bottom(int colspan, int rowspan, int col_step, int row_step) const {
     int ncols = cols();
     int nrows = rows();
+    col_step = std::max(1, col_step);
+    row_step = std::max(1, row_step);
 
-    // Scan bottom-to-top, right-to-left
-    for (int r = nrows - rowspan; r >= 0; --r) {
-        for (int c = ncols - colspan; c >= 0; --c) {
+    // Scan bottom-to-top, right-to-left, from the last legal origin.
+    for (int r = floor_to_step(nrows - rowspan, row_step); r >= 0; r -= row_step) {
+        for (int c = floor_to_step(ncols - colspan, col_step); c >= 0; c -= col_step) {
             if (can_place(c, r, colspan, rowspan)) {
                 return std::make_pair(c, r);
             }
@@ -185,8 +207,8 @@ std::optional<std::pair<int, int>> GridLayout::find_available_bottom(int colspan
     return std::nullopt;
 }
 
-GridLayout::SpanPlacement GridLayout::find_available_bottom_min(int min_colspan,
-                                                                int min_rowspan) const {
+GridLayout::SpanPlacement GridLayout::find_available_bottom_min(int min_colspan, int min_rowspan,
+                                                                int col_step, int row_step) const {
     SpanPlacement out;
 
     // A span of 0 means "unset" in PanelWidgetDef; treat it as 1 cell.
@@ -200,7 +222,7 @@ GridLayout::SpanPlacement GridLayout::find_available_bottom_min(int min_colspan,
         return out;
     }
 
-    if (auto pos = find_available_bottom(want_cols, want_rows)) {
+    if (auto pos = find_available_bottom(want_cols, want_rows, col_step, row_step)) {
         return {pos->first, pos->second, want_cols, want_rows, PlacementFailure::None};
     }
 
@@ -235,33 +257,43 @@ bool GridLayout::strip_is_free(int col, int row, int colspan, int rowspan) const
     return true;
 }
 
-bool GridLayout::grow_once(const std::string& widget_id, int target_colspan, int target_rowspan) {
+bool GridLayout::grow_once(const std::string& widget_id, int target_colspan, int target_rowspan,
+                           int col_step, int row_step) {
     GridPlacement* p = find_placement_mut(widget_id);
     if (!p)
         return false;
+
+    col_step = std::max(1, col_step);
+    row_step = std::max(1, row_step);
 
     // The grid is a hard ceiling on top of the widget's own target.
     const int target_cols = std::min(std::max(1, target_colspan), cols());
     const int target_rows = std::min(std::max(1, target_rowspan), rows());
 
     // RIGHT then DOWN keep the origin fixed; LEFT then UP are the fallback for a
-    // widget already against an edge. See grow_once() in grid_layout.h.
-    if (p->colspan < target_cols && strip_is_free(p->col + p->colspan, p->row, 1, p->rowspan)) {
-        ++p->colspan;
+    // widget already against an edge. See grow_once() in grid_layout.h. The
+    // whole step has to be free, not just its first track: growing by one track
+    // into a two-track gap would leave a whole-cell widget straddling (#1126).
+    if (p->colspan + col_step <= target_cols &&
+        strip_is_free(p->col + p->colspan, p->row, col_step, p->rowspan)) {
+        p->colspan += col_step;
         return true;
     }
-    if (p->rowspan < target_rows && strip_is_free(p->col, p->row + p->rowspan, p->colspan, 1)) {
-        ++p->rowspan;
+    if (p->rowspan + row_step <= target_rows &&
+        strip_is_free(p->col, p->row + p->rowspan, p->colspan, row_step)) {
+        p->rowspan += row_step;
         return true;
     }
-    if (p->colspan < target_cols && strip_is_free(p->col - 1, p->row, 1, p->rowspan)) {
-        --p->col;
-        ++p->colspan;
+    if (p->colspan + col_step <= target_cols &&
+        strip_is_free(p->col - col_step, p->row, col_step, p->rowspan)) {
+        p->col -= col_step;
+        p->colspan += col_step;
         return true;
     }
-    if (p->rowspan < target_rows && strip_is_free(p->col, p->row - 1, p->colspan, 1)) {
-        --p->row;
-        ++p->rowspan;
+    if (p->rowspan + row_step <= target_rows &&
+        strip_is_free(p->col, p->row - row_step, p->colspan, row_step)) {
+        p->row -= row_step;
+        p->rowspan += row_step;
         return true;
     }
     return false;
@@ -274,7 +306,7 @@ int GridLayout::grow_to_targets(const std::vector<GrowthTarget>& targets) {
     for (bool progress = true; progress;) {
         progress = false;
         for (const auto& t : targets) {
-            if (grow_once(t.widget_id, t.colspan, t.rowspan)) {
+            if (grow_once(t.widget_id, t.colspan, t.rowspan, t.col_step, t.row_step)) {
                 progress = true;
                 ++steps;
             }

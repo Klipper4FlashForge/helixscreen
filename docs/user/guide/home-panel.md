@@ -279,7 +279,7 @@ These are the same 5 groups the Widget Catalog uses on the device.
 | **AMS Status** | A live view of your multi-material spool lanes. At 1x it's a compact row of colored bars — one per lane, each filled to show roughly how much filament is left. At 2x and wider it switches to a detailed view: a small spool for each lane with its lane number, material type (PLA, PETG…), and percent remaining, and the currently loaded lane's number badge is highlighted green. The spools size to fit the widget — 2 across at 2x, 4 across at 4x — and any lanes that don't fit scroll sideways. Tap for the full AMS panel. | 1x1 | 1x1 | 4x2 | Yes | AMS/MMU detected |
 | **Filament Sensor** | Filament runout detection status. Tap to load, unload, or purge filament - what happens depends on what's going on: if the sensor is turned off, tapping opens its settings instead; while a print is running the modal is a status readout only; and if the print is paused you also get **Resume Print** and **Cancel Print**, so a runout pause can be dealt with without leaving the home screen. Cancelling asks you to confirm first. Configurable via the gear icon in Edit Mode - choose which sensor the tile follows. See [Configuring a Widget](#configuring-a-widget) above. | 1x1 | 1x1 | 2x1 | Horizontal only | Filament sensor |
 | **Width Sensor** | Live filament width reading from a diameter sensor. | 1x1 | 1x1 | 2x2 | Yes | Width sensor |
-| **Clog Detection** | Filament clog and flow health monitor. Shows a clog/flow arc meter, and a buffer sync meter on Happy Hare printers. Tap to open the Buffer Status detail modal. Configurable via the gear icon in Edit Mode. See [Clog Detection Widget](#clog-detection-widget) below. | 1x1 | 1x1 | 2x2 | Yes | AMS/MMU detected |
+| **Clog Detection** | Filament clog and flow health monitor. Shows the FlowGuard bar, and a buffer sync meter on Happy Hare printers. Tap to open the Buffer Status detail modal. Configurable via the gear icon in Edit Mode. See [Clog Detection Widget](#clog-detection-widget) below. | 2x1 | 2x1 | 4x2 | Yes | AMS/MMU detected |
 | **Humidity** | Enclosure humidity reading from a connected sensor. | 1x1 | 1x1 | 2x2 | Yes | Humidity sensor |
 
 ### Controls
@@ -446,17 +446,21 @@ The Clog Detection widget monitors your filament path health in real time — de
 
 The widget displays a **carousel** with one or two pages depending on your hardware:
 
-**Page 1 — Clog/Flow Arc Meter** (always shown)
+**Page 1 — FlowGuard bar** (always shown)
 
-A 270-degree arc gauge that fills based on your clog or flow detection reading. The color shifts from green (healthy) through orange (warning) to red (danger) as the value increases. A red danger zone arc shows the warning threshold, and a peak marker tracks the highest reading seen.
+![FlowGuard bar — TANGLE and CLOG end labels, fill running out from the middle, danger shading at both ends](../../images/user/home-flowguard-bar.png)
 
-The meter adapts to your detection backend:
+A horizontal scale with a label at each end, reading left to right. The bar fills as your clog or flow reading moves, shifting from green (healthy) through orange to red (danger). A shaded red band at the end (or at both ends) marks the warning threshold, a bright tick shows the current reading, and a fainter tick marks the worst value seen this print. Above the bar you get the detection mode on the left and the live reading on the right; the headline number sits underneath.
 
-| Backend | What the meter shows |
-|---------|---------------------|
-| **Encoder** | Clog percentage (0–100%) — how much the encoder reading deviates from expected |
-| **Flowguard** | Symmetrical flow deviation (−100 to +100) — negative means tangle risk, positive means clog risk |
-| **AFC** | Buffer fault proximity (0–100%) — how close the buffer is to a fault condition |
+The bar adapts to your detection backend:
+
+| Backend | End labels | What the bar shows |
+|---------|-----------|--------------------|
+| **Encoder** | Detection length ... 0 | Clog percentage (0–100%) — how much the encoder reading deviates from expected. Fills from the left. |
+| **Flowguard** | TANGLE ... CLOG | Flow deviation (−100 to +100). Fills **out from the middle**: toward TANGLE when filament is over-feeding, toward CLOG when it is under-feeding. Both ends are shaded, because either extreme is a fault. |
+| **AFC** | SAFE ... FAULT | Buffer fault proximity (0–100%) — how close the buffer is to a fault condition. |
+
+> The same reading is drawn as an arc gauge in the filament sidebar and on the loaded-spool card. The dashboard widget uses the bar because it is authored wide and short, which leaves room for a label at each end — so a Flowguard reading tells you *which* fault it is heading toward, not just how far.
 
 **Page 2 — Buffer Sync Meter** (Happy Hare with sync feedback only)
 

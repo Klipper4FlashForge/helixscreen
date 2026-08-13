@@ -1,0 +1,178 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file test_clog_meter_geometry.cpp
+ * @brief The FlowGuard bar's layout arithmetic and the shared indicator-colour
+ *        rule (prestonbrown/helixscreen#1017).
+ *
+ * Both are pure, so they are tested without LVGL or a loaded theme: the tint
+ * rule names design tokens rather than resolving them, and the geometry is
+ * plain track-local pixels. What the widget layer then has to get right is only
+ * "put this rectangle at that x", which the widget-size sweep covers.
+ */
+
+#include "clog_meter_geometry.h"
+
+#include "../catch_amalgamated.hpp"
+
+using namespace helix::ui;
+
+namespace {
+constexpr int kMode_Encoder = static_cast<int>(ClogMeterMode::Encoder);
+constexpr int kMode_Flowguard = static_cast<int>(ClogMeterMode::Flowguard);
+constexpr int kMode_Buffer = static_cast<int>(ClogMeterMode::Buffer);
+constexpr int kTrack = 200;
+} // namespace
+
+// ===========================================================================
+// clog_meter_tint
+// ===========================================================================
+
+TEST_CASE("clog_meter_tint: a warning is danger whatever the mode", "[clog][tint][1017]") {
+    for (int mode : {kMode_Encoder, kMode_Flowguard, kMode_Buffer}) {
+        auto t = clog_meter_tint(mode, /*value=*/0, /*warning=*/1);
+        INFO("mode " << mode);
+        CHECK(std::string(t.a) == "danger");
+        CHECK(std::string(t.b) == "danger");
+    }
+}
+
+TEST_CASE("clog_meter_tint: linear modes ramp primary -> warning -> danger", "[clog][tint][1017]") {
+    // At rest the indicator is primary: mix_a of 0 yields all of `b`.
+    auto safe = clog_meter_tint(kMode_Encoder, 0, 0);
+    CHECK(std::string(safe.b) == "primary");
+    CHECK(safe.mix_a == 0);
+
+    // Halfway is the hand-off point — fully `warning` from either side.
+    auto mid_lo = clog_meter_tint(kMode_Encoder, 49, 0);
+    CHECK(std::string(mid_lo.a) == "warning");
+    CHECK(mid_lo.mix_a > 240); // all but the last step toward warning
+
+    auto mid_hi = clog_meter_tint(kMode_Encoder, 50, 0);
+    CHECK(std::string(mid_hi.b) == "warning");
+    CHECK(mid_hi.mix_a == 0);
+
+    // Fully clogged is fully danger.
+    auto hot = clog_meter_tint(kMode_Buffer, 100, 0);
+    CHECK(std::string(hot.a) == "danger");
+    CHECK(hot.mix_a == 255);
+}
+
+TEST_CASE("clog_meter_tint: Flowguard does not tint by magnitude", "[clog][tint][1017]") {
+    // Its two ends mean opposite faults and are labelled as such, so a colour
+    // ramp across the middle would be reporting severity the scale already
+    // shows position for.
+    for (int v : {-100, -40, 0, 40, 100}) {
+        auto t = clog_meter_tint(kMode_Flowguard, v, 0);
+        INFO("value " << v);
+        CHECK(std::string(t.b) == "primary");
+    }
+}
+
+TEST_CASE("clog_meter_tint: a negative reading tints by magnitude", "[clog][tint][1017]") {
+    // Encoder values are never negative in practice, but the rule reads
+    // abs(value) and must not index the ramp backwards if one ever is.
+    CHECK(clog_meter_tint(kMode_Encoder, -100, 0).mix_a ==
+          clog_meter_tint(kMode_Encoder, 100, 0).mix_a);
+}
+
+// ===========================================================================
+// clog_bar_geometry — linear modes
+// ===========================================================================
+
+TEST_CASE("clog_bar_geometry: a linear mode fills from the left", "[clog][bar][1017]") {
+    auto g = clog_bar_geometry(kMode_Encoder, /*value=*/25, /*danger=*/75, /*peak=*/40, kTrack);
+    CHECK(g.fill_x == 0);
+    CHECK(g.fill_w == kTrack / 4);
+
+    // The danger shading is the far end only.
+    CHECK(g.danger_lo_w == 0);
+    CHECK(g.danger_hi_x == kTrack * 3 / 4);
+    CHECK(g.danger_hi_w == kTrack / 4);
+
+    CHECK(g.peak_x == kTrack * 40 / 100 - 1); // centred on the tick's own width
+}
+
+TEST_CASE("clog_bar_geometry: an empty and a full linear reading", "[clog][bar][1017]") {
+    auto empty = clog_bar_geometry(kMode_Buffer, 0, 75, 0, kTrack);
+    CHECK(empty.fill_w == 0);
+    CHECK(empty.marker_x == 0);
+
+    auto full = clog_bar_geometry(kMode_Buffer, 100, 75, 100, kTrack);
+    CHECK(full.fill_w == kTrack);
+    // Both ticks stay inside the track rather than hanging off the end.
+    CHECK(full.marker_x <= kTrack - 2);
+    CHECK(full.peak_x <= kTrack - 2);
+}
+
+// ===========================================================================
+// clog_bar_geometry — Flowguard's symmetrical range
+// ===========================================================================
+
+TEST_CASE("clog_bar_geometry: Flowguard fills out from the centre", "[clog][bar][1017]") {
+    const int centre = kTrack / 2;
+
+    auto neutral = clog_bar_geometry(kMode_Flowguard, 0, 80, 0, kTrack);
+    CHECK(neutral.fill_w == 0);
+    CHECK(neutral.fill_x == centre);
+
+    // Clog side: grows right from the centre.
+    auto clog = clog_bar_geometry(kMode_Flowguard, 50, 80, 50, kTrack);
+    CHECK(clog.fill_x == centre);
+    CHECK(clog.fill_w == kTrack / 4);
+    CHECK(clog.marker_x > centre);
+
+    // Tangle side: same magnitude, mirrored.
+    auto tangle = clog_bar_geometry(kMode_Flowguard, -50, 80, 50, kTrack);
+    CHECK(tangle.fill_w == clog.fill_w);
+    CHECK(tangle.fill_x == centre - clog.fill_w);
+    CHECK(tangle.marker_x < centre);
+}
+
+TEST_CASE("clog_bar_geometry: Flowguard shades both ends", "[clog][bar][1017]") {
+    auto g = clog_bar_geometry(kMode_Flowguard, 0, /*danger=*/80, 0, kTrack);
+    // 80% of the way out from the centre, on each side.
+    CHECK(g.danger_lo_x == 0);
+    CHECK(g.danger_lo_w == kTrack / 2 - kTrack * 80 / 200);
+    CHECK(g.danger_hi_x == kTrack / 2 + kTrack * 80 / 200);
+    CHECK(g.danger_hi_w == kTrack - g.danger_hi_x);
+    // Symmetrical, which is the whole point of the mode.
+    CHECK(g.danger_lo_w == g.danger_hi_w);
+}
+
+TEST_CASE("clog_bar_geometry: the Flowguard peak follows the side in fault", "[clog][bar][1017]") {
+    // peak_pct is max(|clog|, |tangle|) — a magnitude with no side of its own,
+    // so it is drawn on the side the current reading leans toward.
+    auto clog = clog_bar_geometry(kMode_Flowguard, 30, 80, 60, kTrack);
+    auto tangle = clog_bar_geometry(kMode_Flowguard, -30, 80, 60, kTrack);
+    CHECK(clog.peak_x > kTrack / 2);
+    CHECK(tangle.peak_x < kTrack / 2);
+}
+
+// ===========================================================================
+// Degenerate inputs
+// ===========================================================================
+
+TEST_CASE("clog_bar_geometry: a zero-width track draws nothing", "[clog][bar][1017]") {
+    // Reached on the first layout pass, before the track has been measured.
+    auto g = clog_bar_geometry(kMode_Flowguard, 50, 80, 50, 0);
+    CHECK(g.fill_w == 0);
+    CHECK(g.danger_lo_w == 0);
+    CHECK(g.danger_hi_w == 0);
+    CHECK(g.marker_x == 0);
+    CHECK(g.peak_x == 0);
+}
+
+TEST_CASE("clog_bar_geometry: out-of-range values are clamped, not wrapped", "[clog][bar][1017]") {
+    auto over = clog_bar_geometry(kMode_Flowguard, 5000, 80, 5000, kTrack);
+    CHECK(over.fill_x + over.fill_w <= kTrack);
+    CHECK(over.marker_x <= kTrack - 2);
+
+    auto under = clog_bar_geometry(kMode_Flowguard, -5000, 80, -5000, kTrack);
+    CHECK(under.fill_x >= 0);
+    CHECK(under.peak_x >= 0);
+
+    auto silly_danger = clog_bar_geometry(kMode_Encoder, 50, /*danger=*/900, 0, kTrack);
+    CHECK(silly_danger.danger_hi_w == 0); // shading collapses, it does not invert
+}
