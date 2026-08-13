@@ -24,6 +24,14 @@ using namespace helix;
 // rather than reading any global, so there is nothing to install first.
 // 6x4 is the shape the pre-square-cell grid had at MICRO, which is what the
 // hardcoded coordinates below were authored against.
+//
+// These fixtures are built from single-track widgets, so they pass a search and
+// growth step of 1 (kStep). A span of one track only exists for a widget that
+// declares half-cell support, whose step IS 1 — the whole-cell default would
+// make half the origins in a 6x4 grid unreachable and turn "scans left to
+// right" into "scans every other column". The whole-cell step is covered on its
+// own terms in test_grid_half_cell_placement.cpp.
+constexpr int kStep = 1;
 constexpr GridDimensions kGrid6x4{6, 4};
 constexpr GridDimensions kGrid8x6{8, 6};
 
@@ -172,7 +180,7 @@ TEST_CASE("GridLayout find_available: finds first open position", "[grid_layout]
     GridLayout grid(UiBreakpoint::Micro, kGrid6x4);
     grid.place({"w1", 0, 0, 2, 1});
 
-    auto pos = grid.find_available(2, 1);
+    auto pos = grid.find_available(2, 1, kStep, kStep);
     REQUIRE(pos.has_value());
     // First available 2x1 slot: (2,0) — same row, after w1
     CHECK(pos->first == 2);
@@ -187,7 +195,7 @@ TEST_CASE("GridLayout find_available: scans top-to-bottom, left-to-right", "[gri
     grid.place({"r0b", 3, 0, 3, 1});
 
     // Next available 1x1 should be at row 1
-    auto pos = grid.find_available(1, 1);
+    auto pos = grid.find_available(1, 1, kStep, kStep);
     REQUIRE(pos.has_value());
     CHECK(pos->first == 0);
     CHECK(pos->second == 1);
@@ -204,7 +212,7 @@ TEST_CASE("GridLayout find_available: returns nullopt when no space", "[grid_lay
         }
     }
 
-    CHECK_FALSE(grid.find_available(1, 1).has_value());
+    CHECK_FALSE(grid.find_available(1, 1, kStep, kStep).has_value());
 }
 
 TEST_CASE("GridLayout find_available: large widget in fragmented grid", "[grid_layout][find]") {
@@ -216,7 +224,7 @@ TEST_CASE("GridLayout find_available: large widget in fragmented grid", "[grid_l
     grid.place({"c3", 4, 0, 1, 1});
 
     // A 2x1 widget can fit at (0,1) on the second row
-    auto pos = grid.find_available(2, 1);
+    auto pos = grid.find_available(2, 1, kStep, kStep);
     REQUIRE(pos.has_value());
     // Actually it should find something on row 0 at position (0,0) is occupied,
     // (1,0) is free — so (1,0) with span 2 needs (1,0) and (2,0). But (2,0) is occupied.
@@ -579,7 +587,7 @@ TEST_CASE("GridLayout find_available_bottom_min: grants the minimum, not the lar
 
     // tips: authored 4x2, minimum 2x1. A 6-column grid could hold the full 4x2,
     // and the old greedy finder handed it over. Minimum-first must not.
-    auto fit = grid.find_available_bottom_min(2, 1);
+    auto fit = grid.find_available_bottom_min(2, 1, kStep, kStep);
     CHECK(fit.failure == GridLayout::PlacementFailure::None);
     CHECK(fit.colspan == 2);
     CHECK(fit.rowspan == 1);
@@ -594,7 +602,7 @@ TEST_CASE("GridLayout find_available_bottom_min: reports TooLargeForGrid, not Gr
 
     // A 7-column minimum can never exist in a 6-column grid, however it is
     // packed. The grid is empty, so "grid full" would name the wrong condition.
-    auto fit = grid.find_available_bottom_min(7, 1);
+    auto fit = grid.find_available_bottom_min(7, 1, kStep, kStep);
     CHECK(fit.failure == GridLayout::PlacementFailure::TooLargeForGrid);
     CHECK_FALSE(fit.placed());
 }
@@ -606,7 +614,7 @@ TEST_CASE("GridLayout find_available_bottom_min: reports GridFull when space run
         REQUIRE(grid.place({"filler" + std::to_string(r), 0, r, 6, 1}));
     }
 
-    auto fit = grid.find_available_bottom_min(1, 1);
+    auto fit = grid.find_available_bottom_min(1, 1, kStep, kStep);
     CHECK(fit.failure == GridLayout::PlacementFailure::GridFull);
     CHECK_FALSE(fit.placed());
 }
@@ -628,7 +636,7 @@ TEST_CASE("GridLayout grow_once: extends right before any other direction",
     GridLayout grid(UiBreakpoint::Micro, kGrid6x4);
     REQUIRE(grid.place({"w", 2, 1, 1, 1}));
 
-    CHECK(grid.grow_once("w", 2, 2));
+    CHECK(grid.grow_once("w", 2, 2, kStep, kStep));
     const auto* p = grid.find_placement("w");
     REQUIRE(p);
     CHECK(p->col == 2); // origin unchanged — right is tried first
@@ -644,7 +652,7 @@ TEST_CASE("GridLayout grow_once: falls back to left and up at the edge",
     // first auto-placed widget, so left/up is the common growth path.
     REQUIRE(grid.place({"w", 5, 3, 1, 1}));
 
-    REQUIRE(grid.grow_once("w", 2, 2));
+    REQUIRE(grid.grow_once("w", 2, 2, kStep, kStep));
     const auto* p = grid.find_placement("w");
     REQUIRE(p);
     CHECK(p->col == 4); // grew left
@@ -652,7 +660,7 @@ TEST_CASE("GridLayout grow_once: falls back to left and up at the edge",
     CHECK(p->row == 3);
     CHECK(p->rowspan == 1);
 
-    REQUIRE(grid.grow_once("w", 2, 2));
+    REQUIRE(grid.grow_once("w", 2, 2, kStep, kStep));
     p = grid.find_placement("w");
     REQUIRE(p);
     CHECK(p->row == 2); // then up
@@ -684,7 +692,7 @@ TEST_CASE("GridLayout grow_once: stops at the target span", "[grid_layout][grow]
     REQUIRE(grid.place({"w", 0, 0, 2, 2}));
 
     // Already at the target: no growth even though the grid is mostly free.
-    CHECK_FALSE(grid.grow_once("w", 2, 2));
+    CHECK_FALSE(grid.grow_once("w", 2, 2, kStep, kStep));
     const auto* p = grid.find_placement("w");
     CHECK(p->colspan == 2);
     CHECK(p->rowspan == 2);
@@ -692,7 +700,7 @@ TEST_CASE("GridLayout grow_once: stops at the target span", "[grid_layout][grow]
 
 TEST_CASE("GridLayout grow_once: ignores an unknown widget", "[grid_layout][grow][1216]") {
     GridLayout grid(UiBreakpoint::Micro, kGrid6x4);
-    CHECK_FALSE(grid.grow_once("nobody", 4, 4));
+    CHECK_FALSE(grid.grow_once("nobody", 4, 4, kStep, kStep));
 }
 
 TEST_CASE("GridLayout grow_to_targets: expands into the free region", "[grid_layout][grow][1216]") {
@@ -701,7 +709,7 @@ TEST_CASE("GridLayout grow_to_targets: expands into the free region", "[grid_lay
     REQUIRE(grid.place({"a", 5, 3, 1, 1}));
     REQUIRE(grid.place({"b", 3, 3, 2, 1}));
 
-    int steps = grid.grow_to_targets({{"a", 2, 2}, {"b", 2, 2}});
+    int steps = grid.grow_to_targets({{"a", 2, 2, kStep, kStep}, {"b", 2, 2, kStep, kStep}});
     CHECK(steps > 0);
 
     const auto* a = grid.find_placement("a");
@@ -729,7 +737,7 @@ TEST_CASE("GridLayout grow_to_targets: round-robin, not first-come", "[grid_layo
     REQUIRE(grid.place({"a", 0, 3, 1, 1}));
     REQUIRE(grid.place({"b", 1, 3, 1, 1}));
 
-    grid.grow_to_targets({{"a", 1, 2}, {"b", 1, 2}});
+    grid.grow_to_targets({{"a", 1, 2, kStep, kStep}, {"b", 1, 2, kStep, kStep}});
 
     const auto* a = grid.find_placement("a");
     const auto* b = grid.find_placement("b");
@@ -746,7 +754,8 @@ TEST_CASE("GridLayout grow_to_targets: same input, same result",
         REQUIRE(grid.place({"a", 5, 3, 1, 1}));
         REQUIRE(grid.place({"b", 3, 3, 2, 1}));
         REQUIRE(grid.place({"c", 1, 3, 2, 1}));
-        grid.grow_to_targets({{"a", 2, 2}, {"b", 2, 2}, {"c", 4, 2}});
+        grid.grow_to_targets(
+            {{"a", 2, 2, kStep, kStep}, {"b", 2, 2, kStep, kStep}, {"c", 4, 2, kStep, kStep}});
         std::vector<std::tuple<std::string, int, int, int, int>> out;
         for (const auto& p : grid.placements()) {
             out.emplace_back(p.widget_id, p.col, p.row, p.colspan, p.rowspan);

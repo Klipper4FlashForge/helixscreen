@@ -306,7 +306,7 @@ int GridLayout::grow_to_targets(const std::vector<GrowthTarget>& targets) {
     for (bool progress = true; progress;) {
         progress = false;
         for (const auto& t : targets) {
-            if (grow_once(t.widget_id, t.colspan, t.rowspan)) {
+            if (grow_once(t.widget_id, t.colspan, t.rowspan, t.col_step, t.row_step)) {
                 progress = true;
                 ++steps;
             }
