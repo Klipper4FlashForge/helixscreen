@@ -345,6 +345,7 @@ Located in the `display` section:
     "bed_mesh_render_mode": 0,
     "bed_mesh_show_zero_plane": true,
     "page_scroll_buttons": false,
+    "ui_scale_percent": 0,
     "printer_image": ""
   }
 }
@@ -478,6 +479,14 @@ Can also be overridden via `HELIX_GCODE_MODE` env var (`3D` or `2D`).
 **Type:** boolean
 **Default:** `false`
 **Description:** Show up/down scroll buttons on long lists throughout the app. Useful on small screens or displays where drag-to-scroll feels unresponsive. See [Display & Sound Settings](guide/settings/display-sound.md#scroll-buttons) for details.
+
+### `ui_scale_percent`
+**Type:** integer
+**Default:** `0` (Automatic)
+**Values:** `0`, or `100`-`200`
+**Description:** Size of the whole interface. `0` means Automatic: HelixScreen works the scale out from the panel's physical pixel density, which leaves every supported printer at exactly `100` and only grows the UI on very high-density screens such as a phone. Any other value is an explicit percentage that overrides the measurement — useful if the interface comes out too small or too large on your display. A value outside the range is ignored and treated as Automatic.
+
+**Takes effect on the next start.** HelixScreen sizes fonts and layout once, while the screen is being set up, so changing this mid-session cannot re-scale what is already drawn. See [Display & Sound Settings](guide/settings/display-sound.md#ui-scale).
 
 ### `printer_image`
 **Type:** string

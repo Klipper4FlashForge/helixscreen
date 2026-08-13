@@ -512,6 +512,39 @@ Inside a table, breakpoint keys are named rather than indexed — `micro`, `tiny
 resolves by fallback (`micro`→`tiny`→`small`, `xlarge`→`large`, `xxlarge`→`xlarge`→`large`).
 If no tier in the chain matches, the anchor is dropped and that widget is auto-placed instead.
 
+#### Grid-qualified keys
+
+A breakpoint names a *panel*, not a *grid*. The high-DPI UI scale multiplies the cell edge
+(see `include/display_metrics.h`), so one panel at one tier has a different track count per
+scale — 1080x2400 is xxlarge portrait at **12x24** tracks unscaled, **8x18** at 125% and
+**6x14** at 158%. A table authored for one of those does not describe the others.
+
+A placement key may therefore name its grid: `"xxlarge@6x14"`. Within a tier the qualified
+key wins over the bare one, and the tier chain still dominates — this tier on some other
+grid beats a coarser tier on this exact grid, because the tier is what decides how much text
+has to fit. A bare key remains the catch-all for every grid with no entry of its own.
+
+```json
+"placements": {
+  "xxlarge":      { "col": 8, "row": 0, "colspan": 2, "rowspan": 2 },
+  "xxlarge@6x14": { "col": 4, "row": 0, "colspan": 2, "rowspan": 2 }
+}
+```
+
+**An anchor that does not fit the measured grid is now dropped rather than clamped.**
+`build_default_grid(grid_cols, grid_rows)` checks each anchor against the grid it is being
+placed on and auto-places the ones that do not fit, naming them in a warning. Widgets the
+tier switches off are exempt — whether a disabled widget's anchor fits is not a fact about
+anything.
+
+This is also why defaults are no longer built at config load. `load()` runs before the
+widget container exists, and the panel extent it could have guessed from is not what the
+track count divides — the *content box* is, and the two disagree enough to pick a different
+grid (1042x2141 against 1080x2400 is 6x14 tracks against 8x16). So `build_defaults()` tags
+the layout `"anchors": "pending"` and `PanelWidgetManager::populate_widgets()` resolves it
+at the first measured populate, then clears the tag. The tag is positive and written only by
+the defaults path, so a layout a user has arranged is never overwritten.
+
 The file is runtime-editable and read via `find_readable()`, so a malformed or missing file
 degrades to a small hardcoded fallback rather than an empty dashboard.
 
