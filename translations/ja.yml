@@ -1104,6 +1104,7 @@ translations:
   Insert filament before resuming: 再開前にフィラメントを挿入してください
   Install: インストール
   Install HelixPrint Plugin: HelixPrint プラグインをインストール
+  Install Older Version?: ''
   Install Plugin: プラグインをインストール
   Install Root: インストールルート
   Install Update: 更新をインストール
@@ -2162,6 +2163,7 @@ translations:
   Surfaces inherit app background tokens for light and dark modes.: サーフェスはライトモードとダークモードのアプリ背景トークンを継承します。
   Switch Printer: プリンターを切り替え
   Switch between light and dark themes: ライトテーマとダークテーマを切り替え
+  Switch to v%s: ''
   Switched to T{}: T{} に切替えました
   Switches to a backup spool on runout: フィラメント切れ時にバックアップスプールへ切り替えます
   Switching heater control to MPC. Klipper will restart.: ヒーター制御をMPCに切り替えます。Klipperが再起動します。
@@ -2267,6 +2269,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: このキャリブレーションは紙の摩擦方式を使用して
     Z-offset を設定します。
   This cannot be undone.: この操作は元に戻せません。
+  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: ''
   This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: このデバイスには有線ネットワーク接続がありません。WiFiをオフにすると、この画面からのみオンに戻せます。
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?

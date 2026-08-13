@@ -1186,6 +1186,7 @@ translations:
   Insert filament before resuming: Insert filament before resuming
   Install: Install
   Install HelixPrint Plugin: Install HelixPrint Plugin
+  Install Older Version?: Install Older Version?
   Install Plugin: Install Plugin
   Install Root: Install Root
   Install Update: Install Update
@@ -2333,6 +2334,7 @@ translations:
     app background tokens for light and dark modes.
   Switch Printer: Switch Printer
   Switch between light and dark themes: Switch between light and dark themes
+  Switch to v%s: Switch to v%s
   Switched to T{}: Switched to T{}
   Switches to a backup spool on runout: Switches to a backup spool on runout
   Switching heater control to MPC. Klipper will restart.: Switching heater control
@@ -2456,6 +2458,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: This calibration
     uses the paper friction method to set your Z-offset.
   This cannot be undone.: This cannot be undone.
+  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: This channel offers v{}, older than the installed v{}. Anything added since then will be removed.
   This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: This clears every spool's failover assignment. The print will stop on runout until you set up failover again.
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?

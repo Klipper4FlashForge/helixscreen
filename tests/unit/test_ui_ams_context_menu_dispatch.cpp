@@ -41,7 +41,7 @@ void install_mock_backend() {
 } // namespace
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: claims every backend-only action",
-                 "[ui][ams][context_menu][dispatch]") {
+                 "[ui][ams][context_menu][dispatch][1258]") {
     install_mock_backend();
 
     // These five must be handled centrally. If any one of them stops being
@@ -58,7 +58,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: claims every backend-only act
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: declines panel-specific actions",
-                 "[ui][ams][context_menu][dispatch]") {
+                 "[ui][ams][context_menu][dispatch][1258]") {
     install_mock_backend();
 
     // These open panel-owned modals or route through the panel's sidebar, so
@@ -77,7 +77,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: declines panel-specific actio
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: EJECT reaches the backend",
-                 "[ui][ams][context_menu][dispatch]") {
+                 "[ui][ams][context_menu][dispatch][1258]") {
     install_mock_backend();
 
     auto* backend = static_cast<AmsBackendMock*>(AmsState::instance().get_backend());
@@ -96,7 +96,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: EJECT reaches the backend",
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: claims actions even with no backend",
-                 "[ui][ams][context_menu][dispatch]") {
+                 "[ui][ams][context_menu][dispatch][1258]") {
     AmsState::instance().init_subjects(false);
     AmsState::instance().set_backend(nullptr);
 

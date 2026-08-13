@@ -1223,6 +1223,7 @@ translations:
   Insert filament before resuming: Inserire filamento prima di riprendere
   Install: Installa
   Install HelixPrint Plugin: Installa plugin HelixPrint
+  Install Older Version?: ''
   Install Plugin: Installa plugin
   Install Root: Root di installazione
   Install Update: Installa Aggiornamento
@@ -2396,6 +2397,7 @@ translations:
     i token sfondo app per modalità chiara e scura.
   Switch Printer: Cambia stampante
   Switch between light and dark themes: Passa tra tema chiaro e scuro
+  Switch to v%s: ''
   Switched to T{}: Passato a T{}
   Switches to a backup spool on runout: Passa a una bobina di riserva a filamento esaurito
   Switching heater control to MPC. Klipper will restart.: Passaggio controllo riscaldatore
@@ -2524,6 +2526,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Questa calibrazione
     utilizza il metodo della frizione della carta per impostare lo Z-offset.
   This cannot be undone.: Questa azione non può essere annullata.
+  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: ''
   This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: Questo dispositivo non dispone di una connessione di rete cablata. Se disattivi il WiFi, potrà essere riattivato solo da questa schermata.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?

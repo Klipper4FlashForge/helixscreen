@@ -1293,6 +1293,24 @@ static void run_versioned_migrations(json& config, const std::string& config_pat
         version = config["config_version"].get<int>();
     }
 
+    // A config written by a NEWER build than this one — reachable as soon as
+    // update channels are user-switchable, since moving from the devel channel
+    // back to stable installs an older binary over a newer config.
+    //
+    // Every gate below is `version < N`, so none of them would fire; the damage
+    // is the unconditional stamp at the end, which would rewrite config_version
+    // DOWN to ours. The newer build would then re-run migrations it had already
+    // applied, against data already in the new shape. Leave the document alone
+    // instead: unknown keys are read-through-default everywhere, and
+    // Config::save() serializes the whole in-memory document, so the newer
+    // build's settings survive a round trip through this one untouched.
+    if (version > CURRENT_CONFIG_VERSION) {
+        spdlog::warn("[Config] config_version {} was written by a newer build (this build "
+                     "understands {}) — leaving the document unmigrated and unstamped",
+                     version, CURRENT_CONFIG_VERSION);
+        return;
+    }
+
     if (version < 1)
         migrate_v0_to_v1(config);
     if (version < 2)
