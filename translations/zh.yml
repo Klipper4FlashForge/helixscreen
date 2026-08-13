@@ -95,6 +95,7 @@ translations:
   = Loosen: = 松开
   = Tighten: = 拧紧
   A: 辅
+  A picture of your printer: 打印机的图片
   ABS: ABS
   ACCELEROMETERS: 加速度计
   ACE Moonraker bridge not found. Install ace_status.py for full support.: 未找到 ACE Moonraker 桥接。请安装 ace_status.py 以获得完整支持。
@@ -154,6 +155,7 @@ translations:
   After running the commands, tap Check Again below.: 执行命令后，点击下方的重新检查。
   Alert: 警报
   Alerts: 警报
+  Alerts and messages waiting for you: 待查看的提醒和消息
   All: 全部
   All Devices: 所有设备
   All axes homed: 所有轴已归位
@@ -291,6 +293,7 @@ translations:
   Brother QL: Brother QL
   Brother QL (Bluetooth): Brother QL（蓝牙）
   Browse and play recorded timelapses: 浏览和播放录制的延时摄影
+  Browse and run your Klipper macros: 浏览并运行 Klipper 宏
   Browse guides, configuration references, and troubleshooting resources for HelixScreen.: 浏览
     HelixScreen 的指南、配置参考和故障排除资源。
   Buffer Status: 缓冲区状态
@@ -437,6 +440,7 @@ translations:
   Cleared from settings — system unpair failed, may need OS Bluetooth: 已从设置中清除；系统解除配对失败，可能需使用系统蓝牙设置
   Clipboard unavailable - use SSH: 剪贴板不可用 - 请使用 SSH
   Clog Detection: 堵料检测
+  Clog and flow health while printing: 打印时的堵料与流量状况
   Clog detection: 堵料检测
   Close: 关闭
   Closer: 更近
@@ -627,6 +631,7 @@ translations:
   Device name is required: 设备名称为必填项
   'Device: ': '设备: '
   Different filament?: 耗材不同？
+  Digital Clock: 数字时钟
   Disable: 禁用
   Disable Motors?: 关闭电机？
   Disable the security PIN: 禁用安全 PIN
@@ -753,6 +758,7 @@ translations:
   Estimating...: 估算中...
   Ethernet: 以太网
   Events appear here after sessions and prints: 会话和打印后事件将显示在此处
+  Every extruder's temperature at once: 同时查看所有挤出机温度
   Excellent Accuracy: 精度极佳
   'Exception: {}': '异常: {}'
   Exclude: 排除
@@ -881,6 +887,7 @@ translations:
   'Failed to upload remapped G-code: {}': 上传重新映射的 G-code 失败：{}
   Fan: 风扇
   Fan Calibration: 风扇校准
+  Fan Speeds: 风扇转速
   Fan Transfer: 风扇传热
   'Fan control failed: {}': '风扇控制失败: {}'
   FanSelect: 选择风扇
@@ -965,6 +972,7 @@ translations:
   G-code Console: G-code 控制台
   G-code Preview: G-code 预览
   G-code commands will appear here: G-code 命令将显示在此处
+  GCode Console: G-code 控制台
   Gear motor synced: 齿轮电机已同步
   Gear sync: 齿轮同步
   Generic: 通用
@@ -1064,6 +1072,7 @@ translations:
   How the toolhead icon appears: 工具头图标的显示方式
   Hub: 集线器
   Humidity: 湿度
+  Humidity inside the enclosure: 腔体内的湿度
   Hyperlapse: 延时摄影
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: 延时拍摄以固定时间间隔捕获帧。适合超长时间打印。
   ID (optional): ID（可选）
@@ -1159,6 +1168,8 @@ translations:
   Klippy Shutdowns: Klippy 关闭次数
   # Source: led_control_overlay.xml:31
   LED: ''
+  LED Controls: LED 控制
+  LED Light: LED 灯
   LED SELECTION: LED 选择
   LED Settings: LED 设置
   LED Strip: LED 灯带
@@ -1175,6 +1186,7 @@ translations:
   Labels: 标签
   Labels Per Sheet: 每页标签数
   Lane: 料仓
+  Lane colors, materials, and levels: 料仓的颜色、材料和余量
   Lane {} is blocked — manual intervention required: 料仓 {} 被阻塞 — 需要手动干预
   Language: 语言
   Language, theme, brightness, and sound: 语言、主题、亮度和声音
@@ -1201,6 +1213,7 @@ translations:
   Light: 浅色
   Light will switch when the current operation finishes: 灯光将在当前操作完成后切换
   Listen to all theme sounds: 试听所有主题声音
+  Live view from your webcam: 摄像头实时画面
   Load: 加载
   Load Filament: 加载耗材
   Load may still be running — response timed out: 加载可能仍在运行 — 响应超时
@@ -1226,7 +1239,9 @@ translations:
   Lock: 锁定
   Lock A: 锁定 A
   Lock B: 锁定 B
+  Lock Screen: 锁屏
   Lock screen after idle timeout: 空闲超时后锁定屏幕
+  Lock the screen with your PIN: 用 PIN 码锁定屏幕
   Locked during print: 打印期间锁定
   Log Level: 日志级别
   Logs: 日志
@@ -1257,6 +1272,7 @@ translations:
   Machine Limits: 机器限制
   Macro: 宏
   Macro Browser: 宏浏览器
+  Macro Button: 宏按钮
   Macro Buttons: 宏按钮
   Macro analysis not initialized: 宏分析未初始化
   'Macro failed: {}': '宏执行失败: {}'
@@ -1307,6 +1323,7 @@ translations:
   Measure and compare belt path frequencies: 测量和比较皮带路径频率
   Measure belt path frequencies: 测量皮带路径频率
   Measured: 已测量
+  Measured filament diameter: 测量的耗材直径
   Measurement Failed: 测量失败
   Measuring Path A... %d%%: 正在测量路径 A... %d%%
   Measuring Path B... %d%%: 正在测量路径 B... %d%%
@@ -1347,6 +1364,7 @@ translations:
   Multi-Filament System: 多耗材系统
   Multi-Filament System Detected: 检测到多耗材系统
   Multi-Filament System Management: 多耗材系统管理
+  Multi-Filament System Status: 多耗材系统状态
   'Multi-Filament System is busy: {}': '多耗材系统忙碌中: {}'
   Multi-Filament System not available: 多耗材系统不可用
   Must home axes first: 请先归位
@@ -1483,11 +1501,13 @@ translations:
   Nozzle Priming: 喷嘴预挤
   Nozzle Temp: 喷嘴温度
   Nozzle Temperature: 喷嘴温度
+  Nozzle Temperatures: 各喷嘴温度
   Nozzle Temps: 喷嘴温度
   Nozzle did not reach {}°C — {} cancelled: 喷嘴未达到 {}°C — {} 已取消
   Nozzle min cannot exceed max: 喷嘴最低温度不能超过最高温度
   Nozzle target set to {}°C: 喷嘴目标已设为 {}°C
   Nozzle temp must be 100-500°C: 喷嘴温度必须为 100-500°C
+  Nozzle, bed, and chamber in one widget: 喷嘴、热床和腔体合为一个小组件
   'Nozzle:': 喷嘴：
   OD: OD
   'OFF': 关
@@ -1509,6 +1529,8 @@ translations:
   'On:': '开:'
   Open: 打开
   Open Source Licenses: 开源许可证
+  Open color and brightness controls: 打开颜色和亮度控制
+  Open motion controls for jogging: 打开手动移动控制
   Operation already in progress: 操作正在进行中
   Operations: 操作
   Optimize Your Printing: 优化您的打印
@@ -1560,6 +1582,7 @@ translations:
   Part: 零件
   Part Cooling Fan: 零件冷却风扇
   Part Fan: 零件风扇
+  Part, hotend, and auxiliary fan speeds: 模型、热端和辅助风扇转速
   Password: 密码
   Password cannot be empty: 密码不能为空
   Password is required for secured networks: 加密网络需要密码
@@ -1569,6 +1592,7 @@ translations:
   Pause: 暂停
   Pause macro not configured: 暂停宏未配置
   Pause the print first, then load, unload, or change filament: 请先暂停打印，然后再加载、卸载或更换耗材
+  Pause, resume, or stop the print: 暂停、恢复或停止打印
   Paused: 已暂停
   Paused (attention needed): 已暂停（需要处理）
   Pausing...: 暂停中...
@@ -1620,6 +1644,7 @@ translations:
   Power Devices: 电源设备
   Power off the printer or screen: 关闭打印机或屏幕电源
   'Pre-print command failed: {}': '打印前命令失败: {}'
+  Preheat: 预热
   Preheat Macro: 预热宏
   Preheat PLA: 预热 PLA
   Preheat cancelled: 预热已取消
@@ -1644,6 +1669,7 @@ translations:
   Print Cancelled: 打印已取消
   Print Complete!: 打印完成！
   Print Completion Alert: 打印完成提醒
+  Print Controls: 打印控制
   Print Details: 打印详情
   Print Failed: 打印失败
   Print File: 打印文件
@@ -1656,6 +1682,7 @@ translations:
   Print Paused: 打印已暂停
   Print Speed: 打印速度
   Print Start: 打印开始
+  Print Stats: 打印统计
   Print Status: 打印状态
   Print Time: 打印时间
   Print Tuning: 打印调优
@@ -1665,6 +1692,7 @@ translations:
   Print error: 打印错误
   Print failed: 打印失败
   Print issue detected: 检测到打印问题
+  Print jobs waiting to run: 等待执行的打印任务
   'Print preparation failed: {}': '打印准备失败: {}'
   Print server rejected the job — check printer status: 打印服务器拒绝了任务 — 请检查打印机状态
   Print setup failed: 打印设置失败
@@ -1730,6 +1758,7 @@ translations:
   Profile name (e.g., default): 配置名称（例如：default）
   Profile renamed: 配置文件已重命名
   Profiles: 配置
+  Progress, file, and time remaining: 进度、文件和剩余时间
   Pulling filament back: 正在回抽耗材
   Purge: 排料
   'Purge failed: {}': '清洗失败: {}'
@@ -1764,6 +1793,7 @@ translations:
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
   Re-probe: 重新探测
   Re-syncs Happy Hare's tracked state with the hardware.: 将 Happy Hare 跟踪的状态与硬件重新同步。
+  Readings from extra temperature sensors: 额外温度传感器的读数
   Ready: 就绪
   Ready to Apply: 准备应用
   Ready to load: 准备装载
@@ -1837,6 +1867,7 @@ translations:
   Restart Firmware?: 重启固件？
   Restart HelixScreen: 重启 HelixScreen
   Restart Klipper: 重启 Klipper
+  Restart Klipper without rebooting: 无需重启主机即可重启 Klipper
   Restart Moonraker: 重启 Moonraker
   Restart Now: 立即重启
   Restart Required: 需要重启
@@ -1872,6 +1903,7 @@ translations:
   Review your configuration below, then click Finish to save: 请检查以下配置，然后点击完成以保存
   Rewinding: 回卷中
   'Role:': 角色：
+  Rotating tips for using your printer: 轮播的打印机使用提示
   Rotation: 旋转
   'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': '旋转: %d\xc2\xb0 - 剩余%ds
     (或等待重试)'
@@ -1881,6 +1913,7 @@ translations:
   Run Macro: 运行宏
   Run Macro?: 运行宏？
   Run a Klipper macro when preheating this material: 预热此材料时运行 Klipper 宏
+  Run a macro you choose, in one tap: 一键运行选定的宏
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): 即使喷嘴处于冷态也执行耗材加载/卸载（适用于自行加热喷嘴的宏）
   Run without parameter prompt: 运行时不提示参数
   Run {}?: 运行 {}？
@@ -1989,6 +2022,7 @@ translations:
   Selecting slot...: 正在选择料仓...
   Selector: 选择器
   Self-Test: 自检
+  Send G-code and read the replies: 发送 G-code 并查看回复
   Send Report: 发送报告
   Send commands directly to printer: 直接向打印机发送命令
   Send this crash report to help improve HelixScreen.: 发送此崩溃报告以帮助改进 HelixScreen。
@@ -2012,6 +2046,9 @@ translations:
     Strobe Light Tachometer, myStroboscope'
   : '将手机频闪应用设置为 %.1f Hz 并对准皮带。调整直到皮带看起来静止不动。\n\n推荐应用:\n  Android: Strobily, Strobe
     Light\n  iOS: Strobe Light Tachometer, myStroboscope'
+  Set and watch the bed temperature: 设置并监控热床温度
+  Set and watch the chamber temperature: 设置并监控腔体温度
+  Set and watch the nozzle temperature: 设置并监控喷嘴温度
   Set local timezone for time display: 设置本地时区以显示时间
   Set logging verbosity for troubleshooting: 设置日志详细级别以便故障排除
   Set up: 设置
@@ -2043,10 +2080,12 @@ translations:
   Showing loaded colors: ''
   Showing sliced colors: ''
   Showing the 50 newest files. See more in the printer's web UI.: ''
+  Shut down or restart the host: 关闭或重启主机
   Shutdown: 关机
   Shutdown / Reboot: 关机 / 重启
   Shutdown failed: 关机失败
   Shutdown failed — host is still reachable: 关机失败 — 主机仍可访问
+  Shutdown/Reboot: 关机/重启
   Shutting down printer...: 正在关闭打印机...
   Shutting down screen...: 正在关闭屏幕...
   Shutting down...: 正在关机...
@@ -2157,7 +2196,9 @@ translations:
   Suppress raw debug output from printer firmware modules: 抑制打印机固件模块的原始调试输出
   Surfaces inherit app background tokens for light and dark modes.: 表面继承应用背景色用于浅色和深色模式。
   Switch Printer: 切换打印机
+  Switch a power device on or off: 开启或关闭电源设备
   Switch between light and dark themes: 切换浅色和深色主题
+  Switch the active tool or extruder: 切换当前工具或挤出机
   Switched to T{}: 已切换到 T{}
   Switches to a backup spool on runout: 耗材用尽时切换到备用料盘
   Switching heater control to MPC. Klipper will restart.: 正在将加热控制切换为 MPC。Klipper 将重启。
@@ -2204,10 +2245,13 @@ translations:
   Temp °C: 温度 °C
   Temp °C (%d–%d): 温度 °C (%d–%d)
   Temperature: 温度
+  Temperature Graph: 温度图表
   Temperature Graph Config: 温度图表配置
   # Source: calibration_pid_panel.xml:333
+  Temperature Sensors: 温度传感器
   Temperature control has been optimized.: ''
   Temperatures: 温度
+  Temperatures plotted over time: 温度随时间的变化曲线
   Temperatures saved: 温度已保存
   Template: 模板
   Temporary adjustment for this print, unless saved on Controls panel: 此打印的临时调整，除非在控制面板上保存
@@ -2228,6 +2272,7 @@ translations:
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
   : HelixPrint 插件可在打印机上直接进行快速 G-code 修改——例如跳过热床网格以快速重新打印。
+  The Spoolman spool currently loaded: 当前装载的 Spoolman 料盘
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : 为防止动画屏保干扰打印，已在此设备上将其关闭。您可以在设置 > 显示中重新启用。
@@ -2249,6 +2294,8 @@ translations:
   The printer rejected the filament configuration. The print was not started.: 打印机拒绝了该耗材配置。打印未启动。
   The printer's firmware chooses the backup spool itself: 备用料盘由打印机固件自行选择
   The runout sensor indicates no filament is loaded. Start print anyway?: 断料传感器显示未装载耗材。仍要开始打印吗？
+  The speed of one fan you choose: 所选风扇的转速
+  The time, date, and system uptime: 时间、日期和系统运行时长
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: 工具头传感器显示耗材已装载。仍要继续装载吗？
   The toolhead sensor indicates no filament is present. Proceed with unload anyway?: 工具头传感器显示无耗材。仍要继续卸载吗？
   Theme: 主题
@@ -2319,6 +2366,7 @@ translations:
   Timelapse rendered successfully: 延时视频渲染成功
   Timezone: 时区
   'Tip:': 提示：
+  Tips: 提示
   Tips database format error: 提示数据库格式错误
   Tips database not found: 未找到提示数据库
   Toggle: 切换
@@ -2327,6 +2375,7 @@ translations:
   Too humid: 湿度过高
   Tool: 工具
   Tool Changer: 换刀器
+  Tool Switcher: 工具切换
   'Tool change failed: {}': '工具切换失败: {}'
   Tool mapping failed: 工具映射失败
   Tool swap: 工具切换
@@ -2339,6 +2388,7 @@ translations:
   Tools Used: 已使用工具
   'Tools: ': '工具: '
   Total Prints: 总打印数
+  Total prints, success rate, and time: 总打印数、成功率和时间
   Touch & Input: 触摸和输入
   Touch Cal: 触摸校准
   Touch Calibration: 触摸校准
@@ -2362,6 +2412,7 @@ translations:
   Turn On: 开启
   Turn on LEDs when printer starts: 打印机启动时开启 LED
   Turn the extruder heater off after a load or unload finishes: 加载或卸载完成后关闭挤出机加热器
+  Turn the printer's lights on or off: 开启或关闭打印机灯光
   Type: 类型
   Type to preview input field...: 输入以预览输入框...
   'Type:': '类型:'
@@ -2468,6 +2519,7 @@ translations:
   Waiting for bed to reach temperature for accurate calibration.: 等待热床达到温度以进行精确校准。
   Waiting for the filament system to report its state: 正在等待耗材系统报告状态
   Warm Bed: 预热热床
+  Warm up for a material in one tap: 一键为材料预热
   Warming Bed...: 正在预热热床...
   Warn: 警告
   Warning: 警告
@@ -2489,7 +2541,9 @@ translations:
     preparation.
   : 开始打印时，您可以选择是否运行 %s。如果您最近已经执行过或希望对打印准备过程有更多控制，这样可以节省时间。
   Where UI sounds play: 界面声音的播放位置
+  Whether filament is loaded: 耗材是否已装载
   White: 白色
+  Wi-Fi or ethernet connection status: WiFi 或以太网连接状态
   WiFi: WiFi
   WiFi Disabled: WiFi 已禁用
   WiFi Enabled: WiFi 已启用
@@ -2504,6 +2558,7 @@ translations:
     WiFi 但硬件不可用。请检查系统配置。
   Widget Labels: 小组件标签
   Width: 宽度
+  Width Sensor: 宽度传感器
   Wifi: Wi-Fi
   Will not switch spools on runout: 耗材用尽时不会切换料盘
   Wizard Error: 向导错误
@@ -2650,4 +2705,5 @@ translations:
   '{} new hardware available': '{} 个新硬件可用'
   '{} preset{}': '{} 个预设{}'
   '{} target set to {}°C': '{} 目标已设为 {}°C'
+  '{} widgets': ''
   '{} — response timed out': '{} — 响应超时'

@@ -683,6 +683,112 @@ TEST_CASE("PanelWidgetRegistry: always-available widgets have no gate subject",
 }
 
 // ============================================================================
+// Registry tests — category taxonomy
+// ============================================================================
+
+TEST_CASE("PanelWidgetRegistry: every def has a valid category", "[panel_widget][widget_config]") {
+    const auto& defs = get_all_widget_defs();
+    for (const auto& def : defs) {
+        CAPTURE(def.id);
+        REQUIRE(find_widget_category(def.category) != nullptr);
+    }
+}
+
+TEST_CASE("PanelWidgetRegistry: category table fields are non-null and non-empty",
+          "[panel_widget][widget_config]") {
+    for (const auto& cat : get_widget_categories()) {
+        REQUIRE(cat.display_name != nullptr);
+        REQUIRE(cat.translation_tag != nullptr);
+        REQUIRE(cat.icon != nullptr);
+        CAPTURE(cat.display_name);
+        REQUIRE(std::string_view(cat.display_name).size() > 0);
+        REQUIRE(std::string_view(cat.translation_tag).size() > 0);
+        REQUIRE(std::string_view(cat.icon).size() > 0);
+    }
+}
+
+TEST_CASE("PanelWidgetRegistry: category table has no duplicate id or display name",
+          "[panel_widget][widget_config]") {
+    std::set<int> ids;
+    std::set<std::string> names;
+    for (const auto& cat : get_widget_categories()) {
+        CAPTURE(cat.display_name);
+        REQUIRE(ids.insert(static_cast<int>(cat.id)).second);
+        REQUIRE(names.insert(cat.display_name).second);
+    }
+    REQUIRE(ids.size() == get_widget_categories().size());
+}
+
+TEST_CASE("PanelWidgetRegistry: every category has at least one widget",
+          "[panel_widget][widget_config]") {
+    const auto& defs = get_all_widget_defs();
+    for (const auto& cat : get_widget_categories()) {
+        CAPTURE(cat.display_name);
+        auto count = std::count_if(defs.begin(), defs.end(), [&cat](const PanelWidgetDef& def) {
+            return def.category == cat.id;
+        });
+        REQUIRE(count > 0);
+    }
+}
+
+TEST_CASE("PanelWidgetRegistry: per-category counts sum to the full def count",
+          "[panel_widget][widget_config]") {
+    const auto& defs = get_all_widget_defs();
+    size_t total = 0;
+    for (const auto& cat : get_widget_categories()) {
+        total += static_cast<size_t>(
+            std::count_if(defs.begin(), defs.end(),
+                          [&cat](const PanelWidgetDef& def) { return def.category == cat.id; }));
+    }
+    REQUIRE(total == widget_def_count());
+}
+
+TEST_CASE("PanelWidgetRegistry: known widgets keep their category",
+          "[panel_widget][widget_config]") {
+    struct Expected {
+        const char* id;
+        WidgetCategory category;
+    };
+    // Spot pins — a careless re-shuffle of the table should trip at least one.
+    const Expected pinned[] = {
+        {"print_status", WidgetCategory::PrintStatus},
+        {"control_buttons", WidgetCategory::PrintStatus},
+        {"temperature", WidgetCategory::Temperature},
+        {"preheat", WidgetCategory::Temperature},
+        // Fans fold into Temperature & Cooling rather than carrying a
+        // two-widget category of their own.
+        {"fan_stack", WidgetCategory::Temperature},
+        {"fan", WidgetCategory::Temperature},
+        {"ams", WidgetCategory::Filament},
+        // Humidity reads as a filament-drying concern, not a climate one.
+        {"humidity", WidgetCategory::Filament},
+        // LEDs are something you actuate, so they live with the other controls.
+        {"led", WidgetCategory::Controls},
+        {"macros", WidgetCategory::Controls},
+        {"clock", WidgetCategory::System},
+        {"shutdown", WidgetCategory::System},
+    };
+    for (const auto& e : pinned) {
+        CAPTURE(e.id);
+        const auto* def = find_widget_def(e.id);
+        REQUIRE(def != nullptr);
+        REQUIRE(def->category == e.category);
+    }
+}
+
+TEST_CASE("PanelWidgetRegistry: find_widget_category returns the matching entry",
+          "[panel_widget][widget_config]") {
+    for (const auto& cat : get_widget_categories()) {
+        const auto* found = find_widget_category(cat.id);
+        REQUIRE(found != nullptr);
+        REQUIRE(found->id == cat.id);
+        REQUIRE(std::string_view(found->display_name) == cat.display_name);
+    }
+    // An out-of-range value resolves to nothing rather than the first entry.
+    REQUIRE(find_widget_category(static_cast<WidgetCategory>(9999)) == nullptr);
+}
+
+// ============================================================================
 // Config tests — reorder edge cases
 // ============================================================================
 

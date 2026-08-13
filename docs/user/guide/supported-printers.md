@@ -123,7 +123,7 @@ A true 4-toolhead changer, running on the U1's built-in 3.5" screen. Each of the
 
 **Requirements:** SSH access — either stock firmware 1.2+ (via its **Root access** option) or PAXX Extended Firmware (SSH on by default). Reinstall after any firmware update. See [Installation → Snapmaker U1](../INSTALL.md#snapmaker-u1).
 
-**Status:** Tested (on PAXX 1.2.x–1.4.x; stock-firmware support is newly added — testers wanted).
+**Status:** Tested on PAXX 1.2.x–1.4.x. The stock-firmware path is unverified on a real stock device — testers wanted.
 
 > **Good to know:** The U1's 480×320 display is the smallest resolution HelixScreen supports; a few panels have known layout tightness there. Physical cameras work normally. Writing filament data back to RFID tags works only on PAXX firmware.
 

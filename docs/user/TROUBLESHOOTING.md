@@ -611,9 +611,9 @@ Contributions are very welcome here and only need XML, not C++ — see the [UI C
 - **Tips** in particular is missing on a portrait-mounted screen
 - You saw a message like *"'Tips' removed — grid full"* even though the grid looked far from full
 
-**Cause:** on older versions, a widget that was wider than a portrait screen's grid could not be placed anywhere, so HelixScreen switched it off — and *saved* that off state to your settings. Fixing the placement logic does not undo the saved setting, so the widget stays off until you put it back yourself. It is not lost: it is sitting in the Widget Catalog as an available widget.
+**Cause:** when a widget cannot fit anywhere on the grid, HelixScreen switches it off and *saves* that off state to your settings. If the widget later would fit — you removed something, or the grid changed size — the saved setting still stands, so it stays off until you put it back yourself. It is not lost: it is sitting in the Widget Catalog as an available widget.
 
-Note that **Tips is now deliberately off by default on portrait screens** — it is a wide widget and takes a third to a half of a row on a narrow grid. If Tips is the only thing missing, that may simply be the new default rather than the old bug.
+**Tips** is the one that hits this most, because it is a wide widget and a portrait grid is narrow. On the shortest portrait screens Tips is also left out of the default layout on purpose, so if Tips is the only thing missing, that may be the default rather than a widget that got dropped.
 
 **Fix — put back a single widget:**
 
@@ -1264,7 +1264,7 @@ Re-slice your file after adding these — the commands are baked into the G-code
 
 > **Cura users:** Cura doesn't expose these layer placeholders directly and needs a post-processing script to inject `SET_PRINT_STATS_INFO`. See the Klipper community docs and forums for a Cura post-processing plugin that adds it.
 
-> **Note:** Some noise in the layer count during the print-start phase (bed mesh, purge/prime line, Z-hop) is normal. HelixScreen holds the layer at 0 until real printing begins, so it no longer jumps ahead before the first layer. The estimate only matters mid-print when the slicer macros above are missing.
+> **Note:** Some noise in the layer count during the print-start phase (bed mesh, purge/prime line, Z-hop) is normal. HelixScreen holds the layer at 0 until real printing begins, so it will not jump ahead before the first layer. The estimate only matters mid-print when the slicer macros above are missing.
 
 ### Time remaining is inaccurate or slow to settle
 
@@ -1994,7 +1994,7 @@ If you can't find a solution, open a GitHub issue with:
 
 ```markdown
 ## Environment
-- HelixScreen version: 1.0.0
+- HelixScreen version: 0.99.111
 - Hardware: Raspberry Pi 4 4GB
 - Display: Official 7" touchscreen
 - OS: MainsailOS 1.2.0

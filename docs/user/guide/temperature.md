@@ -70,7 +70,7 @@ On printers with multiple extruders, an extruder selector appears at the top of 
 - Toolchanger printers show tool names (T0, T1) rather than "Nozzle 1", "Nozzle 2"
 - The selector only appears when Klipper reports more than one extruder
 
-Single-extruder printers are unaffected — the panel works exactly as before.
+On a single-extruder printer none of this appears — there is no selector and the panel simply shows your one nozzle.
 
 ---
 

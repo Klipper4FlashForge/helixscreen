@@ -36,6 +36,7 @@ Complete reference for HelixScreen configuration options.
 - [Telemetry Settings](#telemetry-settings)
 - [Plugin Settings](#plugin-settings)
 - [Update Settings](#update-settings)
+- [Upgrade Nudge](#upgrade-nudge)
 - [Safety Limits](#safety-limits)
 - [Capability Overrides](#capability-overrides)
 - [Resetting Configuration](#resetting-configuration)
@@ -62,7 +63,7 @@ The configuration file is created automatically by the first-run wizard. You can
 cp config/settings.json.template config/settings.json
 ```
 
-**Note:** Legacy config locations (`settings.json` in app root or `/opt/helixscreen/settings.json`) are automatically migrated to the new location on startup.
+**Note:** A `settings.json` sitting in the app root or at `/opt/helixscreen/settings.json` is moved to the location above on startup.
 
 ---
 
@@ -72,11 +73,13 @@ The configuration file is JSON format with several top-level sections:
 
 ```json
 {
+  "config_version": 22,
   "dark_mode": false,
   "brightness": 80,
   "sounds_enabled": true,
   "ui_sounds_enabled": true,
   "sound_theme": "default",
+  "disable_sound": false,
   "completion_alert": 1,
   "wizard_completed": false,
   "wifi_expected": false,
@@ -116,11 +119,11 @@ The configuration file is JSON format with several top-level sections:
 
 ## Multi-Printer Configuration
 
-When multiple printers are configured, the config file uses a versioned schema (v4) with per-printer settings:
+When multiple printers are configured, the config file uses a versioned schema with per-printer settings. `config_version` tracks the schema and HelixScreen migrates older files forward on load — leave it alone:
 
 ```json
 {
-  "config_version": 4,
+  "config_version": 22,
   "active_printer_id": "voron-24",
   "printers": {
     "voron-24": {
@@ -260,7 +263,7 @@ Located in the `theme` section:
 **Default:** `0`
 **Description:** Theme accent color preset. **Requires restart to take effect.**
 
-> **Note:** `preset` is a legacy dropdown-index field, and index `0` maps to Ayu — it does **not** reflect the effective default theme. The out-of-the-box default theme is **Nord**. The active theme is set by the `/display/theme` string (a theme name), not by this numeric index.
+> **Note:** `preset` is a dropdown index, not the effective theme — index `0` maps to Ayu, while the out-of-the-box default is **Nord**. What actually selects the theme is the `/display/theme` string (a theme name). Set that; ignore this.
 
 | Value | Theme |
 |-------|-------|
@@ -369,7 +372,7 @@ Located in the `display` section:
 ### `theme`
 **Type:** string
 **Default:** `"nord"`
-**Description:** Active color theme by name (e.g., `"nord"`, `"dracula"`, `"gruvbox"`). This is the string that actually determines the effective theme — the numeric `theme.preset` index is a legacy field. **Requires restart to take effect.** Easiest to change via **Settings > Appearance > Display Settings > Theme Colors**, which writes this value for you.
+**Description:** Active color theme by name (e.g., `"nord"`, `"dracula"`, `"gruvbox"`). This is the string that actually determines the effective theme — the numeric `theme.preset` index does not. **Requires restart to take effect.** Easiest to change via **Settings > Appearance > Display Settings > Theme Colors**, which writes this value for you.
 
 ### `layout`
 **Type:** string
@@ -377,7 +380,7 @@ Located in the `display` section:
 **Values:** `auto`, `standard`, `ultrawide`, `portrait`, `micro`, `micro-portrait`, `tiny`, `tiny-portrait`
 **Description:** Override the auto-detected screen layout. Leave this at `auto` unless you are testing — HelixScreen picks the layout from your display's aspect ratio: wider than about 2.5:1 is `ultrawide`, narrower than about 0.8:1 is `portrait`, and anything in between is `standard`. Displays whose longest side is 480px or less get `micro` (480x272 class) or `tiny` instead, with `-portrait` variants when the screen is taller than wide.
 
-> **Ultrawide and portrait are alpha at best.** Detection, navigation-bar sizing, and grid sizing work, but there are no ultrawide panel layouts yet and portrait has only the app shell and navigation bar. The `micro-portrait` and `tiny-portrait` variants are placeholders with no layouts at all. Every panel without an override falls back to the standard landscape layout, so expect stretched, cramped, or clipped screens. Neither orientation has been tested on real hardware. Forcing one of these is useful for contributing layouts, not for daily use.
+> **Ultrawide and portrait are alpha at best.** Detection, navigation-bar sizing, and grid sizing all work, and both orientations get their own home dashboard layout. Portrait goes further: Print Status, Print Tune, Motion, Bed Mesh, the temperature graph, and the Advanced panel's E-stop bar rearrange for a tall screen as well. Ultrawide has the home dashboard and nothing else. Every other panel falls back to the standard landscape layout, so expect stretched, cramped, or clipped screens outside that set. Neither orientation has been tested much on real hardware. Forcing one of these is useful for contributing layouts, not for daily use.
 
 ### `rotate`
 **Type:** integer
@@ -414,6 +417,22 @@ Located in the `display` section:
 **Default:** `30`
 **Range:** `1` - `100`
 **Description:** Brightness percentage when screen is dimmed.
+
+### `sleep_backlight_off`
+**Type:** boolean
+**Default:** `true`
+**Description:** Whether going to sleep switches the backlight off, rather than only dimming it to zero. Leave this on. It exists for panels where cutting the backlight leaves the screen in a state it cannot wake from; if your display goes dark and stays dark after sleeping, and a touch does not bring it back, set this to `false` and restart.
+
+### `backlight_enable_ioctl`
+**Type:** boolean
+**Default:** `true`
+**Description:** Whether to use the kernel's backlight enable/disable call in addition to setting a brightness level. A few panels wire this signal backwards, so enabling the backlight turns it off. If your screen is inverted — dark when it should be lit, lit when it should be asleep — set this to `false` so brightness alone controls it.
+
+### `screensaver_type`
+**Type:** integer
+**Default:** `1`
+**Values:** `0` = Off, `1` = Flying Toasters, `2` = Starfield, `3` = 3D Pipes
+**Description:** Which screensaver plays when the screen has been idle. Choose it in **Settings > Display & Sound**. It starts at the `dim_sec` mark, alongside dimming, and stops when `sleep_sec` takes the display down. On a panel with no backlight control the screensaver is the only idle indication you get.
 
 ### `drm_device`
 **Type:** string
@@ -625,7 +644,7 @@ Located in the `output` section:
 ### `led_on_at_start`
 **Type:** boolean
 **Default:** `false`
-**Description:** Automatically turn on the configured LED strip when Klipper becomes ready. Useful for printers with chamber lights that should always be on. **Deprecated:** This setting has moved to `printer.leds.led_on_at_start`. The legacy location is still read for backward compatibility.
+**Description:** Automatically turn on the configured LED strip when Klipper becomes ready. Useful for printers with chamber lights that should always be on. **Set this under [`printer.leds.led_on_at_start`](#ledsled_on_at_start) instead** — that is where HelixScreen writes it and where per-printer settings belong. A value here is still read, but it applies to every printer.
 
 ---
 
@@ -782,7 +801,7 @@ Located in the `printer.leds` section. Configured via **Settings > LED Settings*
 ### `leds.strip`
 **Type:** string
 **Default:** `""` (empty)
-**Description:** Legacy single LED strip name. Empty string if no controllable LEDs. Superseded by `leds.selected_strips` for multi-strip control.
+**Description:** A single LED strip name, empty when there are no controllable LEDs. Use `leds.selected_strips` instead — it is the one that handles more than one strip.
 
 ### `leds.selected_strips`
 **Type:** array of strings
@@ -792,12 +811,18 @@ Located in the `printer.leds` section. Configured via **Settings > LED Settings*
 ### `leds.led_on_at_start`
 **Type:** boolean
 **Default:** `false`
-**Description:** Automatically turn on selected LED strips when Klipper becomes ready. Useful for chamber lights that should always be on. This setting has moved from `output.led_on_at_start` to here, though the legacy location is still read for backward compatibility.
+**Description:** Automatically turn on selected LED strips when Klipper becomes ready. Useful for chamber lights that should always be on. A copy of this key under `output` is also honoured if you have one; `printer.leds` is where HelixScreen writes it.
+
+### `leds.startup_brightness`
+**Type:** integer
+**Default:** `80`
+**Range:** `0` - `100`
+**Description:** Brightness the strips come up at when `leds.led_on_at_start` switches them on. Independent of `leds.last_brightness`, so the lights can start at a fixed level regardless of where you left the slider.
 
 ### `leds.last_color`
 **Type:** string (or integer)
 **Default:** `"#FFFFFF"` (white)
-**Description:** Last used LED color as a `#RRGGBB` hex string (e.g., `"#FFFFFF"` = white, `"#FF0000"` = red, `"#00FF00"` = green). Legacy integer RGB values (e.g., `16777215`) are also accepted for backward compatibility. Remembered between sessions.
+**Description:** Last used LED color as a `#RRGGBB` hex string (e.g., `"#FFFFFF"` = white, `"#FF0000"` = red, `"#00FF00"` = green). Plain integer RGB values (e.g., `16777215`) are also accepted. Remembered between sessions.
 
 ### `leds.last_brightness`
 **Type:** integer
@@ -808,7 +833,7 @@ Located in the `printer.leds` section. Configured via **Settings > LED Settings*
 ### `leds.color_presets`
 **Type:** array of strings (or integers)
 **Default:** `["#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]`
-**Description:** Preset colors shown in the color picker as `#RRGGBB` hex strings. Legacy integer RGB values are also accepted. Default presets are white, red, green, blue, yellow, magenta, and cyan.
+**Description:** Preset colors shown in the color picker as `#RRGGBB` hex strings. Plain integer RGB values are also accepted. Default presets are white, red, green, blue, yellow, magenta, and cyan.
 
 ### `leds.auto_state`
 **Type:** object
@@ -833,7 +858,7 @@ Located in the `printer.leds` section. Configured via **Settings > LED Settings*
 - `enabled` — Boolean, enable/disable automatic state-based lighting
 - `mappings` — Object mapping printer state keys (`idle`, `heating`, `printing`, `paused`, `error`, `complete`) to actions
 - Each mapping has an `action` type: `"off"`, `"brightness"`, `"color"`, `"effect"`, `"wled_preset"`, or `"macro"`
-- Additional fields depend on the action: `brightness` (0-100), `color` (`#RRGGBB` hex string or legacy integer RGB), `effect_name` (string), `wled_preset` (integer), `macro` (string)
+- Additional fields depend on the action: `brightness` (0-100), `color` (`#RRGGBB` hex string, or a plain integer RGB), `effect_name` (string), `wled_preset` (integer), `macro` (string)
 
 ### `leds.macro_devices`
 **Type:** array of objects
@@ -1108,18 +1133,17 @@ Located under the `panel_widgets` key, grouped by panel ID. The Home panel uses 
         {
           "id": "main",
           "widgets": [
-            {"id": "printer_image", "enabled": true, "col": 0, "row": 0, "colspan": 2, "rowspan": 2},
-            {"id": "print_status", "enabled": true, "col": 0, "row": 2, "colspan": 2, "rowspan": 2},
-            {"id": "tips", "enabled": true, "col": 2, "row": 0, "colspan": 4, "rowspan": 2},
-            {"id": "temperature", "enabled": true, "col": 6, "row": 0, "colspan": 1, "rowspan": 1},
-            {"id": "fan_stack", "enabled": true, "col": 7, "row": 0, "colspan": 1, "rowspan": 1}
+            {"id": "printer_image", "enabled": true, "col": 0, "row": 0, "colspan": 4, "rowspan": 4},
+            {"id": "print_status", "enabled": true, "col": 0, "row": 4, "colspan": 8, "rowspan": 4},
+            {"id": "temperature", "enabled": true, "col": 4, "row": 0, "colspan": 2, "rowspan": 2},
+            {"id": "fan_stack", "enabled": true, "col": 4, "row": 2, "colspan": 2, "rowspan": 2}
           ]
         },
         {
           "id": "page_1",
           "widgets": [
-            {"id": "temp_graph", "enabled": true, "col": 0, "row": 0, "colspan": 4, "rowspan": 3},
-            {"id": "camera", "enabled": true, "col": 4, "row": 0, "colspan": 4, "rowspan": 3}
+            {"id": "temp_graph", "enabled": true, "col": 0, "row": 0, "colspan": 8, "rowspan": 6},
+            {"id": "camera", "enabled": true, "col": 8, "row": 0, "colspan": 8, "rowspan": 6}
           ]
         }
       ],
@@ -1130,7 +1154,12 @@ Located under the `panel_widgets` key, grouped by panel ID. The Home panel uses 
 }
 ```
 
-> **Migration note:** If your config has the older flat-array format (a simple list of widgets without pages) or the legacy `home_widgets` key, HelixScreen automatically migrates it to the multi-page format on first launch. Your existing widgets are placed on a single page.
+> **Positions and spans are counted in half cells, not cells.** The grid is laid out in
+> half-cell tracks so that a few widgets can sit on half-cell boundaries, and these numbers
+> are in those tracks. A one-cell widget is `"colspan": 2, "rowspan": 2`; the two-by-two
+> Printer Image above is `4` by `4`. Multiply by two when translating a size you read off
+> the Widget Catalog badge or the [Home Panel guide](guide/home-panel.md#available-widgets),
+> which are both written in whole cells.
 
 ### `panel_widgets.home`
 **Type:** object
@@ -1146,38 +1175,80 @@ Each widget object has:
 
 - `id` — Widget identifier (see table below)
 - `enabled` — Whether the widget is shown (`true`/`false`)
-- `col` — Grid column position (0-based, left to right)
-- `row` — Grid row position (0-based, top to bottom)
-- `colspan` — Number of columns the widget spans
-- `rowspan` — Number of rows the widget spans
-- `config` — (optional) Per-widget settings object. Currently used by `temp_stack` and `fan_stack` for display mode, and by `filament` for its sensor source:
-  - `display_mode` — `"stack"` (default) or `"carousel"`. Stack shows compact rows; carousel shows swipeable full-size pages. Toggle via long-press on the widget.
-  - `source` (`filament` only) - `"auto"` (default), `"runout"`, `"toolhead"`, or `"entry"`. Which sensor role the tile follows. Set via the gear icon in Edit Mode.
+- `col` — Grid column position in half cells (0-based, left to right)
+- `row` — Grid row position in half cells (0-based, top to bottom)
+- `colspan` — Width in half cells (`2` = one cell wide)
+- `rowspan` — Height in half cells (`2` = one cell tall)
+- `config` — (optional) Per-widget settings object, written by the gear button in Edit Mode. Which keys apply depends on the widget:
+
+| Key | Widgets | Values |
+|-----|---------|--------|
+| `display_mode` | `temp_stack`, `fan_stack`, `thermistor` | `"stack"` (default) or `"carousel"` |
+| `layout_style` | `print_status` | `"detailed"` for the expanded card, otherwise the compact one |
+| `fan` | `fan` | Name of the fan to monitor |
+| `sensor` | `thermistor` | Name of the sensor to display |
+| `sensors` | `thermistor`, `temp_graph` | Array of sensor names to include |
+| `macro`, `color`, `skip_param_prompt` | `favorite_macro` | Macro to run, icon tint, and whether to skip the parameter prompt |
+| `device` | `power_device` | Name of the Moonraker power device to bind |
+| `icon` | `favorite_macro`, `power_device`, `temp_stack`, `fan_stack`, `tool_switcher` | Icon name override |
+| `rotation`, `flip_h`, `flip_v` | `camera` | `0`/`90`/`180`/`270`, and booleans |
+| `source`, `danger_threshold` | `clog_detection` | Detection source and danger-zone percentage |
+| `source` | `filament` | Which sensor role the tile follows: `"auto"` (default), `"runout"`, `"toolhead"`, or `"entry"` |
+| `material_index` | `preheat` | Which material profile the buttons preheat to |
+
+Setting these through Edit Mode is far easier than editing them here, and it is the only way that validates the value against your printer.
 
 **Available widget IDs:**
 
-| ID | Widget | Default | Hardware-Gated |
-|----|--------|---------|---------------|
-| `power` | Moonraker power device controls | Enabled | Yes (requires power devices) |
-| `network` | WiFi/Ethernet status | Disabled | No |
-| `firmware_restart` | Klipper firmware restart | Disabled | No |
-| `ams` | Multi-material spool status | Enabled | Yes (requires AMS/MMU) |
-| `temperature` | Nozzle temperature with heating animation | Enabled | No |
-| `temp_stack` | Stacked nozzle, bed, and chamber temps (supports carousel mode) | Disabled | No |
-| `led` | LED quick toggle | Enabled | Yes (requires LEDs) |
-| `humidity` | Enclosure humidity sensor | Enabled | Yes (requires sensor) |
-| `width_sensor` | Filament width sensor | Enabled | Yes (requires sensor) |
-| `probe` | Z probe status and offset | Enabled | Yes (requires probe) |
-| `filament` | Filament runout detection, tap for load/unload/purge | Enabled | Yes (requires sensor) |
-| `fan_stack` | Part, hotend, and auxiliary fan speeds (supports carousel mode with arc dials) | Enabled | No |
-| `thermistor` | Temperature sensors (chamber, enclosure, etc.) | Disabled | Yes (requires sensor) |
-| `notifications` | Pending alerts with severity badge | Enabled | No |
+For what each widget does and how big it can get, see the [Home Panel guide](guide/home-panel.md#available-widgets). This table is just the ID-to-widget mapping you need when editing the JSON.
+
+| ID | Widget | On by default | Hardware-gated |
+|----|--------|---------------|----------------|
+| `printer_image` | Printer Image | Yes | No |
+| `print_status` | Print Status | Yes | No |
+| `control_buttons` | Print Controls | No | No |
+| `print_stats` | Print Stats | No | No |
+| `job_queue` | Job Queue | No | No |
+| `camera` | Camera | No | Webcam configured |
+| `temperature` | Nozzle Temperature | Yes | No |
+| `nozzle_temps` | Nozzle Temperatures | No | No |
+| `bed_temperature` | Bed Temperature | Yes | No |
+| `chamber_temperature` | Chamber Temperature | No | Chamber sensor or heater |
+| `temp_stack` | Temperatures | No | No |
+| `thermistor` | Temperature Sensors | No | Extra temperature sensors |
+| `temp_graph` | Temperature Graph | No | No |
+| `preheat` | Preheat | No | No |
+| `fan_stack` | Fan Speeds | Yes | No |
+| `fan` | Fan | No | No |
+| `ams` | Multi-Filament System Status | No | AMS/MMU detected |
+| `active_spool` | Active Spool | No | No |
+| `filament` | Filament Sensor | Yes | Filament sensor |
+| `humidity` | Humidity | No | Humidity sensor |
+| `width_sensor` | Width Sensor | No | Width sensor |
+| `clog_detection` | Clog Detection | No | Clog detection hardware |
+| `favorite_macro` | Macro Button | No | No |
+| `macros` | Macros | No | No |
+| `gcode_console` | G-code Console | No | No |
+| `motion` | Motion | No | No |
+| `tool_switcher` | Tool Switcher | No | No |
+| `power_device` | Power | No | Moonraker power device |
+| `led` | LED Light | Yes | LEDs configured |
+| `led_controls` | LED Controls | No | LEDs configured |
+| `network` | Network | No | No |
+| `notifications` | Notifications | Yes | No |
+| `clock` | Digital Clock | No | No |
+| `tips` | Tips | Yes | No |
+| `shutdown` | Shutdown/Reboot | No | No |
+| `firmware_restart` | Firmware Restart | No | No |
+| `lock` | Lock Screen | No | No |
+
+`power_device`, `fan`, `thermistor`, `favorite_macro`, and `temp_graph` can appear more than once. Extra copies get an ID like `favorite_macro:2`.
 
 **Notes:**
-- Widget grid positions (`col`, `row`, `colspan`, `rowspan`) determine where each widget appears on its page
+- Widget grid positions (`col`, `row`, `colspan`, `rowspan`) determine where each widget appears on its page, in half cells
 - Hardware-gated widgets are hidden on the Home Panel if their hardware isn't detected, even when enabled
-- New widgets added in future versions are automatically appended with their default enabled state
-- Unknown widget IDs (from older versions) are silently ignored
+- New widgets are appended automatically with their default enabled state
+- Widget IDs that HelixScreen doesn't recognise are ignored
 - Up to 8 pages are supported
 
 This is best configured via **Edit Mode** on the Home Panel (long-press the widget grid) rather than editing the JSON directly. See the [Home Panel guide](guide/home-panel.md) for details on adding pages and arranging widgets.
@@ -1532,6 +1603,38 @@ Can also be changed from the Settings panel when `beta_features` is enabled.
 
 ---
 
+## Upgrade Nudge
+
+Located in the top-level `upgrade_nudge` section. Controls how insistently HelixScreen tells you an update is waiting.
+
+```json
+{
+  "upgrade_nudge": {
+    "intensity": "off",
+    "dismissed_version": ""
+  }
+}
+```
+
+### `upgrade_nudge.intensity`
+**Type:** string
+**Default:** `"off"`
+**Values:** `"off"`, `"normal"`, `"aggressive"`
+**Description:** How visible the update prompt is.
+
+- `"off"` — nothing. An available update is only visible in **Settings > Help & About**
+- `"normal"` — a red dot on the Settings icon
+- `"aggressive"` — the red dot, plus a banner across the top of the screen that stays until you dismiss it
+
+No nudge of any kind appears while a print is running.
+
+### `upgrade_nudge.dismissed_version`
+**Type:** string
+**Default:** `""` (empty)
+**Description:** The version whose banner you dismissed. Set for you when you close the banner, and only suppresses that exact version — the next release brings the banner back. Clear it to see the banner again for a version you already dismissed.
+
+---
+
 ## Safety Limits
 
 Located in `printer.safety_limits`:
@@ -1577,7 +1680,8 @@ Located in `printer.capability_overrides`:
       "z_tilt": "auto",
       "nozzle_clean": "auto",
       "heat_soak": "auto",
-      "chamber": "auto"
+      "chamber": "auto",
+      "speaker": "auto"
     }
   }
 }
@@ -1592,6 +1696,7 @@ Located in `printer.capability_overrides`:
 - Enable `heat_soak` when you have a chamber but no chamber heater (soak macro works without)
 - Disable `qgl` on a printer where it's defined but not used
 - Enable `bed_mesh` if detection failed
+- Disable `speaker` on a board whose buzzer is detected but not wired, so HelixScreen stops trying to play M300 beeps through it
 
 ---
 
@@ -1655,9 +1760,8 @@ If your config is lost or corrupted:
 3. **Fresh start:** Copy `settings.json.template` to `settings.json` and re-run
    the setup wizard
 
-### Migration from helixconfig.json
-Older versions used `helixconfig.json`. HelixScreen automatically renames this to
-`settings.json` on startup — no manual action needed.
+### If you have a `helixconfig.json`
+HelixScreen renames it to `settings.json` on startup — no manual action needed.
 
 ---
 
@@ -1750,7 +1854,7 @@ These can be set in the systemd service file or before running the binary:
 | `HELIX_COLOR_SWAP_RB` | Swap red/blue channels (`1` to enable) — fixes inverted colors on some displays |
 | `HELIX_BACKLIGHT_DEVICE` | Force the backlight control method: `sysfs`, `allwinner`, `brightness` (Creality Sonic Pad), or `none` to disable. Fixes a brightness slider that does nothing |
 | `HELIX_DPI` | Override display DPI / UI scale (`50`–`500`, default `160`) — lower for oversized UI, higher for cramped UI |
-| `HELIX_SCREEN_SIZE` | Force screen size / layout (`micro`, `tiny`, `small`, `medium`, `large`, `xlarge`, or `WxH`) — persistent equivalent of `-s` |
+| `HELIX_SCREEN_SIZE` | Force screen size / layout (`micro`, `tiny`, `small`, `medium`, `large`, `xlarge`, `xxlarge`, or `WxH`) — persistent equivalent of `-s` |
 | `HELIX_TOUCH_DEVICE` | Override touch input device (e.g., `/dev/input/event1`) |
 | `HELIX_TOUCH_SWAP_AXES` | Swap X/Y touch axes (`1` to enable) |
 | `HELIX_TOUCH_CALIBRATE` | Force touch calibration on next launch (`1` to enable) |

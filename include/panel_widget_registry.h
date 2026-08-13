@@ -17,6 +17,32 @@ class PanelWidget;
 using WidgetFactory = std::function<std::unique_ptr<PanelWidget>(const std::string& instance_id)>;
 using SubjectInitFn = std::function<void()>;
 
+/// Grouping used to organize the Add Widget catalog.
+///
+/// Enumerator order is the display order in the catalog, ordered by how often
+/// people reach for a group rather than alphabetically: the print you are
+/// watching first, the machine housekeeping you rarely touch last.
+///
+/// These are deliberately coarser than the section list in
+/// docs/user/guide/home-panel.md § "Available Widgets". That list is a
+/// reference index you read top to bottom; this is a menu you navigate on a
+/// 480px panel, where a category holding two widgets costs two taps to reach
+/// two things and earns nothing.
+enum class WidgetCategory {
+    PrintStatus,
+    Temperature,
+    Filament,
+    Controls,
+    System,
+};
+
+struct WidgetCategoryDef {
+    WidgetCategory id;
+    const char* display_name;
+    const char* translation_tag; // For i18n
+    const char* icon;            // Icon name from ui_icon_codepoints.h
+};
+
 struct PanelWidgetDef {
     const char* id;                    // Stable string for JSON config
     const char* display_name;          // For settings overlay UI
@@ -25,14 +51,21 @@ struct PanelWidgetDef {
     const char* translation_tag;       // For i18n
     const char* hardware_gate_subject; // nullptr = always available
     const char* hardware_gate_hint; // Human-readable reason, e.g., "Requires AMS or MMU hardware"
-    bool default_enabled = true;    // Whether enabled in fresh/default config
-    int colspan = 1;                // Default grid columns spanned
-    int rowspan = 1;                // Default grid rows spanned
-    int min_colspan = 0;            // Minimum columns (0 = use colspan)
-    int min_rowspan = 0;            // Minimum rows (0 = use rowspan)
-    int max_colspan = 0;            // Maximum columns (0 = use colspan, i.e. not scalable)
-    int max_rowspan = 0;            // Maximum rows (0 = use rowspan, i.e. not scalable)
-    bool multi_instance = false;    // Allows dynamic instance creation with base_id:N IDs
+
+    /// Catalog grouping. Deliberately has no default: it sits before the
+    /// defaulted fields so every table entry must name one positionally, and a
+    /// new widget cannot silently land in whichever category happens to be
+    /// first.
+    WidgetCategory category;
+
+    bool default_enabled = true; // Whether enabled in fresh/default config
+    int colspan = 1;             // Default grid columns spanned
+    int rowspan = 1;             // Default grid rows spanned
+    int min_colspan = 0;         // Minimum columns (0 = use colspan)
+    int min_rowspan = 0;         // Minimum rows (0 = use rowspan)
+    int max_colspan = 0;         // Maximum columns (0 = use colspan, i.e. not scalable)
+    int max_rowspan = 0;         // Maximum rows (0 = use rowspan, i.e. not scalable)
+    bool multi_instance = false; // Allows dynamic instance creation with base_id:N IDs
 
     /// True when this widget may occupy half a cell on that axis (#1126).
     ///
@@ -84,6 +117,11 @@ struct PanelWidgetDef {
                effective_max_rowspan() > effective_min_rowspan();
     }
 };
+
+/// Categories in catalog display order.
+const std::vector<WidgetCategoryDef>& get_widget_categories();
+/// nullptr when `id` is not one of the enumerators.
+const WidgetCategoryDef* find_widget_category(WidgetCategory id);
 
 const std::vector<PanelWidgetDef>& get_all_widget_defs();
 const PanelWidgetDef* find_widget_def(std::string_view id);
