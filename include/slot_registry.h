@@ -133,7 +133,11 @@ class SlotRegistry {
     /// entry if it still points at this slot. set_tool_mapping() rejects negative
     /// tool numbers, so this is the primitive for resetting to unmapped.
     void clear_tool_mapping(int global_index);
-    void set_tool_map(const std::vector<int>& tool_to_slot);
+    /// Bulk replace of the whole forward map. Same source semantics as
+    /// set_tool_mapping(): Happy Hare's ttg_map arrives this way, as one
+    /// authoritative array per subscription update rather than per-slot deltas.
+    void set_tool_map(const std::vector<int>& tool_to_slot,
+                      MappingSource source = MappingSource::Optimistic);
     /// Forward map: tool_map()[tool] = global slot index, -1 for an unmapped
     /// tool. This is the exact vector build_system_info() copies into
     /// AmsSystemInfo::tool_to_slot_map; exposed on its own so a caller that only

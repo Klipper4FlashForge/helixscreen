@@ -21,12 +21,17 @@
 #include "ui_update_queue.h"
 
 #include "../lvgl_test_fixture.h"
+#include "../test_helpers/cfs_test_access.h"
 #include "../test_helpers/print_start_controller_test_access.h"
+#include "ams_backend_ad5x_ifs.h"
 #include "ams_backend_afc.h"
+#include "ams_backend_cfs.h"
+#include "ams_backend_happy_hare.h"
 #include "ams_state.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
+#include "slot_registry.h"
 
 #include <memory>
 #include <vector>
@@ -324,4 +329,70 @@ TEST_CASE("remap restore: firmware reporting the wrong mapping keeps waiting",
     be.backend->firmware_reports({2, 1});
     Harness::ams_data_tick();
     CHECK(PrintStartControllerTestAccess::saved_mapping(h.controller).empty());
+}
+
+// ============================================================================
+// Per-backend echo capability (#1270). Which backends can confirm at all was
+// established by reading firmware sources and probing hardware, not assumed:
+//   AFC  — per-lane `map` over the subscription
+//   HH   — whole ttg_map in get_status() (mmu.py)
+//   CFS  — box.map, measured on a live K2 (single-key delta, ~0.7s) — EXCEPT K1,
+//          where BOX_MODIFY_TN no-ops (#968) so no confirming frame ever arrives
+//   AD5X — zmod_ifs.py has no get_status at all; nothing to confirm against
+// A backend that wrongly claims support waits forever and strands the record.
+// ============================================================================
+
+TEST_CASE("remap restore: echoing backends advertise confirmation support",
+          "[remap-restore][1270]") {
+    AmsBackendAfc afc{nullptr, nullptr};
+    CHECK(afc.reports_firmware_tool_mapping());
+
+    AmsBackendHappyHare hh{nullptr, nullptr};
+    CHECK(hh.reports_firmware_tool_mapping());
+
+    // AD5X IFS cannot: ZMOD publishes no status object for the mapping.
+    AmsBackendAd5xIfs ifs{nullptr, nullptr};
+    CHECK_FALSE(ifs.reports_firmware_tool_mapping());
+}
+
+TEST_CASE("remap restore: CFS confirms except on K1 where BOX_MODIFY_TN no-ops",
+          "[remap-restore][1270]") {
+    helix::printer::AmsBackendCfs cfs{nullptr, nullptr};
+    CHECK(cfs.reports_firmware_tool_mapping()); // K2 default
+
+    CfsTestAccess::set_macro_variant_k1(cfs);
+    CHECK_FALSE(cfs.reports_firmware_tool_mapping());
+}
+
+// ============================================================================
+// The registry seam itself: only firmware writes move the generation.
+// ============================================================================
+
+TEST_CASE("remap restore: only firmware-sourced registry writes bump the generation",
+          "[remap-restore][1270]") {
+    using helix::printer::SlotRegistry;
+    SlotRegistry reg;
+    reg.initialize("unit", {"a", "b", "c"});
+
+    const uint64_t start = reg.firmware_mapping_generation();
+
+    // Per-slot optimistic write (what set_tool_mapping() does before sending).
+    reg.set_tool_mapping(0, 0);
+    CHECK(reg.firmware_mapping_generation() == start);
+
+    // Per-slot firmware write (AFC's subscription parser).
+    reg.set_tool_mapping(1, 1, SlotRegistry::MappingSource::Firmware);
+    CHECK(reg.firmware_mapping_generation() == start + 1);
+
+    // Bulk optimistic write.
+    reg.set_tool_map({0, 1, 2});
+    CHECK(reg.firmware_mapping_generation() == start + 1);
+
+    // Bulk firmware write (Happy Hare's whole ttg_map).
+    reg.set_tool_map({2, 1, 0}, SlotRegistry::MappingSource::Firmware);
+    CHECK(reg.firmware_mapping_generation() == start + 2);
+
+    // A rejected write must not count as confirmation.
+    reg.set_tool_mapping(99, 0, SlotRegistry::MappingSource::Firmware);
+    CHECK(reg.firmware_mapping_generation() == start + 2);
 }

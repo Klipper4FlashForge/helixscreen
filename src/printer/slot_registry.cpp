@@ -255,7 +255,14 @@ void SlotRegistry::clear_tool_mapping(int global_index) {
     slots_[global_index].info.mapped_tool = -1;
 }
 
-void SlotRegistry::set_tool_map(const std::vector<int>& tool_to_slot) {
+void SlotRegistry::set_tool_map(const std::vector<int>& tool_to_slot, MappingSource source) {
+    // One bump per accepted bulk write: Happy Hare reports the ENTIRE ttg_map in
+    // every status update, so a single call is the whole firmware truth rather
+    // than one lane's worth of it.
+    if (source == MappingSource::Firmware) {
+        ++firmware_mapping_generation_;
+    }
+
     // Clear all existing mappings
     for (auto& slot : slots_) {
         slot.info.mapped_tool = -1;
