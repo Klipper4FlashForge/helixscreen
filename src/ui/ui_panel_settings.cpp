@@ -328,8 +328,13 @@ void SettingsPanel::init_subjects() {
 #ifdef HELIX_DISPLAY_SDL
     bool show_touch_cal = get_runtime_config()->is_test_mode();
 #else
+    // supports_ (any real touch panel), NOT needs_ (auto-fire the first-run
+    // wizard). The auto-fire heuristic keys off controller name and ABS range,
+    // and neither can see a touch panel mounted 90° from the display — so
+    // gating the manual entry point on it left those users with no way in
+    // (prestonbrown/helixscreen#1259).
     DisplayManager* dm = DisplayManager::instance();
-    bool show_touch_cal = dm && dm->needs_touch_calibration();
+    bool show_touch_cal = dm && dm->supports_touch_calibration();
 #endif
     lv_subject_init_int(&show_touch_calibration_subject_, show_touch_cal ? 1 : 0);
     subjects_.register_subject(&show_touch_calibration_subject_);
@@ -1063,8 +1068,8 @@ void SettingsPanel::handle_power_devices_clicked() {
 
 void SettingsPanel::handle_touch_calibration_clicked() {
     DisplayManager* dm = DisplayManager::instance();
-    if (dm && !dm->needs_touch_calibration()) {
-        spdlog::debug("[{}] Touch calibration not needed for this device", get_name());
+    if (dm && !dm->supports_touch_calibration()) {
+        spdlog::debug("[{}] No calibratable touch device", get_name());
         return;
     }
 
