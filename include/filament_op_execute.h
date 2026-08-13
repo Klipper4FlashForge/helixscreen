@@ -25,6 +25,15 @@ class AmsBackend;
 
 namespace helix::ui {
 
+/// @note **`log_tag` must have static storage duration.** All three functions
+/// capture the raw pointer in lambdas that outlive the call — the macro-tier
+/// and raw-gcode paths hand their success/error callbacks to Moonraker and
+/// return immediately. A string literal (what every caller passes: a bracketed
+/// class name) satisfies this; a `std::string::c_str()` or a stack buffer would
+/// dangle by the time the reply lands. Deliberately `const char*` rather than
+/// `std::string` so that constraint is visible instead of being paid for on
+/// every dispatch.
+
 /// Execute a load for `slot` on `backend` (which may be null), resolving the
 /// tier through plan_load() and running it. `log_tag` prefixes the spdlog lines
 /// so a reader can still tell which surface asked.
@@ -43,11 +52,12 @@ void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loade
 /// Purge counterpart. Two tiers only (the configured macro, then
 /// filament_purge_fallback_gcode() from filament_op_router.h) — no AmsBackend
 /// exposes a purge entry point, so there is no plan_purge() to route through.
-/// Mirrors FilamentRunoutHandler::dispatch_purge(), the one existing purge
-/// dispatch that is NOT entangled with panel UI state. FilamentPanel::execute_purge()
-/// was deliberately not the source: it drives that panel's operation_guard_
-/// spinner and a macro-parameter modal with active-material temperature
-/// prefill, none of which apply here.
+/// Extracted from FilamentRunoutHandler::dispatch_purge(), the one existing
+/// purge dispatch that was NOT entangled with panel UI state; that method now
+/// calls this. FilamentPanel::execute_purge() was deliberately not the source:
+/// it drives that panel's operation_guard_ spinner and a macro-parameter modal
+/// with active-material temperature prefill, none of which apply here — and it
+/// remains an unconverted third copy for that reason.
 void execute_filament_purge(const char* log_tag);
 
 } // namespace helix::ui

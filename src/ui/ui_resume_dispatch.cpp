@@ -229,4 +229,36 @@ void dispatch_prepared_resume(IMoonrakerAPI* api, std::string log_prefix,
     });
 }
 
+void dispatch_cancel_print(IMoonrakerAPI* api, std::string log_prefix) {
+    if (!api) {
+        spdlog::warn("{} dispatch_cancel_print: api is null", log_prefix);
+        return;
+    }
+
+    // The empty-slot check is the whole reason this is shared rather than a
+    // bare StandardMacros::execute() at each call site: without it the button
+    // silently does nothing on a printer with no CANCEL_PRINT.
+    const auto& cancel_info = StandardMacros::instance().get(StandardMacroSlot::Cancel);
+    if (cancel_info.is_empty()) {
+        spdlog::warn("{} Cancel macro slot is empty", log_prefix);
+        NOTIFY_WARNING(lv_tr("Cancel macro not configured"));
+        return;
+    }
+
+    spdlog::info("{} Using StandardMacros cancel: {}", log_prefix, cancel_info.get_macro());
+    StandardMacros::instance().execute(
+        StandardMacroSlot::Cancel, api,
+        [log_prefix]() { spdlog::info("{} Print cancelled", log_prefix); },
+        [log_prefix](const MoonrakerError& err) {
+            spdlog::error("{} Failed to cancel print: {}", log_prefix, err.message);
+            auto user_msg = err.user_message();
+            // StandardMacros::execute may deliver this from the libhv WebSocket
+            // thread; the toast and its lv_tr() lookup are main-thread only.
+            helix::ui::queue_update("dispatch_cancel_print::on_error",
+                                    [user_msg = std::move(user_msg)]() {
+                                        NOTIFY_ERROR(lv_tr("Failed to cancel: {}"), user_msg);
+                                    });
+        });
+}
+
 } // namespace helix::ui

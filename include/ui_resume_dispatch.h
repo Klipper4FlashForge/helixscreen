@@ -39,6 +39,24 @@ namespace helix::ui {
 void dispatch_prepared_resume(IMoonrakerAPI* api, std::string log_prefix,
                               std::function<void()> on_failure = {});
 
+/// Cancel the running print through the configured Cancel StandardMacro.
+///
+/// Refuses with a "Cancel macro not configured" warning toast when the slot is
+/// empty — skipping that check makes the button silently do nothing. Errors
+/// surface as a NOTIFY_ERROR toast.
+///
+/// **No confirmation dialog.** This is the raw dispatch that the runout guidance
+/// dialog's "Cancel Print" button has always performed; PrintControlButtons'
+/// Stop button is a different path that confirms first (PrintCancelModal) and
+/// routes through AbortManager. Callers wanting a confirmation must raise it
+/// themselves before calling.
+///
+/// @param api        Moonraker API for macro execution. A null api is a no-op
+///                   (logged), matching the guard both call sites already had.
+/// @param log_prefix Spdlog tag, e.g. `"[FilamentRunoutHandler]"`. By value so
+///                   the async lambdas own their copy.
+void dispatch_cancel_print(IMoonrakerAPI* api, std::string log_prefix);
+
 /// Show the "Print Was Terminated — Restart from the beginning?" modal.
 /// Exposed so post-resume backstops (e.g. AmsBackendSnapmaker) can surface it
 /// after a silent RESUME no-op, not just the up-front prepare_for_resume gate.

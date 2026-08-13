@@ -45,7 +45,7 @@ void execute_filament_load(AmsBackend* backend, int slot, const char* log_tag) {
 
     switch (plan.tier) {
     case helix::ui::FilamentTier::AmsBackend: {
-        spdlog::info("{} Idle runout load via AMS backend (slot {})", log_tag, slot);
+        spdlog::info("{} Load via AMS backend (slot {})", log_tag, slot);
         AmsError err = (plan.ams_call == helix::ui::AmsCall::ChangeTool)
                            ? backend->change_tool(plan.ams_arg)
                            : backend->load_filament(plan.ams_arg);
@@ -57,8 +57,11 @@ void execute_filament_load(AmsBackend* backend, int slot, const char* log_tag) {
     }
 
     case helix::ui::FilamentTier::Refused:
-        // Never navigate: PanelId::Filament was the old behaviour and it tore
-        // the dialog out from under the user. Say what happened and stay put.
+        // AlreadyMounted: SELECT_TOOL on the carriage tool is a firmware no-op
+        // that would leave the dialog looking like it did something (9KRXZ62P).
+        // SelectSlot: no lane resolved, and none of these surfaces has a picker.
+        // Never navigate either: PanelId::Filament was the old behaviour and it
+        // tore the dialog out from under the user. Say what happened, stay put.
         if (plan.refusal == helix::ui::FilamentRefusal::AlreadyMounted) {
             spdlog::info("{} Load refused — tool {} already mounted", log_tag, slot);
             NOTIFY_INFO(lv_tr("That tool is already loaded"));
@@ -74,7 +77,7 @@ void execute_filament_load(AmsBackend* backend, int slot, const char* log_tag) {
             return;
         }
         const std::string macro_name = load_info.get_macro();
-        spdlog::info("{} Idle runout load via StandardMacros: {}", log_tag, macro_name);
+        spdlog::info("{} Using StandardMacros load: {}", log_tag, macro_name);
         // ParamPolicy::Suppress runs the callback synchronously, so nothing here
         // outlives this call and no token capture is needed inside it.
         helix::ui::dispatch_filament_macro(

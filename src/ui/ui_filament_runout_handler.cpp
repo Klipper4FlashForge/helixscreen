@@ -3,28 +3,24 @@
 
 #include "ui_filament_runout_handler.h"
 
-#include "ui_error_reporting.h"
 #include "ui_nav_manager.h"
+#include "ui_resume_dispatch.h"
 #include "ui_update_queue.h"
 
 #include "ams_backend.h"
 #include "ams_state.h"
 #include "filament_op_dispatch.h"
 #include "filament_op_execute.h"
-#include "filament_op_router.h"
 #include "filament_sensor_manager.h"
 #include "i_moonraker_api.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "print_control_buttons.h"
 #include "print_lifecycle_state.h" // For PrintState enum
 #include "runtime_config.h"
-#include "standard_macros.h"
 
 #include <spdlog/spdlog.h>
 
 #include <lvgl.h>
-#include <string>
 
 namespace helix::ui {
 
@@ -210,28 +206,10 @@ void FilamentRunoutHandler::show_runout_guidance_modal() {
             return;
 
         spdlog::info("[FilamentRunoutHandler] User chose to cancel print after runout");
-
-        // Check if cancel slot is available
-        const auto& cancel_info = StandardMacros::instance().get(StandardMacroSlot::Cancel);
-        if (cancel_info.is_empty()) {
-            spdlog::warn("[FilamentRunoutHandler] Cancel macro slot is empty");
-            NOTIFY_WARNING(lv_tr("Cancel macro not configured"));
-            return;
-        }
-
-        // Cancel the print via StandardMacros
-        if (api_) {
-            spdlog::info("[FilamentRunoutHandler] Using StandardMacros cancel: {}",
-                         cancel_info.get_macro());
-            StandardMacros::instance().execute(
-                StandardMacroSlot::Cancel, api_,
-                []() { spdlog::info("[FilamentRunoutHandler] Print cancelled after runout"); },
-                [](const MoonrakerError& err) {
-                    spdlog::error("[FilamentRunoutHandler] Failed to cancel print: {}",
-                                  err.message);
-                    NOTIFY_ERROR(lv_tr("Failed to cancel: {}"), err.user_message());
-                });
-        }
+        // Shared with the home Filament tile's paused modal, which offers the
+        // same button. No confirmation here — this dialog has never asked, and
+        // the tile deliberately matches rather than diverging.
+        helix::ui::dispatch_cancel_print(api_, "[FilamentRunoutHandler]");
     });
 
     runout_modal_.set_on_unload_filament([this, token]() {
@@ -302,6 +280,8 @@ void FilamentRunoutHandler::show_runout_guidance_modal() {
 // ============================================================================
 
 void FilamentRunoutHandler::dispatch_load() {
+    spdlog::info("[FilamentRunoutHandler] User chose to load filament after runout");
+
     // Shared three-tier ladder (AMS backend, then the configured LOAD_FILAMENT
     // macro, then raw gcode) via execute_filament_load() — the same execution
     // this dialog and PrintStatusWidget now share. FilamentPanel and
@@ -350,41 +330,10 @@ void FilamentRunoutHandler::dispatch_unload() {
 
 void FilamentRunoutHandler::dispatch_purge() {
     spdlog::info("[FilamentRunoutHandler] User chose to purge after runout");
-
-    if (!api_) {
-        return;
-    }
-
-    // Two tiers, not three: no AmsBackend exposes a purge entry point, so there
-    // is no plan_purge() to route through. The macro tier and the fallback are
-    // the whole ladder here.
-    const auto& purge_info = StandardMacros::instance().get(StandardMacroSlot::Purge);
-    if (!purge_info.is_empty()) {
-        const std::string macro_name = purge_info.get_macro();
-        spdlog::info("[FilamentRunoutHandler] Using StandardMacros purge: {}", macro_name);
-        helix::ui::dispatch_filament_macro(
-            macro_name, helix::ui::ParamPolicy::Suppress,
-            [this](const helix::MacroParamResult& result) {
-                StandardMacros::instance().execute(
-                    StandardMacroSlot::Purge, api_, result.params,
-                    []() { spdlog::info("[FilamentRunoutHandler] Purge started"); },
-                    [](const MoonrakerError& err) {
-                        spdlog::error("[FilamentRunoutHandler] Failed to purge: {}", err.message);
-                        NOTIFY_ERROR(lv_tr("Failed to purge: {}"), err.user_message());
-                    });
-            });
-        return;
-    }
-
-    spdlog::info("[FilamentRunoutHandler] No purge macro configured — raw gcode fallback");
-    api_->execute_gcode(
-        filament_purge_fallback_gcode(),
-        []() { spdlog::info("[FilamentRunoutHandler] Purge fallback gcode sent"); },
-        [](const MoonrakerError& err) {
-            spdlog::error("[FilamentRunoutHandler] Purge fallback failed: {}", err.message);
-            NOTIFY_ERROR(lv_tr("Failed to purge: {}"), err.user_message());
-        },
-        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+    // Same shared two-tier ladder (configured PURGE macro, then raw gcode) the
+    // home Filament tile uses — execute_filament_purge() was extracted from the
+    // body that used to live here.
+    helix::ui::execute_filament_purge("[FilamentRunoutHandler]");
 }
 
 void FilamentRunoutHandler::hide_modal() {
