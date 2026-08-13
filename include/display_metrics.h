@@ -56,6 +56,11 @@ struct ResolvedDpi {
     DpiSource source;
 };
 
+/// Human-readable source name, for the one startup log line that records how
+/// the UI decided its scale. Worth logging: when a user reports the UI is the
+/// wrong size, which source won is the first thing to know.
+const char* dpi_source_name(DpiSource source);
+
 /// Physical-size reasoning for the UI. All pure functions — no global state,
 /// no LVGL dependency — so the whole policy is unit-testable in isolation.
 class DisplayMetrics {
@@ -131,6 +136,24 @@ class DisplayMetrics {
     /// physical-units caller goes through, so widening the refactor past
     /// Android does not mean rewriting call sites again.
     static int32_t scaled_px(int32_t authored_px, double scale);
+
+    /// Remap a font asset name to the face nearest the scaled size, e.g.
+    /// "noto_sans_32" at 1.578 becomes "noto_sans_48". Snaps to the NEAREST
+    /// available size rather than rounding down: a scaled 40 wants 63, and 64
+    /// is off by 1 where the next rung down is off by 15.
+    ///
+    /// Returns @p font_name unchanged when the scale is 1.0, when the name has
+    /// no parseable trailing size, or when the family is unknown. Faces above
+    /// the XXLarge tier are not linked on printer builds, but those never ask:
+    /// their scale is pinned to 1.0 by the deadband.
+    static std::string scaled_font_name(const std::string& font_name, double scale);
+
+    /// The process-wide scale, resolved once during display init. Screens do
+    /// not resize or change DPI at runtime, so this is set exactly once and
+    /// read everywhere; it defaults to 1.0 so any code path that runs before
+    /// display init (or in a unit test) behaves exactly as it does today.
+    static void set_active_scale(double scale);
+    static double active_scale();
 };
 
 } // namespace helix

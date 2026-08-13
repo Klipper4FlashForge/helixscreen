@@ -238,3 +238,78 @@ TEST_CASE("scaled_px rounds and never returns zero for a positive input",
     // A 1px hairline must survive scaling rather than collapsing away.
     REQUIRE(DisplayMetrics::scaled_px(1, 1.0) >= 1);
 }
+
+// ============================================================================
+// Font remapping — the ladder tops out at 40 (26 light), so the scale needs
+// the larger faces added in FONTS_XXLARGE
+// ============================================================================
+
+TEST_CASE("font names remap to the nearest larger face", "[display_metrics][font]") {
+    const double scale = DisplayMetrics::ui_scale_for_dpi(kPhoneDpi); // ~1.578
+
+    // font_body_xxlarge: 32 * 1.578 = 50.5, nearest rung is 48.
+    REQUIRE(DisplayMetrics::scaled_font_name("noto_sans_32", scale) == "noto_sans_48");
+    // font_heading_xxlarge: 40 * 1.578 = 63.1 — 64 is off by 1, 48 by 15.
+    REQUIRE(DisplayMetrics::scaled_font_name("noto_sans_40", scale) == "noto_sans_64");
+    // font_small_xxlarge: light 26 * 1.578 = 41.0.
+    REQUIRE(DisplayMetrics::scaled_font_name("noto_sans_light_26", scale) == "noto_sans_light_40");
+    REQUIRE(DisplayMetrics::scaled_font_name("noto_sans_bold_40", scale) == "noto_sans_bold_64");
+}
+
+TEST_CASE("font remapping preserves weight", "[display_metrics][font]") {
+    // Splitting on the FIRST underscore would turn light_26 into a regular
+    // face; the prefix must be "noto_sans_light_", not "noto_sans_".
+    const double scale = DisplayMetrics::ui_scale_for_dpi(kPhoneDpi);
+    const std::string light = DisplayMetrics::scaled_font_name("noto_sans_light_20", scale);
+    const std::string bold = DisplayMetrics::scaled_font_name("noto_sans_bold_32", scale);
+    REQUIRE(light.rfind("noto_sans_light_", 0) == 0);
+    REQUIRE(bold.rfind("noto_sans_bold_", 0) == 0);
+}
+
+TEST_CASE("icon fonts remap on their own rungs", "[display_metrics][font]") {
+    const double scale = DisplayMetrics::ui_scale_for_dpi(kPhoneDpi);
+    // 64 * 1.578 = 101; rungs are 80/96/128, so 96 wins.
+    REQUIRE(DisplayMetrics::scaled_font_name("mdi_icons_64", scale) == "mdi_icons_96");
+}
+
+TEST_CASE("font remapping is a no-op at scale 1.0", "[display_metrics][font]") {
+    // Every printer sits here, so this is the no-regression case.
+    for (const char* name :
+         {"noto_sans_32", "noto_sans_light_26", "noto_sans_bold_40", "mdi_icons_64"}) {
+        INFO("font: " << name);
+        REQUIRE(DisplayMetrics::scaled_font_name(name, 1.0) == name);
+    }
+}
+
+TEST_CASE("font remapping never returns a smaller face", "[display_metrics][font]") {
+    // The scale only ever grows; a face must never shrink out from under a panel.
+    REQUIRE(DisplayMetrics::scaled_font_name("noto_sans_64", 1.05) == "noto_sans_64");
+    REQUIRE(DisplayMetrics::scaled_font_name("noto_sans_40", 0.5) == "noto_sans_40");
+}
+
+TEST_CASE("unparseable or unknown font names pass through", "[display_metrics][font]") {
+    const double scale = 1.578;
+    REQUIRE(DisplayMetrics::scaled_font_name("some_custom_face", scale) == "some_custom_face");
+    REQUIRE(DisplayMetrics::scaled_font_name("noname", scale) == "noname");
+    REQUIRE(DisplayMetrics::scaled_font_name("trailing_", scale) == "trailing_");
+    REQUIRE(DisplayMetrics::scaled_font_name("", scale) == "");
+}
+
+// ============================================================================
+// Active scale
+// ============================================================================
+
+TEST_CASE("active scale defaults to 1.0 and rejects shrinking values", "[display_metrics][scale]") {
+    DisplayMetrics::set_active_scale(1.5);
+    REQUIRE(DisplayMetrics::active_scale() == Catch::Approx(1.5));
+
+    // Anything that would shrink the UI is refused, so a bad stored setting
+    // cannot make the whole interface smaller than authored.
+    DisplayMetrics::set_active_scale(0.4);
+    REQUIRE(DisplayMetrics::active_scale() == Catch::Approx(1.0));
+
+    DisplayMetrics::set_active_scale(std::nan(""));
+    REQUIRE(DisplayMetrics::active_scale() == Catch::Approx(1.0));
+
+    DisplayMetrics::set_active_scale(1.0); // restore for other tests
+}

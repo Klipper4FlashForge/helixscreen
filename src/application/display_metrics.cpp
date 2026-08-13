@@ -37,7 +37,45 @@ constexpr PanelEntry kKnownPanels[] = {
     {"k2", {480, 800, 108.6}},
 };
 
+/// Sizes actually generated for each font family, ascending. Mirrors the
+/// SIZES_* lists in scripts/regen_text_fonts.sh and the mdi rungs in
+/// scripts/regen_mdi_fonts.sh. A face named here but not linked on this
+/// platform is unreachable in practice: only the XXLarge tier carries anything
+/// above 40 (26 for light), and no printer build declares that tier, so their
+/// scale never leaves 1.0 and no remap is ever requested.
+struct FontFamily {
+    const char* prefix;
+    const int sizes[16];
+    int count;
+};
+
+constexpr FontFamily kFontFamilies[] = {
+    {"noto_sans_", {8, 10, 11, 12, 14, 16, 18, 20, 24, 26, 28, 32, 40, 48, 64}, 15},
+    {"noto_sans_light_", {10, 11, 12, 14, 16, 18, 20, 26, 32, 40}, 10},
+    {"noto_sans_bold_", {14, 16, 18, 20, 24, 28, 32, 40, 48, 64}, 10},
+    {"source_code_pro_", {8, 10, 12, 14, 16, 18, 20, 24}, 8},
+    {"mdi_icons_", {14, 16, 24, 32, 48, 64, 80, 96, 128}, 9},
+};
+
+/// Process-wide UI scale. Set once during display init; screens do not resize
+/// or change DPI at runtime (see project notes on fixed-geometry screens).
+double g_active_scale = 1.0;
+
 } // namespace
+
+const char* dpi_source_name(DpiSource source) {
+    switch (source) {
+    case DpiSource::UserOverride:
+        return "user-override";
+    case DpiSource::PlatformMeasured:
+        return "platform-measured";
+    case DpiSource::KnownPanel:
+        return "known-panel";
+    case DpiSource::Fallback:
+        return "fallback";
+    }
+    return "unknown";
+}
 
 double DisplayMetrics::ui_scale_for_dpi(double dpi) {
     if (!std::isfinite(dpi) || dpi <= kScaleDeadbandDpi) {
@@ -114,6 +152,60 @@ int32_t DisplayMetrics::scaled_px(int32_t authored_px, double scale) {
         return 1;
     }
     return scaled;
+}
+
+std::string DisplayMetrics::scaled_font_name(const std::string& font_name, double scale) {
+    if (!std::isfinite(scale) || std::fabs(scale - 1.0) < 0.001) {
+        return font_name;
+    }
+
+    // Split on the LAST underscore so "noto_sans_light_26" keeps its weight:
+    // the prefix is "noto_sans_light_", not "noto_sans_".
+    const auto underscore = font_name.rfind('_');
+    if (underscore == std::string::npos || underscore + 1 >= font_name.size()) {
+        return font_name;
+    }
+    const std::string prefix = font_name.substr(0, underscore + 1);
+    const std::string digits = font_name.substr(underscore + 1);
+    if (digits.find_first_not_of("0123456789") != std::string::npos) {
+        return font_name;
+    }
+
+    const int authored = std::stoi(digits);
+    const auto target = static_cast<double>(authored) * scale;
+
+    for (const auto& family : kFontFamilies) {
+        if (prefix != family.prefix) {
+            continue;
+        }
+        // Nearest rung, not the next one down: a scaled 40 wants 63, where 64
+        // is off by 1 and 48 is off by 15.
+        int best = family.sizes[0];
+        double best_delta = std::fabs(static_cast<double>(best) - target);
+        for (int i = 1; i < family.count; ++i) {
+            const double delta = std::fabs(static_cast<double>(family.sizes[i]) - target);
+            if (delta < best_delta) {
+                best = family.sizes[i];
+                best_delta = delta;
+            }
+        }
+        // Never hand back something smaller than authored — the scale only
+        // ever grows, and a low-DPI panel must keep today's face.
+        if (best <= authored) {
+            return font_name;
+        }
+        return prefix + std::to_string(best);
+    }
+
+    return font_name;
+}
+
+void DisplayMetrics::set_active_scale(double scale) {
+    g_active_scale = (std::isfinite(scale) && scale >= 1.0) ? scale : 1.0;
+}
+
+double DisplayMetrics::active_scale() {
+    return g_active_scale;
 }
 
 } // namespace helix

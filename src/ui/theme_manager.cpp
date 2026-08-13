@@ -15,6 +15,7 @@
 #include "border_radius_sizes.h"
 #include "config.h"
 #include "data_root_resolver.h"
+#include "display_metrics.h"
 #include "helix-xml/src/libs/expat/expat.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "layout_manager.h"
@@ -1126,6 +1127,32 @@ theme_manager_resolve_px_tokens(lv_display_t* display) {
 
         resolved[base_name] = pick_tier(t, base_name, suffix);
     }
+
+    // Apply the high-DPI UI scale to every px token — spacing, padding, and
+    // sizes alike. This is the one place both the init and the resize path go
+    // through, so the two can never disagree.
+    //
+    // No double-count with LVGL's own LV_DPX padding: these tokens are plain
+    // pixel constants that reach widgets via style attributes, while LV_DPX
+    // scales LVGL's internal theme chrome off the display DPI. The two paths
+    // are disjoint, and the display DPI is set from the same scale factor (see
+    // Application), so the two halves grow in step rather than compounding.
+    //
+    // active_scale() is 1.0 on every shipping printer, making this loop an
+    // exact identity there.
+    const double scale = helix::DisplayMetrics::active_scale();
+    if (scale > 1.0) {
+        for (auto& [base_name, value] : resolved) {
+            char* end = nullptr;
+            const long authored = std::strtol(value.c_str(), &end, 10);
+            // Leave anything that is not a bare integer alone — percentages and
+            // "content" are sizing keywords, not lengths to multiply.
+            if (end && *end == '\0' && authored > 0) {
+                value = std::to_string(
+                    helix::DisplayMetrics::scaled_px(static_cast<int32_t>(authored), scale));
+            }
+        }
+    }
     return resolved;
 }
 
@@ -1418,6 +1445,25 @@ void theme_manager_register_responsive_fonts(lv_display_t* display) {
             // font names and must be registered as-is.
             bool is_font_constant =
                 (base_name.rfind("font_", 0) == 0) || (base_name.rfind("icon_font_", 0) == 0);
+
+            // High-DPI UI scale: the tier picks the face, then the scale steps
+            // it up to the nearest larger one so type grows with the layout
+            // rather than being left behind in an oversized box. The scaled
+            // name is adopted only when it is actually linked, so a build that
+            // pruned the larger faces simply keeps its tier font. Storage must
+            // outlive the registration below, since `value` is a borrowed
+            // pointer into the token maps.
+            std::string scaled_font_storage;
+            if (is_font_constant) {
+                const double ui_scale = helix::DisplayMetrics::active_scale();
+                if (ui_scale > 1.0) {
+                    scaled_font_storage = helix::DisplayMetrics::scaled_font_name(value, ui_scale);
+                    if (scaled_font_storage != value &&
+                        lv_xml_get_font_silent(scope, scaled_font_storage.c_str()) != nullptr) {
+                        value = scaled_font_storage.c_str();
+                    }
+                }
+            }
 
             // Verify the selected font is actually linked. If not, fall back to
             // _large (guaranteed present by the triplet check above) and emit
