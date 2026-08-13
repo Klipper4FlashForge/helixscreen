@@ -727,6 +727,12 @@
               "row": 0,
               "colspan": 4,
               "rowspan": 4
+            },
+            "xxlarge@6x14": {
+              "col": 0,
+              "row": 0,
+              "colspan": 4,
+              "rowspan": 4
             }
           }
         },
@@ -777,6 +783,12 @@
               "row": 6,
               "colspan": 10,
               "rowspan": 6
+            },
+            "xxlarge@6x14": {
+              "col": 0,
+              "row": 6,
+              "colspan": 6,
+              "rowspan": 4
             }
           }
         },
@@ -817,6 +829,12 @@
               "col": 0,
               "row": 4,
               "colspan": 10,
+              "rowspan": 2
+            },
+            "xxlarge@6x14": {
+              "col": 0,
+              "row": 10,
+              "colspan": 6,
               "rowspan": 2
             }
           }
@@ -906,6 +924,12 @@
               "row": 0,
               "colspan": 2,
               "rowspan": 2
+            },
+            "xxlarge@6x14": {
+              "col": 0,
+              "row": 4,
+              "colspan": 2,
+              "rowspan": 2
             }
           }
         },
@@ -951,6 +975,12 @@
             "xxlarge": {
               "col": 4,
               "row": 2,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xxlarge@6x14": {
+              "col": 2,
+              "row": 4,
               "colspan": 2,
               "rowspan": 2
             }
@@ -1000,6 +1030,12 @@
               "row": 2,
               "colspan": 2,
               "rowspan": 2
+            },
+            "xxlarge@6x14": {
+              "col": 4,
+              "row": 4,
+              "colspan": 2,
+              "rowspan": 2
             }
           }
         },
@@ -1044,6 +1080,12 @@
             },
             "xxlarge": {
               "col": 8,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "xxlarge@6x14": {
+              "col": 4,
               "row": 0,
               "colspan": 2,
               "rowspan": 2
@@ -1094,6 +1136,12 @@
               "row": 0,
               "colspan": 2,
               "rowspan": 2
+            },
+            "xxlarge@6x14": {
+              "col": 4,
+              "row": 2,
+              "colspan": 2,
+              "rowspan": 2
             }
           }
         },
@@ -1140,6 +1188,23 @@
               "col": 8,
               "row": 2,
               "colspan": 2,
+              "rowspan": 2
+            },
+            "xxlarge@6x14": {
+              "col": 0,
+              "row": 12,
+              "colspan": 4,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "ams",
+          "placements": {
+            "xxlarge@6x14": {
+              "col": 0,
+              "row": 12,
+              "colspan": 6,
               "rowspan": 2
             }
           }

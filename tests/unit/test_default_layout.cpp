@@ -1046,6 +1046,41 @@ void check_anchor_table(const nlohmann::json& anchors, const std::string& bp_nam
 /// rather than exported because the point is to check the shipped tables
 /// against the resolution rule as written; sharing the function would let both
 /// drift together.
+/// Split a placement key into the tier it names and, when the key is
+/// grid-qualified, the track grid it was authored for. "xxlarge@6x14" gives
+/// {"xxlarge", 6, 14}; a bare "xxlarge" gives {"xxlarge", 0, 0}.
+struct PlacementKey {
+    std::string tier;
+    int cols = 0;
+    int rows = 0;
+
+    bool grid_qualified() const {
+        return cols > 0 && rows > 0;
+    }
+};
+
+/// The one pair of widgets a table may seat on top of each other, because
+/// build_default_grid() enables exactly one of them per printer.
+bool mutually_exclusive(const std::string& a, const std::string& b) {
+    return (a == "ams" && b == "filament") || (a == "filament" && b == "ams");
+}
+
+PlacementKey parse_placement_key(const std::string& key) {
+    const auto at = key.find('@');
+    if (at == std::string::npos) {
+        return {key, 0, 0};
+    }
+    PlacementKey out{key.substr(0, at), 0, 0};
+    const std::string grid = key.substr(at + 1);
+    const auto x = grid.find('x');
+    if (x == std::string::npos) {
+        return out;
+    }
+    out.cols = std::atoi(grid.substr(0, x).c_str());
+    out.rows = std::atoi(grid.substr(x + 1).c_str());
+    return out;
+}
+
 const char* resolve_key(const nlohmann::json& by_bp, int bp_idx) {
     static const char* fallback[][3] = {
         {"micro", "tiny", "small"},     {"tiny", "small", nullptr},  {"small", nullptr, nullptr},
@@ -1168,7 +1203,7 @@ TEST_CASE("default_layout: the shipped portrait anchors fit a portrait grid",
         REQUIRE(anchor.contains("placements"));
         for (auto it = anchor["placements"].begin(); it != anchor["placements"].end(); ++it) {
             INFO("anchor " << id << " breakpoint " << it.key());
-            CHECK(kPortraitBudget.count(it.key()) == 1);
+            CHECK(kPortraitBudget.count(parse_placement_key(it.key()).tier) == 1);
             // A span past the widget's registry maximum is not a layout the grid
             // can honour — grid_edit_mode would clamp it the moment the user
             // touched it, and nothing else checks the shipped table against the
@@ -1509,4 +1544,99 @@ TEST_CASE("default_layout: the same anchor fits a grid that is big enough",
     REQUIRE(ps);
     CHECK(ps->col == 8);
     CHECK(ps->row == 0);
+}
+
+TEST_CASE("default_layout: every grid-qualified table fits the grid it names",
+          "[default_layout][shipped][grid_key]") {
+    // A grid-qualified key states the track grid it was authored for, so it
+    // checks against that rather than against a tier budget — no assumption
+    // about which panel or scale produces the grid, and none needed. This is
+    // the check the tier-keyed budgets cannot make: they hold one grid per
+    // tier, and the UI scale gives a tier as many grids as it has scales.
+    std::string path = helix::find_readable("default_layout.json");
+    std::ifstream in(path);
+    REQUIRE(in.is_open());
+    nlohmann::json layout = nlohmann::json::parse(in);
+
+    std::vector<std::pair<std::string, const nlohmann::json*>> tables;
+    tables.emplace_back("base", &layout);
+    if (layout.contains("variants")) {
+        for (auto v = layout["variants"].begin(); v != layout["variants"].end(); ++v) {
+            if (v->is_object() && v->contains("anchors")) {
+                tables.emplace_back(v.key(), &*v);
+            }
+        }
+    }
+
+    int checked = 0;
+    for (const auto& [table_name, table] : tables) {
+        // Collect every grid-qualified key this table uses, then check each
+        // key's anchors as the one layout they are: all of them together, not
+        // one anchor at a time. Overlap is a property of the set.
+        std::set<std::string> qualified;
+        for (const auto& anchor : (*table)["anchors"]) {
+            if (!anchor.contains("placements")) {
+                continue;
+            }
+            for (auto it = anchor["placements"].begin(); it != anchor["placements"].end(); ++it) {
+                if (parse_placement_key(it.key()).grid_qualified()) {
+                    qualified.insert(it.key());
+                }
+            }
+        }
+
+        for (const auto& key : qualified) {
+            const PlacementKey pk = parse_placement_key(key);
+            INFO("table " << table_name << " key " << key);
+
+            std::vector<AnchorRect> placed;
+            for (const auto& anchor : (*table)["anchors"]) {
+                const std::string id = anchor.value("id", std::string{});
+                if (!anchor.contains("placements") || !anchor["placements"].contains(key)) {
+                    continue;
+                }
+                const auto* def = helix::find_widget_def(id);
+                INFO("anchor " << id);
+                REQUIRE(def != nullptr);
+
+                const auto& p = anchor["placements"][key];
+                const AnchorRect r{id, p.value("col", 0), p.value("row", 0),
+                                   p.value("colspan", def->colspan),
+                                   p.value("rowspan", def->rowspan)};
+
+                // Inside the grid the key names. An anchor that fails this is
+                // exactly what build_default_grid() now drops to auto-place, so
+                // shipping one would be shipping a decoration.
+                CHECK(r.col >= 0);
+                CHECK(r.row >= 0);
+                CHECK(r.col + r.colspan <= pk.cols);
+                CHECK(r.row + r.rowspan <= pk.rows);
+
+                // Within what the widget can actually be stretched to. A span
+                // past the registry maximum is one grid_edit_mode would refuse
+                // to give back the moment the user touched it.
+                CHECK(r.colspan <= def->effective_max_colspan());
+                CHECK(r.rowspan <= def->effective_max_rowspan());
+
+                for (const auto& other : placed) {
+                    // ams and filament are mutually exclusive: the swap at the
+                    // end of build_default_grid() enables exactly one, on the
+                    // hardware it found. Sharing a slot is how a table gives
+                    // both the same spot without spending it twice, so an
+                    // overlap between those two is the intent, not a clash.
+                    if (mutually_exclusive(r.id, other.id)) {
+                        continue;
+                    }
+                    INFO("overlaps anchor " << other.id);
+                    CHECK_FALSE(anchors_overlap(r, other));
+                }
+                placed.push_back(r);
+                ++checked;
+            }
+        }
+    }
+
+    // Guards the loop against passing by finding nothing: the shipped file
+    // carries at least one grid-qualified table.
+    CHECK(checked > 0);
 }
