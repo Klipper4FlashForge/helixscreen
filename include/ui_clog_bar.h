@@ -3,7 +3,9 @@
 
 #pragma once
 
-#include "ui_observer_guard.h"
+#include "clog_meter_model.h"
+
+#include <optional>
 
 struct _lv_obj_t;
 typedef struct _lv_obj_t lv_obj_t;
@@ -42,7 +44,6 @@ class UiClogBar {
     void relayout();
 
   private:
-    void setup_observers();
     static void on_track_size_changed(lv_event_t* e);
 
     lv_obj_t* root_ = nullptr;
@@ -52,18 +53,12 @@ class UiClogBar {
     lv_obj_t* peak_ = nullptr;
     lv_obj_t* danger_lo_ = nullptr;
     lv_obj_t* danger_hi_ = nullptr;
+    lv_obj_t* threshold_lo_ = nullptr;
+    lv_obj_t* threshold_hi_ = nullptr;
 
-    int mode_ = 0;
-    int value_ = 0;
-    int warning_ = 0;
-    int danger_pct_ = 0;
-    int peak_pct_ = 0;
-
-    ObserverGuard mode_obs_;
-    ObserverGuard value_obs_;
-    ObserverGuard warning_obs_;
-    ObserverGuard danger_obs_;
-    ObserverGuard peak_obs_;
+    /// Constructed last, once the named lookups above have succeeded, so its
+    /// change callback never runs against a half-found widget tree.
+    std::optional<ClogMeterModel> model_;
 };
 
 } // namespace helix::ui

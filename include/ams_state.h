@@ -724,6 +724,9 @@ class AmsState {
         return &clog_meter_warning_;
     }
 
+    lv_subject_t* get_clog_meter_status_subject() {
+        return &clog_meter_status_;
+    }
     lv_subject_t* get_clog_meter_danger_pct_subject() {
         return &clog_meter_danger_pct_;
     }
@@ -1526,8 +1529,7 @@ class AmsState {
     lv_subject_t clog_meter_mode_;    // 0=none, 1=encoder, 2=flowguard, 3=afc_buffer
     lv_subject_t clog_meter_value_;   // 0-100 (encoder/afc) or -100..+100 (flowguard)
     lv_subject_t clog_meter_warning_; // 0=ok, 1=warning
-    lv_subject_t clog_meter_value_text_;
-    char clog_meter_value_text_buf_[16]{};
+    lv_subject_t clog_meter_status_;  // ClogMeterStatus: 0=ok, 1=warning, 2=fault
     lv_subject_t clog_meter_mode_text_;
     char clog_meter_mode_text_buf_[24]{};
     lv_subject_t clog_meter_danger_pct_;  // 0-100, where danger zone starts

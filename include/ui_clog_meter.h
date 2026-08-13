@@ -3,7 +3,9 @@
 
 #pragma once
 
-#include "ui_observer_guard.h"
+#include "clog_meter_model.h"
+
+#include <optional>
 
 // Forward declarations
 struct _lv_obj_t;
@@ -47,29 +49,24 @@ class UiClogMeter {
     void resize_arc();
 
   private:
-    void setup_observers();
-    void on_mode_changed(int mode);
-    void on_value_changed(int value);
-    void on_warning_changed(int warning);
-    void update_arc_color();
-    void update_safe_state();
+    /// Redraw the arc for one sample: range and mode, sweep, colour, and the
+    /// check icon that stands in when there is nothing to report.
+    void apply(const ClogMeterSample& s);
+    void update_arc_color(const ClogMeterSample& s);
+    void update_safe_state(const ClogMeterSample& s);
 
     static void on_card_size_changed(lv_event_t* e);
 
     lv_obj_t* root_ = nullptr;
     lv_obj_t* arc_ = nullptr;
     lv_obj_t* arc_container_ = nullptr;
-    int current_mode_ = 0;
-    int current_value_ = 0;
-    int current_warning_ = 0;
     bool in_resize_ = false;
 
     lv_obj_t* safe_icon_ = nullptr;  ///< check_circle shown when there is nothing to report
     lv_obj_t* value_text_ = nullptr; ///< XML-bound clog_value_text, hidden in the safe state
 
-    ObserverGuard mode_obs_;
-    ObserverGuard value_obs_;
-    ObserverGuard warning_obs_;
+    /// Constructed last, once the named lookups above have succeeded.
+    std::optional<ClogMeterModel> model_;
 };
 
 } // namespace helix::ui

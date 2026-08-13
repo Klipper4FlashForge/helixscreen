@@ -8,7 +8,8 @@
 
 namespace helix::ui {
 class UiBufferMeter;
-}
+class UiClogBar;
+} // namespace helix::ui
 
 /**
  * @brief Read-only modal showing buffer/sync status for Happy Hare or AFC
@@ -44,6 +45,9 @@ class BufferStatusModal : public Modal {
 
     static bool subjects_initialized_;
     helix::ui::UiBufferMeter* meter_ = nullptr;
+    /// The clog reading above the columns. Owned here so it is torn down
+    /// before Modal::~Modal() frees the dialog tree it points into.
+    helix::ui::UiClogBar* clog_bar_ = nullptr;
 
     // Static subjects + backing buffers (persist across modal instances)
     static lv_subject_t type_subject_;
@@ -58,8 +62,6 @@ class BufferStatusModal : public Modal {
     static char espooler_buf_[128];
     static lv_subject_t gear_sync_value_subject_;
     static char gear_sync_buf_[32];
-    static lv_subject_t clog_value_subject_;
-    static char clog_buf_[32];
     static lv_subject_t flow_value_subject_;
     static char flow_buf_[32];
     static lv_subject_t afc_state_subject_;

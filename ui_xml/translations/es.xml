@@ -99,6 +99,7 @@
   <translation tag="ADXL" es="ADXL"/>
   <translation tag="AFC" es="AFC"/>
   <translation tag="AFC Update Available" es="Actualización de AFC Disponible"/>
+  <translation tag="AFC buffer"/>
   <translation tag="AFC failure reset complete" es="Reinicio de fallo AFC completado"/>
   <translation tag="AFC failure reset failed" es="Error al reiniciar fallo AFC"/>
   <translation tag="AFC recovery complete" es="Recuperación AFC completada"/>
@@ -303,6 +304,7 @@
   <translation tag="CAPABILITIES" es="CAPACIDADES"/>
   <translation tag="CARTOGRAPHER" es="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" es="CAMBIADO DESDE LA ÚLTIMA SESIÓN"/>
+  <translation tag="CLOG"/>
   <translation tag="COLOR SENSORS" es="SENSORES DE COLOR"/>
   <translation tag="CONFIGURATION" es="CONFIGURACIÓN"/>
   <translation tag="CONNECTION TYPE" es="TIPO DE CONEXIÓN"/>
@@ -428,7 +430,10 @@
   <translation tag="Clear failed" es="Error al limpiar"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" es="Borrado de los ajustes; falló el desemparejamiento del sistema, puede que necesite el Bluetooth del SO"/>
   <translation tag="Clipboard unavailable - use SSH" es="Portapapeles no disponible - use SSH"/>
+  <translation tag="Clog"/>
+  <translation tag="Clog Auto"/>
   <translation tag="Clog Detection" es="Detección de obstrucción"/>
+  <translation tag="Clog Manual"/>
   <translation tag="Clog and flow health while printing" es="Obstrucción y flujo durante la impresión"/>
   <translation tag="Clog detection" es="Detección de obstrucción"/>
   <translation tag="Close" es="Cerrar"/>
@@ -2150,6 +2155,7 @@
   <translation tag="T%d has no filament loaded — this print will run out." es="T%d no tiene filamento cargado — esta impresión se quedará sin filamento."/>
   <translation tag="T%d needs filament in slot %d, which is empty — this print will run out." es="T%d necesita filamento en la ranura %d, que está vacía — esta impresión se quedará sin filamento."/>
   <translation tag="T0"/>
+  <translation tag="TANGLE"/>
   <translation tag="TD-1 filament color detection" es="Detección de color de filamento TD-1"/>
   <translation tag="TEMPERATURE SENSORS" es="SENSORES DE TEMPERATURA"/>
   <translation tag="THEME COLORS" es="COLORES DEL TEMA"/>

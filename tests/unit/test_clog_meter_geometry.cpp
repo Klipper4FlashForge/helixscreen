@@ -78,6 +78,121 @@ TEST_CASE("clog_meter_tint: a negative reading tints by magnitude", "[clog][tint
 }
 
 // ===========================================================================
+// clog_meter_is_safe
+// ===========================================================================
+
+TEST_CASE("clog_meter_is_safe: only the buffer mode reports nothing", "[clog][safe][1017]") {
+    CHECK(clog_meter_is_safe(kMode_Buffer, 0));
+
+    // A buffer reading of any size is a measurement, so it draws.
+    CHECK_FALSE(clog_meter_is_safe(kMode_Buffer, 1));
+    CHECK_FALSE(clog_meter_is_safe(kMode_Buffer, 100));
+}
+
+TEST_CASE("clog_meter_is_safe: zero is a real reading in the other modes", "[clog][safe][1017]") {
+    // Encoder zero means "no clog", and Flowguard zero means "dead centre" —
+    // both are measurements the widget must keep drawing.
+    CHECK_FALSE(clog_meter_is_safe(kMode_Encoder, 0));
+    CHECK_FALSE(clog_meter_is_safe(kMode_Flowguard, 0));
+}
+
+TEST_CASE("clog_meter_is_safe: no hardware is not the safe state", "[clog][safe][1017]") {
+    // Mode 0 hides the whole widget from XML; conflating the two would leave
+    // a check icon standing in for a printer that cannot detect a clog at all.
+    CHECK_FALSE(clog_meter_is_safe(static_cast<int>(ClogMeterMode::None), 0));
+}
+
+// ===========================================================================
+// clog_meter_status
+// ===========================================================================
+
+TEST_CASE("clog_meter_status: the backend's warning outranks the threshold",
+          "[clog][status][1017]") {
+    // A tripped backend is a fault however far off the threshold the reading
+    // looks — it is the thing that pauses the print.
+    CHECK(clog_meter_status(kMode_Encoder, /*value=*/0, /*warning=*/1, /*danger=*/75) ==
+          ClogMeterStatus::Fault);
+    CHECK(clog_meter_status(kMode_Flowguard, -5, 1, 80) == ClogMeterStatus::Fault);
+}
+
+TEST_CASE("clog_meter_status: reaching the threshold warns before anything trips",
+          "[clog][status][1017]") {
+    CHECK(clog_meter_status(kMode_Encoder, 74, 0, 75) == ClogMeterStatus::Ok);
+    CHECK(clog_meter_status(kMode_Encoder, 75, 0, 75) == ClogMeterStatus::Warning);
+    CHECK(clog_meter_status(kMode_Encoder, 100, 0, 75) == ClogMeterStatus::Warning);
+}
+
+TEST_CASE("clog_meter_status: Flowguard's tangle side counts by magnitude",
+          "[clog][status][1017]") {
+    // -85 is as far into the tangle end as +85 is into the clog end.
+    CHECK(clog_meter_status(kMode_Flowguard, -85, 0, 80) == ClogMeterStatus::Warning);
+    CHECK(clog_meter_status(kMode_Flowguard, 85, 0, 80) == ClogMeterStatus::Warning);
+    CHECK(clog_meter_status(kMode_Flowguard, -2, 0, 80) == ClogMeterStatus::Ok);
+}
+
+TEST_CASE("clog_meter_status: nothing to report is OK, not a zero-distance fault",
+          "[clog][status][1017]") {
+    // An untracked AFC buffer reads zero; without the safe check a zero
+    // threshold would have to be relied on to keep it quiet.
+    CHECK(clog_meter_status(kMode_Buffer, 0, 0, 75) == ClogMeterStatus::Ok);
+}
+
+TEST_CASE("clog_meter_status: an unset threshold has no opinion", "[clog][status][1017]") {
+    // danger_pct of 0 would otherwise make every reading, including a neutral
+    // one, compare as "at or past the threshold".
+    CHECK(clog_meter_status(kMode_Flowguard, 0, 0, /*danger=*/0) == ClogMeterStatus::Ok);
+    CHECK(clog_meter_status(kMode_Encoder, 50, 0, 0) == ClogMeterStatus::Ok);
+}
+
+// ===========================================================================
+// ClogMeterSample — the derived state both renderers must agree on
+// ===========================================================================
+
+TEST_CASE("ClogMeterSample: only Flowguard reads out from a centre", "[clog][model][1017]") {
+    // The arc encodes this as LV_ARC_MODE_SYMMETRICAL over 0..200 and the bar
+    // as centre-out geometry. Two encodings are fine; two decisions are not.
+    ClogMeterSample fg;
+    fg.mode = kMode_Flowguard;
+    CHECK(fg.is_symmetrical());
+
+    for (int mode : {static_cast<int>(ClogMeterMode::None), kMode_Encoder, kMode_Buffer}) {
+        ClogMeterSample s;
+        s.mode = mode;
+        INFO("mode " << mode);
+        CHECK_FALSE(s.is_symmetrical());
+    }
+}
+
+TEST_CASE("ClogMeterSample: derived state matches the free functions", "[clog][model][1017]") {
+    // The sample is a convenience over the same rules, so a renderer reading
+    // either spelling cannot disagree with one reading the other.
+    ClogMeterSample s;
+    s.mode = kMode_Buffer;
+    s.value = 0;
+    s.danger_pct = 75;
+    CHECK(s.is_safe() == clog_meter_is_safe(s.mode, s.value));
+    CHECK(s.status() == clog_meter_status(s.mode, s.value, s.warning, s.danger_pct));
+
+    s.mode = kMode_Flowguard;
+    s.value = -90;
+    s.danger_pct = 80;
+    s.warning = 0;
+    CHECK(s.is_safe() == clog_meter_is_safe(s.mode, s.value));
+    CHECK(s.status() == ClogMeterStatus::Warning);
+}
+
+TEST_CASE("ClogMeterSample: a default sample draws nothing", "[clog][model][1017]") {
+    // UiClogBar::relayout() runs from SIZE_CHANGED before the model exists and
+    // falls back to a default sample. That must be inert, not a fault.
+    ClogMeterSample s;
+    CHECK(s.kind() == ClogMeterMode::None);
+    CHECK_FALSE(s.is_safe());
+    CHECK_FALSE(s.is_symmetrical());
+    CHECK(s.status() == ClogMeterStatus::Ok);
+    CHECK(clog_bar_geometry(s.mode, s.value, s.danger_pct, s.peak_pct, kTrack).fill_w == 0);
+}
+
+// ===========================================================================
 // clog_bar_geometry — linear modes
 // ===========================================================================
 

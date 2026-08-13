@@ -99,6 +99,7 @@
   <translation tag="ADXL" it="ADXL"/>
   <translation tag="AFC" it="AFC"/>
   <translation tag="AFC Update Available" it="Aggiornamento AFC Disponibile"/>
+  <translation tag="AFC buffer"/>
   <translation tag="AFC failure reset complete" it="Reset errore AFC completato"/>
   <translation tag="AFC failure reset failed" it="Reset errore AFC fallito"/>
   <translation tag="AFC recovery complete" it="Recupero AFC completato"/>
@@ -303,6 +304,7 @@
   <translation tag="CAPABILITIES" it="FUNZIONALITÀ"/>
   <translation tag="CARTOGRAPHER" it="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" it="MODIFICATO DALLA SESSIONE PRECEDENTE"/>
+  <translation tag="CLOG"/>
   <translation tag="COLOR SENSORS" it="SENSORI DI COLORE"/>
   <translation tag="CONFIGURATION" it="CONFIGURAZIONE"/>
   <translation tag="CONNECTION TYPE" it="TIPO DI CONNESSIONE"/>
@@ -428,7 +430,10 @@
   <translation tag="Clear failed" it="Cancellazione fallita"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" it="Rimosso dalle impostazioni; disaccoppiamento di sistema fallito, potrebbe servire il Bluetooth del sistema operativo"/>
   <translation tag="Clipboard unavailable - use SSH" it="Appunti non disponibili - usare SSH"/>
+  <translation tag="Clog"/>
+  <translation tag="Clog Auto"/>
   <translation tag="Clog Detection" it="Rilevamento intasamento"/>
+  <translation tag="Clog Manual"/>
   <translation tag="Clog and flow health while printing" it="Intasamento e flusso durante la stampa"/>
   <translation tag="Clog detection" it="Rilevamento intasamento"/>
   <translation tag="Close" it="Chiudi"/>
@@ -2150,6 +2155,7 @@
   <translation tag="T%d has no filament loaded — this print will run out." it="T%d non ha filamento caricato — questa stampa lo esaurirà."/>
   <translation tag="T%d needs filament in slot %d, which is empty — this print will run out." it="T%d richiede filamento nello slot %d, che è vuoto — questa stampa lo esaurirà."/>
   <translation tag="T0"/>
+  <translation tag="TANGLE"/>
   <translation tag="TD-1 filament color detection" it="Rilevamento colore filamento TD-1"/>
   <translation tag="TEMPERATURE SENSORS" it="SENSORI DI TEMPERATURA"/>
   <translation tag="THEME COLORS" it="COLORI TEMA"/>

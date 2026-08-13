@@ -99,6 +99,7 @@ translations:
   ADXL: ADXL
   AFC: AFC
   AFC Update Available: AFC Update Available
+  AFC buffer: AFC buffer
   AFC failure reset complete: AFC failure reset complete
   AFC failure reset failed: AFC failure reset failed
   AFC recovery complete: AFC recovery complete
@@ -303,6 +304,7 @@ translations:
   CAPABILITIES: CAPABILITIES
   CARTOGRAPHER: CARTOGRAPHER
   CHANGED FROM LAST SESSION: CHANGED FROM LAST SESSION
+  CLOG: CLOG
   COLOR SENSORS: COLOR SENSORS
   CONFIGURATION: CONFIGURATION
   CONNECTION TYPE: CONNECTION TYPE
@@ -428,7 +430,10 @@ translations:
   Clear failed: Clear failed
   Cleared from settings — system unpair failed, may need OS Bluetooth: Cleared from settings — system unpair failed, may need OS Bluetooth
   Clipboard unavailable - use SSH: Clipboard unavailable - use SSH
+  Clog: Clog
+  Clog Auto: Clog Auto
   Clog Detection: Clog Detection
+  Clog Manual: Clog Manual
   Clog and flow health while printing: Clog and flow health while printing
   Clog detection: Clog detection
   Close: Close
@@ -2163,6 +2168,7 @@ translations:
   T%d has no filament loaded — this print will run out.: T%d has no filament loaded — this print will run out.
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d needs filament in slot %d, which is empty — this print will run out.
   T0: T0
+  TANGLE: TANGLE
   TD-1 filament color detection: TD-1 filament color detection
   TEMPERATURE SENSORS: TEMPERATURE SENSORS
   THEME COLORS: THEME COLORS

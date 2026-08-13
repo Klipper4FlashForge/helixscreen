@@ -749,6 +749,67 @@ struct BufferHealth {
     /// -1 = not reported (fault detection off, or older firmware).
     float fault_timer = -1.0f;
 
+    /// Filament pressure sensor, present only on an `AFC_buffer` configured
+    /// `type: FPS_PSF` (AFCFPSBuffer, AFC v1.2.0+). A TurtleNeck buffer is
+    /// `type: switched` and reports none of these; -1 = not reported.
+    ///
+    /// `smoothed_fps` is the one to read: AFC's own advance/trailing triggers
+    /// compare it, not the raw `fps_value`, so it is what the firmware means by
+    /// the buffer's position (`AFC_buffer.py`, AFCFPSEndstop docstring).
+    ///
+    /// Note what is NOT here. `low_point` / `high_point` / `deadband` are
+    /// config-only — AFCFPSBuffer::get_status publishes `fps_value`,
+    /// `smoothed_fps` and `set_point` and nothing else — so the tuning range
+    /// cannot be read at runtime. afc_fps_to_bias() normalizes against the
+    /// sensor's own 0..1 rail instead.
+    float fps_value = -1.0f;
+    float smoothed_fps = -1.0f;
+    float fps_set_point = -1.0f;
+
+    /// Set when a frame actually carried `smoothed_fps`.
+    ///
+    /// Presence cannot be inferred from the value: the ADC is nominally 0..1
+    /// but it is a voltage divider on real hardware, so a reading can land
+    /// slightly below zero — and that is max tension, the single most
+    /// interesting reading there is. A value-based sentinel would blank the
+    /// meter exactly then.
+    bool fps_reported = false;
+
+    /// Whether this buffer publishes a proportional pressure reading at all.
+    /// False for the switched TurtleNeck every BoxTurtle ships with.
+    [[nodiscard]] bool has_fps() const {
+        return fps_reported && fps_set_point > 0.0f;
+    }
+
+    /// Map an AFC filament-pressure reading onto the -1..+1 sync-feedback bias
+    /// Happy Hare publishes directly, so one buffer meter can draw both.
+    ///
+    /// Sign follows the existing convention: negative is tension (filament
+    /// pulling tight), positive is compression (filament loose). AFC agrees —
+    /// its `low_point` is max tension and `high_point` max compression.
+    ///
+    /// The scale is the honest part. The plan for this wanted to normalize
+    /// against `high_point - set_point`, but neither point is published, so
+    /// each side is normalized against the distance from `set_point` to the
+    /// sensor's own rail (0.0 and 1.0). With the default set_point of 0.5 the
+    /// two agree; with an off-centre one this reads slightly conservative,
+    /// which is the right direction to be wrong in for a fault indicator.
+    ///
+    /// Returns -1.5 (the "no data" sentinel the rest of the UI gates on) when
+    /// the buffer is not an FPS one.
+    [[nodiscard]] float afc_fps_to_bias() const {
+        if (!has_fps()) {
+            return -1.5f;
+        }
+        const float sp = std::clamp(fps_set_point, 0.01f, 0.99f);
+        const float v = std::clamp(smoothed_fps, 0.0f, 1.0f);
+        const float span = (v >= sp) ? (1.0f - sp) : sp;
+        if (span <= 0.0f) {
+            return 0.0f;
+        }
+        return std::clamp((v - sp) / span, -1.0f, 1.0f);
+    }
+
     /// Compute fault threshold from error_sensitivity: (11 - sensitivity) * 10 mm
     /// Returns 60mm fallback when sensitivity is 0 (not reported)
     /// Clamps sensitivity to 10 max to ensure threshold >= 10mm

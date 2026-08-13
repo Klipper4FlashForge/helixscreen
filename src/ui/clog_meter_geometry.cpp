@@ -48,6 +48,25 @@ lv_color_t resolve_clog_tint(int mode, int value, int warning) {
     return lv_color_mix(theme_manager_get_color(t.a), theme_manager_get_color(t.b), t.mix_a);
 }
 
+ClogMeterStatus clog_meter_status(int mode, int value, int warning, int danger_pct) {
+    if (warning != 0) {
+        return ClogMeterStatus::Fault;
+    }
+    if (clog_meter_is_safe(mode, value)) {
+        return ClogMeterStatus::Ok;
+    }
+    // A threshold of zero would make every reading a warning, including a
+    // perfectly neutral one, so an unset threshold means "no opinion".
+    if (danger_pct > 0 && std::abs(value) >= danger_pct) {
+        return ClogMeterStatus::Warning;
+    }
+    return ClogMeterStatus::Ok;
+}
+
+bool clog_meter_is_safe(int mode, int value) {
+    return static_cast<ClogMeterMode>(mode) == ClogMeterMode::Buffer && value == 0;
+}
+
 ClogBarGeometry clog_bar_geometry(int mode, int value, int danger_pct, int peak_pct, int track_w) {
     ClogBarGeometry g;
     if (track_w <= 0) {

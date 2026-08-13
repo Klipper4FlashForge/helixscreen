@@ -99,6 +99,7 @@
   <translation tag="ADXL" ru="ADXL"/>
   <translation tag="AFC" ru="AFC"/>
   <translation tag="AFC Update Available" ru="Доступно обновление AFC"/>
+  <translation tag="AFC buffer"/>
   <translation tag="AFC failure reset complete" ru="Сброс ошибки AFC завершён"/>
   <translation tag="AFC failure reset failed" ru="Ошибка сброса ошибки AFC"/>
   <translation tag="AFC recovery complete" ru="Восстановление AFC завершено"/>
@@ -303,6 +304,7 @@
   <translation tag="CAPABILITIES" ru="ВОЗМОЖНОСТИ"/>
   <translation tag="CARTOGRAPHER" ru="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" ru="ИЗМЕНЕНО С ПРОШЛОЙ СЕССИИ"/>
+  <translation tag="CLOG"/>
   <translation tag="COLOR SENSORS" ru="ДАТЧИКИ ЦВЕТА"/>
   <translation tag="CONFIGURATION" ru="КОНФИГУРАЦИЯ"/>
   <translation tag="CONNECTION TYPE" ru="ТИП ПОДКЛЮЧЕНИЯ"/>
@@ -428,7 +430,10 @@
   <translation tag="Clear failed" ru="Ошибка очистки"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" ru="Удалено из настроек; не удалось отменить сопряжение в системе, возможно нужен Bluetooth ОС"/>
   <translation tag="Clipboard unavailable - use SSH" ru="Буфер обмена недоступен - используйте SSH"/>
+  <translation tag="Clog"/>
+  <translation tag="Clog Auto"/>
   <translation tag="Clog Detection" ru="Обнаружение засора"/>
+  <translation tag="Clog Manual"/>
   <translation tag="Clog and flow health while printing" ru="Засоры и поток во время печати"/>
   <translation tag="Clog detection" ru="Обнаружение засора"/>
   <translation tag="Close" ru="Закрыть"/>
@@ -2150,6 +2155,7 @@
   <translation tag="T%d has no filament loaded — this print will run out." ru="В T%d не загружен филамент — печати не хватит филамента."/>
   <translation tag="T%d needs filament in slot %d, which is empty — this print will run out." ru="Для T%d нужен филамент в слоте %d, который пуст — печати не хватит филамента."/>
   <translation tag="T0"/>
+  <translation tag="TANGLE"/>
   <translation tag="TD-1 filament color detection" ru="Определение цвета филамента TD-1"/>
   <translation tag="TEMPERATURE SENSORS" ru="ДАТЧИКИ ТЕМПЕРАТУРЫ"/>
   <translation tag="THEME COLORS" ru="ЦВЕТА ТЕМЫ"/>

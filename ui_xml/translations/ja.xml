@@ -99,6 +99,7 @@
   <translation tag="ADXL" ja="ADXL"/>
   <translation tag="AFC" ja="AFC"/>
   <translation tag="AFC Update Available" ja="AFC更新あり"/>
+  <translation tag="AFC buffer"/>
   <translation tag="AFC failure reset complete" ja="AFCエラーリセット完了"/>
   <translation tag="AFC failure reset failed" ja="AFCエラーリセット失敗"/>
   <translation tag="AFC recovery complete" ja="AFC復旧完了"/>
@@ -303,6 +304,7 @@
   <translation tag="CAPABILITIES" ja="機能"/>
   <translation tag="CARTOGRAPHER" ja="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" ja="前回のセッションから変更"/>
+  <translation tag="CLOG"/>
   <translation tag="COLOR SENSORS" ja="カラーセンサー"/>
   <translation tag="CONFIGURATION" ja="設定"/>
   <translation tag="CONNECTION TYPE" ja="接続タイプ"/>
@@ -428,7 +430,10 @@
   <translation tag="Clear failed" ja="クリアに失敗しました"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" ja="設定から削除しました。システムのペアリング解除に失敗、OS の Bluetooth 設定が必要な場合があります"/>
   <translation tag="Clipboard unavailable - use SSH" ja="クリップボード利用不可 - SSHを使用してください"/>
+  <translation tag="Clog"/>
+  <translation tag="Clog Auto"/>
   <translation tag="Clog Detection" ja="詰まり検出"/>
+  <translation tag="Clog Manual"/>
   <translation tag="Clog and flow health while printing" ja="印刷中の詰まりとフローの状態"/>
   <translation tag="Clog detection" ja="詰まり検出"/>
   <translation tag="Close" ja="閉じる"/>
@@ -2150,6 +2155,7 @@
   <translation tag="T%d has no filament loaded — this print will run out." ja="T%d にフィラメントが装填されていません — この印刷は途中で切れます。"/>
   <translation tag="T%d needs filament in slot %d, which is empty — this print will run out." ja="T%d はスロット %d のフィラメントを必要としますが、空です — この印刷は途中で切れます。"/>
   <translation tag="T0"/>
+  <translation tag="TANGLE"/>
   <translation tag="TD-1 filament color detection" ja="TD-1 フィラメント色検出"/>
   <translation tag="TEMPERATURE SENSORS" ja="温度センサー"/>
   <translation tag="THEME COLORS" ja="テーマカラー"/>
