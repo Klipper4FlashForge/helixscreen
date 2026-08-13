@@ -138,14 +138,19 @@ Some widgets adapt their content based on size. For example, the Digital Clock s
 
 ### Snapping and half cells
 
-Most widgets snap to whole cells when you drag or resize them. A handful can go finer:
+Many widgets snap to whole cells when you drag or resize them. The ones that show more content when you give them a bit more room can go finer, in half-cell steps:
 
 | Widget | What it can do |
 |--------|----------------|
-| **Digital Clock** | Moves **and resizes** in half-cell steps, on both axes — so 1.5x1 and 2x2.5 are real sizes for it |
+| **Print Status**, **Camera**, **Printer Image**, **Temperature Graph**, **Tips**, **Job Queue**, **Print Stats**, **Multi-Filament System Status**, **Active Spool**, **Nozzle Temperatures**, **Temperatures**, **Fan Speeds**, **Tool Switcher**, **Clog Detection**, **Digital Clock** | Move **and resize** in half-cell steps on **both** axes - so 1.5x1 and 2x2.5 are real sizes |
+| **Preheat**, **Fan**, **Temperature Sensors**, **Macro Button** | Half-cell steps **across** only - useful when a long fan, sensor, or macro name is getting cut off |
 | **Shutdown/Reboot**, **Lock Screen**, **Firmware Restart**, **LED Controls** | Stay one cell in size, but can be **positioned** half a cell across, so a row of them can sit between the main columns |
 
+Everything else - the small tiles that are just an icon and a short label, like **Network**, **LED Light**, **Filament Sensor**, **Humidity**, and the individual temperature tiles - snaps to whole cells. An in-between size would only add empty space around a centred icon, and whole-cell snapping is easier to hit with a finger.
+
 You don't have to remember which is which. The dot grid tells you: **whole-cell dots are always drawn, and the smaller, fainter half-cell dots in between appear only while a widget that can use them is selected** — and only on the axis it can use them on. If you see the extra dots, you can snap to them. If you don't, the widget you have selected snaps to whole cells.
+
+No widget can be made smaller than one whole cell, whatever its snapping.
 
 Half-cell sizes are also why the Widget Catalog occasionally shows a size like "1.5x1" on a badge.
 

@@ -561,6 +561,20 @@ widget by `TRACKS_PER_CELL` and the edit-mode lattice only draws targets there, 
 authored span is a size the user can never restore after one drag. A registry-wide test
 asserts this.
 
+**Which widgets opt in.** Set the flag on an axis when the widget's content is *continuous*
+along it - a chart, an aspect-fit frame, wrapping text, a scrolling strip, stacked readout
+rows, or a layout picked by measurement (`active_spool`'s compact/wide switch,
+`decide_nozzle_layout()`). Half a cell of extra room shows more content there. Leave it off
+for a centred fixed glyph over a short label - `network`, `led`, `filament`, `humidity`, the
+heater tiles - where the intermediate size buys whitespace and nothing else, and costs a drag
+snap twice as fussy on a 34px track. Every minimum is a whole cell, so the flag only ever
+*adds* sizes above one the content already fits; it can never shrink a widget. The four
+fixed-footprint buttons that carry `supports_half_col` with `max == min` - `shutdown`,
+`lock`, `firmware_restart`, `led_controls` - use it for **placement** alone: it lets a lone
+button centre in a two-cell gap. They cannot be resized at all.
+`tests/unit/test_grid_layout.cpp` classifies every registry id, so a new widget cannot be
+added without deciding this.
+
 **Almost no widget paints its own background.** Most home widgets extend `lv_obj`, which
 inherits the fully transparent `StyleRole::ObjBase`, so a widget excluded from the card
 merge renders on the bare panel. `merges_into_card` defaults to true; the six that turn it
@@ -570,9 +584,11 @@ card looks wrong. `ams` stays a participant but drops its own inner card when th
 already painting one (`card="false"`), because a card inside a card reads as a box in a box.
 
 The merge itself is a BFS flood fill over adjacent participants, decomposed into maximal
-rectangles so the result is always rectangular rather than a stepped L. Only **cell-aligned**
-whole-cell widgets enter it: a half-cell widget dropped on an odd track would otherwise get
-its card drawn half a cell away.
+rectangles so the result is always rectangular rather than a stepped L. It runs in **track**
+coordinates, the same units the grid is addressed in, so a widget on an odd track or with an
+odd span is backed like any other. It used to work in cells and convert back, which truncated
+such a position - so every half-cell placement was excluded from the merge outright and
+rendered on the bare panel with no background at all.
 
 Auto-placement (`PanelWidgetManager`, `src/ui/panel_widget_manager.cpp`) runs two passes:
 

@@ -10,6 +10,10 @@
 #include "grid_layout.h"
 #include "panel_widget_registry.h"
 
+#include <map>
+#include <string>
+#include <utility>
+
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
@@ -440,38 +444,84 @@ TEST_CASE("PanelWidgetDef: registry entries have valid scalability constraints",
     }
 }
 
-TEST_CASE("PanelWidgetDef: half-cell capability is opt-in", "[widget_def][half_cell][1126]") {
-    // #1126 grants half-cell resolution to the small single-action widgets only.
-    // Anything that renders a chart, an image, a list or a video frame needs a
-    // whole cell on both axes, so its flags stay false.
-    const std::vector<std::string> half_capable = {"lock", "shutdown", "firmware_restart",
-                                                   "led_controls", "clock"};
-    // camera is absent from the registry on builds without camera support, so it
-    // is appended only where it exists rather than listed unconditionally.
-    std::vector<std::string> whole_cell_only = {"temp_graph", "print_status", "job_queue", "ams",
-                                                "tips"};
-#if HELIX_HAS_CAMERA
-    whole_cell_only.emplace_back("camera");
-#endif
+TEST_CASE("PanelWidgetDef: half-cell capability is classified per widget",
+          "[widget_def][half_cell][1126]") {
+    // Every registry id appears below, so a new widget cannot be added without
+    // deciding this. The rule (PanelWidgetDef::supports_half_col): an axis gets
+    // half-cell resolution when the content along it is CONTINUOUS - a chart,
+    // an aspect-fit frame, wrapping text, a scrolling strip, stacked readout
+    // rows, a measured layout switch - because half a cell of extra room shows
+    // more. A centred fixed glyph over a short label gains only whitespace, and
+    // the finer drag snap is a real cost at a 34px track, so those stay whole.
+    //
+    // The five with a fixed 1x1 footprint (max == min on both axes) carry
+    // half_col for PLACEMENT alone: it is what lets a lone button centre in a
+    // two-cell gap. They cannot be resized at all.
+    const std::map<std::string, std::pair<bool, bool>> expected = {
+        // id                      half_col  half_row
+        {"printer_image", {true, true}},   // aspect-fit render
+        {"print_status", {true, true}},    // filename/times/progress reflow
+        {"camera", {true, true}},          // aspect-fit frame
+        {"temp_graph", {true, true}},      // chart
+        {"tips", {true, true}},            // wrapping body text
+        {"job_queue", {true, true}},       // list rows
+        {"print_stats", {true, true}},     // stat rows
+        {"ams", {true, true}},             // lane slots side by side
+        {"active_spool", {true, true}},    // measured compact/wide switch
+        {"nozzle_temps", {true, true}},    // decide_nozzle_layout() is measured
+        {"temp_stack", {true, true}},      // 2-3 stacked readout rows
+        {"fan_stack", {true, true}},       // 2-3 stacked readout rows
+        {"tool_switcher", {true, true}},   // horizontal chip strip
+        {"clog_detection", {true, true}},  // carousel arc scales with the box
+        {"preheat", {true, false}},        // flex row; row span is fixed
+        {"fan", {true, false}},            // user fan name, long_mode=dots
+        {"thermistor", {true, false}},     // user sensor name, long_mode=dots
+        {"favorite_macro", {true, false}}, // user macro name, long_mode=dots
+        {"shutdown", {true, false}},       // fixed 1x1: placement only
+        {"lock", {true, false}},           // fixed 1x1: placement only
+        {"firmware_restart", {true, false}},
+        {"led_controls", {true, false}},
+        {"clock", {true, true}}, // digits and date reflow on both axes
+        // Centred fixed glyph + short label: an intermediate size is whitespace.
+        {"network", {false, false}},
+        {"led", {false, false}},
+        {"filament", {false, false}},
+        {"humidity", {false, false}},
+        {"width_sensor", {false, false}},
+        {"notifications", {false, false}},
+        {"temperature", {false, false}},
+        {"bed_temperature", {false, false}},
+        {"chamber_temperature", {false, false}},
+        // Fixed 1x1/2x1 action buttons that never gained placement freedom.
+        {"power_device", {false, false}},
+        {"macros", {false, false}},
+        {"motion", {false, false}},
+        {"gcode_console", {false, false}},
+        {"control_buttons", {false, false}},
+    };
 
-    for (const auto& id : half_capable) {
-        INFO("widget " << id);
-        const auto* def = helix::find_widget_def(id);
-        REQUIRE(def != nullptr);
-        CHECK(def->supports_half_col);
+    for (const auto& def : helix::get_all_widget_defs()) {
+        INFO("widget " << def.id);
+        auto it = expected.find(def.id);
+        REQUIRE(it != expected.end()); // new widget: classify it above
+        CHECK(def.supports_half_col == it->second.first);
+        CHECK(def.supports_half_row == it->second.second);
     }
-    for (const auto& id : whole_cell_only) {
-        INFO("widget " << id);
-        const auto* def = helix::find_widget_def(id);
-        REQUIRE(def != nullptr);
-        CHECK_FALSE(def->supports_half_col);
-        CHECK_FALSE(def->supports_half_row);
-    }
+}
 
-    // clock is the only one that can halve on both axes.
-    const auto* clock = helix::find_widget_def("clock");
-    REQUIRE(clock != nullptr);
-    CHECK(clock->supports_half_row);
+TEST_CASE("PanelWidgetDef: a half-cell axis is never below a whole cell",
+          "[widget_def][half_cell][1126]") {
+    // Half-cell resolution only ever ADDS sizes above one whole cell. It was
+    // authored the other way once - a 1-track minimum at 31-40px, where the
+    // icon and caption clipped on every geometry - and the floor was raised to
+    // a cell in response. A new widget must not reintroduce a sub-cell floor
+    // just because it carries the flag.
+    constexpr int cell = GridLayout::TRACKS_PER_CELL;
+    for (const auto& def : helix::get_all_widget_defs()) {
+        INFO("widget " << def.id);
+        CHECK(def.effective_min_colspan() >= cell);
+        CHECK(def.effective_min_rowspan() >= cell);
+    }
 }
 
 TEST_CASE("PanelWidgetDef: half-cell defaults to off", "[widget_def][half_cell]") {

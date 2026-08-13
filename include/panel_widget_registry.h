@@ -73,6 +73,18 @@ struct PanelWidgetDef {
     /// GridLayout::TRACKS_PER_CELL tracks wide. A widget with the flag set may
     /// also be placed and sized at odd track counts; edit mode snaps everything
     /// else to even boundaries so a whole-cell widget can never straddle two.
+    ///
+    /// Set it on an axis when the widget's content is CONTINUOUS along it - a
+    /// chart, an aspect-fit image, wrapping text, a scrolling strip, stacked
+    /// readout rows, or a layout chosen by measurement (active_spool's
+    /// compact/wide switch, decide_nozzle_layout()). Half a cell of extra room
+    /// shows more there. Leave it off for a centred fixed glyph with a short
+    /// label - network, led, filament, humidity, the heater tiles - where the
+    /// intermediate size buys whitespace and nothing else, and costs a drag
+    /// snap that is twice as fussy on a 34px track.
+    ///
+    /// The minimum on every axis is a whole cell, so this only ever ADDS sizes
+    /// above a size the content already fits. It never makes a widget smaller.
     bool supports_half_col = false;
     bool supports_half_row = false;
 

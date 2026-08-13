@@ -671,25 +671,32 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     spdlog::debug("[PanelWidgetManager] Track geometry: {:.2f}x{:.2f}px, gutter {}px",
                   metrics.cell_w, metrics.cell_h, gutter);
 
-    // Create merged card backgrounds behind adjacent single-cell widgets.
-    // A "single cell" widget spans TRACKS_PER_CELL × TRACKS_PER_CELL tracks.
-    // BFS flood-fill finds connected components of single-cell widgets, then a
+    // Create merged card backgrounds behind adjacent widgets that ask for one.
+    // BFS flood-fill finds connected components of merging widgets, then a
     // single card object spans each component's bounding rectangle.
-    // All analysis happens in CELL coordinates (track ÷ TRACKS_PER_CELL); card
-    // positions are converted back to track coordinates for grid assignment.
+    //
+    // All analysis happens in TRACK coordinates - the same units the grid is
+    // addressed in. It used to work in cells and convert back, which forced
+    // every widget off a cell boundary out of the merge entirely: a widget that
+    // supports half-cell resolution can be dragged onto an odd track, and
+    // dividing that position into cells truncates it, so the card would have
+    // landed half a cell from the widget it belongs to. Excluding those left
+    // them with no background at all. Tracks divide exactly, so there is
+    // nothing to exclude.
+    //
     // Use ALL enabled config entries (not just currently-placed ones) so that
     // cards for hardware-gated widgets appear from the first frame, preventing
     // the grid from visually jumping when hardware gates fire.
     {
-        const int TPC = GridLayout::TRACKS_PER_CELL;
-        // Collect all enabled single-cell widgets and cells occupied by larger widgets
-        struct CellHash {
+        // Tracks covered by widgets that share the fused card, and tracks
+        // blocked by widgets that bring a background of their own.
+        struct TrackHash {
             size_t operator()(const std::pair<int, int>& p) const {
                 return std::hash<int>()(p.first) ^ (std::hash<int>()(p.second) << 16);
             }
         };
-        std::unordered_set<std::pair<int, int>, CellHash> single_cells;
-        std::unordered_set<std::pair<int, int>, CellHash> occupied_by_large;
+        std::unordered_set<std::pair<int, int>, TrackHash> merged_tracks;
+        std::unordered_set<std::pair<int, int>, TrackHash> occupied_by_own_card;
         for (const auto& entry : widget_config.page_entries(page_index)) {
             if (!entry.enabled || !entry.has_grid_position()) {
                 continue;
@@ -718,61 +725,41 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             // ways: a 2x1 fan_stack paints nothing of its own and got no
             // background, while a one-cell ams brings its own and got two.
             //
-            // Geometry still has a say, but only about arithmetic. The
-            // footprint must be a whole number of cells sitting on cell
-            // boundaries, because the merge works in cell coordinates. Widgets
-            // whose registry def supports half-cell resolution snap on a single
-            // track (GridEditMode::snap_step_for), so a user can drop one on an
-            // odd track; dividing that position into cells would truncate and
-            // lay the card half a cell from the widget it belongs to.
-            //
-            // Anything excluded takes the multi-cell path: it blocks merges
-            // through the cells it touches, and it is on its own for a
-            // background.
+            // Geometry no longer has a say. In tracks a widget's footprint is
+            // exact whatever its size or alignment, so the flag alone decides:
+            // a widget that opts out blocks merges through the tracks it
+            // touches and is on its own for a background.
             const auto* def = find_widget_def(entry.id);
-            const bool cell_aligned = fitted.col % TPC == 0 && fitted.row % TPC == 0 &&
-                                      fitted.colspan % TPC == 0 && fitted.rowspan % TPC == 0;
-            if (def && def->merges_into_card && cell_aligned) {
-                for (int r = fitted.row / TPC; r < (fitted.row + fitted.rowspan) / TPC; r++) {
-                    for (int c = fitted.col / TPC; c < (fitted.col + fitted.colspan) / TPC; c++) {
-                        single_cells.insert({c, r});
-                    }
-                }
-            } else {
-                // Mark every cell this widget touches, rounding a partial cell
-                // up at both edges so a half-cell overhang still blocks.
-                for (int r = fitted.row / TPC; r < (fitted.row + fitted.rowspan + TPC - 1) / TPC;
-                     r++) {
-                    for (int c = fitted.col / TPC;
-                         c < (fitted.col + fitted.colspan + TPC - 1) / TPC; c++) {
-                        occupied_by_large.insert({c, r});
-                    }
+            auto& covered = (def && def->merges_into_card) ? merged_tracks : occupied_by_own_card;
+            for (int r = fitted.row; r < fitted.row + fitted.rowspan; r++) {
+                for (int c = fitted.col; c < fitted.col + fitted.colspan; c++) {
+                    covered.insert({c, r});
                 }
             }
         }
 
         // BFS flood-fill to find connected components (4-directional adjacency)
-        std::unordered_set<std::pair<int, int>, CellHash> visited;
-        for (const auto& cell : single_cells) {
-            if (visited.count(cell)) {
+        std::unordered_set<std::pair<int, int>, TrackHash> visited;
+        for (const auto& track : merged_tracks) {
+            if (visited.count(track)) {
                 continue;
             }
 
-            // BFS from this cell to collect the connected component
+            // BFS from this track to collect the connected component
             std::queue<std::pair<int, int>> q;
-            q.push(cell);
-            visited.insert(cell);
+            q.push(track);
+            visited.insert(track);
 
-            std::vector<std::pair<int, int>> component_cells;
+            std::vector<std::pair<int, int>> component_tracks;
             while (!q.empty()) {
                 auto [c, r] = q.front();
                 q.pop();
-                component_cells.push_back({c, r});
+                component_tracks.push_back({c, r});
 
                 const std::pair<int, int> neighbors[] = {
                     {c - 1, r}, {c + 1, r}, {c, r - 1}, {c, r + 1}};
                 for (const auto& n : neighbors) {
-                    if (single_cells.count(n) && !visited.count(n)) {
+                    if (merged_tracks.count(n) && !visited.count(n)) {
                         visited.insert(n);
                         q.push(n);
                     }
@@ -780,27 +767,27 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             }
 
             // Build the card coverage: bounding box of the component, filling
-            // gaps between 1x1 widgets, but excluding cells occupied by larger
-            // widgets that intrude into the region.
-            int min_col = component_cells[0].first;
+            // gaps between merging widgets, but excluding tracks occupied by a
+            // widget that paints its own background and intrudes on the region.
+            int min_col = component_tracks[0].first;
             int max_col = min_col;
-            int min_row = component_cells[0].second;
+            int min_row = component_tracks[0].second;
             int max_row_card = min_row;
-            for (const auto& [c, r] : component_cells) {
+            for (const auto& [c, r] : component_tracks) {
                 min_col = std::min(min_col, c);
                 max_col = std::max(max_col, c);
                 min_row = std::min(min_row, r);
                 max_row_card = std::max(max_row_card, r);
             }
 
-            // Cover the component's bounding box, minus any cell a non-merging
+            // Cover the component's bounding box, minus any track a non-merging
             // widget sits in, then split what is left into maximal rectangles.
             //
             // Both halves of that matter. Running the bounding box straight
             // over a non-merging widget makes the card butt against that
             // widget's own card with no gutter, and two abutting Card surfaces
             // read as one continuous slab — a readout block and the graph below
-            // it stop looking like separate things. Carving the cells out is
+            // it stop looking like separate things. Carving the tracks out is
             // what keeps the gutter.
             //
             // Every emitted piece is still a rectangle. The ragged look this
@@ -808,10 +795,10 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             // ams sat one cell into the readout row while painting its own
             // card, which split that row into three pieces of differing
             // heights. It merges now, so a carve-out only ever trims an edge.
-            std::unordered_set<std::pair<int, int>, CellHash> remaining;
+            std::unordered_set<std::pair<int, int>, TrackHash> remaining;
             for (int r = min_row; r <= max_row_card; r++) {
                 for (int c = min_col; c <= max_col; c++) {
-                    if (!occupied_by_large.count({c, r})) {
+                    if (!occupied_by_own_card.count({c, r})) {
                         remaining.insert({c, r});
                     }
                 }
@@ -855,14 +842,11 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                     }
                 }
 
-                int card_colspan = end_col - start_col + 1;
-                int card_rowspan = end_row - start_row + 1;
-
-                // Convert cell coordinates back to track coordinates for placement
-                int track_col = start_col * TPC;
-                int track_row = start_row * TPC;
-                int track_colspan = card_colspan * TPC;
-                int track_rowspan = card_rowspan * TPC;
+                // Already in track coordinates, which is what the grid takes.
+                int track_col = start_col;
+                int track_row = start_row;
+                int track_colspan = end_col - start_col + 1;
+                int track_rowspan = end_row - start_row + 1;
 
                 // Create a plain lv_obj with Card styling as the background
                 lv_obj_t* card_bg = lv_obj_create(container);

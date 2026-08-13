@@ -6,14 +6,17 @@
  * @brief A merged card background must line up with the widgets it backs.
  *
  * populate_widgets() draws one card object behind each connected run of
- * single-cell widgets. The flood fill works in CELL coordinates while the grid
- * is addressed in TRACKS, so every conversion has to survive a widget that does
- * not sit on a cell boundary: widgets whose registry def supports half-cell
- * resolution snap on a single track, so a user can drag one onto an odd track.
+ * widgets that opt into the shared background. The flood fill and the grid are
+ * both addressed in TRACKS, so a widget parked on an odd track - reachable by
+ * drag for any widget whose registry def supports half-cell resolution - is
+ * backed like any other. The fill used to work in cells, which truncated such a
+ * position, so those widgets were dropped from the merge and drew no background
+ * at all.
  *
- * The invariant is containment. A card that overlaps a widget at all must cover
+ * Two invariants. Containment: a card that overlaps a widget at all must cover
  * it completely — a card offset by half a cell leaves the widget's far edge
- * hanging outside its own background, which is the visible artifact.
+ * hanging outside its own background, which is the visible artifact. Coverage:
+ * a widget that asked for the shared card must actually be behind one.
  */
 
 #include "../test_fixtures.h"
@@ -135,11 +138,12 @@ size_t check_card_containment(const std::string& panel_id, const nlohmann::json&
     lv_obj_update_layout(container);
 
     auto cards = card_backgrounds(container, ids);
+    std::vector<bool> backed(ids.size(), false);
     for (lv_obj_t* card : cards) {
         lv_area_t card_area;
         lv_obj_get_coords(card, &card_area);
-        for (const auto& id : ids) {
-            lv_obj_t* w = lv_obj_find_by_name(container, id.c_str());
+        for (size_t i = 0; i < ids.size(); i++) {
+            lv_obj_t* w = lv_obj_find_by_name(container, ids[i].c_str());
             if (!w) {
                 continue;
             }
@@ -148,11 +152,24 @@ size_t check_card_containment(const std::string& panel_id, const nlohmann::json&
             if (!areas_overlap(card_area, w_area)) {
                 continue;
             }
-            INFO("widget " << id << " at [" << w_area.x1 << "," << w_area.y1 << " " << w_area.x2
+            backed[i] = true;
+            INFO("widget " << ids[i] << " at [" << w_area.x1 << "," << w_area.y1 << " " << w_area.x2
                            << "," << w_area.y2 << "] vs card [" << card_area.x1 << ","
                            << card_area.y1 << " " << card_area.x2 << "," << card_area.y2 << "]");
             CHECK(area_contains(card_area, w_area));
         }
+    }
+
+    // Coverage. Without this the containment loop passes vacuously for any
+    // widget the merge pass declined to back - which is exactly how the
+    // cell-coordinate version looked correct while drawing nothing.
+    for (size_t i = 0; i < ids.size(); i++) {
+        const auto* def = helix::find_widget_def(ids[i]);
+        if (!def || !def->merges_into_card || !lv_obj_find_by_name(container, ids[i].c_str())) {
+            continue;
+        }
+        INFO("widget " << ids[i] << " asked for the shared card");
+        CHECK(backed[i]);
     }
 
     mgr.clear_panel_config(panel_id);
@@ -196,8 +213,9 @@ TEST_CASE_METHOD(XMLTestFixture, "Card merge: adjacent aligned widgets share one
 
 // A half-cell-capable widget snaps on a single track (snap_step_for), so it can
 // legally sit on an odd track. Converting that position to cell coordinates
-// truncates, which used to emit the card one track to the left of the widget.
-TEST_CASE_METHOD(XMLTestFixture, "Card merge: a widget on an odd track gets no misaligned card",
+// truncated it, so the pass excluded the widget outright and it rendered on the
+// bare panel background. In tracks it gets a card that lines up with it.
+TEST_CASE_METHOD(XMLTestFixture, "Card merge: a widget on an odd track still gets its card",
                  "[manager][card_merge]") {
     helix::init_widget_registrations();
     lv_xml_register_component_from_data(
@@ -230,5 +248,40 @@ TEST_CASE_METHOD(XMLTestFixture, "Card merge: a widget on an odd track gets no m
                                {"colspan", TPC},
                                {"rowspan", TPC}}};
 
-    check_card_containment("test_card_merge_odd", widgets, {"shutdown", "lock"}, test_screen());
+    // One empty track separates them, so they stay two components rather than
+    // fusing across the gap - two cards, each covering its own widget.
+    size_t cards =
+        check_card_containment("test_card_merge_odd", widgets, {"shutdown", "lock"}, test_screen());
+    CHECK(cards == 2);
+}
+
+// A widget sized to an odd number of tracks - 1.5 cells - is the other half of
+// the same bug: the span truncated as well as the position.
+TEST_CASE_METHOD(XMLTestFixture, "Card merge: a widget 1.5 cells wide gets a card that fits it",
+                 "[manager][card_merge]") {
+    helix::init_widget_registrations();
+    lv_xml_register_component_from_data(
+        "test_card_merge_stub",
+        "<component><view extends=\"lv_obj\" width=\"100%\" height=\"100%\"/></component>");
+    REQUIRE(theme_manager_get_spacing("space_xs") > 0);
+
+    // The premise: clock resizes on odd track counts and wants the shared card.
+    const auto* def = helix::find_widget_def("clock");
+    REQUIRE(def != nullptr);
+    REQUIRE(def->supports_half_col);
+    REQUIRE(def->merges_into_card);
+    REQUIRE(def->effective_max_colspan() >= 3);
+
+    ScopedStubFactory a("clock");
+
+    nlohmann::json widgets = {{{"id", "clock"},
+                               {"enabled", true},
+                               {"col", 0},
+                               {"row", 0},
+                               {"colspan", 3}, // 1.5 cells
+                               {"rowspan", TPC}}};
+
+    size_t cards =
+        check_card_containment("test_card_merge_odd_span", widgets, {"clock"}, test_screen());
+    CHECK(cards == 1);
 }

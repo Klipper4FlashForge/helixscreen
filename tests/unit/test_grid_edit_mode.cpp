@@ -1710,7 +1710,7 @@ TEST_CASE("round_to_grid_cell: gutters do not shift the stepped boundary",
 
 TEST_CASE("snap_step_for: whole-cell widgets step by a full cell",
           "[grid_edit][resize][half_cell]") {
-    auto [wc, wr] = GridEditMode::snap_step_for("camera");
+    auto [wc, wr] = GridEditMode::snap_step_for("temperature");
     CHECK(wc == helix::GridLayout::TRACKS_PER_CELL);
     CHECK(wr == helix::GridLayout::TRACKS_PER_CELL);
 
@@ -1746,11 +1746,12 @@ TEST_CASE_METHOD(LVGLTestFixture,
 TEST_CASE_METHOD(XMLTestFixture, "dots overlay: rebuilds to match the selected widget's snap step",
                  "[grid_edit][half_cell][dots]") {
     // dot_count() above proves the counting formula; this proves GridEditMode
-    // actually calls it on every selection change. "camera" has no half-cell
-    // support (snap_step_for returns {cell, cell}); "shutdown" supports half
-    // columns (snap_step_for returns {1, cell}) — see the registry entries
-    // this reads from (panel_widget_registry.cpp) and the equivalent
-    // snap_step_for() assertions above.
+    // actually calls it on every selection change. "temperature" has no
+    // half-cell support (snap_step_for returns {cell, cell}) - it is a centred
+    // icon over a readout, so an intermediate size buys only whitespace;
+    // "shutdown" supports half columns (snap_step_for returns {1, cell}) - see
+    // the registry entries this reads from (panel_widget_registry.cpp) and the
+    // equivalent snap_step_for() assertions above.
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     REQUIRE(bp_subj != nullptr);
     REQUIRE(as_breakpoint(lv_subject_get_int(bp_subj)) == UiBreakpoint::Medium);
@@ -1774,10 +1775,11 @@ TEST_CASE_METHOD(XMLTestFixture, "dots overlay: rebuilds to match the selected w
     auto row_dsc = GridLayout::make_row_dsc(nrows);
     lv_obj_set_grid_dsc_array(container, col_dsc.data(), row_dsc.data());
 
-    lv_obj_t* camera_widget = lv_obj_create(container);
-    lv_obj_set_name(camera_widget, "camera");
-    lv_obj_remove_flag(camera_widget, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_grid_cell(camera_widget, LV_GRID_ALIGN_STRETCH, 0, 2, LV_GRID_ALIGN_STRETCH, 0, 2);
+    lv_obj_t* temperature_widget = lv_obj_create(container);
+    lv_obj_set_name(temperature_widget, "temperature");
+    lv_obj_remove_flag(temperature_widget, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_grid_cell(temperature_widget, LV_GRID_ALIGN_STRETCH, 0, 2, LV_GRID_ALIGN_STRETCH, 0,
+                         2);
 
     lv_obj_t* shutdown_widget = lv_obj_create(container);
     lv_obj_set_name(shutdown_widget, "shutdown");
@@ -1803,7 +1805,7 @@ TEST_CASE_METHOD(XMLTestFixture, "dots overlay: rebuilds to match the selected w
                         {{{"id", "main"}, {"widgets", nlohmann::json::array()}},
                          {{"id", "test"},
                           {"widgets",
-                           {{{"id", "camera"},
+                           {{{"id", "temperature"},
                              {"enabled", true},
                              {"col", 0},
                              {"row", 0},
@@ -1827,19 +1829,19 @@ TEST_CASE_METHOD(XMLTestFixture, "dots overlay: rebuilds to match the selected w
     lv_obj_t* dots_at_enter = GridEditModeTestAccess::dots_overlay(em);
     REQUIRE(dots_at_enter != nullptr);
 
-    em.select_widget(camera_widget);
-    lv_obj_t* dots_for_camera = GridEditModeTestAccess::dots_overlay(em);
-    REQUIRE(dots_for_camera != nullptr);
+    em.select_widget(temperature_widget);
+    lv_obj_t* dots_for_temperature = GridEditModeTestAccess::dots_overlay(em);
+    REQUIRE(dots_for_temperature != nullptr);
     // A new lattice object, not the one enter() built — the selection changed
     // what is a legal drop target, so the overlay must be rebuilt, not reused.
-    CHECK(dots_for_camera != dots_at_enter);
-    CHECK(lv_obj_get_child_count(dots_for_camera) ==
+    CHECK(dots_for_temperature != dots_at_enter);
+    CHECK(lv_obj_get_child_count(dots_for_temperature) ==
           static_cast<uint32_t>(GridEditMode::dot_count(ncols, nrows, cell, cell)));
 
     em.select_widget(shutdown_widget);
     lv_obj_t* dots_for_shutdown = GridEditModeTestAccess::dots_overlay(em);
     REQUIRE(dots_for_shutdown != nullptr);
-    CHECK(dots_for_shutdown != dots_for_camera);
+    CHECK(dots_for_shutdown != dots_for_temperature);
     CHECK(lv_obj_get_child_count(dots_for_shutdown) ==
           static_cast<uint32_t>(GridEditMode::dot_count(ncols, nrows, 1, cell)));
 
