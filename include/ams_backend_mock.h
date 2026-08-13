@@ -40,6 +40,15 @@ class AmsBackendMock : public AmsBackend {
     void stop() override;
     [[nodiscard]] bool is_running() const override;
 
+    // Guarded to match the base declaration: ESP32 compiles this class for the
+    // CONFIG_HELIX_MOCK_PRINTER build but never defines HELIX_ENABLE_MOCKS, so
+    // there is no base virtual to override there.
+#ifdef HELIX_ENABLE_MOCKS
+    [[nodiscard]] AmsBackendMock* as_mock() override {
+        return this;
+    }
+#endif
+
     // Mock-only: receiver for MoonrakerClientMock's active-gcode-tool
     // notifications. Wired up by MoonrakerManager when both mocks are live.
     // Production AMS backends get equivalent state from real Klipper via

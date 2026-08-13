@@ -208,8 +208,7 @@ void WiFiManager::handle_init_failed(bool silent, const std::string& msg) {
     // so users aren't left WiFi-less because of a dormant NM install. Guarded
     // by tried_fallback_ to avoid infinite loops if wpa_supplicant also fails.
 #if !defined(__APPLE__) && !defined(__ANDROID__) && !defined(ESP_PLATFORM)
-    if (!tried_fallback_ && backend_ &&
-        dynamic_cast<WifiBackendNetworkManager*>(backend_.get()) != nullptr) {
+    if (!tried_fallback_ && backend_ && backend_->is_network_manager()) {
         tried_fallback_ = true;
         spdlog::warn("[WiFiManager] NetworkManager backend INIT_FAILED ({}); "
                      "falling back to wpa_supplicant",

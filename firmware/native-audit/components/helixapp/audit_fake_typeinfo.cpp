@@ -6,13 +6,14 @@
 //
 // Rationale: audit_moonraker_stub.cpp defines out-of-line methods of these
 // classes, so their vtables get emitted here, and a vtable's second slot is a
-// reference to the class typeinfo SYMBOL. The remaining dynamic_casts on
-// MoonrakerClientMock / helix::MoonrakerClient (moonraker_manager.cpp,
-// ams_backend.cpp) want the same symbols. Emitting the real one would drag
-// each class's full vtable - 100+ virtuals on classes the slice never instantiates (the
-// API/client pointers stay nullptr; dynamic_cast on a null pointer never
-// consults typeinfo). The struct mimics the {vptr, name} ABI layout that
-// libstdc++'s non-virtual type_info ops (hash_code/operator==/name) read.
+// reference to the class typeinfo SYMBOL. Emitting the real one would drag each
+// class's full vtable - 100+ virtuals on classes the slice never instantiates.
+// The struct mimics the {vptr, name} ABI layout that libstdc++'s non-virtual
+// type_info ops (hash_code/operator==/name) read.
+//
+// The runtime downcasts that used to want these same symbols (moonraker_manager.cpp,
+// ams_backend.cpp) are gone; only the vtable slot references remain, and they
+// are emitted regardless of whether anything queries the type at runtime.
 
 namespace {
 struct AuditFakeTypeinfo {

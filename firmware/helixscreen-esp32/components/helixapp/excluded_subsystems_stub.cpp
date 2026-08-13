@@ -34,10 +34,11 @@
 //     wiring that runs but has no visible effect on the idle path.
 //
 // NOTE: PrintStartCollector and M300SoundBackend are deliberately NOT stubbed
-// here — kept code constructs them (make_shared) and, for the sound backend,
-// dynamic_casts to it, so they need real ctors/vtables/typeinfo that a stub
-// cannot supply. They are resolved by adding their portable, platform-free real
-// .cpp files to app_srcs.txt instead. See the report for details.
+// here — kept code constructs them (make_shared) and calls virtuals on them
+// (SoundManager asks the backend needs_moonraker_client()), so they need real
+// ctors and vtables that a stub cannot supply. They are resolved by adding
+// their portable, platform-free real .cpp files to app_srcs.txt instead. See
+// the report for details.
 
 #include "ui_overlay_timelapse_install.h"
 #include "ui_overlay_timelapse_settings.h"
