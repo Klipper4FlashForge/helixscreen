@@ -846,6 +846,37 @@ static void theme_manager_register_color_pairs(lv_xml_component_scope_t* scope, 
  * any that do NOT have dynamic suffixes (_light, _dark, _small, _medium, _large).
  * These static constants are registered first so dynamic variants can override them.
  */
+/// Apply the high-DPI UI scale to one authored px token.
+///
+/// Shared by the responsive resolver and the static registration path. Both
+/// must scale: a non-suffixed token is a fixed-size box (icon badges, chips,
+/// swatches, column widths) whose contents are scaled fonts, so scaling only
+/// the responsive half leaves the glyph overflowing its container.
+///
+/// Opacities are declared as <px> too and must be left alone — an 0-255 alpha
+/// multiplied by 1.578 sails past opaque. `modal_backdrop_opacity` is the only
+/// one today; the suffix test keeps a future one safe without another audit.
+static std::string theme_manager_scale_px_token(const std::string& name, const std::string& value,
+                                                double scale) {
+    if (scale <= 1.0) {
+        return value;
+    }
+    static constexpr const char* kOpacitySuffix = "_opacity";
+    const size_t suffix_len = std::strlen(kOpacitySuffix);
+    if (name.size() >= suffix_len &&
+        name.compare(name.size() - suffix_len, suffix_len, kOpacitySuffix) == 0) {
+        return value;
+    }
+    // Leave anything that is not a bare positive integer alone: percentages and
+    // sizing keywords are not lengths to multiply.
+    char* end = nullptr;
+    const long authored = std::strtol(value.c_str(), &end, 10);
+    if (!end || *end != '\0' || authored <= 0) {
+        return value;
+    }
+    return std::to_string(helix::DisplayMetrics::scaled_px(static_cast<int32_t>(authored), scale));
+}
+
 static void theme_manager_register_static_constants(lv_xml_component_scope_t* scope) {
     const std::vector<std::string> skip_suffixes = {
         "_light", "_dark", "_micro", "_tiny", "_small", "_medium", "_large", "_xlarge", "_xxlarge"};
@@ -871,10 +902,15 @@ static void theme_manager_register_static_constants(lv_xml_component_scope_t* sc
         }
     }
 
+    const double px_scale = helix::DisplayMetrics::active_scale();
     for (const auto& [name, value] :
          theme_manager_parse_all_xml_for_element(tm_ui_xml_dir(), "px")) {
         if (!has_dynamic_suffix(name)) {
-            lv_xml_register_const(scope, name.c_str(), value.c_str());
+            // Static tokens scale too. They are fixed-size boxes (icon badges,
+            // chips, swatches, column widths) whose contents are scaled fonts,
+            // so leaving them authored-size is what makes the glyph overflow.
+            const std::string scaled = theme_manager_scale_px_token(name, value, px_scale);
+            lv_xml_register_const(scope, name.c_str(), scaled.c_str());
             px_count++;
         }
     }
@@ -887,8 +923,9 @@ static void theme_manager_register_static_constants(lv_xml_component_scope_t* sc
         }
     }
 
-    spdlog::trace("[Theme] Registered {} static colors, {} static px, {} static strings",
-                  color_count, px_count, string_count);
+    spdlog::debug(
+        "[Theme] Registered {} static colors, {} static px, {} static strings (ui_scale={:.3f})",
+        color_count, px_count, string_count, px_scale);
 }
 
 /**
@@ -1141,17 +1178,8 @@ theme_manager_resolve_px_tokens(lv_display_t* display) {
     // active_scale() is 1.0 on every shipping printer, making this loop an
     // exact identity there.
     const double scale = helix::DisplayMetrics::active_scale();
-    if (scale > 1.0) {
-        for (auto& [base_name, value] : resolved) {
-            char* end = nullptr;
-            const long authored = std::strtol(value.c_str(), &end, 10);
-            // Leave anything that is not a bare integer alone — percentages and
-            // "content" are sizing keywords, not lengths to multiply.
-            if (end && *end == '\0' && authored > 0) {
-                value = std::to_string(
-                    helix::DisplayMetrics::scaled_px(static_cast<int32_t>(authored), scale));
-            }
-        }
+    for (auto& [base_name, value] : resolved) {
+        value = theme_manager_scale_px_token(base_name, value, scale);
     }
     return resolved;
 }

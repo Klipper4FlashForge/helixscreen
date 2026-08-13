@@ -86,9 +86,9 @@ TEST_CASE_METHOD(XMLTestFixture, "A rising breakpoint registers the font tiers s
 #if HELIX_MAX_FONT_TIER >= 6
     CHECK(lv_xml_get_font_silent(nullptr, "noto_sans_40") != nullptr); // xxlarge gate
     // The high-DPI rungs must resolve too. theme_manager only adopts a scaled
-    // face after lv_xml_get_font_silent() confirms it, so if these are compiled
-    // but never registered the scale silently falls back to the tier face —
-    // which is exactly how the first wiring attempt failed.
+    // face after lv_xml_get_font_silent() confirms it, so a face that is
+    // compiled and linked but never registered leaves the scale silently
+    // falling back to the unscaled tier font.
     CHECK(lv_xml_get_font_silent(nullptr, "noto_sans_48") != nullptr);
     CHECK(lv_xml_get_font_silent(nullptr, "noto_sans_64") != nullptr);
     CHECK(lv_xml_get_font_silent(nullptr, "noto_sans_bold_64") != nullptr);
