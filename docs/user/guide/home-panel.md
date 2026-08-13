@@ -618,14 +618,16 @@ When you update HelixScreen and new widgets are added:
 
 If you downgrade and a widget type no longer exists, it's silently removed from your layout. Upgrading again restores it.
 
-**The exception is an update that changes the shape of the grid itself.** A saved position means "column 5, row 3, two cells wide" — if an update changes how many cells your screen gets, those numbers point somewhere else, or off the edge entirely. Rather than leave widgets scattered, HelixScreen re-places them all on the new grid. When that happens:
+**The exception is an update that changes the shape of the grid itself.** A saved position means "column 5, row 3, two cells wide" — if an update changes how many cells your screen gets, those numbers count something different. Rather than scatter your widgets or reset them, HelixScreen converts the arrangement onto the new grid. When that happens:
 
-- Every widget on every page is **re-placed automatically**. Expect a different arrangement than the one you built
+- **Your arrangement is carried over**, in proportion. A widget that filled the left third of the screen still fills the left third; two widgets that were touching stay touching
+- **Sizes can shift slightly.** The new grid does not divide the screen the same way, so a widget lands on the nearest size it is allowed to hold. Some widgets have a minimum of one full cell and will grow to it
+- **A widget that will not fit is re-placed automatically**, and only that widget. On a screen that got shorter or narrower this can happen to one or two of them; the rest keep their spots
 - **Which widgets you have is remembered.** A widget you deleted with the trash button stays gone; one you added stays added, including extra Macro Buttons, Power widgets, and other multiples
-- **Per-widget settings are kept** — display modes, assigned fans and macros all survive. Only positions and sizes are recomputed
-- Extra pages are kept, and widgets are re-placed within the page they were already on
+- **Per-widget settings are kept** — display modes, assigned fans and macros all survive
+- Extra pages are kept, and widgets are converted within the page they were already on
 
-Your printer keeps working the whole time — this only moves tiles around. If you had an arrangement you liked, it is worth a couple of minutes in Edit Mode afterwards to put it back.
+Your printer keeps working the whole time — this only moves tiles around. The conversion happens the first time the home screen is drawn after the update, so the layout you see on that first boot is the one that is saved.
 
 ---
 

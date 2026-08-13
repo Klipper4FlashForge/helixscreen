@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <sys/stat.h>
@@ -1230,28 +1231,44 @@ static void migrate_v20_to_v21(json& config) {
     collapse_scanner_to_root(config);
 }
 
-/// Migration v21->v22: unplace every saved home layout.
+/// Migration v21->v22: mark every saved home layout as holding pre-v22 units.
 ///
 /// Saved col/row/colspan/rowspan are counts of cells in a grid whose track
-/// count and cell size both changed, so the numbers no longer name anything.
-/// This runs at config load — before Application settles the screen size and
-/// long before LayoutManager::init() — so there is no resolution here to
-/// rescale against, and no resolution is stored in settings.json either. The
-/// coordinates are cleared and the two-pass placement engine seats everything
-/// on whatever grid the panel actually turns out to have, which is the path
-/// every never-positioned widget already takes on every boot.
+/// count and cell size both changed. This runs at config load — before
+/// Application settles the screen size and long before LayoutManager::init() —
+/// so there is no resolution HERE to rescale against, and none is stored in
+/// settings.json either. That rules out converting the numbers now; it does not
+/// rule out converting them at all. The first grid build knows the panel extent
+/// and the measured content box, which is everything the conversion needs, so
+/// the coordinates are left intact and tagged, and PanelWidgetManager ports them
+/// once (see port_legacy_layout(), include/layout_port.h) and drops the tag.
 ///
-/// Intent is read before the coordinates are blanked: an entry that is disabled
-/// AND holds real coordinates was removed with the trash button, which leaves
-/// the position intact. One that is disabled at -1 was auto-disabled by the
+/// `legacy_rows` carries what /ui/cached_grid/<panel>/rows held. The old grid
+/// sized its row axis from the widgets in use rather than from a table, using
+/// that cache as a floor for widgets whose hardware gate had not yet fired, so
+/// it is the one part of the old grid the saved layout cannot re-derive alone.
+/// It travels with the tag rather than being read back out of /ui, so the port
+/// has a single source and the /ui key can go now.
+///
+/// Intent is read for entries with no coordinates: one that is disabled AND
+/// holds real coordinates was removed with the trash button, which leaves the
+/// position intact. One that is disabled at -1 was auto-disabled by the
 /// placement engine or was never added, so the key is dropped and the
 /// registry's default_enabled decides.
 ///
 /// Iterates every printer profile, not just the active one — the shipped
 /// config/settings.json already carries two.
 static void migrate_v21_to_v22(json& config) {
-    // A row count in cells of the grid that just changed.
-    if (config.contains("ui") && config["ui"].is_object()) {
+    // Harvest the per-panel row cache before dropping the node: nothing else
+    // reads /ui/cached_grid any more, and the port wants it keyed to the panel.
+    std::map<std::string, int> cached_rows;
+    if (config.contains("ui") && config["ui"].is_object() && config["ui"].contains("cached_grid") &&
+        config["ui"]["cached_grid"].is_object()) {
+        for (const auto& [panel_id, node] : config["ui"]["cached_grid"].items()) {
+            if (node.is_object() && node.contains("rows") && node["rows"].is_number_integer()) {
+                cached_rows[panel_id] = node["rows"].get<int>();
+            }
+        }
         config["ui"].erase("cached_grid");
     }
 
@@ -1259,10 +1276,13 @@ static void migrate_v21_to_v22(json& config) {
         return;
     }
 
-    int unplaced = 0;
+    int tagged = 0;
     int profiles = 0;
 
-    auto unplace_array = [&unplaced](json& widgets) {
+    // An entry that never had coordinates and is switched off carries no intent
+    // worth preserving; drop the key so the registry default decides. Entries
+    // WITH coordinates are left exactly as they are for the port to read.
+    auto clean_array = [](json& widgets) {
         if (!widgets.is_array()) {
             return;
         }
@@ -1278,12 +1298,14 @@ static void migrate_v21_to_v22(json& config) {
             if (!enabled && col < 0) {
                 entry.erase("enabled");
             }
-            entry["col"] = -1;
-            entry["row"] = -1;
-            entry.erase("colspan");
-            entry.erase("rowspan");
-            ++unplaced;
         }
+    };
+
+    auto tag_panel = [&](const std::string& panel_id, json& panel) {
+        panel["layout_units"] = "cells_v21";
+        auto it = cached_rows.find(panel_id);
+        panel["legacy_rows"] = (it != cached_rows.end()) ? it->second : 0;
+        ++tagged;
     };
 
     for (auto& printer : config["printers"]) {
@@ -1292,17 +1314,18 @@ static void migrate_v21_to_v22(json& config) {
             continue;
         }
         ++profiles;
-        for (auto& panel : printer["panel_widgets"]) {
+        for (auto&& [panel_id, panel] : printer["panel_widgets"].items()) {
             // Legacy flat array: lift it into the page shape as well. Left as an
             // array, PanelWidgetConfig::load() would find no entry with a grid
             // position, read the config as pre-grid and replace it wholesale
             // with the registry defaults, discarding every deliberate hide.
             if (panel.is_array()) {
                 json widgets = panel;
-                unplace_array(widgets);
+                clean_array(widgets);
                 panel = json{{"main_page_index", 0},
                              {"next_page_id", 1},
                              {"pages", json::array({json{{"id", "main"}, {"widgets", widgets}}})}};
+                tag_panel(panel_id, panel);
                 continue;
             }
             if (!panel.is_object() || !panel.contains("pages") || !panel["pages"].is_array()) {
@@ -1310,15 +1333,17 @@ static void migrate_v21_to_v22(json& config) {
             }
             for (auto& page : panel["pages"]) {
                 if (page.is_object() && page.contains("widgets")) {
-                    unplace_array(page["widgets"]);
+                    clean_array(page["widgets"]);
                 }
             }
+            tag_panel(panel_id, panel);
         }
     }
 
-    if (unplaced > 0) {
-        spdlog::info("[Config] Migration v22: unplaced {} widget(s) across {} printer profile(s)",
-                     unplaced, profiles);
+    if (tagged > 0) {
+        spdlog::info("[Config] Migration v22: tagged {} panel layout(s) across {} printer "
+                     "profile(s) for porting to the square-cell grid",
+                     tagged, profiles);
     }
 }
 
