@@ -1364,3 +1364,149 @@ TEST_CASE("default_layout: no shipped table mixes authored and inherited placeme
         }
     }
 }
+
+// ============================================================================
+// Grid-qualified placements
+// ============================================================================
+//
+// A breakpoint names a panel, not a grid. The high-DPI UI scale multiplies the
+// cell edge, so one panel at one tier has a different track count per scale --
+// 1080x2400 is xxlarge portrait at 12x24 tracks unscaled, 8x18 at 125%, 6x14 at
+// 158%. Anchors authored against one of those collapse through clamp_to_grid on
+// the others. A placement may therefore name the grid it was authored for.
+
+TEST_CASE("default_layout: a grid-qualified placement wins over the bare tier key",
+          "[default_layout][grid_key]") {
+    TempCwdGuard guard;
+    guard.write_layout(R"({
+        "anchors": [
+            {
+                "id": "printer_image",
+                "placements": {
+                    "tiny":      { "col": 0, "row": 0, "colspan": 8, "rowspan": 2 },
+                    "tiny@6x14": { "col": 2, "row": 4, "colspan": 4, "rowspan": 2 }
+                }
+            }
+        ]
+    })");
+
+    // Same tier, same file — only the measured grid differs.
+    auto on_6x14 = PanelWidgetConfig::build_default_grid(6, 14);
+    auto* qualified = find_entry(on_6x14, "printer_image");
+    REQUIRE(qualified);
+    CHECK(qualified->col == 2);
+    CHECK(qualified->row == 4);
+    CHECK(qualified->colspan == 4);
+
+    // A grid with no entry of its own falls back to the bare tier key.
+    auto on_12x24 = PanelWidgetConfig::build_default_grid(12, 24);
+    auto* bare = find_entry(on_12x24, "printer_image");
+    REQUIRE(bare);
+    CHECK(bare->col == 0);
+    CHECK(bare->row == 0);
+    CHECK(bare->colspan == 8);
+}
+
+TEST_CASE("default_layout: an unknown grid leaves tier-keyed behaviour untouched",
+          "[default_layout][grid_key]") {
+    // Every caller that cannot measure a grid — config load, and every existing
+    // test — must get exactly what it got before grids entered the key.
+    TempCwdGuard guard;
+    guard.write_layout(R"({
+        "anchors": [
+            {
+                "id": "printer_image",
+                "placements": {
+                    "tiny":      { "col": 0, "row": 0, "colspan": 8, "rowspan": 2 },
+                    "tiny@6x14": { "col": 2, "row": 4, "colspan": 4, "rowspan": 2 }
+                }
+            }
+        ]
+    })");
+
+    auto entries = PanelWidgetConfig::build_default_grid();
+    auto* pi = find_entry(entries, "printer_image");
+    REQUIRE(pi);
+    CHECK(pi->col == 0);
+    CHECK(pi->row == 0);
+    CHECK(pi->colspan == 8);
+}
+
+TEST_CASE("default_layout: an anchor that does not fit the measured grid is not honoured",
+          "[default_layout][grid_key]") {
+    // The failure this exists to stop. clamp_to_grid() would shove the origin
+    // back so the span fits, landing the widget on top of a neighbour and
+    // reading as a designed position. Dropping it to auto-place says what
+    // actually happened: this anchor does not describe this grid.
+    TempCwdGuard guard;
+    guard.write_layout(R"({
+        "anchors": [
+            {
+                "id": "printer_image",
+                "placements": {
+                    "tiny": { "col": 0, "row": 0, "colspan": 4, "rowspan": 4 }
+                }
+            },
+            {
+                "id": "print_status",
+                "placements": {
+                    "tiny": { "col": 8, "row": 0, "colspan": 2, "rowspan": 2 }
+                }
+            },
+            {
+                "id": "tips",
+                "placements": {
+                    "tiny": { "col": 0, "row": 4, "colspan": 10, "rowspan": 2 }
+                }
+            }
+        ]
+    })");
+
+    // A 6x14 grid holds printer_image (0+4 <= 6, 0+4 <= 14) but not
+    // print_status (col 8 is off the grid) nor tips (colspan 10 > 6).
+    auto entries = PanelWidgetConfig::build_default_grid(6, 14);
+
+    auto* pi = find_entry(entries, "printer_image");
+    REQUIRE(pi);
+    CHECK(pi->col == 0);
+    CHECK(pi->row == 0);
+
+    auto* ps = find_entry(entries, "print_status");
+    REQUIRE(ps);
+    CHECK(ps->col == -1);
+    CHECK(ps->row == -1);
+
+    auto* tips = find_entry(entries, "tips");
+    REQUIRE(tips);
+    CHECK(tips->col == -1);
+    CHECK(tips->row == -1);
+
+    // Dropped anchors keep their registry span, the same answer an entry that
+    // never had a position gets — not the span the rejected anchor asked for.
+    const auto* tips_def = helix::find_widget_def("tips");
+    REQUIRE(tips_def);
+    CHECK(tips->colspan == tips_def->colspan);
+}
+
+TEST_CASE("default_layout: the same anchor fits a grid that is big enough",
+          "[default_layout][grid_key]") {
+    // Guards the test above against passing for the wrong reason: if the
+    // fitting check were simply rejecting everything, this would fail too.
+    TempCwdGuard guard;
+    guard.write_layout(R"({
+        "anchors": [
+            {
+                "id": "print_status",
+                "placements": {
+                    "tiny": { "col": 8, "row": 0, "colspan": 2, "rowspan": 2 }
+                }
+            }
+        ]
+    })");
+
+    auto entries = PanelWidgetConfig::build_default_grid(12, 24);
+    auto* ps = find_entry(entries, "print_status");
+    REQUIRE(ps);
+    CHECK(ps->col == 8);
+    CHECK(ps->row == 0);
+}

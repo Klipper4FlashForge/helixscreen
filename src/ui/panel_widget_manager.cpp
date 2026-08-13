@@ -318,6 +318,7 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     lv_obj_update_layout(container);
     int content_w = lv_obj_get_content_width(container);
     int content_h = lv_obj_get_content_height(container);
+    const bool content_box_measured = content_w > 0 && content_h > 0;
     if (content_w <= 0 || content_h <= 0) {
         // Nothing legitimate produces this; a container that measures empty
         // after an explicit layout pass is detached or zero-sized. Fall back to
@@ -332,6 +333,28 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
         content_h = lm.height();
     }
     const GridDimensions grid_dims = GridLayout::get_dimensions(breakpoint, content_w, content_h);
+
+    // Apply the default anchors now that the grid is known. build_defaults()
+    // runs at config load with no container to measure, and the panel extent it
+    // could have guessed from is not what the track count divides — the content
+    // box is, and the two disagree enough to pick a different grid (1042x2141
+    // against 1080x2400 is 6x14 tracks against 8x16 on a scaled phone).
+    //
+    // Only against a real measurement, for the same reason the pre-v22 port is:
+    // this rewrites coordinates and drops the tag, so running it on the panel
+    // -extent fallback above would bake a layout for a grid this panel never
+    // has. Skipping leaves the tag set and the widgets auto-placed, which is
+    // what an unanchored default already looks like, and the next populate
+    // that measures cleanly resolves it.
+    if (widget_config.has_pending_anchors()) {
+        if (content_box_measured) {
+            widget_config.apply_pending_anchors(grid_dims.cols, grid_dims.rows);
+        } else {
+            spdlog::warn("[PanelWidgetManager] '{}': deferring the default anchors until the "
+                         "content box measures",
+                         panel_id);
+        }
+    }
 
     // Build grid placement tracker to compute positions
     GridLayout grid(breakpoint, grid_dims);

@@ -141,6 +141,7 @@ void PanelWidgetConfig::load() {
     pages_.clear();
     main_page_index_ = 0;
     next_page_id_ = 1;
+    pending_anchors_ = false;
 
     // Per-panel path: /printers/{active}/panel_widgets/<panel_id>
     std::string panel_path = config_.df() + "panel_widgets/" + panel_id_;
@@ -170,6 +171,12 @@ void PanelWidgetConfig::load() {
         main_page_index_ =
             static_cast<size_t>(helix::json_util::safe_int(saved, "main_page_index"));
         next_page_id_ = helix::json_util::safe_int(saved, "next_page_id");
+
+        // Defaults written before any grid was measured. Compared against the
+        // one value build_defaults() writes, so anything else — including the
+        // key being absent, which is every layout that predates this — reads as
+        // "already placed" and is left alone.
+        pending_anchors_ = helix::json_util::safe_string(saved, "anchors") == "pending";
 
         size_t page_idx = 0;
         for (const auto& page_json : saved["pages"]) {
@@ -210,6 +217,7 @@ void PanelWidgetConfig::load() {
             PageConfig page;
             page.id = "main";
             page.widgets = build_defaults();
+            pending_anchors_ = true;
             pages_.push_back(std::move(page));
             save();
         }
@@ -228,6 +236,7 @@ void PanelWidgetConfig::load() {
 
         if (entries.empty()) {
             entries = build_defaults();
+            pending_anchors_ = true;
         } else {
             // If no entries have grid positions, this is a pre-grid config — reset to defaults.
             bool has_any_grid =
@@ -238,6 +247,7 @@ void PanelWidgetConfig::load() {
                              "grid for '{}'",
                              panel_id_);
                 entries = build_defaults();
+                pending_anchors_ = true;
             }
         }
 
@@ -269,6 +279,7 @@ void PanelWidgetConfig::load() {
     PageConfig page;
     page.id = "main";
     page.widgets = build_defaults();
+    pending_anchors_ = true;
     pages_.push_back(std::move(page));
     next_page_id_ = 1;
     save(); // Persist default grid positions for future launches
@@ -370,6 +381,12 @@ void PanelWidgetConfig::save() {
     root["pages"] = std::move(pages_json);
     root["main_page_index"] = main_page_index_;
     root["next_page_id"] = next_page_id_;
+    // Has to survive a save that lands before the anchors are applied: the
+    // placement engine writes auto-placed positions back on every populate, so
+    // dropping the tag here would make an unanchored default look arranged.
+    if (pending_anchors_) {
+        root["anchors"] = "pending";
+    }
 
     config_.set<json>(config_.df() + "panel_widgets/" + panel_id_, root);
     config_.save();
@@ -415,6 +432,7 @@ void PanelWidgetConfig::reset_to_defaults() {
     pages_.resize(1);
     pages_[0].id = "main";
     pages_[0].widgets = build_defaults();
+    pending_anchors_ = true;
     main_page_index_ = 0;
     next_page_id_ = 1;
 }
@@ -559,6 +577,60 @@ const char* choose_breakpoint_key(const nlohmann::json& by_bp, UiBreakpoint brea
     return nullptr;
 }
 
+/// Placement key for a tier on a measured grid, or "" when nothing matches.
+///
+/// Walks the same tier fallback chain, but tries the grid-qualified form
+/// ("<tier>@<cols>x<rows>") before the bare tier name at each rung. Tier
+/// specificity still dominates: a table entry for this tier on some other grid
+/// beats one for a coarser tier on this exact grid, because the tier is what
+/// decides how much text has to fit. The grid breaks ties within a tier, which
+/// is the case the UI scale creates - one panel, one tier, a different track
+/// count per scale.
+///
+/// With @p grid_cols / @p grid_rows at 0 this is exactly choose_breakpoint_key,
+/// so a caller that cannot measure a grid resolves as it always did.
+std::string choose_placement_key(const nlohmann::json& by_bp, UiBreakpoint breakpoint,
+                                 int grid_cols, int grid_rows) {
+    static const char* fallback_order[][3] = {
+        {"micro", "tiny", "small"},     // bp=0 Micro
+        {"tiny", "small", nullptr},     // bp=1 Tiny
+        {"small", nullptr},             // bp=2 Small
+        {"medium", nullptr},            // bp=3 Medium
+        {"large", nullptr},             // bp=4 Large
+        {"xlarge", "large", nullptr},   // bp=5 XLarge
+        {"xxlarge", "xlarge", "large"}, // bp=6 XXLarge
+    };
+    static_assert(std::size(fallback_order) == to_int(UiBreakpoint::XXLarge) + 1,
+                  "fallback_order must cover every UiBreakpoint tier");
+
+    const int bp_idx = to_int(breakpoint);
+    if (bp_idx < 0 || bp_idx >= static_cast<int>(std::size(fallback_order))) {
+        return {};
+    }
+
+    const bool have_grid = grid_cols > 0 && grid_rows > 0;
+    const std::string suffix =
+        have_grid ? "@" + std::to_string(grid_cols) + "x" + std::to_string(grid_rows)
+                  : std::string{};
+
+    for (int i = 0; i < 3 && fallback_order[bp_idx][i]; ++i) {
+        const std::string tier = fallback_order[bp_idx][i];
+        if (have_grid && by_bp.contains(tier + suffix)) {
+            return tier + suffix;
+        }
+        if (by_bp.contains(tier)) {
+            return tier;
+        }
+    }
+    return {};
+}
+
+/// Whether an anchor's rectangle lies wholly inside a track grid.
+bool anchor_fits_grid(int col, int row, int colspan, int rowspan, int cols, int rows) {
+    return col >= 0 && row >= 0 && colspan >= 1 && rowspan >= 1 && col + colspan <= cols &&
+           row + rowspan <= rows;
+}
+
 /// Read a table's `disabled` map — `{ "<breakpoint>": ["id", ...] }` — into `out`.
 ///
 /// The base table and every variant carry the same optional key, so both go
@@ -588,7 +660,7 @@ void collect_disabled(const nlohmann::json& table, UiBreakpoint breakpoint,
 
 } // namespace
 
-std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
+std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid(int grid_cols, int grid_rows) {
     const auto& defs = get_all_widget_defs();
 
     // Determine current breakpoint for per-breakpoint anchor sizing
@@ -703,8 +775,9 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
                     continue;
                 const nlohmann::json& placements = *placements_it;
 
-                const char* chosen_name = choose_breakpoint_key(placements, breakpoint);
-                if (chosen_name) {
+                const std::string chosen_name =
+                    choose_placement_key(placements, breakpoint, grid_cols, grid_rows);
+                if (!chosen_name.empty()) {
                     // find, not operator[]: `placements` is a const reference
                     // now, and const operator[] on a missing key is only
                     // JSON_ASSERT-guarded — under NDEBUG it dereferences end().
@@ -763,6 +836,48 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
                 {"print_status", 0, 4, 4, 4},
                 {"tips", 4, 0, 4, 4},
             };
+        }
+    }
+
+    // Drop anchors the measured grid cannot hold. Keeping one would hand it to
+    // clamp_to_grid(), which shrinks the span and walks the origin back until it
+    // fits — on a grid narrower than the table assumed that lands several
+    // widgets on the same track, each looking like a chosen position. An
+    // unseated widget goes through the auto-placement pass below instead, which
+    // is the honest answer: this anchor does not describe this grid.
+    if (grid_cols > 0 && grid_rows > 0) {
+        // Manual join — fmt::join needs fmt/ranges.h, which spdlog's bundled
+        // copy does not carry.
+        std::string rejected;
+        int rejected_count = 0;
+        anchors.erase(std::remove_if(anchors.begin(), anchors.end(),
+                                     [&](const AnchorPlacement& a) {
+                                         // A widget this tier switches off is never placed, so
+                                         // whether its anchor fits is not a fact about anything.
+                                         // `tips` on micro reaches here only because it has no
+                                         // micro placement and inherits small's, which is authored
+                                         // for a taller grid — warning about it would put a false
+                                         // alarm in every CC1 log.
+                                         if (disabled_ids.count(a.id) > 0) {
+                                             return false;
+                                         }
+                                         if (anchor_fits_grid(a.col, a.row, a.colspan, a.rowspan,
+                                                              grid_cols, grid_rows)) {
+                                             return false;
+                                         }
+                                         if (!rejected.empty()) {
+                                             rejected += ", ";
+                                         }
+                                         rejected += a.id;
+                                         ++rejected_count;
+                                         return true;
+                                     }),
+                      anchors.end());
+        if (rejected_count > 0) {
+            spdlog::warn("[PanelWidgetConfig] {} of {} default anchors do not fit the {}x{} track "
+                         "grid and will be auto-placed: {}",
+                         rejected_count, rejected_count + static_cast<int>(anchors.size()),
+                         grid_cols, grid_rows, rejected);
         }
     }
 
@@ -902,6 +1017,37 @@ bool PanelWidgetConfig::is_grid_format() const {
 
 std::vector<PanelWidgetEntry> PanelWidgetConfig::build_defaults() {
     return build_default_grid();
+}
+
+void PanelWidgetConfig::apply_pending_anchors(int grid_cols, int grid_rows) {
+    if (!pending_anchors_ || grid_cols <= 0 || grid_rows <= 0) {
+        return;
+    }
+
+    // Rebuild rather than patch. The anchor table decides enable/disable per
+    // tier and carries per-widget config, and a grid-qualified entry may differ
+    // from the tier entry in any of those, not only in coordinates — so the
+    // answer for this grid is whatever build_default_grid() says for it.
+    //
+    // Page 0 only. Extra pages are user-made, and a user who has built one has
+    // arranged page 0 too, so a layout still tagged pending has exactly one.
+    const auto rebuilt = build_default_grid(grid_cols, grid_rows);
+    if (!rebuilt.empty() && !pages_.empty()) {
+        pages_[0].widgets = rebuilt;
+    }
+
+    int anchored = 0;
+    for (const auto& e : pages_[0].widgets) {
+        if (e.has_grid_position()) {
+            ++anchored;
+        }
+    }
+    spdlog::info("[PanelWidgetConfig] '{}': applied default anchors for a {}x{} track grid, {} of "
+                 "{} widget(s) placed",
+                 panel_id_, grid_cols, grid_rows, anchored, pages_[0].widgets.size());
+
+    pending_anchors_ = false;
+    save();
 }
 
 } // namespace helix

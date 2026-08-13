@@ -138,8 +138,42 @@ class PanelWidgetConfig {
     /// Remove an entry entirely from ANY page (first match).
     void delete_entry(const std::string& id);
 
-    /// Generate default grid layout, placing enabled widgets sequentially in 1x1 cells.
-    static std::vector<PanelWidgetEntry> build_default_grid();
+    /// Generate the default layout for a measured grid.
+    ///
+    /// @p grid_cols / @p grid_rows are the track counts the layout will be
+    /// placed on, or 0 when they are not known yet — which is every caller that
+    /// runs before the widget container has been measured, config load
+    /// included.
+    ///
+    /// Knowing the grid changes two things. A placement may be keyed by the
+    /// grid it was authored for ("xxlarge@6x14") and that entry beats the bare
+    /// tier key, because a breakpoint names a panel while the UI scale gives
+    /// that same panel a different track count per scale. And an anchor that
+    /// does not fit is dropped to auto-placement instead of being handed to
+    /// clamp_to_grid, which would shove its origin back until the span fitted
+    /// and seat it on top of a neighbour looking deliberate.
+    static std::vector<PanelWidgetEntry> build_default_grid(int grid_cols = 0, int grid_rows = 0);
+
+    /// True while this layout is the default set with its anchors not yet
+    /// applied, because no grid had been measured when it was built.
+    ///
+    /// build_defaults() runs at config load, where the widget container does
+    /// not exist and therefore neither does its content box - and the content
+    /// box, not the panel extent, is what the track count divides (1042x2141
+    /// against 1080x2400 on a scaled phone, 6x14 tracks against 8x16). So the
+    /// anchors cannot be chosen there. PanelWidgetManager applies them at the
+    /// first measured populate and clears the tag.
+    ///
+    /// A positive tag, written only by the defaults path, so a layout that
+    /// predates this or that a user has since arranged reads as "already
+    /// placed" and is never overwritten.
+    bool has_pending_anchors() const {
+        return pending_anchors_;
+    }
+
+    /// Apply the default anchors for a now-known grid, then persist and clear
+    /// the tag. No-op unless has_pending_anchors().
+    void apply_pending_anchors(int grid_cols, int grid_rows);
 
     /// Check if config uses grid format (has any entries with col/row fields)
     bool is_grid_format() const;
@@ -160,6 +194,7 @@ class PanelWidgetConfig {
     size_t main_page_index_ = 0;
     int next_page_id_ = 1;
     bool loaded_ = false;
+    bool pending_anchors_ = false;
 
     static std::vector<PanelWidgetEntry> build_defaults();
 
