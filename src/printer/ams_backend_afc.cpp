@@ -2512,8 +2512,15 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
                 try {
                     int tool_num = std::stoi(map_str.substr(1));
                     if (tool_num >= 0 && tool_num <= 64) {
-                        // Update registry tool mapping (also sets slot.mapped_tool)
-                        slots_.set_tool_mapping(slot_index, tool_num);
+                        // Update registry tool mapping (also sets slot.mapped_tool).
+                        // Firmware-sourced: this is AFC's own `map` field coming
+                        // back over the subscription, which is the only write here
+                        // that proves the printer applied a mapping (#1270).
+                        // set_slot_info()'s write is NOT this — that one is our
+                        // own intent, sent as SET_MAP a few lines later.
+                        slots_.set_tool_mapping(
+                            slot_index, tool_num,
+                            helix::printer::SlotRegistry::MappingSource::Firmware);
                         spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, tool_num);
                         mapped = true;
 
@@ -5049,6 +5056,11 @@ helix::printer::ToolMappingCapabilities AmsBackendAfc::get_tool_mapping_capabili
 std::vector<int> AmsBackendAfc::get_tool_mapping() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return slots_.build_system_info().tool_to_slot_map;
+}
+
+uint64_t AmsBackendAfc::firmware_tool_mapping_generation() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return slots_.firmware_mapping_generation();
 }
 
 helix::printer::EndlessSpoolConfig AmsBackendAfc::get_endless_spool_config() const {

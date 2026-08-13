@@ -2625,6 +2625,7 @@ translations:
   '{} macro not configured': '{} 宏未配置'
   '{} may cause unintended changes. Are you sure?': '{} 可能导致意外更改。确定吗？'
   '{} more taps to {} beta features': 再点击 {} 次以{}测试功能
+  '{} needs the HelixPrint plugin. Printing original file.': ''
   '{} new hardware available': '{} 个新硬件可用'
   '{} preset{}': '{} 个预设{}'
   '{} target set to {}°C': '{} 目标已设为 {}°C'

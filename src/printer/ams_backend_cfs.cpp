@@ -1223,6 +1223,16 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
         if (is_full_update) {
             auto new_info = parse_box_status(box);
 
+            // Firmware-sourced mapping tick. box.map is what the CFS itself
+            // reports — verified on a live K2: BOX_MODIFY_TN T1A=T1B echoed back
+            // as a single-key delta in ~0.7s. This is what lets a remap restore
+            // be confirmed against the box rather than against the optimistic
+            // write set_tool_mapping() makes before sending (#1270). Bumped here
+            // rather than inside parse_box_status because that parser is static.
+            if (box.contains("map") && box["map"].is_object()) {
+                ++firmware_map_generation_;
+            }
+
             // Build observed per-slot RFID fingerprints for every unit present
             // in this notification. Slots that weren't included stay empty
             // (observed_uids stays at default ""), and empty-UID observations
@@ -2532,6 +2542,20 @@ helix::printer::ToolMappingCapabilities AmsBackendCfs::get_tool_mapping_capabili
 std::vector<int> AmsBackendCfs::get_tool_mapping() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return system_info_.tool_to_slot_map;
+}
+
+bool AmsBackendCfs::reports_firmware_tool_mapping() const {
+    // Everywhere except the K1 official CFS upgrade firmware, where
+    // BOX_MODIFY_TN is a confirmed no-op (#968 Phase 5): the command is
+    // accepted and nothing changes, so no box frame with a new map ever
+    // arrives. Claiming confirmation support there would leave a restore
+    // waiting forever and strand pending_remap.json (#1270).
+    return macro_variant_ != CfsMacroVariant::K1;
+}
+
+uint64_t AmsBackendCfs::firmware_tool_mapping_generation() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return firmware_map_generation_;
 }
 
 std::vector<helix::printer::DeviceAction> AmsBackendCfs::get_device_actions() const {

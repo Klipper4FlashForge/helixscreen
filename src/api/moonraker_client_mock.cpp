@@ -276,6 +276,12 @@ int MoonrakerClientMock::connect(const char* url, std::function<void()> on_conne
                                  [[maybe_unused]] std::function<void()> on_disconnected) {
     spdlog::debug("[MoonrakerClientMock] Simulating connection to: {}", url ? url : "(null)");
 
+    // Record the URL exactly as the real connect() does. Without this,
+    // get_last_url() stays empty for the whole life of a mock session and
+    // anything asking which host we are talking to -- is_local_moonraker(),
+    // telemetry topology -- silently reads "no connection".
+    set_last_url(url ? url : "");
+
     // Simulate connection state change (same as real client)
     set_connection_state(ConnectionState::CONNECTING);
 

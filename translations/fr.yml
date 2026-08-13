@@ -2625,6 +2625,7 @@ translations:
   '{} macro not configured': Macro {} non configurée
   '{} may cause unintended changes. Are you sure?': '{} peut entraîner des modifications non souhaitées. Êtes-vous sûr ?'
   '{} more taps to {} beta features': '{} appuis supplémentaires pour {} les fonctionnalités bêta'
+  '{} needs the HelixPrint plugin. Printing original file.': ''
   '{} new hardware available': '{} nouveau matériel disponible'
   '{} preset{}': '{} préréglage{}'
   '{} target set to {}°C': Cible {} réglée à {}°C
