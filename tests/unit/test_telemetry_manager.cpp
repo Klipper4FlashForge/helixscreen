@@ -1649,10 +1649,10 @@ namespace {
 
 /// Mock client that reports a caller-supplied websocket URL.
 ///
-/// MoonrakerClientMock::connect() simulates a connection without recording the
-/// URL, so get_last_url() is always empty under the plain mock. That is worth
-/// knowing: a test that relies on the bare mock cannot tell a working
-/// implementation from one that never consults the URL at all.
+/// MoonrakerClientMock::connect() does record the URL, so these cases could be
+/// driven through it. Overriding the accessor instead keeps them synchronous:
+/// the mock's connect() sleeps to simulate a realistic handshake and starts the
+/// temperature simulation, neither of which this test wants three times over.
 class StubUrlClient : public MoonrakerClientMock {
   public:
     explicit StubUrlClient(std::string url) : url_(std::move(url)) {}
