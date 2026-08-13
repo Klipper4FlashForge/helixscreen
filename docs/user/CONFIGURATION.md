@@ -606,7 +606,7 @@ Can also be overridden with the `HELIX_TOUCH_JITTER` environment variable.
 ### `force_calibration`
 **Type:** boolean
 **Default:** `false`
-**Description:** Force touch calibration on next startup, even if the device doesn't normally require it. After successful calibration, this flag is automatically cleared. Useful when touch input is inaccurate but HelixScreen doesn't show the calibration option in Settings.
+**Description:** Force the calibration wizard to run on next startup, even if the device doesn't normally require it. After successful calibration, this flag is automatically cleared. Mainly useful when touch is too far off to reach Settings at all — the Settings entry point itself is offered for any touchscreen, so you rarely need this just to find the option.
 
 ---
 
