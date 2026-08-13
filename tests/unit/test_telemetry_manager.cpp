@@ -1616,6 +1616,50 @@ TEST_CASE_METHOD(TelemetryTestFixture, "record_memory_snapshot creates valid eve
 // Hardware Profile Event [telemetry][hardware]
 // ============================================================================
 
+TEST_CASE("classify_moonraker_locality distinguishes local, remote and unknown",
+          "[telemetry][hardware]") {
+    using TM = TelemetryManager;
+
+    SECTION("a loopback websocket URL is local") {
+        CHECK(TM::classify_moonraker_locality("ws://localhost:7125/websocket") == true);
+        CHECK(TM::classify_moonraker_locality("ws://127.0.0.1:7125/websocket") == true);
+        CHECK(TM::classify_moonraker_locality("ws://[::1]:7125/websocket") == true);
+    }
+
+    SECTION("a routable host is remote") {
+        CHECK(TM::classify_moonraker_locality("ws://192.168.1.100:7125/websocket") == false);
+        CHECK(TM::classify_moonraker_locality("ws://printer.local:7125/websocket") == false);
+        CHECK(TM::classify_moonraker_locality("wss://klipper.lan/websocket") == false);
+    }
+
+    SECTION("no URL is unknown, not remote") {
+        // The mock client never records a URL, and a client that has not
+        // connected yet has none either. Reporting those as "remote" would
+        // invent data; the field must be omitted so the aggregate can tell
+        // "not measured" apart from a real answer.
+        CHECK_FALSE(TM::classify_moonraker_locality("").has_value());
+    }
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture,
+                 "hardware_profile omits moonraker_is_local when no URL is known",
+                 "[telemetry][hardware]") {
+    TelemetryManager::instance().set_enabled(true);
+    TelemetryManager::instance().clear_queue();
+    TelemetryManager::instance().record_hardware_profile();
+
+    auto snapshot = TelemetryManager::instance().get_queue_snapshot();
+    REQUIRE_FALSE(snapshot.empty());
+
+    for (const auto& event : snapshot) {
+        if (event["event"] == "hardware_profile") {
+            // No connected client in the test fixture, so the field must be
+            // absent rather than present-and-false.
+            CHECK_FALSE(event.contains("moonraker_is_local"));
+        }
+    }
+}
+
 TEST_CASE_METHOD(TelemetryTestFixture, "record_hardware_profile creates valid event",
                  "[telemetry][hardware]") {
     TelemetryManager::instance().set_enabled(true);
