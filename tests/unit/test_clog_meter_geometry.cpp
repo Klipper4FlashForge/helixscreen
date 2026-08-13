@@ -145,6 +145,54 @@ TEST_CASE("clog_meter_status: an unset threshold has no opinion", "[clog][status
 }
 
 // ===========================================================================
+// ClogMeterSample — the derived state both renderers must agree on
+// ===========================================================================
+
+TEST_CASE("ClogMeterSample: only Flowguard reads out from a centre", "[clog][model][1017]") {
+    // The arc encodes this as LV_ARC_MODE_SYMMETRICAL over 0..200 and the bar
+    // as centre-out geometry. Two encodings are fine; two decisions are not.
+    ClogMeterSample fg;
+    fg.mode = kMode_Flowguard;
+    CHECK(fg.is_symmetrical());
+
+    for (int mode : {static_cast<int>(ClogMeterMode::None), kMode_Encoder, kMode_Buffer}) {
+        ClogMeterSample s;
+        s.mode = mode;
+        INFO("mode " << mode);
+        CHECK_FALSE(s.is_symmetrical());
+    }
+}
+
+TEST_CASE("ClogMeterSample: derived state matches the free functions", "[clog][model][1017]") {
+    // The sample is a convenience over the same rules, so a renderer reading
+    // either spelling cannot disagree with one reading the other.
+    ClogMeterSample s;
+    s.mode = kMode_Buffer;
+    s.value = 0;
+    s.danger_pct = 75;
+    CHECK(s.is_safe() == clog_meter_is_safe(s.mode, s.value));
+    CHECK(s.status() == clog_meter_status(s.mode, s.value, s.warning, s.danger_pct));
+
+    s.mode = kMode_Flowguard;
+    s.value = -90;
+    s.danger_pct = 80;
+    s.warning = 0;
+    CHECK(s.is_safe() == clog_meter_is_safe(s.mode, s.value));
+    CHECK(s.status() == ClogMeterStatus::Warning);
+}
+
+TEST_CASE("ClogMeterSample: a default sample draws nothing", "[clog][model][1017]") {
+    // UiClogBar::relayout() runs from SIZE_CHANGED before the model exists and
+    // falls back to a default sample. That must be inert, not a fault.
+    ClogMeterSample s;
+    CHECK(s.kind() == ClogMeterMode::None);
+    CHECK_FALSE(s.is_safe());
+    CHECK_FALSE(s.is_symmetrical());
+    CHECK(s.status() == ClogMeterStatus::Ok);
+    CHECK(clog_bar_geometry(s.mode, s.value, s.danger_pct, s.peak_pct, kTrack).fill_w == 0);
+}
+
+// ===========================================================================
 // clog_bar_geometry — linear modes
 // ===========================================================================
 

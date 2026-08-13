@@ -74,6 +74,44 @@ ClogMeterStatus clog_meter_status(int mode, int value, int warning, int danger_p
 /// detection hardware at all and the whole widget hides itself from XML.
 bool clog_meter_is_safe(int mode, int value);
 
+/// One coherent read of the five `clog_meter_*` subjects, plus everything the
+/// renderers have to agree about.
+///
+/// The arc and the bar draw the same quantity in two shapes, and every time one
+/// of them decided something for itself the two drifted: the arc treated an
+/// untracked AFC buffer as "nothing to report" while the bar drew an empty
+/// track, and each spelled "this mode is symmetrical" as its own `mode == 2`.
+/// Anything both presentations must answer the same way belongs here.
+struct ClogMeterSample {
+    int mode = 0;
+    int value = 0;
+    int warning = 0;
+    int danger_pct = 0;
+    int peak_pct = 0;
+
+    [[nodiscard]] ClogMeterMode kind() const {
+        return static_cast<ClogMeterMode>(mode);
+    }
+
+    /// Nothing to report, as opposed to a measured zero. Both renderers stand
+    /// a check icon in for this.
+    [[nodiscard]] bool is_safe() const {
+        return clog_meter_is_safe(mode, value);
+    }
+
+    /// The reading runs out from a centre rather than up from nothing, so the
+    /// two ends mean opposite faults. The arc encodes this as an LVGL
+    /// symmetrical range and the bar as centre-out geometry; the *decision* is
+    /// this one.
+    [[nodiscard]] bool is_symmetrical() const {
+        return kind() == ClogMeterMode::Flowguard;
+    }
+
+    [[nodiscard]] ClogMeterStatus status() const {
+        return clog_meter_status(mode, value, warning, danger_pct);
+    }
+};
+
 /// Width of the value marker and the peak tick, in px. Both are deliberately
 /// thin: the fill carries the reading, and these two only say "here" and
 /// "worst so far". clog_bar_geometry() keeps both inside the track by this

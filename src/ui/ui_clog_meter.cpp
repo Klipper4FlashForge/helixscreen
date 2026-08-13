@@ -6,10 +6,8 @@
 #include "ui_progress_arc.h"
 #include "ui_update_queue.h"
 
-#include "ams_state.h"
 #include "clog_meter_geometry.h"
 #include "lvgl/lvgl.h"
-#include "observer_factory.h"
 
 #include <spdlog/spdlog.h>
 
@@ -62,7 +60,8 @@ UiClogMeter::UiClogMeter(lv_obj_t* parent) {
     value_text_ = lv_obj_find_by_name(root_, "clog_value_text");
     safe_icon_ = lv_obj_find_by_name(root_, "clog_safe_icon");
 
-    setup_observers();
+    model_.emplace([this](const ClogMeterSample& s) { apply(s); });
+    apply(model_->sample());
     spdlog::debug("[ClogMeter] Initialized");
 }
 
@@ -78,9 +77,10 @@ UiClogMeter::~UiClogMeter() {
         lv_obj_remove_event_cb_with_user_data(card, on_card_size_changed, this);
     }
 
-    mode_obs_.reset();
-    value_obs_.reset();
-    warning_obs_.reset();
+    // Before the widget pointers below are cleared: its callback calls apply(),
+    // which reads them.
+    model_.reset();
+
     root_ = nullptr;
     arc_ = nullptr;
     safe_icon_ = nullptr;
@@ -91,86 +91,43 @@ UiClogMeter::~UiClogMeter() {
     spdlog::debug("[ClogMeter] Destroyed");
 }
 
-void UiClogMeter::setup_observers() {
-    auto& ams = AmsState::instance();
-
-    // Use immediate observers — these callbacks only update local state and
-    // arc properties, they don't modify observer lifecycle (safe per issue #82)
-    mode_obs_ = observe_int_immediate<UiClogMeter>(
-        ams.get_clog_meter_mode_subject(), this,
-        [](UiClogMeter* self, int mode) { self->on_mode_changed(mode); });
-
-    value_obs_ = observe_int_immediate<UiClogMeter>(
-        ams.get_clog_meter_value_subject(), this,
-        [](UiClogMeter* self, int value) { self->on_value_changed(value); });
-
-    warning_obs_ = observe_int_immediate<UiClogMeter>(
-        ams.get_clog_meter_warning_subject(), this,
-        [](UiClogMeter* self, int warning) { self->on_warning_changed(warning); });
-}
-
-void UiClogMeter::on_mode_changed(int mode) {
-    current_mode_ = mode;
-
+void UiClogMeter::apply(const ClogMeterSample& s) {
     if (!arc_)
         return;
 
-    if (mode == 2) {
-        // Flowguard: symmetrical mode, range -100..+100 mapped to 0..200
+    if (s.is_symmetrical()) {
+        // Flowguard: -100..+100 mapped onto LVGL's 0..200 symmetrical range,
+        // which draws out from the middle. The bar spells the same decision as
+        // centre-out geometry; ClogMeterSample is where the two agree.
         lv_arc_set_range(arc_, 0, 200);
         lv_arc_set_mode(arc_, LV_ARC_MODE_SYMMETRICAL);
-        lv_arc_set_value(arc_, 100); // Center
+        lv_arc_set_value(arc_, s.value + 100);
     } else {
-        // Encoder/AFC/none: normal 0-100
         lv_arc_set_range(arc_, 0, 100);
         lv_arc_set_mode(arc_, LV_ARC_MODE_NORMAL);
-        lv_arc_set_value(arc_, 0);
+        lv_arc_set_value(arc_, s.value);
     }
 
-    update_arc_color();
-    update_safe_state();
-    spdlog::debug("[ClogMeter] Mode changed to {}", mode);
+    update_arc_color(s);
+    update_safe_state(s);
 }
 
-void UiClogMeter::on_value_changed(int value) {
-    current_value_ = value;
-
-    if (!arc_)
-        return;
-
-    if (current_mode_ == 2) {
-        // Flowguard: -100..+100 → 0..200
-        lv_arc_set_value(arc_, value + 100);
-    } else {
-        lv_arc_set_value(arc_, value);
-    }
-
-    update_arc_color();
-    update_safe_state();
-}
-
-void UiClogMeter::on_warning_changed(int warning) {
-    current_warning_ = warning;
-    update_arc_color();
-}
-
-void UiClogMeter::update_arc_color() {
+void UiClogMeter::update_arc_color(const ClogMeterSample& s) {
     if (!arc_)
         return;
 
     // Dynamic indicator colour is an intentional exception to the "no C++
     // styling" rule. The rule itself lives in clog_meter_geometry.h so the
     // horizontal bar (#1017) draws the same ramp from the same tokens.
-    lv_obj_set_style_arc_color(arc_,
-                               resolve_clog_tint(current_mode_, current_value_, current_warning_),
+    lv_obj_set_style_arc_color(arc_, resolve_clog_tint(s.mode, s.value, s.warning),
                                LV_PART_INDICATOR);
 }
 
-void UiClogMeter::update_safe_state() {
+void UiClogMeter::update_safe_state(const ClogMeterSample& s) {
     // "Nothing to report" rather than "zero danger": the arc goes away
     // entirely and the check icon stands in for it. The bar reads the same
     // predicate so the two presentations cannot drift.
-    const bool safe = clog_meter_is_safe(current_mode_, current_value_);
+    const bool safe = s.is_safe();
 
     if (arc_) {
         if (safe) {

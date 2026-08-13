@@ -250,6 +250,7 @@ src/ui/page_scroll_auto_inject.cpp
 src/ui/page_scroll_controller.cpp
 src/ui/panel_widget_manager.cpp
 src/ui/clog_meter_geometry.cpp
+src/ui/clog_meter_model.cpp
 src/ui/panel_widget_registry.cpp
 src/ui/panel_widgets/active_spool_widget.cpp
 src/ui/panel_widgets/camera_widget.cpp
