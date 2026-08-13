@@ -45,6 +45,18 @@ ClogMeterTint clog_meter_tint(int mode, int value, int warning);
 /// cannot drift into resolving it differently.
 lv_color_t resolve_clog_tint(int mode, int value, int warning);
 
+/// Whether the reading means "nothing to report" rather than "zero danger".
+///
+/// AFC reports a buffer distance it is not currently tracking as zero, and a
+/// distance at or beyond the fault threshold collapses to zero as well
+/// (`BufferHealth::danger_value()`). Neither is a measurement, so both
+/// renderers stand a check icon in place of the reading instead of drawing an
+/// empty scale — which is what the bar did before it shared this predicate.
+///
+/// This is not the same as `ClogMeterMode::None`: mode 0 means there is no
+/// detection hardware at all and the whole widget hides itself from XML.
+bool clog_meter_is_safe(int mode, int value);
+
 /// Width of the value marker and the peak tick, in px. Both are deliberately
 /// thin: the fill carries the reading, and these two only say "here" and
 /// "worst so far". clog_bar_geometry() keeps both inside the track by this

@@ -48,6 +48,10 @@ lv_color_t resolve_clog_tint(int mode, int value, int warning) {
     return lv_color_mix(theme_manager_get_color(t.a), theme_manager_get_color(t.b), t.mix_a);
 }
 
+bool clog_meter_is_safe(int mode, int value) {
+    return static_cast<ClogMeterMode>(mode) == ClogMeterMode::Buffer && value == 0;
+}
+
 ClogBarGeometry clog_bar_geometry(int mode, int value, int danger_pct, int peak_pct, int track_w) {
     ClogBarGeometry g;
     if (track_w <= 0) {

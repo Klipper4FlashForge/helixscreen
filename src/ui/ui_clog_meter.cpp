@@ -3,7 +3,6 @@
 
 #include "ui_clog_meter.h"
 
-#include "ui_fonts.h"
 #include "ui_progress_arc.h"
 #include "ui_update_queue.h"
 
@@ -11,7 +10,6 @@
 #include "clog_meter_geometry.h"
 #include "lvgl/lvgl.h"
 #include "observer_factory.h"
-#include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -60,8 +58,9 @@ UiClogMeter::UiClogMeter(lv_obj_t* parent) {
         resize_arc();
     }
 
-    // Cached so the safe state can hide it
+    // Cached so the safe state can swap the reading for the check icon
     value_text_ = lv_obj_find_by_name(root_, "clog_value_text");
+    safe_icon_ = lv_obj_find_by_name(root_, "clog_safe_icon");
 
     setup_observers();
     spdlog::debug("[ClogMeter] Initialized");
@@ -168,10 +167,10 @@ void UiClogMeter::update_arc_color() {
 }
 
 void UiClogMeter::update_safe_state() {
-    // AFC reports a buffer distance it is not currently tracking as zero. That
-    // is "nothing to report", not "zero danger", so the arc goes away entirely
-    // and the check icon stands in for it.
-    const bool safe = (current_mode_ == 3 && current_value_ == 0);
+    // "Nothing to report" rather than "zero danger": the arc goes away
+    // entirely and the check icon stands in for it. The bar reads the same
+    // predicate so the two presentations cannot drift.
+    const bool safe = clog_meter_is_safe(current_mode_, current_value_);
 
     if (arc_) {
         if (safe) {
@@ -189,16 +188,6 @@ void UiClogMeter::update_safe_state() {
         }
     }
 
-    // Created on first need — most printers never reach the safe state.
-    if (safe && !safe_icon_ && arc_container_) {
-        safe_icon_ = lv_label_create(arc_container_);
-        lv_label_set_text(safe_icon_, ICON_CHECK_CIRCLE);
-        lv_obj_set_style_text_font(safe_icon_, &mdi_icons_24, 0);
-        lv_obj_set_style_text_color(safe_icon_, theme_manager_get_color("primary"), 0);
-        lv_obj_align(safe_icon_, LV_ALIGN_CENTER, 0, 0);
-        lv_obj_remove_flag(safe_icon_, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_flag(safe_icon_, LV_OBJ_FLAG_EVENT_BUBBLE);
-    }
     if (safe_icon_) {
         if (safe) {
             lv_obj_remove_flag(safe_icon_, LV_OBJ_FLAG_HIDDEN);

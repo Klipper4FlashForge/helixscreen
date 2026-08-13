@@ -78,6 +78,31 @@ TEST_CASE("clog_meter_tint: a negative reading tints by magnitude", "[clog][tint
 }
 
 // ===========================================================================
+// clog_meter_is_safe
+// ===========================================================================
+
+TEST_CASE("clog_meter_is_safe: only the buffer mode reports nothing", "[clog][safe][1017]") {
+    CHECK(clog_meter_is_safe(kMode_Buffer, 0));
+
+    // A buffer reading of any size is a measurement, so it draws.
+    CHECK_FALSE(clog_meter_is_safe(kMode_Buffer, 1));
+    CHECK_FALSE(clog_meter_is_safe(kMode_Buffer, 100));
+}
+
+TEST_CASE("clog_meter_is_safe: zero is a real reading in the other modes", "[clog][safe][1017]") {
+    // Encoder zero means "no clog", and Flowguard zero means "dead centre" —
+    // both are measurements the widget must keep drawing.
+    CHECK_FALSE(clog_meter_is_safe(kMode_Encoder, 0));
+    CHECK_FALSE(clog_meter_is_safe(kMode_Flowguard, 0));
+}
+
+TEST_CASE("clog_meter_is_safe: no hardware is not the safe state", "[clog][safe][1017]") {
+    // Mode 0 hides the whole widget from XML; conflating the two would leave
+    // a check icon standing in for a printer that cannot detect a clog at all.
+    CHECK_FALSE(clog_meter_is_safe(static_cast<int>(ClogMeterMode::None), 0));
+}
+
+// ===========================================================================
 // clog_bar_geometry — linear modes
 // ===========================================================================
 

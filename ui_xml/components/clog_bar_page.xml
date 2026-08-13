@@ -16,72 +16,71 @@
     shading, all positioned inside clog_bar_track.
 
     Named objects UiClogBar expects: clog_bar, clog_bar_track, clog_bar_fill,
-    clog_bar_marker, clog_bar_peak, clog_bar_danger_lo, clog_bar_danger_hi.
+    clog_bar_marker, clog_bar_peak, clog_bar_danger_lo, clog_bar_danger_hi,
+    clog_bar_center_text, clog_bar_safe_icon.
   -->
   <view name="clog_bar_page"
-        extends="lv_obj" width="100%" height="100%" style_pad_all="0" style_pad_row="#space_xs"
-        style_pad_column="0" scrollable="false" flex_flow="column" style_flex_main_place="center"
-        style_flex_cross_place="center" clickable="false" event_bubble="true">
+        extends="lv_obj" width="100%" height="100%" style_pad_all="0" style_pad_row="#space_xs" style_pad_column="0"
+        scrollable="false" flex_flow="column" style_flex_main_place="center" style_flex_cross_place="center"
+        clickable="false" event_bubble="true">
     <lv_obj name="clog_bar"
-            width="100%" height="content" style_pad_all="0" style_pad_row="#space_xs"
-            style_pad_column="0" scrollable="false" flex_flow="column" style_flex_cross_place="center"
-            clickable="false" event_bubble="true">
+            width="100%" height="content" style_pad_all="0" style_pad_row="#space_xs" style_pad_column="0"
+            scrollable="false" flex_flow="column" style_flex_cross_place="center" clickable="false" event_bubble="true">
       <bind_flag_if_eq subject="clog_meter_mode" flag="hidden" ref_value="0"/>
 
       <!-- Mode on the left, live reading on the right. -->
-      <lv_obj width="100%" height="content" style_pad_all="0" scrollable="false" flex_flow="row"
+      <lv_obj width="100%"
+              height="content" style_pad_all="0" scrollable="false" flex_flow="row"
               style_flex_main_place="space_between" style_flex_cross_place="center" clickable="false"
               event_bubble="true">
         <text_tiny name="clog_bar_mode_text"
-                   bind_text="clog_meter_mode_text" style_text_color="#text_muted" clickable="false"
-                   event_bubble="true"/>
+                   bind_text="clog_meter_mode_text" style_text_color="#text_muted" clickable="false" event_bubble="true"/>
         <text_tiny name="clog_bar_value_text"
-                   bind_text="clog_meter_value_text" style_text_align="right" clickable="false"
-                   event_bubble="true"/>
+                   bind_text="clog_meter_value_text" style_text_align="right" clickable="false" event_bubble="true"/>
       </lv_obj>
 
       <!-- End label, scale, end label. -->
-      <lv_obj width="100%" height="content" style_pad_all="0" style_pad_column="#space_xs"
-              scrollable="false" flex_flow="row" style_flex_cross_place="center" clickable="false"
-              event_bubble="true">
+      <lv_obj width="100%"
+              height="content" style_pad_all="0" style_pad_column="#space_xs" scrollable="false" flex_flow="row"
+              style_flex_cross_place="center" clickable="false" event_bubble="true">
         <text_tiny name="clog_bar_label_left"
                    bind_text="clog_meter_label_left" style_text_color="#text_muted" clickable="false"
                    event_bubble="true"/>
         <lv_obj name="clog_bar_track"
-                flex_grow="1" height="#meter_track_h" style_pad_all="0" style_bg_color="#overlay_bg"
-                style_bg_opa="255" style_radius="#border_radius" style_border_width="0"
-                style_clip_corner="true" scrollable="false" clickable="false" event_bubble="true">
+                height="#meter_track_h" flex_grow="1" style_pad_all="0" style_bg_color="#overlay_bg" style_bg_opa="255"
+                style_radius="#border_radius" style_border_width="0" style_clip_corner="true" scrollable="false"
+                clickable="false" event_bubble="true">
           <!-- Order is z-order: shading behind the fill, ticks on top. -->
           <lv_obj name="clog_bar_danger_lo"
-                  width="0" height="100%" y="0" style_pad_all="0" style_bg_color="#danger"
-                  style_bg_opa="77" style_radius="0" style_border_width="0" scrollable="false"
-                  clickable="false" event_bubble="true"/>
+                  width="0" height="100%" y="0" style_pad_all="0" style_bg_color="#danger" style_bg_opa="77"
+                  style_radius="0" style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
           <lv_obj name="clog_bar_danger_hi"
-                  width="0" height="100%" y="0" style_pad_all="0" style_bg_color="#danger"
-                  style_bg_opa="77" style_radius="0" style_border_width="0" scrollable="false"
-                  clickable="false" event_bubble="true"/>
+                  width="0" height="100%" y="0" style_pad_all="0" style_bg_color="#danger" style_bg_opa="77"
+                  style_radius="0" style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
           <lv_obj name="clog_bar_fill"
-                  width="0" height="100%" y="0" style_pad_all="0" style_bg_opa="255"
-                  style_radius="#border_radius" style_border_width="0" scrollable="false"
-                  clickable="false" event_bubble="true"/>
+                  width="0" height="100%" y="0" style_pad_all="0" style_bg_opa="255" style_radius="#border_radius"
+                  style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
           <lv_obj name="clog_bar_peak"
-                  width="2" height="100%" y="0" style_pad_all="0" style_bg_color="#text_muted"
-                  style_bg_opa="255" style_radius="0" style_border_width="0" scrollable="false"
-                  clickable="false" event_bubble="true"/>
+                  width="2" height="100%" y="0" style_pad_all="0" style_bg_color="#text_muted" style_bg_opa="255"
+                  style_radius="0" style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
           <lv_obj name="clog_bar_marker"
-                  width="2" height="100%" y="0" style_pad_all="0" style_bg_color="#text"
-                  style_bg_opa="255" style_radius="0" style_border_width="0" scrollable="false"
-                  clickable="false" event_bubble="true"/>
+                  width="2" height="100%" y="0" style_pad_all="0" style_bg_color="#text" style_bg_opa="255"
+                  style_radius="0" style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
         </lv_obj>
         <text_tiny name="clog_bar_label_right"
                    bind_text="clog_meter_label_right" style_text_color="#text_muted" clickable="false"
                    event_bubble="true"/>
       </lv_obj>
 
-      <!-- The headline number, or a check when there is nothing to report. -->
+      <!-- The headline number, or a check when there is nothing to report.
+           UiClogBar swaps the two on clog_meter_is_safe() — the same predicate
+           the arc uses, so a state that reads "safe" on one page cannot read
+           "empty scale" on the other. -->
       <text_small name="clog_bar_center_text"
-                  bind_text="clog_meter_center_text" style_text_align="center" clickable="false"
-                  event_bubble="true"/>
+                  bind_text="clog_meter_center_text" style_text_align="center" clickable="false" event_bubble="true"/>
+      <lv_label name="clog_bar_safe_icon"
+                hidden="true" text="#icon_check_circle" style_text_font="mdi_icons_16" style_text_color="#primary"
+                clickable="false" event_bubble="true"/>
     </lv_obj>
   </view>
 </component>
