@@ -9,6 +9,7 @@
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
+#include "grid_layout.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "panel_widget_config.h"
 #include "panel_widget_manager.h"
@@ -159,6 +160,22 @@ void on_catalog_reset(lv_event_t* /*e*/) {
         nullptr, nullptr);
 }
 
+/// Renders a registry span for the size badge.
+///
+/// The registry stores spans in grid tracks and a track is half a cell
+/// (GridLayout::TRACKS_PER_CELL), but a cell is the unit the grid shows the
+/// user and the unit the user guide's widget tables are written in. Printing
+/// the track count raw badged every one-cell widget as "2x2". The few widgets
+/// that may occupy half a cell can carry an odd span, so those render as a
+/// half rather than truncating to the cell below.
+std::string format_track_span(int tracks) {
+    const int cells = tracks / GridLayout::TRACKS_PER_CELL;
+    if (tracks % GridLayout::TRACKS_PER_CELL == 0) {
+        return std::to_string(cells);
+    }
+    return std::to_string(cells) + ".5";
+}
+
 } // namespace
 
 // ============================================================================
@@ -263,7 +280,8 @@ lv_obj_t* WidgetCatalogOverlay::create_row(lv_obj_t* parent, const char* name, c
     lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
 
     char size_text[16];
-    snprintf(size_text, sizeof(size_text), "%dx%d", colspan, rowspan);
+    snprintf(size_text, sizeof(size_text), "%sx%s", format_track_span(colspan).c_str(),
+             format_track_span(rowspan).c_str());
     lv_obj_t* badge_label = lv_label_create(badge);
     lv_label_set_text(badge_label, size_text);
     lv_obj_set_style_text_font(badge_label, &noto_sans_12, 0);

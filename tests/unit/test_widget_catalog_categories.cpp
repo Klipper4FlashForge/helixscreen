@@ -20,11 +20,13 @@
 #include "../test_helpers/config_test_access.h"
 #include "config.h"
 #include "display_settings_manager.h"
+#include "grid_layout.h"
 #include "panel_widget_config.h"
 #include "panel_widget_registry.h"
 
 #include <array>
 #include <cctype>
+#include <functional>
 #include <set>
 #include <string>
 #include <vector>
@@ -452,5 +454,74 @@ TEST_CASE_METHOD(WidgetCatalogCategoryFixture,
     settle();
     CHECK(selected_ids_.empty());
 
+    force_close();
+}
+
+// ============================================================================
+// Size badge units
+// ============================================================================
+
+/// The deepest label in a row's right-hand group is the size badge. "Placed"
+/// sits in the same group as a bare label, so the badge is found by its own
+/// container rather than by position among siblings.
+static std::string find_badge_text(lv_obj_t* row) {
+    std::string best;
+    std::function<void(lv_obj_t*)> walk = [&](lv_obj_t* obj) {
+        for (uint32_t i = 0; i < lv_obj_get_child_count(obj); i++) {
+            lv_obj_t* child = lv_obj_get_child(obj, static_cast<int32_t>(i));
+            if (lv_obj_check_type(child, &lv_label_class)) {
+                const char* txt = lv_label_get_text(child);
+                if (txt && std::string(txt).find('x') != std::string::npos) {
+                    best = txt;
+                }
+            }
+            walk(child);
+        }
+    };
+    walk(row);
+    return best;
+}
+
+TEST_CASE_METHOD(WidgetCatalogCategoryFixture,
+                 "Widget catalog: size badges are cells, not half-cell tracks",
+                 "[widget_catalog][1016]") {
+    // The registry stores spans in tracks and a track is half a cell. Printing
+    // them raw badged every one-cell widget as "2x2" and disagreed with both the
+    // grid the user sees and the sizes the user guide documents.
+    const auto& cats = get_widget_categories();
+    open_catalog();
+
+    bool checked_any = false;
+    for (size_t c = 0; c < cats.size(); c++) {
+        const auto defs = WidgetCatalogOverlay::widgets_in_category(cats[c].id);
+        dive(c);
+        lv_obj_t* scroll = category_scroll();
+        REQUIRE(scroll != nullptr);
+        REQUIRE(child_count(scroll) == defs.size());
+
+        for (size_t r = 0; r < defs.size(); r++) {
+            lv_obj_t* row = lv_obj_get_child(scroll, static_cast<int32_t>(r));
+            const std::string badge = find_badge_text(row);
+            INFO("widget " << defs[r]->id << " badge '" << badge << "'");
+            REQUIRE_FALSE(badge.empty());
+
+            const int col_cells = defs[r]->colspan / GridLayout::TRACKS_PER_CELL;
+            const int row_cells = defs[r]->rowspan / GridLayout::TRACKS_PER_CELL;
+            std::string expect = std::to_string(col_cells) +
+                                 (defs[r]->colspan % GridLayout::TRACKS_PER_CELL ? ".5" : "") +
+                                 "x" + std::to_string(row_cells) +
+                                 (defs[r]->rowspan % GridLayout::TRACKS_PER_CELL ? ".5" : "");
+            CHECK(badge == expect);
+
+            // The mutation this guards against: raw track counts. Every shipping
+            // widget is at least one whole cell, so a raw span always differs.
+            CHECK(badge !=
+                  std::to_string(defs[r]->colspan) + "x" + std::to_string(defs[r]->rowspan));
+            checked_any = true;
+        }
+        header_back();
+    }
+
+    CHECK(checked_any);
     force_close();
 }
