@@ -13,8 +13,12 @@
 
 #include "ui_update_queue.h"
 
+#include "app_globals.h"
 #include "async_lifetime_guard.h"
 #include "config.h"
+#include "moonraker_api.h"
+#include "moonraker_client_mock.h"
+#include "printer_state.h"
 #include "system/telemetry_manager.h"
 
 #include <algorithm>
@@ -1641,9 +1645,99 @@ TEST_CASE("classify_moonraker_locality distinguishes local, remote and unknown",
     }
 }
 
+namespace {
+
+/// Mock client that reports a caller-supplied websocket URL.
+///
+/// MoonrakerClientMock::connect() simulates a connection without recording the
+/// URL, so get_last_url() is always empty under the plain mock. That is worth
+/// knowing: a test that relies on the bare mock cannot tell a working
+/// implementation from one that never consults the URL at all.
+class StubUrlClient : public MoonrakerClientMock {
+  public:
+    explicit StubUrlClient(std::string url) : url_(std::move(url)) {}
+    const std::string& get_last_url() const override {
+        return url_;
+    }
+
+  private:
+    std::string url_;
+};
+
+/// Installs a global Moonraker API for a scope and restores the previous one.
+class ScopedMoonrakerApi {
+  public:
+    explicit ScopedMoonrakerApi(IMoonrakerAPI* api) : previous_(get_moonraker_api()) {
+        set_moonraker_api(api);
+    }
+    ~ScopedMoonrakerApi() {
+        set_moonraker_api(previous_);
+    }
+
+    ScopedMoonrakerApi(const ScopedMoonrakerApi&) = delete;
+    ScopedMoonrakerApi& operator=(const ScopedMoonrakerApi&) = delete;
+
+  private:
+    IMoonrakerAPI* previous_;
+};
+
+/// Record a hardware_profile with `websocket_url` in place and return the event.
+///
+/// Uses the shared PrinterState rather than a fresh one: a default-constructed
+/// PrinterState whose init_subjects() never ran corrupts memory on destruction
+/// (see the DEFERRED note in test_helix_macro_manager.cpp).
+json hardware_profile_with_url(const std::string& websocket_url) {
+    StubUrlClient client(websocket_url);
+    MoonrakerAPI api(client, get_printer_state());
+    ScopedMoonrakerApi installed(&api);
+
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+    tm.clear_queue();
+    tm.record_hardware_profile();
+
+    for (const auto& event : tm.get_queue_snapshot()) {
+        if (event["event"] == "hardware_profile") {
+            return event;
+        }
+    }
+    return json();
+}
+
+} // namespace
+
 TEST_CASE_METHOD(TelemetryTestFixture,
-                 "hardware_profile omits moonraker_is_local when no URL is known",
+                 "hardware_profile reports Moonraker topology from the websocket URL",
                  "[telemetry][hardware]") {
+    SECTION("a loopback URL is recorded as local") {
+        auto event = hardware_profile_with_url("ws://localhost:7125/websocket");
+        REQUIRE(event.contains("moonraker_is_local"));
+        CHECK(event["moonraker_is_local"] == true);
+    }
+
+    SECTION("a routable URL is recorded as remote") {
+        auto event = hardware_profile_with_url("ws://192.168.1.50:7125/websocket");
+        REQUIRE(event.contains("moonraker_is_local"));
+        CHECK(event["moonraker_is_local"] == false);
+    }
+
+    SECTION("an API with no URL yet omits the field") {
+        // The API is present and consulted here -- only the URL is missing. The
+        // field has to be absent rather than present-and-false, so the
+        // aggregate can tell "not measured" from a measured "remote".
+        auto event = hardware_profile_with_url("");
+        REQUIRE_FALSE(event.is_null());
+        CHECK_FALSE(event.contains("moonraker_is_local"));
+    }
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture,
+                 "hardware_profile omits moonraker_is_local when there is no Moonraker API",
+                 "[telemetry][hardware]") {
+    // Distinct from the empty-URL case above: here get_moonraker_api() itself
+    // returns null, which is the state before the client has been wired up.
+    REQUIRE(get_moonraker_api() == nullptr);
+
     TelemetryManager::instance().set_enabled(true);
     TelemetryManager::instance().clear_queue();
     TelemetryManager::instance().record_hardware_profile();
@@ -1653,8 +1747,6 @@ TEST_CASE_METHOD(TelemetryTestFixture,
 
     for (const auto& event : snapshot) {
         if (event["event"] == "hardware_profile") {
-            // No connected client in the test fixture, so the field must be
-            // absent rather than present-and-false.
             CHECK_FALSE(event.contains("moonraker_is_local"));
         }
     }

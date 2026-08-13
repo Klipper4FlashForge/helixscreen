@@ -241,6 +241,16 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
      */
     [[nodiscard]] std::vector<int> get_tool_mapping() const override;
 
+    /// Happy Hare publishes the complete ttg_map in printer.mmu status, so a
+    /// restore can be confirmed against firmware truth rather than our own
+    /// optimistic write (#1270). Cleaner than a per-lane echo: the whole map
+    /// lands in one update, so there is no partial-match intermediate state.
+    [[nodiscard]] bool reports_firmware_tool_mapping() const override {
+        return true;
+    }
+
+    [[nodiscard]] uint64_t firmware_tool_mapping_generation() const override;
+
     // NOTE: has_per_slot_loaded_authority() is deliberately NOT overridden.
     // printer.mmu.gate and printer.mmu.filament are Happy Hare's own values,
     // parsed verbatim from one object into the aggregate pair, so the aggregate
