@@ -116,6 +116,11 @@ void FilamentRunoutHandler::show_runout_guidance_modal() {
 
     spdlog::info("[FilamentRunoutHandler] Showing runout guidance modal");
 
+    // This one IS a warning — say so rather than inheriting whatever the last
+    // surface to show this dialog left behind (the home tile's advisory tap
+    // otherwise latches the neutral icon on for the rest of the session).
+    runout_modal_.set_advisory(false);
+
     // Capability-aware layout: backends that feed filament to the nozzle as part
     // of resume (e.g. Snapmaker U1's AUTO_FEEDING) present Resume as the primary
     // action and demote manual Load/Unload/Purge. Set on the main thread (show

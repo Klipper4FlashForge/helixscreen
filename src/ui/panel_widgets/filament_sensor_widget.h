@@ -121,8 +121,6 @@ class FilamentSensorWidget : public PanelWidget {
 
     /// Mirror of the selected role subject; the XML's single binding target.
     static inline lv_subject_t tile_state_subject_{};
-    /// 1 = opened by a deliberate tap (neutral icon), 0 = a real runout.
-    static inline lv_subject_t advisory_subject_{};
     /// Which row the source picker's check icon sits on; mirrors source_ so the
     /// picker reflects the current selection whenever it is reopened. int, 0-3,
     /// matching ui::FilamentTileSource's enum order - see the static_assert next

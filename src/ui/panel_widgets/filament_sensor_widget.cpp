@@ -53,7 +53,6 @@ void FilamentSensorWidget::init_static_subjects() {
     // -1 = no sensor, matching FilamentSensorManager's encoding, so the tile
     // reads "hidden" until the first real value arrives rather than "empty".
     lv_subject_init_int(&tile_state_subject_, -1);
-    lv_subject_init_int(&advisory_subject_, 0);
     lv_subject_init_int(&source_subject_, static_cast<int>(ui::FilamentTileSource::Auto));
 
     // Global scope (not the "panel_widget_filament" component scope): the
@@ -76,19 +75,11 @@ void FilamentSensorWidget::init_static_subjects() {
     // check icons silently never resolve it.
     lv_xml_register_subject(nullptr, "filament_tile_source", &source_subject_);
 
-    auto* modal_scope = lv_xml_component_get_scope("runout_guidance_modal");
-    if (modal_scope) {
-        lv_xml_register_subject(modal_scope, "runout_is_advisory", &advisory_subject_);
-    } else {
-        spdlog::warn("[FilamentSensorWidget] runout_guidance_modal scope not found");
-    }
-
     StaticSubjectRegistry::instance().register_deinit("FilamentSensorWidget", []() {
         if (!subjects_initialized_) {
             return;
         }
         lv_subject_deinit(&tile_state_subject_);
-        lv_subject_deinit(&advisory_subject_);
         lv_subject_deinit(&source_subject_);
         subjects_initialized_ = false;
     });
@@ -215,7 +206,9 @@ void FilamentSensorWidget::show_tap_modal(bool status_only) {
     if (!parent_screen_) {
         return;
     }
-    lv_subject_set_int(&advisory_subject_, 1);
+    // A deliberate tap is not a warning. Every show site states its own value —
+    // see RunoutGuidanceModal::set_advisory() for why inheriting is a bug.
+    tap_modal_.set_advisory(true);
 
     // Override the runout copy. `title` and `message` are <prop>s on
     // runout_guidance_modal.xml, and Modal::show() forwards XML attrs, so the

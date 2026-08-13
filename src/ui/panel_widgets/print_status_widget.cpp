@@ -1166,6 +1166,11 @@ void PrintStatusWidget::show_idle_runout_modal() {
     // retains this callback until it is overwritten. Guard with the same
     // AsyncLifetimeGuard token FilamentRunoutHandler uses; the press arrives on
     // the main thread, so a plain expired() check is correct here.
+    // A detected runout is a warning, not an advisory tap. State it here rather
+    // than inheriting: the subject is shared with the home tile's tap modal,
+    // which sets it the other way — see RunoutGuidanceModal::set_advisory().
+    runout_modal_.set_advisory(false);
+
     auto token = lifetime_.token();
     runout_modal_.set_on_load_filament([this, token]() {
         if (token.expired())

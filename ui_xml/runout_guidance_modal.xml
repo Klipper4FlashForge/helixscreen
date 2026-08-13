@@ -40,7 +40,9 @@
             height="content" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="#space_lg"
             style_pad_bottom="#space_sm" flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_sm">
       <!-- Runout is a warning; a deliberate tap from the home tile is not.
-           runout_is_advisory is owned by C++ and set at show time. -->
+           runout_is_advisory is owned by RunoutGuidanceModal and every show
+           site states its own value via set_advisory() - the subject is static
+           and outlives any one show, so inheriting would latch. -->
       <icon name="icon_warning" src="alert" size="md" variant="warning">
         <bind_flag_if_eq subject="runout_is_advisory" flag="hidden" ref_value="1"/>
       </icon>

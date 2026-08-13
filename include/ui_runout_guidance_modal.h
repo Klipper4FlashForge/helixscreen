@@ -73,6 +73,30 @@ class RunoutGuidanceModal : public Modal {
     }
 
     /**
+     * @brief Say whether this showing is advisory or a real runout.
+     *
+     * Drives the component-scoped `runout_is_advisory` subject the header icons
+     * bind to: 0 picks the `alert` warning icon, 1 the neutral `filament` icon.
+     * A deliberate tap on the home Filament tile is advisory; a runout that
+     * paused a print is not.
+     *
+     * EVERY show site must state its own value rather than inheriting the
+     * previous one's. The subject is static and component-scoped (it survives
+     * show/hide and outlives any one modal instance), so a surface that only
+     * sets it in the advisory direction latches the neutral icon on for the rest
+     * of the session and silently downgrades the warning affordance on the next
+     * real runout dialog.
+     *
+     * Main thread only.
+     *
+     * @param advisory true for a user-initiated informational show, false for a
+     *                 real runout
+     */
+    void set_advisory(bool advisory) {
+        lv_subject_set_int(&advisory_subject_, advisory ? 1 : 0);
+    }
+
+    /**
      * @brief Gate the Resume button on first-gate (port) filament presence (#991).
      *
      * Drives the component-scoped `runout_resume_blocked` subject the XML binds
@@ -95,6 +119,14 @@ class RunoutGuidanceModal : public Modal {
     /// show/hide). Never null after construction (init_subjects runs in ctor).
     static lv_subject_t* resume_blocked_subject() {
         return &resume_blocked_subject_;
+    }
+
+    /// The advisory subject set_advisory() drives. Same storage rules as
+    /// resume_blocked_subject(): component-scoped, static, never null after
+    /// construction. Exposed so a caller (or a test) can read the current form
+    /// without going through an XML scope lookup.
+    static lv_subject_t* advisory_subject() {
+        return &advisory_subject_;
     }
 
     /**
@@ -255,6 +287,13 @@ class RunoutGuidanceModal : public Modal {
     // Default 0 so non-auto-feed / unknown backends are never gated.
     // Component-scoped like autofeed_capable_subject_.
     static inline lv_subject_t resume_blocked_subject_{};
+    // Header-icon subject: 1 = advisory (neutral filament icon), 0 = real runout
+    // (alert icon). Lives here, with the modal's other two component-scoped
+    // subjects, rather than on any one consumer — it describes THIS dialog, and
+    // an owner-specific home made it look like one surface's private state when
+    // all three share it. Default 0: a caller that forgets set_advisory() gets
+    // the warning icon, which is the safe direction to fail.
+    static inline lv_subject_t advisory_subject_{};
     static inline bool subjects_initialized_ = false;
 
     static void init_subjects() {
@@ -264,11 +303,13 @@ class RunoutGuidanceModal : public Modal {
 
         lv_subject_init_int(&autofeed_capable_subject_, 0);
         lv_subject_init_int(&resume_blocked_subject_, 0);
+        lv_subject_init_int(&advisory_subject_, 0);
 
         auto* scope = lv_xml_component_get_scope("runout_guidance_modal");
         if (scope) {
             lv_xml_register_subject(scope, "runout_autofeed_capable", &autofeed_capable_subject_);
             lv_xml_register_subject(scope, "runout_resume_blocked", &resume_blocked_subject_);
+            lv_xml_register_subject(scope, "runout_is_advisory", &advisory_subject_);
         } else {
             spdlog::warn("[RunoutGuidanceModal] Component scope not found — "
                          "ensure runout_guidance_modal.xml is registered first");
@@ -279,6 +320,7 @@ class RunoutGuidanceModal : public Modal {
                 return;
             lv_subject_deinit(&autofeed_capable_subject_);
             lv_subject_deinit(&resume_blocked_subject_);
+            lv_subject_deinit(&advisory_subject_);
             subjects_initialized_ = false;
         });
     }
