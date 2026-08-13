@@ -133,10 +133,25 @@ bool operator<(const KnownClip& a, const KnownClip& b) {
 ///
 /// Shrinking this list is the point. Adding to it means a widget that used to
 /// fit no longer does.
+///
+/// Re-pinned once, deliberately. Every number here before that point was
+/// recorded while ui_icon memoized icon_font_* for the life of the process, so
+/// the sweep measured all eight geometries with whichever face the first icon
+/// built in the binary happened to pin — on seven of them, an icon three sizes
+/// too small. This list was therefore describing the defect, not the widgets.
+/// The re-pin removed that residue; it is not the baseline being widened to
+/// silence a failure.
+///
+/// The 1024x600 cluster below has one shared cause, not one per widget. The
+/// icon_size ladder in globals.xml steps "lg" (48px) -> "xl" (64px) at the
+/// large tier, while the home grid's cell height is 112px at BOTH 800x480 and
+/// 1024x600 — so a tile whose icon is sized with #icon_size gains 16px of glyph
+/// and no room to put it. Fixing it is a design-ladder decision (cap
+/// icon_size_large, or give home tiles their own rung), not a per-widget edit,
+/// which is why these are recorded rather than patched.
 // clang-format off
 const std::vector<KnownClip> kKnownClipping = {
     // Whole-widget: does not fit at its minimum on any shipping panel.
-    {"clock",            "*"},
     {"clog_detection",   "*"},
     {"led_controls",     "*"},
     {"lock",             "*"},
@@ -154,23 +169,27 @@ const std::vector<KnownClip> kKnownClipping = {
 
     {"ams",              "272x480"},
 
+    // #icon_size cluster: 64px glyph, 112px cell. See the note above.
+    {"bed_temperature",  "1024x600"}, {"bed_temperature",  "1280x720"},
+    {"chamber_temperature", "1024x600"}, {"chamber_temperature", "1280x720"},
+    {"gcode_console",    "1024x600"},
+    {"led",              "1024x600"},
+    {"macros",           "1024x600"},
+    {"motion",           "1024x600"},
+    {"network",          "1024x600"},
+
+    // btn_primary's label runs 76-100px past its button on every panel; the
+    // 480x320 entry is the same defect, one pixel over on btn_stop's icon.
     {"control_buttons",  "1024x600"}, {"control_buttons",  "1280x720"},
     {"control_buttons",  "272x480"},  {"control_buttons",  "480x272"},
-    {"control_buttons",  "480x400"},  {"control_buttons",  "480x800"},
-    {"control_buttons",  "800x480"},
+    {"control_buttons",  "480x320"},  {"control_buttons",  "480x400"},
+    {"control_buttons",  "480x800"},  {"control_buttons",  "800x480"},
 
     {"favorite_macro",   "272x480"},  {"favorite_macro",   "480x272"},
 
-    {"filament",         "1024x600"}, {"filament",         "1280x720"},
-    {"filament",         "272x480"},  {"filament",         "480x272"},
-    {"filament",         "480x320"},  {"filament",         "480x400"},
-    {"filament",         "480x800"},
-
-    {"firmware_restart", "1024x600"}, {"firmware_restart", "1280x720"},
+    // Not the badge any more (that was ui_button padding, now zeroed) — the
+    // "Restart" caption below it, 1px, on the two smallest panels only.
     {"firmware_restart", "272x480"},  {"firmware_restart", "480x272"},
-    {"firmware_restart", "480x320"},  {"firmware_restart", "480x400"},
-
-    {"job_queue",        "1024x600"}, {"job_queue",        "480x400"},
 
     {"nozzle_temps",     "1024x600"}, {"nozzle_temps",     "1280x720"},
     {"nozzle_temps",     "272x480"},  {"nozzle_temps",     "480x400"},
@@ -179,11 +198,7 @@ const std::vector<KnownClip> kKnownClipping = {
     {"power_device",     "480x272"},  {"power_device",     "480x320"},
     {"power_device",     "480x400"},  {"power_device",     "480x800"},
 
-    {"print_stats",      "1280x720"},
-
-    {"tips",             "1024x600"}, {"tips",             "1280x720"},
     {"tips",             "272x480"},  {"tips",             "480x400"},
-    {"tips",             "480x800"},  {"tips",             "800x480"},
 };
 // clang-format on
 
