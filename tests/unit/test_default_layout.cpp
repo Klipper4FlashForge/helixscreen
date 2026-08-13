@@ -959,9 +959,13 @@ const std::map<std::string, TrackBudget> kPortraitBudget = {
     {"medium", {8, 12}},
     {"large", {10, 14}},
     {"xlarge", {10, 16}},
-    // No measured xxlarge panel exists; it falls through to xlarge in the
-    // placement chain, so hold it to the same budget rather than invent one.
-    {"xxlarge", {10, 16}},
+    // 1080x2400, measured: content 1056x2236 over a 192px cell is 6x12 cells.
+    // Held at scale 1.0 - the UI scale factor multiplies the cell edge, so the
+    // same panel quantises to 8x18 tracks at 125% and 6x14 at 158%, and the
+    // shipped anchors do not fit either. That gap is real and untracked here:
+    // this table is keyed by breakpoint alone, which cannot express it. See
+    // the scale note above check_anchor_table().
+    {"xxlarge", {12, 24}},
 };
 
 const std::map<std::string, TrackBudget> kLandscapeBudget = {
@@ -1001,6 +1005,16 @@ bool anchors_overlap(const AnchorRect& a, const AnchorRect& b) {
 /// with the neighbour it was authored beside. grid.place() fails and the widget
 /// falls through to auto-place at the registry span, so the anchor is silently
 /// decoration and the log carries only a warning.
+///
+/// A breakpoint is not the whole story any more. The high-DPI UI scale factor
+/// multiplies the grid's cell edge, so one panel at one breakpoint has as many
+/// track counts as it has scales: 1080x2400 is xxlarge portrait at 12x24 tracks
+/// unscaled, 8x18 at 125%, and 6x14 at 158%. The budgets below are the scale
+/// 1.0 grids, which is what every shipping printer runs (they all sit inside
+/// the DPI deadband). Anchors authored for a tier are NOT checked against that
+/// tier's scaled grids, because the table cannot name one — keying the shipped
+/// layout by (tier, cols, rows) is what would close that, and until then a
+/// scaled panel's anchors collapse through clamp_to_grid unchecked.
 void check_anchor_table(const nlohmann::json& anchors, const std::string& bp_name,
                         const TrackBudget& budget, bool require_bp) {
     std::vector<AnchorRect> placed;
