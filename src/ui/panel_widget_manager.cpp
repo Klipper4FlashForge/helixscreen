@@ -12,6 +12,7 @@
 #include "grid_edit_mode.h"
 #include "grid_layout.h"
 #include "layout_manager.h"
+#include "layout_port.h"
 #include "observer_factory.h"
 #include "panel_widget.h"
 #include "panel_widget_config.h"
@@ -76,6 +77,74 @@ ClampedCell clamp_to_grid(int col, int row, int colspan, int rowspan, int cols, 
         c.col = std::max(0, floor_to(cols - c.colspan, col_step));
     }
     return c;
+}
+
+/// Convert a panel's saved pre-v22 cell coordinates to tracks, once.
+///
+/// The v22 migration tags the layout instead of converting it, because config
+/// load settles no screen size and settings.json records none. Both grids are
+/// known here: the new one was just measured, and the old one is deterministic
+/// in the panel extent (legacy_grid_cols) with its row count readable off the
+/// layout itself (legacy_grid_rows). Every page shares this grid, so all of
+/// them port together and the tag drops in one save.
+///
+/// A widget the port cannot seat is left at -1 with its registry span, which
+/// drops it into the same auto-placement pass a never-positioned widget takes.
+/// Failing per widget rather than per layout is the whole reason to try: the
+/// worst case degrades to one widget losing its spot, not the dashboard.
+void port_legacy_page_layouts(PanelWidgetConfig& widget_config, const std::string& panel_id,
+                              const GridDimensions& dims) {
+    auto& lm = LayoutManager::instance();
+    const int old_cols = legacy_grid_cols(lm.width(), lm.height());
+    if (old_cols <= 0) {
+        spdlog::warn("[PanelWidgetManager] '{}': cannot reconstruct the pre-v22 grid from a "
+                     "{}x{} panel; leaving the layout to auto-placement",
+                     panel_id, lm.width(), lm.height());
+        widget_config.clear_legacy_units();
+        return;
+    }
+
+    int seated = 0;
+    int positioned = 0;
+    for (size_t page = 0; page < widget_config.page_count(); ++page) {
+        auto& entries = widget_config.page_entries_mut(page);
+        std::vector<LegacyPlacement> saved;
+        saved.reserve(entries.size());
+        for (const auto& e : entries) {
+            saved.push_back({e.id, e.col, e.row, e.colspan, e.rowspan});
+            if (e.has_grid_position()) {
+                ++positioned;
+            }
+        }
+
+        const int old_rows = legacy_grid_rows(saved, widget_config.legacy_rows());
+        const auto ported = port_legacy_layout(saved, old_cols, old_rows, dims.cols, dims.rows);
+
+        for (size_t i = 0; i < entries.size() && i < ported.size(); ++i) {
+            if (ported[i].seated) {
+                entries[i].col = ported[i].col;
+                entries[i].row = ported[i].row;
+                entries[i].colspan = ported[i].colspan;
+                entries[i].rowspan = ported[i].rowspan;
+                ++seated;
+                continue;
+            }
+            // The saved span counts cells; read as tracks it would be half the
+            // widget. The registry default is the same answer parse_widget_array
+            // gives an entry that omits its span.
+            const auto* def = find_widget_def(entries[i].id);
+            entries[i].col = -1;
+            entries[i].row = -1;
+            entries[i].colspan = def ? def->colspan : GridLayout::TRACKS_PER_CELL;
+            entries[i].rowspan = def ? def->rowspan : GridLayout::TRACKS_PER_CELL;
+        }
+    }
+
+    spdlog::info("[PanelWidgetManager] '{}': ported {} of {} placed widget(s) from pre-v22 "
+                 "cells onto a {}x{} track grid ({} panel); the rest are auto-placed",
+                 panel_id, seated, positioned, dims.cols, dims.rows,
+                 std::to_string(lm.width()) + "x" + std::to_string(lm.height()));
+    widget_config.clear_legacy_units();
 }
 
 } // namespace
@@ -339,6 +408,7 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     lv_obj_update_layout(container);
     int content_w = lv_obj_get_content_width(container);
     int content_h = lv_obj_get_content_height(container);
+    const bool content_box_measured = content_w > 0 && content_h > 0;
     if (content_w <= 0 || content_h <= 0) {
         // Nothing legitimate produces this; a container that measures empty
         // after an explicit layout pass is detached or zero-sized. Fall back to
@@ -353,6 +423,26 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
         content_h = lm.height();
     }
     const GridDimensions grid_dims = GridLayout::get_dimensions(breakpoint, content_w, content_h);
+
+    // Port a pre-v22 layout before anything reads its coordinates as tracks.
+    // This is the first point in the run where both grids are knowable, which
+    // is why the v22 migration deferred the conversion rather than doing it.
+    //
+    // Only against a real measurement. The port is one-shot and destructive —
+    // it rewrites the coordinates and drops the tag — so running it on the
+    // panel-extent fallback above would bake a layout derived from a grid this
+    // panel never has. Skipping leaves the tag set for the next populate, and
+    // until one measures cleanly the saved positions are simply not used, which
+    // is the same dashboard the unconditional reset would have given.
+    if (widget_config.has_legacy_units()) {
+        if (content_box_measured) {
+            port_legacy_page_layouts(widget_config, panel_id, grid_dims);
+        } else {
+            spdlog::warn("[PanelWidgetManager] '{}': deferring the pre-v22 layout port until the "
+                         "content box measures",
+                         panel_id);
+        }
+    }
 
     // Build grid placement tracker to compute positions
     GridLayout grid(breakpoint, grid_dims);

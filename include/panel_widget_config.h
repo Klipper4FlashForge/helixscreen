@@ -153,6 +153,29 @@ class PanelWidgetConfig {
     /// Set per-widget config for a given widget ID (searches all pages), then save
     void set_widget_config(const std::string& id, const nlohmann::json& config);
 
+    /// True while these coordinates are still counts of cells in the pre-v22
+    /// home grid rather than tracks of the square-cell one (#1126).
+    ///
+    /// Set by the v22 migration, which cannot convert them itself: it runs at
+    /// config load, with no screen size settled and none recorded. The first
+    /// grid build has both, so PanelWidgetManager ports the layout there and
+    /// clears the tag. Until it does, the coordinates must not be read as
+    /// tracks — they name a grid with different dimensions and a different unit.
+    bool has_legacy_units() const {
+        return legacy_units_;
+    }
+
+    /// Row count the pre-v22 grid was known to have reached, 0 when unknown.
+    /// The old grid sized its row axis from the widgets in use, so this is the
+    /// floor its cache held for widgets whose hardware gate had not yet fired.
+    int legacy_rows() const {
+        return legacy_rows_;
+    }
+
+    /// Drop the legacy-units tag and persist. Call once the port has run, so a
+    /// layout already in track units is never ported a second time.
+    void clear_legacy_units();
+
   private:
     std::string panel_id_;
     Config& config_;
@@ -160,6 +183,8 @@ class PanelWidgetConfig {
     size_t main_page_index_ = 0;
     int next_page_id_ = 1;
     bool loaded_ = false;
+    bool legacy_units_ = false;
+    int legacy_rows_ = 0;
 
     static std::vector<PanelWidgetEntry> build_defaults();
 
