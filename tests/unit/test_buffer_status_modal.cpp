@@ -42,9 +42,6 @@ class TestableBufferStatusModal : public BufferStatusModal {
     const char* gear_sync_value() {
         return lv_subject_get_string(&gear_sync_value_subject_);
     }
-    const char* clog_value() {
-        return lv_subject_get_string(&clog_value_subject_);
-    }
     const char* flow_value() {
         return lv_subject_get_string(&flow_value_subject_);
     }
@@ -228,30 +225,6 @@ TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate HH gear sync",
     }
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate HH clog detection",
-                 "[modals][buffer_status]") {
-    TestableBufferStatusModal modal;
-    auto info = make_hh_info();
-
-    SECTION("auto") {
-        info.clog_detection = 2;
-        modal.populate(info, 0);
-        REQUIRE(std::string(modal.clog_value()) == "Automatic");
-    }
-
-    SECTION("manual") {
-        info.clog_detection = 1;
-        modal.populate(info, 0);
-        REQUIRE(std::string(modal.clog_value()) == "Manual");
-    }
-
-    SECTION("off") {
-        info.clog_detection = 0;
-        modal.populate(info, 0);
-        REQUIRE(std::string(modal.clog_value()) == "Off");
-    }
-}
-
 TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate HH flow rate",
                  "[modals][buffer_status]") {
     TestableBufferStatusModal modal;
@@ -296,7 +269,6 @@ TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate AFC with buffer he
     REQUIRE(modal.show_meter_value() == 0);
     REQUIRE(std::string(modal.afc_state_value()) == "Feeding filament forward");
     REQUIRE(modal.show_distance_value() == 1);
-    REQUIRE(std::string(modal.clog_value()) == "Active");
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate AFC state translations",
@@ -338,7 +310,6 @@ TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate AFC fault detectio
     modal.populate(info, 0);
 
     REQUIRE(modal.show_distance_value() == 0);
-    REQUIRE(std::string(modal.clog_value()) == "Inactive");
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate AFC no buffer health",
@@ -351,7 +322,6 @@ TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate AFC no buffer heal
 
     REQUIRE(std::string(modal.afc_state_value()) == "No buffer data available");
     REQUIRE(modal.show_distance_value() == 0);
-    REQUIRE(std::string(modal.clog_value()) == "Unknown");
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate AFC out-of-range unit",
