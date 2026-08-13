@@ -2593,6 +2593,6 @@
   <translation tag="{} new hardware available" ru="Доступно нового оборудования: {}"/>
   <translation tag="{} preset{}" ru="{} пресет{}"/>
   <translation tag="{} target set to {}°C" ru="Целевая температура {} — {}°C"/>
-  <translation tag="{} widgets"/>
+  <translation tag="{} widgets" ru="Виджетов: {}"/>
   <translation tag="{} — response timed out" ru="{} — время ожидания ответа истекло"/>
 </translations>

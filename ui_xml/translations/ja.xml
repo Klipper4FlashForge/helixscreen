@@ -2593,6 +2593,6 @@
   <translation tag="{} new hardware available" ja="{} 個の新しいハードウェアが利用可能です"/>
   <translation tag="{} preset{}" ja="{} 個のプリセット{}"/>
   <translation tag="{} target set to {}°C" ja="{} 目標温度を {}°C に設定しました"/>
-  <translation tag="{} widgets"/>
+  <translation tag="{} widgets" ja="ウィジェット {} 個"/>
   <translation tag="{} — response timed out" ja="{} — 応答タイムアウト"/>
 </translations>

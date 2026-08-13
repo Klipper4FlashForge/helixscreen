@@ -2593,6 +2593,6 @@
   <translation tag="{} new hardware available" zh="{} 个新硬件可用"/>
   <translation tag="{} preset{}" zh="{} 个预设{}"/>
   <translation tag="{} target set to {}°C" zh="{} 目标已设为 {}°C"/>
-  <translation tag="{} widgets"/>
+  <translation tag="{} widgets" zh="{} 个小组件"/>
   <translation tag="{} — response timed out" zh="{} — 响应超时"/>
 </translations>

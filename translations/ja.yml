@@ -2622,5 +2622,5 @@ translations:
   '{} new hardware available': '{} 個の新しいハードウェアが利用可能です'
   '{} preset{}': '{} 個のプリセット{}'
   '{} target set to {}°C': '{} 目標温度を {}°C に設定しました'
-  '{} widgets': ''
+  '{} widgets': ウィジェット {} 個
   '{} — response timed out': '{} — 応答タイムアウト'

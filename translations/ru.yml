@@ -2622,5 +2622,5 @@ translations:
   '{} new hardware available': 'Доступно нового оборудования: {}'
   '{} preset{}': '{} пресет{}'
   '{} target set to {}°C': Целевая температура {} — {}°C
-  '{} widgets': ''
+  '{} widgets': 'Виджетов: {}'
   '{} — response timed out': '{} — время ожидания ответа истекло'

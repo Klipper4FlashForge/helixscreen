@@ -2593,6 +2593,6 @@
   <translation tag="{} new hardware available" de="{} neue Hardware verfügbar" en="{} new hardware available" es="{} nuevo hardware disponible" fr="{} nouveau matériel disponible" it="{} nuovo hardware disponibile" ja="{} 個の新しいハードウェアが利用可能です" pt="{} novo hardware disponível" ru="Доступно нового оборудования: {}" zh="{} 个新硬件可用"/>
   <translation tag="{} preset{}" de="{} Voreinstellung{}" en="{} preset{}" es="{} preajuste{}" fr="{} préréglage{}" it="{} preset{}" ja="{} 個のプリセット{}" pt="{} predefinição{}" ru="{} пресет{}" zh="{} 个预设{}"/>
   <translation tag="{} target set to {}°C" de="{}-Zieltemperatur auf {}°C gesetzt" en="{} target set to {}°C" es="{} configurado a {}°C" fr="Cible {} réglée à {}°C" it="Obiettivo {} impostato a {}°C" ja="{} 目標温度を {}°C に設定しました" pt="{} configurado para {}°C" ru="Целевая температура {} — {}°C" zh="{} 目标已设为 {}°C"/>
-  <translation tag="{} widgets" en="{} widgets"/>
+  <translation tag="{} widgets" de="{} Widgets" en="{} widgets" es="{} widgets" fr="{} widgets" it="{} widget" ja="ウィジェット {} 個" pt="{} widgets" ru="Виджетов: {}" zh="{} 个小组件"/>
   <translation tag="{} — response timed out" de="{} – Antwort-Zeitüberschreitung" en="{} — response timed out" es="{} — tiempo de espera agotado" fr="{} — réponse expirée" it="{} — tempo scaduto" ja="{} — 応答タイムアウト" pt="{} — tempo esgotado" ru="{} — время ожидания ответа истекло" zh="{} — 响应超时"/>
 </translations>

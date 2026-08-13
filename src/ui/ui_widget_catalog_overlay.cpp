@@ -67,21 +67,33 @@ void release_catalog_state() {
     }
 }
 
-/// Retire a category sub-page: unregister it and hand the widget to the
+/// Retire a popped catalog overlay: unregister it and hand the widget to the
 /// deferred deleter.
 ///
-/// The delete is queued rather than issued directly because go_back() runs its
-/// whole body through UpdateQueue. Queueing here lands the reclaim in the batch
-/// *after* the pop body has finished reading the widget it is unwinding.
-void retire_category_page(lv_obj_t* page) {
-    if (!page) {
+/// Must be called immediately after the go_back() that popped it, in the same
+/// synchronous scope. The delete is queued rather than issued directly because
+/// go_back() runs its whole body through UpdateQueue; queueing here lands the
+/// reclaim in the batch *after* the pop body has finished reading the widget it
+/// is unwinding.
+///
+/// go_back() only hides an overlay — NavigationManager never deletes one. Without
+/// this the tree stays parented to the screen for the life of the process, and a
+/// catalog is cheap to reopen, so an edit session leaks one whole overlay per
+/// open: the panel, its setting_group, and a setting_action_row per category,
+/// each carrying ui_breakpoint observers.
+void retire_overlay(lv_obj_t* overlay, const char* tag) {
+    if (!overlay) {
         return;
     }
-    NavigationManager::instance().unregister_overlay_instance(page);
-    helix::ui::queue_update("catalog_category_reclaim", [page]() {
-        lv_obj_t* condemned = page;
+    NavigationManager::instance().unregister_overlay_instance(overlay);
+    helix::ui::queue_update(tag, [overlay]() {
+        lv_obj_t* condemned = overlay;
         helix::ui::safe_delete_deferred(condemned);
     });
+}
+
+inline void retire_category_page(lv_obj_t* page) {
+    retire_overlay(page, "catalog_category_reclaim");
 }
 
 /// Pop the category sub-page if one is open, leaving the catalog itself intact.
@@ -128,15 +140,21 @@ void close_catalog() {
     // Unregister the close callback so the pop below cannot double-fire on_close.
     nav.unregister_overlay_close_callback(root);
 
+    // Retire in the same scope as the pop that removed it, exactly as
+    // pop_category_page() does. Queueing the reclaim separately would race
+    // go_back()'s own queued body, and scrub_deleted_widget() erasing the widget
+    // from panel_stack_ first would make that pop take the wrong overlay.
     if (popped_page) {
         helix::ui::queue_update("catalog_close_pop", [root]() {
             auto& n = NavigationManager::instance();
             if (n.is_panel_on_top(root)) {
                 n.go_back();
+                retire_overlay(root, "catalog_root_reclaim");
             }
         });
     } else if (nav.is_panel_on_top(root)) {
         nav.go_back();
+        retire_overlay(root, "catalog_root_reclaim");
     }
 
     release_catalog_state();
@@ -529,11 +547,21 @@ void WidgetCatalogOverlay::show(lv_obj_t* parent_screen, const PanelWidgetConfig
     }
     g_catalog_state.backdrop = backdrop;
 
+    // Park the callbacks before anything can fail. GridEditMode has already set
+    // catalog_open_ and hidden the dots overlay by the time it calls us, and it
+    // only learns otherwise through on_close — so an early return that drops the
+    // callback on the floor leaves edit mode permanently believing the catalog is
+    // open, with the backdrop stranded over the panel. release_catalog_state()
+    // below is only reachable once they are stored here.
+    g_catalog_state.on_select = std::move(on_select);
+    g_catalog_state.on_close = std::move(on_close);
+
     // Create overlay from XML
     auto* overlay =
         static_cast<lv_obj_t*>(lv_xml_create(parent_screen, "widget_catalog_overlay", nullptr));
     if (!overlay) {
         spdlog::error("[WidgetCatalog] Failed to create widget_catalog_overlay from XML");
+        release_catalog_state();
         return;
     }
 
@@ -545,12 +573,11 @@ void WidgetCatalogOverlay::show(lv_obj_t* parent_screen, const PanelWidgetConfig
     // Initially hidden (NavigationManager will unhide during push)
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 
-    // Store state
+    // Store state. on_select/on_close were parked above, before the first thing
+    // that can fail — re-moving them here would assign the moved-from empties.
     g_catalog_state.overlay_root = overlay;
     g_catalog_state.parent_screen = parent_screen;
     g_catalog_state.config = &config;
-    g_catalog_state.on_select = std::move(on_select);
-    g_catalog_state.on_close = std::move(on_close);
 
     // DELETE cleanup exception: detect when NavigationManager pops the overlay
     // without going through close_catalog() (e.g., system back navigation)
@@ -570,9 +597,13 @@ void WidgetCatalogOverlay::show(lv_obj_t* parent_screen, const PanelWidgetConfig
     lv_obj_t* group = lv_obj_find_by_name(overlay, "category_group");
     if (!group) {
         spdlog::error("[WidgetCatalog] category_group not found in XML");
+        // The delete re-enters the LV_EVENT_DELETE handler, which releases the
+        // state and fires on_close while overlay_root still matches. Calling
+        // release again is deliberate belt-and-braces: it is idempotent for
+        // on_close (moved out and nulled), and leaving the fire to depend on a
+        // re-entrant delete is too subtle to rely on.
         lv_obj_delete(overlay);
-        g_catalog_state.overlay_root = nullptr;
-        g_catalog_state.on_select = nullptr;
+        release_catalog_state();
         return;
     }
 
@@ -598,6 +629,11 @@ void WidgetCatalogOverlay::show(lv_obj_t* parent_screen, const PanelWidgetConfig
                 retire_category_page(page);
             }
             release_catalog_state();
+            // The pop that triggered this callback has already run, so the
+            // widget is off the stack and safe to reclaim. Without this the
+            // header back button leaks the whole tree the same way close_catalog
+            // used to.
+            retire_overlay(overlay, "catalog_root_reclaim");
             spdlog::debug("[WidgetCatalog] Closed via navigation go_back");
         }
     });

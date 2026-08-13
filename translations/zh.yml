@@ -2622,5 +2622,5 @@ translations:
   '{} new hardware available': '{} 个新硬件可用'
   '{} preset{}': '{} 个预设{}'
   '{} target set to {}°C': '{} 目标已设为 {}°C'
-  '{} widgets': ''
+  '{} widgets': '{} 个小组件'
   '{} — response timed out': '{} — 响应超时'

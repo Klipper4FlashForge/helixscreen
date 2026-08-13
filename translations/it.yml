@@ -2622,5 +2622,5 @@ translations:
   '{} new hardware available': '{} nuovo hardware disponibile'
   '{} preset{}': '{} preset{}'
   '{} target set to {}°C': Obiettivo {} impostato a {}°C
-  '{} widgets': ''
+  '{} widgets': '{} widget'
   '{} — response timed out': '{} — tempo scaduto'

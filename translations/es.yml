@@ -2622,5 +2622,5 @@ translations:
   '{} new hardware available': '{} nuevo hardware disponible'
   '{} preset{}': '{} preajuste{}'
   '{} target set to {}°C': '{} configurado a {}°C'
-  '{} widgets': ''
+  '{} widgets': '{} widgets'
   '{} — response timed out': '{} — tiempo de espera agotado'

@@ -2593,6 +2593,6 @@
   <translation tag="{} new hardware available" de="{} neue Hardware verfügbar"/>
   <translation tag="{} preset{}" de="{} Voreinstellung{}"/>
   <translation tag="{} target set to {}°C" de="{}-Zieltemperatur auf {}°C gesetzt"/>
-  <translation tag="{} widgets"/>
+  <translation tag="{} widgets" de="{} Widgets"/>
   <translation tag="{} — response timed out" de="{} – Antwort-Zeitüberschreitung"/>
 </translations>
