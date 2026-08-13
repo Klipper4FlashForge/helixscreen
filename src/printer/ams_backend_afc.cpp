@@ -897,6 +897,52 @@ std::string to_lower_copy(const std::string& s) {
     return out;
 }
 
+/// Highest tool number a lane may claim. Anything above this is treated as
+/// garbage rather than grown into, so a malformed field cannot size a vector.
+constexpr int kAfcMaxToolNumber = 64;
+
+/// Parse AFC's per-lane `map` field into tool numbers, in the order AFC sent them.
+///
+/// Two wire shapes are live at once and both must keep working. Before virtual
+/// tools (AFC #605) a lane's map is a single `"T0"` string; from #605 on it is
+/// ALWAYS a list — even a lane with exactly one tool, and even when virtual tools
+/// are left disabled — so the list shape is what every AFC install sends once that
+/// version is out, not just the ones that opted in.
+///
+/// The tool number must be ALL digits: `std::stoi("14,13")` returns 14 without
+/// throwing, so a laxer parse would turn a hypothetical comma-joined string into a
+/// confident, wrong, silent single mapping. Unparseable entries are skipped
+/// individually — one junk element does not discard a lane's good ones.
+std::vector<int> parse_afc_lane_map(const nlohmann::json& map_value) {
+    auto parse_one = [](const nlohmann::json& value, std::vector<int>& out) {
+        if (!value.is_string())
+            return;
+        const std::string token = value.get<std::string>();
+        if (token.size() < 2 || token[0] != 'T')
+            return;
+        const std::string digits = token.substr(1);
+        if (!std::all_of(digits.begin(), digits.end(),
+                         [](unsigned char c) { return std::isdigit(c) != 0; }))
+            return;
+        try {
+            const int tool = std::stoi(digits);
+            if (tool >= 0 && tool <= kAfcMaxToolNumber)
+                out.push_back(tool);
+        } catch (...) {
+            // Out of int range — skip
+        }
+    };
+
+    std::vector<int> tools;
+    if (map_value.is_array()) {
+        for (const auto& entry : map_value)
+            parse_one(entry, tools);
+    } else {
+        parse_one(map_value, tools);
+    }
+    return tools;
+}
+
 } // namespace
 
 std::optional<std::string>
@@ -2487,62 +2533,60 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     // notify_status_update DELTAS (only changed fields), so an ABSENT "map" means
     // "unchanged" and must NOT clear the mapping — same partial-delta rule the
     // status block above applies. Only a PRESENT value is authoritative:
-    //   string "T0"    → map to that tool
-    //   null           → unmapped, clear
-    //   array/object   → speculative multi-tool shape (AFC #605), unsupported;
-    //                    clear + warn once per lane so it surfaces in logs.
+    //   string "T0"        → AFC before virtual tools; one tool per lane
+    //   array ["T0", ...]  → AFC with virtual tools (#605), where map is ALWAYS a
+    //                        list, single-tool lanes included
+    //   null / empty / junk → unmapped, clear
     if (data.contains("map")) {
-        bool mapped = false;
-        if (data["map"].is_string()) {
-            std::string map_str = data["map"].get<std::string>();
-            // Parse "T{N}" format
-            if (map_str.size() >= 2 && map_str[0] == 'T') {
-                try {
-                    int tool_num = std::stoi(map_str.substr(1));
-                    if (tool_num >= 0 && tool_num <= 64) {
-                        // Update registry tool mapping (also sets slot.mapped_tool).
-                        // Firmware-sourced: this is AFC's own `map` field coming
-                        // back over the subscription, which is the only write here
-                        // that proves the printer applied a mapping (#1270).
-                        // set_slot_info()'s write is NOT this — that one is our
-                        // own intent, sent as SET_MAP a few lines later.
-                        slots_.set_tool_mapping(
-                            slot_index, tool_num,
-                            helix::printer::SlotRegistry::MappingSource::Firmware);
-                        spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, tool_num);
-                        mapped = true;
-
-                        // Cross-check against the T-commands AFC actually registered
-                        // with Klipper (AFC.maps, v1.2.0+). A lane claiming a tool
-                        // that has no registered command means change_tool() would
-                        // send gcode the firmware does not know. Diagnostic only —
-                        // the lane's own map field stays authoritative, since maps
-                        // is absent entirely before v1.2.0.
-                        if (!afc_tool_cmds_.empty() &&
-                            std::find(afc_tool_cmds_.begin(), afc_tool_cmds_.end(), map_str) ==
-                                afc_tool_cmds_.end() &&
-                            tool_cmd_missing_warned_.insert(tool_num).second) {
-                            spdlog::warn("[AMS AFC] Lane {} maps to {} but AFC registered no such "
-                                         "command ({} registered) — a tool change to T{} would "
-                                         "fail",
-                                         lane_name, map_str, afc_tool_cmds_.size(), tool_num);
-                        }
-                    }
-                } catch (...) {
-                    // Invalid tool number format — fall through to reset
-                }
-            }
-        } else if (!data["map"].is_null()) {
-            // Present but not a string: array/object multi-tool shape (unsupported)
-            if (map_non_string_warned_lanes_.insert(lane_name).second) {
-                spdlog::warn("[AMS AFC] Lane {} 'map' field is not a string (got array/object); "
-                             "multi-tool map is not supported — see AFC #605",
-                             lane_name);
-            }
-        }
-        if (!mapped) {
-            // Present-but-null, present-non-string, or malformed → authoritative unmap
+        const std::vector<int> tools = parse_afc_lane_map(data["map"]);
+        if (tools.empty()) {
+            // Present-but-null, empty list, or malformed → authoritative unmap
             slots_.clear_tool_mapping(slot_index);
+        } else {
+            // One tool per lane is all SlotRegistry can express: set_tool_mapping()
+            // drops the slot's previous tool from the forward map, so writing N
+            // tools for one lane would leave only the last one reachable. Take the
+            // LOWEST — it is stable as virtual tools are added and removed above it,
+            // and it keeps a lane on the tool it already had before its owner opted
+            // in. The extras are not tracked, so a tool change to one of them will
+            // not resolve to this lane until the registry models many-to-one.
+            const int tool_num = *std::min_element(tools.begin(), tools.end());
+
+            // Firmware-sourced: this is AFC's own `map` field coming back over the
+            // subscription, which is the only write here that proves the printer
+            // applied a mapping (#1270). set_slot_info()'s write is NOT this — that
+            // one is our own intent, sent as SET_MAP a few lines later.
+            slots_.set_tool_mapping(slot_index, tool_num,
+                                    helix::printer::SlotRegistry::MappingSource::Firmware);
+            spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, tool_num);
+
+            if (tools.size() > 1 && multi_tool_warned_lanes_.insert(lane_name).second) {
+                // Logged in AFC's own order, which is also how we learn what that
+                // order means — we have only ever seen it in a screencast.
+                std::string tool_list;
+                for (int t : tools)
+                    tool_list += (tool_list.empty() ? "T" : ", T") + std::to_string(t);
+                spdlog::warn("[AMS AFC] Lane {} maps to {} tools ({}) — virtual tools (AFC #605); "
+                             "using T{}, the rest are not tracked",
+                             lane_name, tools.size(), tool_list, tool_num);
+            }
+
+            // Cross-check against the T-commands AFC actually registered with
+            // Klipper (AFC.maps, v1.2.0+). A lane claiming a tool that has no
+            // registered command means change_tool() would send gcode the firmware
+            // does not know. Diagnostic only — the lane's own map field stays
+            // authoritative, since maps is absent entirely before v1.2.0. Checks
+            // only the tool we actually mapped, for the same reason the extras are
+            // dropped above.
+            const std::string map_cmd = "T" + std::to_string(tool_num);
+            if (!afc_tool_cmds_.empty() &&
+                std::find(afc_tool_cmds_.begin(), afc_tool_cmds_.end(), map_cmd) ==
+                    afc_tool_cmds_.end() &&
+                tool_cmd_missing_warned_.insert(tool_num).second) {
+                spdlog::warn("[AMS AFC] Lane {} maps to {} but AFC registered no such command ({} "
+                             "registered) — a tool change to T{} would fail",
+                             lane_name, map_cmd, afc_tool_cmds_.size(), tool_num);
+            }
         }
     }
     // "map" absent → partial delta, keep existing mapping

@@ -1006,9 +1006,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Per-lane hub routing: lane_name → hub name ("direct" for direct lanes)
     std::unordered_map<std::string, std::string> lane_hub_routing_;
 
-    // Lanes whose "map" field arrived as a non-string (array/object) — dedupes the
-    // multi-tool tripwire warning so it fires once per lane, not per update.
-    std::set<std::string> map_non_string_warned_lanes_;
+    // Lanes whose "map" field listed more than one tool (AFC virtual tools, #605)
+    // — dedupes the "extras are not tracked" warning so it fires once per lane,
+    // not once per status update.
+    std::set<std::string> multi_tool_warned_lanes_;
 
     // AFC state strings outside our known vocabulary — dedupes the schema-drift
     // warning so it fires once per distinct string, not once per status update.
