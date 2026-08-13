@@ -127,6 +127,72 @@ void on_restart_confirm(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_END();
 }
 
+/// Context for the cancel confirmation. Heap-allocated per show, freed in
+/// exactly one of on_cancel_confirmed / on_cancel_dismissed — same ownership
+/// shape as RestartCtx above.
+struct CancelCtx {
+    lv_obj_t* modal = nullptr;
+    IMoonrakerAPI* api = nullptr;
+    std::string log_prefix;
+};
+
+/// The actual send, reached only after the user confirms.
+void send_cancel_macro(IMoonrakerAPI* api, const std::string& log_prefix) {
+    const auto& cancel_info = StandardMacros::instance().get(StandardMacroSlot::Cancel);
+    spdlog::info("{} Using StandardMacros cancel: {}", log_prefix, cancel_info.get_macro());
+    StandardMacros::instance().execute(
+        StandardMacroSlot::Cancel, api,
+        [log_prefix]() { spdlog::info("{} Print cancelled", log_prefix); },
+        [log_prefix](const MoonrakerError& err) {
+            spdlog::error("{} Failed to cancel print: {}", log_prefix, err.message);
+            auto user_msg = err.user_message();
+            // StandardMacros::execute may deliver this from the libhv WebSocket
+            // thread; the toast and its lv_tr() lookup are main-thread only.
+            queue_update("dispatch_cancel_print::on_error", [user_msg = std::move(user_msg)]() {
+                NOTIFY_ERROR(lv_tr("Failed to cancel: {}"), user_msg);
+            });
+        });
+}
+
+void on_cancel_dismissed(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[CancelDispatch] on_cancel_dismissed");
+    auto* ctx = static_cast<CancelCtx*>(lv_event_get_user_data(e));
+    if (!ctx) {
+        return;
+    }
+    spdlog::info("{} Cancel confirmation dismissed — print continues", ctx->log_prefix);
+    if (ctx->modal) {
+        modal_hide(ctx->modal);
+    }
+    delete ctx;
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void on_cancel_confirmed(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[CancelDispatch] on_cancel_confirmed");
+    auto* ctx = static_cast<CancelCtx*>(lv_event_get_user_data(e));
+    if (!ctx) {
+        return;
+    }
+    // Hide before dispatching, and take copies first: modal_hide() runs the exit
+    // animation and the ctx is gone by the time the send's callbacks fire.
+    if (ctx->modal) {
+        modal_hide(ctx->modal);
+        ctx->modal = nullptr;
+    }
+    IMoonrakerAPI* api = ctx->api;
+    std::string log_prefix = std::move(ctx->log_prefix);
+    delete ctx;
+
+    if (!api) {
+        spdlog::error("{} cancel_confirm: api is null", log_prefix);
+        return;
+    }
+    spdlog::info("{} User confirmed cancel", log_prefix);
+    send_cancel_macro(api, log_prefix);
+    LVGL_SAFE_EVENT_CB_END();
+}
+
 } // namespace
 
 void show_restart_required_modal(IMoonrakerAPI* api, const std::string& filename,
@@ -235,9 +301,12 @@ void dispatch_cancel_print(IMoonrakerAPI* api, std::string log_prefix) {
         return;
     }
 
-    // The empty-slot check is the whole reason this is shared rather than a
-    // bare StandardMacros::execute() at each call site: without it the button
-    // silently does nothing on a printer with no CANCEL_PRINT.
+    // Checked BEFORE the confirmation, not after: asking "are you sure?" about
+    // an action that will then refuse for a reason the user could not have known
+    // is worse than refusing up front. The check is also the whole reason this
+    // is shared rather than a bare StandardMacros::execute() at each call site —
+    // without it the button silently does nothing on a printer with no
+    // CANCEL_PRINT.
     const auto& cancel_info = StandardMacros::instance().get(StandardMacroSlot::Cancel);
     if (cancel_info.is_empty()) {
         spdlog::warn("{} Cancel macro slot is empty", log_prefix);
@@ -245,20 +314,31 @@ void dispatch_cancel_print(IMoonrakerAPI* api, std::string log_prefix) {
         return;
     }
 
-    spdlog::info("{} Using StandardMacros cancel: {}", log_prefix, cancel_info.get_macro());
-    StandardMacros::instance().execute(
-        StandardMacroSlot::Cancel, api,
-        [log_prefix]() { spdlog::info("{} Print cancelled", log_prefix); },
-        [log_prefix](const MoonrakerError& err) {
-            spdlog::error("{} Failed to cancel print: {}", log_prefix, err.message);
-            auto user_msg = err.user_message();
-            // StandardMacros::execute may deliver this from the libhv WebSocket
-            // thread; the toast and its lv_tr() lookup are main-thread only.
-            helix::ui::queue_update("dispatch_cancel_print::on_error",
-                                    [user_msg = std::move(user_msg)]() {
-                                        NOTIFY_ERROR(lv_tr("Failed to cancel: {}"), user_msg);
-                                    });
-        });
+    auto* ctx = new CancelCtx{};
+    ctx->api = api;
+    ctx->log_prefix = log_prefix;
+
+    // Copy and severity deliberately identical to print_cancel_confirm_modal.xml,
+    // the confirmation the print-status panel's Stop button already raises: the
+    // two dialogs cancel the same print, so they must read the same. Severity
+    // Error selects modal_dialog.xml's alert_octagon/danger icon, which is the
+    // icon that component uses. (The primary button there carries an explicit
+    // danger variant that modal_dialog's severity binding does not drive — the
+    // one cosmetic difference between the two.)
+    ctx->modal = modal_show_confirmation(
+        lv_tr("Stop Print?"),
+        lv_tr("Are you sure you want to cancel this print? All progress will be lost."),
+        ModalSeverity::Error, lv_tr("Stop"), on_cancel_confirmed, on_cancel_dismissed, ctx,
+        lv_tr("Keep Printing"));
+
+    if (!ctx->modal) {
+        // Never silently swallow the intent: if the dialog cannot be built there
+        // is nothing to confirm against, so refuse loudly rather than cancelling
+        // a print the user was never actually asked about.
+        spdlog::error("{} Failed to create cancel confirmation modal — not cancelling", log_prefix);
+        NOTIFY_ERROR(lv_tr("Could not confirm cancel"));
+        delete ctx;
+    }
 }
 
 } // namespace helix::ui

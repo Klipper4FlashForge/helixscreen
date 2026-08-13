@@ -289,10 +289,9 @@ void FilamentSensorWidget::show_tap_modal(bool status_only) {
                 return;
             }
             spdlog::info("[FilamentSensorWidget] User chose to cancel print from the sensor tile");
-            // No confirmation, deliberately: FilamentRunoutHandler's identical
-            // "Cancel Print" button has never confirmed either, and two dialogs
-            // that look the same must not behave differently. If a confirmation
-            // is wanted it belongs inside dispatch_cancel_print(), covering both.
+            // Raises a confirmation and sends nothing until it is accepted; the
+            // dialog lives in dispatch_cancel_print() so this surface and the
+            // runout guidance dialog cannot diverge on a destructive action.
             helix::ui::dispatch_cancel_print(get_moonraker_api(), "[FilamentSensorWidget]");
         });
     } else {

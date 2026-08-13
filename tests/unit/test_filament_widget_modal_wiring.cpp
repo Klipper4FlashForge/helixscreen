@@ -148,31 +148,82 @@ TEST_CASE_METHOD(TapModalFixture, "Paused tap modal wires the buttons its paused
     CHECK(modal().has_cancel_print_handler());
 }
 
-TEST_CASE_METHOD(TapModalFixture, "One Cancel Print press dispatches the cancel macro, unconfirmed",
+TEST_CASE_METHOD(TapModalFixture,
+                 "Cancel Print dispatches nothing until the confirmation is accepted",
                  "[filament][widget_tap][wiring]") {
-    // Two claims in one press. That anything is sent at all: before the fix the
-    // press closed the dialog and dispatched nothing. And that ONE press is
-    // enough — no confirmation step stands between the button and the printer.
-    //
-    // The unconfirmed half is deliberate and pinned so a divergence fails here
-    // rather than surprising someone: FilamentRunoutHandler's identical Cancel
-    // Print button has never confirmed either, and two dialogs that render the
-    // same must not behave differently. Adding a confirmation belongs inside
-    // dispatch_cancel_print(), which both surfaces call — at which point this
-    // assertion changes once, on purpose, for both.
+    // Cancelling a print is destructive and unrecoverable, and this button sits
+    // in a dialog whose every other button is harmless — exactly the shape a
+    // misplaced tap ruins a print with. dispatch_cancel_print() therefore raises
+    // the same confirmation the print-status panel's Stop button does, and both
+    // surfaces that call it inherit it.
     configure_cancel_macro();
     set_print_state(helix::PrintJobState::PAUSED);
     show_tap_modal(/*status_only=*/false);
 
-    lv_obj_t* dialog = modal().dialog();
-    REQUIRE(dialog != nullptr);
-    lv_obj_t* cancel = lv_obj_find_by_name(dialog, "btn_cancel_print");
+    lv_obj_t* guidance = modal().dialog();
+    REQUIRE(guidance != nullptr);
+    lv_obj_t* cancel = lv_obj_find_by_name(guidance, "btn_cancel_print");
     REQUIRE(cancel != nullptr);
 
     lv_obj_send_event(cancel, LV_EVENT_CLICKED, nullptr);
     helix::ui::UpdateQueue::instance().drain();
 
+    // The press alone must reach the printer with nothing.
+    CHECK_FALSE(gcode_sent_containing("CANCEL_PRINT"));
+
+    // A second, distinct modal is now on top of the stack.
+    lv_obj_t* confirm = Modal::get_top();
+    REQUIRE(confirm != nullptr);
+    REQUIRE(confirm != guidance);
+
+    lv_obj_t* btn_primary = lv_obj_find_by_name(confirm, "btn_primary");
+    REQUIRE(btn_primary != nullptr);
+
+    lv_obj_send_event(btn_primary, LV_EVENT_CLICKED, nullptr);
+    helix::ui::UpdateQueue::instance().drain();
+
+    // ...and only accepting sends it.
     CHECK(gcode_sent_containing("CANCEL_PRINT"));
+}
+
+TEST_CASE_METHOD(TapModalFixture,
+                 "Declining the cancel confirmation sends nothing and orphans nothing",
+                 "[filament][widget_tap][wiring]") {
+    // The half that makes the test above mean something: if "Keep Printing" also
+    // dispatched, confirming would be theatre. Also pins that declining leaves no
+    // modal behind — the confirmation stacks on a dialog that hides itself on the
+    // same press, so the teardown order is worth an assertion.
+    configure_cancel_macro();
+    set_print_state(helix::PrintJobState::PAUSED);
+    show_tap_modal(/*status_only=*/false);
+
+    lv_obj_t* cancel = lv_obj_find_by_name(modal().dialog(), "btn_cancel_print");
+    REQUIRE(cancel != nullptr);
+    lv_obj_send_event(cancel, LV_EVENT_CLICKED, nullptr);
+    helix::ui::UpdateQueue::instance().drain();
+
+    lv_obj_t* confirm = Modal::get_top();
+    REQUIRE(confirm != nullptr);
+    lv_obj_t* btn_secondary = lv_obj_find_by_name(confirm, "btn_secondary");
+    REQUIRE(btn_secondary != nullptr);
+
+    // Documented, not endorsed: RunoutGuidanceModal::on_tertiary() hides
+    // unconditionally, so the dialog the user pressed the button in is already
+    // going away by the time the confirmation is up. Declining therefore does not
+    // return them to it. That was right when the press was terminal and is
+    // questionable now that it only opens a question - flagged in the report
+    // rather than changed here, since it alters a shipped dialog's semantics.
+    CHECK_FALSE(modal().is_visible());
+
+    lv_obj_send_event(btn_secondary, LV_EVENT_CLICKED, nullptr);
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK_FALSE(gcode_sent_containing("CANCEL_PRINT"));
+
+    // Let both exit animations run to completion, then assert the stack drained.
+    process_lvgl(600);
+    helix::ui::UpdateQueue::instance().drain();
+    CHECK_FALSE(Modal::any_visible());
 }
 
 TEST_CASE_METHOD(TapModalFixture, "Status-only reshow leaves no stale action callbacks",

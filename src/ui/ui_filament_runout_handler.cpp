@@ -212,8 +212,9 @@ void FilamentRunoutHandler::show_runout_guidance_modal() {
 
         spdlog::info("[FilamentRunoutHandler] User chose to cancel print after runout");
         // Shared with the home Filament tile's paused modal, which offers the
-        // same button. No confirmation here — this dialog has never asked, and
-        // the tile deliberately matches rather than diverging.
+        // same button. Raises the same confirmation the Stop button does and
+        // sends nothing until the user accepts — this dialog used to cancel on
+        // the first tap, alone among the printer's three cancel affordances.
         helix::ui::dispatch_cancel_print(api_, "[FilamentRunoutHandler]");
     });
 
