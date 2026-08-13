@@ -171,6 +171,36 @@ class PanelWidgetConfig {
         return pending_anchors_;
     }
 
+    /// Grid signature the saved coordinates are expressed in ("6x14"), or ""
+    /// when the layout predates per-grid storage and has not been stamped yet.
+    const std::string& grid_signature() const {
+        return grid_signature_;
+    }
+
+    /// Make @p cols x @p rows the active grid.
+    ///
+    /// A saved layout is coordinates in TRACKS, and a track means nothing
+    /// without the grid it counts against. The grid is no longer fixed per
+    /// device: the UI scale multiplies the cell edge, so one panel yields a
+    /// different track count per scale, and restoring a config onto other
+    /// hardware moves it too. Rewriting one stored layout each time the grid
+    /// changed destroyed the arrangement - the write-back in populate_widgets()
+    /// persists computed positions, so the degraded copy became the only copy
+    /// and switching back had nothing to restore.
+    ///
+    /// So each grid keeps its own arrangement. The active one stays exactly
+    /// where it always was, which leaves every existing reader untouched; the
+    /// rest are parked beside it. Switching parks the outgoing layout, then
+    /// restores this grid's if it has one, or seeds it by remapping the
+    /// outgoing one - the arrangement the user was just looking at is the
+    /// closest thing to their intent that exists, and port_legacy_layout()
+    /// makes it fit by construction.
+    ///
+    /// A layout with no recorded grid is stamped and otherwise left alone:
+    /// which grid it was arranged on is unrecoverable, and reseating it on a
+    /// guess would discard a real arrangement. No-op when already active.
+    void switch_to_grid(int cols, int rows);
+
     /// Apply the default anchors for a now-known grid, then persist and clear
     /// the tag. No-op unless has_pending_anchors().
     void apply_pending_anchors(int grid_cols, int grid_rows);
@@ -218,10 +248,21 @@ class PanelWidgetConfig {
     int next_page_id_ = 1;
     bool loaded_ = false;
     bool pending_anchors_ = false;
+    std::string grid_signature_;
+    /// Arrangements for grids that are not active, keyed by signature. Each
+    /// value has the same shape as the active layout's persisted form.
+    nlohmann::json parked_grids_ = nlohmann::json::object();
     bool legacy_units_ = false;
     int legacy_rows_ = 0;
 
     static std::vector<PanelWidgetEntry> build_defaults();
+
+    /// The pages payload as it is persisted. Shared by save() and by
+    /// switch_to_grid(), which parks exactly what save() would have written.
+    nlohmann::json serialize_pages() const;
+
+    /// Replace pages_ from a payload produced by serialize_pages().
+    void restore_pages(const nlohmann::json& payload);
 
     /// Parse a JSON array of widget entries into a vector, applying migrations.
     /// If append_registry_defaults is true, appends missing registry widgets.

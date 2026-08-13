@@ -454,7 +454,18 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     // The two tags never coexist: a pre-v22 layout is not a freshly-defaulted
     // one. Ordering them anyway keeps the invariant that nothing reads a
     // coordinate before the pass that owns its units has run.
-    if (widget_config.has_pending_anchors()) {
+    //
+    // Neither runs while Klipper is not READY. A transient firmware_restart
+    // widget is occupying a cell then, so this is not the user's layout, and
+    // both of these persist — one stamps the grid, the other can reseat every
+    // coordinate. Freezing either from a transient arrangement is the same
+    // mistake the write-back below refuses to make; deferring costs nothing,
+    // because the next READY populate resolves it cleanly.
+    if (fw_restart_injected) {
+        spdlog::debug("[PanelWidgetManager] '{}': deferring layout resolution — Klipper is not "
+                      "READY, so this arrangement is transient",
+                      panel_id);
+    } else if (widget_config.has_pending_anchors()) {
         if (content_box_measured) {
             widget_config.apply_pending_anchors(grid_dims.cols, grid_dims.rows);
         } else {
@@ -462,6 +473,17 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                          "content box measures",
                          panel_id);
         }
+    } else if (content_box_measured) {
+        // Make this grid the active one. A saved layout is coordinates in
+        // tracks, and the grid those tracks count against is no longer fixed
+        // per device — the UI scale changes it on the same panel. Without this
+        // the write-back below persists whatever THIS grid could seat over the
+        // arrangement the user made on another one, and switching back finds
+        // nothing to restore.
+        //
+        // Cheap on the common path: the signature already matches on every
+        // rebuild after the first, so this returns without touching storage.
+        widget_config.switch_to_grid(grid_dims.cols, grid_dims.rows);
     }
 
     // Build grid placement tracker to compute positions

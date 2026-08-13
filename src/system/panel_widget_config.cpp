@@ -9,6 +9,7 @@
 #include "helix-xml/src/xml/lv_xml.h"
 #include "json_utils.h"
 #include "layout_manager.h"
+#include "layout_port.h"
 #include "panel_widget_registry.h"
 #include "theme_manager.h"
 
@@ -142,6 +143,8 @@ void PanelWidgetConfig::load() {
     main_page_index_ = 0;
     next_page_id_ = 1;
     pending_anchors_ = false;
+    grid_signature_.clear();
+    parked_grids_ = json::object();
     legacy_units_ = false;
     legacy_rows_ = 0;
 
@@ -184,6 +187,14 @@ void PanelWidgetConfig::load() {
         // key being absent, which is every layout that predates this — reads as
         // "already placed" and is left alone.
         pending_anchors_ = helix::json_util::safe_string(saved, "anchors") == "pending";
+
+        // Which grid `pages` counts against, and the arrangements parked for
+        // other grids. Absent on every layout written before per-grid storage,
+        // which reads as "not stamped yet" and is handled by switch_to_grid().
+        grid_signature_ = helix::json_util::safe_string(saved, "grid");
+        if (auto p = saved.find("parked_grids"); p != saved.end() && p->is_object()) {
+            parked_grids_ = *p;
+        }
 
         // Pre-v22 coordinates, tagged by the migration for PanelWidgetManager to
         // port once a measured grid exists. Compared against the one value the
@@ -368,7 +379,7 @@ bool PanelWidgetConfig::try_populate_from_preset_seed() {
     return true;
 }
 
-void PanelWidgetConfig::save() {
+nlohmann::json PanelWidgetConfig::serialize_pages() const {
     json pages_json = json::array();
     for (const auto& page : pages_) {
         json page_obj;
@@ -391,10 +402,15 @@ void PanelWidgetConfig::save() {
         pages_json.push_back(std::move(page_obj));
     }
 
-    json root;
-    root["pages"] = std::move(pages_json);
-    root["main_page_index"] = main_page_index_;
-    root["next_page_id"] = next_page_id_;
+    json out;
+    out["pages"] = std::move(pages_json);
+    out["main_page_index"] = main_page_index_;
+    out["next_page_id"] = next_page_id_;
+    return out;
+}
+
+void PanelWidgetConfig::save() {
+    json root = serialize_pages();
     // Has to survive a save that lands before the anchors are applied: the
     // placement engine writes auto-placed positions back on every populate, so
     // dropping the tag here would make an unanchored default look arranged.
@@ -407,6 +423,15 @@ void PanelWidgetConfig::save() {
     if (legacy_units_) {
         root["layout_units"] = "cells_v21";
         root["legacy_rows"] = legacy_rows_;
+    }
+    // The grid these coordinates count against, and the arrangements belonging
+    // to grids that are not active. Both omitted while empty so a single-grid
+    // config — every printer — is byte-identical to what it wrote before.
+    if (!grid_signature_.empty()) {
+        root["grid"] = grid_signature_;
+    }
+    if (!parked_grids_.empty()) {
+        root["parked_grids"] = parked_grids_;
     }
 
     config_.set<json>(config_.df() + "panel_widgets/" + panel_id_, root);
@@ -653,6 +678,19 @@ std::string choose_placement_key(const nlohmann::json& by_bp, UiBreakpoint break
         }
     }
     return {};
+}
+
+/// One axis of a "<cols>x<rows>" signature, or 0 when it does not parse.
+int parse_grid_axis(const std::string& signature, bool want_cols) {
+    const auto x = signature.find('x');
+    if (x == std::string::npos) {
+        return 0;
+    }
+    const std::string part = want_cols ? signature.substr(0, x) : signature.substr(x + 1);
+    if (part.empty() || part.find_first_not_of("0123456789") != std::string::npos) {
+        return 0;
+    }
+    return std::atoi(part.c_str());
 }
 
 /// Whether an anchor's rectangle lies wholly inside a track grid.
@@ -1049,6 +1087,110 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_defaults() {
     return build_default_grid();
 }
 
+void PanelWidgetConfig::restore_pages(const nlohmann::json& payload) {
+    pages_.clear();
+    main_page_index_ = static_cast<size_t>(helix::json_util::safe_int(payload, "main_page_index"));
+    next_page_id_ = helix::json_util::safe_int(payload, "next_page_id");
+    if (payload.contains("pages") && payload["pages"].is_array()) {
+        for (const auto& page_json : payload["pages"]) {
+            if (!page_json.is_object()) {
+                continue;
+            }
+            PageConfig page;
+            page.id = helix::json_util::safe_string(page_json, "id");
+            if (page_json.contains("widgets") && page_json["widgets"].is_array()) {
+                page.widgets = parse_widget_array(page_json["widgets"], pages_.empty());
+            }
+            pages_.push_back(std::move(page));
+        }
+    }
+    if (pages_.empty()) {
+        PageConfig page;
+        page.id = "main";
+        page.widgets = build_defaults();
+        pending_anchors_ = true;
+        pages_.push_back(std::move(page));
+    }
+    if (main_page_index_ >= pages_.size()) {
+        main_page_index_ = 0;
+    }
+    if (next_page_id_ <= 0) {
+        next_page_id_ = static_cast<int>(pages_.size());
+    }
+}
+
+void PanelWidgetConfig::switch_to_grid(int cols, int rows) {
+    if (cols <= 0 || rows <= 0 || pages_.empty()) {
+        return;
+    }
+    const std::string target = std::to_string(cols) + "x" + std::to_string(rows);
+    if (grid_signature_ == target) {
+        return;
+    }
+
+    // Never stamped. Which grid these coordinates were arranged on is not
+    // recoverable, so the honest move is to claim the grid we are on now and
+    // change nothing else — reseating a real arrangement on a guess is the
+    // failure this whole change exists to stop.
+    if (grid_signature_.empty()) {
+        grid_signature_ = target;
+        spdlog::info("[PanelWidgetConfig] '{}': layout adopted by the {} grid", panel_id_, target);
+        save();
+        return;
+    }
+
+    const std::string outgoing = grid_signature_;
+    const int old_cols = parse_grid_axis(outgoing, /*want_cols=*/true);
+    const int old_rows = parse_grid_axis(outgoing, /*want_cols=*/false);
+
+    // Park the outgoing arrangement before touching anything.
+    parked_grids_[outgoing] = serialize_pages();
+
+    if (auto it = parked_grids_.find(target); it != parked_grids_.end() && it->is_object()) {
+        restore_pages(*it);
+        parked_grids_.erase(target);
+        grid_signature_ = target;
+        spdlog::info("[PanelWidgetConfig] '{}': restored the saved {} arrangement (was {})",
+                     panel_id_, target, outgoing);
+        save();
+        return;
+    }
+
+    // First visit. Seed from the arrangement being left rather than from the
+    // shipped defaults: it is the layout the user was last looking at, and the
+    // remapper seats it on the new grid or drops a widget to auto-placement,
+    // per widget, rather than failing the layout.
+    int seated = 0;
+    if (old_cols > 0 && old_rows > 0) {
+        for (auto& page : pages_) {
+            std::vector<LegacyPlacement> saved;
+            saved.reserve(page.widgets.size());
+            for (const auto& e : page.widgets) {
+                saved.push_back({e.id, e.col, e.row, e.colspan, e.rowspan});
+            }
+            const auto ported = port_legacy_layout(saved, old_cols, old_rows, cols, rows);
+            for (size_t i = 0; i < page.widgets.size() && i < ported.size(); ++i) {
+                if (ported[i].seated) {
+                    page.widgets[i].col = ported[i].col;
+                    page.widgets[i].row = ported[i].row;
+                    page.widgets[i].colspan = ported[i].colspan;
+                    page.widgets[i].rowspan = ported[i].rowspan;
+                    ++seated;
+                } else {
+                    page.widgets[i].col = -1;
+                    page.widgets[i].row = -1;
+                }
+            }
+        }
+    }
+
+    grid_signature_ = target;
+    spdlog::info("[PanelWidgetConfig] '{}': seeded the {} grid from {} ({} widget(s) reseated, "
+                 "the rest auto-placed)",
+                 panel_id_, target, outgoing, seated);
+    save();
+}
+
 void PanelWidgetConfig::apply_pending_anchors(int grid_cols, int grid_rows) {
     if (!pending_anchors_ || grid_cols <= 0 || grid_rows <= 0) {
         return;
@@ -1077,6 +1219,7 @@ void PanelWidgetConfig::apply_pending_anchors(int grid_cols, int grid_rows) {
                  panel_id_, grid_cols, grid_rows, anchored, pages_[0].widgets.size());
 
     pending_anchors_ = false;
+    grid_signature_ = std::to_string(grid_cols) + "x" + std::to_string(grid_rows);
     save();
 }
 

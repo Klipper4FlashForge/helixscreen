@@ -537,6 +537,50 @@ placed on and auto-places the ones that do not fit, naming them in a warning. Wi
 tier switches off are exempt — whether a disabled widget's anchor fits is not a fact about
 anything.
 
+#### One saved layout per grid
+
+A saved layout is coordinates in **tracks**, and a track means nothing without the grid it
+counts against. That grid is no longer a fixed property of the device: the UI scale
+multiplies the cell edge, so the same panel yields a different track count per scale, and
+restoring a config onto other hardware moves it too.
+
+Rewriting a single stored layout on each grid change destroyed the arrangement. The
+write-back at the end of `populate_widgets()` persists computed positions, so the first
+populate on a new grid replaced the user's coordinates with that grid's clamped and
+auto-placed fallback, and switching back had nothing left to restore. Spans were already
+protected from precisely this (#1216, *"a property of the current screen, not of the user's
+layout"*); positions were not.
+
+So each grid keeps its own arrangement:
+
+```json
+"panel_widgets": { "home": {
+  "pages": [ ... ],          // the ACTIVE grid's layout, shape unchanged
+  "grid": "6x14",            // which grid those tracks count against
+  "parked_grids": {          // arrangements for grids that are not active
+    "12x24": { "pages": [ ... ], "main_page_index": 0, "next_page_id": 1 }
+  }
+}}
+```
+
+The active layout stays exactly where it always was, so every existing reader is untouched,
+and both new keys are omitted while empty — a single-grid config, which is every printer,
+writes byte-identical JSON to what it wrote before.
+
+`PanelWidgetConfig::switch_to_grid(cols, rows)` parks the outgoing arrangement, then either
+restores this grid's saved one or seeds it by remapping the outgoing one through
+`port_legacy_layout()` (`include/layout_port.h`) — the same remapper the pre-v22 port uses.
+Seeding from the layout being left, rather than from the shipped defaults, is deliberate: it
+is the arrangement the user was last looking at, so it is the closest thing to their intent
+that exists. A layout with no recorded grid is **stamped and otherwise left alone**; which
+grid it was arranged on is unrecoverable, and reseating a real arrangement on a guess is the
+failure this exists to prevent.
+
+Neither this nor the pending-anchor pass runs while Klipper is not READY. A transient
+`firmware_restart` widget occupies a cell then, so the arrangement is not the user's, and
+both passes persist — freezing either from a transient layout is the mistake the write-back
+already refuses to make.
+
 This is also why defaults are no longer built at config load. `load()` runs before the
 widget container exists, and the panel extent it could have guessed from is not what the
 track count divides — the *content box* is, and the two disagree enough to pick a different
