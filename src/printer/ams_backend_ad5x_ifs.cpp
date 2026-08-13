@@ -1512,6 +1512,16 @@ AmsError AmsBackendAd5xIfs::do_load_filament(int slot_index) {
     // on native ZMOD — without this the load sticks at Purge until the 90s
     // timeout flips to ERROR (raza616 stuck-on-Purging). on_complete fires on a
     // bg thread, so hop to the main thread before touching state.
+    //
+    // ensure_homed_then() WITHOUT skip_homing is deliberate (#1248 proposed
+    // skip_homing=true on the theory that this double-homes; it does not). The
+    // macro's leading _G28 is conditional on homed_axes, so once our G28 has
+    // run it falls through - one home either way. What ensure_homed_then() buys
+    // over letting the macro home itself is the "Home printer first?" prompt:
+    // on a loadcell-Z AD5X the load is about to run a full probing home plus a
+    // trash-drop and nozzle wipe, and the user gets told before the toolhead
+    // moves. Unlike the unload above, which the user reaches only from an
+    // already-loaded head, Load is the entry point from a cold idle printer.
     auto token = lifetime_.token();
     return ensure_homed_then("INSERT_PRUTOK_IFS PRUTOK=" + std::to_string(port), [this, token]() {
         token.defer("Ad5xIfsBackend::load_macro_complete",
@@ -1630,13 +1640,19 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
 
     // Dispatch ZMOD's own toolhead-unload macro rather than reconstructing it.
     // _IFS_REMOVE_CURRENT_PRUTOK is the firmware's "Remove from extruder" button
-    // (observed working on raza616's device, bundle 7AC4SDEX): it homes itself
+    // (observed working on raza616's device, bundle 7AC4SDEX): it self-homes
     // (_G28), calls IFS_REMOVE_CURRENT_PRUTOK with NEED_TRASH=1
     // BYPASS_TEMPERATURE_CHECK=1, then resets the hotend to 0 and refreshes
-    // color. Send it raw via execute_gcode() (NOT ensure_homed_then(), which
-    // would home a SECOND time), and never the bare Python command — that skips
-    // the trash drop and leaves the nozzle hot. Verified against the device cfg
-    // and ZMOD v1.7.1.
+    // color. Send it raw via execute_gcode(), never the bare Python command -
+    // that skips the trash drop and leaves the nozzle hot. Verified against the
+    // device cfg and ZMOD v1.7.1.
+    //
+    // Raw rather than ensure_homed_then() because the macro's own _G28 already
+    // covers the unhomed case, so our G28 would add nothing but a "Home printer
+    // first?" prompt in front of a home the user cannot decline anyway. It is
+    // NOT to avoid a double home: _G28 is conditional on homed_axes and no-ops
+    // once we have homed (see filament_ops_self_home() in the header). The load
+    // path below deliberately makes the opposite call - see do_load_filament().
     spdlog::info("{} Unloading filament from toolhead (slot {}, current_slot {}, seated_slot {}, "
                  "head_empty {})",
                  backend_log_tag(), slot_index, current_slot, seated_slot, head_empty);
@@ -1766,6 +1782,16 @@ AmsError AmsBackendAd5xIfs::do_change_tool(int tool_number) {
     // LOADING action above is what the runout gate keys on instead.
     emit_event(EVENT_STATE_CHANGED);
     spdlog::info("{} Changing to tool T{} (port {})", backend_log_tag(), tool_number, port);
+    // ensure_homed_then() without skip_homing, and NOT because A_CHANGE_FILAMENT
+    // is known to need it. Unlike INSERT_PRUTOK_IFS / _IFS_REMOVE_CURRENT_PRUTOK,
+    // this macro is not in the ZMOD tree at all: ZMOD ships CHANGE_FILAMENT and
+    // _A_CHANGE_FILAMENT as RESPOND-only stubs and drives its own swaps through
+    // INSERT_PRUTOK_IFS (zmod_color.py). A_CHANGE_FILAMENT comes from the stock
+    // FlashForge config, which we have no copy of, so whether it self-homes is
+    // unverified in either direction. Homing first is the safe side of that
+    // unknown: an extra conditional _G28 costs nothing, while skipping ours in
+    // front of a macro that does NOT self-home hands Klipper toolhead moves on
+    // unhomed axes. Do not "fix" this to skip_homing=true without the cfg.
     return ensure_homed_then("A_CHANGE_FILAMENT CHANNEL=" + std::to_string(port));
 }
 

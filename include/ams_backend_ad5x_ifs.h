@@ -196,24 +196,35 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
     /// AD5X IFS is the one backend whose filament macros home inside firmware.
     ///
-    /// `_IFS_REMOVE_CURRENT_PRUTOK` (the unload HelixScreen dispatches for a
-    /// loaded toolhead) runs `_G28` itself before removing the filament — which
-    /// is why unload_filament() sends it via execute_gcode() rather than
-    /// ensure_homed_then(), to avoid homing twice
-    /// (ams_backend_ad5x_ifs.cpp "it homes itself (_G28)";
-    /// docs/devel/printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md). The load
-    /// macro `INSERT_PRUTOK_IFS` is likewise home -> heat -> feed -> purge.
+    /// Both toolhead macros open with `_G28`: `_IFS_REMOVE_CURRENT_PRUTOK` (the
+    /// unload HelixScreen dispatches for a loaded toolhead) and
+    /// `_INSERT_PRUTOK_IFS` (behind the `INSERT_PRUTOK_IFS` load), the latter
+    /// being `_G28` -> heat -> feed -> purge.
     ///
-    /// The AD5X has a loadcell Z: that `_G28` probes the nozzle DOWN into the
-    /// bed. Issued while a job owns the toolhead it drives the nozzle into the
-    /// part, tripping ZMOD's ZCONTROL_AUTO force trip and shutting Klipper down
-    /// — recoverable only by a firmware restart (bundle XWPBR2DX, commit
-    /// 329e731e9). Layer 1 (reject_homing_during_active_print) cannot help: the
-    /// `_G28` is buried in the firmware macro and never crosses our gcode API.
+    /// `_G28` is CONDITIONAL, not an unconditional home. Its whole body is
+    /// `{% if "xyz" not in printer.toolhead.homed_axes %} _HOME {% endif %}`
+    /// (ZMOD 1.7.1 `mod/_mod/translate/*/base.cfg`, identical in all 12 language
+    /// copies). So it homes an unhomed toolhead and no-ops on a homed one, and
+    /// pairing it with ensure_homed_then() does NOT home twice: our `G28`
+    /// (itself `_HOME`, via ZMOD's `G28` override in the same base.cfg) leaves
+    /// `homed_axes` == "xyz", and the macro's `_G28` then falls through. See
+    /// prestonbrown/helixscreen#1248, which read the macro as an unconditional
+    /// home and reported a double home that does not occur.
+    ///
+    /// What this flag is about is the rest of the macro, not the home. The AD5X
+    /// has a loadcell Z, and the macros drive the toolhead across the bed on
+    /// their own authority (`_GOTO_TRASH`, `_SBROS_TRASH`, `_CLEAR_REZINA`
+    /// nozzle wipe) with a `_G28` in front that WILL fire whenever `homed_axes`
+    /// has been cleared - a Klipper error, an `M84`, a cold resume. Issued while
+    /// a job owns the toolhead, that motion reaches the part, tripping ZMOD's
+    /// ZCONTROL_AUTO force trip and shutting Klipper down - recoverable only by
+    /// a firmware restart (bundle XWPBR2DX, commit 329e731e9). Layer 1
+    /// (reject_homing_during_active_print) cannot help: the `_G28` is buried in
+    /// the firmware macro and never crosses our gcode API.
     ///
     /// So this backend keeps refusing load/unload/change_tool while PAUSED as
     /// well as while PRINTING. That protection was earned on a real shutdown and
-    /// must not be relaxed without evidence the macro stopped self-homing.
+    /// must not be relaxed on the strength of the `homed_axes` guard alone.
     [[nodiscard]] bool filament_ops_self_home() const override {
         return true;
     }
