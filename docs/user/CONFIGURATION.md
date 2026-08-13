@@ -1094,6 +1094,45 @@ Located in the `ams` section:
 - `3d` - Bambu-style pseudo-3D canvas with gradients
 - `flat` - Simple concentric rings
 
+### Per-printer AMS settings
+
+The remaining AMS settings are **per printer**, so they live under the printer's own section rather than the top-level `ams` block:
+
+```json
+{
+  "printers": {
+    "default": {
+      "ams": {
+        "force_bypass_controls": false,
+        "always_show_bypass_spool": false,
+        "afc_unload_after_print": false
+      }
+    }
+  }
+}
+```
+
+All three have UI equivalents in **Settings > Hardware & Devices > Multi-Filament System Management** - edit them there rather than by hand.
+
+#### `force_bypass_controls`
+**Type:** boolean
+**Default:** `false`
+**Description:** Show the bypass controls and the external spool on the filament path even when the firmware reports no bypass position. Applies to Creality CFS, Anycubic ACE Pro, Snapmaker U1, tool changers, QIDI Box, and Happy Hare configs where `[mmu_machine] has_bypass` is `0`. The matching UI row is hidden whenever the firmware *does* report a bypass.
+
+On Happy Hare, `MMU_SELECT_BYPASS` ignores `has_bypass` and works either way, so this setting makes the bypass usable on `mmu_vendor: Other` setups and on uncalibrated type-A selectors. On the other systems there is no bypass command to send: the Bypass toggle reports that the operation is not supported, and the setting controls only whether the external spool is displayed and tracked.
+
+See [Filament → When Bypass Doesn't Appear](guide/filament.md#when-bypass-doesnt-appear).
+
+#### `always_show_bypass_spool`
+**Type:** boolean
+**Default:** `false`
+**Description:** Keep the external spool visible on the filament path while bypass is disengaged. Applies to AFC systems (Box Turtle, OpenAMS) only, which publish a virtual bypass sensor whether or not one is physically wired; without this, the node is drawn only while bypass is actually engaged.
+
+#### `afc_unload_after_print`
+**Type:** boolean
+**Default:** `false`
+**Description:** On AFC systems, retract filament back to its lane when a print finishes.
+
 ---
 
 ## Panel Widget Settings
