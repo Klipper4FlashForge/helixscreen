@@ -136,6 +136,11 @@ TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection lays the bar out from the me
         // Only the far end is dangerous in a 0..100 mode.
         CHECK(piece_x(track, "clog_bar_danger_lo") == -1);
         CHECK(piece_w(track, "clog_bar_danger_hi") == g.danger_hi_w);
+
+        // The threshold rule marks where that shading starts, and there is no
+        // low end to mark.
+        CHECK(piece_x(track, "clog_bar_threshold_hi") == g.danger_hi_x);
+        CHECK(piece_x(track, "clog_bar_threshold_lo") == -1);
     }
 
     SECTION("Flowguard grows out from the centre and shades both ends") {
@@ -155,6 +160,13 @@ TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection lays the bar out from the me
 
         // The peak went to the side the reading is leaning toward.
         CHECK(piece_x(track, "clog_bar_peak") < track_w / 2);
+
+        // A symmetrical mode marks both thresholds, each on the inside edge of
+        // its shading — the rule has to sit inside the zone it opens, or it
+        // hangs off the end of the track at an extreme threshold.
+        CHECK(piece_x(track, "clog_bar_threshold_lo") ==
+              g.danger_lo_x + g.danger_lo_w - ui::kClogBarTickW);
+        CHECK(piece_x(track, "clog_bar_threshold_hi") == g.danger_hi_x);
     }
 
     SECTION("nothing to report draws no fill and no peak") {
@@ -246,4 +258,48 @@ TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection re-measures when the mode ch
     CHECK(lv_obj_get_content_width(track) == linear_track);
     CHECK(piece_w(track, "clog_bar_fill") ==
           ui::clog_bar_geometry(encoder, 50, 75, 50, linear_track).fill_w);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection draws the threshold over the fill",
+                 "[widget_size][clog_detection][1017]") {
+    // The danger shading is danger at 30% opacity and a warning fill is drawn
+    // in danger too, so a reading past the threshold used to merge the two into
+    // one red block — "how far past" was least readable exactly when it
+    // mattered most. The rule is a separate object, added after the fill so the
+    // fill cannot paint over it.
+    PanelWidgetManager::instance().init_widget_subjects();
+    AmsState::instance().init_subjects(true);
+
+    const auto* def = find_widget_def("clog_detection");
+    REQUIRE(def != nullptr);
+
+    PanelWidgetHarness<ClogDetectionWidget> h(test_screen());
+    REQUIRE(h.root() != nullptr);
+    h.resize(def->colspan, def->rowspan, 240, 112);
+
+    lv_obj_t* track = h.child("clog_bar_track");
+    REQUIRE(track != nullptr);
+
+    // Well past the threshold, and warning set: the worst case for legibility.
+    const int mode = static_cast<int>(ui::ClogMeterMode::Encoder);
+    publish(mode, /*value=*/94, /*danger=*/59, /*peak=*/95);
+    lv_obj_set_state(track, LV_STATE_DEFAULT, true);
+    lv_obj_update_layout(track);
+
+    const int track_w = lv_obj_get_content_width(track);
+    const auto g = ui::clog_bar_geometry(mode, 94, 59, 95, track_w);
+
+    // The fill really does run past the threshold, or this proves nothing.
+    REQUIRE(g.fill_w > g.danger_hi_x);
+
+    lv_obj_t* rule = lv_obj_find_by_name(track, "clog_bar_threshold_hi");
+    lv_obj_t* fill = lv_obj_find_by_name(track, "clog_bar_fill");
+    REQUIRE(rule != nullptr);
+    REQUIRE(fill != nullptr);
+
+    CHECK_FALSE(lv_obj_has_flag(rule, LV_OBJ_FLAG_HIDDEN));
+    CHECK(lv_obj_get_x(rule) == g.danger_hi_x);
+
+    // Drawn after the fill, which is what keeps it visible through one.
+    CHECK(lv_obj_get_index(rule) > lv_obj_get_index(fill));
 }

@@ -21,7 +21,8 @@
     It finds them by name, so it works under any parent that contains this.
 
     Named objects UiClogBar expects: clog_bar, clog_bar_track, clog_bar_fill,
-    clog_bar_marker, clog_bar_peak, clog_bar_danger_lo, clog_bar_danger_hi.
+    clog_bar_marker, clog_bar_peak, clog_bar_danger_lo, clog_bar_danger_hi,
+    clog_bar_threshold_lo, clog_bar_threshold_hi.
   -->
   <view name="clog_bar_body"
         extends="lv_obj" width="100%" height="content" style_pad_all="0" style_pad_row="0" style_pad_column="0"
@@ -81,15 +82,33 @@
                 style_radius="#border_radius" style_border_width="0" style_clip_corner="true" scrollable="false"
                 clickable="false" event_bubble="true">
           <!-- Order is z-order: shading behind the fill, ticks on top. -->
+          <!-- The shaded zone plus a hard edge where it starts. The shading is
+               danger at 30%, and a warning fill is drawn in danger too, so at
+               a fault the two merged and "how far past the threshold" became
+               unreadable exactly when it mattered. The edge is #warning, which
+               no fill ever uses, so it stays visible through one. -->
           <lv_obj name="clog_bar_danger_lo"
                   width="0" height="100%" y="0" style_pad_all="0" style_bg_color="#danger" style_bg_opa="77"
-                  style_radius="0" style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
+                  style_radius="0" style_border_width="2" style_border_side="right" style_border_color="#warning"
+                  style_border_opa="255" scrollable="false" clickable="false" event_bubble="true"/>
           <lv_obj name="clog_bar_danger_hi"
                   width="0" height="100%" y="0" style_pad_all="0" style_bg_color="#danger" style_bg_opa="77"
-                  style_radius="0" style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
+                  style_radius="0" style_border_width="2" style_border_side="left" style_border_color="#warning"
+                  style_border_opa="255" scrollable="false" clickable="false" event_bubble="true"/>
           <lv_obj name="clog_bar_fill"
                   width="0" height="100%" y="0" style_pad_all="0" style_bg_opa="255" style_radius="#border_radius"
                   style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
+          <!-- Where the danger zone starts, drawn over the fill rather than
+               under it. The shading below is danger at 30% and a warning fill
+               is danger too, so at a fault the two merged into one red block
+               and "how far past the threshold" was unreadable exactly when it
+               mattered most. These are #warning, which no fill ever uses. -->
+          <lv_obj name="clog_bar_threshold_lo"
+                  width="0" height="100%" y="0" style_pad_all="0" style_bg_color="#warning" style_bg_opa="255"
+                  style_radius="0" style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
+          <lv_obj name="clog_bar_threshold_hi"
+                  width="0" height="100%" y="0" style_pad_all="0" style_bg_color="#warning" style_bg_opa="255"
+                  style_radius="0" style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>
           <lv_obj name="clog_bar_peak"
                   width="2" height="100%" y="0" style_pad_all="0" style_bg_color="#text_muted" style_bg_opa="255"
                   style_radius="0" style_border_width="0" scrollable="false" clickable="false" event_bubble="true"/>

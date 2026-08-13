@@ -31,6 +31,8 @@ UiClogBar::UiClogBar(lv_obj_t* parent) {
     peak_ = lv_obj_find_by_name(track_, "clog_bar_peak");
     danger_lo_ = lv_obj_find_by_name(track_, "clog_bar_danger_lo");
     danger_hi_ = lv_obj_find_by_name(track_, "clog_bar_danger_hi");
+    threshold_lo_ = lv_obj_find_by_name(track_, "clog_bar_threshold_lo");
+    threshold_hi_ = lv_obj_find_by_name(track_, "clog_bar_threshold_hi");
 
     // The track is flex_grow'd, so its width is only known after a layout pass.
     // SIZE_CHANGED is a layout event and has no declarative equivalent.
@@ -64,6 +66,8 @@ UiClogBar::~UiClogBar() {
     peak_ = nullptr;
     danger_lo_ = nullptr;
     danger_hi_ = nullptr;
+    threshold_lo_ = nullptr;
+    threshold_hi_ = nullptr;
     spdlog::debug("[ClogBar] Destroyed");
 }
 
@@ -105,6 +109,13 @@ void UiClogBar::relayout() {
     place(danger_lo_, g.danger_lo_x, g.danger_lo_w);
     place(danger_hi_, g.danger_hi_x, g.danger_hi_w);
     place(fill_, g.fill_x, g.fill_w);
+
+    // A rule where each shaded zone begins, on top of the fill. Only drawn
+    // where that zone exists: a linear mode has no low end to mark, and a
+    // threshold at either extreme would put the rule under the track's edge.
+    place(threshold_lo_, g.danger_lo_x + g.danger_lo_w - kClogBarTickW,
+          g.danger_lo_w > 0 ? kClogBarTickW : 0);
+    place(threshold_hi_, g.danger_hi_x, g.danger_hi_w > 0 ? kClogBarTickW : 0);
 
     // The marker only means something once there is a fill to lead, and the
     // peak tick only once a worst-case has actually been recorded.

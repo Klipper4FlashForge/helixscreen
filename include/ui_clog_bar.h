@@ -53,6 +53,8 @@ class UiClogBar {
     lv_obj_t* peak_ = nullptr;
     lv_obj_t* danger_lo_ = nullptr;
     lv_obj_t* danger_hi_ = nullptr;
+    lv_obj_t* threshold_lo_ = nullptr;
+    lv_obj_t* threshold_hi_ = nullptr;
 
     /// Constructed last, once the named lookups above have succeeded, so its
     /// change callback never runs against a half-found widget tree.
