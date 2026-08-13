@@ -528,6 +528,7 @@ translations:
   Correction (Ki): Korrektur (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: PRINT_START-Makro konnte nicht analysiert werden. Einige Druckoptionen sind möglicherweise nicht verfügbar.
   Could not check webcam status.\nCheck printer connection.: Webcam-Status konnte nicht geprüft werden.\nDruckerverbindung prüfen.
+  Could not confirm cancel: ''
   Could not forget device: Gerät konnte nicht vergessen werden
   Could not load printer database: Druckerdatenbank konnte nicht geladen werden
   Could not parse tips database: Tipps-Datenbank konnte nicht ausgelesen werden
@@ -717,6 +718,7 @@ translations:
   Enter printer IP address first: Zuerst Drucker-IP-Adresse eingeben
   Enter the IP address and port of your Spoolman server.: Geben Sie die IP-Adresse und den Port Ihres Spoolman-Servers ein.
   Entry: Eingang
+  Entry Sensor: ''
   Error: Fehler
   Error at chunk {} (code={}): Fehler bei Block {} (code={})
   Error loading file: Fehler beim Laden der Datei
@@ -889,6 +891,7 @@ translations:
   Filament Used: Filament verwendet
   Filament already exists: Filament bereits vorhanden
   Filament by Type: Filament nach Typ
+  Filament controls are unavailable while printing.: ''
   Filament deleted: Filament gelöscht
   Filament diameter sensors for flow compensation: Filamentdurchmessersensoren für Flusskompensation
   Filament is loose: Filament ist locker
@@ -1183,6 +1186,7 @@ translations:
   Load: Laden
   Load Filament: Filament laden
   Load may still be running — response timed out: Laden läuft möglicherweise noch — Zeitüberschreitung
+  Load or unload filament.: ''
   Load the required filaments or start anyway?: Benötigte Filamente laden oder trotzdem starten?
   Loaded: Geladen
   Loading: Laden
@@ -1978,6 +1982,7 @@ translations:
   Sending...: Wird gesendet...
   Sensor: Sensor
   Sensor Response: Sensor-Reaktion
+  Sensor Source: ''
   Sensor Temperature: Sensortemperatur
   Sensors: Sensoren
   Separate on/off macros. HelixScreen tracks the state.: Separate Ein-/Aus-Makros. HelixScreen verfolgt den Status.
@@ -2307,6 +2312,7 @@ translations:
   Tool swap: Werkzeugwechsel
   'Tool {} → Lane {}: no filament loaded.': 'Werkzeug {} → Spur {}: kein Filament geladen.'
   Toolhead: Werkzeugkopf
+  Toolhead Sensor: ''
   Toolhead Style: Toolhead-Stil
   Toolhead jam: Werkzeugkopf-Stau
   Toolhead, G-code, limits, and materials: Druckkopf, G-Code, Grenzen und Materialien

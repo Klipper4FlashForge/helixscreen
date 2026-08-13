@@ -528,6 +528,7 @@ translations:
   Correction (Ki): Коррекция (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: Не удалось проанализировать макрос PRINT_START. Некоторые параметры печати могут быть недоступны.
   Could not check webcam status.\nCheck printer connection.: Не удалось проверить статус веб-камеры.\nПроверьте подключение принтера.
+  Could not confirm cancel: ''
   Could not forget device: Не удалось забыть устройство
   Could not load printer database: Не удалось загрузить базу данных принтеров
   Could not parse tips database: Не удалось разобрать базу данных советов
@@ -717,6 +718,7 @@ translations:
   Enter printer IP address first: Сначала введите IP-адрес принтера
   Enter the IP address and port of your Spoolman server.: Введите IP-адрес и порт вашего сервера Spoolman.
   Entry: Вход
+  Entry Sensor: ''
   Error: Ошибка
   Error at chunk {} (code={}): Ошибка в блоке {} (код={})
   Error loading file: Ошибка загрузки файла
@@ -889,6 +891,7 @@ translations:
   Filament Used: Использовано филамента
   Filament already exists: Такой филамент уже существует
   Filament by Type: Филамент по типу
+  Filament controls are unavailable while printing.: ''
   Filament deleted: Филамент удалён
   Filament diameter sensors for flow compensation: Датчики диаметра филамента для компенсации потока
   Filament is loose: Филамент ослаблен
@@ -1183,6 +1186,7 @@ translations:
   Load: Загрузить
   Load Filament: Загрузить филамент
   Load may still be running — response timed out: Загрузка может ещё выполняться — время ожидания истекло
+  Load or unload filament.: ''
   Load the required filaments or start anyway?: Загрузить нужные филаменты или начать без них?
   Loaded: Загружен
   Loading: Загрузка
@@ -1978,6 +1982,7 @@ translations:
   Sending...: Отправка...
   Sensor: Датчик
   Sensor Response: Отклик датчика
+  Sensor Source: ''
   Sensor Temperature: Температура датчика
   Sensors: Датчики
   Separate on/off macros. HelixScreen tracks the state.: Отдельные макросы вкл/выкл. HelixScreen отслеживает состояние.
@@ -2307,6 +2312,7 @@ translations:
   Tool swap: Смена инструмента
   'Tool {} → Lane {}: no filament loaded.': 'Инструмент {} → Слот {}: филамент не загружен.'
   Toolhead: Печатающая головка
+  Toolhead Sensor: ''
   Toolhead Style: Стиль печатающей головки
   Toolhead jam: Замятие в печатающей головке
   Toolhead, G-code, limits, and materials: Печатающая головка, G-code, лимиты и материалы

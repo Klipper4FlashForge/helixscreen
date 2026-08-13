@@ -526,6 +526,7 @@
   <translation tag="Correction (Ki)" zh="校正 (Ki)"/>
   <translation tag="Could not analyze PRINT_START macro. Some print options may be unavailable." zh="无法分析 PRINT_START 宏。部分打印选项可能不可用。"/>
   <translation tag="Could not check webcam status.\nCheck printer connection." zh="无法检查摄像头状态。\n请检查打印机连接。"/>
+  <translation tag="Could not confirm cancel"/>
   <translation tag="Could not forget device" zh="无法忘记设备"/>
   <translation tag="Could not load printer database" zh="无法加载打印机数据库"/>
   <translation tag="Could not parse tips database" zh="无法解析提示数据库"/>
@@ -714,6 +715,7 @@
   <translation tag="Enter printer IP address first" zh="请先输入打印机 IP 地址"/>
   <translation tag="Enter the IP address and port of your Spoolman server." zh="输入 Spoolman 服务器的 IP 地址和端口。"/>
   <translation tag="Entry" zh="入口"/>
+  <translation tag="Entry Sensor"/>
   <translation tag="Error" zh="错误"/>
   <translation tag="Error at chunk {} (code={})" zh="区块 {} 出错 (code={})"/>
   <translation tag="Error loading file" zh="加载文件出错"/>
@@ -886,6 +888,7 @@
   <translation tag="Filament Used" zh="已用耗材"/>
   <translation tag="Filament already exists" zh="耗材已存在"/>
   <translation tag="Filament by Type" zh="按类型分类的耗材"/>
+  <translation tag="Filament controls are unavailable while printing."/>
   <translation tag="Filament deleted" zh="耗材已删除"/>
   <translation tag="Filament diameter sensors for flow compensation" zh="耗材直径传感器用于流量补偿"/>
   <translation tag="Filament is loose" zh="耗材松弛"/>
@@ -1175,6 +1178,7 @@
   <translation tag="Load" zh="加载"/>
   <translation tag="Load Filament" zh="加载耗材"/>
   <translation tag="Load may still be running — response timed out" zh="加载可能仍在运行 — 响应超时"/>
+  <translation tag="Load or unload filament."/>
   <translation tag="Load the required filaments or start anyway?" zh="加载所需耗材还是直接开始？"/>
   <translation tag="Loaded" zh="已加载"/>
   <translation tag="Loading" zh="加载中"/>
@@ -1966,6 +1970,7 @@
   <translation tag="Sending..." zh="正在发送..."/>
   <translation tag="Sensor" zh="传感器"/>
   <translation tag="Sensor Response" zh="传感器响应"/>
+  <translation tag="Sensor Source"/>
   <translation tag="Sensor Temperature" zh="传感器温度"/>
   <translation tag="Sensors" zh="传感器"/>
   <translation tag="Separate on/off macros. HelixScreen tracks the state." zh="独立的开/关宏。HelixScreen 跟踪状态。"/>
@@ -2284,6 +2289,7 @@
   <translation tag="Tool swap" zh="工具切换"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." zh="工具 {} → 料仓 {}: 未加载耗材。"/>
   <translation tag="Toolhead" zh="工具头"/>
+  <translation tag="Toolhead Sensor"/>
   <translation tag="Toolhead Style" zh="工具头样式"/>
   <translation tag="Toolhead jam" zh="工具头堵塞"/>
   <translation tag="Toolhead, G-code, limits, and materials" zh="打印头、G代码、限制和材料"/>

@@ -32,6 +32,7 @@ void register_shutdown_widget();
 void register_lock_widget();
 void register_macros_widget();
 void register_motion_widget();
+void register_filament_sensor_widget();
 void register_clock_widget();
 void register_control_buttons_widget();
 void register_job_queue_widget();
@@ -231,6 +232,7 @@ void init_widget_registrations() {
     register_gcode_console_widget();
     register_macros_widget();
     register_motion_widget();
+    register_filament_sensor_widget();
     register_preheat_widget();
     register_active_spool_widget();
     register_tool_switcher_widget();

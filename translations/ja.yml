@@ -528,6 +528,7 @@ translations:
   Correction (Ki): 補正 (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: PRINT_START マクロを分析できませんでした。一部の印刷オプションが利用できない場合があります。
   Could not check webcam status.\nCheck printer connection.: ウェブカメラの状態を確認できませんでした。\nプリンター接続を確認してください。
+  Could not confirm cancel: ''
   Could not forget device: デバイスの登録を解除できませんでした
   Could not load printer database: プリンターデータベースを読み込めませんでした
   Could not parse tips database: ヒントデータベースを解析できませんでした
@@ -717,6 +718,7 @@ translations:
   Enter printer IP address first: 先にプリンターのIPアドレスを入力してください
   Enter the IP address and port of your Spoolman server.: Spoolman サーバーのIPアドレスとポートを入力してください。
   Entry: 入口
+  Entry Sensor: ''
   Error: エラー
   Error at chunk {} (code={}): チャンク {} でエラー (code={})
   Error loading file: ファイルの読み込みエラー
@@ -889,6 +891,7 @@ translations:
   Filament Used: 使用済みフィラメント
   Filament already exists: フィラメントはすでに存在します
   Filament by Type: 種類別フィラメント
+  Filament controls are unavailable while printing.: ''
   Filament deleted: フィラメントを削除しました
   Filament diameter sensors for flow compensation: フロー補正用フィラメント直径センサー
   Filament is loose: フィラメントが緩んでいます
@@ -1183,6 +1186,7 @@ translations:
   Load: 装填
   Load Filament: フィラメントを装填
   Load may still be running — response timed out: 装填がまだ実行中の可能性があります — 応答タイムアウト
+  Load or unload filament.: ''
   Load the required filaments or start anyway?: 必要なフィラメントを装填しますか？それともこのまま開始しますか？
   Loaded: 装填済み
   Loading: ロード中
@@ -1978,6 +1982,7 @@ translations:
   Sending...: 送信中...
   Sensor: センサー
   Sensor Response: センサー応答
+  Sensor Source: ''
   Sensor Temperature: センサー温度
   Sensors: センサー
   Separate on/off macros. HelixScreen tracks the state.: 個別のオン/オフマクロ。HelixScreenが状態を追跡します。
@@ -2307,6 +2312,7 @@ translations:
   Tool swap: ツール交換
   'Tool {} → Lane {}: no filament loaded.': 'ツール {} → レーン {}: フィラメントが装填されていません。'
   Toolhead: ツールヘッド
+  Toolhead Sensor: ''
   Toolhead Style: ツールヘッドスタイル
   Toolhead jam: ツールヘッドの詰まり
   Toolhead, G-code, limits, and materials: ツールヘッド、Gコード、制限、材料

@@ -1193,6 +1193,7 @@ Each widget object has:
 | `icon` | `favorite_macro`, `power_device`, `temp_stack`, `fan_stack`, `tool_switcher` | Icon name override |
 | `rotation`, `flip_h`, `flip_v` | `camera` | `0`/`90`/`180`/`270`, and booleans |
 | `source`, `danger_threshold` | `clog_detection` | Detection source and danger-zone percentage |
+| `source` | `filament` | Which sensor role the tile follows: `"auto"` (default), `"runout"`, `"toolhead"`, or `"entry"` |
 | `material_index` | `preheat` | Which material profile the buttons preheat to |
 
 Setting these through Edit Mode is far easier than editing them here, and it is the only way that validates the value against your printer.

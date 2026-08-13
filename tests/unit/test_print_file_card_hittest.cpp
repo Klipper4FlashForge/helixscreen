@@ -1,3 +1,4 @@
+// Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Hit-testing for print_file_card: the whole card face must resolve to card_root,
 // which owns the CLICKED/LONG_PRESSED handlers (ui_print_select_card_view.cpp).

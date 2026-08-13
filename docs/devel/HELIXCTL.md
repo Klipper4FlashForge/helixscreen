@@ -371,6 +371,30 @@ helix-screen ctl release
 Get coordinates from `geom <target>` — it reports each widget's absolute `x`, `y`,
 `w` and `h`, so aim at a rect's centre rather than guessing.
 
+**Entering home-grid edit mode.** Long-pressing the home widget grid enters Edit Mode.
+The `long_pressed` handler is registered on `carousel_host`, the grid's own container
+(`ui_xml/home_panel.xml`), not on any individual tile - and `LONG_PRESSED` does not bubble
+out of a tile's own clickable root. Aim the press at the grid gutter between tiles (a few
+px of `#space_xs` padding, from `GridLayout::gutter_px()`), not at a tile's rect, or the
+long-press lands on the tile and edit mode never opens. This is true for every widget
+tile, not just one:
+
+```bash
+# geom a tile to find its rect - the widget's name is its PanelWidgetDef id
+# (set via lv_obj_set_name(widget, slot.widget_id.c_str()) in panel_widget_manager.cpp)
+helix-screen ctl geom filament
+# {"x": 40, "y": 120, "w": 100, "h": 50, ...}
+
+# Long-press a couple of px outside the tile's rect, in the gutter
+helix-screen ctl press 38 118
+sleep 0.6                       # exceed the long-press threshold
+helix-screen ctl release
+
+# Now in Edit Mode - ls shows the selection/gear/trash chrome once a tile is selected
+helix-screen ctl click filament
+helix-screen ctl ls
+```
+
 The device is created lazily on the first pointer command and coexists with the
 real SDL/evdev pointer; LVGL supports multiple pointer indevs. Instances that never
 receive a pointer command never register it.

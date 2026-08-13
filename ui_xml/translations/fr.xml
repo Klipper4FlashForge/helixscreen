@@ -526,6 +526,7 @@
   <translation tag="Correction (Ki)" fr="Correction (Ki)"/>
   <translation tag="Could not analyze PRINT_START macro. Some print options may be unavailable." fr="Impossible d&apos;analyser la macro PRINT_START. Certaines options d&apos;impression peuvent être indisponibles."/>
   <translation tag="Could not check webcam status.\nCheck printer connection." fr="Impossible de vérifier la webcam.\nVérifiez la connexion."/>
+  <translation tag="Could not confirm cancel"/>
   <translation tag="Could not forget device" fr="Impossible d&apos;oublier l&apos;appareil"/>
   <translation tag="Could not load printer database" fr="Impossible de charger la base de données dimprimantes"/>
   <translation tag="Could not parse tips database" fr="Impossible danalyser la base de données de conseils"/>
@@ -714,6 +715,7 @@
   <translation tag="Enter printer IP address first" fr="Entrez d&apos;abord l&apos;adresse IP de l&apos;imprimante"/>
   <translation tag="Enter the IP address and port of your Spoolman server." fr="Entrez l&apos;adresse IP et le port de votre serveur Spoolman."/>
   <translation tag="Entry" fr="Entrée"/>
+  <translation tag="Entry Sensor"/>
   <translation tag="Error" fr="Erreur"/>
   <translation tag="Error at chunk {} (code={})" fr="Erreur au bloc {} (code={})"/>
   <translation tag="Error loading file" fr="Erreur lors du chargement du fichier"/>
@@ -886,6 +888,7 @@
   <translation tag="Filament Used" fr="Filament utilisé"/>
   <translation tag="Filament already exists" fr="Ce filament existe déjà"/>
   <translation tag="Filament by Type" fr="Filament par type"/>
+  <translation tag="Filament controls are unavailable while printing."/>
   <translation tag="Filament deleted" fr="Filament supprimé"/>
   <translation tag="Filament diameter sensors for flow compensation" fr="Capteurs de diamètre de filament pour compensation du débit"/>
   <translation tag="Filament is loose" fr="Le filament est détendu"/>
@@ -1175,6 +1178,7 @@
   <translation tag="Load" fr="Charger"/>
   <translation tag="Load Filament" fr="Charger le filament"/>
   <translation tag="Load may still be running — response timed out" fr="Le chargement est peut-être encore en cours — délai dépassé"/>
+  <translation tag="Load or unload filament."/>
   <translation tag="Load the required filaments or start anyway?" fr="Charger les filaments requis ou démarrer quand même ?"/>
   <translation tag="Loaded" fr="Chargé"/>
   <translation tag="Loading" fr="Chargement"/>
@@ -1966,6 +1970,7 @@
   <translation tag="Sending..." fr="Envoi..."/>
   <translation tag="Sensor" fr="Capteur"/>
   <translation tag="Sensor Response" fr="Réponse du capteur"/>
+  <translation tag="Sensor Source"/>
   <translation tag="Sensor Temperature" fr="Température du capteur"/>
   <translation tag="Sensors" fr="Capteurs"/>
   <translation tag="Separate on/off macros. HelixScreen tracks the state." fr="Macros marche/arrêt séparées. HelixScreen suit l&apos;état."/>
@@ -2284,6 +2289,7 @@
   <translation tag="Tool swap" fr="Changement d&apos;outil"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." fr="Outil {} → Voie {} : aucun filament chargé."/>
   <translation tag="Toolhead" fr="Tête d&apos;outil"/>
+  <translation tag="Toolhead Sensor"/>
   <translation tag="Toolhead Style" fr="Style de tête d&apos;outil"/>
   <translation tag="Toolhead jam" fr="Bourrage de la tête d&apos;outil"/>
   <translation tag="Toolhead, G-code, limits, and materials" fr="Tête d&apos;outil, G-code, limites et matériaux"/>

@@ -528,6 +528,7 @@ translations:
   Correction (Ki): 校正 (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: 无法分析 PRINT_START 宏。部分打印选项可能不可用。
   Could not check webcam status.\nCheck printer connection.: 无法检查摄像头状态。\n请检查打印机连接。
+  Could not confirm cancel: ''
   Could not forget device: 无法忘记设备
   Could not load printer database: 无法加载打印机数据库
   Could not parse tips database: 无法解析提示数据库
@@ -717,6 +718,7 @@ translations:
   Enter printer IP address first: 请先输入打印机 IP 地址
   Enter the IP address and port of your Spoolman server.: 输入 Spoolman 服务器的 IP 地址和端口。
   Entry: 入口
+  Entry Sensor: ''
   Error: 错误
   Error at chunk {} (code={}): 区块 {} 出错 (code={})
   Error loading file: 加载文件出错
@@ -889,6 +891,7 @@ translations:
   Filament Used: 已用耗材
   Filament already exists: 耗材已存在
   Filament by Type: 按类型分类的耗材
+  Filament controls are unavailable while printing.: ''
   Filament deleted: 耗材已删除
   Filament diameter sensors for flow compensation: 耗材直径传感器用于流量补偿
   Filament is loose: 耗材松弛
@@ -1183,6 +1186,7 @@ translations:
   Load: 加载
   Load Filament: 加载耗材
   Load may still be running — response timed out: 加载可能仍在运行 — 响应超时
+  Load or unload filament.: ''
   Load the required filaments or start anyway?: 加载所需耗材还是直接开始？
   Loaded: 已加载
   Loading: 加载中
@@ -1978,6 +1982,7 @@ translations:
   Sending...: 正在发送...
   Sensor: 传感器
   Sensor Response: 传感器响应
+  Sensor Source: ''
   Sensor Temperature: 传感器温度
   Sensors: 传感器
   Separate on/off macros. HelixScreen tracks the state.: 独立的开/关宏。HelixScreen 跟踪状态。
@@ -2307,6 +2312,7 @@ translations:
   Tool swap: 工具切换
   'Tool {} → Lane {}: no filament loaded.': '工具 {} → 料仓 {}: 未加载耗材。'
   Toolhead: 工具头
+  Toolhead Sensor: ''
   Toolhead Style: 工具头样式
   Toolhead jam: 工具头堵塞
   Toolhead, G-code, limits, and materials: 打印头、G代码、限制和材料

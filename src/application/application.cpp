@@ -2378,6 +2378,10 @@ bool show_demo_overlay(const std::string& name) {
         auto* modal = new RunoutGuidanceModal();
         modal->set_autofeed_capable(false);
         modal->set_resume_blocked(false);
+        // A runout is a warning, and this token screenshots the runout dialog —
+        // state it rather than inheriting whatever ran last, same rule every
+        // other show site follows (RunoutGuidanceModal::set_advisory()).
+        modal->set_advisory(false);
         modal->show(screen);
         return true;
     }

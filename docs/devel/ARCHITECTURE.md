@@ -457,7 +457,42 @@ The home panel exposes a multi-page grid of modular "widgets" — small cards th
 
 PanelWidgets live in `src/ui/panel_widgets/` (implementations) and headers alongside each `.cpp`. The authoritative widget list is `s_widget_defs` in `src/ui/panel_widget_registry.cpp` — a `PanelWidgetDef` per entry carrying its ID, display name, icon, default/min/max grid span, and hardware gate. Treat that array as ground truth rather than any table here; it currently holds 37 entries and grows as new widgets ship.
 
-Not every entry has its own C++ class — some are config-driven instances of a shared one. `temperature`, `bed_temperature`, and `chamber_temperature` are all `HeaterTempWidget`, distinguished by the `HeaterTempWidget::Config` passed to their factory (`src/ui/panel_widgets/heater_temp_widget.cpp`). Widgets that are pure XML data binding (`filament`, `ams`, etc.) don't need a `PanelWidget` subclass at all — they work via subject bindings defined in their XML component alone.
+| Widget ID | Class | Displays |
+|-----------|-------|---------|
+| `fan_stack` | `FanStackWidget` | Part / hotend / aux fan speeds with spinning icon animations |
+| `temp_stack` | `TempStackWidget` | Nozzle and bed temperatures |
+| `temperature` | `HeaterTempWidget` | Nozzle temperature - tap to set |
+| `bed_temperature` | `HeaterTempWidget` | Bed temperature - tap to set |
+| `chamber_temperature` | `HeaterTempWidget` | Chamber temperature - tap to set |
+| `thermistor` | `ThermistorWidget` | Temperature sensor readings |
+| `led` | `LedWidget` | LED on/off toggle with brightness-reactive icon |
+| `power_device` | `PowerDeviceWidget` | Power device toggle |
+| `network` | `NetworkWidget` | Network connection status |
+| `active_spool` | `ActiveSpoolWidget` | Currently loaded Spoolman spool — color, material, brand, weight |
+| `filament` | `FilamentSensorWidget` | Filament sensor state; tap routes to load/unload/purge or sensor settings by sensor and print state, edit-mode gear picks which sensor role the tile follows |
+| `camera` | `CameraWidget` | Live webcam feed |
+| `clog_detection` | `ClogDetectionWidget` | Filament clog/flow detection meter |
+| `temp_graph` | `TempGraphWidget` | Live temperature graph with configurable sensors |
+| `print_status` | `PrintStatusWidget` | Print progress and file selection |
+| `fan` | `FanWidget` | Monitor a single fan speed |
+| `favorite_macro` | `FavoriteMacroWidget` | Run a configured macro with one tap |
+| `nozzle_temps` | `NozzleTempsWidget` | All extruder temperatures with progress bars |
+| `preheat` | `PreheatWidget` | Quick preheat with material selection |
+| `job_queue` | `JobQueueWidget` | Queued print jobs |
+| `tips` | `TipsWidget` | Rotating tips and helpful information |
+| `tool_switcher` | `ToolSwitcherWidget` | Quick tool switching for multi-tool printers |
+| `clock` | `ClockWidget` | Current time and date |
+| `control_buttons` | `ControlButtonsWidget` | Pause/resume and stop the active print |
+| `macros` | `MacrosWidget` | Browse and execute Klipper macros |
+| `motion` | `MotionWidget` | Jump directly to motion control / jogging |
+| `led_controls` | `LedControlsWidget` | Open LED color and brightness controls |
+| `lock` | `LockWidget` | PIN-protected screen lock |
+| `shutdown` | `ShutdownWidget` | Shutdown or reboot the printer host |
+| `humidity` | `HumidityWidget` | Enclosure humidity sensor readings |
+
+Not every entry has its own C++ class - some are config-driven instances of a shared one. `temperature`, `bed_temperature` and `chamber_temperature` are all `HeaterTempWidget`, distinguished by the `HeaterTempWidget::Config` passed to their factory (`src/ui/panel_widgets/heater_temp_widget.cpp:74-82`).
+
+Widgets that are pure XML data binding (`ams`, `firmware_restart`, `notifications`, etc. - `PanelWidgetDef::factory` left `nullptr`, see `include/panel_widget_registry.h`) do NOT need a `PanelWidget` subclass - they work via subject bindings defined in their XML component alone. `filament` used to be one of these but is not anymore; `humidity` looks like a candidate from its name but has always had a minimal `HumidityWidget` subclass for size-responsive scaling.
 
 ### PanelWidget Base Class
 
@@ -475,6 +510,8 @@ public:
     virtual void on_activate() {}         // Panel became visible
     virtual void on_deactivate() {}       // Panel went offscreen
     virtual void on_size_changed(int colspan, int rowspan, int width_px, int height_px) {}  // Adapt to cell size
+    virtual bool has_edit_configure() const { return false; }  // Show the gear button in edit mode?
+    virtual bool on_edit_configure() { return false; }         // Gear pressed; return true to rebuild
     virtual const char* id() const = 0;  // Stable widget ID string
 };
 ```

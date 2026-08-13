@@ -80,6 +80,7 @@ using helix::ui::temperature::get_heating_state_color;
 // filament_op_router.h so AmsOperationSidebar and FilamentRunoutHandler reach
 // the same instance and the same sequences.
 using helix::ui::filament_load_fallback_gcode;
+using helix::ui::filament_purge_fallback_gcode;
 using helix::ui::filament_unload_fallback_gcode;
 using helix::ui::get_filament_param_modal;
 
@@ -1473,14 +1474,10 @@ void FilamentPanel::execute_purge() {
         return;
     }
 
-    // Fallback: extrude a fixed 50mm at 10mm/s (M83 = relative extrusion)
-    constexpr int PURGE_FALLBACK_MM = 50;
-    constexpr int PURGE_FALLBACK_SPEED_MM_MIN = 10 * 60; // 10 mm/s → 600 mm/min
+    // Fallback: the shared built-in extrude sequence (filament_op_router.h).
     begin_operation_guard();
-    spdlog::info("[{}] Purge fallback: extruding {}mm at F{}", get_name(), PURGE_FALLBACK_MM,
-                 PURGE_FALLBACK_SPEED_MM_MIN);
-    std::string gcode =
-        fmt::format("M83\nG1 E{} F{}", PURGE_FALLBACK_MM, PURGE_FALLBACK_SPEED_MM_MIN);
+    spdlog::info("[{}] Purge fallback: using built-in extrude sequence", get_name());
+    std::string gcode = filament_purge_fallback_gcode();
     op_started(FilamentOp::Purge); // on-button spinner replaces the start toast
 
     api_->execute_gcode(

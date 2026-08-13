@@ -505,6 +505,26 @@ void on_quinary() override {
 }
 ```
 
+**Subject-driven conditional sections.** The six button hooks are only half the story - which
+buttons and rows are even visible is driven by XML bindings on component-scoped subjects that
+`RunoutGuidanceModal` sets before each `show()`, not by hiding/showing widgets from C++:
+
+- `runout_autofeed_capable` (0/1) - set from the active backend's `recovers_filament_on_resume()`.
+  When 1 (autofeed, e.g. Snapmaker U1), the manual Load/Unload/Purge row is hidden entirely and
+  the message changes to "Refill the spool, then Resume." because Resume alone recovers the
+  runout.
+- `print_state_enum` - also hides the manual row while `== 1` (printing; Load/Unload/Purge mid-print
+  destroys the print), and swaps the Close button row for a Cancel Print / Resume Print row while
+  `== 2` (paused).
+- `runout_is_advisory` (0/1) - swaps the warning icon (`alert`) for a neutral one (`filament`)
+  when the dialog was opened by a deliberate user tap rather than an actual runout. Owned by
+  `RunoutGuidanceModal`; every show site must call `set_advisory()` itself since the subject is
+  static and outlives any one show - inheriting the previous call's value would latch it.
+
+All three live in `ui_xml/runout_guidance_modal.xml` as `<bind_flag_if_eq>` /
+`<bind_flag_if>` bindings, not `on_show()` visibility toggles - see rule 2 in the root
+`CLAUDE.md`'s declarative-UI table.
+
 ### Modals with Keyboard Input (WiFi Password)
 
 Use `helix::ui::modal_register_keyboard()` to attach a keyboard to a textarea inside a modal:

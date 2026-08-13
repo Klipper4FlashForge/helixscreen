@@ -526,6 +526,7 @@
   <translation tag="Correction (Ki)" en="Correction (Ki)"/>
   <translation tag="Could not analyze PRINT_START macro. Some print options may be unavailable." en="Could not analyze PRINT_START macro. Some print options may be unavailable."/>
   <translation tag="Could not check webcam status.\nCheck printer connection." en="Could not check webcam status.\nCheck printer connection."/>
+  <translation tag="Could not confirm cancel" en="Could not confirm cancel"/>
   <translation tag="Could not forget device" en="Could not forget device"/>
   <translation tag="Could not load printer database" en="Could not load printer database"/>
   <translation tag="Could not parse tips database" en="Could not parse tips database"/>
@@ -714,6 +715,7 @@
   <translation tag="Enter printer IP address first" en="Enter printer IP address first"/>
   <translation tag="Enter the IP address and port of your Spoolman server." en="Enter the IP address and port of your Spoolman server."/>
   <translation tag="Entry" en="Entry"/>
+  <translation tag="Entry Sensor" en="Entry Sensor"/>
   <translation tag="Error" en="Error"/>
   <translation tag="Error at chunk {} (code={})" en="Error at chunk {} (code={})"/>
   <translation tag="Error loading file" en="Error loading file"/>
@@ -886,6 +888,7 @@
   <translation tag="Filament Used" en="Filament Used"/>
   <translation tag="Filament already exists" en="Filament already exists"/>
   <translation tag="Filament by Type" en="Filament by Type"/>
+  <translation tag="Filament controls are unavailable while printing." en="Filament controls are unavailable while printing."/>
   <translation tag="Filament deleted" en="Filament deleted"/>
   <translation tag="Filament diameter sensors for flow compensation" en="Filament diameter sensors for flow compensation"/>
   <translation tag="Filament is loose" en="Filament is loose"/>
@@ -1175,6 +1178,7 @@
   <translation tag="Load" en="Load"/>
   <translation tag="Load Filament" en="Load Filament"/>
   <translation tag="Load may still be running — response timed out" en="Load may still be running — response timed out"/>
+  <translation tag="Load or unload filament." en="Load or unload filament."/>
   <translation tag="Load the required filaments or start anyway?" en="Load the required filaments or start anyway?"/>
   <translation tag="Loaded" en="Loaded"/>
   <translation tag="Loading" en="Loading"/>
@@ -1966,6 +1970,7 @@
   <translation tag="Sending..." en="Sending..."/>
   <translation tag="Sensor" en="Sensor"/>
   <translation tag="Sensor Response" en="Sensor Response"/>
+  <translation tag="Sensor Source" en="Sensor Source"/>
   <translation tag="Sensor Temperature" en="Sensor Temperature"/>
   <translation tag="Sensors" en="Sensors"/>
   <translation tag="Separate on/off macros. HelixScreen tracks the state." en="Separate on/off macros. HelixScreen tracks the state."/>
@@ -2284,6 +2289,7 @@
   <translation tag="Tool swap" en="Tool swap"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." en="Tool {} → Lane {}: no filament loaded."/>
   <translation tag="Toolhead" en="Toolhead"/>
+  <translation tag="Toolhead Sensor" en="Toolhead Sensor"/>
   <translation tag="Toolhead Style" en="Toolhead Style"/>
   <translation tag="Toolhead jam" en="Toolhead jam"/>
   <translation tag="Toolhead, G-code, limits, and materials" en="Toolhead, G-code, limits, and materials"/>

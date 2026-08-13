@@ -1,17 +1,20 @@
+// Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "filament_catalog.h"
 #include "helix_test_fixture.h"
-#include "../catch_amalgamated.hpp"
+
 #include <algorithm>
 
-using helix::printer::FilamentCatalog;
+#include "../catch_amalgamated.hpp"
+
 using helix::printer::EffectiveFilament;
+using helix::printer::FilamentCatalog;
 
 namespace {
 bool contains(const std::vector<std::string>& v, const std::string& s) {
     return std::find(v.begin(), v.end(), s) != v.end();
 }
-}  // namespace
+} // namespace
 
 TEST_CASE_METHOD(HelixTestFixture, "all_brands is deduped and sorted", "[filament_catalog]") {
     auto cat = FilamentCatalog::load_full();
@@ -25,7 +28,8 @@ TEST_CASE_METHOD(HelixTestFixture, "all_brands is deduped and sorted", "[filamen
     REQUIRE(contains(brands, "Generic"));
 }
 
-TEST_CASE_METHOD(HelixTestFixture, "types_for_brand returns that brand's types only", "[filament_catalog]") {
+TEST_CASE_METHOD(HelixTestFixture, "types_for_brand returns that brand's types only",
+                 "[filament_catalog]") {
     auto cat = FilamentCatalog::load_full();
     auto types = cat.types_for_brand("Generic");
     REQUIRE(!types.empty());
@@ -56,7 +60,7 @@ TEST_CASE_METHOD(HelixTestFixture, "brands_for_type only lists carriers", "[fila
 }
 
 TEST_CASE_METHOD(HelixTestFixture, "SILK has a selectable Generic product (AD5X whitelist seed)",
-                  "[filament_catalog]") {
+                 "[filament_catalog]") {
     // AD5X stock firmware's material whitelist includes "SILK" as a type distinct from
     // "PLA" (see get_supported_materials() in ams_backend_ad5x_ifs.cpp), but Orca has no
     // profile for it — silk PLA is just a display name over Orca's plain "PLA" type. A

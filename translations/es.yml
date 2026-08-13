@@ -528,6 +528,7 @@ translations:
   Correction (Ki): Corrección (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: No se pudo analizar la macro PRINT_START. Algunas opciones de impresión pueden no estar disponibles.
   Could not check webcam status.\nCheck printer connection.: No se pudo verificar la webcam.\nCompruebe la conexión.
+  Could not confirm cancel: ''
   Could not forget device: No se pudo olvidar el dispositivo
   Could not load printer database: No se pudo cargar la base de datos de impresoras
   Could not parse tips database: No se pudo analizar la base de datos de consejos
@@ -717,6 +718,7 @@ translations:
   Enter printer IP address first: Ingrese la dirección IP de la impresora primero
   Enter the IP address and port of your Spoolman server.: Ingrese la dirección IP y el puerto de su servidor Spoolman.
   Entry: Entrada
+  Entry Sensor: ''
   Error: Error
   Error at chunk {} (code={}): Error en el fragmento {} (code={})
   Error loading file: Error al cargar archivo
@@ -889,6 +891,7 @@ translations:
   Filament Used: Filamento Usado
   Filament already exists: El filamento ya existe
   Filament by Type: Filamento por Tipo
+  Filament controls are unavailable while printing.: ''
   Filament deleted: Filamento eliminado
   Filament diameter sensors for flow compensation: Sensores de diámetro de filamento para compensación de flujo
   Filament is loose: El filamento está suelto
@@ -1183,6 +1186,7 @@ translations:
   Load: Cargar
   Load Filament: Cargar Filamento
   Load may still be running — response timed out: La carga puede seguir en curso — tiempo de espera agotado
+  Load or unload filament.: ''
   Load the required filaments or start anyway?: ¿Cargar los filamentos requeridos o iniciar de todos modos?
   Loaded: Cargado
   Loading: Cargando
@@ -1978,6 +1982,7 @@ translations:
   Sending...: Enviando...
   Sensor: Sensor
   Sensor Response: Respuesta del sensor
+  Sensor Source: ''
   Sensor Temperature: Temperatura del Sensor
   Sensors: Sensores
   Separate on/off macros. HelixScreen tracks the state.: Macros separados de encendido/apagado. HelixScreen rastrea el estado.
@@ -2307,6 +2312,7 @@ translations:
   Tool swap: Cambio de herramienta
   'Tool {} → Lane {}: no filament loaded.': 'Herramienta {} → Carril {}: no hay filamento cargado.'
   Toolhead: Cabezal
+  Toolhead Sensor: ''
   Toolhead Style: Estilo de Cabezal
   Toolhead jam: Atasco del cabezal
   Toolhead, G-code, limits, and materials: Cabezal, G-code, límites y materiales
