@@ -192,6 +192,18 @@
     <px name="spinner_xs_xlarge" value="18"/>
     <px name="spinner_xs_xxlarge" value="20"/>
 
+    <!-- meter_track_h: the bar a horizontal meter is drawn in — the FlowGuard
+         scale (clog_bar_page.xml). Thin enough to read as a scale rather than a
+         panel, and it climbs with the type ladder so the value marker and peak
+         tick stay visible next to the labels either side of it. -->
+    <px name="meter_track_h_micro" value="8"/>
+    <px name="meter_track_h_tiny" value="10"/>
+    <px name="meter_track_h_small" value="12"/>
+    <px name="meter_track_h_medium" value="12"/>
+    <px name="meter_track_h_large" value="14"/>
+    <px name="meter_track_h_xlarge" value="16"/>
+    <px name="meter_track_h_xxlarge" value="20"/>
+
     <!-- Spinner arc widths - proportional to size -->
     <px name="spinner_arc_lg_small" value="3"/>
     <px name="spinner_arc_lg_medium" value="4"/>

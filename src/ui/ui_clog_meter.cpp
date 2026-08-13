@@ -8,6 +8,7 @@
 #include "ui_update_queue.h"
 
 #include "ams_state.h"
+#include "clog_meter_geometry.h"
 #include "lvgl/lvgl.h"
 #include "observer_factory.h"
 #include "theme_manager.h"
@@ -180,30 +181,12 @@ void UiClogMeter::update_arc_color() {
     if (!arc_)
         return;
 
-    lv_color_t color;
-    int val = std::clamp(std::abs(current_value_), 0, 100);
-
-    if (current_warning_) {
-        // Warning/triggered state
-        color = theme_manager_get_color("danger");
-    } else if (current_mode_ == 1 || current_mode_ == 3) {
-        // Encoder/AFC: gradient primary (safe) → warning (risky) → danger (clogged)
-        // Dynamic arc color is an intentional exception to the "no C++ styling" rule
-        if (val < 50) {
-            color =
-                lv_color_mix(theme_manager_get_color("warning"), theme_manager_get_color("primary"),
-                             static_cast<uint8_t>(val * 255 / 50));
-        } else {
-            color =
-                lv_color_mix(theme_manager_get_color("danger"), theme_manager_get_color("warning"),
-                             static_cast<uint8_t>((val - 50) * 255 / 50));
-        }
-    } else {
-        // Flowguard or default
-        color = theme_manager_get_color("primary");
-    }
-
-    lv_obj_set_style_arc_color(arc_, color, LV_PART_INDICATOR);
+    // Dynamic indicator colour is an intentional exception to the "no C++
+    // styling" rule. The rule itself lives in clog_meter_geometry.h so the
+    // horizontal bar (#1017) draws the same ramp from the same tokens.
+    lv_obj_set_style_arc_color(arc_,
+                               resolve_clog_tint(current_mode_, current_value_, current_warning_),
+                               LV_PART_INDICATOR);
 }
 
 void UiClogMeter::update_safe_state() {
