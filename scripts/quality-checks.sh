@@ -729,6 +729,21 @@ else
   echo "⚠️  esp32 app_srcs manifest or gate not found — skipping"
 fi
 
+# A printer_database.json entry naming an image that does not exist is silent at
+# runtime: the lookup falls through to generic-corexy and logs nothing above debug,
+# so a bed-slinger just quietly shows a CoreXY frame. Twenty entries had drifted
+# that way before anyone noticed.
+if [ -f "assets/config/printer_database.json" ] && [ -f "scripts/check_printer_images.py" ]; then
+  if python3 scripts/check_printer_images.py >/tmp/printer_images.out 2>&1; then
+    cat /tmp/printer_images.out
+  else
+    cat /tmp/printer_images.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  printer database or image gate not found — skipping"
+fi
+
 echo ""
 
 # ====================================================================
@@ -1301,6 +1316,37 @@ else
   section_time $SECTION_START
   echo ""
   echo "⚠️  check_grid_metrics_single_source.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
+echo -n "⏱️  Checking series_meta slot-vs-handle indexing..."
+
+if [ -f "scripts/check_series_meta_indexing.py" ]; then
+  # series_meta is SLOT-indexed; TempGraphHit::series_id is a monotonic handle
+  # that is never reused. remove_series frees a slot without lowering
+  # next_series_id, so after one remove-then-add the same number means two
+  # different things: indexing with the handle renders the wrong series, and
+  # past 16 cycles reads off the end of the array. Resolve with
+  # find_meta_by_id() instead. This shipped once in temp_graph_tooltip_draw_cb
+  # and was caught in review rather than by a test, because the only symptom is
+  # drawn pixels and there is no draw-pass readback here.
+  if python3 scripts/check_series_meta_indexing.py >/tmp/series_meta_indexing.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/series_meta_indexing.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/series_meta_indexing.out
+    echo "   Use helix::temp_graph_internal::find_meta_by_id(graph, id) instead."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_series_meta_indexing.py not found — skipping"
 fi
 
 echo ""

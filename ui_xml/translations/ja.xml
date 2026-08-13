@@ -1077,6 +1077,7 @@
   <translation tag="Insert filament before resuming" ja="再開前にフィラメントを挿入してください"/>
   <translation tag="Install" ja="インストール"/>
   <translation tag="Install HelixPrint Plugin" ja="HelixPrint プラグインをインストール"/>
+  <translation tag="Install Older Version?"/>
   <translation tag="Install Plugin" ja="プラグインをインストール"/>
   <translation tag="Install Root" ja="インストールルート"/>
   <translation tag="Install Update" ja="更新をインストール"/>
@@ -2128,6 +2129,7 @@
   <translation tag="Switch a power device on or off" ja="電源デバイスのオン/オフ切り替え"/>
   <translation tag="Switch between light and dark themes" ja="ライトテーマとダークテーマを切り替え"/>
   <translation tag="Switch the active tool or extruder" ja="アクティブなツールやエクストルーダーを切り替え"/>
+  <translation tag="Switch to v%s"/>
   <translation tag="Switched to T{}" ja="T{} に切替えました"/>
   <translation tag="Switches to a backup spool on runout" ja="フィラメント切れ時にバックアップスプールへ切り替えます"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." ja="ヒーター制御をMPCに切り替えます。Klipperが再起動します。"/>
@@ -2222,6 +2224,7 @@
   <translation tag="These tools have no matching filament loaded:" ja="これらのツールに一致するフィラメントが装填されていません:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." ja="このキャリブレーションは紙の摩擦方式を使用して Z-offset を設定します。"/>
   <translation tag="This cannot be undone." ja="この操作は元に戻せません。"/>
+  <translation tag="This channel offers v{}, older than the installed v{}. Anything added since then will be removed."/>
   <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again."/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." ja="このデバイスには有線ネットワーク接続がありません。WiFiをオフにすると、この画面からのみオンに戻せます。"/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" ja="このデバイスの RAM は {} MB しかありません。共振キャリブレーションはメモリを大量に消費し、プリンターのファームウェアが \&quot;Timer Too Close\&quot; エラーを報告したり、テスト中に再起動したりする可能性があります。それでも続行しますか？"/>

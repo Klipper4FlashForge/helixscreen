@@ -55,7 +55,7 @@ void SoundManager::set_moonraker_client(IMoonrakerClient* client) {
     // will reinstall via try_install_m300_backend() only if appropriate —
     // otherwise we'd carry M300 over to a new printer that has no beeper,
     // resurrecting the "!! Unknown command:M300" feedback loop.
-    if (!client && backend_ && dynamic_cast<M300SoundBackend*>(backend_.get())) {
+    if (!client && backend_ && backend_->needs_moonraker_client()) {
         spdlog::info("[SoundManager] Dropping M300 backend (client cleared)");
         if (sequencer_) {
             sequencer_->shutdown();

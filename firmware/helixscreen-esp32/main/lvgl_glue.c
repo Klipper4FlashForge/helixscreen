@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "lvgl_glue.h"
 
+#include "app_boot.h"
 #include "board_display.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
@@ -321,8 +322,11 @@ static void* ui_thread_main(void* arg) {
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(disp, flush_cb);
 
-    // Touch indev registration must run on the UI thread after lv_init.
-    touch_input_init();
+    // Touch indev registration must run on the UI thread after lv_init. A
+    // failed probe is non-fatal (no indev, display-only); report it to the app
+    // layer here, which runs before s_ui_build() below, so app_boot_ui() can
+    // enqueue the user-visible warning before it drains the warning queue.
+    app_boot_set_touch_available(touch_input_init());
 
     // Presenter task — the only writer of the panel FB.
     if (xTaskCreate(present_task, "present", PRESENT_STACK_BYTES, NULL, PRESENT_TASK_PRIO, NULL) !=

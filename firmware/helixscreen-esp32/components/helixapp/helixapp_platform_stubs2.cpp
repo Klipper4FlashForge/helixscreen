@@ -3,6 +3,7 @@
 // Link stubs, round 2 — platform-bound singletons/utilities demanded by the
 // slice link. One row each in the audit categorization table.
 
+#include "ui_panel_spoolman.h"
 #include "ui_spoolman_overlay.h"
 
 #include "app_globals.h"
@@ -10,7 +11,9 @@
 #include "bt_print_utils.h"
 #include "camera_stream.h"
 #include "display_manager.h"
+#include "esp_attr.h"
 #include "ethernet_manager.h"
+#include "filament_display_name.h"
 #include "gcode_data_source.h"
 #include "host_identity.h"
 #include "hv/WebSocketClient.h"
@@ -21,6 +24,9 @@
 #include "platform_info.h"
 #include "plugin_manager.h"
 #include "snapshot_qr_scanner.h"
+#include "spoolman_manager.h"
+#include "spoolman_slot_saver.h"
+#include "spoolman_types.h"
 #include "system/crash_handler.h"
 #include "system/debug_bundle_collector.h"
 #include "system/telemetry_manager.h"
@@ -30,6 +36,7 @@
 #include "wifi_manager.h"
 
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <sys/types.h>
 #include <vector>
@@ -125,6 +132,119 @@ SpoolmanOverlay& get_spoolman_overlay() {
     return overlay;
 }
 } // namespace ui
+} // namespace helix
+
+// --- Spoolman proper (8 TUs, dropped 2026-08-12) -----------------------------
+// SCOPE DECISION, not a cleanup. Spoolman is unreachable on this build only
+// because the ESP client skips the second server.info discovery call
+// (helixnet/esp_moonraker_client.cpp), so `printer_has_spoolman` is never set
+// and every XML entry row stays hidden. The subject itself is still registered
+// for real by the KEPT printer_capabilities_state.cpp, so no XML binding is
+// orphaned by this removal. If discovery is ever restored, these stubs must be
+// replaced by re-adding the eight src/ TUs — see app_srcs_excluded.txt.
+//
+// SpoolmanManager has no virtual call reaching it from kept code, so raw
+// storage is safe there (and fails CLOSED: a new call site becomes a link
+// error rather than a null-vtable fault). SpoolmanSlotSaver is constructed by
+// value in ui_ams_edit_overlay.cpp, so it needs a real ctor.
+//
+// SpoolmanPanel CANNOT be raw storage: two kept call sites
+// (ui_panel_advanced.cpp handle_spoolman_clicked, ui_printer_manager_overlay
+// .cpp on_chip_spoolman_clicked) hand it to lazy_create_and_push_overlay,
+// which dispatches init_subjects(), register_callbacks() and create() on it.
+// Those are virtual, so raw storage would fault (LoadProhibited) the moment
+// the capability gate that hides both rows is lifted. So the accessor
+// constructs a real object, which requires defining the ctor and every
+// OverlayBase override here so the vtable emits with all slots filled — plus
+// the ctors/dtors/virtuals of the three excluded member classes it aggregates
+// (list view, context menu, edit modal), which live in dropped TUs.
+//
+// create() returns nullptr, which lazy_create_and_push_overlay already handles:
+// it logs and raises the "Failed to open Spoolman" toast, so a tap that gets
+// past the gate produces a visible error instead of a panic. The real
+// init_subjects() registers only spoolman_panel_state / spoolman_header_title,
+// both bound solely by spoolman_panel.xml — an overlay that is never created
+// here — so the no-op body leaves no binding unsatisfied.
+
+// src/ui/ui_panel_spoolman.cpp (DEFINE_GLOBAL_PANEL)
+SpoolmanPanel::SpoolmanPanel() = default;
+SpoolmanPanel::~SpoolmanPanel() = default;
+void SpoolmanPanel::init_subjects() {}
+void SpoolmanPanel::register_callbacks() {}
+lv_obj_t* SpoolmanPanel::create(lv_obj_t*) {
+    return nullptr;
+}
+void SpoolmanPanel::on_activate() {}
+void SpoolmanPanel::on_deactivate() {}
+
+SpoolmanPanel& get_global_spoolman_panel() {
+    static SpoolmanPanel panel;
+    return panel;
+}
+
+// Member subobjects of SpoolmanPanel whose own TUs are dropped. Constructing
+// the panel above requires their ctors/dtors, and defining their out-of-line
+// virtuals here is what makes their vtables emit complete too.
+
+// src/ui/ui_spoolman_list_view.cpp
+namespace helix::ui {
+SpoolmanListView::~SpoolmanListView() = default;
+
+// src/ui/ui_spoolman_context_menu.cpp
+SpoolmanContextMenu::SpoolmanContextMenu() = default;
+SpoolmanContextMenu::~SpoolmanContextMenu() = default;
+void SpoolmanContextMenu::on_created(lv_obj_t*) {}
+void SpoolmanContextMenu::on_backdrop_clicked() {}
+
+// src/ui/ui_spoolman_edit_modal.cpp
+SpoolEditModal::SpoolEditModal() = default;
+SpoolEditModal::~SpoolEditModal() = default;
+void SpoolEditModal::on_show() {}
+void SpoolEditModal::on_hide() {}
+} // namespace helix::ui
+
+// src/printer/spoolman_types.cpp — no spools exist, so nothing survives a filter.
+std::vector<SpoolInfo> filter_spools(const std::vector<SpoolInfo>&, const std::string&) {
+    return {};
+}
+
+// src/printer/spoolman_manager.cpp — the real init_subjects() registers only
+// observers (no XML subjects), so a no-op leaves no binding unsatisfied.
+SpoolmanManager& SpoolmanManager::instance() {
+    alignas(SpoolmanManager) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(SpoolmanManager)];
+    return *reinterpret_cast<SpoolmanManager*>(storage);
+}
+void SpoolmanManager::init_subjects() {}
+void SpoolmanManager::set_api(IMoonrakerAPI*) {}
+void SpoolmanManager::start_spoolman_polling() {}
+void SpoolmanManager::stop_spoolman_polling() {}
+std::optional<helix::SpoolIdentity> SpoolmanManager::find_identity(int) {
+    return std::nullopt;
+}
+
+// src/spoolman/spoolman_slot_saver.cpp — the AMS edit overlay compiles calls to
+// these, but reaches them only from the Spoolman-gated save path. "No change"
+// and "not complete" are the answers that make that path a no-op if entered.
+namespace helix {
+SpoolmanSlotSaver::SpoolmanSlotSaver(IMoonrakerAPI* api) : api_(api) {}
+
+ChangeSet SpoolmanSlotSaver::detect_changes(const SlotInfo&, const SlotInfo&) {
+    return ChangeSet{};
+}
+bool SpoolmanSlotSaver::is_filament_complete(const SlotInfo&) {
+    return false;
+}
+void SpoolmanSlotSaver::build_spool_patches(const SpoolInfo&, const SpoolInfo&, nlohmann::json&,
+                                            nlohmann::json&) {}
+
+// Reports failure rather than silently succeeding — a caller that got here
+// must not believe it persisted anything to Spoolman.
+void SpoolmanSlotSaver::save(const SlotInfo&, const SlotInfo&, LinkIntent,
+                             CompletionCallback on_complete) {
+    if (on_complete) {
+        on_complete(SaveResult{});
+    }
+}
 } // namespace helix
 
 // --- process-spawn stubs newlib lacks ----------------------------------------
@@ -234,8 +354,17 @@ bool CameraStream::configure_from_printer(std::string&, std::string&) {
 #endif // HELIX_HAS_CAMERA
 
 // --- DebugBundleCollector (libhv HTTPS upload of diagnostics) ----------------
-// The result callback is never invoked.
-void DebugBundleCollector::upload_async(const BundleOptions&, ResultCallback) {}
+// Reports failure rather than returning silently: the debug-bundle modal shows
+// a progress state with no buttons while it waits for this callback, so never
+// invoking it strands the user there with no way out but a reboot.
+void DebugBundleCollector::upload_async(const BundleOptions&, ResultCallback callback) {
+    if (callback) {
+        BundleResult result;
+        result.success = false;
+        result.error_message = "Debug bundle upload is not available on this device";
+        callback(result);
+    }
+}
 
 // --- host identity cache (getifaddrs/gethostname; see round 1) ---------------
 void invalidate_host_identity_cache() {}
@@ -517,6 +646,9 @@ std::atomic<bool> gcode_renderer_loaded{false};
 // The status callback is never invoked.
 void UpdateChecker::refresh_config_snapshot() {}
 void UpdateChecker::check_for_updates(Callback) {}
+// Release-channel switch: the real body re-checks and re-stamps the config from
+// the network, which this slice has no updater for.
+void UpdateChecker::on_channel_changed() {}
 void UpdateChecker::report_download_status(DownloadStatus, int, const std::string&,
                                            const std::string&) {}
 std::optional<UpdateChecker::ReleaseInfo> UpdateChecker::get_cached_update() const {
@@ -544,10 +676,10 @@ EthernetManager::~EthernetManager() = default;
 void EthernetManager::get_info_async(std::function<void(const EthernetInfo&)>) {}
 
 // --- app_globals, fourth batch ------------------------------------------------
-// Both accessors document "may be nullptr if not initialized" — the honest
-// slice answer. Constructing the real JobQueueState (its .cpp IS in the
-// slice) at static-init time would run subject registration before LVGL
-// init, so the nullptr contract is used instead.
+// Process-global storage for both accessors (get returns what set stored),
+// same shape as the MoonrakerManager pair in helixapp_platform_stubs.cpp.
+// app_boot.cpp Phase 10 constructs the real JobQueueState — well after LVGL
+// init, so its subject registration is safe there — and publishes it here.
 static helix::IMoonrakerClient* g_moonraker_client = nullptr;
 helix::IMoonrakerClient* get_moonraker_client() {
     return g_moonraker_client;
@@ -555,8 +687,12 @@ helix::IMoonrakerClient* get_moonraker_client() {
 void set_moonraker_client(helix::IMoonrakerClient* client) {
     g_moonraker_client = client;
 }
+static JobQueueState* g_job_queue_state = nullptr;
 JobQueueState* get_job_queue_state() {
-    return nullptr;
+    return g_job_queue_state;
+}
+void set_job_queue_state(JobQueueState* state) {
+    g_job_queue_state = state;
 }
 std::string app_get_install_root() {
     return std::string("/littlefs");

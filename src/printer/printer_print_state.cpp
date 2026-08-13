@@ -11,6 +11,7 @@
 
 #include "ui_update_queue.h"
 
+#include "data_root_resolver.h"
 #include "format_utils.h"
 #include "printer_state.h" // For enum definitions
 #include "state/subject_macros.h"
@@ -23,6 +24,12 @@
 #include <cstring>
 
 namespace helix {
+
+const char* PrinterPrintState::no_thumbnail_placeholder() {
+    static const std::string path =
+        helix::asset_component_uri("assets/images/benchy_thumbnail_white.png");
+    return path.c_str();
+}
 
 PrinterPrintState::PrinterPrintState() {
     // Initialize string buffers
@@ -68,8 +75,8 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     // Seeded with the placeholder rather than "": consumers bind this subject
     // straight to lv_image_set_src and observers fire once at registration, so
     // an empty initial value would be delivered to every consumer before the
-    // first print. See kNoThumbnailPlaceholder for why "" is unsafe there.
-    INIT_SUBJECT_STRING(print_thumbnail_path, kNoThumbnailPlaceholder, subjects_, register_xml);
+    // first print. See no_thumbnail_placeholder() for why "" is unsafe there.
+    INIT_SUBJECT_STRING(print_thumbnail_path, no_thumbnail_placeholder(), subjects_, register_xml);
 #if defined(HELIX_PLATFORM_ESP32)
     INIT_SUBJECT_INT(print_psram_thumb_gen, 0, subjects_, register_xml);
 #endif

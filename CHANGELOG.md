@@ -7,12 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.99.110] - 2026-08-11
+## [0.99.111] - 2026-08-12
 
-**Upgrading from 0.99.108?** This is your next release. 0.99.109 was tagged but never
-published: a compile error in its own release commit broke every device cross-build and
-macOS, so no artifacts were ever produced. Everything 0.99.109 would have delivered is
-included below, together with the fixes found while tracking that failure down.
+**Upgrading from 0.99.108?** This is your next release. Neither 0.99.109 nor 0.99.110
+produced downloadable builds: 109 died on a compile error in its own release commit, and
+110's Raspberry Pi build was killed by the runner's OOM killer during the link, which
+blocked the release from publishing. Everything both would have delivered is included
+below, plus the fixes found while tracking those two failures down.
 
 ### Added
 
@@ -35,6 +36,8 @@ included below, together with the fixes found while tracking that failure down.
 - **The G-code preview dropped its thumbnail too early on every non-GPU device**, leaving a grey gap while "Building preview" was still running.
 - **Two Japanese characters rendered blank** in the new AD5X spool-switchover strings.
 - **Debug bundles dropped the incident itself** from `klipper_log` and `log_tail`.
+- **Android crash reports and update checks could silently do nothing** - the Java bridge they resolve was looked up in a way that cannot see the app's own classes from a background thread, so the call returned nothing and failed as "HTTP 0" with no diagnosis. All five call sites now share one lookup that works from any thread.
+- **One bad value in settings.json could crash the app or refuse to save** - a setting stored with the wrong type (a string where a number or a yes/no belongs, usually from a hand-edit) threw instead of falling back to the default, and writing that setting afterwards failed outright. Bad values are now ignored with a log line naming the setting.
 - **The print-status bar could disagree with the progress text** - one source and one formatter now feed the bar, progress text, filament, duration and layer strings.
 - **The print-status thumbnail could apply during a mid-teardown relayout** - now guarded.
 - **Portrait detection disagreed with the layout override (#1255)**.
@@ -52,12 +55,17 @@ included below, together with the fixes found while tracking that failure down.
 - The ESP32 source manifest gate accepted lines the firmware build then silently discarded, so it could pass while the build broke. It now enforces exactly what the build consumes, and detects stale and duplicated entries.
 - The home-screen edit-mode toggle and long-press slider shipped with no tests; deleting either check failed nothing. Both are now covered, along with the reconnect and endless-spool fixes above.
 - Three tests were found asserting the wrong thing or passing only by shard ordering: one encoded the endless-spool bug above, one had been reduced to a tautology that no longer exercised the runout confirm delay, and two depended on state a co-tenant test happened to leave behind. All corrected. No user impact; disclosed for the record.
+- The release pipeline could not build Raspberry Pi at all. The link peak had grown past the runner's memory, so it was OOM-killed; separately, the job that warms the compiler cache was sized for a warm build and so could never complete the cold one it always runs, leaving the cache permanently missing. Both are fixed, and the platform build now degrades to a slow build rather than a failed release when the cache is absent.
+
+## [0.99.110] - 2026-08-11 [WITHDRAWN]
+
+No downloadable build was ever produced: the Raspberry Pi link was OOM-killed on every
+attempt, which blocked the publish steps. Its entire contents ship in 0.99.111 above.
 
 ## [0.99.109] - 2026-08-10 [WITHDRAWN]
 
-Tagged but never published. A compile error in the release commit itself broke all nine device
-cross-builds and macOS, so no artifacts were released and no one could install this version.
-Its entire contents ship in 0.99.110 above.
+No downloadable build was ever produced: a compile error in the release commit broke all nine
+device cross-builds and macOS. Its entire contents ship in 0.99.111 above.
 
 ## [0.99.108] - 2026-08-09
 
@@ -4994,7 +5002,8 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
-[0.99.110]: https://github.com/prestonbrown/helixscreen/compare/v0.99.108...v0.99.110
+[0.99.111]: https://github.com/prestonbrown/helixscreen/compare/v0.99.108...v0.99.111
+[0.99.110]: https://github.com/prestonbrown/helixscreen/compare/v0.99.109...v0.99.110
 [0.99.109]: https://github.com/prestonbrown/helixscreen/compare/v0.99.108...v0.99.109
 [0.99.108]: https://github.com/prestonbrown/helixscreen/compare/v0.99.107...v0.99.108
 [0.99.107]: https://github.com/prestonbrown/helixscreen/compare/v0.99.106...v0.99.107

@@ -52,6 +52,8 @@ class ThermistorWidget : public PanelWidget {
     /// a single-sensor widget. Picking a row binds the widget to that sensor and
     /// closes the card; a tap outside it chooses nothing.
     class SensorPicker : public helix::ui::ContextMenu {
+        HELIX_CONTEXT_MENU_KIND(SensorPicker)
+
       public:
         explicit SensorPicker(ThermistorWidget& owner) : owner_(owner) {}
 
@@ -82,6 +84,8 @@ class ThermistorWidget : public PanelWidget {
     /// tap on a carousel page. The checkboxes are the edit, so both the Done button
     /// and a tap on the backdrop commit them.
     class ConfigurePicker : public helix::ui::ContextMenu {
+        HELIX_CONTEXT_MENU_KIND(ConfigurePicker)
+
       public:
         explicit ConfigurePicker(ThermistorWidget& owner) : owner_(owner) {}
 

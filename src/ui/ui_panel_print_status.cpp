@@ -283,7 +283,7 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
         printer_state_.get_print_thumbnail_path_subject(), this,
         [](PrintStatusPanel* self, const char* path) {
             // No empty-path branch: ActivePrintMediaManager publishes
-            // kNoThumbnailPlaceholder for a file with no thumbnail and the
+            // no_thumbnail_placeholder() for a file with no thumbnail and the
             // subject is seeded with it, so the value is always an image.
             // The subject carries the file the path was produced FOR
             // (set_print_thumbnail writes it before publishing the path), so
@@ -2766,7 +2766,7 @@ void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
             if (esp_thumbnail_ && print_thumbnail_ &&
                 lv_image_get_src(print_thumbnail_) == esp_thumbnail_->dsc()) {
                 lv_image_set_src(print_thumbnail_,
-                                 helix::PrinterPrintState::kNoThumbnailPlaceholder);
+                                 helix::PrinterPrintState::no_thumbnail_placeholder());
             }
             esp_thumbnail_.reset();
 #endif

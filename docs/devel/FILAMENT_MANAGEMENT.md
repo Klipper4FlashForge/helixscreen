@@ -1387,7 +1387,7 @@ Happy Hare's `filament_pos` (0-8) maps to `PathSegment` via `path_segment_from_h
 |---------|-----------|----------|
 | Endless Spool | `Available` | `Group` on a single-unit MMU; `ReadOnly` + `MultiUnit` on multi-unit, `ReadOnly` + `NotReady` before the gate registry initialises (see [Endless Spool](#endless-spool-shared-model)) |
 | Tool Mapping | Yes | Yes (via `MMU_TTG_MAP`) |
-| Bypass Mode | Yes | Yes (selector position -2) |
+| Bypass Mode | Yes | Yes (selector position -2), when `[mmu_machine] has_bypass` is set. `has_bypass: 0` hides the UI but `MMU_SELECT_BYPASS` still works - see [the force override](#bypass-visibility-and-the-force-override) |
 | Spoolman | Yes | -- |
 | Auto-Heat on Load | No | UI manages preheat |
 | Dryer | Yes | `MMU_HEATER` (see [Happy Hare Specifics](#happy-hare-specifics)) |
@@ -2297,7 +2297,7 @@ These belong to ValgACE's Moonraker component (`ace_status.py`) and are used **o
 |---------|-----------|----------|
 | Endless Spool | `Unsupported` | No override; inherits the base default |
 | Tool Mapping | No | Fixed 1:1 mapping |
-| Bypass Mode | No | -- |
+| Bypass Mode | No | `enable_bypass()` returns `not_supported`; [the force override](#bypass-visibility-and-the-force-override) shows the external spool for tracking only |
 | Spoolman | No | -- |
 | Auto-Heat on Load | No | -- |
 | Dryer | Yes | Built-in hardware dryer |
@@ -2375,7 +2375,7 @@ Klipper object `toolchanger` in `printer.objects.list` sets `AmsType::TOOL_CHANG
 |---------|-----------|----------|
 | Endless Spool | `Unsupported` | No override; inherits the base default |
 | Tool Mapping | No | Fixed (tools ARE slots) |
-| Bypass Mode | No | Not applicable |
+| Bypass Mode | No | Not applicable - each tool is its own path. [The force override](#bypass-visibility-and-the-force-override) shows the external spool for tracking only |
 | Spoolman | No | -- |
 | Auto-Heat on Load | No | -- |
 | Dryer | No | -- |
@@ -2830,6 +2830,22 @@ The user-facing on/off control is the `toggle_auto_refill` device action, which 
 `BOX_ENABLE_AUTO_REFILL`; it is not an endless-spool *edit* in the
 `set_endless_spool_backup()` sense, which is why editability stays `ReadOnly`.
 
+### Bypass / external spool
+
+`supports_bypass` is hardcoded `false` in three places - the constructor and both schema
+parsers - and `enable_bypass()` / `disable_bypass()` return `not_supported` without consulting
+`bypass_available_for()`. So the **Enable Bypass Controls** override renders the external-spool
+node and its metadata menu, but the sidebar's bypass toggle still fails. See
+[Bypass visibility and the force override](#bypass-visibility-and-the-force-override).
+
+The `Flat` schema does carry an `external: true` entry in `slots[]` for the spool holder.
+`parse_flat_box_status()` skips it (it is not a CFS bay, and counting it renders a phantom
+fifth slot on a 4-bay unit) and bounds-checks `loaded_slot` against the resulting vector,
+because that field indexes the payload's array and can therefore name the external entry.
+Bypass stays unsupported anyway: the port's `box.py` is unpublished, so there is no verified
+command that loads from the holder, and advertising bypass would put a button on screen that
+cannot work.
+
 ### Known limitations on K1
 
 - `BOX_MODIFY_TN` (tool remap) and `BOX_MODIFY_TN_DATA` (color sync) are emitted with the same syntax on K1 — neither has been field-validated.
@@ -2910,7 +2926,7 @@ Spools identify via MIFARE Classic RFID tags. Data lives in sector 1 block 0. Th
 |---------|----------|-------|
 | Endless Spool | Yes (auto-backup-spool) | Advertised by QIDI. The stub reports `Unsupported` today - it does not override `get_endless_spool_capabilities()`. Expect `FirmwareManaged` read-only if it turns out to work like AD5X IFS |
 | Tool Mapping | Likely via `save_variables` | Matches AD5X IFS shape |
-| Bypass Mode | Unknown | Need hardware inspection |
+| Bypass Mode | Unknown | Need hardware inspection. Backend hardcodes `false`; [the force override](#bypass-visibility-and-the-force-override) shows the external spool for tracking only |
 | Spoolman | Optional | Works through standard Moonraker `[spoolman]` |
 | Auto-Heat on Load | Unknown | |
 | Dryer | Yes (up to 65°C) | `aht20_f.py` owns humidity sensing |
@@ -3075,6 +3091,59 @@ The `AmsDeviceOperationsOverlay` (`ui_ams_device_operations_overlay.h`) consolid
 | Recover | `MMU_RECOVER` / `AFC_RESET` | Attempt error recovery |
 | Abort | `cancel()` | Cancel current operation |
 | Bypass Toggle | `enable_bypass()` / `disable_bypass()` | Toggle bypass mode (if supported) |
+
+### Bypass visibility and the force override
+
+Two pure predicates decide whether any bypass UI exists. Both had been inlined at four render
+sites, where three of the four had already drifted apart, so neither may be re-derived locally:
+
+| Predicate | Header | Rule |
+|-----------|--------|------|
+| `bypass_available(supports_bypass, force_override)` | `ams_bypass_policy.h` | `supports_bypass \|\| force_override` - folds the user's override into the firmware's report |
+| `bypass_node_visible(supports_bypass, bypass_active, is_afc, always_show)` | `ui_bypass_spool_widget.h` | Additionally hides AFC's *virtual* bypass sensor while disengaged (#1229) unless `always_show` |
+
+`bypass_available_for(bool)` and `bypass_node_visible_for(const AmsBackend*)` gather the live
+inputs from `SettingsManager` and the backend; the render sites call the `_for` variants. The
+firmware's own `supports_bypass` is never overwritten, so switching the override off restores
+reality without a re-parse.
+
+Settings keys (per-printer, under `df() + "ams/"`): `force_bypass_controls`,
+`always_show_bypass_spool`. The **Enable Bypass Controls** row in `ams_device_operations.xml`
+binds `hidden` to `ams_device_ops_fw_supports_bypass == 1`, so it self-hides on hardware that
+already reports a bypass. Flipping it calls `AmsState::sync_from_backend()` +
+`update_from_backend()` because both gating subjects are recomputed from the backend, not from
+the setting, and neither moves on its own.
+
+Where the override lands, by backend:
+
+| Backend | `supports_bypass` | Override row shown | `enable_bypass()` with override on |
+|---------|-------------------|--------------------|------------------------------------|
+| AFC | `afc_defaults` caps, default `true` | no | Consults `bypass_available_for()` |
+| AD5X IFS | `true` (`ams_backend_ad5x_ifs.cpp:85`) | no | Real command via `less_waste_external` |
+| Happy Hare | Runtime from `[mmu_machine] has_bypass`; `false` until first status | Only when `has_bypass: 0` | Consults `bypass_available_for()`; `MMU_SELECT_BYPASS` runs |
+| CFS | Hardcoded `false` in ctor + both parsers (`:397`, `:526`, `:917`) | yes | `not_supported`, unconditionally |
+| ACE | Hardcoded `false` (`:43`) | yes | `not_supported` |
+| Snapmaker | Hardcoded `false` (`:237`) | yes | `not_supported` |
+| Tool Changer | Hardcoded `false` (`:31`) | yes | `not_supported` |
+| QIDI Box | Hardcoded `false` (`:193`, stub backend) | yes | `not_supported` |
+
+Happy Hare is the one backend where the override changes machine behavior rather than only the
+UI: `cmd_MMU_SELECT_BYPASS` never checks `has_bypass`, it deselects the gear steppers and
+reports gate -2 either way, while `has_bypass` defaults to `0` for `mmu_vendor: Other` (a QIDI
+Box driven through Happy Hare reports exactly that) and is ANDed with the calibrated bypass
+offset on type-A selectors.
+
+On the bottom five rows the override is display-and-tracking only. Their `is_bypass_active()`
+returns a literal `false`, so `bypass_node_visible()` reaches the `!is_afc` branch and renders
+the node; tapping it opens `show_external_spool_menu()`, which writes HelixScreen-side slot
+metadata (`AmsState::set_external_spool_info()`) and sends nothing to the printer. The sidebar
+toggle, however, is gated on the same `ams_supports_bypass` subject, so it appears too and then
+fails with the backend's `not_supported`.
+
+> **Adding a backend:** if the override is meant to engage a command the firmware can actually
+> run, guard `enable_bypass()` with `bypass_available_for(system_info_.supports_bypass)` rather
+> than `system_info_.supports_bypass` directly - that is what AFC, Happy Hare and the mock do.
+> A hardcoded `not_supported` is the correct answer only when no command exists at all.
 
 ### Dynamic Actions (backend-specific)
 

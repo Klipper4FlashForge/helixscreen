@@ -1077,6 +1077,7 @@
   <translation tag="Insert filament before resuming" pt="Insira filamento antes de retomar"/>
   <translation tag="Install" pt="Instalar"/>
   <translation tag="Install HelixPrint Plugin" pt="Instalar Plugin HelixPrint"/>
+  <translation tag="Install Older Version?"/>
   <translation tag="Install Plugin" pt="Instalar Plugin"/>
   <translation tag="Install Root" pt="Raiz de Instalação"/>
   <translation tag="Install Update" pt="Instalar Atualização"/>
@@ -2128,6 +2129,7 @@
   <translation tag="Switch a power device on or off" pt="Ligar ou desligar um dispositivo"/>
   <translation tag="Switch between light and dark themes" pt="Alternar entre temas claro e escuro"/>
   <translation tag="Switch the active tool or extruder" pt="Trocar a ferramenta ou extrusor ativo"/>
+  <translation tag="Switch to v%s"/>
   <translation tag="Switched to T{}" pt="Alterado para T{}"/>
   <translation tag="Switches to a backup spool on runout" pt="Troca para um carretel de reserva ao acabar"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." pt="Alterando controle do aquecedor para MPC. Klipper será reiniciado."/>
@@ -2222,6 +2224,7 @@
   <translation tag="These tools have no matching filament loaded:" pt="Estas ferramentas não têm filamento correspondente carregado:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." pt="Esta calibração usa o método de fricção de papel para definir seu Z-offset."/>
   <translation tag="This cannot be undone." pt="Isso não pode ser desfeito."/>
+  <translation tag="This channel offers v{}, older than the installed v{}. Anything added since then will be removed."/>
   <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again."/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." pt="Este dispositivo não tem conexão de rede com fio. Se você desligar o WiFi, só será possível ligá-lo novamente nesta tela."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" pt="Este dispositivo tem apenas {} MB de RAM. A calibração de ressonância consome muita memória e pode fazer o firmware da impressora reportar um erro \&quot;Timer Too Close\&quot; ou reiniciar durante o teste. Continuar mesmo assim?"/>

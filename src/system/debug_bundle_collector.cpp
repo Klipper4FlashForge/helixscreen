@@ -1120,12 +1120,20 @@ static std::string line_shape(const std::string& line) {
 static constexpr const char* kKlipperConfigHeader = "===== Config file =====";
 static constexpr const char* kKlipperConfigFooter = "=======================";
 
-/// How far into the window a lone footer may sit and still be read as the tail
-/// of a config dump the Range fetch cut through. A full AD5X+ZMOD dump is ~1300
-/// lines; 5000 covers a pathological config while staying far short of the
-/// ~40k-line window a 4 MiB fetch produces, so a stray rule line deep in the log
-/// can never take the events before it with it.
-static constexpr size_t kOrphanFooterMaxIndex = 5000;
+/// Klipper's per-second runtime stats line. Used as the discriminator for an
+/// orphan footer: the config dump contains no line starting with "Stats " (the
+/// dump indents every continuation with a tab, and config keys are lowercase),
+/// while a live log window is saturated with them. Measured on Vger1700's
+/// printer.log: 0 before the footer, 3284 after.
+static constexpr const char* kKlipperStatsPrefix = "Stats ";
+
+/// Positional backstop for a lone footer, used alongside the "no Stats yet"
+/// rule above. Deliberately generous: a real AD5X+ZMOD dump is 6668 lines, not
+/// the ~1300 this was first written against, so a tight bound silently skips
+/// the elision whenever the fetch cuts near the top of a dump. The Stats rule
+/// is what actually prevents over-reach; this only caps the damage in a window
+/// that somehow contains no runtime output at all.
+static constexpr size_t kOrphanFooterMaxIndex = 25000;
 
 /// Drop Klipper's config dump(s) from a raw log window, in place.
 ///
@@ -1151,6 +1159,7 @@ static void strip_klipper_config_dumps(std::vector<std::string>& lines) {
 
     size_t header_at = std::string::npos; // index of an open, unterminated header
     size_t dumps_closed = 0;
+    bool runtime_output_seen = false; // a "Stats " line means we are past any dump
     auto note_elision = [&out](size_t count) {
         if (count == 0)
             return;
@@ -1174,18 +1183,24 @@ static void strip_klipper_config_dumps(std::vector<std::string>& lines) {
             continue;
         }
 
-        // Orphan footer: only the head of the window can hold one, and only
-        // because the byte-range fetch cut the header off mid-dump. Everything
-        // before it is therefore config body. Requiring that no dump has closed
-        // yet keeps this strictly a head-of-window rule, so it can never reach
-        // back across a real event.
-        if (line == kKlipperConfigFooter && dumps_closed == 0 && i <= kOrphanFooterMaxIndex) {
+        // Orphan footer: the byte-range fetch cut the header off mid-dump, so
+        // everything before it is config body and goes with it. Three conditions
+        // keep that from reaching across real content:
+        //   - no dump has closed yet, so this stays a head-of-window rule;
+        //   - no runtime "Stats " line has been seen, which is what actually
+        //     distinguishes a cut-off dump from a stray rule line in a live log;
+        //   - a generous positional backstop for a window with no runtime output.
+        if (line == kKlipperConfigFooter && dumps_closed == 0 && !runtime_output_seen &&
+            i <= kOrphanFooterMaxIndex) {
             out.clear();
             note_elision(i + 1);
             ++dumps_closed;
             continue;
         }
 
+        if (!runtime_output_seen && line.rfind(kKlipperStatsPrefix, 0) == 0) {
+            runtime_output_seen = true;
+        }
         out.push_back(line);
     }
 
@@ -1263,7 +1278,7 @@ std::string DebugBundleCollector::condense_klipper_log(const std::string& raw, i
 
 std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
                                                  const std::string& endpoint, int num_lines,
-                                                 int tail_bytes, bool condense_klipper) {
+                                                 int tail_bytes, int condense_max_repeats) {
     try {
         auto req = std::make_shared<HttpRequest>();
         req->method = HTTP_GET;
@@ -1319,9 +1334,9 @@ std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
 
         // Condense BEFORE the num_lines cap: the whole point is to spend the
         // line budget on events rather than on Klipper's per-second Stats spam.
-        if (condense_klipper) {
+        if (condense_max_repeats > 0) {
             size_t raw_bytes = body.size();
-            body = condense_klipper_log(body);
+            body = condense_klipper_log(body, condense_max_repeats);
             spdlog::debug("[DebugBundle] Condensed {} to {} bytes from {}", raw_bytes, body.size(),
                           endpoint);
         }
@@ -1360,7 +1375,7 @@ std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
 // refused, while both files sat on the local disk the whole time. moonraker.log
 // in particular is the one artefact that would say why Moonraker stopped.
 std::string DebugBundleCollector::collect_local_log_tail(const std::string& log_name, int num_lines,
-                                                         bool condense_klipper) {
+                                                         int condense_max_repeats) {
     std::string host;
     uint16_t port = 7125;
     if (!helix::diag::split_host_port(get_moonraker_url(), host, port))
@@ -1385,34 +1400,154 @@ std::string DebugBundleCollector::collect_local_log_tail(const std::string& log_
                  paths.size());
     // Defaults, as at the HTTP call site: the second parameter is stats_context,
     // not a line count.
-    return condense_klipper ? condense_klipper_log(body) : body;
+    return condense_max_repeats > 0 ? condense_klipper_log(body, condense_max_repeats) : body;
+}
+
+std::string DebugBundleCollector::pick_rotated_sibling(const std::vector<LogFileEntry>& listing,
+                                                       const std::vector<std::string>& stems) {
+    const LogFileEntry* best = nullptr;
+
+    for (const auto& e : listing) {
+        // Root-level only. A nested "mod/init.log.1" is another component's file
+        // even when the basename would match.
+        if (e.path.find('/') != std::string::npos)
+            continue;
+
+        for (const auto& stem : stems) {
+            // Exactly "<stem>." + a non-empty suffix. The trailing dot is what
+            // keeps "printer.log" from claiming "printer.log_backup.1" or
+            // "printer.logger.2", and requiring a suffix excludes the active file.
+            if (e.path.size() <= stem.size() + 1)
+                continue;
+            if (e.path.compare(0, stem.size(), stem) != 0 || e.path[stem.size()] != '.')
+                continue;
+
+            if (best == nullptr || e.modified > best->modified)
+                best = &e;
+            break;
+        }
+    }
+
+    return best ? best->path : std::string{};
+}
+
+std::vector<DebugBundleCollector::LogFileEntry>
+DebugBundleCollector::fetch_log_listing(const std::string& base_url) {
+    std::vector<LogFileEntry> out;
+    if (base_url.empty())
+        return out;
+
+    try {
+        auto resp = moonraker_get(base_url, "/server/files/list?root=logs");
+        if (!resp.is_object() || !resp.contains("result") || !resp["result"].is_array())
+            return out;
+
+        for (const auto& item : resp["result"]) {
+            if (!item.is_object() || !item.contains("path") || !item["path"].is_string())
+                continue;
+            LogFileEntry e;
+            e.path = item["path"].get<std::string>();
+            if (item.contains("size") && item["size"].is_number())
+                e.size = item["size"].get<uint64_t>();
+            if (item.contains("modified") && item["modified"].is_number())
+                e.modified = item["modified"].get<double>();
+            out.push_back(std::move(e));
+        }
+    } catch (const std::exception& e) {
+        spdlog::debug("[DebugBundle] Log listing failed: {}", e.what());
+    }
+    return out;
+}
+
+/// Prepend the newest rotated predecessor when the active log is too short to
+/// have used its byte budget.
+///
+/// The predicate is the point: if the active log already fills the window we
+/// were willing to spend, it reaches as far back as we can afford and there is
+/// nothing to gain. It is only when the active log is SHORT that the window has
+/// unspent room — and a short active log is exactly the fingerprint of the case
+/// that burned us, a restart or reboot after the incident. So the extra GET
+/// costs nothing in the common case and fires precisely when the evidence has
+/// moved next door.
+std::string DebugBundleCollector::prepend_rotated_predecessor(const std::string& base_url,
+                                                              const std::vector<std::string>& stems,
+                                                              const std::string& active_body,
+                                                              int tail_bytes, int num_lines,
+                                                              int condense_max_repeats) {
+    const auto used = static_cast<int>(active_body.size());
+    if (used >= tail_bytes)
+        return active_body; // window already spent; nothing older is affordable
+
+    auto listing = fetch_log_listing(base_url);
+    const std::string sibling = pick_rotated_sibling(listing, stems);
+    if (sibling.empty())
+        return active_body;
+
+    const int remaining = tail_bytes - used;
+    auto older = fetch_log_tail(base_url, "/server/files/logs/" + sibling, num_lines, remaining,
+                                condense_max_repeats);
+    if (older.empty())
+        return active_body;
+
+    spdlog::info("[DebugBundle] Active log short ({} B); prepended {} ({} B)", used, sibling,
+                 older.size());
+    // Older first: the two halves are contiguous in time, and a reader scanning
+    // downward should move forward through the incident, not backward.
+    return older + "\n[helix] ---- rotated boundary: " + sibling +
+           " above, active log below ----\n" + active_body;
 }
 
 std::string DebugBundleCollector::collect_klipper_log_tail(int num_lines) {
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
-        return collect_local_log_tail("klippy.log", num_lines, /*condense_klipper=*/true);
+        return collect_local_log_tail("klippy.log", num_lines, kKlipperCondenseMaxRepeats);
     // 4 MiB of raw klippy.log is ~80 minutes of Klipper's 1-Stats-line-per-second
     // output, versus ~10 minutes for the old 512 KiB tail. condense_klipper_log()
     // then strips the Stats padding, so the retained payload stays in the same
     // ballpark as before while reaching far enough back to contain the incident
     // (bundle UJCCQP6S: 615 of 635 captured lines were Stats, and the MCU
     // shutdown being investigated had scrolled off hours earlier).
-    auto body = fetch_log_tail(base_url, "/server/files/klippy.log", num_lines,
-                               /*tail_bytes=*/4 * 1024 * 1024, /*condense_klipper=*/true);
+    constexpr int kKlipperTailBytes = 4 * 1024 * 1024;
+    auto body = fetch_log_tail(base_url, "/server/files/klippy.log", num_lines, kKlipperTailBytes,
+                               kKlipperCondenseMaxRepeats);
     if (body.empty())
-        body = collect_local_log_tail("klippy.log", num_lines, /*condense_klipper=*/true);
-    return body;
+        return collect_local_log_tail("klippy.log", num_lines, kKlipperCondenseMaxRepeats);
+
+    // klippy.log is the fragile one. Klipper's handler rotates on a clock jump,
+    // and an RTC-less printer jumps its clock on every boot — Vger1700's device
+    // carried both printer.log.1970-01-01 and printer.log.2025-12-31 as proof.
+    // "klippy.log" is a Moonraker alias; on AD5M/AD5X the real file is
+    // printer.log, so rotations must be matched under both names.
+    static const std::vector<std::string> kStems = {"klippy.log", "printer.log"};
+    return prepend_rotated_predecessor(base_url, kStems, body, kKlipperTailBytes, num_lines,
+                                       kKlipperCondenseMaxRepeats);
 }
 
 std::string DebugBundleCollector::collect_moonraker_log_tail(int num_lines) {
+    // moonraker.log used to ship raw against a 512 KiB window. Both were wrong in
+    // the same direction: the condenser is shape-based rather than Klipper-specific,
+    // so it collapses moonraker's log_request() padding just as well (1524 KiB of a
+    // real file down to 240 KiB), and once the payload shrinks a bigger fetch costs
+    // little. Measured on Vger1700's logs, 512 KiB reached 7656 lines for 167 KB
+    // shipped; 2 MiB reached all 23862 for 240 KB.
+    //
+    // This matters more than the klippy budget does. moonraker.log carries the only
+    // record of the gcode queue stalling (klippy_connection.wait() pending ages) and
+    // the only host-CPU trace across a shutdown (proc_stats), it timestamps in wall
+    // clock rather than uptime seconds, it sees every client rather than just us,
+    // and it outlives the Klipper tree: on LYGVE39Y a rollback to Klipper 12 took
+    // klippy.log with it while moonraker.log kept the whole incident.
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
-        return collect_local_log_tail("moonraker.log", num_lines);
-    auto body = fetch_log_tail(base_url, "/server/files/moonraker.log", num_lines);
+        return collect_local_log_tail("moonraker.log", num_lines, kMoonrakerCondenseMaxRepeats);
+    auto body = fetch_log_tail(base_url, "/server/files/moonraker.log", num_lines,
+                               kMoonrakerTailBytes, kMoonrakerCondenseMaxRepeats);
     if (body.empty())
-        body = collect_local_log_tail("moonraker.log", num_lines);
-    return body;
+        return collect_local_log_tail("moonraker.log", num_lines, kMoonrakerCondenseMaxRepeats);
+
+    static const std::vector<std::string> kStems = {"moonraker.log"};
+    return prepend_rotated_predecessor(base_url, kStems, body, kMoonrakerTailBytes, num_lines,
+                                       kMoonrakerCondenseMaxRepeats);
 }
 
 // =============================================================================

@@ -728,6 +728,15 @@ class NavigationManager {
     // overlay close. See activate_restored_target().
     bool restore_activation_pending_ = false;
 
+    // True while the active main panel sits deactivated underneath an overlay.
+    // Set when the first overlay covers it, cleared by whoever activates a main
+    // panel next. switch_to_panel_impl() needs it because a navbar tap onto the
+    // panel you are already on makes set_active() a no-op, leaving nothing else
+    // to re-activate it; the flag says whether that re-activation is owed, so a
+    // panel that set_active() already activated under the overlay (the
+    // connection-change path) is not activated a second time.
+    bool main_panel_deactivated_for_overlay_ = false;
+
     // Animation constants
     static constexpr uint32_t OVERLAY_ANIM_DURATION_MS = 200;
     static constexpr int32_t OVERLAY_SLIDE_OFFSET = 400;

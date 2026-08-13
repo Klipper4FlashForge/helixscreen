@@ -1344,6 +1344,12 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                                               int slot) {
         AmsBackend* backend = AmsState::instance().get_backend();
 
+        // EJECT / RECOVER_POSITION / SELECT_GATE / CHECK_GATE / CLEAR_SPOOL are
+        // identical in both AMS panels — see ams_dispatch_backend_action().
+        if (helix::ui::ams_dispatch_backend_action(action, slot, path_canvas_)) {
+            return;
+        }
+
         switch (action) {
         case helix::ui::AmsContextMenu::MenuAction::LOAD:
             if (!backend) {
@@ -1382,64 +1388,6 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             }
             break;
 
-        case helix::ui::AmsContextMenu::MenuAction::EJECT:
-            if (!backend) {
-                NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
-                return;
-            }
-            {
-                if (path_canvas_) {
-                    ui_filament_path_canvas_set_eject_mode(path_canvas_, true);
-                }
-                AmsError error = backend->eject_lane(slot);
-                if (error.result != AmsResult::SUCCESS) {
-                    helix::ui::notify_ams_error(error, lv_tr("Eject failed"));
-                    if (path_canvas_) {
-                        ui_filament_path_canvas_set_eject_mode(path_canvas_, false);
-                    }
-                }
-            }
-            break;
-
-        case helix::ui::AmsContextMenu::MenuAction::RECOVER_POSITION:
-            if (!backend) {
-                NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
-                return;
-            }
-            {
-                AmsError error = backend->recover_lane_position(slot);
-                if (error.result != AmsResult::SUCCESS) {
-                    helix::ui::notify_ams_error(error, lv_tr("Recovery failed"));
-                }
-            }
-            break;
-
-        case helix::ui::AmsContextMenu::MenuAction::SELECT_GATE:
-            if (!backend) {
-                NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
-                return;
-            }
-            {
-                AmsError error = backend->select_gate(slot);
-                if (error.result != AmsResult::SUCCESS) {
-                    helix::ui::notify_ams_error(error, lv_tr("Select slot failed"));
-                }
-            }
-            break;
-
-        case helix::ui::AmsContextMenu::MenuAction::CHECK_GATE:
-            if (!backend) {
-                NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
-                return;
-            }
-            {
-                AmsError error = backend->check_gate(slot);
-                if (error.result != AmsResult::SUCCESS) {
-                    helix::ui::notify_ams_error(error, lv_tr("Check slot failed"));
-                }
-            }
-            break;
-
         case helix::ui::AmsContextMenu::MenuAction::EDIT:
             show_edit_modal(slot);
             break;
@@ -1469,41 +1417,6 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
 #endif // HELIX_HAS_CAMERA
             break;
         }
-
-        case helix::ui::AmsContextMenu::MenuAction::CLEAR_SPOOL:
-            if (!backend) {
-                NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
-                return;
-            }
-            {
-                // Clear spool assignment: reset material/color/spool data, keep slot status
-                SlotInfo cleared = backend->get_slot_info(slot);
-                cleared.material.clear();
-                cleared.color_rgb = AMS_DEFAULT_SLOT_COLOR;
-                cleared.color_name.clear();
-                cleared.multi_color_hexes.clear();
-                cleared.brand.clear();
-                // Drops spoolman_id AND the filament/vendor handles — leaving
-                // those behind fed a later repoint comparison against a spool
-                // this lane is no longer linked to.
-                cleared.clear_spoolman_link();
-                cleared.remaining_weight_g = -1;
-                cleared.total_weight_g = -1;
-                auto error = backend->set_slot_info(slot, cleared);
-                if (error.success()) {
-#if HELIX_HAS_CFS
-                    if (backend->get_type() == AmsType::CFS) {
-                        static_cast<helix::printer::AmsBackendCfs*>(backend)
-                            ->clear_box_slot_profile(slot);
-                    }
-#endif
-                    AmsState::instance().sync_from_backend();
-                    NOTIFY_INFO(lv_tr("Slot {} spool cleared"), slot + 1);
-                } else {
-                    helix::ui::notify_ams_error(error, lv_tr("Clear failed"));
-                }
-            }
-            break;
 
         case helix::ui::AmsContextMenu::MenuAction::CANCELLED:
         default:

@@ -170,7 +170,17 @@
 	#define LV_DRAW_SW_SUPPORT_L8			1
 	#define LV_DRAW_SW_SUPPORT_AL88			1
 	#define LV_DRAW_SW_SUPPORT_A8			1
-	#define LV_DRAW_SW_SUPPORT_I1			1
+	/* I1 (1-bit indexed) and RGB565_SWAPPED are both OFF on this panel. The
+	 * GT911/ST7701 board runs native little-endian RGB565 at 16 bpp with no
+	 * byte-swap (main/board_display.c `.bits_per_pixel = 16`, no swap flag), and
+	 * nothing in the tree renders an I1 source — LV_COLOR_FORMAT_I1 appears
+	 * nowhere in src/ or the firmware. Both must be spelled out here: LVGL's
+	 * lv_conf_internal.h defaults each to 1 when LV_KCONFIG_PRESENT is unset,
+	 * which is our case (LV_KCONFIG_IGNORE). Neither format is touched by the
+	 * S3 PIE SIMD path — simd/esp_lvgl_port_lv_blend.h only overrides the
+	 * RGB565/RGB888/ARGB8888 blend macros. */
+	#define LV_DRAW_SW_SUPPORT_I1			0
+	#define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED	0
 
 	/* Set the number of draw unit.
      * > 1 requires an operating system enabled in `LV_USE_OS`
@@ -620,7 +630,11 @@
     extern lv_font_t mdi_icons_64; /* non-const: runtime-populated from .bin (moved_fonts_shim.c) */
 
 /*Always set a default font*/
-#define LV_FONT_DEFAULT &lv_font_montserrat_14  /* audit: repo uses noto_sans_14 */
+/* Repointing this: noto_sans_18 is the ONLY Helix face compiled into the image
+ * (helixcore/CMakeLists.txt HELIX_FONT_SRCS). Every other face is a zero-init
+ * shim symbol in moved_fonts_shim.c, filled from a .bin at boot, so none of
+ * them is a legal compile-time default. */
+#define LV_FONT_DEFAULT &lv_font_montserrat_14
 
 /*Enable handling large font and/or fonts with a lot of characters.
  *The limit depends on the font size, font face and bpp.

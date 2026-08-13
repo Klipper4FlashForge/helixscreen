@@ -18,6 +18,8 @@ namespace helix::ui {
  * launches the setup wizard.
  */
 class PrinterSwitchMenu : public ContextMenu {
+    HELIX_CONTEXT_MENU_KIND(PrinterSwitchMenu)
+
   public:
     enum class MenuAction {
         SWITCH,

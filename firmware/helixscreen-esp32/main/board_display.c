@@ -11,6 +11,7 @@
 #include "ktouch.h"
 
 static const char* TAG = "board_display";
+static bool s_backlight_ok;
 
 esp_lcd_panel_handle_t board_display_init(void) {
     gpio_config_t rst = {.pin_bit_mask = 1ULL << BOARD_LCD_PIN_RESET, .mode = GPIO_MODE_OUTPUT};
@@ -81,7 +82,17 @@ esp_lcd_panel_handle_t board_display_init(void) {
         .freq_hz = 30000,
         .clk_cfg = LEDC_AUTO_CLK,
     };
-    ESP_ERROR_CHECK(ledc_timer_config(&timer));
+    // Backlight bring-up is non-fatal, unlike the panel init above: a board
+    // whose LEDC setup fails still has a working panel, and a backlight stuck
+    // at its power-on level is a far better outcome than refusing to boot.
+    // board_display_backlight() checks s_backlight_ok so it does not spam
+    // errors against an unconfigured channel.
+    esp_err_t err = ledc_timer_config(&timer);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "backlight timer config failed: %s - brightness control disabled",
+                 esp_err_to_name(err));
+        return panel;
+    }
     ledc_channel_config_t channel = {
         .gpio_num = BOARD_BACKLIGHT_PIN,
         .speed_mode = LEDC_LOW_SPEED_MODE,
@@ -90,11 +101,19 @@ esp_lcd_panel_handle_t board_display_init(void) {
         .duty = (1 << 11) - 1,
         .hpoint = 0,
     };
-    ESP_ERROR_CHECK(ledc_channel_config(&channel));
+    err = ledc_channel_config(&channel);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "backlight channel config failed: %s - brightness control disabled",
+                 esp_err_to_name(err));
+        return panel;
+    }
+    s_backlight_ok = true;
     return panel;
 }
 
 void board_display_backlight(uint8_t percent) {
+    if (!s_backlight_ok)
+        return;
     if (percent > 100)
         percent = 100;
     uint32_t duty = ((uint32_t)percent * ((1 << 11) - 1)) / 100;

@@ -59,11 +59,12 @@ class ActivePrintMediaManager {
      *
      * This manager is the sole writer of print_thumbnail_path, and it never
      * publishes the empty string — "there is no thumbnail" is said with an
-     * explicit image. See PrinterPrintState::kNoThumbnailPlaceholder for why
+     * explicit image. See PrinterPrintState::no_thumbnail_placeholder() for why
      * the empty string is not merely untidy but unsafe to hand a consumer.
      */
-    static constexpr const char* kNoThumbnailPlaceholder =
-        PrinterPrintState::kNoThumbnailPlaceholder;
+    static const char* no_thumbnail_placeholder() {
+        return PrinterPrintState::no_thumbnail_placeholder();
+    }
 
     // Non-copyable
     ActivePrintMediaManager(const ActivePrintMediaManager&) = delete;

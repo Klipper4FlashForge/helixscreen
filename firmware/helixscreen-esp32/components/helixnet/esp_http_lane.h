@@ -63,7 +63,9 @@ class EspHttpLane {
         FetchErrorCb on_error;
     };
 
-    void ensure_worker_started();
+    // Caller must already hold mutex_ — mutex_ is a plain std::mutex, so this
+    // must never take it itself. Returns whether the worker is running.
+    bool ensure_worker_started_locked();
     static void* worker_main(void* self);
     void worker_loop();
     void run_one(const Job& job);

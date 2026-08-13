@@ -41,6 +41,8 @@ class ToolSwitcherWidget : public PanelWidget {
     /// Single-select list of the printer's tools, raised by a tap on the compact
     /// tile. Picking a row issues the change; a tap outside it chooses nothing.
     class ToolPicker : public helix::ui::ContextMenu {
+        HELIX_CONTEXT_MENU_KIND(ToolPicker)
+
       public:
         explicit ToolPicker(ToolSwitcherWidget& owner) : owner_(owner) {}
 

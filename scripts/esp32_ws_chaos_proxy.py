@@ -18,7 +18,7 @@ attempt.
 Usage:
     # Drop the current client connection every 45s, forever:
     ./scripts/esp32_ws_chaos_proxy.py --listen-port 7125 \\
-        --upstream-host 192.168.1.112 --upstream-port 7125 --drop-every 45
+        --upstream-host 192.168.1.100 --upstream-port 7125 --drop-every 45
 
     # Drop on demand instead, from another terminal:
     kill -USR1 <pid>          # or: ./scripts/esp32_ws_chaos_proxy.py --pid-file /tmp/chaos.pid
@@ -182,7 +182,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--listen-host", default="0.0.0.0", help="Interface to listen on (default: all)")
     parser.add_argument("--listen-port", type=int, required=True, help="Port the device connects to")
-    parser.add_argument("--upstream-host", required=True, help="Real Moonraker host (e.g. 192.168.1.112)")
+    parser.add_argument("--upstream-host", required=True, help="Real Moonraker host (e.g. 192.168.1.100)")
     parser.add_argument("--upstream-port", type=int, required=True, help="Real Moonraker port (e.g. 7125)")
     parser.add_argument(
         "--drop-every", type=float, default=None,

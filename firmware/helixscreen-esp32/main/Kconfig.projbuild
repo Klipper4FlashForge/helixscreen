@@ -23,11 +23,13 @@ config HELIX_HIL_WIFI_PASS
 
 config HELIX_HIL_MOONRAKER_URL
     string "Moonraker WebSocket URL"
-    default "ws://192.168.1.112:7125/websocket"
+    default ""
     help
-        Moonraker WebSocket endpoint the app connects to at boot. The default is
-        the HIL Voron; override via sdkconfig.local. A runtime settings surface
-        replaces this in Task 12.
+        Moonraker WebSocket endpoint used ONLY as the first-boot seed for
+        settings.json. Empty in the committed tree — a bench printer's address
+        is site-local, so supply it via a git-ignored sdkconfig.local. Left
+        empty, the device boots into the not-ready UI and the host is set in
+        Settings > System > Host.
 
 endmenu
 
