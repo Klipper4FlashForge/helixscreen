@@ -96,6 +96,7 @@ translations:
   = Loosen: = 緩める
   = Tighten: = 締める
   A: A
+  A picture of your printer: プリンターの画像
   ABS: ABS
   ACCELEROMETERS: 加速度センサー
   ACE Moonraker bridge not found. Install ace_status.py for full support.: ACE Moonraker ブリッジが見つかりません。完全なサポートには ace_status.py をインストールしてください。
@@ -155,6 +156,7 @@ translations:
   After running the commands, tap Check Again below.: コマンド実行後、下の「再確認」をタップしてください。
   Alert: アラート
   Alerts: アラート
+  Alerts and messages waiting for you: 待機中のアラートとメッセージ
   All: すべて
   All Devices: すべてのデバイス
   All axes homed: すべての軸がホーミング済み
@@ -292,6 +294,7 @@ translations:
   Brother QL: Brother QL
   Brother QL (Bluetooth): Brother QL (Bluetooth)
   Browse and play recorded timelapses: 録画済みタイムラプスを閲覧・再生
+  Browse and run your Klipper macros: Klipper マクロを表示して実行
   Browse guides, configuration references, and troubleshooting resources for HelixScreen.: HelixScreen
     のガイド、設定リファレンス、トラブルシューティング資料を参照します。
   Buffer Status: バッファーステータス
@@ -441,6 +444,7 @@ translations:
     の Bluetooth 設定が必要な場合があります
   Clipboard unavailable - use SSH: クリップボード利用不可 - SSHを使用してください
   Clog Detection: 詰まり検出
+  Clog and flow health while printing: 印刷中の詰まりとフローの状態
   Clog detection: 詰まり検出
   Close: 閉じる
   Closer: 近く
@@ -631,6 +635,7 @@ translations:
   Device name is required: デバイス名は必須です
   'Device: ': 'デバイス: '
   Different filament?: 別のフィラメント？
+  Digital Clock: デジタル時計
   Disable: 無効化
   Disable Motors?: モーターを無効にしますか？
   Disable the security PIN: セキュリティ PIN を無効化
@@ -758,6 +763,7 @@ translations:
   Estimating...: 推定中...
   Ethernet: イーサネット
   Events appear here after sessions and prints: セッションと印刷の後にイベントがここに表示されます
+  Every extruder's temperature at once: 全エクストルーダーの温度を一覧表示
   Excellent Accuracy: 非常に高精度
   'Exception: {}': '例外: {}'
   Exclude: 除外
@@ -884,6 +890,7 @@ translations:
   'Failed to upload remapped G-code: {}': 'リマップしたG-codeのアップロードに失敗しました: {}'
   Fan: ファン
   Fan Calibration: ファンキャリブレーション
+  Fan Speeds: ファン速度
   Fan Transfer: ファン熱伝達
   'Fan control failed: {}': 'ファン制御に失敗しました: {}'
   FanSelect: ファンを選択
@@ -967,6 +974,7 @@ translations:
   G-code Console: G-code コンソール
   G-code Preview: G-code プレビュー
   G-code commands will appear here: G-code コマンドがここに表示されます
+  GCode Console: G-code コンソール
   Gear motor synced: ギアモーターを同期しました
   Gear sync: ギア同期
   Generic: 汎用
@@ -1067,6 +1075,7 @@ translations:
   How the toolhead icon appears: ツールヘッドアイコンの表示スタイル
   Hub: ハブ
   Humidity: 湿度
+  Humidity inside the enclosure: チャンバー内の湿度
   Hyperlapse: ハイパーラプス
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: ハイパーラプスは一定の時間間隔でフレームを撮影します。非常に長い印刷に適しています。
   ID (optional): ID（任意）
@@ -1161,6 +1170,8 @@ translations:
   Klippy Shutdowns: Klippy シャットダウン
   # Source: led_control_overlay.xml:31
   LED: ''
+  LED Controls: LED 操作
+  LED Light: LED ライト
   LED SELECTION: LED選択
   LED Settings: LED設定
   LED Strip: LEDストリップ
@@ -1177,6 +1188,7 @@ translations:
   Labels: ラベル
   Labels Per Sheet: シートあたりのラベル数
   Lane: レーン
+  Lane colors, materials, and levels: レーンの色、素材、残量
   Lane {} is blocked — manual intervention required: レーン {} がブロックされています — 手動での対応が必要です
   Language: 言語
   Language, theme, brightness, and sound: 言語、テーマ、明るさ、サウンド
@@ -1204,6 +1216,7 @@ translations:
   Light: ライト
   Light will switch when the current operation finishes: 現在の操作が完了したらライトを切り替えます
   Listen to all theme sounds: すべてのテーマサウンドを試聴
+  Live view from your webcam: ウェブカメラのライブ表示
   Load: 装填
   Load Filament: フィラメントを装填
   Load may still be running — response timed out: 装填がまだ実行中の可能性があります — 応答タイムアウト
@@ -1228,7 +1241,9 @@ translations:
   Lock: ロック
   Lock A: ロック A
   Lock B: ロック B
+  Lock Screen: 画面ロック
   Lock screen after idle timeout: アイドルタイムアウト後に画面をロック
+  Lock the screen with your PIN: PIN で画面をロック
   Locked during print: 印刷中はロックされています
   Log Level: ログレベル
   Logs: ログ
@@ -1259,6 +1274,7 @@ translations:
   Machine Limits: 機械制限
   Macro: マクロ
   Macro Browser: マクロブラウザ
+  Macro Button: マクロボタン
   Macro Buttons: マクロボタン
   Macro analysis not initialized: マクロ解析が初期化されていません
   'Macro failed: {}': 'マクロの実行に失敗しました: {}'
@@ -1309,6 +1325,7 @@ translations:
   Measure and compare belt path frequencies: ベルトパスの周波数を測定・比較
   Measure belt path frequencies: ベルトパスの周波数を測定
   Measured: 測定値
+  Measured filament diameter: 測定したフィラメント直径
   Measurement Failed: 測定失敗
   Measuring Path A... %d%%: パス A を測定中... %d%%
   Measuring Path B... %d%%: パス B を測定中... %d%%
@@ -1349,6 +1366,7 @@ translations:
   Multi-Filament System: マルチフィラメントシステム
   Multi-Filament System Detected: マルチフィラメントシステムを検出
   Multi-Filament System Management: マルチフィラメントシステム管理
+  Multi-Filament System Status: マルチフィラメントシステム状態
   'Multi-Filament System is busy: {}': 'マルチフィラメントシステムがビジー状態: {}'
   Multi-Filament System not available: マルチフィラメントシステムが利用できません
   Must home axes first: 先にホーミングしてください
@@ -1486,11 +1504,13 @@ translations:
   Nozzle Priming: ノズルプライミング
   Nozzle Temp: ノズル温度
   Nozzle Temperature: ノズル温度
+  Nozzle Temperatures: 各ノズル温度
   Nozzle Temps: ノズル温度
   Nozzle did not reach {}°C — {} cancelled: ノズルが{}°Cに達しませんでした — {}を中止しました
   Nozzle min cannot exceed max: ノズル温度の最小値は最大値を超えられません
   Nozzle target set to {}°C: ノズル目標温度を {}°C に設定しました
   Nozzle temp must be 100-500°C: ノズル温度は 100〜500°C にしてください
+  Nozzle, bed, and chamber in one widget: ノズル、ベッド、チャンバーをまとめて表示
   'Nozzle:': 'ノズル:'
   OD: OD
   'OFF': 'OFF'
@@ -1512,6 +1532,8 @@ translations:
   'On:': 'オン:'
   Open: 開く
   Open Source Licenses: オープンソースライセンス
+  Open color and brightness controls: 色と明るさの調整を開く
+  Open motion controls for jogging: ジョグ操作を開く
   Operation already in progress: 操作がすでに進行中です
   Operations: 操作
   Optimize Your Printing: 印刷を最適化
@@ -1563,6 +1585,7 @@ translations:
   Part: パーツ
   Part Cooling Fan: パーツ冷却ファン
   Part Fan: パーツファン
+  Part, hotend, and auxiliary fan speeds: パーツ、ホットエンド、補助ファンの速度
   Password: パスワード
   Password cannot be empty: パスワードを入力してください
   Password is required for secured networks: セキュリティ保護されたネットワークにはパスワードが必要です
@@ -1572,6 +1595,7 @@ translations:
   Pause: 一時停止
   Pause macro not configured: 一時停止マクロが未設定です
   Pause the print first, then load, unload, or change filament: 先に印刷を一時停止してから、装填・排出・フィラメント交換を行ってください
+  Pause, resume, or stop the print: 印刷の一時停止、再開、停止
   Paused: 一時停止
   Paused (attention needed): 一時停止（対応が必要）
   Pausing...: 一時停止中...
@@ -1623,6 +1647,7 @@ translations:
   Power Devices: 電源デバイス
   Power off the printer or screen: プリンターまたは画面の電源をオフにします
   'Pre-print command failed: {}': '印刷前コマンドに失敗しました: {}'
+  Preheat: 予熱
   Preheat Macro: 予熱マクロ
   Preheat PLA: PLA 予熱
   Preheat cancelled: 予熱がキャンセルされました
@@ -1647,6 +1672,7 @@ translations:
   Print Cancelled: 印刷キャンセル
   Print Complete!: 印刷完了！
   Print Completion Alert: 印刷完了通知
+  Print Controls: 印刷操作
   Print Details: 印刷詳細
   Print Failed: 印刷失敗
   Print File: 印刷ファイル
@@ -1659,6 +1685,7 @@ translations:
   Print Paused: 印刷一時停止
   Print Speed: 印刷速度
   Print Start: 印刷開始
+  Print Stats: 印刷統計
   Print Status: 印刷ステータス
   Print Time: 印刷時間
   Print Tuning: 印刷チューニング
@@ -1668,6 +1695,7 @@ translations:
   Print error: 印刷エラー
   Print failed: 印刷失敗
   Print issue detected: 印刷の問題を検出しました
+  Print jobs waiting to run: 実行待ちの印刷ジョブ
   'Print preparation failed: {}': '印刷準備に失敗しました: {}'
   Print server rejected the job — check printer status: 印刷サーバーがジョブを拒否しました — プリンターの状態を確認してください
   Print setup failed: 印刷のセットアップに失敗しました
@@ -1734,6 +1762,7 @@ translations:
   Profile name (e.g., default): 'プロファイル名（例: default）'
   Profile renamed: プロファイル名を変更しました
   Profiles: プロファイル
+  Progress, file, and time remaining: 進行状況、ファイル、残り時間
   Pulling filament back: フィラメントを引き戻し中
   Purge: パージ
   'Purge failed: {}': 'パージに失敗しました: {}'
@@ -1768,6 +1797,7 @@ translations:
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
   Re-probe: 再プローブ
   Re-syncs Happy Hare's tracked state with the hardware.: Happy Hare が追跡している状態をハードウェアと再同期します。
+  Readings from extra temperature sensors: 追加の温度センサーの値
   Ready: 準備完了
   Ready to Apply: 適用の準備完了
   Ready to load: 読み込み準備完了
@@ -1842,6 +1872,7 @@ translations:
   Restart Firmware?: ファームウェアを再起動しますか？
   Restart HelixScreen: HelixScreen を再起動
   Restart Klipper: Klipper を再起動
+  Restart Klipper without rebooting: ホストを再起動せずに Klipper を再起動
   Restart Moonraker: Moonraker を再起動
   Restart Now: 今すぐ再起動
   Restart Required: 再起動が必要です
@@ -1877,6 +1908,7 @@ translations:
   Review your configuration below, then click Finish to save: 以下の設定を確認し、「完了」をクリックして保存してください
   Rewinding: 巻き戻し中
   'Role:': '役割:'
+  Rotating tips for using your printer: プリンターの使い方のヒントを順に表示
   Rotation: 回転
   'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': '回転: %d\xc2\xb0 - %ds残り
     (待つと再試行)'
@@ -1886,6 +1918,7 @@ translations:
   Run Macro: マクロを実行
   Run Macro?: マクロを実行しますか？
   Run a Klipper macro when preheating this material: この素材の予熱時に Klipper マクロを実行
+  Run a macro you choose, in one tap: 選んだマクロをワンタップで実行
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): ノズルがコールドの状態でもフィラメントの装填/取り出しを実行（ノズルを自身で加熱するマクロ向け）
   Run without parameter prompt: パラメータ入力なしで実行
   Run {}?: '{} を実行しますか？'
@@ -1994,6 +2027,7 @@ translations:
   Selecting slot...: スロットを選択中...
   Selector: セレクター
   Self-Test: セルフテスト
+  Send G-code and read the replies: G-code を送信して応答を確認
   Send Report: レポートを送信
   Send commands directly to printer: プリンターに直接コマンドを送信
   Send this crash report to help improve HelixScreen.: HelixScreen の改善にこのクラッシュレポートを送信してください。
@@ -2016,6 +2050,9 @@ translations:
     Strobe Light Tachometer, myStroboscope'
   : 'スマホのストロボアプリを %.1f Hz に設定してベルトに向けてください。ベルトが静止して見えるまで調整します。\n\n推奨アプリ:\n  Android:
     Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope'
+  Set and watch the bed temperature: ベッド温度の設定と監視
+  Set and watch the chamber temperature: チャンバー温度の設定と監視
+  Set and watch the nozzle temperature: ノズル温度の設定と監視
   Set local timezone for time display: 時刻表示用のローカルタイムゾーンを設定
   Set logging verbosity for troubleshooting: トラブルシューティング用のログの詳細レベルを設定
   Set up: セットアップ
@@ -2047,10 +2084,12 @@ translations:
   Showing loaded colors: ''
   Showing sliced colors: ''
   Showing the 50 newest files. See more in the printer's web UI.: ''
+  Shut down or restart the host: ホストのシャットダウンまたは再起動
   Shutdown: シャットダウン
   Shutdown / Reboot: シャットダウン / 再起動
   Shutdown failed: シャットダウンに失敗しました
   Shutdown failed — host is still reachable: シャットダウンに失敗しました — ホストに依然として到達可能です
+  Shutdown/Reboot: シャットダウン/再起動
   Shutting down printer...: プリンターをシャットダウン中...
   Shutting down screen...: 画面をシャットダウン中...
   Shutting down...: シャットダウン中...
@@ -2161,7 +2200,9 @@ translations:
   Suppress raw debug output from printer firmware modules: プリンターファームウェアモジュールからの生のデバッグ出力を抑制
   Surfaces inherit app background tokens for light and dark modes.: サーフェスはライトモードとダークモードのアプリ背景トークンを継承します。
   Switch Printer: プリンターを切り替え
+  Switch a power device on or off: 電源デバイスのオン/オフ切り替え
   Switch between light and dark themes: ライトテーマとダークテーマを切り替え
+  Switch the active tool or extruder: アクティブなツールやエクストルーダーを切り替え
   Switched to T{}: T{} に切替えました
   Switches to a backup spool on runout: フィラメント切れ時にバックアップスプールへ切り替えます
   Switching heater control to MPC. Klipper will restart.: ヒーター制御をMPCに切り替えます。Klipperが再起動します。
@@ -2207,10 +2248,13 @@ translations:
   Temp °C: 温度 °C
   Temp °C (%d–%d): 温度 °C (%d〜%d)
   Temperature: 温度
+  Temperature Graph: 温度グラフ
   Temperature Graph Config: 温度グラフ設定
   # Source: calibration_pid_panel.xml:333
+  Temperature Sensors: 温度センサー
   Temperature control has been optimized.: ''
   Temperatures: 温度
+  Temperatures plotted over time: 温度の時間変化をグラフ表示
   Temperatures saved: 温度を保存しました
   Template: テンプレート
   Temporary adjustment for this print, unless saved on Controls panel: コントロールパネルで保存しない限り、この印刷のみの一時的な調整です
@@ -2232,6 +2276,7 @@ translations:
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
   : HelixPrint プラグインは、クイック再印刷のためのベッドメッシュスキップなど、プリンター上で直接高速 G-code 修正を可能にします。
+  The Spoolman spool currently loaded: 現在装填中の Spoolman スプール
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : アニメーション付きスクリーンセーバーが印刷に干渉しないよう、このデバイスではオフになっています。設定 > ディスプレイで再度有効にできます。
@@ -2253,6 +2298,8 @@ translations:
   The printer rejected the filament configuration. The print was not started.: プリンターがフィラメント設定を拒否しました。印刷は開始されませんでした。
   The printer's firmware chooses the backup spool itself: バックアップスプールはプリンターのファームウェアが選びます
   The runout sensor indicates no filament is loaded. Start print anyway?: フィラメント切れセンサーがフィラメント未装填を検出しました。それでも印刷を開始しますか？
+  The speed of one fan you choose: 選んだファン1つの速度
+  The time, date, and system uptime: 時間、日付、稼働時間
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: ツールヘッドセンサーがフィラメント装填済みを検出しました。それでも装填を続行しますか？
   The toolhead sensor indicates no filament is present. Proceed with unload anyway?: ツールヘッドセンサーがフィラメント未検出を報告しました。それでもアンロードを続行しますか？
   Theme: テーマ
@@ -2324,6 +2371,7 @@ translations:
   Timelapse rendered successfully: タイムラプスのレンダリングが完了しました
   Timezone: タイムゾーン
   'Tip:': 'ヒント:'
+  Tips: ヒント
   Tips database format error: ヒントデータベースの形式エラー
   Tips database not found: ヒントデータベースが見つかりません
   Toggle: トグル
@@ -2332,6 +2380,7 @@ translations:
   Too humid: 湿度が高すぎます
   Tool: ツール
   Tool Changer: ツールチェンジャー
+  Tool Switcher: ツール変更
   'Tool change failed: {}': 'ツール変更に失敗しました: {}'
   Tool mapping failed: ツールマッピングに失敗しました
   Tool swap: ツール交換
@@ -2343,6 +2392,7 @@ translations:
   Tools Used: 使用したツール
   'Tools: ': 'ツール: '
   Total Prints: 総印刷数
+  Total prints, success rate, and time: 総印刷数、成功率、印刷時間
   Touch & Input: タッチと入力
   Touch Cal: タッチキャリブレーション
   Touch Calibration: タッチキャリブレーション
@@ -2366,6 +2416,7 @@ translations:
   Turn On: オンにする
   Turn on LEDs when printer starts: プリンター起動時に LED を点灯
   Turn the extruder heater off after a load or unload finishes: 装填または排出の完了後にエクストルーダーヒーターをオフにします
+  Turn the printer's lights on or off: プリンターのライトをオン/オフ
   Type: タイプ
   Type to preview input field...: 入力フィールドをプレビューするには入力してください...
   'Type:': 'タイプ:'
@@ -2472,6 +2523,7 @@ translations:
   Waiting for bed to reach temperature for accurate calibration.: 正確なキャリブレーションのためにベッド温度到達を待機中。
   Waiting for the filament system to report its state: フィラメントシステムの状態報告を待機中
   Warm Bed: ベッドを予熱
+  Warm up for a material in one tap: 素材に合わせてワンタップで予熱
   Warming Bed...: ベッド予熱中...
   Warn: 警告
   Warning: 警告
@@ -2493,7 +2545,9 @@ translations:
     preparation.
   : 印刷開始時に %s を実行するかどうかを選択できるようになります。最近すでに実行した場合や、印刷準備をより細かく制御したい場合に時間を節約できます。
   Where UI sounds play: UIサウンドの再生先
+  Whether filament is loaded: フィラメントの装填状態
   White: ホワイト
+  Wi-Fi or ethernet connection status: WiFi またはイーサネットの接続状態
   WiFi: WiFi
   WiFi Disabled: WiFi 無効
   WiFi Enabled: WiFi 有効
@@ -2508,6 +2562,7 @@ translations:
     は設定されていますが、ハードウェアが利用できません。システム設定を確認してください。
   Widget Labels: ウィジェットラベル
   Width: 幅
+  Width Sensor: 幅センサー
   Wifi: Wi-Fi
   Will not switch spools on runout: フィラメント切れ時にスプールを切り替えません
   Wizard Error: ウィザードエラー
@@ -2655,4 +2710,5 @@ translations:
   '{} new hardware available': '{} 個の新しいハードウェアが利用可能です'
   '{} preset{}': '{} 個のプリセット{}'
   '{} target set to {}°C': '{} 目標温度を {}°C に設定しました'
+  '{} widgets': ''
   '{} — response timed out': '{} — 応答タイムアウト'

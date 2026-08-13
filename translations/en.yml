@@ -96,6 +96,7 @@ translations:
   = Loosen: = Loosen
   = Tighten: = Tighten
   A: A
+  A picture of your printer: A picture of your printer
   ABS: ABS
   ACCELEROMETERS: ACCELEROMETERS
   ACE Moonraker bridge not found. Install ace_status.py for full support.: ACE Moonraker bridge not found. Install ace_status.py for full support.
@@ -161,6 +162,7 @@ translations:
     tap Check Again below.
   Alert: Alert
   Alerts: Alerts
+  Alerts and messages waiting for you: Alerts and messages waiting for you
   All: All
   All Devices: All Devices
   All axes homed: All axes homed
@@ -310,6 +312,7 @@ translations:
   Brother QL: Brother QL
   Brother QL (Bluetooth): Brother QL (Bluetooth)
   Browse and play recorded timelapses: Browse and play recorded timelapses
+  Browse and run your Klipper macros: Browse and run your Klipper macros
   Browse guides, configuration references, and troubleshooting resources for HelixScreen.: Browse
     guides, configuration references, and troubleshooting resources for HelixScreen.
   Buffer Status: Buffer Status
@@ -480,6 +483,7 @@ translations:
     settings — system unpair failed, may need OS Bluetooth
   Clipboard unavailable - use SSH: Clipboard unavailable - use SSH
   Clog Detection: Clog Detection
+  Clog and flow health while printing: Clog and flow health while printing
   Clog detection: Clog detection
   Close: Close
   Closer: Closer
@@ -679,6 +683,7 @@ translations:
   Device name is required: Device name is required
   'Device: ': 'Device: '
   Different filament?: Different filament?
+  Digital Clock: Digital Clock
   Disable: Disable
   Disable Motors?: Disable Motors?
   Disable the security PIN: Disable the security PIN
@@ -812,6 +817,7 @@ translations:
   Ethernet: Ethernet
   Events appear here after sessions and prints: Events appear here after sessions
     and prints
+  Every extruder's temperature at once: Every extruder's temperature at once
   Excellent Accuracy: Excellent Accuracy
   'Exception: {}': 'Exception: {}'
   Exclude: Exclude
@@ -948,6 +954,7 @@ translations:
   'Failed to upload remapped G-code: {}': 'Failed to upload remapped G-code: {}'
   Fan: Fan
   Fan Calibration: Fan Calibration
+  Fan Speeds: Fan Speeds
   Fan Transfer: Fan Transfer
   'Fan control failed: {}': 'Fan control failed: {}'
   FanSelect: FanSelect
@@ -1035,6 +1042,7 @@ translations:
   G-code Console: G-code Console
   G-code Preview: G-code Preview
   G-code commands will appear here: G-code commands will appear here
+  GCode Console: GCode Console
   Gear motor synced: Gear motor synced
   Gear sync: Gear sync
   Generic: Generic
@@ -1142,6 +1150,7 @@ translations:
   How the toolhead icon appears: How the toolhead icon appears
   Hub: Hub
   Humidity: Humidity
+  Humidity inside the enclosure: Humidity inside the enclosure
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Hyperlapse
     captures frames at fixed time intervals. Good for very long prints.
@@ -1255,6 +1264,8 @@ translations:
   Klippy Shutdowns: Klippy Shutdowns
   # Source: led_control_overlay.xml:31
   LED: LED
+  LED Controls: LED Controls
+  LED Light: LED Light
   LED SELECTION: LED SELECTION
   LED Settings: LED Settings
   LED Strip: LED Strip
@@ -1271,6 +1282,7 @@ translations:
   Labels: Labels
   Labels Per Sheet: Labels Per Sheet
   Lane: Lane
+  Lane colors, materials, and levels: Lane colors, materials, and levels
   Lane {} is blocked — manual intervention required: Lane {} is blocked — manual intervention
     required
   Language: Language
@@ -1301,6 +1313,7 @@ translations:
   Light will switch when the current operation finishes: Light will switch when the
     current operation finishes
   Listen to all theme sounds: Listen to all theme sounds
+  Live view from your webcam: Live view from your webcam
   Load: Load
   Load Filament: Load Filament
   Load may still be running — response timed out: Load may still be running — response
@@ -1327,7 +1340,9 @@ translations:
   Lock: Lock
   Lock A: Lock A
   Lock B: Lock B
+  Lock Screen: Lock Screen
   Lock screen after idle timeout: Lock screen after idle timeout
+  Lock the screen with your PIN: Lock the screen with your PIN
   Locked during print: Locked during print
   Log Level: Log Level
   Logs: Logs
@@ -1359,6 +1374,7 @@ translations:
   Machine Limits: Machine Limits
   Macro: Macro
   Macro Browser: Macro Browser
+  Macro Button: Macro Button
   Macro Buttons: Macro Buttons
   Macro analysis not initialized: Macro analysis not initialized
   'Macro failed: {}': 'Macro failed: {}'
@@ -1411,6 +1427,7 @@ translations:
   Measure and compare belt path frequencies: Measure and compare belt path frequencies
   Measure belt path frequencies: Measure belt path frequencies
   Measured: Measured
+  Measured filament diameter: Measured filament diameter
   Measurement Failed: Measurement Failed
   Measuring Path A... %d%%: Measuring Path A... %d%%
   Measuring Path B... %d%%: Measuring Path B... %d%%
@@ -1456,6 +1473,7 @@ translations:
   Multi-Filament System: Multi-Filament System
   Multi-Filament System Detected: Multi-Filament System Detected
   Multi-Filament System Management: Multi-Filament System Management
+  Multi-Filament System Status: Multi-Filament System Status
   'Multi-Filament System is busy: {}': 'Multi-Filament System is busy: {}'
   Multi-Filament System not available: Multi-Filament System not available
   Must home axes first: Must home axes first
@@ -1599,11 +1617,13 @@ translations:
   Nozzle Priming: Nozzle Priming
   Nozzle Temp: Nozzle Temp
   Nozzle Temperature: Nozzle Temperature
+  Nozzle Temperatures: Nozzle Temperatures
   Nozzle Temps: Nozzle Temps
   Nozzle did not reach {}°C — {} cancelled: Nozzle did not reach {}°C — {} cancelled
   Nozzle min cannot exceed max: Nozzle min cannot exceed max
   Nozzle target set to {}°C: Nozzle target set to {}°C
   Nozzle temp must be 100-500°C: Nozzle temp must be 100-500°C
+  Nozzle, bed, and chamber in one widget: Nozzle, bed, and chamber in one widget
   'Nozzle:': 'Nozzle:'
   OD: OD
   'OFF': 'OFF'
@@ -1625,6 +1645,8 @@ translations:
   'On:': 'On:'
   Open: Open
   Open Source Licenses: Open Source Licenses
+  Open color and brightness controls: Open color and brightness controls
+  Open motion controls for jogging: Open motion controls for jogging
   Operation already in progress: Operation already in progress
   Operations: Operations
   Optimize Your Printing: Optimize Your Printing
@@ -1678,6 +1700,7 @@ translations:
   Part: Part
   Part Cooling Fan: Part Cooling Fan
   Part Fan: Part Fan
+  Part, hotend, and auxiliary fan speeds: Part, hotend, and auxiliary fan speeds
   Password: Password
   Password cannot be empty: Password cannot be empty
   Password is required for secured networks: Password is required for secured networks
@@ -1688,6 +1711,7 @@ translations:
   Pause macro not configured: Pause macro not configured
   Pause the print first, then load, unload, or change filament: Pause the print first,
     then load, unload, or change filament
+  Pause, resume, or stop the print: Pause, resume, or stop the print
   Paused: Paused
   Paused (attention needed): Paused (attention needed)
   Pausing...: Pausing...
@@ -1745,6 +1769,7 @@ translations:
   Power Devices: Power Devices
   Power off the printer or screen: Power off the printer or screen
   'Pre-print command failed: {}': 'Pre-print command failed: {}'
+  Preheat: Preheat
   Preheat Macro: Preheat Macro
   Preheat PLA: Preheat PLA
   Preheat cancelled: Preheat cancelled
@@ -1769,6 +1794,7 @@ translations:
   Print Cancelled: Print Cancelled
   Print Complete!: Print Complete!
   Print Completion Alert: Print Completion Alert
+  Print Controls: Print Controls
   Print Details: Print Details
   Print Failed: Print Failed
   Print File: Print File
@@ -1781,6 +1807,7 @@ translations:
   Print Paused: Print Paused
   Print Speed: Print Speed
   Print Start: Print Start
+  Print Stats: Print Stats
   Print Status: Print Status
   Print Time: Print Time
   Print Tuning: Print Tuning
@@ -1790,6 +1817,7 @@ translations:
   Print error: Print error
   Print failed: Print failed
   Print issue detected: Print issue detected
+  Print jobs waiting to run: Print jobs waiting to run
   'Print preparation failed: {}': 'Print preparation failed: {}'
   Print server rejected the job — check printer status: Print server rejected the
     job — check printer status
@@ -1862,6 +1890,7 @@ translations:
   Profile name (e.g., default): Profile name (e.g., default)
   Profile renamed: Profile renamed
   Profiles: Profiles
+  Progress, file, and time remaining: Progress, file, and time remaining
   Pulling filament back: Pulling filament back
   Purge: Purge
   'Purge failed: {}': 'Purge failed: {}'
@@ -1899,6 +1928,7 @@ translations:
   Re-probe: Re-probe
   Re-syncs Happy Hare's tracked state with the hardware.: Re-syncs Happy Hare's tracked
     state with the hardware.
+  Readings from extra temperature sensors: Readings from extra temperature sensors
   Ready: Ready
   Ready to Apply: Ready to Apply
   Ready to load: Ready to load
@@ -1978,6 +2008,7 @@ translations:
   Restart Firmware?: Restart Firmware?
   Restart HelixScreen: Restart HelixScreen
   Restart Klipper: Restart Klipper
+  Restart Klipper without rebooting: Restart Klipper without rebooting
   Restart Moonraker: Restart Moonraker
   Restart Now: Restart Now
   Restart Required: Restart Required
@@ -2016,6 +2047,7 @@ translations:
     below, then click Finish to save
   Rewinding: Rewinding
   'Role:': 'Role:'
+  Rotating tips for using your printer: Rotating tips for using your printer
   Rotation: Rotation
   'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': 'Rotation: %d\xc2\xb0
     - %ds remaining (or wait to retry)'
@@ -2026,6 +2058,7 @@ translations:
   Run Macro?: Run Macro?
   Run a Klipper macro when preheating this material: Run a Klipper macro when preheating
     this material
+  Run a macro you choose, in one tap: Run a macro you choose, in one tap
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): Run
     filament load/unload even when the nozzle is cold (for macros that heat the nozzle
     themselves)
@@ -2147,6 +2180,7 @@ translations:
   Selecting slot...: Selecting slot...
   Selector: Selector
   Self-Test: Self-Test
+  Send G-code and read the replies: Send G-code and read the replies
   Send Report: Send Report
   Send commands directly to printer: Send commands directly to printer
   Send this crash report to help improve HelixScreen.: Send this crash report to help
@@ -2172,6 +2206,9 @@ translations:
   : 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
+  Set and watch the bed temperature: Set and watch the bed temperature
+  Set and watch the chamber temperature: Set and watch the chamber temperature
+  Set and watch the nozzle temperature: Set and watch the nozzle temperature
   Set local timezone for time display: Set local timezone for time display
   Set logging verbosity for troubleshooting: Set logging verbosity for troubleshooting
   Set up: Set up
@@ -2208,10 +2245,12 @@ translations:
   Showing sliced colors: Showing sliced colors
   Showing the 50 newest files. See more in the printer's web UI.: Showing the 50
     newest files. See more in the printer's web UI.
+  Shut down or restart the host: Shut down or restart the host
   Shutdown: Shutdown
   Shutdown / Reboot: Shutdown / Reboot
   Shutdown failed: Shutdown failed
   Shutdown failed — host is still reachable: Shutdown failed — host is still reachable
+  Shutdown/Reboot: Shutdown/Reboot
   Shutting down printer...: Shutting down printer...
   Shutting down screen...: Shutting down screen...
   Shutting down...: Shutting down...
@@ -2332,7 +2371,9 @@ translations:
   Surfaces inherit app background tokens for light and dark modes.: Surfaces inherit
     app background tokens for light and dark modes.
   Switch Printer: Switch Printer
+  Switch a power device on or off: Switch a power device on or off
   Switch between light and dark themes: Switch between light and dark themes
+  Switch the active tool or extruder: Switch the active tool or extruder
   Switched to T{}: Switched to T{}
   Switches to a backup spool on runout: Switches to a backup spool on runout
   Switching heater control to MPC. Klipper will restart.: Switching heater control
@@ -2382,10 +2423,13 @@ translations:
   Temp °C: Temp °C
   Temp °C (%d–%d): Temp °C (%d–%d)
   Temperature: Temperature
+  Temperature Graph: Temperature Graph
   Temperature Graph Config: Temperature Graph Config
   # Source: calibration_pid_panel.xml:333
+  Temperature Sensors: Temperature Sensors
   Temperature control has been optimized.: Temperature control has been optimized.
   Temperatures: Temperatures
+  Temperatures plotted over time: Temperatures plotted over time
   Temperatures saved: Temperatures saved
   Template: Template
   Temporary adjustment for this print, unless saved on Controls panel: Temporary adjustment
@@ -2409,6 +2453,7 @@ translations:
     skipping bed mesh for quick reprints.
   : The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
+  The Spoolman spool currently loaded: The Spoolman spool currently loaded
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : The animated screensaver has been turned off on this device to prevent it from
@@ -2438,6 +2483,8 @@ translations:
   The printer's firmware chooses the backup spool itself: The printer's firmware chooses the backup spool itself
   The runout sensor indicates no filament is loaded. Start print anyway?: The runout
     sensor indicates no filament is loaded. Start print anyway?
+  The speed of one fan you choose: The speed of one fan you choose
+  The time, date, and system uptime: The time, date, and system uptime
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: The
     toolhead sensor indicates filament is already loaded. Proceed with load anyway?
   The toolhead sensor indicates no filament is present. Proceed with unload anyway?: The
@@ -2526,6 +2573,7 @@ translations:
   Timelapse rendered successfully: Timelapse rendered successfully
   Timezone: Timezone
   'Tip:': 'Tip:'
+  Tips: Tips
   Tips database format error: Tips database format error
   Tips database not found: Tips database not found
   Toggle: Toggle
@@ -2534,6 +2582,7 @@ translations:
   Too humid: Too humid
   Tool: Tool
   Tool Changer: Tool Changer
+  Tool Switcher: Tool Switcher
   'Tool change failed: {}': 'Tool change failed: {}'
   Tool mapping failed: Tool mapping failed
   Tool swap: Tool swap
@@ -2545,6 +2594,7 @@ translations:
   Tools Used: Tools Used
   'Tools: ': 'Tools: '
   Total Prints: Total Prints
+  Total prints, success rate, and time: Total prints, success rate, and time
   Touch & Input: Touch & Input
   Touch Cal: Touch Cal
   Touch Calibration: Touch Calibration
@@ -2569,6 +2619,7 @@ translations:
   Turn On: Turn On
   Turn on LEDs when printer starts: Turn on LEDs when printer starts
   Turn the extruder heater off after a load or unload finishes: Turn the extruder heater off after a load or unload finishes
+  Turn the printer's lights on or off: Turn the printer's lights on or off
   Type: Type
   Type to preview input field...: Type to preview input field...
   'Type:': 'Type:'
@@ -2684,6 +2735,7 @@ translations:
     to reach temperature for accurate calibration.
   Waiting for the filament system to report its state: Waiting for the filament system to report its state
   Warm Bed: Warm Bed
+  Warm up for a material in one tap: Warm up for a material in one tap
   Warming Bed...: Warming Bed...
   Warn: Warn
   Warning: Warning
@@ -2711,7 +2763,9 @@ translations:
     time when you've already done it recently or want more control over your print
     preparation.
   Where UI sounds play: Where UI sounds play
+  Whether filament is loaded: Whether filament is loaded
   White: White
+  Wi-Fi or ethernet connection status: Wi-Fi or ethernet connection status
   WiFi: WiFi
   WiFi Disabled: WiFi Disabled
   WiFi Enabled: WiFi Enabled
@@ -2726,6 +2780,7 @@ translations:
     was configured but hardware is not available. Check system configuration.
   Widget Labels: Widget Labels
   Width: Width
+  Width Sensor: Width Sensor
   Wifi: Wifi
   Will not switch spools on runout: Will not switch spools on runout
   Wizard Error: Wizard Error
@@ -2888,4 +2943,5 @@ translations:
   '{} new hardware available': '{} new hardware available'
   '{} preset{}': '{} preset{}'
   '{} target set to {}°C': '{} target set to {}°C'
+  '{} widgets': '{} widgets'
   '{} — response timed out': '{} — response timed out'

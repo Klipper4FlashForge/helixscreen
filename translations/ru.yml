@@ -100,6 +100,7 @@ translations:
   = Loosen: = Ослабить
   = Tighten: = Затянуть
   A: A
+  A picture of your printer: Изображение вашего принтера
   ABS: ABS
   ACCELEROMETERS: АКСЕЛЕРОМЕТРЫ
   ACE Moonraker bridge not found. Install ace_status.py for full support.: Мост ACE Moonraker не найден. Установите ace_status.py для полной поддержки.
@@ -165,6 +166,7 @@ translations:
     «Проверить снова» ниже.
   Alert: Оповещение
   Alerts: Оповещения
+  Alerts and messages waiting for you: Уведомления и сообщения для вас
   All: Все
   All Devices: Все устройства
   All axes homed: Все оси запаркованы
@@ -317,6 +319,7 @@ translations:
   Brother QL: Brother QL
   Brother QL (Bluetooth): Brother QL (Bluetooth)
   Browse and play recorded timelapses: Просмотр и воспроизведение записанных таймлапсов
+  Browse and run your Klipper macros: Просмотр и запуск макросов Klipper
   Browse guides, configuration references, and troubleshooting resources for HelixScreen.: Руководства,
     справочники по настройке и ресурсы по устранению неполадок для HelixScreen.
   Buffer Status: Статус буфера
@@ -494,6 +497,7 @@ translations:
     настроек; не удалось отменить сопряжение в системе, возможно нужен Bluetooth ОС
   Clipboard unavailable - use SSH: Буфер обмена недоступен - используйте SSH
   Clog Detection: Обнаружение засора
+  Clog and flow health while printing: Засоры и поток во время печати
   Clog detection: Обнаружение засора
   Close: Закрыть
   Closer: Ближе
@@ -696,6 +700,7 @@ translations:
   Device name is required: Требуется название устройства
   'Device: ': 'Устройство: '
   Different filament?: Другой филамент?
+  Digital Clock: Цифровые часы
   Disable: Отключить
   Disable Motors?: Отключить моторы?
   Disable the security PIN: Отключить PIN-код
@@ -830,6 +835,7 @@ translations:
   Ethernet: Ethernet
   Events appear here after sessions and prints: События появятся здесь после сессий
     и печатей
+  Every extruder's temperature at once: Температура всех экструдеров
   Excellent Accuracy: Отличная точность
   'Exception: {}': 'Исключение: {}'
   Exclude: Исключить
@@ -969,6 +975,7 @@ translations:
     {}'
   Fan: Вентилятор
   Fan Calibration: Калибровка вентилятора
+  Fan Speeds: Скорости вентиляторов
   Fan Transfer: Теплообмен с вентилятором
   'Fan control failed: {}': 'Ошибка управления вентилятором: {}'
   FanSelect: Выбрать вентилятор
@@ -1055,6 +1062,7 @@ translations:
   G-code Console: Консоль G-code
   G-code Preview: Просмотр G-code
   G-code commands will appear here: Здесь будут отображаться G-code команды
+  GCode Console: Консоль G-code
   Gear motor synced: Шестерёнчатый мотор синхронизирован
   Gear sync: Синхронизация шестерни
   Generic: Общий
@@ -1162,6 +1170,7 @@ translations:
   How the toolhead icon appears: Как отображается значок печатающей головки
   Hub: Хаб
   Humidity: Влажность
+  Humidity inside the enclosure: Влажность внутри камеры
   Hyperlapse: Гиперлапс
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Гиперлапс
     захватывает кадры через фиксированные интервалы времени. Подходит для очень долгих
@@ -1277,6 +1286,8 @@ translations:
   Klippy Shutdowns: Отключения Klippy
   # Source: led_control_overlay.xml:31
   LED: ''
+  LED Controls: Управление LED
+  LED Light: Подсветка LED
   LED SELECTION: ВЫБОР LED
   LED Settings: Настройки LED
   LED Strip: LED-лента
@@ -1294,6 +1305,7 @@ translations:
   Labels: Этикетки
   Labels Per Sheet: Этикеток на листе
   Lane: Слот
+  Lane colors, materials, and levels: Цвета, материалы и уровни слотов
   Lane {} is blocked — manual intervention required: Слот {} заблокирован — требуется
     ручное вмешательство
   Language: Язык
@@ -1325,6 +1337,7 @@ translations:
   Light will switch when the current operation finishes: Подсветка переключится после
     завершения текущей операции
   Listen to all theme sounds: Прослушать все звуки темы
+  Live view from your webcam: Прямая трансляция с веб-камеры
   Load: Загрузить
   Load Filament: Загрузить филамент
   Load may still be running — response timed out: Загрузка может ещё выполняться —
@@ -1351,7 +1364,9 @@ translations:
   Lock: Блокировка
   Lock A: Блокировка A
   Lock B: Блокировка B
+  Lock Screen: Блокировка экрана
   Lock screen after idle timeout: Блокировать экран после простоя
+  Lock the screen with your PIN: Заблокировать экран PIN-кодом
   Locked during print: Заблокировано во время печати
   Log Level: Уровень журнала
   Logs: Журналы
@@ -1384,6 +1399,7 @@ translations:
   Machine Limits: Ограничения принтера
   Macro: Макрос
   Macro Browser: Обзор макросов
+  Macro Button: Кнопка макроса
   Macro Buttons: Кнопки макросов
   Macro analysis not initialized: Анализ макросов не инициализирован
   'Macro failed: {}': 'Ошибка макроса: {}'
@@ -1437,6 +1453,7 @@ translations:
   Measure and compare belt path frequencies: Измерить и сравнить частоты путей ремня
   Measure belt path frequencies: Измерить частоты путей ремня
   Measured: Измерено
+  Measured filament diameter: Измеренный диаметр филамента
   Measurement Failed: Измерение не удалось
   Measuring Path A... %d%%: Измерение пути A... %d%%
   Measuring Path B... %d%%: Измерение пути B... %d%%
@@ -1481,6 +1498,7 @@ translations:
   Multi-Filament System: Мультифиламентная система
   Multi-Filament System Detected: Обнаружена мультифиламентная система
   Multi-Filament System Management: Управление мульти-филаментной системой
+  Multi-Filament System Status: Статус мультифиламентной системы
   'Multi-Filament System is busy: {}': 'Мультифиламентная система занята: {}'
   Multi-Filament System not available: Мультифиламентная система недоступна
   Must home axes first: Сначала необходимо запарковать оси
@@ -1626,11 +1644,13 @@ translations:
   Nozzle Priming: Подготовка сопла
   Nozzle Temp: Темп. сопла
   Nozzle Temperature: Температура сопла
+  Nozzle Temperatures: Температуры сопел
   Nozzle Temps: Темп. сопел
   Nozzle did not reach {}°C — {} cancelled: Сопло не нагрелось до {}°C — «{}» отменено
   Nozzle min cannot exceed max: Минимум сопла не может превышать максимум
   Nozzle target set to {}°C: Целевая температура сопла {}°C
   Nozzle temp must be 100-500°C: Температура сопла должна быть 100-500°C
+  Nozzle, bed, and chamber in one widget: Сопло, стол и камера в одном виджете
   'Nozzle:': 'Сопло:'
   OD: OD
   'OFF': ВЫКЛ
@@ -1652,6 +1672,8 @@ translations:
   'On:': 'Вкл:'
   Open: Открыть
   Open Source Licenses: Лицензии с открытым кодом
+  Open color and brightness controls: Управление цветом и яркостью
+  Open motion controls for jogging: Управление перемещением осей
   Operation already in progress: Операция уже выполняется
   Operations: Операции
   Optimize Your Printing: Оптимизируйте вашу печать
@@ -1705,6 +1727,7 @@ translations:
   Part: Деталь
   Part Cooling Fan: Вентилятор охлаждения детали
   Part Fan: Вент. детали
+  Part, hotend, and auxiliary fan speeds: Обдув детали, хотенда, доп. вентиляторы
   Password: Пароль
   Password cannot be empty: Пароль не может быть пустым
   Password is required for secured networks: Для защищённых сетей требуется пароль
@@ -1714,6 +1737,7 @@ translations:
   Pause: Пауза
   Pause macro not configured: Макрос паузы не настроен
   Pause the print first, then load, unload, or change filament: Сначала приостановите печать, затем загружайте, выгружайте или меняйте филамент
+  Pause, resume, or stop the print: Пауза, продолжение или остановка
   Paused: Приостановлено
   Paused (attention needed): Приостановлено (требует внимания)
   Pausing...: Приостановка...
@@ -1771,6 +1795,7 @@ translations:
   Power Devices: Устройства питания
   Power off the printer or screen: Выключить принтер или экран
   'Pre-print command failed: {}': 'Ошибка команды перед печатью: {}'
+  Preheat: Преднагрев
   Preheat Macro: Макрос преднагрева
   Preheat PLA: Преднагрев PLA
   Preheat cancelled: Предварительный нагрев отменён
@@ -1795,6 +1820,7 @@ translations:
   Print Cancelled: Печать отменена
   Print Complete!: Печать завершена!
   Print Completion Alert: Уведомление о завершении печати
+  Print Controls: Управление печатью
   Print Details: Информация о печати
   Print Failed: Печать не удалась
   Print File: Файл печати
@@ -1807,6 +1833,7 @@ translations:
   Print Paused: Печать приостановлена
   Print Speed: Скорость печати
   Print Start: Начало печати
+  Print Stats: Статистика печати
   Print Status: Статус печати
   Print Time: Время печати
   Print Tuning: Настройка печати
@@ -1817,6 +1844,7 @@ translations:
   Print error: Ошибка печати
   Print failed: Печать не удалась
   Print issue detected: Обнаружена проблема печати
+  Print jobs waiting to run: Задания печати в очереди
   'Print preparation failed: {}': 'Ошибка подготовки печати: {}'
   Print server rejected the job — check printer status: Сервер печати отклонил задание
     — проверьте статус принтера
@@ -1891,6 +1919,7 @@ translations:
   Profile name (e.g., default): Имя профиля (например, default)
   Profile renamed: Профиль переименован
   Profiles: Профили
+  Progress, file, and time remaining: Прогресс, файл и остаток времени
   Pulling filament back: Откат филамента
   Purge: Продуть
   'Purge failed: {}': 'Ошибка прочистки: {}'
@@ -1928,6 +1957,7 @@ translations:
   Re-probe: Перепроверить
   Re-syncs Happy Hare's tracked state with the hardware.: Повторно синхронизирует
     отслеживаемое состояние Happy Hare с оборудованием.
+  Readings from extra temperature sensors: Показания доп. датчиков температуры
   Ready: Готов
   Ready to Apply: Готово к применению
   Ready to load: Готов к загрузке
@@ -2007,6 +2037,7 @@ translations:
   Restart Firmware?: Перезапустить прошивку?
   Restart HelixScreen: Перезапустить HelixScreen
   Restart Klipper: Перезапустить Klipper
+  Restart Klipper without rebooting: Перезапуск Klipper без перезагрузки
   Restart Moonraker: Перезапустить Moonraker
   Restart Now: Перезапустить сейчас
   Restart Required: Требуется перезапуск
@@ -2045,6 +2076,7 @@ translations:
     ниже, затем нажмите «Готово» для сохранения
   Rewinding: Перемотка
   'Role:': 'Тип:'
+  Rotating tips for using your printer: Сменяющиеся советы по печати
   Rotation: Поворот
   'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': 'Поворот: %d\xc2\xb0
     - осталось %ds (или подождите для повтора)'
@@ -2055,6 +2087,7 @@ translations:
   Run Macro?: Запустить макрос?
   Run a Klipper macro when preheating this material: Запускать макрос Klipper при
     преднагреве этого материала
+  Run a macro you choose, in one tap: Выбранный макрос одним нажатием
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): Выполнять
     загрузку/выгрузку филамента даже при холодном сопле (для макросов, которые сами
     нагревают сопло)
@@ -2177,6 +2210,7 @@ translations:
   Selecting slot...: Выбор слота...
   Selector: Селектор
   Self-Test: Самотестирование
+  Send G-code and read the replies: Отправка G-code и чтение ответов
   Send Report: Отправить отчёт
   Send commands directly to printer: Отправлять команды напрямую принтеру
   Send this crash report to help improve HelixScreen.: Отправьте этот отчёт об ошибке,
@@ -2202,6 +2236,9 @@ translations:
   : 'Установите приложение-стробоскоп на телефоне на %.1f Гц и направьте на ремень.
     Регулируйте, пока ремень не будет казаться неподвижным.\n\nРекомендуемые приложения:\n  Android:
     Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope'
+  Set and watch the bed temperature: Установка и контроль температуры стола
+  Set and watch the chamber temperature: Установка и контроль температуры камеры
+  Set and watch the nozzle temperature: Установка и контроль температуры сопла
   Set local timezone for time display: Установить часовой пояс для отображения времени
   Set logging verbosity for troubleshooting: Установить уровень детализации журнала
     для устранения неполадок
@@ -2241,10 +2278,12 @@ translations:
   Showing loaded colors: ''
   Showing sliced colors: ''
   Showing the 50 newest files. See more in the printer's web UI.: ''
+  Shut down or restart the host: Выключение или перезагрузка хоста
   Shutdown: Выключение
   Shutdown / Reboot: Выключение / Перезагрузка
   Shutdown failed: Ошибка выключения
   Shutdown failed — host is still reachable: Ошибка выключения — хост всё ещё доступен
+  Shutdown/Reboot: Выключение / Перезагрузка
   Shutting down printer...: Выключение принтера...
   Shutting down screen...: Выключение экрана...
   Shutting down...: Выключение...
@@ -2366,7 +2405,9 @@ translations:
   Surfaces inherit app background tokens for light and dark modes.: Поверхности наследуют
     токены фона приложения для светлого и тёмного режимов.
   Switch Printer: Переключить принтер
+  Switch a power device on or off: Включить или выключить питание
   Switch between light and dark themes: Переключение между светлой и тёмной темами
+  Switch the active tool or extruder: Смена активного инструмента
   Switched to T{}: Переключено на T{}
   Switches to a backup spool on runout: При обрыве переключится на резервную катушку
   Switching heater control to MPC. Klipper will restart.: Переключение управления
@@ -2416,10 +2457,13 @@ translations:
   Temp °C: Темп. °C
   Temp °C (%d–%d): Темп. °C (%d–%d)
   Temperature: Температура
+  Temperature Graph: График температуры
   Temperature Graph Config: Настройка графика температуры
   # Source: calibration_pid_panel.xml:333
+  Temperature Sensors: Датчики температуры
   Temperature control has been optimized.: ''
   Temperatures: Температуры
+  Temperatures plotted over time: Температуры во времени
   Temperatures saved: Температуры сохранены
   Template: Шаблон
   Temporary adjustment for this print, unless saved on Controls panel: Временная настройка
@@ -2443,6 +2487,7 @@ translations:
     skipping bed mesh for quick reprints.
   : Плагин HelixPrint позволяет быстро модифицировать G-code прямо на принтере — например,
     пропускать сетку стола для быстрых перепечаток.
+  The Spoolman spool currently loaded: Текущая катушка Spoolman
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : Анимированная заставка была отключена на данном устройстве, чтобы она не мешала
@@ -2472,6 +2517,8 @@ translations:
   The printer's firmware chooses the backup spool itself: Прошивка принтера сама выбирает резервную катушку
   The runout sensor indicates no filament is loaded. Start print anyway?: Датчик окончания
     филамента показывает, что филамент не загружен. Всё равно начать печать?
+  The speed of one fan you choose: Скорость выбранного вентилятора
+  The time, date, and system uptime: Время, дата и время работы системы
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: Датчик
     печатающей головки показывает, что филамент уже загружен. Всё равно продолжить
     загрузку?
@@ -2564,6 +2611,7 @@ translations:
   Timelapse rendered successfully: Таймлапс успешно отрендерен
   Timezone: Часовой пояс
   'Tip:': 'Совет:'
+  Tips: Советы
   Tips database format error: Ошибка формата базы данных советов
   Tips database not found: База данных советов не найдена
   Toggle: Переключить
@@ -2572,6 +2620,7 @@ translations:
   Too humid: Слишком влажно
   Tool: Инструмент
   Tool Changer: Сменщик инструментов
+  Tool Switcher: Смена инструмента
   'Tool change failed: {}': 'Ошибка смены инструмента: {}'
   Tool mapping failed: Ошибка сопоставления инструмента
   Tool swap: Смена инструмента
@@ -2584,6 +2633,7 @@ translations:
   Tools Used: Использовано инструментов
   'Tools: ': 'Инструменты: '
   Total Prints: Всего печатей
+  Total prints, success rate, and time: Всего печатей, процент успеха и время
   Touch & Input: Касание и ввод
   Touch Cal: Кал. касания
   Touch Calibration: Калибровка касания
@@ -2608,6 +2658,7 @@ translations:
   Turn On: Включить
   Turn on LEDs when printer starts: Включать LED при запуске принтера
   Turn the extruder heater off after a load or unload finishes: Выключать нагреватель экструдера после загрузки или выгрузки
+  Turn the printer's lights on or off: Включить или выключить подсветку
   Type: Тип
   Type to preview input field...: Введите для предпросмотра поля ввода...
   'Type:': 'Тип:'
@@ -2723,6 +2774,7 @@ translations:
     стола для точной калибровки.
   Waiting for the filament system to report its state: Ожидание состояния системы филамента
   Warm Bed: Прогреть стол
+  Warm up for a material in one tap: Преднагрев под материал одним нажатием
   Warming Bed...: Прогрев стола...
   Warn: Предупреждение
   Warning: Предупреждение
@@ -2749,7 +2801,9 @@ translations:
   : При запуске печати вы сможете выбрать, запускать ли %s. Это экономит время, если
     вы уже делали это недавно или хотите больше контроля над подготовкой печати.
   Where UI sounds play: Где воспроизводятся звуки интерфейса
+  Whether filament is loaded: Загружен ли филамент
   White: Белый
+  Wi-Fi or ethernet connection status: Статус подключения Wi-Fi или Ethernet
   WiFi: WiFi
   WiFi Disabled: WiFi отключён
   WiFi Enabled: WiFi включён
@@ -2764,6 +2818,7 @@ translations:
     был настроен, но оборудование недоступно. Проверьте конфигурацию системы.
   Widget Labels: Подписи виджетов
   Width: Ширина
+  Width Sensor: Датчик ширины
   Wifi: Wi-Fi
   Will not switch spools on runout: При обрыве катушка не переключится
   Wizard Error: Ошибка мастера
@@ -2931,4 +2986,5 @@ translations:
   '{} new hardware available': 'Доступно нового оборудования: {}'
   '{} preset{}': '{} пресет{}'
   '{} target set to {}°C': Целевая температура {} — {}°C
+  '{} widgets': ''
   '{} — response timed out': '{} — время ожидания ответа истекло'

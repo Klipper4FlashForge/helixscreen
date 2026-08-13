@@ -413,6 +413,7 @@ void register_xml_components() {
     register_xml("overlay_backdrop.xml");
     register_xml("overlay_panel.xml");
     register_xml("widget_catalog_overlay.xml");
+    register_xml("widget_catalog_category_overlay.xml");
     register_xml("toast_notification.xml");
 
     // Utility components (dividers, button rows, headers - used by modals and other components)
