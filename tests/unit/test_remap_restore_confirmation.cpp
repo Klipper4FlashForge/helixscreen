@@ -55,12 +55,37 @@ class CountingAfcBackend : public AmsBackendAfc {
         return current;
     }
 
+    // Confirmation support is opt-in per test. Real AFC returns true, but the
+    // delivery-gate tests below are about backends in general, so they run with
+    // it off and pin the can't-confirm fallback. The confirmation tests turn it
+    // on explicitly.
+    bool reports_firmware_tool_mapping() const override {
+        return echoes_firmware;
+    }
+
+    uint64_t firmware_tool_mapping_generation() const override {
+        return generation;
+    }
+
+    /// Simulate a firmware report landing: the printer tells us `mapping`.
+    void firmware_reports(std::vector<int> mapping) {
+        current = std::move(mapping);
+        ++generation;
+    }
+
+    /// Simulate an OPTIMISTIC local write — the shape that must never confirm.
+    void locally_assume(std::vector<int> mapping) {
+        current = std::move(mapping);
+    }
+
     struct Call {
         int tool;
         int slot;
     };
     std::vector<Call> calls;
     std::vector<int> current;
+    bool echoes_firmware = false;
+    uint64_t generation = 0;
 };
 
 // Installs a counting backend at index 0 and removes it on scope exit.
@@ -68,6 +93,10 @@ struct ScopedCountingBackend {
     CountingAfcBackend* backend = nullptr;
 
     explicit ScopedCountingBackend(std::vector<int> current_mapping) {
+        // The confirmation observer hangs off AmsState's data-revision subject.
+        // Without init_subjects() that subject is never initialized, so it
+        // notifies nobody and every confirmation silently fails to arrive.
+        AmsState::instance().init_subjects(false);
         auto be = std::make_unique<CountingAfcBackend>();
         be->current = std::move(current_mapping);
         backend = be.get();
@@ -87,6 +116,14 @@ struct Harness {
 
     Harness() {
         ps.init_subjects(false);
+    }
+
+    /// Tick AmsState's data-revision subject the way a synced backend event
+    /// does, then drain so the observer body actually runs.
+    static void ams_data_tick() {
+        auto* rev = AmsState::instance().get_ams_data_revision_subject();
+        lv_subject_set_int(rev, lv_subject_get_int(rev) + 1);
+        helix::ui::UpdateQueue::instance().drain();
     }
 
     void set_klippy(KlippyState state) {
@@ -205,5 +242,86 @@ TEST_CASE("remap restore: deferred restore fires when Klipper becomes ready",
     h.set_klippy(KlippyState::READY);
 
     CHECK(be.backend->calls.size() == 2);
+    CHECK(PrintStartControllerTestAccess::saved_mapping(h.controller).empty());
+}
+
+// ============================================================================
+// Firmware confirmation: the send is not the proof
+// ============================================================================
+
+TEST_CASE("remap restore: echoing backend waits for firmware before clearing",
+          "[remap-restore][1270]") {
+    LVGLTestFixture fx;
+    ScopedCountingBackend be{{1, 2}};
+    be.backend->echoes_firmware = true;
+    Harness h;
+    h.set_klippy(KlippyState::READY);
+    PrintStartControllerTestAccess::seed_saved_mapping(h.controller, {2, 1}, 0);
+
+    PrintStartControllerTestAccess::restore(h.controller);
+
+    // Commands went out to a ready Klipper...
+    REQUIRE(be.backend->calls.size() == 2);
+    // ...but a send is not proof the firmware applied them, so the record stays.
+    CHECK_FALSE(PrintStartControllerTestAccess::saved_mapping(h.controller).empty());
+}
+
+TEST_CASE("remap restore: our own optimistic write never counts as confirmation",
+          "[remap-restore][1270]") {
+    LVGLTestFixture fx;
+    ScopedCountingBackend be{{1, 2}};
+    be.backend->echoes_firmware = true;
+    Harness h;
+    h.set_klippy(KlippyState::READY);
+    PrintStartControllerTestAccess::seed_saved_mapping(h.controller, {2, 1}, 0);
+    PrintStartControllerTestAccess::restore(h.controller);
+
+    // THE trap this whole seam exists for: every backend updates its registry
+    // optimistically inside set_tool_mapping(), so the mapping reads correct
+    // immediately even when Klipper refused the command. Matching values with an
+    // unmoved generation must NOT be accepted as proof.
+    be.backend->locally_assume({2, 1});
+    Harness::ams_data_tick();
+
+    CHECK_FALSE(PrintStartControllerTestAccess::saved_mapping(h.controller).empty());
+}
+
+TEST_CASE("remap restore: firmware report matching the snapshot confirms it",
+          "[remap-restore][1270]") {
+    LVGLTestFixture fx;
+    ScopedCountingBackend be{{1, 2}};
+    be.backend->echoes_firmware = true;
+    Harness h;
+    h.set_klippy(KlippyState::READY);
+    PrintStartControllerTestAccess::seed_saved_mapping(h.controller, {2, 1}, 0);
+    PrintStartControllerTestAccess::restore(h.controller);
+    REQUIRE_FALSE(PrintStartControllerTestAccess::saved_mapping(h.controller).empty());
+
+    be.backend->firmware_reports({2, 1});
+    Harness::ams_data_tick();
+
+    CHECK(PrintStartControllerTestAccess::saved_mapping(h.controller).empty());
+    CHECK(PrintStartControllerTestAccess::saved_backend_index(h.controller) == -1);
+}
+
+TEST_CASE("remap restore: firmware reporting the wrong mapping keeps waiting",
+          "[remap-restore][1270]") {
+    LVGLTestFixture fx;
+    ScopedCountingBackend be{{1, 2}};
+    be.backend->echoes_firmware = true;
+    Harness h;
+    h.set_klippy(KlippyState::READY);
+    PrintStartControllerTestAccess::seed_saved_mapping(h.controller, {2, 1}, 0);
+    PrintStartControllerTestAccess::restore(h.controller);
+
+    // A multi-lane restore lands one delta at a time, so a partial match is a
+    // normal intermediate state — keep the record rather than declaring failure.
+    be.backend->firmware_reports({2, 2});
+    Harness::ams_data_tick();
+    CHECK_FALSE(PrintStartControllerTestAccess::saved_mapping(h.controller).empty());
+
+    // The rest arrives.
+    be.backend->firmware_reports({2, 1});
+    Harness::ams_data_tick();
     CHECK(PrintStartControllerTestAccess::saved_mapping(h.controller).empty());
 }

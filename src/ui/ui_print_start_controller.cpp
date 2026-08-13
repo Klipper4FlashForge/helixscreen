@@ -62,8 +62,13 @@ PrintStartController::~PrintStartController() {
                      saved_tool_mapping_.size(), saved_backend_index_);
     }
 
-    // Clear print state observer before modal cleanup
+    // Clear observers before modal cleanup. All three must be reset here, not
+    // just the print-state one: each holds a context pointing at this object,
+    // and the klippy/AMS guards stay armed across a whole deferred-restore wait
+    // (ObserverGuard, never release() — #579).
     print_state_observer_.reset();
+    klippy_state_observer_.reset();
+    ams_data_observer_.reset();
 
     // Clean up any open modals - only if LVGL is still initialized
     // (destructor may be called after lv_deinit() during shutdown)
@@ -1361,10 +1366,100 @@ void PrintStartController::restore_filament_mapping() {
         }
     }
 
-    spdlog::info("[PrintStartController] Restored {} mapping(s) on print end", restores_sent);
+    spdlog::info("[PrintStartController] Sent {} restore command(s) on print end", restores_sent);
+
+    // Backends that echo their mapping back let us wait for firmware truth
+    // instead of trusting a send. Those that don't fall back to "sent to a ready
+    // Klipper counts as delivered" — weaker, but waiting for a confirmation that
+    // can never arrive would strand the record forever.
+    if (!backend->reports_firmware_tool_mapping()) {
+        spdlog::debug("[PrintStartController] Backend does not echo its tool mapping — treating "
+                      "the send as delivery");
+        finish_restore();
+        return;
+    }
+
+    // Nothing was sent AND the mapping already matches: already correct, no
+    // firmware round trip is coming to confirm. Done.
+    if (restores_sent == 0) {
+        finish_restore();
+        return;
+    }
+
+    restore_generation_at_send_ = backend->firmware_tool_mapping_generation();
+    awaiting_restore_confirmation_ = true;
+    spdlog::info("[PrintStartController] Awaiting firmware confirmation of restore (generation {})",
+                 restore_generation_at_send_);
+    observe_ams_data_for_confirmation();
+}
+
+void PrintStartController::finish_restore() {
+    awaiting_restore_confirmation_ = false;
+    ams_data_observer_.reset();
     saved_tool_mapping_.clear();
     saved_backend_index_ = -1;
     clear_persisted_remap_state();
+}
+
+void PrintStartController::observe_ams_data_for_confirmation() {
+    if (ams_data_observer_) {
+        return;
+    }
+
+    auto* subject = AmsState::instance().get_ams_data_revision_subject();
+    if (!subject) {
+        return;
+    }
+
+    ams_data_observer_ = observe_int_sync<PrintStartController>(
+        subject, this, [](PrintStartController* self, int) { self->check_restore_confirmed(); });
+}
+
+void PrintStartController::check_restore_confirmed() {
+    if (!awaiting_restore_confirmation_ || saved_tool_mapping_.empty() ||
+        saved_backend_index_ < 0) {
+        return;
+    }
+
+    auto* backend = AmsState::instance().get_backend(saved_backend_index_);
+    if (!backend) {
+        // Backend disappeared mid-wait. Nothing can confirm now, and holding the
+        // record would block every future restore, so give up on THIS one but
+        // leave the persisted file for the next startup to replay.
+        spdlog::warn("[PrintStartController] Backend {} gone while awaiting restore confirmation",
+                     saved_backend_index_);
+        awaiting_restore_confirmation_ = false;
+        ams_data_observer_.reset();
+        return;
+    }
+
+    // The revision subject is a coarse wake-up — it fires for our own optimistic
+    // writes too. The generation is what separates "the printer said so" from
+    // "we said so", so an unmoved generation means this tick proves nothing.
+    const uint64_t generation = backend->firmware_tool_mapping_generation();
+    if (generation == restore_generation_at_send_) {
+        return;
+    }
+
+    auto current = backend->get_tool_mapping();
+    for (size_t i = 0; i < saved_tool_mapping_.size(); ++i) {
+        const int want = saved_tool_mapping_[i];
+        const int have = (i < current.size()) ? current[i] : -1;
+        if (want != have) {
+            // Firmware reported something, but not what we asked for. Keep
+            // waiting: a multi-lane restore lands one delta at a time, so a
+            // partial match is the normal intermediate state, not a failure.
+            spdlog::debug("[PrintStartController] Restore not yet confirmed: T{} reads slot {}, "
+                          "want {} (generation {})",
+                          i, have, want, generation);
+            return;
+        }
+    }
+
+    spdlog::info("[PrintStartController] Firmware confirmed restore of {} mapping(s) (generation "
+                 "{} -> {})",
+                 saved_tool_mapping_.size(), restore_generation_at_send_, generation);
+    finish_restore();
 }
 
 // ============================================================================
