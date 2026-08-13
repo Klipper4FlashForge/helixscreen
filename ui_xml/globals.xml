@@ -99,14 +99,29 @@
     <!-- Runtime selects appropriate variant via ui_theme_register_responsive_fonts()
          Unified icon size for cards, nav bar, and other standard icons
          Values: xs(16), sm(24), md(32), lg(48), xl(64) -->
-    <!-- NOTE: icon_size_micro="md" (32px) — sm(24) is too small at 272px vertical (~9% of screen height, illegible) -->
+    <!-- These are the NOMINAL size names above; the pixel face each one resolves to
+         also varies per tier (see icon_font_<size>_<tier> below), so "md" is 32px at
+         tiny but 24px at micro. Read both ladders together before changing either.
+
+         The rung is chosen so the glyph lands at 40-50% of the home grid's cell, which
+         is what keeps a tile's icon and its caption both inside the box. Cell edge is
+         2 * GridLayout::GRID_CELL[tier] = 68/80/80/120/120/144/192.
+
+         micro is the deliberate exception at 24px (35%): its 68px cell cannot host a
+         40% glyph AND a caption. "md" reads as 32px from the nominal list, but micro
+         demotes it to 24 - which is the size this comment used to reject as illegible,
+         so the value is right and the reasoning behind it was not. Measured: raising
+         micro to 32px (via "xl") clips 7 widgets on BOTH micro geometries. Leave it. -->
     <string name="icon_size_micro" value="md"/>
     <string name="icon_size_tiny" value="md"/>
     <string name="icon_size_small" value="md"/>
     <string name="icon_size_medium" value="lg"/>
-    <string name="icon_size_large" value="xl"/>
-    <string name="icon_size_xlarge" value="xl"/>
-    <string name="icon_size_xxlarge" value="xl"/>
+    <!-- large/xlarge/xxlarge sit on "lg" rather than "xl": GRID_CELL repeats 60 for
+         medium and large, so an "xl" here grew the glyph 48->64 with no more room and
+         put the tier at 53% - it clipped 10 widget/geometry pairs. -->
+    <string name="icon_size_large" value="lg"/>
+    <string name="icon_size_xlarge" value="lg"/>
+    <string name="icon_size_xxlarge" value="lg"/>
 
     <!-- Literal text that begins with '#'. resolve_consts() treats a leading
          '#' as a const reference on EVERY attribute, and only lets a value

@@ -153,7 +153,6 @@ bool operator<(const KnownClip& a, const KnownClip& b) {
 const std::vector<KnownClip> kKnownClipping = {
     // Whole-widget: does not fit at its minimum on any shipping panel.
     {"clog_detection",   "*"},
-    {"led_controls",     "*"},
     {"lock",             "*"},
     {"preheat",          "*"},
     {"print_status",     "*"},
@@ -169,14 +168,13 @@ const std::vector<KnownClip> kKnownClipping = {
 
     {"ams",              "272x480"},
 
-    // #icon_size cluster: 64px glyph, 112px cell. See the note above.
-    {"bed_temperature",  "1024x600"}, {"bed_temperature",  "1280x720"},
-    {"chamber_temperature", "1024x600"}, {"chamber_temperature", "1280x720"},
-    {"gcode_console",    "1024x600"},
-    {"led",              "1024x600"},
-    {"macros",           "1024x600"},
-    {"motion",           "1024x600"},
-    {"network",          "1024x600"},
+    // The #icon_size cluster that used to live here - bed_temperature,
+    // chamber_temperature, gcode_console, led, macros, motion, network at
+    // 1024x600 and 1280x720, plus led_controls on every panel - is gone. It was
+    // never widget debt: icon_size stepped to "xl" at the large tier while
+    // GRID_CELL repeated 60 for medium and large, so the glyph grew 48->64 with
+    // no more cell to grow into. The rung is "lg" now (ui_xml/globals.xml), and
+    // all ten pairs fit.
 
     // btn_primary's label runs 76-100px past its button on every panel; the
     // 480x320 entry is the same defect, one pixel over on btn_stop's icon.
