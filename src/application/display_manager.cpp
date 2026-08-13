@@ -1396,6 +1396,13 @@ bool DisplayManager::needs_touch_calibration() const {
     return m_backend->needs_touch_calibration();
 }
 
+bool DisplayManager::supports_touch_calibration() const {
+    if (!m_backend) {
+        return false;
+    }
+    return m_backend->supports_touch_calibration();
+}
+
 void DisplayManager::disable_affine_calibration() {
     if (m_backend) {
         m_backend->disable_affine_calibration();

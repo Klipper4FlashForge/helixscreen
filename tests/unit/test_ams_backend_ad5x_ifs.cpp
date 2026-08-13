@@ -7200,7 +7200,10 @@ TEST_CASE("AD5X IFS eject_lane rejects out-of-range slots", "[ams][ad5x_ifs]") {
 //   * _IFS_REMOVE_CURRENT_PRUTOK is the firmware's own "Remove from extruder" button:
 //     it self-homes, calls IFS_REMOVE_CURRENT_PRUTOK NEED_TRASH=1
 //     BYPASS_TEMPERATURE_CHECK=1, resets the hotend, and refreshes color. This is what
-//     we dispatch for a loaded toolhead — raw, so we don't home a second time.
+//     we dispatch for a loaded toolhead, raw rather than via ensure_homed_then() so we
+//     don't put a "Home printer first?" prompt in front of a home the macro's own
+//     _G28 already covers. (_G28 is conditional on homed_axes, so ensure_homed_then()
+//     would not have caused a DOUBLE home - see the load-path test below and #1248.)
 // With a null client, execute_gcode() is overridden, so captured_gcodes holds exactly
 // what unload_filament() sends.
 
@@ -7222,8 +7225,84 @@ TEST_CASE("AD5X IFS unload_filament dispatches the firmware _IFS_REMOVE_CURRENT_
     REQUIRE_FALSE(backend.has_gcode("IFS_REMOVE_CURRENT_PRUTOK")); // bare, no underscore
     REQUIRE_FALSE(backend.has_gcode("IFS_REMOVE_PRUTOK"));
     REQUIRE_FALSE(backend.has_gcode_containing("REMOVE_PRUTOK_IFS"));
-    // The macro self-homes; we must not double-home with our own G28.
+    // Raw dispatch: no G28 of ours in front of the macro's own conditional _G28.
     REQUIRE_FALSE(backend.has_gcode_containing("G28"));
+}
+
+TEST_CASE("AD5X IFS unhomed load sends exactly one G28 then the load macro (#1248)",
+          "[ams][ad5x_ifs][homing][1248]") {
+    // #1248 read INSERT_PRUTOK_IFS's leading _G28 as an unconditional home and
+    // proposed ensure_homed_then(..., skip_homing=true) to stop a double home.
+    // There is no double home to stop: _G28's whole body is
+    //   {% if "xyz" not in printer.toolhead.homed_axes %} _HOME {% endif %}
+    // (ZMOD 1.7.1 mod/_mod/translate/*/base.cfg:88), so it no-ops once our G28
+    // has homed. What the load path DOES owe the user is the "Home printer
+    // first?" prompt before a loadcell-Z probing home, and that only happens
+    // while skip_homing stays false.
+    //
+    // The existing coverage for homed=false only exercised the DECLINE branch
+    // (see "declining the pre-load home confirmation..." below), so nothing
+    // pinned what actually goes out on confirm. This does.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    backend.homed = false;
+
+    // Empty prompter -> request_home_confirmation() runs on_confirm inline,
+    // which is the branch under test. Installed explicitly rather than relying
+    // on the slot already being clear, so shard order can't change the branch.
+    ScopedHomeConfirmPrompter no_prompter{helix::ui::HomeConfirmPrompter{}};
+
+    REQUIRE(backend.load_filament(2).success());
+
+    // Exactly two commands, in order: our G28, then the macro. Not the macro
+    // alone (that would mean skip_homing=true and a silent unprompted home),
+    // and not two homes.
+    REQUIRE(backend.captured_gcodes.size() == 2);
+    CHECK(backend.captured_gcodes[0] == "G28");
+    CHECK(backend.captured_gcodes[1] == "INSERT_PRUTOK_IFS PRUTOK=3"); // slot 2 -> port 3
+    CHECK(std::count(backend.captured_gcodes.begin(), backend.captured_gcodes.end(), "G28") == 1);
+
+    // The macro still carries its completion callback through the homed
+    // detour, so the stuck-on-Purging finalize path survives an unhomed load.
+    REQUIRE(backend.captured_completion != nullptr);
+    REQUIRE(Ad5xIfsTestAccess::phase_active(backend));
+
+    // Already homed: no G28 of ours at all, macro dispatched straight through.
+    TestableAd5xIfsBackend homed_backend;
+    Ad5xIfsTestAccess::set_running(homed_backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(homed_backend, false);
+    homed_backend.homed = true;
+
+    REQUIRE(homed_backend.load_filament(2).success());
+
+    REQUIRE(homed_backend.captured_gcodes.size() == 1);
+    CHECK(homed_backend.captured_gcodes[0] == "INSERT_PRUTOK_IFS PRUTOK=3");
+    CHECK_FALSE(homed_backend.has_gcode_containing("G28"));
+}
+
+TEST_CASE("AD5X IFS unhomed change_tool sends G28 before A_CHANGE_FILAMENT (#1248)",
+          "[ams][ad5x_ifs][homing][1248]") {
+    // The #1248 companion case. A_CHANGE_FILAMENT is NOT in the ZMOD tree
+    // (ZMOD ships CHANGE_FILAMENT / _A_CHANGE_FILAMENT as RESPOND-only stubs
+    // and swaps via INSERT_PRUTOK_IFS in zmod_color.py), so it comes from the
+    // stock FlashForge config and whether it self-homes is unverified. Homing
+    // first is the safe side of that unknown; this pins it so nobody flips it
+    // to skip_homing=true on the strength of the load-macro analysis.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    REQUIRE(backend.set_tool_mapping(1, 1).success()); // tool 1 -> port 2
+    backend.captured_gcodes.clear(); // only the change_tool dispatch is under test
+    backend.homed = false;
+
+    ScopedHomeConfirmPrompter no_prompter{helix::ui::HomeConfirmPrompter{}};
+
+    REQUIRE(backend.change_tool(1).success());
+
+    REQUIRE(backend.captured_gcodes.size() == 2);
+    CHECK(backend.captured_gcodes[0] == "G28");
+    CHECK(backend.captured_gcodes[1] == "A_CHANGE_FILAMENT CHANNEL=2");
 }
 
 TEST_CASE("AD5X IFS unload finalizes to IDLE on the macro completion ack, not the 90s timeout "
