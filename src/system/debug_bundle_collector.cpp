@@ -32,6 +32,7 @@
 #include <filesystem>
 #include <fstream>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <unordered_map>
 #include <zlib.h>
@@ -186,6 +187,16 @@ json DebugBundleCollector::collect(const BundleOptions& options) {
     } catch (const std::exception& e) {
         spdlog::warn("[DebugBundle] Failed to collect platform files: {}", e.what());
         bundle["platform_files"] = json{{"error", e.what()}};
+    }
+
+    try {
+        auto printer_config = collect_printer_config();
+        if (!printer_config.empty()) {
+            bundle["printer_config"] = printer_config;
+        }
+    } catch (const std::exception& e) {
+        spdlog::warn("[DebugBundle] Failed to collect printer config: {}", e.what());
+        bundle["printer_config"] = json{{"error", e.what()}};
     }
 
     if (options.include_klipper_logs) {
@@ -895,6 +906,32 @@ json DebugBundleCollector::filter_filament_objects(const json& object_list) {
     return result;
 }
 
+json DebugBundleCollector::extract_gcode_macro_names(const json& object_list) {
+    static constexpr const char* kPrefix = "gcode_macro ";
+    static constexpr size_t kPrefixLen = 12; // strlen("gcode_macro ")
+
+    json result = json::array();
+    if (!object_list.is_array())
+        return result;
+
+    for (const auto& obj : object_list) {
+        if (!obj.is_string())
+            continue;
+        const std::string name = obj.get<std::string>();
+        if (name.compare(0, kPrefixLen, kPrefix) != 0)
+            continue;
+        // Store the bare name: "gcode_macro A_CHANGE_FILAMENT" -> "A_CHANGE_FILAMENT".
+        // A macro named exactly "gcode_macro " with nothing after it is not a
+        // thing Klipper accepts, but an empty push would read as a real entry.
+        if (name.size() <= kPrefixLen)
+            continue;
+        result.push_back(name.substr(kPrefixLen));
+        if (result.size() >= kMaxGcodeMacroNames)
+            break;
+    }
+    return result;
+}
+
 json DebugBundleCollector::collect_filament_system_info() {
     json fs;
     std::string base_url = get_moonraker_url();
@@ -902,6 +939,7 @@ json DebugBundleCollector::collect_filament_system_info() {
     if (base_url.empty()) {
         spdlog::debug("[DebugBundle] Moonraker not connected, skipping filament system info");
         fs["object_list"] = json::array();
+        fs["gcode_macros"] = json::array();
         fs["object_state"] = json{{"error", "Not connected"}};
         fs["spoolman_status"] = json{{"error", "Not connected"}};
         fs["afc_version"] = json{{"error", "Not connected"}};
@@ -913,15 +951,35 @@ json DebugBundleCollector::collect_filament_system_info() {
 
     // Phase 1: Discover filament-related Klipper objects
     json discovered = json::array();
+    json macro_names = json::array();
+    size_t total_macros = 0;
     try {
         auto objects_resp = moonraker_get(base_url, "/printer/objects/list");
         if (objects_resp.contains("result") && objects_resp["result"].contains("objects")) {
-            discovered = filter_filament_objects(objects_resp["result"]["objects"]);
+            const json& objects = objects_resp["result"]["objects"];
+            discovered = filter_filament_objects(objects);
+            macro_names = extract_gcode_macro_names(objects);
+            if (objects.is_array()) {
+                for (const auto& obj : objects) {
+                    if (obj.is_string() && obj.get<std::string>().rfind("gcode_macro ", 0) == 0) {
+                        ++total_macros;
+                    }
+                }
+            }
         }
     } catch (const std::exception& e) {
         spdlog::debug("[DebugBundle] object_list discovery failed: {}", e.what());
     }
     fs["object_list"] = discovered;
+    // Names only - see extract_gcode_macro_names(). NOT folded into
+    // object_list, which drives the objects/query batch below.
+    fs["gcode_macros"] = macro_names;
+    if (total_macros > macro_names.size()) {
+        fs["gcode_macros_truncated"] =
+            json{{"captured", macro_names.size()}, {"total", total_macros}};
+        spdlog::info("[DebugBundle] gcode_macro names truncated: {} of {} captured",
+                     macro_names.size(), total_macros);
+    }
 
     // Phase 2: Batch query all discovered objects
     if (!discovered.empty()) {
@@ -1085,6 +1143,189 @@ json DebugBundleCollector::collect_platform_files() {
         }
     }
 
+    return result;
+}
+
+// =============================================================================
+// printer.cfg + its [include] tree
+// =============================================================================
+
+std::vector<std::string> DebugBundleCollector::parse_include_patterns(const std::string& body) {
+    std::vector<std::string> patterns;
+    std::istringstream stream(body);
+    std::string line;
+    while (std::getline(stream, line)) {
+        // Strip a trailing CR so CRLF configs parse (Klipper accepts them).
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        // Klipper section headers must start at column 0; a leading space makes
+        // the line a continuation of the previous option, not a new section.
+        // Comments (# or ;) are not section headers either.
+        if (line.compare(0, 9, "[include ") != 0) {
+            continue;
+        }
+        const size_t close = line.find(']', 9);
+        if (close == std::string::npos) {
+            continue;
+        }
+        std::string pattern = line.substr(9, close - 9);
+        // Trim surrounding whitespace: "[include  foo.cfg ]" is valid.
+        const size_t first = pattern.find_first_not_of(" \t");
+        const size_t last = pattern.find_last_not_of(" \t");
+        if (first == std::string::npos) {
+            continue;
+        }
+        patterns.push_back(pattern.substr(first, last - first + 1));
+    }
+    return patterns;
+}
+
+bool DebugBundleCollector::glob_match(const std::string& pattern, const std::string& path) {
+    // Iterative wildcard match with backtracking. '*' and '?' do not cross '/',
+    // matching Python's glob (which is what Klipper's configfile.py uses), so
+    // "mod/*.cfg" does not reach into "mod/sub/".
+    size_t p = 0, s = 0;
+    size_t star = std::string::npos; // last '*' in the pattern
+    size_t star_s = 0;               // where that '*' started consuming
+    while (s < path.size()) {
+        const bool lit_match =
+            p < pattern.size() && (pattern[p] == '?' ? path[s] != '/' : pattern[p] == path[s]);
+        if (lit_match) {
+            ++p;
+            ++s;
+        } else if (p < pattern.size() && pattern[p] == '*') {
+            star = p++;
+            star_s = s;
+        } else if (star != std::string::npos && path[star_s] != '/') {
+            // Give the '*' one more character, unless that character is a
+            // separator it is not allowed to swallow.
+            p = star + 1;
+            s = ++star_s;
+        } else {
+            return false;
+        }
+    }
+    while (p < pattern.size() && pattern[p] == '*') {
+        ++p;
+    }
+    return p == pattern.size();
+}
+
+std::vector<std::string>
+DebugBundleCollector::resolve_include_pattern(const std::string& pattern,
+                                              const std::string& including_file,
+                                              const std::vector<std::string>& available) {
+    // Klipper resolves an include relative to the directory of the file that
+    // contains it, so an include inside "mod/a.cfg" of "b.cfg" means
+    // "mod/b.cfg".
+    std::string base;
+    const size_t slash = including_file.find_last_of('/');
+    if (slash != std::string::npos) {
+        base = including_file.substr(0, slash + 1);
+    }
+    std::string full = (!pattern.empty() && pattern.front() == '/') ? pattern : base + pattern;
+
+    // Collapse a leading "./" so "./foo.cfg" matches the listing's "foo.cfg".
+    if (full.compare(0, 2, "./") == 0) {
+        full = full.substr(2);
+    }
+
+    std::vector<std::string> matches;
+    for (const auto& path : available) {
+        if (glob_match(full, path)) {
+            matches.push_back(path);
+        }
+    }
+    return matches;
+}
+
+json DebugBundleCollector::collect_printer_config() {
+    json result = json::object();
+    const std::string base_url = get_moonraker_url();
+    if (base_url.empty()) {
+        spdlog::debug("[DebugBundle] Moonraker not connected, skipping printer config");
+        return result;
+    }
+
+    // The config-root listing is what turns a glob include into filenames. If
+    // it fails we can still ship printer.cfg itself, just without its tree.
+    std::vector<std::string> available;
+    try {
+        auto listing = moonraker_get(base_url, "/server/files/list?root=config");
+        if (listing.contains("result") && listing["result"].is_array()) {
+            for (const auto& entry : listing["result"]) {
+                if (entry.is_object() && entry.contains("path") && entry["path"].is_string()) {
+                    available.push_back(entry["path"].get<std::string>());
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        spdlog::debug("[DebugBundle] config listing failed: {}", e.what());
+    }
+
+    json files = json::object();
+    size_t total_bytes = 0;
+    bool truncated = false;
+    std::string truncate_reason;
+
+    // Breadth-first over the include tree, deduped: a config included from two
+    // places is fetched once, and an include cycle terminates.
+    std::vector<std::string> queue{"printer.cfg"};
+    std::set<std::string> seen{"printer.cfg"};
+
+    for (size_t i = 0; i < queue.size(); ++i) {
+        const std::string& path = queue[i];
+
+        if (files.size() >= kMaxConfigFiles) {
+            truncated = true;
+            truncate_reason = "file count";
+            break;
+        }
+        if (total_bytes >= kMaxConfigBytes) {
+            truncated = true;
+            truncate_reason = "byte budget";
+            break;
+        }
+
+        auto raw = http_get_text(base_url, "/server/files/config/" + path, 15);
+        if (raw.status == 404) {
+            // A stale [include] of a deleted file is a Klipper startup error,
+            // not our problem to report; note it and move on.
+            spdlog::debug("[DebugBundle] config '{}' not present (404)", path);
+            continue;
+        }
+        if (raw.status < 200 || raw.status >= 300) {
+            files[path] = json{{"error", "HTTP " + std::to_string(raw.status)}};
+            continue;
+        }
+
+        total_bytes += raw.body.size();
+        // Per-LINE sanitize: sanitize_value() replaces any string over 4 KB
+        // with [REDACTED_LONG_VALUE], so handing it a whole config would redact
+        // the entire file. Line granularity still catches the things that
+        // actually appear in a printer.cfg - notification macros carrying
+        // Pushover/Telegram tokens, camera and Spoolman URLs with embedded
+        // credentials, [include] paths carrying a home-directory username.
+        files[path] = sanitize_text_block(raw.body);
+
+        for (const auto& pattern : parse_include_patterns(raw.body)) {
+            for (const auto& match : resolve_include_pattern(pattern, path, available)) {
+                if (seen.insert(match).second) {
+                    queue.push_back(match);
+                }
+            }
+        }
+    }
+
+    result["files"] = files;
+    result["bytes"] = total_bytes;
+    if (truncated) {
+        result["truncated"] = truncate_reason;
+        spdlog::info("[DebugBundle] printer config capture truncated ({}) after {} file(s)",
+                     truncate_reason, files.size());
+    }
+    spdlog::info("[DebugBundle] Collected {} config file(s), {} bytes", files.size(), total_bytes);
     return result;
 }
 

@@ -2596,6 +2596,7 @@
   <translation tag="{} macro not configured" ja="{} マクロが未設定です"/>
   <translation tag="{} may cause unintended changes. Are you sure?" ja="{} は意図しない変更を引き起こす可能性があります。よろしいですか？"/>
   <translation tag="{} more taps to {} beta features" ja="あと{}回タップでベータ機能を{}"/>
+  <translation tag="{} needs the HelixPrint plugin. Printing original file."/>
   <translation tag="{} new hardware available" ja="{} 個の新しいハードウェアが利用可能です"/>
   <translation tag="{} preset{}" ja="{} 個のプリセット{}"/>
   <translation tag="{} target set to {}°C" ja="{} 目標温度を {}°C に設定しました"/>

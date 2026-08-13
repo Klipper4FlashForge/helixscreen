@@ -504,8 +504,7 @@ void GcodeErrorRouter::process_line(const std::string& line) {
     switch (how) {
     case PresentAs::MODAL:
         // CRITICAL without a recovery action -- see helix::ui::modal_title_for().
-        ui_notification_error(helix::ui::modal_title_for(*ev), ev->detail.c_str(),
-                              /*modal=*/true);
+        ui_notification_printer_fault(helix::ui::modal_title_for(*ev), ev->detail.c_str());
         break;
     case PresentAs::MODAL_WITH_RECOVER:
         present_recovery_modal(*ev);
@@ -614,7 +613,7 @@ void GcodeErrorRouter::on_connected() {
                     const char* title = (code.size() >= 4 && code.compare(0, 4, "key8") == 0)
                                             ? lv_tr("Filament System Error")
                                             : lv_tr("Printer Error");
-                    ui_notification_error(title, clean.c_str(), /*modal=*/true);
+                    ui_notification_printer_fault(title, clean.c_str());
                     return;
                 }
             }),
