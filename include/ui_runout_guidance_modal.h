@@ -248,13 +248,28 @@ class RunoutGuidanceModal : public Modal {
     /**
      * @brief Called when user clicks Cancel Print button
      *
-     * Invokes the cancel print callback if set, then hides the modal.
+     * Invokes the cancel print callback if set. Does NOT hide the modal - the
+     * callback owns that, and only on the confirmed path.
+     *
+     * Cancel Print raises a confirmation (helix::ui::dispatch_cancel_print), so
+     * this press no longer decides anything; it asks a question. Hiding here put
+     * the dialog into its exit animation while the confirmation was still going
+     * up, so declining left a bare screen - and on the runout path it did not
+     * come back: check_and_show_runout_guidance() early-returns on
+     * runout_modal_shown_for_pause_, which clears only on a transition to
+     * Printing/Idle/Complete/Cancelled/Error. A user who reconsidered a cancel
+     * mid-pause lost Load, Unload, Purge and Resume for the rest of that pause.
+     *
+     * Both callers pass dispatch_cancel_print() an `on_confirmed` that closes
+     * this dialog, so an accepted cancel still tears it down. A caller that wires
+     * on_cancel_print_ without closing anything leaves the dialog open on press;
+     * that is only reachable where the XML shows btn_cancel_print at all, i.e.
+     * print_state_enum == 2.
      */
     void on_tertiary() override {
         if (on_cancel_print_) {
             on_cancel_print_();
         }
-        hide();
     }
 
     /**

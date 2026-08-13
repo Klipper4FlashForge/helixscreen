@@ -20,10 +20,18 @@
  *   what shipped: three reviews read the diff and none caught it, because
  *   nothing about the rendered dialog distinguishes wired from unwired.
  *
- * Mutation check: drop the set_on_resume()/set_on_cancel_print() calls from
- * FilamentSensorWidget::show_tap_modal() and "Paused tap modal wires the buttons
- * its paused row shows" fails; drop the else-branch's Callback{} clears and
- * "Status-only reshow leaves no stale action callbacks" fails.
+ * Mutation checks, each verified:
+ *   - Drop the set_on_resume()/set_on_cancel_print() calls from
+ *     FilamentSensorWidget::show_tap_modal() -> "Paused tap modal wires the
+ *     buttons its paused row shows" fails.
+ *   - Drop the else-branch's Callback{} clears -> "Status-only reshow leaves no
+ *     stale action callbacks" fails.
+ *   - Send the cancel macro directly instead of confirming -> both cancel cases
+ *     fail.
+ *   - Put the hide() back in RunoutGuidanceModal::on_tertiary() -> "Declining
+ *     the cancel returns to a working guidance dialog" fails, and nothing else
+ *     does. That is the whole reason it is asserted here: the regression is
+ *     invisible to every other test in the tree.
  */
 
 #include "ui_update_queue.h"
@@ -186,13 +194,73 @@ TEST_CASE_METHOD(TapModalFixture,
     CHECK(gcode_sent_containing("CANCEL_PRINT"));
 }
 
-TEST_CASE_METHOD(TapModalFixture,
-                 "Declining the cancel confirmation sends nothing and orphans nothing",
+TEST_CASE_METHOD(TapModalFixture, "Declining the cancel returns to a working guidance dialog",
                  "[filament][widget_tap][wiring]") {
-    // The half that makes the test above mean something: if "Keep Printing" also
-    // dispatched, confirming would be theatre. Also pins that declining leaves no
-    // modal behind — the confirmation stacks on a dialog that hides itself on the
-    // same press, so the teardown order is worth an assertion.
+    // The regression this pins: on_tertiary() used to hide unconditionally, so
+    // the dialog was already exiting by the time the confirmation appeared and
+    // declining left a bare screen. On the runout path it did not come back —
+    // check_and_show_runout_guidance() early-returns on
+    // runout_modal_shown_for_pause_ until the print state changes — so a user who
+    // reconsidered lost Load/Unload/Purge/Resume for the rest of that pause.
+    //
+    // "Still there" is not enough on its own: a dialog can survive with every
+    // callback expired, which is the bug this file was written for. Assert it
+    // still works.
+    configure_cancel_macro();
+    set_print_state(helix::PrintJobState::PAUSED);
+    show_tap_modal(/*status_only=*/false);
+
+    lv_obj_t* guidance = modal().dialog();
+    REQUIRE(guidance != nullptr);
+    lv_obj_t* cancel = lv_obj_find_by_name(guidance, "btn_cancel_print");
+    REQUIRE(cancel != nullptr);
+    lv_obj_send_event(cancel, LV_EVENT_CLICKED, nullptr);
+    helix::ui::UpdateQueue::instance().drain();
+
+    // The guidance dialog is still up, underneath the confirmation.
+    CHECK(modal().is_visible());
+    CHECK(modal().dialog() == guidance);
+
+    lv_obj_t* confirm = Modal::get_top();
+    REQUIRE(confirm != nullptr);
+    REQUIRE(confirm != guidance);
+    lv_obj_t* btn_secondary = lv_obj_find_by_name(confirm, "btn_secondary");
+    REQUIRE(btn_secondary != nullptr);
+
+    lv_obj_send_event(btn_secondary, LV_EVENT_CLICKED, nullptr);
+    helix::ui::UpdateQueue::instance().drain();
+    process_lvgl(600); // let the confirmation's exit animation finish
+    helix::ui::UpdateQueue::instance().drain();
+
+    // Declining sends nothing — if "Keep Printing" also dispatched, confirming
+    // would be theatre.
+    CHECK_FALSE(gcode_sent_containing("CANCEL_PRINT"));
+
+    // The confirmation is gone and the guidance dialog is the top modal again.
+    CHECK(modal().is_visible());
+    REQUIRE(Modal::get_top() == guidance);
+
+    // And it still works. Its handlers survived, and a real press on a real
+    // button still reaches the printer — proving we returned to a live dialog,
+    // not a husk.
+    CHECK(modal().has_load_filament_handler());
+    CHECK(modal().has_resume_handler());
+    CHECK(modal().has_cancel_print_handler());
+
+    lv_obj_t* purge = lv_obj_find_by_name(guidance, "btn_purge");
+    REQUIRE(purge != nullptr);
+    lv_obj_send_event(purge, LV_EVENT_CLICKED, nullptr);
+    helix::ui::UpdateQueue::instance().drain();
+    CHECK(gcode_sent_containing("G1 E50")); // tier-3 purge fallback, no PURGE macro configured
+}
+
+TEST_CASE_METHOD(TapModalFixture, "Accepting the cancel closes the guidance dialog too",
+                 "[filament][widget_tap][wiring]") {
+    // The other side of moving the hide out of on_tertiary(): the dialog must
+    // still go away once the cancel is real, or a confirmed cancel would leave it
+    // stranded over a print that is no longer running. The runout handler would
+    // self-heal via on_print_state_changed; this tile has no such hook, which is
+    // why the confirmed path closes it explicitly.
     configure_cancel_macro();
     set_print_state(helix::PrintJobState::PAUSED);
     show_tap_modal(/*status_only=*/false);
@@ -202,27 +270,16 @@ TEST_CASE_METHOD(TapModalFixture,
     lv_obj_send_event(cancel, LV_EVENT_CLICKED, nullptr);
     helix::ui::UpdateQueue::instance().drain();
 
-    lv_obj_t* confirm = Modal::get_top();
-    REQUIRE(confirm != nullptr);
-    lv_obj_t* btn_secondary = lv_obj_find_by_name(confirm, "btn_secondary");
-    REQUIRE(btn_secondary != nullptr);
-
-    // Documented, not endorsed: RunoutGuidanceModal::on_tertiary() hides
-    // unconditionally, so the dialog the user pressed the button in is already
-    // going away by the time the confirmation is up. Declining therefore does not
-    // return them to it. That was right when the press was terminal and is
-    // questionable now that it only opens a question - flagged in the report
-    // rather than changed here, since it alters a shipped dialog's semantics.
-    CHECK_FALSE(modal().is_visible());
-
-    lv_obj_send_event(btn_secondary, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* btn_primary = lv_obj_find_by_name(Modal::get_top(), "btn_primary");
+    REQUIRE(btn_primary != nullptr);
+    lv_obj_send_event(btn_primary, LV_EVENT_CLICKED, nullptr);
     helix::ui::UpdateQueue::instance().drain();
 
-    CHECK_FALSE(gcode_sent_containing("CANCEL_PRINT"));
+    CHECK(gcode_sent_containing("CANCEL_PRINT"));
 
-    // Let both exit animations run to completion, then assert the stack drained.
     process_lvgl(600);
     helix::ui::UpdateQueue::instance().drain();
+    CHECK_FALSE(modal().is_visible());
     CHECK_FALSE(Modal::any_visible());
 }
 

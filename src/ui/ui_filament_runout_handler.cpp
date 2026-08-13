@@ -215,7 +215,16 @@ void FilamentRunoutHandler::show_runout_guidance_modal() {
         // same button. Raises the same confirmation the Stop button does and
         // sends nothing until the user accepts — this dialog used to cancel on
         // the first tap, alone among the printer's three cancel affordances.
-        helix::ui::dispatch_cancel_print(api_, "[FilamentRunoutHandler]");
+        //
+        // This dialog stays up behind the confirmation so declining returns to
+        // it; closing it is the confirmed path's job. Without that the decline
+        // stranded the user: check_and_show_runout_guidance() will not re-show
+        // until runout_modal_shown_for_pause_ clears on a print-state change.
+        helix::ui::dispatch_cancel_print(api_, "[FilamentRunoutHandler]", [this, token]() {
+            if (token.expired())
+                return;
+            hide_runout_guidance_modal();
+        });
     });
 
     runout_modal_.set_on_unload_filament([this, token]() {

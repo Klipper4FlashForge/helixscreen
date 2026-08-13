@@ -64,11 +64,19 @@ void dispatch_prepared_resume(IMoonrakerAPI* api, std::string log_prefix,
 ///
 /// Main thread only — it shows a modal.
 ///
-/// @param api        Moonraker API for macro execution. A null api is a no-op
-///                   (logged), matching the guard both call sites already had.
-/// @param log_prefix Spdlog tag, e.g. `"[FilamentRunoutHandler]"`. By value so
-///                   the confirmation context owns its copy.
-void dispatch_cancel_print(IMoonrakerAPI* api, std::string log_prefix);
+/// @param api          Moonraker API for macro execution. A null api is a no-op
+///                     (logged), matching the guard both call sites already had.
+/// @param log_prefix   Spdlog tag, e.g. `"[FilamentRunoutHandler]"`. By value so
+///                     the confirmation context owns its copy.
+/// @param on_confirmed Optional. Run on the main thread when the user accepts,
+///                     before the macro is sent, and never if they decline.
+///                     Both callers use it to close the dialog the Cancel Print
+///                     button lives in — that dialog must stay up behind the
+///                     confirmation so declining returns to it, so closing it is
+///                     this callback's job rather than the button hook's. Guard
+///                     it with a lifetime token like any retained callback.
+void dispatch_cancel_print(IMoonrakerAPI* api, std::string log_prefix,
+                           std::function<void()> on_confirmed = {});
 
 /// Show the "Print Was Terminated — Restart from the beginning?" modal.
 /// Exposed so post-resume backstops (e.g. AmsBackendSnapmaker) can surface it

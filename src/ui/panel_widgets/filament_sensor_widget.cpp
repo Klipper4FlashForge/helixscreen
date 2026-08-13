@@ -284,7 +284,7 @@ void FilamentSensorWidget::show_tap_modal(bool status_only) {
             // dialog's: pending-action UI, macro check, prepare_for_resume chain.
             helix::ui::PrintControlButtons::instance().request_resume();
         });
-        tap_modal_.set_on_cancel_print([token]() {
+        tap_modal_.set_on_cancel_print([this, token]() {
             if (token.expired()) {
                 return;
             }
@@ -292,7 +292,15 @@ void FilamentSensorWidget::show_tap_modal(bool status_only) {
             // Raises a confirmation and sends nothing until it is accepted; the
             // dialog lives in dispatch_cancel_print() so this surface and the
             // runout guidance dialog cannot diverge on a destructive action.
-            helix::ui::dispatch_cancel_print(get_moonraker_api(), "[FilamentSensorWidget]");
+            // This modal stays up behind it — on_tertiary() no longer hides, so
+            // declining returns here — and closes only once the cancel is real.
+            helix::ui::dispatch_cancel_print(get_moonraker_api(), "[FilamentSensorWidget]",
+                                             [this, token]() {
+                                                 if (token.expired()) {
+                                                     return;
+                                                 }
+                                                 tap_modal_.hide();
+                                             });
         });
     } else {
         // Status-only: the manual row is hidden by XML and the paused row is
