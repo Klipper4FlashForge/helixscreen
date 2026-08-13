@@ -341,9 +341,24 @@
          top of an overlay or on a home-screen widget. NOT badge_size_* — that
          family tops out at 28 and means the small count chip overlaid on an
          icon, which is a different component. icon_badge_radius is half the
-         size and MUST track it. -->
-    <px name="icon_badge_size" value="48"/>
-    <px name="icon_badge_radius" value="24"/>
+         size and MUST track it.
+
+         Responsive because the glyph inside it is: icon_font_md runs 32 / 48 /
+         64 across large / xlarge / xxlarge, so one flat size cannot hold every
+         rung. xxlarge clears its 64px glyph while still leaving room for the
+         status label beneath it in a two-row home widget — that label is what
+         caps it at 1.25x rather than the ~1.5x the smaller rungs carry.
+         xlarge stays at 48, where the glyph exactly fills the badge. -->
+    <px name="icon_badge_size_small" value="48"/>
+    <px name="icon_badge_size_medium" value="48"/>
+    <px name="icon_badge_size_large" value="48"/>
+    <px name="icon_badge_size_xlarge" value="48"/>
+    <px name="icon_badge_size_xxlarge" value="80"/>
+    <px name="icon_badge_radius_small" value="24"/>
+    <px name="icon_badge_radius_medium" value="24"/>
+    <px name="icon_badge_radius_large" value="24"/>
+    <px name="icon_badge_radius_xlarge" value="24"/>
+    <px name="icon_badge_radius_xxlarge" value="40"/>
 
     <!-- button_width_action: fixed width for a standalone action button that
          must not stretch to fill its row (Done/Retry/Close in calibration

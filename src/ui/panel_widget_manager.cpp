@@ -697,26 +697,48 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
         };
         std::unordered_set<std::pair<int, int>, TrackHash> merged_tracks;
         std::unordered_set<std::pair<int, int>, TrackHash> occupied_by_own_card;
+
+        // Where each widget ACTUALLY landed, which is not always where its entry
+        // asks for. Auto-placement and span reduction both move a widget without
+        // touching the saved entry, so the authored position is a request, not a
+        // result. Keyed by id because slot_index indexes enabled_widgets, and
+        // this loop walks config entries.
+        std::unordered_map<std::string, const PlacedSlot*> placed_by_id;
+        for (const auto& p : placed) {
+            if (p.slot_index < enabled_widgets.size()) {
+                placed_by_id[enabled_widgets[p.slot_index].widget_id] = &p;
+            }
+        }
+
         for (const auto& entry : widget_config.page_entries(page_index)) {
             if (!entry.enabled || !entry.has_grid_position()) {
                 continue;
             }
-            // Fit the authored placement to this grid the same way placement
-            // does, so at minimum the two agree on the clamp and no out-of-grid
-            // cell enters the occupancy set.
+            // Prefer where the widget actually landed; fall back to the authored
+            // placement only when it was not placed at all.
             //
-            // KNOWN GAP, not fixed here: the clamp is not the only way these two
-            // diverge. When placement cannot seat a widget at all it auto-places
-            // it at a different position AND size, and this pass never learns —
-            // so an overflowing entry still marks cells it does not cover, and
-            // those cells are subtracted from a neighbour's card. That is what
-            // cost two widgets their background beside an unanchored `tips` at
-            // 480x800. Closing it needs the placed geometry, which is a larger
-            // change than it looks: this deliberately walks ALL enabled entries,
-            // not just placed ones, so hardware-gated widgets reserve their card
-            // on the first frame instead of making the grid jump later.
-            const auto fitted = clamp_to_grid(entry.col, entry.row, entry.colspan, entry.rowspan,
-                                              grid.cols(), grid.rows());
+            // The authored entry is a request, not a result: auto-placement and
+            // span reduction both move a widget without touching its saved
+            // entry. Trusting the entry marks cells the widget does not cover,
+            // and those cells are then subtracted from a neighbour's card,
+            // costing that neighbour its background. The fewer tracks a grid
+            // has, the more often placement has to move something, so this is
+            // routine on cramped and high-DPI-scaled layouts rather than rare.
+            //
+            // The fallback matters: this walks ALL enabled entries, not just
+            // placed ones, so a hardware-gated widget still reserves its card on
+            // the first frame instead of making the grid jump once its hardware
+            // appears.
+            const auto* placed_slot = [&]() -> const PlacedSlot* {
+                auto it = placed_by_id.find(entry.id);
+                return it != placed_by_id.end() ? it->second : nullptr;
+            }();
+            const auto fitted =
+                placed_slot
+                    ? clamp_to_grid(placed_slot->col, placed_slot->row, placed_slot->colspan,
+                                    placed_slot->rowspan, grid.cols(), grid.rows())
+                    : clamp_to_grid(entry.col, entry.row, entry.colspan, entry.rowspan, grid.cols(),
+                                    grid.rows());
 
             // Whether a widget wants the shared card is a property of the
             // widget, not of its size — `merges_into_card` in the registry. It

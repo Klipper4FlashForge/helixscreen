@@ -39,6 +39,7 @@
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/panel_widget_size_harness.h"
 #include "../test_helpers/update_queue_test_access.h"
+#include "display_metrics.h"
 #include "grid_layout.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
@@ -86,6 +87,19 @@ struct Geometry {
     int gutter;
 };
 
+/// NOT COVERED HERE: the high-DPI UI scale factor (DisplayMetrics).
+///
+/// The sweep varies geometry per row, but the UI scale is process-wide: the ~46
+/// static px tokens (icon_badge_size, chip_height, swatch_size) are registered
+/// once at XML init, and lv_xml_register_const is first-write-wins, so a row
+/// cannot re-register them at another scale. A scaled row would therefore
+/// measure scaled fonts inside unscaled boxes — a combination the app never
+/// produces — and report failures that do not exist at runtime.
+///
+/// Scaled coverage needs its own test that sets the scale BEFORE registering
+/// XML. Until then, verify it against a running instance:
+/// `-s 1080x2400 --dpi 405`.
+
 // clang-format off
 const std::vector<Geometry> kShipping = {
     {"480x272",   480,  272,   430, 264,  2},
@@ -96,6 +110,13 @@ const std::vector<Geometry> kShipping = {
     {"480x800",   480,  800,   466, 664,  5},
     {"1024x600", 1024,  600,   904, 584,  6},
     {"1280x720", 1280,  720,  1128, 700,  8},
+
+    // Phone-class panel — a 1080x2400 handset, the geometry the DPI work exists
+    // for. Measured off a live instance the way the rest of the table was:
+    // `-s 1080x2400 -vv`, reading the `[PanelWidgetManager] Grid layout:` and
+    // `Track geometry:` lines. Adding it immediately surfaced two widgets that
+    // had always clipped at this size and had simply never been measured.
+    {"1080x2400", 1080, 2400,  1056, 2236, 10},
 };
 // clang-format on
 
@@ -151,6 +172,16 @@ bool operator<(const KnownClip& a, const KnownClip& b) {
 /// which is why these are recorded rather than patched.
 // clang-format off
 const std::vector<KnownClip> kKnownClipping = {
+    // control_buttons is pinned at exactly 4x2 tracks (min == max in the
+    // registry, so it can never be given more room). At XXLARGE that is ~345px
+    // for two labelled buttons at a 32px body font, and the primary label runs
+    // ~60px past its button. Both real fixes are wider than the defect: raising
+    // min_colspan re-lays-out every shipping panel to fix one tier, and a
+    // per-tier minimum span does not exist in PanelWidgetDef. The narrow fix is
+    // an icon-only branch in ui_button once the button is too narrow for its
+    // label, which is measured layout and belongs in C++.
+    {"control_buttons",  "1080x2400"},
+
     // Whole-widget: does not fit at its minimum on any shipping panel.
     {"clog_detection",   "*"},
     {"lock",             "*"},
@@ -476,6 +507,8 @@ TEST_CASE_METHOD(ContentFitsFixture,
     int too_large_for_grid = 0;
     std::vector<std::string> tight; // Passed, but by two pixels or fewer.
 
+    std::vector<std::string> unplaced; // TooLargeForGrid — never placed at all.
+
     for (const auto& g : kShipping) {
         ScopedResolution res(disp, g.panel_w, g.panel_h);
         theme_manager_refresh_layout_constants(disp);
@@ -490,8 +523,15 @@ TEST_CASE_METHOD(ContentFitsFixture,
             const int min_r = def.effective_min_rowspan();
             if (min_c > dims.cols || min_r > dims.rows) {
                 // GridLayout::PlacementFailure::TooLargeForGrid — the widget is
-                // never placed here, so there is no size to measure.
+                // never placed here, so there is no size to measure. Recorded
+                // by name, not just counted: a widget that vanishes entirely is
+                // a worse outcome than one that clips, and the UI scale can
+                // push a widget over this line by shrinking the track count.
                 ++too_large_for_grid;
+                unplaced.push_back(std::string(def.id) + " @ " + g.name + " (needs " +
+                                   std::to_string(min_c) + "x" + std::to_string(min_r) +
+                                   ", grid is " + std::to_string(dims.cols) + "x" +
+                                   std::to_string(dims.rows) + ")");
                 continue;
             }
 
@@ -547,6 +587,9 @@ TEST_CASE_METHOD(ContentFitsFixture,
 
     for (const auto& t : tight) {
         spdlog::warn("[content_fits] TIGHT {}", t);
+    }
+    for (const auto& u : unplaced) {
+        spdlog::warn("[content_fits] UNPLACED {}", u);
     }
     spdlog::info("[content_fits] checked {} widget/geometry pairs, {} clipped, {} tight, "
                  "{} unbuildable, {} too large for the grid",
