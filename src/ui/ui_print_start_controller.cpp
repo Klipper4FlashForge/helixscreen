@@ -1276,9 +1276,58 @@ void PrintStartController::observe_print_state_for_restore() {
     spdlog::debug("[PrintStartController] Observing print state for mapping restore");
 }
 
+void PrintStartController::observe_klippy_state_for_restore() {
+    if (klippy_state_observer_) {
+        return; // Already waiting — a second deferral must not stack observers
+    }
+
+    auto* subject = printer_state_.get_klippy_state_subject();
+    if (!subject) {
+        spdlog::warn("[PrintStartController] No klippy state subject — deferred restore cannot "
+                     "self-resolve; pending_remap.json will replay on next startup");
+        return;
+    }
+
+    // Fires immediately with the current value, which is by definition not READY
+    // here (we only get called from the not-ready branch), so the first fire is a
+    // no-op. Without this the snapshot would sit until a full app restart, which
+    // is the only other thing that replays pending_remap.json.
+    klippy_state_observer_ = observe_int_sync<PrintStartController>(
+        subject, this, [](PrintStartController* self, int state_val) {
+            if (static_cast<KlippyState>(state_val) != KlippyState::READY) {
+                return;
+            }
+            spdlog::info(
+                "[PrintStartController] Klipper ready — retrying deferred mapping restore");
+            self->klippy_state_observer_.reset();
+            self->restore_filament_mapping();
+        });
+
+    spdlog::debug("[PrintStartController] Observing klippy state for deferred mapping restore");
+}
+
 void PrintStartController::restore_filament_mapping() {
     if (saved_tool_mapping_.empty() || saved_backend_index_ < 0) {
         return; // Nothing to restore
+    }
+
+    // A restore sent to a halted Klipper is refused, and set_tool_mapping()
+    // cannot tell us: every native backend routes into
+    // AmsSubscriptionBackend::execute_gcode(), which returns success
+    // unconditionally and reports refusals only through an async log callback.
+    // So the readiness check has to happen HERE, before we treat the snapshot as
+    // spent. Getting this wrong stranded the printer on the print's mapping with
+    // the recovery record deleted (#1270), and a halted Klipper at print end is
+    // the normal shape of a cancelled or errored print — precisely when restore
+    // runs.
+    const auto klippy =
+        static_cast<KlippyState>(lv_subject_get_int(printer_state_.get_klippy_state_subject()));
+    if (klippy != KlippyState::READY) {
+        spdlog::info("[PrintStartController] Klipper not ready (state={}) — deferring restore of "
+                     "{} mapping(s); snapshot and pending_remap.json retained",
+                     static_cast<int>(klippy), saved_tool_mapping_.size());
+        observe_klippy_state_for_restore();
+        return; // NOT delivered: keep saved_tool_mapping_ and the persisted file
     }
 
     auto& ams = AmsState::instance();

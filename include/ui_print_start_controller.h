@@ -324,6 +324,10 @@ class PrintStartController {
     // Observer for print state changes (to restore mapping on print end)
     ObserverGuard print_state_observer_;
 
+    // Observer for klippy state, armed only while a restore is deferred waiting
+    // for Klipper to come back (see observe_klippy_state_for_restore).
+    ObserverGuard klippy_state_observer_;
+
     // === Filament Remap Methods ===
     /// Snapshot current firmware mapping, send remap commands, return true if remaps were sent
     bool apply_filament_remaps();
@@ -352,6 +356,17 @@ class PrintStartController {
 
     /// Set up observer for print state to auto-restore mapping
     void observe_print_state_for_restore();
+
+    /**
+     * @brief Wait for Klipper to become READY, then retry a deferred restore.
+     *
+     * restore_filament_mapping() refuses to spend the snapshot on a halted
+     * Klipper because the backends cannot report the refusal (#1270). This is
+     * what makes that deferral resolve on its own — without it the snapshot
+     * would sit until the next app start, the only other thing that replays
+     * pending_remap.json. Idempotent: a second deferral does not stack observers.
+     */
+    void observe_klippy_state_for_restore();
 
     // === Crash Recovery Persistence ===
     /// Save remap state to disk so it survives app restart
