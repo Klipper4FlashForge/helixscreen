@@ -450,19 +450,31 @@ The widget displays a **carousel** with one or two pages depending on your hardw
 
 ![FlowGuard bar — TANGLE and CLOG end labels, fill running out from the middle, danger shading at both ends](../../images/user/home-flowguard-bar.png)
 
-A horizontal scale with a label at each end, reading left to right. The bar fills as your clog or flow reading moves, shifting from green (healthy) through orange to red (danger). A shaded red band at the end (or at both ends) marks the warning threshold, a bright tick shows the current reading, and a fainter tick marks the worst value seen this print. Above the bar you get the detection mode on the left and the live reading on the right; the headline number sits underneath.
+A horizontal scale that fills as your clog or flow reading moves, shifting from green (healthy) through orange to red (danger). Every part of it has one job:
+
+| Where | What it tells you |
+|-------|-------------------|
+| **Top left** | Which sensor is measuring — `Clog Auto`, `Clog Manual`, `FlowGuard` or `AFC buffer` |
+| **Top right** | How worried it is, as an icon: a **check** while healthy, a **warning triangle** once the reading reaches the danger threshold, and a **red nozzle** once your firmware has actually flagged a fault |
+| **The bar** | The reading. A shaded red band marks the danger zone, with a bright amber line where that zone begins |
+| **Ticks** | A bright tick at the current reading, a fainter one at the worst value seen this print |
+| **Underneath** | The reading as a number — headroom in mm, flow deviation as a percentage, or distance to fault |
 
 The bar adapts to your detection backend:
 
 | Backend | End labels | What the bar shows |
 |---------|-----------|--------------------|
-| **Encoder** | Detection length ... 0 | Clog percentage (0–100%) — how much the encoder reading deviates from expected. Fills from the left. |
+| **Encoder** | *(none)* | Clog percentage (0–100%) — how much the encoder reading deviates from expected. Fills from the left. |
 | **Flowguard** | TANGLE ... CLOG | Flow deviation (−100 to +100). Fills **out from the middle**: toward TANGLE when filament is over-feeding, toward CLOG when it is under-feeding. Both ends are shaded, because either extreme is a fault. |
-| **AFC** | SAFE ... FAULT | Buffer fault proximity (0–100%) — how close the buffer is to a fault condition. |
+| **AFC** | *(none)* | Buffer fault proximity (0–100%) — how close the buffer is to a fault condition. |
 
-> The same reading is drawn as an arc gauge in the filament sidebar and on the loaded-spool card. The dashboard widget uses the bar because it is authored wide and short, which leaves room for a label at each end — so a Flowguard reading tells you *which* fault it is heading toward, not just how far.
+Only Flowguard carries end labels, because only Flowguard has two directions that mean different faults. The other two fill from nothing toward their danger band, which the shading already shows — so the labels come off and the scale gets the width instead.
 
-**Page 2 — Buffer Sync Meter** (Happy Hare with sync feedback only)
+When there is nothing to report at all — an AFC buffer that is armed but not currently tracking — the bar sits empty and the status icon shows a check, rather than leaving you with a blank scale and no number.
+
+> The same reading is drawn as an arc gauge in the filament sidebar and on the loaded-spool card, where the space is tall and narrow rather than wide and short.
+
+**Page 2 — Buffer Sync Meter** (any printer reporting proportional buffer pressure)
 
 A visual representation of the physical buffer plunger position. Two nested rectangles show the buffer housing and plunger — the plunger slides up or down to indicate filament tension:
 
@@ -477,17 +489,18 @@ A percentage label shows the exact bias reading (e.g., "+5%", "−10%"). Swipe b
 
 Tap the Clog Detection widget to open the **Buffer Status** modal — a detailed read-only view of your filament path health:
 
-**Happy Hare printers show:**
+The same FlowGuard bar sits across the top, so the modal shows everything the widget did and more — it used to show *less*, naming only the detection mode with no reading, threshold or peak.
+
+**Happy Hare printers also show:**
 - Filament tension description (e.g., "Slight tension", "Balanced")
 - Spool motor state
 - Gear sync status
-- Clog detection mode and flow rate
+- Flow rate
 - Full-size buffer meter visualization
 
-**AFC printers show:**
+**AFC printers also show:**
 - Advancing/trailing buffer state
 - Distance to fault (in mm)
-- Fault detection status
 
 ### Configuring Clog Detection
 
