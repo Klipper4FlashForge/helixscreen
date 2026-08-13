@@ -377,7 +377,7 @@ Located in the `display` section:
 **Values:** `auto`, `standard`, `ultrawide`, `portrait`, `micro`, `micro-portrait`, `tiny`, `tiny-portrait`
 **Description:** Override the auto-detected screen layout. Leave this at `auto` unless you are testing — HelixScreen picks the layout from your display's aspect ratio: wider than about 2.5:1 is `ultrawide`, narrower than about 0.8:1 is `portrait`, and anything in between is `standard`. Displays whose longest side is 480px or less get `micro` (480x272 class) or `tiny` instead, with `-portrait` variants when the screen is taller than wide.
 
-> **Ultrawide and portrait are alpha at best.** Detection, navigation-bar sizing, and grid sizing work, but there are no ultrawide panel layouts yet and portrait has only the app shell and navigation bar. The `micro-portrait` and `tiny-portrait` variants are placeholders with no layouts at all. Every panel without an override falls back to the standard landscape layout, so expect stretched, cramped, or clipped screens. Neither orientation has been tested on real hardware. Forcing one of these is useful for contributing layouts, not for daily use.
+> **Ultrawide and portrait are alpha at best.** Detection, navigation-bar sizing, and grid sizing all work, and both orientations get their own home dashboard layout. Portrait goes further: Print Status, Print Tune, Motion, Bed Mesh, the temperature graph, and the Advanced panel's E-stop bar rearrange for a tall screen as well. Ultrawide has the home dashboard and nothing else. Every other panel falls back to the standard landscape layout, so expect stretched, cramped, or clipped screens outside that set. Neither orientation has been tested much on real hardware. Forcing one of these is useful for contributing layouts, not for daily use.
 
 ### `rotate`
 **Type:** integer
@@ -1108,18 +1108,17 @@ Located under the `panel_widgets` key, grouped by panel ID. The Home panel uses 
         {
           "id": "main",
           "widgets": [
-            {"id": "printer_image", "enabled": true, "col": 0, "row": 0, "colspan": 2, "rowspan": 2},
-            {"id": "print_status", "enabled": true, "col": 0, "row": 2, "colspan": 2, "rowspan": 2},
-            {"id": "tips", "enabled": true, "col": 2, "row": 0, "colspan": 4, "rowspan": 2},
-            {"id": "temperature", "enabled": true, "col": 6, "row": 0, "colspan": 1, "rowspan": 1},
-            {"id": "fan_stack", "enabled": true, "col": 7, "row": 0, "colspan": 1, "rowspan": 1}
+            {"id": "printer_image", "enabled": true, "col": 0, "row": 0, "colspan": 4, "rowspan": 4},
+            {"id": "print_status", "enabled": true, "col": 0, "row": 4, "colspan": 8, "rowspan": 4},
+            {"id": "temperature", "enabled": true, "col": 4, "row": 0, "colspan": 2, "rowspan": 2},
+            {"id": "fan_stack", "enabled": true, "col": 4, "row": 2, "colspan": 2, "rowspan": 2}
           ]
         },
         {
           "id": "page_1",
           "widgets": [
-            {"id": "temp_graph", "enabled": true, "col": 0, "row": 0, "colspan": 4, "rowspan": 3},
-            {"id": "camera", "enabled": true, "col": 4, "row": 0, "colspan": 4, "rowspan": 3}
+            {"id": "temp_graph", "enabled": true, "col": 0, "row": 0, "colspan": 8, "rowspan": 6},
+            {"id": "camera", "enabled": true, "col": 8, "row": 0, "colspan": 8, "rowspan": 6}
           ]
         }
       ],
@@ -1130,7 +1129,12 @@ Located under the `panel_widgets` key, grouped by panel ID. The Home panel uses 
 }
 ```
 
-> **Migration note:** If your config has the older flat-array format (a simple list of widgets without pages) or the legacy `home_widgets` key, HelixScreen automatically migrates it to the multi-page format on first launch. Your existing widgets are placed on a single page.
+> **Positions and spans are counted in half cells, not cells.** The grid is laid out in
+> half-cell tracks so that a few widgets can sit on half-cell boundaries, and these numbers
+> are in those tracks. A one-cell widget is `"colspan": 2, "rowspan": 2`; the two-by-two
+> Printer Image above is `4` by `4`. Multiply by two when translating a size you read off
+> the Widget Catalog badge or the [Home Panel guide](guide/home-panel.md#available-widgets),
+> which are both written in whole cells.
 
 ### `panel_widgets.home`
 **Type:** object
@@ -1146,37 +1150,79 @@ Each widget object has:
 
 - `id` — Widget identifier (see table below)
 - `enabled` — Whether the widget is shown (`true`/`false`)
-- `col` — Grid column position (0-based, left to right)
-- `row` — Grid row position (0-based, top to bottom)
-- `colspan` — Number of columns the widget spans
-- `rowspan` — Number of rows the widget spans
-- `config` — (optional) Per-widget settings object. Currently used by `temp_stack` and `fan_stack` for display mode:
-  - `display_mode` — `"stack"` (default) or `"carousel"`. Stack shows compact rows; carousel shows swipeable full-size pages. Toggle via long-press on the widget.
+- `col` — Grid column position in half cells (0-based, left to right)
+- `row` — Grid row position in half cells (0-based, top to bottom)
+- `colspan` — Width in half cells (`2` = one cell wide)
+- `rowspan` — Height in half cells (`2` = one cell tall)
+- `config` — (optional) Per-widget settings object, written by the gear button in Edit Mode. Which keys apply depends on the widget:
+
+| Key | Widgets | Values |
+|-----|---------|--------|
+| `display_mode` | `temp_stack`, `fan_stack`, `thermistor` | `"stack"` (default) or `"carousel"` |
+| `layout_style` | `print_status` | `"detailed"` for the expanded card, otherwise the compact one |
+| `fan` | `fan` | Name of the fan to monitor |
+| `sensor` | `thermistor` | Name of the sensor to display |
+| `sensors` | `thermistor`, `temp_graph` | Array of sensor names to include |
+| `macro`, `color`, `skip_param_prompt` | `favorite_macro` | Macro to run, icon tint, and whether to skip the parameter prompt |
+| `device` | `power_device` | Name of the Moonraker power device to bind |
+| `icon` | `favorite_macro`, `power_device`, `temp_stack`, `fan_stack`, `tool_switcher` | Icon name override |
+| `rotation`, `flip_h`, `flip_v` | `camera` | `0`/`90`/`180`/`270`, and booleans |
+| `source`, `danger_threshold` | `clog_detection` | Detection source and danger-zone percentage |
+| `material_index` | `preheat` | Which material profile the buttons preheat to |
+
+Setting these through Edit Mode is far easier than editing them here, and it is the only way that validates the value against your printer.
 
 **Available widget IDs:**
 
-| ID | Widget | Default | Hardware-Gated |
-|----|--------|---------|---------------|
-| `power` | Moonraker power device controls | Enabled | Yes (requires power devices) |
-| `network` | WiFi/Ethernet status | Disabled | No |
-| `firmware_restart` | Klipper firmware restart | Disabled | No |
-| `ams` | Multi-material spool status | Enabled | Yes (requires AMS/MMU) |
-| `temperature` | Nozzle temperature with heating animation | Enabled | No |
-| `temp_stack` | Stacked nozzle, bed, and chamber temps (supports carousel mode) | Disabled | No |
-| `led` | LED quick toggle | Enabled | Yes (requires LEDs) |
-| `humidity` | Enclosure humidity sensor | Enabled | Yes (requires sensor) |
-| `width_sensor` | Filament width sensor | Enabled | Yes (requires sensor) |
-| `probe` | Z probe status and offset | Enabled | Yes (requires probe) |
-| `filament` | Filament runout detection | Enabled | Yes (requires sensor) |
-| `fan_stack` | Part, hotend, and auxiliary fan speeds (supports carousel mode with arc dials) | Enabled | No |
-| `thermistor` | Temperature sensors (chamber, enclosure, etc.) | Disabled | Yes (requires sensor) |
-| `notifications` | Pending alerts with severity badge | Enabled | No |
+For what each widget does and how big it can get, see the [Home Panel guide](guide/home-panel.md#available-widgets). This table is just the ID-to-widget mapping you need when editing the JSON.
+
+| ID | Widget | On by default | Hardware-gated |
+|----|--------|---------------|----------------|
+| `printer_image` | Printer Image | Yes | No |
+| `print_status` | Print Status | Yes | No |
+| `control_buttons` | Print Controls | No | No |
+| `print_stats` | Print Stats | No | No |
+| `job_queue` | Job Queue | No | No |
+| `camera` | Camera | No | Webcam configured |
+| `temperature` | Nozzle Temperature | Yes | No |
+| `nozzle_temps` | Nozzle Temperatures | No | No |
+| `bed_temperature` | Bed Temperature | Yes | No |
+| `chamber_temperature` | Chamber Temperature | No | Chamber sensor or heater |
+| `temp_stack` | Temperatures | No | No |
+| `thermistor` | Temperature Sensors | No | Extra temperature sensors |
+| `temp_graph` | Temperature Graph | No | No |
+| `preheat` | Preheat | No | No |
+| `fan_stack` | Fan Speeds | Yes | No |
+| `fan` | Fan | No | No |
+| `ams` | Multi-Filament System Status | No | AMS/MMU detected |
+| `active_spool` | Active Spool | No | No |
+| `filament` | Filament Sensor | Yes | Filament sensor |
+| `humidity` | Humidity | No | Humidity sensor |
+| `width_sensor` | Width Sensor | No | Width sensor |
+| `clog_detection` | Clog Detection | No | Clog detection hardware |
+| `favorite_macro` | Macro Button | No | No |
+| `macros` | Macros | No | No |
+| `gcode_console` | G-code Console | No | No |
+| `motion` | Motion | No | No |
+| `tool_switcher` | Tool Switcher | No | No |
+| `power_device` | Power | No | Moonraker power device |
+| `led` | LED Light | Yes | LEDs configured |
+| `led_controls` | LED Controls | No | LEDs configured |
+| `network` | Network | No | No |
+| `notifications` | Notifications | Yes | No |
+| `clock` | Digital Clock | No | No |
+| `tips` | Tips | Yes | No |
+| `shutdown` | Shutdown/Reboot | No | No |
+| `firmware_restart` | Firmware Restart | No | No |
+| `lock` | Lock Screen | No | No |
+
+`power_device`, `fan`, `thermistor`, `favorite_macro`, and `temp_graph` can appear more than once. Extra copies get an ID like `favorite_macro:2`.
 
 **Notes:**
-- Widget grid positions (`col`, `row`, `colspan`, `rowspan`) determine where each widget appears on its page
+- Widget grid positions (`col`, `row`, `colspan`, `rowspan`) determine where each widget appears on its page, in half cells
 - Hardware-gated widgets are hidden on the Home Panel if their hardware isn't detected, even when enabled
-- New widgets added in future versions are automatically appended with their default enabled state
-- Unknown widget IDs (from older versions) are silently ignored
+- New widgets are appended automatically with their default enabled state
+- Widget IDs that HelixScreen doesn't recognise are ignored
 - Up to 8 pages are supported
 
 This is best configured via **Edit Mode** on the Home Panel (long-press the widget grid) rather than editing the JSON directly. See the [Home Panel guide](guide/home-panel.md) for details on adding pages and arranging widgets.
@@ -1654,9 +1700,8 @@ If your config is lost or corrupted:
 3. **Fresh start:** Copy `settings.json.template` to `settings.json` and re-run
    the setup wizard
 
-### Migration from helixconfig.json
-Older versions used `helixconfig.json`. HelixScreen automatically renames this to
-`settings.json` on startup — no manual action needed.
+### If you have a `helixconfig.json`
+HelixScreen renames it to `settings.json` on startup — no manual action needed.
 
 ---
 
@@ -1749,7 +1794,7 @@ These can be set in the systemd service file or before running the binary:
 | `HELIX_COLOR_SWAP_RB` | Swap red/blue channels (`1` to enable) — fixes inverted colors on some displays |
 | `HELIX_BACKLIGHT_DEVICE` | Force the backlight control method: `sysfs`, `allwinner`, `brightness` (Creality Sonic Pad), or `none` to disable. Fixes a brightness slider that does nothing |
 | `HELIX_DPI` | Override display DPI / UI scale (`50`–`500`, default `160`) — lower for oversized UI, higher for cramped UI |
-| `HELIX_SCREEN_SIZE` | Force screen size / layout (`micro`, `tiny`, `small`, `medium`, `large`, `xlarge`, or `WxH`) — persistent equivalent of `-s` |
+| `HELIX_SCREEN_SIZE` | Force screen size / layout (`micro`, `tiny`, `small`, `medium`, `large`, `xlarge`, `xxlarge`, or `WxH`) — persistent equivalent of `-s` |
 | `HELIX_TOUCH_DEVICE` | Override touch input device (e.g., `/dev/input/event1`) |
 | `HELIX_TOUCH_SWAP_AXES` | Swap X/Y touch axes (`1` to enable) |
 | `HELIX_TOUCH_CALIBRATE` | Force touch calibration on next launch (`1` to enable) |

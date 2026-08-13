@@ -383,7 +383,7 @@ The Snapmaker U1 is an all-in-one printer with a built-in touchscreen. HelixScre
 
 - **Software:**
   - **SSH access** — via either firmware path:
-    - **Stock Snapmaker firmware (1.2+):** enable the **Root access** option in printer settings (added in V1.2.0). This turns on SSH. *(Stock-firmware support is newly added and not yet verified end-to-end on a stock device — see note below.)*
+    - **Stock Snapmaker firmware (1.2+):** enable the **Root access** option in printer settings (added in V1.2.0). This turns on SSH. *(The stock-firmware path has not been verified end-to-end on a real stock device — see note below.)*
     - **[PAXX Extended Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware):** SSH on by default. Tested on **1.2.x, 1.3.x, and 1.4.x**.
   - SSH login (`root@<printer-ip>` or `lava@<printer-ip>`, password: `snapmaker`)
 
@@ -616,7 +616,7 @@ Use the touchscreen to complete the setup wizard. The printer should auto-detect
 
 > **Requires SSH access.** Enable it on **stock firmware (1.2+)** via the **Root access** option in printer settings, or install [PAXX Extended Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware) (SSH on by default). PAXX is **not** required — it's just the turnkey option.
 >
-> **Firmware versions:** Tested on PAXX Extended Firmware **1.2.x, 1.3.x, and 1.4.x**. Stock-firmware support is newly added and not yet verified end-to-end on a stock device. After any firmware update, **reinstall HelixScreen** — the update resets the printer's system files and the stock screen will return until you reinstall (see [Upgrading the firmware](#upgrading-the-extended-firmware-with-helixscreen-installed)).
+> **Firmware versions:** Tested on PAXX Extended Firmware **1.2.x, 1.3.x, and 1.4.x**. The stock-firmware path has not been verified end-to-end on a real stock device. After any firmware update, **reinstall HelixScreen** — the update resets the printer's system files and the stock screen will return until you reinstall (see [Upgrading the firmware](#upgrading-the-extended-firmware-with-helixscreen-installed)).
 
 SSH into the printer:
 

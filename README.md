@@ -53,7 +53,7 @@ Run it right on your printer, or on a separate device — a spare Pi, a mini PC,
 | Printer Database | 80+ models | — | Manual config |
 | Display Layouts | Auto-detecting (480x320 to 1024x600; ultrawide/portrait alpha) | Fixed | Configurable |
 | Internationalization | 9 languages | — | 40+ languages |
-| Status | 1.0 (active) | Inactive | Mature (maintenance) |
+| Status | Pre-1.0, actively developed | Inactive | Mature (maintenance) |
 | Language | C++17 | C | Python 3 |
 
 </details>
@@ -138,7 +138,7 @@ See [docs/devel/GALLERY.md](docs/devel/GALLERY.md) for the full gallery.
 
 ² Elegoo Centauri Carbon requires the community [OpenCentauri COSMOS](https://github.com/OpenCentauri/cosmos) firmware ([docs](https://docs.opencentauri.cc/klipper-conversion/cosmos/cosmos/); stock Elegoo firmware has no SSH, Klipper, or Moonraker). Ships with factory white-balance calibration for the 4.3" panel.
 
-³ Snapmaker U1 needs SSH access. Stock firmware (1.2+) provides it via the **Root access** option in printer settings; the community [PAXX Extended Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware) enables SSH by default and is the easiest path. Tested on PAXX 1.3.x/1.4.x; stock-firmware support is newly added. Reinstall HelixScreen after any firmware update — it resets system files and the stock screen returns until you reinstall.
+³ Snapmaker U1 needs SSH access. Stock firmware (1.2+) provides it via the **Root access** option in printer settings; the community [PAXX Extended Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware) enables SSH by default and is the easiest path. Tested on PAXX 1.3.x/1.4.x; the stock-firmware path is unverified on a real stock device. Reinstall HelixScreen after any firmware update — it resets system files and the stock screen returns until you reinstall.
 
 ## Installation
 
@@ -211,7 +211,7 @@ Any Klipper + Moonraker printer. 80+ models in the auto-detection database spann
 **What screen sizes are supported?**
 800x480 and 1024x600 are the well-tested landscape sizes; 480x320 runs but is tight in places. Display rotation (0/90/180/270) with auto-detection.
 
-**Ultrawide (e.g. 1920x480) and portrait (e.g. 480x800) are alpha at best.** The layout engine detects both and picks sensible grid sizing, but almost no panel has an ultrawide- or portrait-specific layout yet, so most screens fall back to the standard landscape layout and will look stretched or cramped. It will run — don't expect it to look right. Both are wide open for contributions; see the [UI Contributor Guide](docs/devel/UI_CONTRIBUTOR_GUIDE.md).
+**Ultrawide (e.g. 1920x440) and portrait (e.g. 480x800) are alpha at best.** The layout engine detects both and sizes the grid from the screen, and both get their own home dashboard layout. Portrait also covers Print Status, Print Tune, Motion, Bed Mesh and the temperature graph; ultrawide covers nothing beyond the dashboard. Every other panel falls back to the standard landscape layout and will look stretched or cramped. It will run — don't expect it to look right everywhere. Both are wide open for contributions; see the [UI Contributor Guide](docs/devel/UI_CONTRIBUTOR_GUIDE.md).
 
 **What multi-material systems work?**
 AFC (Box Turtle, ViViD), Happy Hare (ERCF, 3MS, Tradrack, Night Owl), ACE (Anycubic ACE Pro), AD5X IFS, Creality CFS, Snapmaker U1 (with RFID spool recognition), and tool changers (viesturz/klipper-toolchanger). Full Spoolman integration for spool management.

@@ -279,7 +279,7 @@ When multiple backends are detected:
 
 Each system displays its own logo in the AMS panel header. Happy Hare and AFC show their firmware logos; specific hardware variants (ERCF, Box Turtle, ViViD, etc.) show hardware-specific logos when detected.
 
-Single-backend setups are unaffected — the panel works exactly as before with no selector shown.
+With a single backend there is no selector — the panel just shows that system.
 
 ---
 

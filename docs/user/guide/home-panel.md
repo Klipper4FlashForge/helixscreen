@@ -19,7 +19,9 @@ Your dashboard is built from **widgets** — individual cards that display print
 - Widgets cannot overlap — the grid enforces clean layouts
 - **Everything saves automatically** and persists across restarts and updates
 
-When you first launch HelixScreen, a default layout is created with your printer image, print status, tips, and commonly used widgets. From there, you can customize everything.
+Most widgets don't draw their own box. Instead, neighbouring widgets sit on one **shared card background** that flows around the whole group, so a cluster of small readouts reads as a single panel rather than a row of separate tiles. A few widgets bring their own surface and stay visually distinct — Print Status, Camera, Nozzle Temperatures and the AMS spool view — and Printer Image and Tips deliberately float on the bare background. Move a widget and the card reshapes itself around wherever it lands.
+
+When you first launch HelixScreen, a default layout is created with your printer image, print status, temperatures, and other commonly used widgets, arranged to suit your screen. From there, you can customize everything.
 
 ### On ultrawide and portrait screens
 
@@ -88,7 +90,7 @@ Edit Mode is how you customize your dashboard layout. While in Edit Mode, all no
 
 **Long-press** (press and hold for about half a second) **anywhere on the widget grid**. You'll see:
 
-- A faint **grid of dots** appears showing the underlying grid structure
+- A faint **grid of dots** appears showing the underlying grid structure. **Every dot you can see is somewhere the selected widget is allowed to land** — see [Snapping and half cells](#snapping-and-half-cells) below
 - **Corner brackets** appear on the widget under your finger, indicating it's selected
 - All normal widget tap actions are disabled — you can touch anything without triggering it
 
@@ -133,6 +135,19 @@ Not all widgets are resizable — some (like Power and Shutdown) are always 1x1.
 6. **Release** to apply the new size — the widget rebuilds at its new dimensions
 
 Some widgets adapt their content based on size. For example, the Digital Clock shows just the time at 1x1, adds the date at 2x1, and shows uptime too at 2x2 or larger.
+
+### Snapping and half cells
+
+Most widgets snap to whole cells when you drag or resize them. A handful can go finer:
+
+| Widget | What it can do |
+|--------|----------------|
+| **Digital Clock** | Moves **and resizes** in half-cell steps, on both axes — so 1.5x1 and 2x2.5 are real sizes for it |
+| **Shutdown/Reboot**, **Lock Screen**, **Firmware Restart**, **LED Controls** | Stay one cell in size, but can be **positioned** half a cell across, so a row of them can sit between the main columns |
+
+You don't have to remember which is which. The dot grid tells you: **whole-cell dots are always drawn, and the smaller, fainter half-cell dots in between appear only while a widget that can use them is selected** — and only on the axis it can use them on. If you see the extra dots, you can snap to them. If you don't, the widget you have selected snaps to whole cells.
+
+Half-cell sizes are also why the Widget Catalog occasionally shows a size like "1.5x1" on a badge.
 
 
 ### Adding a Widget
@@ -198,15 +213,15 @@ Some widgets have settings you can change directly from Edit Mode. When you sele
 
 ### Resetting to Defaults
 
-Tap the **Reset** button in the Edit Mode toolbar to restore the default widget layout. This resets **all pages** back to a single page with the default layout — any extra pages you created are removed. Widget positions and sizes are reset, and the default set of enabled widgets is restored. Your per-widget settings (like display mode preferences) are preserved.
+Open the Widget Catalog (long-press an empty area in Edit Mode) and tap **Reset** in its header to restore the default widget layout.
 
-The default layout places:
-- **Printer Image** in the top-left (2x2)
-- **Print Status** below it (2x2)
-- **Tips** across the top-right (4x2)
-- Remaining enabled widgets auto-fill the rest of the grid
+This is a full reset, so be sure before you confirm it:
 
-On a portrait screen the defaults differ: Printer Image and Print Status stack full-width down the top of the grid, Tips is left out, and the rest auto-fill below.
+- **All pages** collapse back to a single page — any extra pages you created are removed
+- Widget positions, sizes, and the set of enabled widgets all go back to defaults
+- **Per-widget settings go too** — display modes, the fan each Fan widget watches, the macro on each Macro Button. The layout is rebuilt from scratch, not adjusted
+
+The default layout is authored per screen shape rather than being one arrangement stretched to fit, so what you get depends on your panel. On a typical 800x480 landscape screen: **Printer Image** in the top-left, a block of small readouts (nozzle, bed, LED, notifications, fan, filament) to its right, the **Temperature Graph** down the right side, and **Print Status** as a wide band across the bottom. Bigger screens get the same shape with more room, and add **Tips** as a footer band. Portrait and ultrawide screens have their own layouts. Anything not placed by the default layout auto-fills the leftover cells.
 
 ### Exiting Edit Mode
 
@@ -277,7 +292,7 @@ These are the same 5 groups the Widget Catalog uses on the device.
 |--------|-------------|---------|-----|-----|-----------|-------------------|
 | **Network** | Current network connection status — WiFi signal strength (with bar indicator) or Ethernet. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
 | **Notifications** | Shows pending notification count with a severity badge (info/warning/error). Tap to open the notification history overlay. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
-| **Digital Clock** | Current time and date. Respects your 12/24-hour preference from display settings. Content adapts to size: time only at 1x1, time + date at 2x1, time + date + system uptime at 2x2+. | 2x1 | 1x1 | 3x3 | Yes | — |
+| **Digital Clock** | Current time and date. Respects your 12/24-hour preference from display settings. Content adapts to size: time only at 1x1, time + date at 2x1, time + date + system uptime at 2x2+. Resizes in half-cell steps — see [Snapping and half cells](#snapping-and-half-cells). | 2x1 | 1x1 | 3x3 | Yes | — |
 | **Tips** | Rotating helpful tips about 3D printing and HelixScreen features. Tap any tip to see the full article. Tips rotate automatically. | 4x2 | 2x1 | Full width x2 | Horizontal only | — |
 | **Shutdown/Reboot** | Shutdown or reboot your printer's host system. Shows a confirmation dialog before acting. | 1x1 | 1x1 | 1x1 | No | — |
 | **Firmware Restart** | Restart the Klipper firmware. Useful when Klipper enters SHUTDOWN state. This widget automatically appears during firmware errors even if disabled. | 1x1 | 1x1 | 1x1 | No | — |
@@ -576,6 +591,15 @@ When you update HelixScreen and new widgets are added:
 - If the grid is full, new widgets stay disabled until you make room
 
 If you downgrade and a widget type no longer exists, it's silently removed from your layout. Upgrading again restores it.
+
+**The exception is an update that changes the shape of the grid itself.** A saved position means "column 5, row 3, two cells wide" — if an update changes how many cells your screen gets, those numbers point somewhere else, or off the edge entirely. Rather than leave widgets scattered, HelixScreen re-places them all on the new grid. When that happens:
+
+- Every widget on every page is **re-placed automatically**. Expect a different arrangement than the one you built
+- **Which widgets you have is remembered.** A widget you deleted with the trash button stays gone; one you added stays added, including extra Macro Buttons, Power widgets, and other multiples
+- **Per-widget settings are kept** — display modes, assigned fans and macros all survive. Only positions and sizes are recomputed
+- Extra pages are kept, and widgets are re-placed within the page they were already on
+
+Your printer keeps working the whole time — this only moves tiles around. If you had an arrangement you liked, it is worth a couple of minutes in Edit Mode afterwards to put it back.
 
 ---
 
