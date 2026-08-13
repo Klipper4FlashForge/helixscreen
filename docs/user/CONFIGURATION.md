@@ -36,6 +36,7 @@ Complete reference for HelixScreen configuration options.
 - [Telemetry Settings](#telemetry-settings)
 - [Plugin Settings](#plugin-settings)
 - [Update Settings](#update-settings)
+- [Upgrade Nudge](#upgrade-nudge)
 - [Safety Limits](#safety-limits)
 - [Capability Overrides](#capability-overrides)
 - [Resetting Configuration](#resetting-configuration)
@@ -62,7 +63,7 @@ The configuration file is created automatically by the first-run wizard. You can
 cp config/settings.json.template config/settings.json
 ```
 
-**Note:** Legacy config locations (`settings.json` in app root or `/opt/helixscreen/settings.json`) are automatically migrated to the new location on startup.
+**Note:** A `settings.json` sitting in the app root or at `/opt/helixscreen/settings.json` is moved to the location above on startup.
 
 ---
 
@@ -72,11 +73,13 @@ The configuration file is JSON format with several top-level sections:
 
 ```json
 {
+  "config_version": 22,
   "dark_mode": false,
   "brightness": 80,
   "sounds_enabled": true,
   "ui_sounds_enabled": true,
   "sound_theme": "default",
+  "disable_sound": false,
   "completion_alert": 1,
   "wizard_completed": false,
   "wifi_expected": false,
@@ -116,11 +119,11 @@ The configuration file is JSON format with several top-level sections:
 
 ## Multi-Printer Configuration
 
-When multiple printers are configured, the config file uses a versioned schema (v4) with per-printer settings:
+When multiple printers are configured, the config file uses a versioned schema with per-printer settings. `config_version` tracks the schema and HelixScreen migrates older files forward on load — leave it alone:
 
 ```json
 {
-  "config_version": 4,
+  "config_version": 22,
   "active_printer_id": "voron-24",
   "printers": {
     "voron-24": {
@@ -260,7 +263,7 @@ Located in the `theme` section:
 **Default:** `0`
 **Description:** Theme accent color preset. **Requires restart to take effect.**
 
-> **Note:** `preset` is a legacy dropdown-index field, and index `0` maps to Ayu — it does **not** reflect the effective default theme. The out-of-the-box default theme is **Nord**. The active theme is set by the `/display/theme` string (a theme name), not by this numeric index.
+> **Note:** `preset` is a dropdown index, not the effective theme — index `0` maps to Ayu, while the out-of-the-box default is **Nord**. What actually selects the theme is the `/display/theme` string (a theme name). Set that; ignore this.
 
 | Value | Theme |
 |-------|-------|
@@ -369,7 +372,7 @@ Located in the `display` section:
 ### `theme`
 **Type:** string
 **Default:** `"nord"`
-**Description:** Active color theme by name (e.g., `"nord"`, `"dracula"`, `"gruvbox"`). This is the string that actually determines the effective theme — the numeric `theme.preset` index is a legacy field. **Requires restart to take effect.** Easiest to change via **Settings > Appearance > Display Settings > Theme Colors**, which writes this value for you.
+**Description:** Active color theme by name (e.g., `"nord"`, `"dracula"`, `"gruvbox"`). This is the string that actually determines the effective theme — the numeric `theme.preset` index does not. **Requires restart to take effect.** Easiest to change via **Settings > Appearance > Display Settings > Theme Colors**, which writes this value for you.
 
 ### `layout`
 **Type:** string
@@ -414,6 +417,22 @@ Located in the `display` section:
 **Default:** `30`
 **Range:** `1` - `100`
 **Description:** Brightness percentage when screen is dimmed.
+
+### `sleep_backlight_off`
+**Type:** boolean
+**Default:** `true`
+**Description:** Whether going to sleep switches the backlight off, rather than only dimming it to zero. Leave this on. It exists for panels where cutting the backlight leaves the screen in a state it cannot wake from; if your display goes dark and stays dark after sleeping, and a touch does not bring it back, set this to `false` and restart.
+
+### `backlight_enable_ioctl`
+**Type:** boolean
+**Default:** `true`
+**Description:** Whether to use the kernel's backlight enable/disable call in addition to setting a brightness level. A few panels wire this signal backwards, so enabling the backlight turns it off. If your screen is inverted — dark when it should be lit, lit when it should be asleep — set this to `false` so brightness alone controls it.
+
+### `screensaver_type`
+**Type:** integer
+**Default:** `1`
+**Values:** `0` = Off, `1` = Flying Toasters, `2` = Starfield, `3` = 3D Pipes
+**Description:** Which screensaver plays when the screen has been idle. Choose it in **Settings > Display & Sound**. It starts at the `dim_sec` mark, alongside dimming, and stops when `sleep_sec` takes the display down. On a panel with no backlight control the screensaver is the only idle indication you get.
 
 ### `drm_device`
 **Type:** string
@@ -625,7 +644,7 @@ Located in the `output` section:
 ### `led_on_at_start`
 **Type:** boolean
 **Default:** `false`
-**Description:** Automatically turn on the configured LED strip when Klipper becomes ready. Useful for printers with chamber lights that should always be on. **Deprecated:** This setting has moved to `printer.leds.led_on_at_start`. The legacy location is still read for backward compatibility.
+**Description:** Automatically turn on the configured LED strip when Klipper becomes ready. Useful for printers with chamber lights that should always be on. **Set this under [`printer.leds.led_on_at_start`](#ledsled_on_at_start) instead** — that is where HelixScreen writes it and where per-printer settings belong. A value here is still read, but it applies to every printer.
 
 ---
 
@@ -782,7 +801,7 @@ Located in the `printer.leds` section. Configured via **Settings > LED Settings*
 ### `leds.strip`
 **Type:** string
 **Default:** `""` (empty)
-**Description:** Legacy single LED strip name. Empty string if no controllable LEDs. Superseded by `leds.selected_strips` for multi-strip control.
+**Description:** A single LED strip name, empty when there are no controllable LEDs. Use `leds.selected_strips` instead — it is the one that handles more than one strip.
 
 ### `leds.selected_strips`
 **Type:** array of strings
@@ -792,12 +811,18 @@ Located in the `printer.leds` section. Configured via **Settings > LED Settings*
 ### `leds.led_on_at_start`
 **Type:** boolean
 **Default:** `false`
-**Description:** Automatically turn on selected LED strips when Klipper becomes ready. Useful for chamber lights that should always be on. This setting has moved from `output.led_on_at_start` to here, though the legacy location is still read for backward compatibility.
+**Description:** Automatically turn on selected LED strips when Klipper becomes ready. Useful for chamber lights that should always be on. A copy of this key under `output` is also honoured if you have one; `printer.leds` is where HelixScreen writes it.
+
+### `leds.startup_brightness`
+**Type:** integer
+**Default:** `80`
+**Range:** `0` - `100`
+**Description:** Brightness the strips come up at when `leds.led_on_at_start` switches them on. Independent of `leds.last_brightness`, so the lights can start at a fixed level regardless of where you left the slider.
 
 ### `leds.last_color`
 **Type:** string (or integer)
 **Default:** `"#FFFFFF"` (white)
-**Description:** Last used LED color as a `#RRGGBB` hex string (e.g., `"#FFFFFF"` = white, `"#FF0000"` = red, `"#00FF00"` = green). Legacy integer RGB values (e.g., `16777215`) are also accepted for backward compatibility. Remembered between sessions.
+**Description:** Last used LED color as a `#RRGGBB` hex string (e.g., `"#FFFFFF"` = white, `"#FF0000"` = red, `"#00FF00"` = green). Plain integer RGB values (e.g., `16777215`) are also accepted. Remembered between sessions.
 
 ### `leds.last_brightness`
 **Type:** integer
@@ -808,7 +833,7 @@ Located in the `printer.leds` section. Configured via **Settings > LED Settings*
 ### `leds.color_presets`
 **Type:** array of strings (or integers)
 **Default:** `["#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]`
-**Description:** Preset colors shown in the color picker as `#RRGGBB` hex strings. Legacy integer RGB values are also accepted. Default presets are white, red, green, blue, yellow, magenta, and cyan.
+**Description:** Preset colors shown in the color picker as `#RRGGBB` hex strings. Plain integer RGB values are also accepted. Default presets are white, red, green, blue, yellow, magenta, and cyan.
 
 ### `leds.auto_state`
 **Type:** object
@@ -833,7 +858,7 @@ Located in the `printer.leds` section. Configured via **Settings > LED Settings*
 - `enabled` — Boolean, enable/disable automatic state-based lighting
 - `mappings` — Object mapping printer state keys (`idle`, `heating`, `printing`, `paused`, `error`, `complete`) to actions
 - Each mapping has an `action` type: `"off"`, `"brightness"`, `"color"`, `"effect"`, `"wled_preset"`, or `"macro"`
-- Additional fields depend on the action: `brightness` (0-100), `color` (`#RRGGBB` hex string or legacy integer RGB), `effect_name` (string), `wled_preset` (integer), `macro` (string)
+- Additional fields depend on the action: `brightness` (0-100), `color` (`#RRGGBB` hex string, or a plain integer RGB), `effect_name` (string), `wled_preset` (integer), `macro` (string)
 
 ### `leds.macro_devices`
 **Type:** array of objects
@@ -1577,6 +1602,38 @@ Can also be changed from the Settings panel when `beta_features` is enabled.
 
 ---
 
+## Upgrade Nudge
+
+Located in the top-level `upgrade_nudge` section. Controls how insistently HelixScreen tells you an update is waiting.
+
+```json
+{
+  "upgrade_nudge": {
+    "intensity": "off",
+    "dismissed_version": ""
+  }
+}
+```
+
+### `upgrade_nudge.intensity`
+**Type:** string
+**Default:** `"off"`
+**Values:** `"off"`, `"normal"`, `"aggressive"`
+**Description:** How visible the update prompt is.
+
+- `"off"` — nothing. An available update is only visible in **Settings > Help & About**
+- `"normal"` — a red dot on the Settings icon
+- `"aggressive"` — the red dot, plus a banner across the top of the screen that stays until you dismiss it
+
+No nudge of any kind appears while a print is running.
+
+### `upgrade_nudge.dismissed_version`
+**Type:** string
+**Default:** `""` (empty)
+**Description:** The version whose banner you dismissed. Set for you when you close the banner, and only suppresses that exact version — the next release brings the banner back. Clear it to see the banner again for a version you already dismissed.
+
+---
+
 ## Safety Limits
 
 Located in `printer.safety_limits`:
@@ -1622,7 +1679,8 @@ Located in `printer.capability_overrides`:
       "z_tilt": "auto",
       "nozzle_clean": "auto",
       "heat_soak": "auto",
-      "chamber": "auto"
+      "chamber": "auto",
+      "speaker": "auto"
     }
   }
 }
@@ -1637,6 +1695,7 @@ Located in `printer.capability_overrides`:
 - Enable `heat_soak` when you have a chamber but no chamber heater (soak macro works without)
 - Disable `qgl` on a printer where it's defined but not used
 - Enable `bed_mesh` if detection failed
+- Disable `speaker` on a board whose buzzer is detected but not wired, so HelixScreen stops trying to play M300 beeps through it
 
 ---
 
