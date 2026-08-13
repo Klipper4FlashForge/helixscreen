@@ -131,6 +131,8 @@ class FanStackWidget : public PanelWidget {
     /// Picking an icon applies immediately and leaves the card up, so Done and
     /// a tap on the backdrop both simply close it.
     class ConfigurePicker : public helix::ui::ContextMenu {
+        HELIX_CONTEXT_MENU_KIND(ConfigurePicker)
+
       public:
         explicit ConfigurePicker(FanStackWidget& owner) : owner_(owner) {}
 

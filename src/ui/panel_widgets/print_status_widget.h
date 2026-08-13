@@ -42,8 +42,13 @@ class PrintStatusWidget : public PanelWidget {
     void attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) override;
     void detach() override;
     void on_size_changed(int colspan, int rowspan, int width_px, int height_px) override;
+    /// Factory-registration key. Exposed so callers scanning a heterogeneous
+    /// widget list can match on id() and static_cast, instead of dynamic_cast —
+    /// the firmware builds -fno-rtti.
+    static constexpr const char* WIDGET_ID = "print_status";
+
     const char* id() const override {
-        return "print_status";
+        return WIDGET_ID;
     }
 
     // Configuration
@@ -152,6 +157,8 @@ class PrintStatusWidget : public PanelWidget {
     /// mode. Every control applies live, so both the Done button and a tap on
     /// the backdrop commit the card rather than discarding it.
     class ConfigurePicker : public helix::ui::ContextMenu {
+        HELIX_CONTEXT_MENU_KIND(ConfigurePicker)
+
       public:
         explicit ConfigurePicker(PrintStatusWidget& owner) : owner_(owner) {}
 
@@ -190,6 +197,8 @@ class PrintStatusWidget : public PanelWidget {
     /// readout in the detailed-active footer. Picking a row pins the temperature
     /// display to that tool; a tap outside it chooses nothing.
     class NozzleToolPicker : public helix::ui::ContextMenu {
+        HELIX_CONTEXT_MENU_KIND(NozzleToolPicker)
+
       public:
         explicit NozzleToolPicker(PrintStatusWidget& owner) : owner_(owner) {}
 

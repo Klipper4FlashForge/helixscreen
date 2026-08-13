@@ -35,6 +35,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 
 using namespace helix;
@@ -777,11 +778,16 @@ void HomePanel::apply_printer_config() {
 }
 
 void HomePanel::refresh_printer_image() {
-    // Search all pages for the PrinterImageWidget
+    // Search all pages for the PrinterImageWidget.
+    //
+    // id() is the widget's factory-registration key, and the registry is a
+    // one-to-one map: an id names exactly one concrete PanelWidget subclass.
+    // Matching on it and then static_cast'ing is therefore equivalent to the
+    // dynamic_cast this replaces, and works under -fno-rtti (firmware).
     for (auto& page : page_widgets_) {
         for (auto& w : page) {
-            if (auto* piw = dynamic_cast<helix::PrinterImageWidget*>(w.get())) {
-                piw->refresh_printer_image();
+            if (w && std::strcmp(w->id(), helix::PrinterImageWidget::WIDGET_ID) == 0) {
+                static_cast<helix::PrinterImageWidget*>(w.get())->refresh_printer_image();
                 return;
             }
         }
@@ -789,11 +795,12 @@ void HomePanel::refresh_printer_image() {
 }
 
 void HomePanel::trigger_idle_runout_check() {
-    // Search all pages for the PrintStatusWidget
+    // Search all pages for the PrintStatusWidget (see refresh_printer_image()
+    // for why the id() match stands in for a dynamic_cast).
     for (auto& page : page_widgets_) {
         for (auto& w : page) {
-            if (auto* psw = dynamic_cast<helix::PrintStatusWidget*>(w.get())) {
-                psw->trigger_idle_runout_check();
+            if (w && std::strcmp(w->id(), helix::PrintStatusWidget::WIDGET_ID) == 0) {
+                static_cast<helix::PrintStatusWidget*>(w.get())->trigger_idle_runout_check();
                 return;
             }
         }

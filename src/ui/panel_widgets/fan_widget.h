@@ -48,6 +48,8 @@ class FanWidget : public PanelWidget {
     /// The card hangs under the widget tile and carries the shared backdrop,
     /// positioning and dismissal behaviour from ContextMenu.
     class FanPicker : public helix::ui::ContextMenu {
+        HELIX_CONTEXT_MENU_KIND(FanPicker)
+
       public:
         explicit FanPicker(FanWidget& owner) : owner_(owner) {}
 

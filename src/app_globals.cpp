@@ -24,6 +24,11 @@
 #include "data_root_resolver.h"
 #include "i_moonraker_api.h"
 #include "i_moonraker_client.h"
+#ifdef HELIX_ENABLE_MOCKS
+// Complete type needed for the derived->base pointer comparison in
+// set_moonraker_client().
+#include "moonraker_client_mock.h"
+#endif
 #include "panel_widget_manager.h"
 #include "printer_state.h"
 #include "static_subject_registry.h"
@@ -55,6 +60,11 @@ using namespace helix;
 // Global singleton instances (extern declarations in header, definitions here)
 // These are set by main.cpp during initialization
 static IMoonrakerClient* g_moonraker_client = nullptr;
+#ifdef HELIX_ENABLE_MOCKS
+// Alias for g_moonraker_client under the concrete mock type; see
+// get_moonraker_client_mock(). Kept in lockstep with the pointer above.
+static MoonrakerClientMock* g_moonraker_client_mock = nullptr;
+#endif
 static IMoonrakerAPI* g_moonraker_api = nullptr;
 static MoonrakerManager* g_moonraker_manager = nullptr;
 static JobQueueState* g_job_queue_state = nullptr;
@@ -92,7 +102,25 @@ IMoonrakerClient* get_moonraker_client() {
 
 void set_moonraker_client(IMoonrakerClient* client) {
     g_moonraker_client = client;
+#ifdef HELIX_ENABLE_MOCKS
+    // The mock alias only stays valid while it names the same object. Anyone
+    // replacing or clearing the client invalidates it; the caller that installs
+    // a mock re-publishes it right after this call.
+    if (static_cast<IMoonrakerClient*>(g_moonraker_client_mock) != client) {
+        g_moonraker_client_mock = nullptr;
+    }
+#endif
 }
+
+#ifdef HELIX_ENABLE_MOCKS
+MoonrakerClientMock* get_moonraker_client_mock() {
+    return g_moonraker_client_mock;
+}
+
+void set_moonraker_client_mock(MoonrakerClientMock* client) {
+    g_moonraker_client_mock = client;
+}
+#endif
 
 IMoonrakerAPI* get_moonraker_api() {
     return g_moonraker_api;

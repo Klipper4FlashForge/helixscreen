@@ -256,21 +256,27 @@ static std::string to_lower(const std::string& s) {
 
 // Helper to create mock backend with optional features.
 //
-// `mock_client` (when non-null) is the MoonrakerClientMock driving the
-// simulated printer. The AMS mock subscribes to its active-gcode-tool
-// notifications so the active-tool indicator follows the gcode (mock-side
-// proxy for production's printer.mmu.tool / toolchanger.tool_number).
+// `mock_client` (when non-null) is the client the caller wants the AMS mock
+// bound to. The AMS mock subscribes to its active-gcode-tool notifications so
+// the active-tool indicator follows the gcode (mock-side proxy for production's
+// printer.mmu.tool / toolchanger.tool_number).
 static std::unique_ptr<AmsBackendMock>
 create_mock_with_features(int gate_count, IMoonrakerClient* mock_client = nullptr) {
     auto mock = std::make_unique<AmsBackendMock>(gate_count);
 
-    // Find the moonraker mock to subscribe to. Caller may pass it explicitly;
-    // otherwise fall back to the global registered by MoonrakerManager. The
-    // AmsState init path calls AmsBackend::create(NONE, null, null) before the
-    // factory hooks up specific backends, so the global is the only handle we
-    // have at that point.
-    IMoonrakerClient* mc_raw = mock_client ? mock_client : get_moonraker_client();
-    if (auto* mc = dynamic_cast<::MoonrakerClientMock*>(mc_raw)) {
+    // Find the moonraker mock to subscribe to. get_moonraker_client_mock() is
+    // the registered client narrowed to the concrete mock type — non-null only
+    // when the client really is a MoonrakerClientMock, which is what the
+    // dynamic_cast here used to establish (the firmware builds -fno-rtti).
+    // When the caller named a client explicitly, it only counts if it is that
+    // same object. The AmsState init path calls AmsBackend::create(NONE, null,
+    // null) before the factory hooks up specific backends, so the registered
+    // mock is the only handle we have at that point.
+    ::MoonrakerClientMock* mc = get_moonraker_client_mock();
+    if (mc && mock_client && static_cast<IMoonrakerClient*>(mc) != mock_client) {
+        mc = nullptr;
+    }
+    if (mc) {
         AmsBackendMock* mock_ptr = mock.get();
         mc->add_active_gcode_tool_observer([mock_ptr](int tool, uint32_t color) {
             mock_ptr->on_simulated_gcode_tool_changed(tool, color);

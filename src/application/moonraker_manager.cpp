@@ -306,6 +306,10 @@ size_t MoonrakerManager::pending_notification_count() const {
 void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
     spdlog::debug("[MoonrakerManager] Creating Moonraker client...");
 
+#ifdef HELIX_ENABLE_MOCKS
+    MoonrakerClientMock* mock_client = nullptr;
+#endif
+
 #if defined(ESP_PLATFORM)
     // Embedded firmware: platform-provided client over esp_websocket_client.
     // HELIX_ENABLE_MOCKS is never defined for ESP32 targets, so there is no
@@ -375,6 +379,12 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
         if (ams_disabled) {
             mock->set_mmu_enabled(false);
         }
+        // Remember the concrete types while we still have them. This is the one
+        // place that knows what m_client actually is, so recording it here beats
+        // recovering it later with a dynamic_cast (the firmware builds
+        // -fno-rtti, and the desktop code must not diverge).
+        mock_client = mock.get();
+        m_concrete_client = mock.get();
         m_client = std::move(mock);
 
         // Thumbnails do not travel over the WebSocket the mock client answers —
@@ -390,7 +400,11 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
     } else {
 #endif
         spdlog::debug("[MoonrakerManager] Creating REAL client");
-        m_client = std::make_unique<MoonrakerClient>();
+        auto real_client = std::make_unique<MoonrakerClient>();
+#ifdef HELIX_ENABLE_MOCKS
+        m_concrete_client = real_client.get();
+#endif
+        m_client = std::move(real_client);
 #ifdef HELIX_ENABLE_MOCKS
     }
 #endif
@@ -398,6 +412,12 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
 
     // Register with app_globals
     set_moonraker_client(m_client.get());
+#ifdef HELIX_ENABLE_MOCKS
+    // Publish the mock under its concrete type as well, so consumers that need
+    // the mock-only API (AmsBackend's simulated-tool subscription) can reach it
+    // without downcasting the interface. Null on a real-client run.
+    set_moonraker_client_mock(mock_client);
+#endif
 
     // Initialize SoundManager with client for M300 audio feedback
     SoundManager::instance().set_moonraker_client(m_client.get());
@@ -409,9 +429,11 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
     // simulator's active-gcode-tool. Production AMS backends ignore this —
     // they read printer.mmu.tool / toolchanger.tool_number directly from
     // Klipper. See post-1.0 issue #958 for the architecturally-correct fix.
-    if (auto* mock_client = dynamic_cast<MoonrakerClientMock*>(m_client.get())) {
+    if (mock_client) {
         auto* backend = AmsState::instance().get_backend();
-        if (auto* ams_mock = dynamic_cast<AmsBackendMock*>(backend)) {
+        // as_mock() is AmsBackend's RTTI-free stand-in for a dynamic_cast: it
+        // returns null on every production backend and `this` on the mock.
+        if (auto* ams_mock = backend ? backend->as_mock() : nullptr) {
             mock_client->add_active_gcode_tool_observer([ams_mock](int tool, uint32_t color) {
                 ams_mock->on_simulated_gcode_tool_changed(tool, color);
             });
@@ -570,15 +592,11 @@ void MoonrakerManager::create_api(const RuntimeConfig& runtime_config) {
     if (runtime_config.should_use_test_files()) {
         spdlog::debug("[MoonrakerManager] Creating MOCK API (local file transfers)");
         // MoonrakerAPIMock (and its sub-mocks) predate the IMoonrakerClient
-        // split and still take a concrete helix::MoonrakerClient&. On non-ESP
-        // builds create_client() only ever constructs helix::MoonrakerClient
-        // (real) or MoonrakerClientMock (its subclass) into m_client — the
-        // ESP_PLATFORM factory arm above is the only path that would produce a
-        // bare platform IMoonrakerClient, and HELIX_ENABLE_MOCKS never
-        // coexists with an ESP32 build — so this downcast is safe here.
-        auto* concrete_client = dynamic_cast<MoonrakerClient*>(m_client.get());
-        assert(concrete_client && "m_client must be a concrete MoonrakerClient for the mock API");
-        auto mock_api = std::make_unique<MoonrakerAPIMock>(*concrete_client, get_printer_state());
+        // split and still take a concrete helix::MoonrakerClient&.
+        // create_client() records the concrete pointer as it builds it, so no
+        // downcast is needed to get back to it here.
+        assert(m_concrete_client && "create_client() must run before create_api()");
+        auto mock_api = std::make_unique<MoonrakerAPIMock>(*m_concrete_client, get_printer_state());
 
         // Check HELIX_MOCK_SPOOLMAN env var
         const char* spoolman_env = std::getenv("HELIX_MOCK_SPOOLMAN");

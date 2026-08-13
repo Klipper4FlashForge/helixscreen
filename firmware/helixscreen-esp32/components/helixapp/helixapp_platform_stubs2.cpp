@@ -646,6 +646,9 @@ std::atomic<bool> gcode_renderer_loaded{false};
 // The status callback is never invoked.
 void UpdateChecker::refresh_config_snapshot() {}
 void UpdateChecker::check_for_updates(Callback) {}
+// Release-channel switch: the real body re-checks and re-stamps the config from
+// the network, which this slice has no updater for.
+void UpdateChecker::on_channel_changed() {}
 void UpdateChecker::report_download_status(DownloadStatus, int, const std::string&,
                                            const std::string&) {}
 std::optional<UpdateChecker::ReleaseInfo> UpdateChecker::get_cached_update() const {

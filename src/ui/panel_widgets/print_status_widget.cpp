@@ -1521,7 +1521,7 @@ void PrintStatusWidget::print_status_layout_library_cb(lv_event_t* /*e*/) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusWidget] print_status_layout_library_cb");
     // The buttons live inside the configure picker's own card, so the menu on
     // screen when one is tapped is the picker that owns them.
-    if (auto* picker = dynamic_cast<ConfigurePicker*>(helix::ui::ContextMenu::active())) {
+    if (auto* picker = helix::ui::ContextMenu::active_as<ConfigurePicker>()) {
         picker->select_layout("library");
     }
     LVGL_SAFE_EVENT_CB_END();
@@ -1529,7 +1529,7 @@ void PrintStatusWidget::print_status_layout_library_cb(lv_event_t* /*e*/) {
 
 void PrintStatusWidget::print_status_layout_detailed_cb(lv_event_t* /*e*/) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusWidget] print_status_layout_detailed_cb");
-    if (auto* picker = dynamic_cast<ConfigurePicker*>(helix::ui::ContextMenu::active())) {
+    if (auto* picker = helix::ui::ContextMenu::active_as<ConfigurePicker>()) {
         picker->select_layout("detailed");
     }
     LVGL_SAFE_EVENT_CB_END();
