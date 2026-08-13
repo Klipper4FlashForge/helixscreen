@@ -421,6 +421,18 @@ AmsSystemInfo AmsBackendAfc::get_system_info() const {
         info.units[u].has_slot_sensors = system_info_.units[u].has_slot_sensors;
     }
 
+    // An FPS_PSF buffer measures the same thing Happy Hare's sync_feedback_bias
+    // does, so publish it the same way and every consumer of that signal (the
+    // buffer meter, the path-canvas tint, the widget's second carousel page)
+    // works on AFC without knowing which backend fed it. A switched TurtleNeck
+    // reports no pressure, leaves the -1.5 "no data" sentinel, and is unchanged.
+    for (const auto& unit : info.units) {
+        if (unit.buffer_health && unit.buffer_health->has_fps()) {
+            info.sync_feedback_bias = unit.buffer_health->afc_fps_to_bias();
+            break;
+        }
+    }
+
     return info;
 }
 
@@ -2644,7 +2656,8 @@ void AmsBackendAfc::parse_afc_buffer(const std::string& buffer_name, const nlohm
     //   "fault_timer": 1.5,
     //   "rotation_distance": 22.67,
     //   "active_lane": "lane2",                 // v1.2.0+
-    //   "multiplier": 1.1, "multiplier_high": 1.1, "multiplier_low": 0.9  // v1.2.0+
+    //   "multiplier": 1.1, "multiplier_high": 1.1, "multiplier_low": 0.9, // v1.2.0+
+    //   "fps_value": 0.512, "smoothed_fps": 0.498, "set_point": 0.5  // type: FPS_PSF only
     // }
 
     // Remember which lanes this buffer serves. AFC rebuilds the whole status
@@ -2745,6 +2758,21 @@ void AmsBackendAfc::parse_afc_buffer(const std::string& buffer_name, const nlohm
     }
     if (data.contains("multiplier_low") && data["multiplier_low"].is_number()) {
         health.multiplier_low = data["multiplier_low"].get<float>();
+    }
+
+    // Filament pressure sensor, present only on `type: FPS_PSF`. A TurtleNeck
+    // buffer sends none of these keys, so an absent field leaves the -1
+    // sentinel and has_fps() stays false — nothing downstream changes for the
+    // switched buffers every BoxTurtle ships with.
+    if (data.contains("smoothed_fps") && data["smoothed_fps"].is_number()) {
+        health.smoothed_fps = data["smoothed_fps"].get<float>();
+        health.fps_reported = true;
+    }
+    if (data.contains("fps_value") && data["fps_value"].is_number()) {
+        health.fps_value = data["fps_value"].get<float>();
+    }
+    if (data.contains("set_point") && data["set_point"].is_number()) {
+        health.fps_set_point = data["set_point"].get<float>();
     }
 
     spdlog::trace("[AMS AFC] Buffer {}: fault_detect={} dist={} sensitivity={} state={} "
