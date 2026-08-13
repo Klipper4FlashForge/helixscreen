@@ -2816,7 +2816,6 @@ void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohma
         }
         if (data.contains("is_standalone") && data["is_standalone"].is_boolean()) {
             ts.is_standalone = data["is_standalone"].get<bool>();
-            ts.has_is_standalone = true;
         }
     }
 
@@ -4607,6 +4606,24 @@ AmsError AmsBackendAfc::recover_lane_position(int slot_index) {
 }
 
 AmsError AmsBackendAfc::eject_lane(int slot_index) {
+    // No gate on cmd_LANE_UNLOAD's own if/elif chain. Those conditions differ
+    // across AFC versions and there is no reliable version to read (the
+    // afc-install database key reports 1.0.0 on installs that are not), so any
+    // copy of them here is a guess that goes stale — see
+    // prestonbrown/helixscreen#1258. Send the macro and let AFC decide.
+    //
+    // What that costs: AFC's own refusals reach the user only as far as AFC
+    // reports them. "Lane is loaded in toolhead" is a bare logger.info, console
+    // only, absent from AFC.message, so it is silent here. Matching that console
+    // string would re-create exactly the coupling this shed; the fix belongs
+    // upstream (promote it to logger.warning, which reaches message_queue and so
+    // AFC.message, which parse_afc_state() already toasts).
+    //
+    // refuse_if_printing() below is deliberately NOT part of that removal. It is
+    // one stable predicate, the first line of cmd_LANE_UNLOAD at every AFC
+    // version checked, and it is the same rule the context menu already greys the
+    // button on (cold_lane_ops_refused_during_print). Dropping it here while
+    // keeping it there would leave the two layers disagreeing.
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -4614,6 +4631,10 @@ AmsError AmsBackendAfc::eject_lane(int slot_index) {
         AmsError precondition = check_preconditions();
         if (!precondition) {
             return precondition;
+        }
+
+        if (AmsError printing = refuse_if_printing(); !printing) {
+            return printing;
         }
 
         AmsError slot_err = validate_slot_index(slot_index);
@@ -4625,176 +4646,9 @@ AmsError AmsBackendAfc::eject_lane(int slot_index) {
         if (lane_name.empty()) {
             return AmsErrorHelper::invalid_slot(slot_index, system_info_.total_slots - 1);
         }
-
-        AmsError refusal = lane_unload_refusal_unlocked(slot_index, lane_name);
-        if (!refusal) {
-            return refusal;
-        }
     }
 
     return enqueue_lane_unload(lane_name);
-}
-
-bool AmsBackendAfc::afc_reports_standalone_unlocked() const {
-    // Callers hold mutex_.
-    for (const auto& [ext_name, ts] : tool_states_) {
-        if (ts.has_is_standalone) {
-            return true;
-        }
-    }
-    return false;
-}
-
-std::string AmsBackendAfc::extruder_for_lane_unlocked(int slot_index,
-                                                      const std::string& lane_name) const {
-    // Callers hold mutex_.
-    //
-    // AFC_stepper.extruder names the extruder a lane feeds whether or not that
-    // lane is currently seated, which is what the standalone check needs — the
-    // condition it models is precisely "this extruder holds nothing".
-    const helix::printer::SlotEntry* entry = slots_.get(slot_index);
-    if (entry && !entry->info.extruder_name.empty()) {
-        return entry->info.extruder_name;
-    }
-
-    // Fallback for a partial delta that has not carried AFC_stepper.extruder yet.
-    // Only a seated lane can be found this way, which is the case the caller's
-    // toolhead check has already handled — so this mostly returns empty, and an
-    // unknown extruder makes no claim rather than guessing "extruder".
-    for (const auto& [ext_name, sensors] : extruder_sensors_) {
-        if (sensors.lane_loaded == lane_name) {
-            return ext_name;
-        }
-    }
-    return {};
-}
-
-AmsError AmsBackendAfc::lane_unload_refusal_unlocked(int slot_index,
-                                                     const std::string& lane_name) const {
-    // Callers hold mutex_.
-    //
-    // Two upstream shapes are live in the field and they refuse on DIFFERENT
-    // conditions, so each guard below is scoped to the era that actually has it.
-    // v1.1.0 (AFC.py:1123-1157) keys on the global AFC.current and the lane's hub
-    // routing; v1.2.0 (AFC.py:1342-1378, unchanged on main) rewrote the body to
-    // key on the lane's own extruder and its is_standalone flag, dropping hub
-    // routing from the decision entirely. Applying either era's rule to the other
-    // is a defect in both directions — over-refusing an eject upstream would
-    // perform, or letting through one it silently discards.
-
-    // 1. Printing. Identical on every version: cmd_LANE_UNLOAD opens with
-    //    `if self.function.is_printing()` and returns after AFC_error(...,
-    //    pause=False). is_printing() is `print_stats.state == "printing"`
-    //    exactly (AFC_functions.py:308-323) — NOT in_print(), so a PAUSED job is
-    //    genuinely allowed. refuse_if_printing() already resolves to precisely
-    //    that for a backend which does not self-home, so this is the same rule,
-    //    not a second one.
-    if (AmsError printing = refuse_if_printing(); !printing) {
-        return printing;
-    }
-
-    // 2. The body's own if/elif chain. Transcribed per era rather than reduced to
-    //    a set of independent tests, because the ORDER carries meaning: on
-    //    v1.2.0 a standalone extruder that IS holding the lane takes the second
-    //    arm and performs a retract, so the "lane is at the toolhead" reading
-    //    that would refuse it never gets to run.
-    const AmsError loaded_here(AmsResult::WRONG_STATE, "Lane is loaded in toolhead",
-                               "Unload from toolhead first", "Use Unload before Eject");
-
-    // Set when the era's own authority had nothing to say for this lane — no
-    // extruder attribution on v1.2.0, no AFC.current on v1.1.0. Moonraker sends
-    // deltas, so a frame can reach here before the object that carries the
-    // signal has ever arrived. The aggregate fallback below covers that gap.
-    bool authority_silent = false;
-    AmsError era_refusal = AmsErrorHelper::success();
-
-    if (afc_reports_standalone_unlocked()) {
-        // v1.2.0 (AFC.py:1342-1378, unchanged on main):
-        //
-        //   if name != extruder.lane_loaded and not extruder.is_standalone(): ACT
-        //   elif extruder.is_standalone() and extruder.lane_loaded:           ACT
-        //   elif name == extruder.lane_loaded:                                refuse, logs
-        //   (no else)                                                         refuse, SILENT
-        //
-        // Both comparisons are against the lane's OWN extruder, not the global
-        // AFC.current v1.1.0 used — the distinction only matters on a
-        // toolchanger, and there the per-extruder answer is the correct one.
-        const std::string ext_name = extruder_for_lane_unlocked(slot_index, lane_name);
-        auto sensors = extruder_sensors_.find(ext_name);
-        auto ts = tool_states_.find(ext_name);
-
-        if (ext_name.empty() || sensors == extruder_sensors_.end()) {
-            // Nothing attributes this lane to an extruder yet, so neither arm can
-            // be evaluated against a real lane_loaded.
-            authority_silent = true;
-        } else {
-            const std::string& lane_loaded = sensors->second.lane_loaded;
-            const bool standalone = ts != tool_states_.end() && ts->second.is_standalone;
-
-            if (lane_name != lane_loaded && !standalone) {
-                // arm 1: the normal lane eject
-            } else if (standalone && !lane_loaded.empty()) {
-                // arm 2: the standalone retract
-            } else if (lane_name == lane_loaded) {
-                era_refusal = loaded_here; // arm 3: logged refusal
-            } else {
-                // Fell off the end: a standalone extruder holding nothing. AFC
-                // returns having logged NOTHING AT ALL — the only refusal in
-                // either era with no trace in klippy.log, and so the hardest to
-                // diagnose from a user report.
-                era_refusal =
-                    AmsError(AmsResult::WRONG_STATE, "Standalone extruder reports no lane loaded",
-                             "Nothing to eject on this toolhead",
-                             "Load the lane first, or unload from the toolhead");
-            }
-        }
-    } else {
-        // v1.1.0 (AFC.py:1123-1157):
-        //
-        //   if name != AFC.current and hub != 'direct': ACT
-        //   elif name == AFC.current:                   refuse, logs
-        //   elif hub == 'direct':                       refuse, logs
-        //
-        // v1.2.0 dropped hub routing from this decision entirely, which is why
-        // the direct-lane arm is confined to this branch: applying it to a 1.2.0
-        // install would refuse ejects upstream performs happily.
-        //
-        // Exact match on "direct", deliberately NOT the rfind("direct", 0) prefix
-        // used for topology derivation above — upstream compares `== 'direct'`,
-        // and "direct_load" appears nowhere in the AFC source at any version.
-        auto route = lane_hub_routing_.find(lane_name);
-        const bool is_direct = route != lane_hub_routing_.end() && route->second == "direct";
-        authority_silent = toolhead_lane_.empty();
-
-        if (lane_name != toolhead_lane_ && !is_direct) {
-            // the normal lane eject
-        } else if (lane_name == toolhead_lane_) {
-            era_refusal = loaded_here;
-        } else {
-            era_refusal = AmsError(AmsResult::WRONG_STATE, "Direct lane cannot be lane-ejected",
-                                   "Unload from the toolhead instead",
-                                   "This lane feeds the extruder directly — use Unload, not Eject");
-        }
-    }
-
-    if (!era_refusal) {
-        return era_refusal;
-    }
-
-    // 3. Last resort: the aggregate pair, used ONLY where the era's own authority
-    //    said nothing. These are derived signals — parse_afc_state() computes
-    //    filament_loaded from `loaded_lane`, which prefers AFC.current_loading and
-    //    so reads true across an entire toolchange (see toolhead_is_free_unlocked)
-    //    — which is exactly why they must not outrank a per-lane answer. But
-    //    before the AFC_extruder / AFC objects have landed they are the only thing
-    //    that knows a lane is at the head, and refusing with a clear message beats
-    //    firing a LANE_UNLOAD that upstream silently discards.
-    if (authority_silent && system_info_.filament_loaded &&
-        system_info_.current_slot == slot_index) {
-        return loaded_here;
-    }
-
-    return AmsErrorHelper::success();
 }
 
 AmsError AmsBackendAfc::enqueue_lane_unload(const std::string& lane_name) {

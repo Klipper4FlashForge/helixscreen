@@ -82,15 +82,6 @@ struct AfcToolState {
     std::string status;         ///< Per-tool AFC State ("ToolDock", "ToolPickup", "Idle", …)
     bool next_pickup = false;   ///< True on the tool about to be picked up
     bool is_standalone = false; ///< Standalone toolhead (own lane) vs lane-fed
-
-    /// Whether AFC ever reported is_standalone for this extruder.
-    ///
-    /// Only v1.2.0+ publishes it (AFC_extruder.get_status), and its presence is
-    /// how eject_lane() tells the two live LANE_UNLOAD shapes apart — v1.2.0
-    /// rewrote the body, and the two versions refuse on different conditions.
-    /// "Absent" must not be read as "reported false", the same distinction
-    /// AfcExtruderSensors::has_on_shuttle draws for on_shuttle.
-    bool has_is_standalone = false;
 };
 
 /**
@@ -1199,38 +1190,6 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// success on enqueue — the caller does not need to re-issue if a previous
     /// eject is still running.
     AmsError enqueue_lane_unload(const std::string& lane_name);
-
-    /// Mirror of the refusals inside upstream's own LANE_UNLOAD.
-    ///
-    /// Every condition upstream refuses on ends in a bare `return` (v1.1.0) or
-    /// falls off the end of its if/elif chain (v1.2.0+) — Klipper still acks the
-    /// G-code as success either way. Without this, eject_lane() reports success,
-    /// the path canvas latches into eject mode, and the filament never moves: the
-    /// user-visible symptom is nothing happening at all, with no error to explain
-    /// it. Returns success when upstream would perform the eject.
-    ///
-    /// Callers hold mutex_.
-    AmsError lane_unload_refusal_unlocked(int slot_index, const std::string& lane_name) const;
-
-    /// Whether AFC has published is_standalone for any extruder.
-    ///
-    /// The v1.2.0 (2026-07-26) LANE_UNLOAD rewrite swapped a `hub == 'direct'`
-    /// test for `extruder_obj.is_standalone()`, and the field arrived in the same
-    /// release — so its presence dates the install. Both eras are still in the
-    /// field, and each refuses on a condition the other performs, so applying
-    /// either rule to the wrong one is a real defect in both directions.
-    ///
-    /// Callers hold mutex_.
-    [[nodiscard]] bool afc_reports_standalone_unlocked() const;
-
-    /// The extruder that feeds @p lane_name, or empty when unknown.
-    ///
-    /// Prefers AFC_stepper.extruder (SlotInfo::extruder_name), falling back to
-    /// whichever extruder currently claims the lane via lane_loaded.
-    ///
-    /// Callers hold mutex_.
-    [[nodiscard]] std::string extruder_for_lane_unlocked(int slot_index,
-                                                         const std::string& lane_name) const;
 
   protected:
     /// Dispatch a LANE_UNLOAD via api_->execute_gcode with completion callbacks

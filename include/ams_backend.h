@@ -1043,10 +1043,18 @@ class AmsBackend {
      * the other end will accept the command.
      *
      * AFC does not: `cmd_LANE_UNLOAD` opens with
-     * `if self.function.is_printing(): AFC_error(...); return` on every version
-     * shipped (v1.1.0 AFC.py:1112, v1.2.0 AFC.py:1331). A backend that answers
-     * true here keeps its cold ops greyed while the print gate is closed, so the
-     * button is not offered into a guaranteed refusal.
+     * `if self.function.is_printing(): AFC_error(...); return`. A backend that
+     * answers true here keeps its cold ops greyed while the print gate is
+     * closed, so the button is not offered into a guaranteed refusal.
+     *
+     * This survived the removal of eject_lane()'s condition mirror
+     * (prestonbrown/helixscreen#1258) because it is a different kind of claim: a
+     * single predicate that has been the first line of that macro at every AFC
+     * version checked, rather than a transcription of the version-dependent
+     * if/elif chain below it. Re-verify it against the AFC checkout rather than
+     * trusting this comment. Note the refusal it avoids is the one AFC DOES
+     * report (AFC_error reaches message_queue and so AFC.message), so if this
+     * ever goes stale the symptom is a toast, not silence.
      *
      * Default false: for every other backend the exemption is correct, and the
      * cold ops stay reachable mid-pause for clearing a snapped strand.
