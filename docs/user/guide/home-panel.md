@@ -152,24 +152,25 @@ Half-cell sizes are also why the Widget Catalog occasionally shows a size like "
 
 ### Adding a Widget
 
-There are two ways to add widgets:
+In Edit Mode there are two ways to open the Widget Catalog:
 
-1. While in Edit Mode, **long-press on an empty area** of the grid
-2. The Widget Catalog opens
+- Tap the **+** button at the top of the navigation bar
+- **Long-press an empty area** of the grid — this also tells HelixScreen where you want the widget to go
 
-**The Widget Catalog** opens on a list of **5 categories** - Print & Status, Temperature & Cooling, Filament, Controls, and System. Tap a category to see the widgets inside it. A **back button** in the header returns you to the category list, so you can browse another category without closing the catalog.
+**The Widget Catalog** opens on a list of **5 categories** - Print & Status, Temperature & Cooling, Filament, Controls, and System, each showing how many widgets it holds. Tap a category to see the widgets inside it. A **back button** in the header returns you to the category list, so you can browse another category without closing the catalog.
 
 Inside a category, each widget entry shows:
 - Widget name and description
-- Size badge (e.g., "2x1")
+- Size badge in cells (e.g., "2x1" means two cells wide by one tall)
 - Widgets already on your dashboard are **dimmed** and labeled "Placed"
+- Widgets whose hardware isn't detected are **dimmed** too, with the reason in brackets after the name
 
 Tap any available widget to add it. HelixScreen places it near where you long-pressed, or finds the best available spot if that area is occupied. If the grid is completely full, you'll need to remove a widget first.
 
-The **Reset** action lives in the catalog header.
+The **Reset** button in the catalog header resets your whole dashboard — see [Resetting to Defaults](#resetting-to-defaults).
 
-<!-- TODO(#1016): screenshot is stale - it shows the old flat 37-row list. Regenerate for the category drill-in catalog. -->
-![Widget Catalog — scrollable list with size badges and dimmed "Placed" entries](../../images/user/home-widget-catalog.png)
+![Widget Catalog — the five category rows, each with its widget count](../../images/user/home-widget-catalog.png)
+![Inside a category — widget rows with size badges and dimmed "Placed" entries](../../images/user/home-widget-catalog-category.png)
 
 ### Removing a Widget
 
@@ -213,7 +214,7 @@ Some widgets have settings you can change directly from Edit Mode. When you sele
 
 ### Resetting to Defaults
 
-Open the Widget Catalog (long-press an empty area in Edit Mode) and tap **Reset** in its header to restore the default widget layout.
+Open the Widget Catalog (the **+** button in Edit Mode) and tap **Reset** in its header to restore the default widget layout.
 
 This is a full reset, so be sure before you confirm it:
 
