@@ -9,7 +9,7 @@
  * The widget itself needs LVGL and a live PrinterState, so every branch that
  * decides *where a tap goes* is lifted into pure functions and tested here.
  * Sensor state: -1 none / 0 empty / 1 loaded / 2 disabled.
- * Print state:   0 standby / 1 printing / 2 paused / 5 error.
+ * Print state:   0 standby / 1 printing / 2 paused / 3 complete / 4 cancelled / 5 error.
  */
 
 #include "filament_widget_tap_policy.h"
@@ -26,7 +26,7 @@ using helix::ui::tile_source_subject;
 using helix::ui::tile_source_to_string;
 
 TEST_CASE("Disabled sensor routes to settings in every print state", "[filament][widget_tap]") {
-    for (int print_state : {0, 1, 2, 5}) {
+    for (int print_state : {0, 1, 2, 3, 4, 5}) {
         INFO("print_state=" << print_state);
         REQUIRE(decide_tap_destination(2, print_state) == FilamentTapDestination::SensorSettings);
     }
@@ -37,8 +37,13 @@ TEST_CASE("Printing suppresses the manual action row", "[filament][widget_tap]")
     REQUIRE(decide_tap_destination(1, 1) == FilamentTapDestination::ModalStatusOnly);
 }
 
-TEST_CASE("Idle, paused and error states get the full modal", "[filament][widget_tap]") {
-    for (int print_state : {0, 2, 5}) {
+TEST_CASE("Every non-printing state gets the full modal", "[filament][widget_tap]") {
+    // 3 (complete) and 4 (cancelled) are the states a finished print sits in
+    // until the user clears it — the printer is idle, the tile is tappable, and
+    // load/unload is exactly what someone does next. They were untested while
+    // the loop covered only 0/2/5, so a `print_state != 0` guard anywhere in
+    // decide_tap_destination() would have gone unnoticed.
+    for (int print_state : {0, 2, 3, 4, 5}) {
         INFO("print_state=" << print_state);
         REQUIRE(decide_tap_destination(0, print_state) == FilamentTapDestination::ModalFull);
         REQUIRE(decide_tap_destination(1, print_state) == FilamentTapDestination::ModalFull);
@@ -49,7 +54,7 @@ TEST_CASE("No configured sensor is unreachable", "[filament][widget_tap]") {
     // The tile is hidden by its filament_sensor_count hardware gate at -1, so a
     // tap cannot land. Assert the policy still refuses rather than falling
     // through to a modal, in case the gate ever regresses.
-    for (int print_state : {0, 1, 2, 5}) {
+    for (int print_state : {0, 1, 2, 3, 4, 5}) {
         INFO("print_state=" << print_state);
         REQUIRE(decide_tap_destination(-1, print_state) == FilamentTapDestination::None);
     }

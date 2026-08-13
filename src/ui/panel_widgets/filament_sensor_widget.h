@@ -139,6 +139,7 @@ class FilamentSensorWidget : public PanelWidget {
     static void on_filament_source_selected(lv_event_t* e);
 
     friend void register_filament_sensor_widget();
+    friend class FilamentSensorWidgetTestAccess;
 };
 
 void register_filament_sensor_widget();

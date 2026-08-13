@@ -4,6 +4,7 @@
 #include "filament_sensor_widget.h"
 
 #include "ui_event_safety.h"
+#include "ui_resume_dispatch.h"
 #include "ui_settings_sensors.h"
 
 #include "ams_backend.h"
@@ -14,6 +15,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
+#include "print_control_buttons.h"
 #include "printer_state.h"
 
 #include <spdlog/spdlog.h>
@@ -103,6 +105,11 @@ void FilamentSensorWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen)
 
 void FilamentSensorWidget::detach() {
     source_observer_.reset();
+    // A grid rebuild detaches this instance while the tap modal may still be up.
+    // invalidate() below expires every callback the dialog holds, so leaving it
+    // open would leave a dialog whose buttons all silently no-op — and whose
+    // parent_screen_ is about to be torn down under it.
+    tap_modal_.hide();
     lifetime_.invalidate();
     if (widget_obj_) {
         lv_obj_set_user_data(widget_obj_, nullptr);
@@ -216,6 +223,20 @@ void FilamentSensorWidget::show_tap_modal(bool status_only) {
     // The manual row is hidden mid-print by the XML gate, so the default
     // "What would you like to do?" copy - and a plain "Load or unload" - both
     // read as offers the dialog is not making. Say what is actually true.
+    //
+    // These go through lv_tr() here rather than being passed as raw tags for the
+    // component's translation_tag="$title" to resolve, and that is deliberate.
+    // The C++ extractor (scripts/translations/extractor.py,
+    // CPP_TRANSLATABLE_PATTERNS) only scans lv_tr(), lv_label_set_text() and
+    // `return "Xx…"` - a raw literal handed to an XML attribute is invisible to
+    // it, so dropping lv_tr() would delete all three strings from
+    // translations/*.yml on the next regeneration. It also matches the two other
+    // C++ callers that fill a modal's title/message prop
+    // (ui_print_exclude_object_manager.cpp, modal_show_confirmation()). The one
+    // cost is that translation_tag then stores an already-translated string, so a
+    // language switch while this dialog is open would not re-resolve it - and
+    // that is unreachable, since changing language means leaving the home screen
+    // this modal sits on.
     const char* message = status_only ? lv_tr("Filament controls are unavailable while printing.")
                                       : lv_tr("Load or unload filament.");
     const char* attrs[] = {"title", lv_tr("Filament"), "message", message, nullptr};
@@ -245,11 +266,47 @@ void FilamentSensorWidget::show_tap_modal(bool status_only) {
             }
             dispatch_purge();
         });
+
+        // Paused (print_state_enum == 2) is a ModalFull destination, and at that
+        // state runout_guidance_modal.xml hides the Close row and shows the
+        // Cancel Print / Resume Print row instead. on_cancel()/on_tertiary()
+        // null-check the callback and then hide() either way, so leaving these
+        // unset gives the user a live "Resume Print" button that closes the
+        // dialog and leaves the print paused — indistinguishable from success.
+        // Both route through the same shared dispatches the runout guidance
+        // dialog uses, so the two surfaces cannot drift.
+        tap_modal_.set_on_resume([token]() {
+            if (token.expired()) {
+                return;
+            }
+            spdlog::info("[FilamentSensorWidget] User chose to resume print from the sensor tile");
+            // Same path as the panel's primary Resume button and the runout
+            // dialog's: pending-action UI, macro check, prepare_for_resume chain.
+            helix::ui::PrintControlButtons::instance().request_resume();
+        });
+        tap_modal_.set_on_cancel_print([token]() {
+            if (token.expired()) {
+                return;
+            }
+            spdlog::info("[FilamentSensorWidget] User chose to cancel print from the sensor tile");
+            // No confirmation, deliberately: FilamentRunoutHandler's identical
+            // "Cancel Print" button has never confirmed either, and two dialogs
+            // that look the same must not behave differently. If a confirmation
+            // is wanted it belongs inside dispatch_cancel_print(), covering both.
+            helix::ui::dispatch_cancel_print(get_moonraker_api(), "[FilamentSensorWidget]");
+        });
+    } else {
+        // Status-only: the manual row is hidden by XML and the paused row is
+        // hidden too (this destination is only chosen while PRINTING). Clear
+        // rather than leave whatever a previous full show installed — the modal
+        // instance is a member and retains its callbacks until overwritten, so
+        // "unset" is only true on the very first show.
+        tap_modal_.set_on_load_filament(RunoutGuidanceModal::Callback{});
+        tap_modal_.set_on_unload_filament(RunoutGuidanceModal::Callback{});
+        tap_modal_.set_on_purge(RunoutGuidanceModal::Callback{});
+        tap_modal_.set_on_resume(RunoutGuidanceModal::Callback{});
+        tap_modal_.set_on_cancel_print(RunoutGuidanceModal::Callback{});
     }
-    // When status_only, the manual row is hidden by XML and the callbacks are
-    // left unset — RunoutGuidanceModal::on_ok() and its siblings null-check
-    // before invoking, so a stray synthesized event on the hidden row is a
-    // no-op rather than reaching a stale dispatch.
 
     tap_modal_.show(parent_screen_, attrs);
 }

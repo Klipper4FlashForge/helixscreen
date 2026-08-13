@@ -185,6 +185,33 @@ class RunoutGuidanceModal : public Modal {
         on_ok_dismiss_ = std::move(cb);
     }
 
+    /// @name Which handlers are currently installed
+    ///
+    /// Every on_*() below null-checks its callback and then hide()s (or stays
+    /// open) regardless, so an unwired button is indistinguishable from a wired
+    /// one at the UI: it closes the dialog and does nothing. That shipped once —
+    /// the home tile's paused modal showed a live "Resume Print" that never
+    /// resumed. These predicates let a test pin "this surface wired what its
+    /// visible buttons promise" instead of asserting on a dialog that always
+    /// looks correct.
+    /// @{
+    [[nodiscard]] bool has_load_filament_handler() const {
+        return static_cast<bool>(on_load_filament_);
+    }
+    [[nodiscard]] bool has_unload_filament_handler() const {
+        return static_cast<bool>(on_unload_filament_);
+    }
+    [[nodiscard]] bool has_purge_handler() const {
+        return static_cast<bool>(on_purge_);
+    }
+    [[nodiscard]] bool has_resume_handler() const {
+        return static_cast<bool>(on_resume_);
+    }
+    [[nodiscard]] bool has_cancel_print_handler() const {
+        return static_cast<bool>(on_cancel_print_);
+    }
+    /// @}
+
   protected:
     /**
      * @brief Called after modal is created and visible
