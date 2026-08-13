@@ -10,7 +10,7 @@
     - ams_current_weight_text: Remaining weight (e.g., "750g")
     - ams_current_has_weight: Show/hide weight (0 = hidden)
     - clog_meter_mode: 0=hidden, 1=encoder, 2=flowguard, 3=afc_buffer
-    - clog_meter_value_text: Flow rate or status text
+    - clog_meter_center_text: the reading (headroom mm, +/-%, distance mm)
     - clog_meter_mode_text: Detection mode text
 
     Slot info is shown in the section header above (bound to ams_current_slot_text).
@@ -49,7 +49,7 @@
         <!-- Main arc — see clog_meter_page.xml for the migration note. -->
         <helix_progress_arc name="clog_arc" align="center"/>
         <!-- Center: flow value -->
-        <text_tiny name="clog_value_text" align="center" bind_text="clog_meter_value_text" style_text_align="center"/>
+        <text_tiny name="clog_value_text" align="center" bind_text="clog_meter_center_text" style_text_align="center"/>
       </lv_obj>
       <!-- Mode label below arc -->
       <text_tiny name="clog_mode_text"

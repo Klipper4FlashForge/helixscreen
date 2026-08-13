@@ -33,8 +33,6 @@ UiClogBar::UiClogBar(lv_obj_t* parent) {
     peak_ = lv_obj_find_by_name(track_, "clog_bar_peak");
     danger_lo_ = lv_obj_find_by_name(track_, "clog_bar_danger_lo");
     danger_hi_ = lv_obj_find_by_name(track_, "clog_bar_danger_hi");
-    center_text_ = lv_obj_find_by_name(root_, "clog_bar_center_text");
-    safe_icon_ = lv_obj_find_by_name(root_, "clog_bar_safe_icon");
 
     // The track is flex_grow'd, so its width is only known after a layout pass.
     // SIZE_CHANGED is a layout event and has no declarative equivalent.
@@ -70,8 +68,6 @@ UiClogBar::~UiClogBar() {
     peak_ = nullptr;
     danger_lo_ = nullptr;
     danger_hi_ = nullptr;
-    center_text_ = nullptr;
-    safe_icon_ = nullptr;
     spdlog::debug("[ClogBar] Destroyed");
 }
 
@@ -121,26 +117,6 @@ void UiClogBar::relayout() {
 
     const int track_w = lv_obj_get_content_width(track_);
     const ClogBarGeometry g = clog_bar_geometry(mode_, value_, danger_pct_, peak_pct_, track_w);
-
-    // "Nothing to report" leaves every measured piece at zero width, which used
-    // to draw as a bare track under a blank line where the number goes. The arc
-    // has always stood a check icon in for that; both now ask the same
-    // predicate, so the two pages cannot disagree about the same reading.
-    // DECLARATIVE_OK: the swap is decided beside the measured layout below, so
-    // the arc and the bar share one C++ predicate rather than two encodings.
-    const bool safe = clog_meter_is_safe(mode_, value_);
-    auto show = [](lv_obj_t* obj, bool visible) {
-        if (!obj) {
-            return;
-        }
-        if (visible) {
-            lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-        }
-    };
-    show(center_text_, !safe);
-    show(safe_icon_, safe);
 
     // A zero-width piece is hidden rather than drawn: LVGL still paints a
     // rounded 0px-wide object as a sliver of its radius.

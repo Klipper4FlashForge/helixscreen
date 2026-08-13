@@ -52,8 +52,6 @@ class UiClogBar {
     lv_obj_t* peak_ = nullptr;
     lv_obj_t* danger_lo_ = nullptr;
     lv_obj_t* danger_hi_ = nullptr;
-    lv_obj_t* center_text_ = nullptr;
-    lv_obj_t* safe_icon_ = nullptr;
 
     int mode_ = 0;
     int value_ = 0;

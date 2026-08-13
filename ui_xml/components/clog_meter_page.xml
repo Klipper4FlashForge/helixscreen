@@ -33,7 +33,7 @@
                   hidden="true" align="center" text="#icon_check_circle" style_text_font="mdi_icons_24"
                   style_text_color="#primary" clickable="false" event_bubble="true"/>
         <text_tiny name="clog_value_text"
-                   align="center" bind_text="clog_meter_value_text" style_text_align="center" clickable="false"
+                   align="center" bind_text="clog_meter_center_text" style_text_align="center" clickable="false"
                    event_bubble="true"/>
       </lv_obj>
       <text_tiny name="clog_mode_text"

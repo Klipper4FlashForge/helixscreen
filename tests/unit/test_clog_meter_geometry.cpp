@@ -103,6 +103,48 @@ TEST_CASE("clog_meter_is_safe: no hardware is not the safe state", "[clog][safe]
 }
 
 // ===========================================================================
+// clog_meter_status
+// ===========================================================================
+
+TEST_CASE("clog_meter_status: the backend's warning outranks the threshold",
+          "[clog][status][1017]") {
+    // A tripped backend is a fault however far off the threshold the reading
+    // looks — it is the thing that pauses the print.
+    CHECK(clog_meter_status(kMode_Encoder, /*value=*/0, /*warning=*/1, /*danger=*/75) ==
+          ClogMeterStatus::Fault);
+    CHECK(clog_meter_status(kMode_Flowguard, -5, 1, 80) == ClogMeterStatus::Fault);
+}
+
+TEST_CASE("clog_meter_status: reaching the threshold warns before anything trips",
+          "[clog][status][1017]") {
+    CHECK(clog_meter_status(kMode_Encoder, 74, 0, 75) == ClogMeterStatus::Ok);
+    CHECK(clog_meter_status(kMode_Encoder, 75, 0, 75) == ClogMeterStatus::Warning);
+    CHECK(clog_meter_status(kMode_Encoder, 100, 0, 75) == ClogMeterStatus::Warning);
+}
+
+TEST_CASE("clog_meter_status: Flowguard's tangle side counts by magnitude",
+          "[clog][status][1017]") {
+    // -85 is as far into the tangle end as +85 is into the clog end.
+    CHECK(clog_meter_status(kMode_Flowguard, -85, 0, 80) == ClogMeterStatus::Warning);
+    CHECK(clog_meter_status(kMode_Flowguard, 85, 0, 80) == ClogMeterStatus::Warning);
+    CHECK(clog_meter_status(kMode_Flowguard, -2, 0, 80) == ClogMeterStatus::Ok);
+}
+
+TEST_CASE("clog_meter_status: nothing to report is OK, not a zero-distance fault",
+          "[clog][status][1017]") {
+    // An untracked AFC buffer reads zero; without the safe check a zero
+    // threshold would have to be relied on to keep it quiet.
+    CHECK(clog_meter_status(kMode_Buffer, 0, 0, 75) == ClogMeterStatus::Ok);
+}
+
+TEST_CASE("clog_meter_status: an unset threshold has no opinion", "[clog][status][1017]") {
+    // danger_pct of 0 would otherwise make every reading, including a neutral
+    // one, compare as "at or past the threshold".
+    CHECK(clog_meter_status(kMode_Flowguard, 0, 0, /*danger=*/0) == ClogMeterStatus::Ok);
+    CHECK(clog_meter_status(kMode_Encoder, 50, 0, 0) == ClogMeterStatus::Ok);
+}
+
+// ===========================================================================
 // clog_bar_geometry — linear modes
 // ===========================================================================
 

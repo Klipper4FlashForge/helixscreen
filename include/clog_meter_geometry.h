@@ -45,6 +45,23 @@ ClogMeterTint clog_meter_tint(int mode, int value, int warning);
 /// cannot drift into resolving it differently.
 lv_color_t resolve_clog_tint(int mode, int value, int warning);
 
+/// Severity of the current reading, as `clog_meter_status` carries it to the
+/// status glyph. Ordered, so a renderer can compare rather than switch.
+enum class ClogMeterStatus : int {
+    Ok = 0,      ///< Below the danger threshold, or nothing to report
+    Warning = 1, ///< At or past the threshold, but the backend has not tripped
+    Fault = 2,   ///< The backend is reporting a warning: clogged, tangled, faulted
+};
+
+/// Which severity a mode/value/warning/threshold quadruple lands on.
+///
+/// The backend's own warning flag is authoritative — it is the thing that
+/// pauses a print — so it always reads as a fault. Below that, a reading that
+/// has reached the danger threshold is a warning even though nothing has
+/// tripped yet, which is the whole point of showing a threshold at all.
+/// `value` is compared by magnitude so Flowguard's tangle side counts.
+ClogMeterStatus clog_meter_status(int mode, int value, int warning, int danger_pct);
+
 /// Whether the reading means "nothing to report" rather than "zero danger".
 ///
 /// AFC reports a buffer distance it is not currently tracking as zero, and a
