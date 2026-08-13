@@ -2105,7 +2105,11 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
     // Source override: 0=auto (use priority), 1=encoder, 2=flowguard, 3=afc
     //
     // Every text slot below has exactly one job, and no slot repeats another:
-    //   mode_text   what is measuring, plus the configuration worth knowing
+    //   mode_text   what is measuring, and nothing else. It is drawn beside a
+    //               15%-wide swatch in ams_loaded_card, where the column is
+    //               content-sized: anything appended here (a detection length,
+    //               an AFC buffer state) steals width from the material name
+    //               and clips it. Keep it to the source's name.
     //   center_buf  the one number that matters
     //   left/right  the two ends of the axis the fill moves along, and only
     //               where those ends mean different things — a linear mode
@@ -2163,11 +2167,7 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
             warning = 1;
         }
 
-        if (info.encoder_info.flow_rate >= 0) {
-            snprintf(mode_text, sizeof(mode_text), "FlowGuard %d%%", info.encoder_info.flow_rate);
-        } else {
-            snprintf(mode_text, sizeof(mode_text), "FlowGuard");
-        }
+        snprintf(mode_text, sizeof(mode_text), "FlowGuard");
 
         // Enhanced clog detection widget subjects
         new_danger_pct = 80;
@@ -2204,9 +2204,6 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
             new_danger_pct = static_cast<int>((1.0f - desired / det_len) * 100);
             new_peak_pct = static_cast<int>((1.0f - min_headroom / det_len) * 100);
             snprintf(center_buf, sizeof(center_buf), "%.1fmm", headroom);
-            // The span the headroom is measured against, beside the source.
-            size_t len = strlen(mode_text);
-            snprintf(mode_text + len, sizeof(mode_text) - len, " %.0fmm", det_len);
         } else {
             new_danger_pct = 75;
             new_peak_pct = value;
@@ -2234,11 +2231,7 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
                     warning = unit.buffer_health->is_warning() ? 1 : 0;
                 }
 
-                // The source, then whichever way AFC says the buffer is
-                // moving. This used to be written into the reading slot as
-                // well, so the widget printed the same word twice.
-                snprintf(mode_text, sizeof(mode_text), "AFC buffer %s",
-                         unit.buffer_health->state.c_str());
+                snprintf(mode_text, sizeof(mode_text), "AFC buffer");
 
                 new_danger_pct = 75;
                 new_peak_pct = value;

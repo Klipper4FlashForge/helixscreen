@@ -109,13 +109,22 @@ TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection lays the bar out from the me
 
     lv_obj_t* track = h.child("clog_bar_track");
     REQUIRE(track != nullptr);
-    const int track_w = lv_obj_get_content_width(track);
-    REQUIRE(track_w > 0);
+
+    // Read the track AFTER publishing, never before: the end labels only
+    // render in Flowguard, so the mode decides how much width is left for the
+    // track. Measuring once up front compares a Flowguard layout against an
+    // encoder-width expectation and misses by the labels.
+    auto measure = [&] {
+        lv_obj_update_layout(track);
+        const int w = lv_obj_get_content_width(track);
+        REQUIRE(w > 0);
+        return w;
+    };
 
     SECTION("a linear mode fills from the left and shades the far end") {
         publish(static_cast<int>(ui::ClogMeterMode::Encoder), /*value=*/40, /*danger=*/75,
                 /*peak=*/60);
-        lv_obj_update_layout(track);
+        const int track_w = measure();
 
         const auto g = ui::clog_bar_geometry(static_cast<int>(ui::ClogMeterMode::Encoder), 40, 75,
                                              60, track_w);
@@ -132,7 +141,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection lays the bar out from the me
     SECTION("Flowguard grows out from the centre and shades both ends") {
         const int mode = static_cast<int>(ui::ClogMeterMode::Flowguard);
         publish(mode, /*value=*/-45, /*danger=*/80, /*peak=*/62);
-        lv_obj_update_layout(track);
+        const int track_w = measure();
 
         const auto g = ui::clog_bar_geometry(mode, -45, 80, 62, track_w);
         // Fill ends at the centre and runs back toward the tangle end.
@@ -151,7 +160,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection lays the bar out from the me
     SECTION("nothing to report draws no fill and no peak") {
         publish(static_cast<int>(ui::ClogMeterMode::Buffer), /*value=*/0, /*danger=*/75,
                 /*peak=*/0);
-        lv_obj_update_layout(track);
+        measure();
 
         CHECK(piece_w(track, "clog_bar_fill") == 0);
         CHECK(piece_x(track, "clog_bar_marker") == -1); // no fill to lead
@@ -191,4 +200,50 @@ TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection relays out when the widget i
     CHECK(wide_fill > narrow_fill);
     // Still half the track at 50%, which is what "it re-measured" means.
     CHECK(wide_fill == ui::clog_bar_geometry(mode, 50, 75, 50, wide_track).fill_w);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "clog_detection re-measures when the mode changes the track",
+                 "[widget_size][clog_detection][1017]") {
+    // The end labels only render in Flowguard, so switching modes changes how
+    // much width is left for the track. The mode observer relayouts against
+    // the width it can see at that instant, which is still the old one — only
+    // the track's own SIZE_CHANGED catches the labels appearing. Without that
+    // second pass the fill keeps geometry scaled to the wrong track.
+    PanelWidgetManager::instance().init_widget_subjects();
+    AmsState::instance().init_subjects(true);
+
+    const auto* def = find_widget_def("clog_detection");
+    REQUIRE(def != nullptr);
+
+    PanelWidgetHarness<ClogDetectionWidget> h(test_screen());
+    REQUIRE(h.root() != nullptr);
+    h.resize(def->colspan, def->rowspan, 240, 112);
+
+    lv_obj_t* track = h.child("clog_bar_track");
+    REQUIRE(track != nullptr);
+
+    const int encoder = static_cast<int>(ui::ClogMeterMode::Encoder);
+    publish(encoder, /*value=*/50, /*danger=*/75, /*peak=*/50);
+    lv_obj_update_layout(track);
+    const int linear_track = lv_obj_get_content_width(track);
+
+    const int flowguard = static_cast<int>(ui::ClogMeterMode::Flowguard);
+    publish(flowguard, /*value=*/50, /*danger=*/80, /*peak=*/50);
+    lv_obj_update_layout(track);
+    const int labelled_track = lv_obj_get_content_width(track);
+
+    // The labels really did take width, or this test proves nothing.
+    REQUIRE(labelled_track < linear_track);
+
+    // And the fill was re-measured against the narrower track, not left at the
+    // wider one's geometry.
+    CHECK(piece_w(track, "clog_bar_fill") ==
+          ui::clog_bar_geometry(flowguard, 50, 80, 50, labelled_track).fill_w);
+
+    // Back the other way: the labels go, the track grows, the fill follows.
+    publish(encoder, /*value=*/50, /*danger=*/75, /*peak=*/50);
+    lv_obj_update_layout(track);
+    CHECK(lv_obj_get_content_width(track) == linear_track);
+    CHECK(piece_w(track, "clog_bar_fill") ==
+          ui::clog_bar_geometry(encoder, 50, 75, 50, linear_track).fill_w);
 }
