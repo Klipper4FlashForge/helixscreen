@@ -1105,6 +1105,7 @@
   <translation tag="Installing..." fr="Installation..."/>
   <translation tag="Intensity" fr="Intensité"/>
   <translation tag="Interactive probe calibration" fr="Calibration interactive de la sonde"/>
+  <translation tag="Interface size. Applies after restart." fr="Taille de l&apos;interface. Effectif après redémarrage."/>
   <translation tag="Internal error: API not available" fr="Erreur interne : API non disponible"/>
   <translation tag="Internal error: no scan result" fr="Erreur interne : aucun résultat de scan"/>
   <translation tag="Invalid port number" fr="Numéro de port invalide"/>
@@ -2330,7 +2331,9 @@
   <translation tag="Type to preview input field..." fr="Tapez pour prévisualiser le champ de saisie..."/>
   <translation tag="Type:" fr="Type :"/>
   <translation tag="T{} shares slot with T{}" fr="T{} partage lemplacement avec T{}"/>
+  <translation tag="UI Scale" fr="Échelle de l&apos;interface"/>
   <translation tag="UI Sounds" fr="Sons de l&apos;interface"/>
+  <translation tag="UI scale applies after restart" fr="L&apos;échelle de l&apos;interface sera effective après redémarrage"/>
   <translation tag="USB" fr="USB"/>
   <translation tag="USB DEVICES" fr="APPAREILS USB"/>
   <translation tag="USB drive connected" fr="Clé USB connectée"/>

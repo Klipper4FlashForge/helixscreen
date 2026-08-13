@@ -1112,6 +1112,7 @@ translations:
   Installing...: 正在安装...
   Intensity: 强度
   Interactive probe calibration: 交互式探针校准
+  Interface size. Applies after restart.: "界面大小。重启后生效。"
   'Internal error: API not available': '内部错误: API 不可用'
   'Internal error: no scan result': '内部错误: 无扫描结果'
   Invalid port number: 无效的端口号
@@ -2353,7 +2354,9 @@ translations:
   Type to preview input field...: 输入以预览输入框...
   'Type:': '类型:'
   T{} shares slot with T{}: T{} 与 T{} 共用料仓
+  UI Scale: "界面缩放"
   UI Sounds: 界面声音
+  UI scale applies after restart: "界面缩放将在重启后生效"
   USB: USB
   USB DEVICES: USB 设备
   USB drive connected: U 盘已连接

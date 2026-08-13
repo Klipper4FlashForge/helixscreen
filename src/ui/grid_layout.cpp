@@ -3,6 +3,7 @@
 
 #include "grid_layout.h"
 
+#include "display_metrics.h"
 #include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -45,7 +46,14 @@ GridDimensions GridLayout::get_dimensions(UiBreakpoint bp, int content_w, int co
     // largest-that-fits: the remainder is spread across the tracks that survive,
     // so discarding a nearly-complete cell inflates every track on that axis,
     // while rounding it up shrinks each one by a much smaller share.
-    const int cell = GridLayout::TRACKS_PER_CELL * GRID_CELL[static_cast<size_t>(clamp_bp(bp))];
+    // The authored track edge is scaled by the high-DPI UI scale factor before
+    // quantising, so a phone-class panel gets a physically correct cell rather
+    // than the ~12mm one its raw pixel count would pick. active_scale() is 1.0
+    // on every shipping printer (they sit inside the DPI deadband), which makes
+    // this multiply an exact no-op there.
+    const int cell = helix::DisplayMetrics::scaled_px(
+        GridLayout::TRACKS_PER_CELL * GRID_CELL[static_cast<size_t>(clamp_bp(bp))],
+        helix::DisplayMetrics::active_scale());
     auto tracks = [cell](int content) {
         const int cells = (std::max(0, content) + cell / 2) / cell;
         return GridLayout::TRACKS_PER_CELL * std::clamp(cells, MIN_CELLS, MAX_CELLS);

@@ -1112,6 +1112,7 @@ translations:
   Installing...: Installation...
   Intensity: Intensité
   Interactive probe calibration: Calibration interactive de la sonde
+  Interface size. Applies after restart.: "Taille de l'interface. Effectif après redémarrage."
   'Internal error: API not available': 'Erreur interne : API non disponible'
   'Internal error: no scan result': 'Erreur interne : aucun résultat de scan'
   Invalid port number: Numéro de port invalide
@@ -2353,7 +2354,9 @@ translations:
   Type to preview input field...: Tapez pour prévisualiser le champ de saisie...
   'Type:': 'Type :'
   T{} shares slot with T{}: T{} partage lemplacement avec T{}
+  UI Scale: "Échelle de l'interface"
   UI Sounds: Sons de l'interface
+  UI scale applies after restart: "L'échelle de l'interface sera effective après redémarrage"
   USB: USB
   USB DEVICES: APPAREILS USB
   USB drive connected: Clé USB connectée

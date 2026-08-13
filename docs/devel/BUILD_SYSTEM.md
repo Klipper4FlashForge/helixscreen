@@ -1742,6 +1742,13 @@ target's tiers silently fails to register on that target, and the token falls ba
 down the ladder. If you add a font token for a large tier, check it against the
 tier list of the smallest device that will run it.
 
+`FONTS_XXLARGE` additionally carries six faces above the authored ladder —
+`noto_sans_48/64`, `noto_sans_bold_48/64`, `noto_sans_light_32/40` — which exist only
+for the high-DPI UI scale factor to step into on phone-class panels. No printer target
+declares the `xxlarge` tier, so none of them links these (~11MB of `.rodata`). Android
+does not build through this Makefile at all: `android/app/jni/CMakeLists.txt` globs
+`assets/fonts/*.c` wholesale, so it picks them up without a tier declaration.
+
 ### Feature gates
 
 | Variable | Default | Purpose |

@@ -1112,6 +1112,7 @@ translations:
   Installing...: Установка...
   Intensity: Интенсивность
   Interactive probe calibration: Интерактивная калибровка зонда
+  Interface size. Applies after restart.: "Размер интерфейса. Применяется после перезапуска."
   'Internal error: API not available': 'Внутренняя ошибка: API недоступен'
   'Internal error: no scan result': 'Внутренняя ошибка: нет результата сканирования'
   Invalid port number: Неверный номер порта
@@ -2353,7 +2354,9 @@ translations:
   Type to preview input field...: Введите для предпросмотра поля ввода...
   'Type:': 'Тип:'
   T{} shares slot with T{}: T{} использует общий слот с T{}
+  UI Scale: "Масштаб интерфейса"
   UI Sounds: Звуки интерфейса
+  UI scale applies after restart: "Масштаб интерфейса применяется после перезапуска"
   USB: USB
   USB DEVICES: USB-УСТРОЙСТВА
   USB drive connected: USB-накопитель подключён

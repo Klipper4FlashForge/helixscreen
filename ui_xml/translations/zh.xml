@@ -1105,6 +1105,7 @@
   <translation tag="Installing..." zh="正在安装..."/>
   <translation tag="Intensity" zh="强度"/>
   <translation tag="Interactive probe calibration" zh="交互式探针校准"/>
+  <translation tag="Interface size. Applies after restart." zh="界面大小。重启后生效。"/>
   <translation tag="Internal error: API not available" zh="内部错误: API 不可用"/>
   <translation tag="Internal error: no scan result" zh="内部错误: 无扫描结果"/>
   <translation tag="Invalid port number" zh="无效的端口号"/>
@@ -2330,7 +2331,9 @@
   <translation tag="Type to preview input field..." zh="输入以预览输入框..."/>
   <translation tag="Type:" zh="类型:"/>
   <translation tag="T{} shares slot with T{}" zh="T{} 与 T{} 共用料仓"/>
+  <translation tag="UI Scale" zh="界面缩放"/>
   <translation tag="UI Sounds" zh="界面声音"/>
+  <translation tag="UI scale applies after restart" zh="界面缩放将在重启后生效"/>
   <translation tag="USB" zh="USB"/>
   <translation tag="USB DEVICES" zh="USB 设备"/>
   <translation tag="USB drive connected" zh="U 盘已连接"/>

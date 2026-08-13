@@ -1112,6 +1112,7 @@ translations:
   Installing...: Installing...
   Intensity: Intensity
   Interactive probe calibration: Interactive probe calibration
+  Interface size. Applies after restart.: Interface size. Applies after restart.
   'Internal error: API not available': 'Internal error: API not available'
   'Internal error: no scan result': 'Internal error: no scan result'
   Invalid port number: Invalid port number
@@ -2353,7 +2354,9 @@ translations:
   Type to preview input field...: Type to preview input field...
   'Type:': 'Type:'
   T{} shares slot with T{}: T{} shares slot with T{}
+  UI Scale: UI Scale
   UI Sounds: UI Sounds
+  UI scale applies after restart: UI scale applies after restart
   USB: USB
   USB DEVICES: USB DEVICES
   USB drive connected: USB drive connected
