@@ -2888,6 +2888,7 @@ translations:
   '{} may cause unintended changes. Are you sure?': '{} may cause unintended changes.
     Are you sure?'
   '{} more taps to {} beta features': '{} more taps to {} beta features'
+  '{} needs the HelixPrint plugin. Printing original file.': '{} needs the HelixPrint plugin. Printing original file.'
   '{} new hardware available': '{} new hardware available'
   '{} preset{}': '{} preset{}'
   '{} target set to {}°C': '{} target set to {}°C'

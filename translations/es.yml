@@ -2977,6 +2977,7 @@ translations:
   '{} may cause unintended changes. Are you sure?': '{} puede causar cambios no deseados.
     ¿Estás seguro?'
   '{} more taps to {} beta features': '{} toques más para {} funciones beta'
+  '{} needs the HelixPrint plugin. Printing original file.': ''
   '{} new hardware available': '{} nuevo hardware disponible'
   '{} preset{}': '{} preajuste{}'
   '{} target set to {}°C': '{} configurado a {}°C'

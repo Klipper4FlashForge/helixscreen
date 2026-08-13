@@ -2529,6 +2529,7 @@
   <translation tag="{} macro not configured" es="Macro {} no configurado"/>
   <translation tag="{} may cause unintended changes. Are you sure?" es="{} puede causar cambios no deseados. ¿Estás seguro?"/>
   <translation tag="{} more taps to {} beta features" es="{} toques más para {} funciones beta"/>
+  <translation tag="{} needs the HelixPrint plugin. Printing original file."/>
   <translation tag="{} new hardware available" es="{} nuevo hardware disponible"/>
   <translation tag="{} preset{}" es="{} preajuste{}"/>
   <translation tag="{} target set to {}°C" es="{} configurado a {}°C"/>

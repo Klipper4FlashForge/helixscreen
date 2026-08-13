@@ -2986,6 +2986,7 @@ translations:
     verursachen. Sind Sie sicher?'
   '{} more taps to {} beta features': '{} weitere Male tippen, um Beta-Funktionen
     zu {}'
+  '{} needs the HelixPrint plugin. Printing original file.': ''
   '{} new hardware available': '{} neue Hardware verfügbar'
   '{} preset{}': '{} Voreinstellung{}'
   '{} target set to {}°C': '{}-Zieltemperatur auf {}°C gesetzt'

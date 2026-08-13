@@ -3017,6 +3017,7 @@ translations:
     non souhaitées. Êtes-vous sûr ?'
   '{} more taps to {} beta features': '{} appuis supplémentaires pour {} les fonctionnalités
     bêta'
+  '{} needs the HelixPrint plugin. Printing original file.': ''
   '{} new hardware available': '{} nouveau matériel disponible'
   '{} preset{}': '{} préréglage{}'
   '{} target set to {}°C': Cible {} réglée à {}°C
