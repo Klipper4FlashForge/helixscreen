@@ -279,7 +279,7 @@ These are the same 5 groups the Widget Catalog uses on the device.
 | **AMS Status** | A live view of your multi-material spool lanes. At 1x it's a compact row of colored bars — one per lane, each filled to show roughly how much filament is left. At 2x and wider it switches to a detailed view: a small spool for each lane with its lane number, material type (PLA, PETG…), and percent remaining, and the currently loaded lane's number badge is highlighted green. The spools size to fit the widget — 2 across at 2x, 4 across at 4x — and any lanes that don't fit scroll sideways. Tap for the full AMS panel. | 1x1 | 1x1 | 4x2 | Yes | AMS/MMU detected |
 | **Filament Sensor** | Filament runout detection status. Tap to load, unload, or purge filament - what happens depends on what's going on: if the sensor is turned off, tapping opens its settings instead; while a print is running the modal is a status readout only; and if the print is paused you also get **Resume Print** and **Cancel Print**, so a runout pause can be dealt with without leaving the home screen. Cancelling asks you to confirm first. Configurable via the gear icon in Edit Mode - choose which sensor the tile follows. See [Configuring a Widget](#configuring-a-widget) above. | 1x1 | 1x1 | 2x1 | Horizontal only | Filament sensor |
 | **Width Sensor** | Live filament width reading from a diameter sensor. | 1x1 | 1x1 | 2x2 | Yes | Width sensor |
-| **Clog Detection** | Filament clog and flow health monitor. Shows a clog/flow arc meter, and a buffer sync meter on Happy Hare printers. Tap to open the Buffer Status detail modal. Configurable via the gear icon in Edit Mode. See [Clog Detection Widget](#clog-detection-widget) below. | 1x1 | 1x1 | 2x2 | Yes | AMS/MMU detected |
+| **Clog Detection** | Filament clog and flow health monitor. Shows the FlowGuard bar, and a buffer sync meter on Happy Hare printers. Tap to open the Buffer Status detail modal. Configurable via the gear icon in Edit Mode. See [Clog Detection Widget](#clog-detection-widget) below. | 2x1 | 2x1 | 4x2 | Yes | AMS/MMU detected |
 | **Humidity** | Enclosure humidity reading from a connected sensor. | 1x1 | 1x1 | 2x2 | Yes | Humidity sensor |
 
 ### Controls
@@ -446,19 +446,35 @@ The Clog Detection widget monitors your filament path health in real time — de
 
 The widget displays a **carousel** with one or two pages depending on your hardware:
 
-**Page 1 — Clog/Flow Arc Meter** (always shown)
+**Page 1 — FlowGuard bar** (always shown)
 
-A 270-degree arc gauge that fills based on your clog or flow detection reading. The color shifts from green (healthy) through orange (warning) to red (danger) as the value increases. A red danger zone arc shows the warning threshold, and a peak marker tracks the highest reading seen.
+![FlowGuard bar — TANGLE and CLOG end labels, fill running out from the middle, danger shading at both ends](../../images/user/home-flowguard-bar.png)
 
-The meter adapts to your detection backend:
+A horizontal scale that fills as your clog or flow reading moves, shifting from green (healthy) through orange to red (danger). Every part of it has one job:
 
-| Backend | What the meter shows |
-|---------|---------------------|
-| **Encoder** | Clog percentage (0–100%) — how much the encoder reading deviates from expected |
-| **Flowguard** | Symmetrical flow deviation (−100 to +100) — negative means tangle risk, positive means clog risk |
-| **AFC** | Buffer fault proximity (0–100%) — how close the buffer is to a fault condition |
+| Where | What it tells you |
+|-------|-------------------|
+| **Top left** | Which sensor is measuring — `Clog Auto`, `Clog Manual`, `FlowGuard` or `AFC buffer` |
+| **Top right** | How worried it is, as an icon: a **check** while healthy, a **warning triangle** once the reading reaches the danger threshold, and a **red nozzle** once your firmware has actually flagged a fault |
+| **The bar** | The reading. A shaded red band marks the danger zone, with a bright amber line where that zone begins |
+| **Ticks** | A bright tick at the current reading, a fainter one at the worst value seen this print |
+| **Underneath** | The reading as a number — headroom in mm, flow deviation as a percentage, or distance to fault |
 
-**Page 2 — Buffer Sync Meter** (Happy Hare with sync feedback only)
+The bar adapts to your detection backend:
+
+| Backend | End labels | What the bar shows |
+|---------|-----------|--------------------|
+| **Encoder** | *(none)* | Clog percentage (0–100%) — how much the encoder reading deviates from expected. Fills from the left. |
+| **Flowguard** | TANGLE ... CLOG | Flow deviation (−100 to +100). Fills **out from the middle**: toward TANGLE when filament is over-feeding, toward CLOG when it is under-feeding. Both ends are shaded, because either extreme is a fault. |
+| **AFC** | *(none)* | Buffer fault proximity (0–100%) — how close the buffer is to a fault condition. |
+
+Only Flowguard carries end labels, because only Flowguard has two directions that mean different faults. The other two fill from nothing toward their danger band, which the shading already shows — so the labels come off and the scale gets the width instead.
+
+When there is nothing to report at all — an AFC buffer that is armed but not currently tracking — the bar sits empty and the status icon shows a check, rather than leaving you with a blank scale and no number.
+
+> The same reading is drawn as an arc gauge in the filament sidebar and on the loaded-spool card, where the space is tall and narrow rather than wide and short.
+
+**Page 2 — Buffer Sync Meter** (any printer reporting proportional buffer pressure)
 
 A visual representation of the physical buffer plunger position. Two nested rectangles show the buffer housing and plunger — the plunger slides up or down to indicate filament tension:
 
@@ -473,17 +489,18 @@ A percentage label shows the exact bias reading (e.g., "+5%", "−10%"). Swipe b
 
 Tap the Clog Detection widget to open the **Buffer Status** modal — a detailed read-only view of your filament path health:
 
-**Happy Hare printers show:**
+The same FlowGuard bar sits across the top, so the modal shows everything the widget did and more — it used to show *less*, naming only the detection mode with no reading, threshold or peak.
+
+**Happy Hare printers also show:**
 - Filament tension description (e.g., "Slight tension", "Balanced")
 - Spool motor state
 - Gear sync status
-- Clog detection mode and flow rate
+- Flow rate
 - Full-size buffer meter visualization
 
-**AFC printers show:**
+**AFC printers also show:**
 - Advancing/trailing buffer state
 - Distance to fault (in mm)
-- Fault detection status
 
 ### Configuring Clog Detection
 
@@ -601,14 +618,16 @@ When you update HelixScreen and new widgets are added:
 
 If you downgrade and a widget type no longer exists, it's silently removed from your layout. Upgrading again restores it.
 
-**The exception is an update that changes the shape of the grid itself.** A saved position means "column 5, row 3, two cells wide" — if an update changes how many cells your screen gets, those numbers point somewhere else, or off the edge entirely. Rather than leave widgets scattered, HelixScreen re-places them all on the new grid. When that happens:
+**The exception is an update that changes the shape of the grid itself.** A saved position means "column 5, row 3, two cells wide" — if an update changes how many cells your screen gets, those numbers count something different. Rather than scatter your widgets or reset them, HelixScreen converts the arrangement onto the new grid. When that happens:
 
-- Every widget on every page is **re-placed automatically**. Expect a different arrangement than the one you built
+- **Your arrangement is carried over**, in proportion. A widget that filled the left third of the screen still fills the left third; two widgets that were touching stay touching
+- **Sizes can shift slightly.** The new grid does not divide the screen the same way, so a widget lands on the nearest size it is allowed to hold. Some widgets have a minimum of one full cell and will grow to it
+- **A widget that will not fit is re-placed automatically**, and only that widget. On a screen that got shorter or narrower this can happen to one or two of them; the rest keep their spots
 - **Which widgets you have is remembered.** A widget you deleted with the trash button stays gone; one you added stays added, including extra Macro Buttons, Power widgets, and other multiples
-- **Per-widget settings are kept** — display modes, assigned fans and macros all survive. Only positions and sizes are recomputed
-- Extra pages are kept, and widgets are re-placed within the page they were already on
+- **Per-widget settings are kept** — display modes, assigned fans and macros all survive
+- Extra pages are kept, and widgets are converted within the page they were already on
 
-Your printer keeps working the whole time — this only moves tiles around. If you had an arrangement you liked, it is worth a couple of minutes in Edit Mode afterwards to put it back.
+Your printer keeps working the whole time — this only moves tiles around. The conversion happens the first time the home screen is drawn after the update, so the layout you see on that first boot is the one that is saved.
 
 ---
 

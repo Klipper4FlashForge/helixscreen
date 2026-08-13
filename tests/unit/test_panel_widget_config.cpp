@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../test_helpers/config_test_access.h"
+#include "../test_helpers/scoped_breakpoint.h"
 #include "config.h"
 #include "data_root_resolver.h"
 #include "panel_widget_config.h"
@@ -1299,11 +1300,9 @@ TEST_CASE_METHOD(PanelWidgetConfigFixture,
 
 TEST_CASE("PanelWidgetConfig: build_default_grid produces correct layout",
           "[panel_widget][widget_config][grid]") {
-    // Force tiny breakpoint (0) — a prior test may have set it to a larger value
-    lv_subject_t* bp = theme_manager_get_breakpoint_subject();
-    if (bp) {
-        lv_subject_set_int(bp, 0);
-    }
+    // Pin the breakpoint this layout is asserted against. Through the guard, so
+    // it is put back: a bare set left every later test building a Micro grid.
+    helix::test::ScopedBreakpoint bp(UiBreakpoint::Micro);
     auto entries = PanelWidgetConfig::build_default_grid();
 
     // Should include all registry widgets

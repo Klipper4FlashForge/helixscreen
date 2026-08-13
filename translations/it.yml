@@ -99,6 +99,7 @@ translations:
   ADXL: ADXL
   AFC: AFC
   AFC Update Available: Aggiornamento AFC Disponibile
+  AFC buffer: ''
   AFC failure reset complete: Reset errore AFC completato
   AFC failure reset failed: Reset errore AFC fallito
   AFC recovery complete: Recupero AFC completato
@@ -303,6 +304,7 @@ translations:
   CAPABILITIES: FUNZIONALITÀ
   CARTOGRAPHER: CARTOGRAPHER
   CHANGED FROM LAST SESSION: MODIFICATO DALLA SESSIONE PRECEDENTE
+  CLOG: ''
   COLOR SENSORS: SENSORI DI COLORE
   CONFIGURATION: CONFIGURAZIONE
   CONNECTION TYPE: TIPO DI CONNESSIONE
@@ -428,7 +430,10 @@ translations:
   Clear failed: Cancellazione fallita
   Cleared from settings — system unpair failed, may need OS Bluetooth: Rimosso dalle impostazioni; disaccoppiamento di sistema fallito, potrebbe servire il Bluetooth del sistema operativo
   Clipboard unavailable - use SSH: Appunti non disponibili - usare SSH
+  Clog: ''
+  Clog Auto: ''
   Clog Detection: Rilevamento intasamento
+  Clog Manual: ''
   Clog and flow health while printing: Intasamento e flusso durante la stampa
   Clog detection: Rilevamento intasamento
   Close: Chiudi
@@ -2164,6 +2169,7 @@ translations:
   T%d has no filament loaded — this print will run out.: T%d non ha filamento caricato — questa stampa lo esaurirà.
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d richiede filamento nello slot %d, che è vuoto — questa stampa lo esaurirà.
   T0: ''
+  TANGLE: ''
   TD-1 filament color detection: Rilevamento colore filamento TD-1
   TEMPERATURE SENSORS: SENSORI DI TEMPERATURA
   THEME COLORS: COLORI TEMA
@@ -2622,6 +2628,7 @@ translations:
   '{} macro not configured': Macro {} non configurata
   '{} may cause unintended changes. Are you sure?': '{} potrebbe causare modifiche indesiderate. Sei sicuro?'
   '{} more taps to {} beta features': '{} tocchi per {} funzioni beta'
+  '{} needs the HelixPrint plugin. Printing original file.': ''
   '{} new hardware available': '{} nuovo hardware disponibile'
   '{} preset{}': '{} preset{}'
   '{} target set to {}°C': Obiettivo {} impostato a {}°C

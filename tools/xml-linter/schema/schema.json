@@ -1707,6 +1707,9 @@
         "show_target": {
           "type": "bool"
         },
+        "hide_target_when_off": {
+          "type": "bool"
+        },
         "hide_target_below_bp": {
           "type": "string"
         },
@@ -3299,6 +3302,14 @@
     "metadata_overlay_opacity",
     "metadata_row_height",
     "metadata_top_pad",
+    "meter_track_h",
+    "meter_track_h_large",
+    "meter_track_h_medium",
+    "meter_track_h_micro",
+    "meter_track_h_small",
+    "meter_track_h_tiny",
+    "meter_track_h_xlarge",
+    "meter_track_h_xxlarge",
     "modal_backdrop_opacity",
     "nav_padding",
     "nav_width",

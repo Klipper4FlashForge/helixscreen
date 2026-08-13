@@ -2433,14 +2433,22 @@ void GridEditMode::place_widget_from_catalog(const std::string& widget_id) {
     int place_col = -1;
     int place_row = -1;
 
+    // Boundaries this widget may occupy. The search, the shrink steps below and
+    // the origin the catalog remembered all have to agree with it, or a
+    // whole-cell widget added from the catalog lands straddling a cell (#1126).
+    const auto [col_step, row_step] = snap_step_for(widget_id);
+    const bool origin_on_step = catalog_origin_col_ >= 0 && catalog_origin_row_ >= 0 &&
+                                catalog_origin_col_ % col_step == 0 &&
+                                catalog_origin_row_ % row_step == 0;
+
     // Try the catalog origin cell first
-    if (catalog_origin_col_ >= 0 && catalog_origin_row_ >= 0 &&
+    if (origin_on_step &&
         temp_grid.can_place(catalog_origin_col_, catalog_origin_row_, colspan, rowspan)) {
         place_col = catalog_origin_col_;
         place_row = catalog_origin_row_;
     } else {
         // Fall back to first available position
-        auto pos = temp_grid.find_available(colspan, rowspan);
+        auto pos = temp_grid.find_available(colspan, rowspan, col_step, row_step);
         if (pos) {
             place_col = pos->first;
             place_row = pos->second;
@@ -2453,21 +2461,23 @@ void GridEditMode::place_widget_from_catalog(const std::string& widget_id) {
         int min_r = def->effective_min_rowspan();
 
         if (min_c < colspan || min_r < rowspan) {
-            // Try shrinking rowspan first (wider but shorter), then colspan
-            for (int try_r = rowspan; try_r >= min_r && place_col < 0; --try_r) {
-                for (int try_c = colspan; try_c >= min_c && place_col < 0; --try_c) {
+            // Try shrinking rowspan first (wider but shorter), then colspan.
+            // One step at a time, not one track: shrinking a whole-cell widget
+            // by a single track produces a size edit mode would refuse to give
+            // it back.
+            for (int try_r = rowspan; try_r >= min_r && place_col < 0; try_r -= row_step) {
+                for (int try_c = colspan; try_c >= min_c && place_col < 0; try_c -= col_step) {
                     if (try_c == colspan && try_r == rowspan)
                         continue; // Already tried
 
-                    if (catalog_origin_col_ >= 0 && catalog_origin_row_ >= 0 &&
-                        temp_grid.can_place(catalog_origin_col_, catalog_origin_row_, try_c,
-                                            try_r)) {
+                    if (origin_on_step && temp_grid.can_place(catalog_origin_col_,
+                                                              catalog_origin_row_, try_c, try_r)) {
                         place_col = catalog_origin_col_;
                         place_row = catalog_origin_row_;
                         colspan = try_c;
                         rowspan = try_r;
                     } else {
-                        auto pos = temp_grid.find_available(try_c, try_r);
+                        auto pos = temp_grid.find_available(try_c, try_r, col_step, row_step);
                         if (pos) {
                             place_col = pos->first;
                             place_row = pos->second;

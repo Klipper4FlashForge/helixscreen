@@ -838,6 +838,81 @@ Per-slot error indicators and per-unit error badges, driven by `SlotInfo.error` 
 - Happy Hare: system-level error mapped to `current_slot` via `reason_for_pause`
 - Mock: `set_slot_error()` / `set_slot_buffer_health()` + pre-populated errors in AFC mode
 
+### Clog / flow meter
+
+Three sources (encoder, Flowguard, AFC buffer) feed one set of `clog_meter_*`
+subjects, derived in `AmsState::sync_clog_meter_from_info()`
+(`src/printer/ams_state.cpp`). Source precedence is **flowguard > encoder > AFC
+buffer**, overridable per-widget via `set_source_override()`.
+
+**Two presentations, one model.** `UiClogBar` draws a wide horizontal scale,
+`UiClogMeter` a compact arc. Neither owns any interpretation:
+
+| Piece | Where | What it decides |
+|-------|-------|-----------------|
+| `ClogMeterSample` | `include/clog_meter_geometry.h` | `is_safe()`, `is_symmetrical()`, `status()` — pure, tested without LVGL |
+| `clog_bar_geometry()` | same | Track-local pixel layout for the bar |
+| `clog_meter_tint()` | same | Indicator colour, as token names rather than resolved colours |
+| `ClogMeterModel` | `include/clog_meter_model.h` | Subscribes to the five subjects once, publishes whole samples |
+
+Both renderers hold a `ClogMeterModel` and are handed a complete
+`ClogMeterSample` on every change — never a single changed field, or a renderer
+would position a new value against an old threshold for one frame. Anything both
+presentations must answer identically goes on the sample; when it lived in the
+renderers they drifted (the arc treated an untracked AFC buffer as "nothing to
+report" while the bar drew an empty track).
+
+Construct the model **last**, after the by-name widget lookups, and destroy it
+**first**, before clearing those pointers — its callback reads them. It also
+suppresses the initial observer fire, which lands while the owning renderer is
+still in its constructor.
+
+**One job per text slot.** The subjects are authored so no slot repeats another:
+`clog_meter_mode_text` names only the source, `clog_meter_center_text` is the one
+number, `clog_meter_label_{left,right}` are the axis ends and are **empty in the
+linear modes** (only Flowguard's two directions mean different faults).
+`clog_meter_status` is an int driving a glyph, not a status word.
+
+> `clog_meter_mode_text` is drawn in `ams_loaded_card.xml` beside the material
+> name in a content-sized flex column. Anything appended to it steals width and
+> clips the filament name. Keep it to the source's name.
+
+**Where it renders:** `clog_bar_body.xml` is the bar itself at content height;
+`clog_bar_page.xml` is a centring shell around it for the carousel cell, and
+`buffer_status_modal.xml` embeds the body directly. The arc is authored twice —
+`clog_meter_page.xml` and `ams_loaded_card.xml` — so a named child added to one
+(e.g. `clog_safe_icon`) must be added to both, or `UiClogMeter` silently finds
+nothing under that parent.
+
+**Mock scenarios:** `helix-screen ctl scenario <name>` drives the mock *backend*,
+so the whole derivation runs — `clog_healthy`, `clog_warning`, `clog_blocked`,
+`flowguard_neutral`, `flowguard_tangle`, `flowguard_clog`, `buffer_safe`,
+`buffer_fault`, `clog_off`.
+
+### AFC buffers: switched vs FPS_PSF
+
+`AFC_buffer` accepts `type: switched` (TurtleNeck, two endstops — the default and
+what every BoxTurtle ships with) or `type: FPS_PSF` (`AFCFPSBuffer`, AFC v1.2.0+),
+which reads an analog filament pressure sensor over ADC.
+
+An FPS buffer adds exactly three keys to `get_status`: `fps_value`,
+`smoothed_fps` and `set_point`. **`low_point`, `high_point` and `deadband` are
+config-only and never published**, so the tuning range cannot be read at runtime
+— `BufferHealth::afc_fps_to_bias()` normalizes each side against the sensor's own
+0..1 rail instead. Read `smoothed_fps`, not `fps_value`: AFC's own
+advance/trailing triggers compare the smoothed one.
+
+The result is published as `sync_feedback_bias`, the same signal Happy Hare
+reports, so `UiBufferMeter` and the path-canvas tint work on both without knowing
+the backend. A switched buffer sends none of these keys, leaves
+`fps_reported` false, and is unchanged.
+
+> **Unverified on hardware.** The only AFC rig here is a BoxTurtle with a
+> switched buffer; its live status carries none of the FPS fields. The mapping is
+> pinned against a source read of AFC v1.2.0 (`a06f14d`) in
+> `tests/unit/test_afc_fps_buffer.cpp` — re-check those against a real FPS_PSF
+> buffer before trusting the scale.
+
 ### Two error channels
 
 A backend fault reaches the user through one of **two independent channels**. They are not alternatives and not a fallback pair — they are fed by different transports, fire at different moments, and a backend may implement either, both, or neither. Getting this wrong is how a fault double-surfaces or vanishes.

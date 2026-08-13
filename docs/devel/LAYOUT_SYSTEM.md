@@ -594,6 +594,19 @@ widget by `TRACKS_PER_CELL` and the edit-mode lattice only draws targets there, 
 authored span is a size the user can never restore after one drag. A registry-wide test
 asserts this.
 
+**`snap_step_for()` is the single source for that rule, and every placement path reads it.**
+Edit mode was once the only caller, which left three ways to seat a whole-cell widget off a
+cell boundary (#1126): `find_available()` / `find_available_bottom()` walked one track at a
+time, so an odd-aligned gap left by a half-cell neighbour was a valid answer; `grow_once()`
+grew one track at a time, so a widget expanding into a two-track gap could stop halfway; and
+`clamp_to_grid()` honoured whatever origin the saved layout held. All four now take a
+per-axis step, defaulted to `TRACKS_PER_CELL` so a caller that has not thought about it
+cannot opt into the permissive behaviour by omission. A whole-cell widget with only an
+odd-aligned gap left is reported as `GridFull` and disabled with a toast, which is the honest
+answer — there is no position in that grid it is allowed to occupy.
+`tests/unit/test_grid_half_cell_placement.cpp` covers the search, the growth and the load
+path.
+
 **Which widgets opt in.** Set the flag on an axis when the widget's content is *continuous*
 along it - a chart, an aspect-fit frame, wrapping text, a scrolling strip, stacked readout
 rows, or a layout picked by measurement (`active_spool`'s compact/wide switch,

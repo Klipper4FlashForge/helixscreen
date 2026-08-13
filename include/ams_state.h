@@ -249,6 +249,27 @@ class AmsState {
     }
 
     /**
+     * @brief Get the AMS data revision subject
+     *
+     * Ticks (monotonic int) every time a backend's state or slot data is synced
+     * from a backend event. Deliberately a coarse "something changed, go look"
+     * signal rather than a precise one: it fires for optimistic local writes as
+     * well as firmware reports, so an observer must re-check the thing it
+     * actually cares about rather than treating a tick as proof.
+     *
+     * Exists because AmsBackend::set_event_callback() is single-slot and
+     * AmsState owns it (add_backend), so a second consumer cannot subscribe to
+     * backend events directly. PrintStartController uses this to re-check
+     * SlotRegistry::firmware_mapping_generation() while confirming a filament
+     * remap restore (#1270).
+     *
+     * @return Subject holding a monotonically increasing revision counter
+     */
+    lv_subject_t* get_ams_data_revision_subject() {
+        return &ams_data_revision_;
+    }
+
+    /**
      * @brief Get active backend subject
      * @return Subject holding index of the currently selected backend
      */
@@ -724,6 +745,9 @@ class AmsState {
         return &clog_meter_warning_;
     }
 
+    lv_subject_t* get_clog_meter_status_subject() {
+        return &clog_meter_status_;
+    }
     lv_subject_t* get_clog_meter_danger_pct_subject() {
         return &clog_meter_danger_pct_;
     }
@@ -1364,6 +1388,7 @@ class AmsState {
     // Backend selector subjects
     lv_subject_t backend_count_;
     lv_subject_t active_backend_;
+    lv_subject_t ams_data_revision_;
 
     // System-level subjects
     lv_subject_t ams_type_;
@@ -1526,8 +1551,7 @@ class AmsState {
     lv_subject_t clog_meter_mode_;    // 0=none, 1=encoder, 2=flowguard, 3=afc_buffer
     lv_subject_t clog_meter_value_;   // 0-100 (encoder/afc) or -100..+100 (flowguard)
     lv_subject_t clog_meter_warning_; // 0=ok, 1=warning
-    lv_subject_t clog_meter_value_text_;
-    char clog_meter_value_text_buf_[16]{};
+    lv_subject_t clog_meter_status_;  // ClogMeterStatus: 0=ok, 1=warning, 2=fault
     lv_subject_t clog_meter_mode_text_;
     char clog_meter_mode_text_buf_[24]{};
     lv_subject_t clog_meter_danger_pct_;  // 0-100, where danger zone starts

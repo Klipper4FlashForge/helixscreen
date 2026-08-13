@@ -3,6 +3,7 @@
 #include "buffer_status_modal.h"
 
 #include "ui_buffer_meter.h"
+#include "ui_clog_bar.h"
 #include "ui_update_queue.h"
 
 #include "theme_manager.h"
@@ -24,8 +25,6 @@ lv_subject_t BufferStatusModal::espooler_value_subject_;
 char BufferStatusModal::espooler_buf_[128]{};
 lv_subject_t BufferStatusModal::gear_sync_value_subject_;
 char BufferStatusModal::gear_sync_buf_[32]{};
-lv_subject_t BufferStatusModal::clog_value_subject_;
-char BufferStatusModal::clog_buf_[32]{};
 lv_subject_t BufferStatusModal::flow_value_subject_;
 char BufferStatusModal::flow_buf_[32]{};
 lv_subject_t BufferStatusModal::afc_state_subject_;
@@ -38,9 +37,10 @@ BufferStatusModal::BufferStatusModal() {
 }
 
 BufferStatusModal::~BufferStatusModal() {
-    // Delete meter before Modal::~Modal() destroys the dialog tree,
-    // so UiBufferMeter can safely remove its event callbacks from root_.
+    // Delete both before Modal::~Modal() destroys the dialog tree, so each
+    // can remove its event callbacks from widgets that still exist.
     delete meter_;
+    delete clog_bar_;
     // Subjects are static — never deinited (persist for the process lifetime)
 }
 
@@ -60,7 +60,6 @@ void BufferStatusModal::init_subjects() {
                            "");
     lv_subject_init_string(&gear_sync_value_subject_, gear_sync_buf_, nullptr,
                            sizeof(gear_sync_buf_), "");
-    lv_subject_init_string(&clog_value_subject_, clog_buf_, nullptr, sizeof(clog_buf_), "");
     lv_subject_init_string(&flow_value_subject_, flow_buf_, nullptr, sizeof(flow_buf_), "");
     lv_subject_init_string(&afc_state_subject_, afc_state_buf_, nullptr, sizeof(afc_state_buf_),
                            "");
@@ -75,7 +74,6 @@ void BufferStatusModal::init_subjects() {
     lv_xml_register_subject(nullptr, "buf_description", &description_subject_);
     lv_xml_register_subject(nullptr, "buf_espooler_value", &espooler_value_subject_);
     lv_xml_register_subject(nullptr, "buf_gear_sync_value", &gear_sync_value_subject_);
-    lv_xml_register_subject(nullptr, "buf_clog_value", &clog_value_subject_);
     lv_xml_register_subject(nullptr, "buf_flow_value", &flow_value_subject_);
     lv_xml_register_subject(nullptr, "buf_afc_state", &afc_state_subject_);
     lv_xml_register_subject(nullptr, "buf_afc_distance", &afc_distance_subject_);
@@ -120,15 +118,6 @@ void BufferStatusModal::populate(const AmsSystemInfo& info, int effective_unit) 
         // Gear sync
         lv_subject_copy_string(&gear_sync_value_subject_,
                                info.sync_drive ? lv_tr("Active") : lv_tr("Inactive"));
-
-        // Clog detection
-        if (info.clog_detection == 2) {
-            lv_subject_copy_string(&clog_value_subject_, lv_tr("Automatic"));
-        } else if (info.clog_detection == 1) {
-            lv_subject_copy_string(&clog_value_subject_, lv_tr("Manual"));
-        } else {
-            lv_subject_copy_string(&clog_value_subject_, lv_tr("Off"));
-        }
 
         // Flow rate
         if (info.sync_feedback_flow_rate >= 0) {
@@ -181,19 +170,11 @@ void BufferStatusModal::populate(const AmsSystemInfo& info, int effective_unit) 
                 } else {
                     lv_subject_set_int(&show_distance_subject_, 0);
                 }
-
-                // Clog detection
-                if (bh.fault_detection_enabled) {
-                    lv_subject_copy_string(&clog_value_subject_, lv_tr("Active"));
-                } else {
-                    lv_subject_copy_string(&clog_value_subject_, lv_tr("Inactive"));
-                }
             }
         }
         if (!found_health) {
             lv_subject_copy_string(&afc_state_subject_, lv_tr("No buffer data available"));
             lv_subject_set_int(&show_distance_subject_, 0);
-            lv_subject_copy_string(&clog_value_subject_, lv_tr("Unknown"));
         }
     } else {
         lv_subject_set_int(&type_subject_, 0);
@@ -229,6 +210,13 @@ void BufferStatusModal::on_show() {
             meter_ = new helix::ui::UiBufferMeter(meter_col);
             meter_->set_bias(info_.sync_feedback_bias);
         }
+    }
+
+    // Drive the clog bar the dialog authored. Unconditional: it reads the same
+    // AmsState subjects the home tile does, and clog_bar_body hides itself when
+    // there is no detection, so there is nothing here to gate on.
+    if (dialog()) {
+        clog_bar_ = new helix::ui::UiClogBar(dialog());
     }
 }
 

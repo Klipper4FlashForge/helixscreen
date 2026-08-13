@@ -142,6 +142,8 @@ void PanelWidgetConfig::load() {
     main_page_index_ = 0;
     next_page_id_ = 1;
     pending_anchors_ = false;
+    legacy_units_ = false;
+    legacy_rows_ = 0;
 
     // Per-panel path: /printers/{active}/panel_widgets/<panel_id>
     std::string panel_path = config_.df() + "panel_widgets/" + panel_id_;
@@ -172,11 +174,23 @@ void PanelWidgetConfig::load() {
             static_cast<size_t>(helix::json_util::safe_int(saved, "main_page_index"));
         next_page_id_ = helix::json_util::safe_int(saved, "next_page_id");
 
+        // Two independent tags, each naming work that config load cannot do
+        // because no grid has been measured yet. They never coexist on one
+        // layout — a pre-v22 layout is not a freshly-defaulted one — but both
+        // are read here so whichever is present survives to populate.
+        //
         // Defaults written before any grid was measured. Compared against the
         // one value build_defaults() writes, so anything else — including the
         // key being absent, which is every layout that predates this — reads as
         // "already placed" and is left alone.
         pending_anchors_ = helix::json_util::safe_string(saved, "anchors") == "pending";
+
+        // Pre-v22 coordinates, tagged by the migration for PanelWidgetManager to
+        // port once a measured grid exists. Compared against the one value the
+        // migration writes, so a hand-edit of anything else reads as "already
+        // ported" and leaves the layout alone rather than porting it twice.
+        legacy_units_ = helix::json_util::safe_string(saved, "layout_units") == "cells_v21";
+        legacy_rows_ = helix::json_util::safe_int(saved, "legacy_rows");
 
         size_t page_idx = 0;
         for (const auto& page_json : saved["pages"]) {
@@ -387,9 +401,25 @@ void PanelWidgetConfig::save() {
     if (pending_anchors_) {
         root["anchors"] = "pending";
     }
+    // Survives a save that happens before the port has run — the placement
+    // engine writes back auto-placed positions on every populate, so dropping
+    // the tag here would silently re-read cell coordinates as tracks.
+    if (legacy_units_) {
+        root["layout_units"] = "cells_v21";
+        root["legacy_rows"] = legacy_rows_;
+    }
 
     config_.set<json>(config_.df() + "panel_widgets/" + panel_id_, root);
     config_.save();
+}
+
+void PanelWidgetConfig::clear_legacy_units() {
+    if (!legacy_units_) {
+        return;
+    }
+    legacy_units_ = false;
+    legacy_rows_ = 0;
+    save();
 }
 
 void PanelWidgetConfig::reorder(size_t from_index, size_t to_index) {

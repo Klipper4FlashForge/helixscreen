@@ -99,6 +99,7 @@
   <translation tag="ADXL" fr="ADXL"/>
   <translation tag="AFC" fr="AFC"/>
   <translation tag="AFC Update Available" fr="Mise à jour AFC disponible"/>
+  <translation tag="AFC buffer"/>
   <translation tag="AFC failure reset complete" fr="Réinitialisation erreur AFC terminée"/>
   <translation tag="AFC failure reset failed" fr="Échec de la réinitialisation erreur AFC"/>
   <translation tag="AFC recovery complete" fr="Récupération AFC terminée"/>
@@ -303,6 +304,7 @@
   <translation tag="CAPABILITIES" fr="CAPACITÉS"/>
   <translation tag="CARTOGRAPHER" fr="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" fr="MODIFIÉ DEPUIS LA DERNIÈRE SESSION"/>
+  <translation tag="CLOG"/>
   <translation tag="COLOR SENSORS" fr="CAPTEURS DE COULEUR"/>
   <translation tag="CONFIGURATION" fr="CONFIGURATION"/>
   <translation tag="CONNECTION TYPE" fr="TYPE DE CONNEXION"/>
@@ -428,7 +430,10 @@
   <translation tag="Clear failed" fr="Échec de l&apos;effacement"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" fr="Effacé des paramètres ; échec du désappairage système, utiliser le Bluetooth de l&apos;OS si besoin"/>
   <translation tag="Clipboard unavailable - use SSH" fr="Presse-papiers indisponible - utilisez SSH"/>
+  <translation tag="Clog"/>
+  <translation tag="Clog Auto"/>
   <translation tag="Clog Detection" fr="Détection de bouchon"/>
+  <translation tag="Clog Manual"/>
   <translation tag="Clog and flow health while printing" fr="Bouchons et débit pendant l&apos;impression"/>
   <translation tag="Clog detection" fr="Détection de bouchon"/>
   <translation tag="Close" fr="Fermer"/>
@@ -2151,6 +2156,7 @@
   <translation tag="T%d has no filament loaded — this print will run out." fr="T%d n&apos;a pas de filament chargé — cette impression manquera de filament."/>
   <translation tag="T%d needs filament in slot %d, which is empty — this print will run out." fr="T%d nécessite du filament dans le slot %d, qui est vide — cette impression manquera de filament."/>
   <translation tag="T0"/>
+  <translation tag="TANGLE"/>
   <translation tag="TD-1 filament color detection" fr="Détection de couleur de filament TD-1"/>
   <translation tag="TEMPERATURE SENSORS" fr="CAPTEURS DE TEMPÉRATURE"/>
   <translation tag="THEME COLORS" fr="COULEURS DU THÈME"/>
@@ -2593,6 +2599,7 @@
   <translation tag="{} macro not configured" fr="Macro {} non configurée"/>
   <translation tag="{} may cause unintended changes. Are you sure?" fr="{} peut entraîner des modifications non souhaitées. Êtes-vous sûr ?"/>
   <translation tag="{} more taps to {} beta features" fr="{} appuis supplémentaires pour {} les fonctionnalités bêta"/>
+  <translation tag="{} needs the HelixPrint plugin. Printing original file."/>
   <translation tag="{} new hardware available" fr="{} nouveau matériel disponible"/>
   <translation tag="{} preset{}" fr="{} préréglage{}"/>
   <translation tag="{} target set to {}°C" fr="Cible {} réglée à {}°C"/>

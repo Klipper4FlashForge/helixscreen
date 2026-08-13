@@ -18,6 +18,7 @@
 
 #include "ams_bypass_policy.h"
 #include "app_globals.h"
+#include "clog_meter_geometry.h"
 #include "data_root_resolver.h"
 #include "filament_database.h"
 #include "filament_display_name.h"
@@ -190,7 +191,6 @@ AmsState::AmsState() {
     std::memset(current_material_text_buf_, 0, sizeof(current_material_text_buf_));
     std::memset(current_slot_text_buf_, 0, sizeof(current_slot_text_buf_));
     std::memset(current_weight_text_buf_, 0, sizeof(current_weight_text_buf_));
-    std::memset(clog_meter_value_text_buf_, 0, sizeof(clog_meter_value_text_buf_));
     std::memset(clog_meter_mode_text_buf_, 0, sizeof(clog_meter_mode_text_buf_));
     std::memset(clog_meter_center_text_buf_, 0, sizeof(clog_meter_center_text_buf_));
     std::memset(clog_meter_label_left_buf_, 0, sizeof(clog_meter_label_left_buf_));
@@ -238,6 +238,7 @@ void AmsState::init_subjects(bool register_xml) {
 
     // Backend selector subjects
     INIT_SUBJECT_INT(backend_count, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(ams_data_revision, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(active_backend, 0, subjects_, register_xml);
 
     // System-level subjects
@@ -388,7 +389,7 @@ void AmsState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(clog_meter_mode, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(clog_meter_value, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(clog_meter_warning, 0, subjects_, register_xml);
-    INIT_SUBJECT_STRING(clog_meter_value_text, "", subjects_, register_xml);
+    INIT_SUBJECT_INT(clog_meter_status, 0, subjects_, register_xml);
     INIT_SUBJECT_STRING(clog_meter_mode_text, "", subjects_, register_xml);
     INIT_SUBJECT_INT(clog_meter_danger_pct, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(clog_meter_peak_pct, 0, subjects_, register_xml);
@@ -1923,6 +1924,13 @@ void AmsState::on_backend_event(int backend_index, const std::string& event,
                 } else {
                     AmsState::instance().update_slot_for_backend(backend_index, slot_index);
                 }
+
+                // Wake anything watching for backend data to land. Bumped AFTER
+                // the sync so an observer that re-reads backend state sees the
+                // synced values, not the previous ones. Main thread already (we
+                // are inside the queue_update body), so the subject write is safe.
+                auto* rev = AmsState::instance().get_ams_data_revision_subject();
+                lv_subject_set_int(rev, lv_subject_get_int(rev) + 1);
             });
     };
 
@@ -2103,10 +2111,22 @@ lv_subject_t* AmsState::get_dryer_info_visible_subject() {
 void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
     // Priority: flowguard > encoder > afc_buffer > legacy > none
     // Source override: 0=auto (use priority), 1=encoder, 2=flowguard, 3=afc
+    //
+    // Every text slot below has exactly one job, and no slot repeats another:
+    //   mode_text   what is measuring, and nothing else. It is drawn beside a
+    //               15%-wide swatch in ams_loaded_card, where the column is
+    //               content-sized: anything appended here (a detection length,
+    //               an AFC buffer state) steals width from the material name
+    //               and clips it. Keep it to the source's name.
+    //   center_buf  the one number that matters
+    //   left/right  the two ends of the axis the fill moves along, and only
+    //               where those ends mean different things — a linear mode
+    //               fills from nothing, which the empty labels leave unsaid so
+    //               the track gets the width instead
+    // Severity is not a slot at all: clog_meter_status drives a glyph.
     int mode = 0;
     int value = 0;
     int warning = 0;
-    char value_text[16] = "";
     char mode_text[24] = "";
     int new_danger_pct = 75;
     int new_peak_pct = 0;
@@ -2150,21 +2170,12 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
         value = static_cast<int>(info.flowguard_info.level * 100.0f);
         value = std::clamp(value, -100, 100);
 
+        // A named trigger is Flowguard saying it has tripped.
         if (!info.flowguard_info.trigger.empty()) {
-            // Active trigger — show trigger name
-            snprintf(value_text, sizeof(value_text), "%s", info.flowguard_info.trigger.c_str());
             warning = 1;
-        } else if (info.flowguard_info.active) {
-            snprintf(value_text, sizeof(value_text), "ACTIVE");
-        } else {
-            snprintf(value_text, sizeof(value_text), "OFF");
         }
 
-        if (info.encoder_info.flow_rate >= 0) {
-            snprintf(mode_text, sizeof(mode_text), "Flow: %d%%", info.encoder_info.flow_rate);
-        } else {
-            snprintf(mode_text, sizeof(mode_text), "Flowguard");
-        }
+        snprintf(mode_text, sizeof(mode_text), "FlowGuard");
 
         // Enhanced clog detection widget subjects
         new_danger_pct = 80;
@@ -2173,8 +2184,8 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
         new_peak_pct = static_cast<int>(std::max(max_clog, max_tangle) * 100);
         snprintf(center_buf, sizeof(center_buf), "%+d%%",
                  static_cast<int>(info.flowguard_info.level * 100));
-        snprintf(left_buf, sizeof(left_buf), "TANGLE");
-        snprintf(right_buf, sizeof(right_buf), "CLOG");
+        snprintf(left_buf, sizeof(left_buf), "%s", lv_tr("TANGLE"));
+        snprintf(right_buf, sizeof(right_buf), "%s", lv_tr("CLOG"));
 
     } else if (use_encoder && info.encoder_info.enabled) {
         // Encoder mode: 0-100 clog percentage
@@ -2182,20 +2193,17 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
         value = info.encoder_info.get_clog_pct();
         warning = info.encoder_info.is_warning() ? 1 : 0;
 
-        if (info.encoder_info.flow_rate >= 0) {
-            snprintf(value_text, sizeof(value_text), "%d%%", info.encoder_info.flow_rate);
-        } else {
-            snprintf(value_text, sizeof(value_text), "---");
-        }
-
-        // Detection mode text
+        // Source, then how it is armed. The detection length is appended below
+        // once it is known to be real — it is configuration, not a scale end,
+        // which is where it used to be drawn.
         if (info.encoder_info.detection_mode == 2) {
-            snprintf(mode_text, sizeof(mode_text), "Auto");
+            snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog Auto"));
         } else if (info.encoder_info.detection_mode == 1) {
-            snprintf(mode_text, sizeof(mode_text), "Manual");
+            snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog Manual"));
+        } else {
+            snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog"));
         }
 
-        // Enhanced clog detection widget subjects
         float det_len = info.encoder_info.detection_length;
         float headroom = info.encoder_info.headroom;
         float desired = info.encoder_info.desired_headroom;
@@ -2204,14 +2212,12 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
             new_danger_pct = static_cast<int>((1.0f - desired / det_len) * 100);
             new_peak_pct = static_cast<int>((1.0f - min_headroom / det_len) * 100);
             snprintf(center_buf, sizeof(center_buf), "%.1fmm", headroom);
-            snprintf(left_buf, sizeof(left_buf), "%.0fmm", det_len);
         } else {
             new_danger_pct = 75;
             new_peak_pct = value;
             snprintf(center_buf, sizeof(center_buf), "---");
-            snprintf(left_buf, sizeof(left_buf), "---");
         }
-        snprintf(right_buf, sizeof(right_buf), "0");
+        // Linear: the fill grows from nothing, so the ends say nothing.
 
     } else {
         // Check AFC buffer fault detection (buffer_health is per-unit, not per-slot)
@@ -2221,30 +2227,28 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
                 float dist = unit.buffer_health->distance_to_fault;
                 float max_dist = unit.buffer_health->fault_threshold();
 
-                if (dist < 0 || dist > max_dist) {
+                const bool tracking = (dist >= 0 && dist <= max_dist);
+                if (!tracking) {
                     // Negative = fault timer stopped, counter stale (normal operation)
                     // Above max = just reset or not yet tracking
                     value = 0;
                     warning = 0;
-                    snprintf(value_text, sizeof(value_text), "%s",
-                             unit.buffer_health->state.c_str());
                 } else {
                     // Actively counting down: 0=fault imminent, max_dist=safe
                     value = unit.buffer_health->danger_value();
                     warning = unit.buffer_health->is_warning() ? 1 : 0;
-                    snprintf(value_text, sizeof(value_text), "%.0fmm", dist);
                 }
 
-                snprintf(mode_text, sizeof(mode_text), "%s", unit.buffer_health->state.c_str());
+                snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("AFC buffer"));
 
-                // Enhanced clog detection widget subjects
                 new_danger_pct = 75;
                 new_peak_pct = value;
-                // Safe: empty center triggers checkmark icon; tracking: show distance
-                snprintf(center_buf, sizeof(center_buf), "%s",
-                         (dist >= 0 && dist <= max_dist) ? value_text : "");
-                snprintf(left_buf, sizeof(left_buf), "SAFE");
-                snprintf(right_buf, sizeof(right_buf), "FAULT");
+                // Not tracking leaves the centre empty, which is the state
+                // clog_meter_is_safe() stands the check icon in for.
+                if (tracking) {
+                    snprintf(center_buf, sizeof(center_buf), "%.0fmm", dist);
+                }
+                // Linear: the fill grows from nothing, so the ends say nothing.
                 break; // Use first unit with fault detection
             }
         }
@@ -2252,16 +2256,18 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
         // Legacy fallback: clog_detection enabled but no encoder_info
         if (mode == 0 && info.clog_detection > 0) {
             mode = 1;
-            if (info.encoder_flow_rate >= 0) {
-                value = 0; // No headroom data for clog%, just show flow rate
-                snprintf(value_text, sizeof(value_text), "%d%%", info.encoder_flow_rate);
-            } else {
-                snprintf(value_text, sizeof(value_text), "---");
-            }
+            value = 0; // No headroom data, so there is no clog% to plot
             if (info.clog_detection == 2) {
-                snprintf(mode_text, sizeof(mode_text), "Auto");
+                snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog Auto"));
             } else {
-                snprintf(mode_text, sizeof(mode_text), "Manual");
+                snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog Manual"));
+            }
+            // Flow rate is all this path has; it is the reading, so it goes in
+            // the centre rather than into a slot of its own.
+            if (info.encoder_flow_rate >= 0) {
+                snprintf(center_buf, sizeof(center_buf), "%d%%", info.encoder_flow_rate);
+            } else {
+                snprintf(center_buf, sizeof(center_buf), "---");
             }
             // Legacy: use defaults (danger_pct=75, peak_pct=0, empty labels)
         }
@@ -2281,8 +2287,12 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
     if (lv_subject_get_int(&clog_meter_warning_) != warning) {
         lv_subject_set_int(&clog_meter_warning_, warning);
     }
-    if (strcmp(lv_subject_get_string(&clog_meter_value_text_), value_text) != 0) {
-        lv_subject_copy_string(&clog_meter_value_text_, value_text);
+    // Severity is derived, not authored per branch, so every source lands on
+    // the same rule — and the threshold override above is already folded in.
+    const int status =
+        static_cast<int>(helix::ui::clog_meter_status(mode, value, warning, new_danger_pct));
+    if (lv_subject_get_int(&clog_meter_status_) != status) {
+        lv_subject_set_int(&clog_meter_status_, status);
     }
     if (strcmp(lv_subject_get_string(&clog_meter_mode_text_), mode_text) != 0) {
         lv_subject_copy_string(&clog_meter_mode_text_, mode_text);

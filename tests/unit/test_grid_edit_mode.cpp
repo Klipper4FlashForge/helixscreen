@@ -738,8 +738,10 @@ TEST_CASE("Multiple overflow widgets all get disabled", "[grid]") {
         }
     }
 
-    // Verify exactly 1 free cell remains
-    auto pos = grid.find_available(1, 1);
+    // Verify exactly 1 free cell remains. Step 1 because this fixture is built
+    // from single-track widgets, which only exist for a half-cell widget — the
+    // whole-cell step would refuse the odd corner at (5,3).
+    auto pos = grid.find_available(1, 1, 1, 1);
     REQUIRE(pos.has_value());
     CHECK(pos->first == 5);
     CHECK(pos->second == 3);
@@ -754,7 +756,9 @@ TEST_CASE("Multiple overflow widgets all get disabled", "[grid]") {
     int placed_count = 0;
     int disabled_count = 0;
     for (auto& entry : overflow_entries) {
-        auto avail = grid.find_available(entry.colspan, entry.rowspan);
+        // Step 1: these entries span a single track, which only a half-cell
+        // widget ever does — see the note on the free-cell check above.
+        auto avail = grid.find_available(entry.colspan, entry.rowspan, 1, 1);
         if (avail &&
             grid.place({entry.id, avail->first, avail->second, entry.colspan, entry.rowspan})) {
             entry.col = avail->first;
@@ -1870,20 +1874,28 @@ TEST_CASE("compute_resize_result: a stepped span never lands on an odd count",
 
 // Helper that replicates the shrink-to-fit algorithm from place_widget_from_catalog
 // Returns {col, row, colspan, rowspan} or {-1,-1,-1,-1} if no fit
+//
+// `step` is the track boundary the placement must land on, the same argument
+// place_widget_from_catalog takes from snap_step_for(). These cases are about
+// the shrink search, not about snapping, and their fixtures are built from
+// single-track widgets — a span of one track only exists for a widget that
+// declares half-cell support, whose step is 1 — so they pass 1 and exercise
+// every origin. The whole-cell step has its own coverage in
+// test_grid_half_cell_placement.cpp.
 static std::tuple<int, int, int, int> try_place_with_shrink(GridLayout& grid, int colspan,
                                                             int rowspan, int min_colspan,
-                                                            int min_rowspan) {
+                                                            int min_rowspan, int step = 1) {
     // Try default size first
-    auto pos = grid.find_available(colspan, rowspan);
+    auto pos = grid.find_available(colspan, rowspan, step, step);
     if (pos)
         return {pos->first, pos->second, colspan, rowspan};
 
     // Try progressively smaller sizes
-    for (int try_r = rowspan; try_r >= min_rowspan; --try_r) {
-        for (int try_c = colspan; try_c >= min_colspan; --try_c) {
+    for (int try_r = rowspan; try_r >= min_rowspan; try_r -= step) {
+        for (int try_c = colspan; try_c >= min_colspan; try_c -= step) {
             if (try_c == colspan && try_r == rowspan)
                 continue;
-            auto p = grid.find_available(try_c, try_r);
+            auto p = grid.find_available(try_c, try_r, step, step);
             if (p)
                 return {p->first, p->second, try_c, try_r};
         }

@@ -99,6 +99,7 @@
   <translation tag="ADXL" en="ADXL"/>
   <translation tag="AFC" en="AFC"/>
   <translation tag="AFC Update Available" en="AFC Update Available"/>
+  <translation tag="AFC buffer" en="AFC buffer"/>
   <translation tag="AFC failure reset complete" en="AFC failure reset complete"/>
   <translation tag="AFC failure reset failed" en="AFC failure reset failed"/>
   <translation tag="AFC recovery complete" en="AFC recovery complete"/>
@@ -303,6 +304,7 @@
   <translation tag="CAPABILITIES" en="CAPABILITIES"/>
   <translation tag="CARTOGRAPHER" en="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" en="CHANGED FROM LAST SESSION"/>
+  <translation tag="CLOG" en="CLOG"/>
   <translation tag="COLOR SENSORS" en="COLOR SENSORS"/>
   <translation tag="CONFIGURATION" en="CONFIGURATION"/>
   <translation tag="CONNECTION TYPE" en="CONNECTION TYPE"/>
@@ -428,7 +430,10 @@
   <translation tag="Clear failed" en="Clear failed"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" en="Cleared from settings — system unpair failed, may need OS Bluetooth"/>
   <translation tag="Clipboard unavailable - use SSH" en="Clipboard unavailable - use SSH"/>
+  <translation tag="Clog" en="Clog"/>
+  <translation tag="Clog Auto" en="Clog Auto"/>
   <translation tag="Clog Detection" en="Clog Detection"/>
+  <translation tag="Clog Manual" en="Clog Manual"/>
   <translation tag="Clog and flow health while printing" en="Clog and flow health while printing"/>
   <translation tag="Clog detection" en="Clog detection"/>
   <translation tag="Close" en="Close"/>
@@ -2151,6 +2156,7 @@
   <translation tag="T%d has no filament loaded — this print will run out." en="T%d has no filament loaded — this print will run out."/>
   <translation tag="T%d needs filament in slot %d, which is empty — this print will run out." en="T%d needs filament in slot %d, which is empty — this print will run out."/>
   <translation tag="T0" en="T0"/>
+  <translation tag="TANGLE" en="TANGLE"/>
   <translation tag="TD-1 filament color detection" en="TD-1 filament color detection"/>
   <translation tag="TEMPERATURE SENSORS" en="TEMPERATURE SENSORS"/>
   <translation tag="THEME COLORS" en="THEME COLORS"/>
@@ -2593,6 +2599,7 @@
   <translation tag="{} macro not configured" en="{} macro not configured"/>
   <translation tag="{} may cause unintended changes. Are you sure?" en="{} may cause unintended changes. Are you sure?"/>
   <translation tag="{} more taps to {} beta features" en="{} more taps to {} beta features"/>
+  <translation tag="{} needs the HelixPrint plugin. Printing original file." en="{} needs the HelixPrint plugin. Printing original file."/>
   <translation tag="{} new hardware available" en="{} new hardware available"/>
   <translation tag="{} preset{}" en="{} preset{}"/>
   <translation tag="{} target set to {}°C" en="{} target set to {}°C"/>

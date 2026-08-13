@@ -1,15 +1,18 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The v21 -> v22 migration unplaces every saved home layout. Saved col/row/span
-// are cell counts against a grid whose track count and cell size both changed,
-// and the migration runs at config load, before any screen size is known, so
-// there is nothing to rescale into. Clearing the coordinates hands the layout to
-// the placement engine, which is the path every never-positioned widget already
-// takes on every boot.
+// The v21 -> v22 migration TAGS every saved home layout rather than converting
+// or clearing it. Saved col/row/span are cell counts against a grid whose track
+// count and cell size both changed, and this runs at config load, before any
+// screen size is known — so the conversion cannot happen here. It can happen at
+// the first grid build, which knows the panel extent and the measured content
+// box, so the coordinates are left intact for PanelWidgetManager to port (see
+// tests/unit/test_layout_port.cpp for the conversion itself).
 //
-// What survives: the widget set, the array order that drives placement order,
-// and a deliberate hide. What does not: hand-arranged positions.
+// What this migration must therefore NOT do is destroy the inputs that port
+// needs. These tests pin that: coordinates and spans survive, the array order
+// that drives placement order survives, a deliberate hide survives, and the old
+// grid's row cache is carried onto the panel instead of being dropped.
 //
 // The migration is a static function in config.cpp, so it is driven through the
 // public Config::init() path exactly as the v21 tests do. A sandboxed
@@ -82,6 +85,11 @@ class MigrationV22Fixture {
             std::string("/printers/") + printer + "/panel_widgets/home/pages/0/widgets", json());
     }
 
+    json panel_of(const char* printer = "default") const {
+        return config.get<json>(std::string("/printers/") + printer + "/panel_widgets/home",
+                                json());
+    }
+
   public:
     MigrationV22Fixture() {
         SetUp();
@@ -93,7 +101,7 @@ class MigrationV22Fixture {
 
 } // namespace
 
-TEST_CASE_METHOD(MigrationV22Fixture, "Config migration v22: clears every coordinate and span",
+TEST_CASE_METHOD(MigrationV22Fixture, "Config migration v22: preserves every coordinate and span",
                  "[config][migration][22]") {
     write_and_init({{"config_version", 21},
                     {"active_printer_id", "default"},
@@ -116,13 +124,21 @@ TEST_CASE_METHOD(MigrationV22Fixture, "Config migration v22: clears every coordi
     auto widgets = widgets_of();
     REQUIRE(widgets.is_array());
     REQUIRE(widgets.size() == 2);
-    for (const auto& w : widgets) {
-        INFO("widget " << w.value("id", std::string{}));
-        CHECK(w["col"] == -1);
-        CHECK(w["row"] == -1);
-        CHECK_FALSE(w.contains("colspan"));
-        CHECK_FALSE(w.contains("rowspan"));
-    }
+    // The port runs later and needs these numbers; destroying them here is
+    // exactly what this migration used to do and must not do again.
+    CHECK(widgets[0]["col"] == 0);
+    CHECK(widgets[0]["row"] == 0);
+    CHECK(widgets[0]["colspan"] == 2);
+    CHECK(widgets[0]["rowspan"] == 2);
+    CHECK(widgets[1]["col"] == 2);
+    CHECK(widgets[1]["row"] == 0);
+    CHECK(widgets[1]["colspan"] == 4);
+    CHECK(widgets[1]["rowspan"] == 2);
+
+    // And they must be marked as the unit they are, or the first grid build
+    // reads cell counts as track counts.
+    auto panel = panel_of();
+    CHECK(panel["layout_units"] == "cells_v21");
     CHECK(config.get<int>("/config_version", 0) == 22);
 }
 
@@ -185,18 +201,18 @@ TEST_CASE_METHOD(MigrationV22Fixture, "Config migration v22: covers every printe
         INFO("printer " << id);
         auto widgets = widgets_of(id);
         REQUIRE(widgets.size() == 1);
-        CHECK(widgets[0]["col"] == -1);
-        CHECK(widgets[0]["row"] == -1);
+        CHECK(widgets[0]["col"].get<int>() >= 0);
+        CHECK(panel_of(id)["layout_units"] == "cells_v21");
     }
 }
 
 TEST_CASE_METHOD(MigrationV22Fixture, "Config migration v22: handles a legacy flat array",
                  "[config][migration][22]") {
-    // Configs written before the multi-page format hold a bare array. After
-    // unplacement PanelWidgetConfig::load() sees no entry with a grid position
-    // and treats the config as pre-grid, replacing it with build_defaults() —
-    // which discards every deliberate hide. The migration converts the array to
-    // the page shape so that branch is never reached.
+    // Configs written before the multi-page format hold a bare array, which
+    // PanelWidgetConfig::load() routes down a separate branch that can decide
+    // the config is pre-grid and replace it with build_defaults(), discarding
+    // every deliberate hide. The migration converts the array to the page shape
+    // so that branch is never reached, and tags it like any other panel.
     write_and_init(
         {{"config_version", 21},
          {"active_printer_id", "default"},
@@ -212,25 +228,62 @@ TEST_CASE_METHOD(MigrationV22Fixture, "Config migration v22: handles a legacy fl
                               {"rowspan", 2}},
                              {{"id", "led"}, {"enabled", true}, {"col", 3}, {"row", 2}}})}}}}}}}});
 
-    auto homecfg = config.get<json>("/printers/default/panel_widgets/home", json());
+    auto homecfg = panel_of();
     REQUIRE(homecfg.is_object());
     REQUIRE(homecfg.contains("pages"));
+    CHECK(homecfg["layout_units"] == "cells_v21");
     auto widgets = homecfg["pages"][0]["widgets"];
     REQUIRE(widgets.size() == 2);
     CHECK(widgets[0]["enabled"] == false); // deliberate hide survives
-    CHECK(widgets[0]["col"] == -1);
+    CHECK(widgets[0]["col"] == 2);         // and so does its position
+    CHECK(widgets[0]["colspan"] == 4);
 }
 
-TEST_CASE_METHOD(MigrationV22Fixture, "Config migration v22: drops the cached grid row count",
+TEST_CASE_METHOD(MigrationV22Fixture,
+                 "Config migration v22: carries the cached row count onto the panel",
                  "[config][migration][22]") {
-    // /ui/cached_grid/<panel>/rows is a row count in cells of the old grid.
+    // /ui/cached_grid/<panel>/rows is a row count in cells of the old grid. It
+    // is the one thing about that grid a saved layout cannot re-derive on its
+    // own — the old row axis was sized from the widgets in use, with this as a
+    // floor for widgets whose hardware gate had not yet fired. So it moves onto
+    // the panel beside the tag rather than being dropped, and /ui loses the key.
     write_and_init({{"config_version", 21},
                     {"ui", {{"cached_grid", {{"home", {{"rows", 4}}}}}}},
                     {"active_printer_id", "default"},
-                    {"printers", {{"default", json::object()}}}});
+                    {"printers",
+                     {{"default",
+                       {{"panel_widgets",
+                         {{"home", home({{{"id", "led"},
+                                          {"enabled", true},
+                                          {"col", 1},
+                                          {"row", 1},
+                                          {"colspan", 1},
+                                          {"rowspan", 1}}})}}}}}}}});
 
     auto ui = config.get<json>("/ui", json());
     CHECK_FALSE(ui.contains("cached_grid"));
+    CHECK(panel_of()["legacy_rows"] == 4);
+}
+
+TEST_CASE_METHOD(MigrationV22Fixture, "Config migration v22: a panel with no cache records zero",
+                 "[config][migration][22]") {
+    // Absent cache is not the same as a cache of zero rows, but the port treats
+    // both as "unknown" and reads the row count off the layout, so the tag can
+    // carry a plain 0 rather than an optional.
+    write_and_init({{"config_version", 21},
+                    {"active_printer_id", "default"},
+                    {"printers",
+                     {{"default",
+                       {{"panel_widgets",
+                         {{"home", home({{{"id", "led"},
+                                          {"enabled", true},
+                                          {"col", 1},
+                                          {"row", 1},
+                                          {"colspan", 1},
+                                          {"rowspan", 1}}})}}}}}}}});
+
+    CHECK(panel_of()["legacy_rows"] == 0);
+    CHECK(panel_of()["layout_units"] == "cells_v21");
 }
 
 TEST_CASE_METHOD(MigrationV22Fixture, "Config migration v22: is idempotent",

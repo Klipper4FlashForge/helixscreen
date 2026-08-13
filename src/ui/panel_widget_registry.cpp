@@ -120,7 +120,12 @@ static std::vector<PanelWidgetDef> s_widget_defs = {
     {"job_queue",        TR_NOOP("Job Queue"),         "progress_clock",   TR_NOOP("Print jobs waiting to run"),                   "Job Queue",        nullptr,              nullptr,                               CAT_PRINT,    false, 4, 4, 4, 4, 8, 6, false, true, true},
     //                                                                                                                                          hint                                cat              en  col row min_c min_r max_c max_r  multi  half_c half_r merges_card
     {"tips",             TR_NOOP("Tips"),              "help_circle",      TR_NOOP("Rotating tips for using your printer"),         "Tips",             nullptr,              nullptr,                               CAT_SYSTEM,   true,  8, 4, 4, 2, BAND_COLSPAN, 4, false, true, true, false},
-    {"clog_detection",   TR_NOOP("Clog Detection"),    "water",            TR_NOOP("Clog and flow health while printing"),          "Clog Detection",   "clog_meter_mode",    "Requires clog detection hardware",    CAT_FILAMENT, false, 2, 2, 2, 2, 4, 4, false, true, true},
+    // Two cells wide by one tall: the FlowGuard scale is horizontal, and it
+    // carries a label at each end (#1017). One cell across had the arc, its
+    // value and its mode text stacked in a box narrower than the words —
+    // reported as showing "nothing useful". The minimum matches the default so
+    // a drag cannot put it back there; height still scales down to one cell.
+    {"clog_detection",   TR_NOOP("Clog Detection"),    "water",            TR_NOOP("Clog and flow health while printing"),          "Clog Detection",   "clog_meter_mode",    "Requires clog detection hardware",    CAT_FILAMENT, false, 4, 2, 4, 2, 8, 4, false, true, true},
     {"print_stats",      TR_NOOP("Print Stats"),       "printer_3d",       TR_NOOP("Total prints, success rate, and time"),         "Print Stats",      nullptr,              nullptr,                               CAT_PRINT,    false, 4, 4, 4, 2, 6, 4, false, true, true},
     {"gcode_console",    TR_NOOP("GCode Console"),     "console",          TR_NOOP("Send G-code and read the replies"),             "GCode Console",    nullptr,              nullptr,                               CAT_CONTROLS, false, 2, 2, 2, 2, 2, 2},
 #if HELIX_HAS_CAMERA

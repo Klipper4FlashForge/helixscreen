@@ -99,6 +99,7 @@ translations:
   ADXL: ADXL
   AFC: AFC
   AFC Update Available: Доступно обновление AFC
+  AFC buffer: ''
   AFC failure reset complete: Сброс ошибки AFC завершён
   AFC failure reset failed: Ошибка сброса ошибки AFC
   AFC recovery complete: Восстановление AFC завершено
@@ -303,6 +304,7 @@ translations:
   CAPABILITIES: ВОЗМОЖНОСТИ
   CARTOGRAPHER: CARTOGRAPHER
   CHANGED FROM LAST SESSION: ИЗМЕНЕНО С ПРОШЛОЙ СЕССИИ
+  CLOG: ''
   COLOR SENSORS: ДАТЧИКИ ЦВЕТА
   CONFIGURATION: КОНФИГУРАЦИЯ
   CONNECTION TYPE: ТИП ПОДКЛЮЧЕНИЯ
@@ -428,7 +430,10 @@ translations:
   Clear failed: Ошибка очистки
   Cleared from settings — system unpair failed, may need OS Bluetooth: Удалено из настроек; не удалось отменить сопряжение в системе, возможно нужен Bluetooth ОС
   Clipboard unavailable - use SSH: Буфер обмена недоступен - используйте SSH
+  Clog: ''
+  Clog Auto: ''
   Clog Detection: Обнаружение засора
+  Clog Manual: ''
   Clog and flow health while printing: Засоры и поток во время печати
   Clog detection: Обнаружение засора
   Close: Закрыть
@@ -2164,6 +2169,7 @@ translations:
   T%d has no filament loaded — this print will run out.: В T%d не загружен филамент — печати не хватит филамента.
   T%d needs filament in slot %d, which is empty — this print will run out.: Для T%d нужен филамент в слоте %d, который пуст — печати не хватит филамента.
   T0: ''
+  TANGLE: ''
   TD-1 filament color detection: Определение цвета филамента TD-1
   TEMPERATURE SENSORS: ДАТЧИКИ ТЕМПЕРАТУРЫ
   THEME COLORS: ЦВЕТА ТЕМЫ
@@ -2622,6 +2628,7 @@ translations:
   '{} macro not configured': Макрос {} не настроен
   '{} may cause unintended changes. Are you sure?': '{} может привести к непреднамеренным изменениям. Вы уверены?'
   '{} more taps to {} beta features': '{} нажатий до {} бета-функций'
+  '{} needs the HelixPrint plugin. Printing original file.': ''
   '{} new hardware available': 'Доступно нового оборудования: {}'
   '{} preset{}': '{} пресет{}'
   '{} target set to {}°C': Целевая температура {} — {}°C

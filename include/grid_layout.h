@@ -199,11 +199,23 @@ class GridLayout {
 
     /// Find first available position for a widget of given size.
     /// Scans top-to-bottom, left-to-right (row-major order).
-    std::optional<std::pair<int, int>> find_available(int colspan, int rowspan) const;
+    ///
+    /// `col_step` / `row_step` are the track boundaries the origin may land on
+    /// — TRACKS_PER_CELL for a widget that must occupy whole cells, 1 for an
+    /// axis it declares half-cell support on. They default to a whole cell:
+    /// half-cell placement is opt-in everywhere else, and a search that walked
+    /// every track seated whole-cell widgets straddling two of them whenever a
+    /// half-cell neighbour had left an odd-aligned gap (#1126).
+    std::optional<std::pair<int, int>> find_available(int colspan, int rowspan,
+                                                      int col_step = TRACKS_PER_CELL,
+                                                      int row_step = TRACKS_PER_CELL) const;
 
     /// Find first available position scanning bottom-to-top, right-to-left.
     /// Used by auto-placement to pack widgets toward the bottom of the grid.
-    std::optional<std::pair<int, int>> find_available_bottom(int colspan, int rowspan) const;
+    /// `col_step` / `row_step` as for find_available().
+    std::optional<std::pair<int, int>> find_available_bottom(int colspan, int rowspan,
+                                                             int col_step = TRACKS_PER_CELL,
+                                                             int row_step = TRACKS_PER_CELL) const;
 
     /// Why a flexible placement attempt failed.
     enum class PlacementFailure {
@@ -237,7 +249,9 @@ class GridLayout {
     ///
     /// `failure` distinguishes "no space left" from "larger than the whole
     /// grid" so the caller can say which condition actually failed.
-    SpanPlacement find_available_bottom_min(int min_colspan, int min_rowspan) const;
+    SpanPlacement find_available_bottom_min(int min_colspan, int min_rowspan,
+                                            int col_step = TRACKS_PER_CELL,
+                                            int row_step = TRACKS_PER_CELL) const;
 
     /// Short, user-facing phrase naming a placement failure. Kept next to the
     /// enum so the toast and the log cannot drift apart.
@@ -245,13 +259,19 @@ class GridLayout {
 
     /// A placed widget's growth goal — the span its definition authors, which
     /// is where grow_to_targets() tries to get it back to.
+    ///
+    /// The steps are the same per-axis track boundaries find_available() takes:
+    /// growth moves an origin as well as a span, so a widget that may not
+    /// straddle a cell must grow a whole cell at a time or not at all (#1126).
     struct GrowthTarget {
         std::string widget_id;
         int colspan;
         int rowspan;
+        int col_step = TRACKS_PER_CELL;
+        int row_step = TRACKS_PER_CELL;
     };
 
-    /// Expand one already-placed widget by a single row or column toward
+    /// Expand one already-placed widget by a single growth step toward
     /// `target_colspan` x `target_rowspan`. Returns true when the placement
     /// changed.
     ///
@@ -264,7 +284,11 @@ class GridLayout {
     ///
     /// The target is a ceiling, never a floor: a widget already at or past its
     /// target does not move.
-    bool grow_once(const std::string& widget_id, int target_colspan, int target_rowspan);
+    ///
+    /// One step is `col_step` tracks horizontally and `row_step` vertically —
+    /// a whole cell unless the widget declared half-cell support on that axis.
+    bool grow_once(const std::string& widget_id, int target_colspan, int target_rowspan,
+                   int col_step = TRACKS_PER_CELL, int row_step = TRACKS_PER_CELL);
 
     /// Round-robin expansion toward every target: each pass offers every widget
     /// in `targets` ONE growth step, and passes repeat until one changes

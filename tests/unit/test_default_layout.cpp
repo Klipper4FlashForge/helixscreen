@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../helix_test_fixture.h"
+#include "../test_helpers/scoped_breakpoint.h"
 #include "data_root_resolver.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "helix-xml/src/xml/lv_xml_component.h"
@@ -60,12 +61,9 @@ class TempCwdGuard {
         save_and_unset_env("HELIX_DATA_DIR", saved_data_dir_, had_data_dir_);
         save_and_unset_env("HELIX_CONFIG_DIR", saved_config_dir_, had_config_dir_);
 
-        // Reset breakpoint subject to Micro — prior tests may have
-        // initialized it to a different breakpoint index via theme_manager_init
-        lv_subject_t* bp = theme_manager_get_breakpoint_subject();
-        if (bp && bp->type == LV_SUBJECT_TYPE_INT) {
-            lv_subject_set_int(bp, to_int(UiBreakpoint::Micro));
-        }
+        // Breakpoint is pinned to Micro by the bp_ member below, which also puts
+        // it back. Setting it here without restoring left every later test in
+        // the process building a Micro-cell grid.
     }
 
     ~TempCwdGuard() {
@@ -94,6 +92,11 @@ class TempCwdGuard {
     TempCwdGuard& operator=(const TempCwdGuard&) = delete;
 
   private:
+    /// Micro for the whole guard's life: this file's JSON placements are all
+    /// authored under the "tiny" key, which is breakpoint index 0. Restored on
+    /// destruction so it does not redefine the grid for the rest of the suite.
+    helix::test::ScopedBreakpoint bp_{UiBreakpoint::Micro};
+
     static void save_and_unset_env(const char* name, std::string& saved, bool& had) {
         const char* v = getenv(name);
         had = (v != nullptr);
