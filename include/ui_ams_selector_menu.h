@@ -44,6 +44,8 @@ namespace helix::ui {
  * @endcode
  */
 class AmsSelectorMenu : public ContextMenu {
+    HELIX_CONTEXT_MENU_KIND(AmsSelectorMenu)
+
   public:
     enum class SelectorAction {
         CANCELLED,     ///< User dismissed menu without action

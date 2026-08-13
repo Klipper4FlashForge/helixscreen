@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include "helix_type_tag.h"
+
+#include <cstddef>
 #include <functional>
 #include <lvgl.h>
 #include <string>
@@ -24,6 +27,7 @@ namespace helix::ui {
  * ## Usage:
  * @code
  * class MyContextMenu : public ContextMenu {
+ *     HELIX_CONTEXT_MENU_KIND(MyContextMenu)
  * protected:
  *     const char* xml_component_name() const override { return "my_context_menu"; }
  *     const char* menu_card_name() const override { return "context_menu"; }
@@ -93,14 +97,33 @@ class ContextMenu {
     [[nodiscard]] static ContextMenu* active();
 
     /**
+     * @brief This menu's concrete type, as a `helix::type_tag<T>()` value
+     *
+     * The RTTI-free stand-in for `typeid(*this)`, so `active_as<T>()` can
+     * downcast without `dynamic_cast` — the firmware builds `-fno-rtti`.
+     * Pure rather than defaulted on purpose: a subclass that forgets it fails to
+     * compile as abstract, instead of silently answering with its base's tag.
+     * Declare it with HELIX_CONTEXT_MENU_KIND(Self).
+     */
+    [[nodiscard]] virtual std::size_t kind_tag() const = 0;
+
+    /**
      * @brief The menu currently on screen, if it is a `T`
      *
      * The downcast every subclass callback needs: the registry holds a base
      * pointer, but a menu's own XML callbacks act on their own type. One helper
      * rather than a `dynamic_cast` open-coded at each of the ~40 callback sites.
+     *
+     * **Exact-type match, unlike the `dynamic_cast` this replaces.** A menu whose
+     * kind tag is a *derived* type's does not answer to its base's `active_as<>`.
+     * Every subclass today is a direct leaf of ContextMenu, so the two agree; if
+     * an intermediate class is ever introduced, code must ask for the leaf type
+     * (or the intermediate must dispatch on the tag itself).
      */
     template <typename T> [[nodiscard]] static T* active_as() {
-        return dynamic_cast<T*>(active());
+        ContextMenu* a = active();
+        return (a != nullptr && a->kind_tag() == helix::type_tag<T>()) ? static_cast<T*>(a)
+                                                                       : nullptr;
     }
 
     /**
@@ -382,5 +405,19 @@ class ContextMenu {
                                        int32_t margin, int32_t gap, AnchorMode mode,
                                        AnchorAlign align);
 };
+
+/**
+ * @brief Declare a context menu's concrete kind, for ContextMenu::active_as()
+ *
+ * One line in every concrete subclass body: `HELIX_CONTEXT_MENU_KIND(MyMenu)`,
+ * where the argument is the class being declared. Emits no access specifier, so
+ * it can sit anywhere in the body without moving the section it lands in. The
+ * override may therefore be private — harmless, because every call goes through
+ * ContextMenu's own public declaration, which is what active_as<>() holds.
+ */
+#define HELIX_CONTEXT_MENU_KIND(T)                                                                 \
+    std::size_t kind_tag() const override {                                                        \
+        return helix::type_tag<T>();                                                               \
+    }
 
 } // namespace helix::ui

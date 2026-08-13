@@ -36,6 +36,8 @@ namespace helix::ui {
  * @endcode
  */
 class SpoolmanContextMenu : public ContextMenu {
+    HELIX_CONTEXT_MENU_KIND(SpoolmanContextMenu)
+
   public:
     enum class MenuAction {
         CANCELLED,   ///< User dismissed menu without action

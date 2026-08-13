@@ -152,6 +152,8 @@ class PrintStatusWidget : public PanelWidget {
     /// mode. Every control applies live, so both the Done button and a tap on
     /// the backdrop commit the card rather than discarding it.
     class ConfigurePicker : public helix::ui::ContextMenu {
+        HELIX_CONTEXT_MENU_KIND(ConfigurePicker)
+
       public:
         explicit ConfigurePicker(PrintStatusWidget& owner) : owner_(owner) {}
 
@@ -190,6 +192,8 @@ class PrintStatusWidget : public PanelWidget {
     /// readout in the detailed-active footer. Picking a row pins the temperature
     /// display to that tool; a tap outside it chooses nothing.
     class NozzleToolPicker : public helix::ui::ContextMenu {
+        HELIX_CONTEXT_MENU_KIND(NozzleToolPicker)
+
       public:
         explicit NozzleToolPicker(PrintStatusWidget& owner) : owner_(owner) {}
 
