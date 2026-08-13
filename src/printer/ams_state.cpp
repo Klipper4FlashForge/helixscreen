@@ -2176,8 +2176,8 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
         new_peak_pct = static_cast<int>(std::max(max_clog, max_tangle) * 100);
         snprintf(center_buf, sizeof(center_buf), "%+d%%",
                  static_cast<int>(info.flowguard_info.level * 100));
-        snprintf(left_buf, sizeof(left_buf), "TANGLE");
-        snprintf(right_buf, sizeof(right_buf), "CLOG");
+        snprintf(left_buf, sizeof(left_buf), "%s", lv_tr("TANGLE"));
+        snprintf(right_buf, sizeof(right_buf), "%s", lv_tr("CLOG"));
 
     } else if (use_encoder && info.encoder_info.enabled) {
         // Encoder mode: 0-100 clog percentage
@@ -2189,11 +2189,11 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
         // once it is known to be real — it is configuration, not a scale end,
         // which is where it used to be drawn.
         if (info.encoder_info.detection_mode == 2) {
-            snprintf(mode_text, sizeof(mode_text), "Clog Auto");
+            snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog Auto"));
         } else if (info.encoder_info.detection_mode == 1) {
-            snprintf(mode_text, sizeof(mode_text), "Clog Manual");
+            snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog Manual"));
         } else {
-            snprintf(mode_text, sizeof(mode_text), "Clog");
+            snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog"));
         }
 
         float det_len = info.encoder_info.detection_length;
@@ -2231,7 +2231,7 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
                     warning = unit.buffer_health->is_warning() ? 1 : 0;
                 }
 
-                snprintf(mode_text, sizeof(mode_text), "AFC buffer");
+                snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("AFC buffer"));
 
                 new_danger_pct = 75;
                 new_peak_pct = value;
@@ -2250,9 +2250,9 @@ void AmsState::sync_clog_meter_from_info(const AmsSystemInfo& info) {
             mode = 1;
             value = 0; // No headroom data, so there is no clog% to plot
             if (info.clog_detection == 2) {
-                snprintf(mode_text, sizeof(mode_text), "Clog Auto");
+                snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog Auto"));
             } else {
-                snprintf(mode_text, sizeof(mode_text), "Clog Manual");
+                snprintf(mode_text, sizeof(mode_text), "%s", lv_tr("Clog Manual"));
             }
             // Flow rate is all this path has; it is the reading, so it goes in
             // the centre rather than into a slot of its own.

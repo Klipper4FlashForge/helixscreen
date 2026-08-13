@@ -99,6 +99,7 @@ translations:
   ADXL: ADXL
   AFC: AFC
   AFC Update Available: AFC 有可用更新
+  AFC buffer: ''
   AFC failure reset complete: AFC故障重置完成
   AFC failure reset failed: AFC故障重置失败
   AFC recovery complete: AFC恢复完成
@@ -303,6 +304,7 @@ translations:
   CAPABILITIES: 功能
   CARTOGRAPHER: CARTOGRAPHER
   CHANGED FROM LAST SESSION: 与上次会话相比有更改
+  CLOG: ''
   COLOR SENSORS: 颜色传感器
   CONFIGURATION: 配置
   CONNECTION TYPE: 连接类型
@@ -428,7 +430,10 @@ translations:
   Clear failed: 清除失败
   Cleared from settings — system unpair failed, may need OS Bluetooth: 已从设置中清除；系统解除配对失败，可能需使用系统蓝牙设置
   Clipboard unavailable - use SSH: 剪贴板不可用 - 请使用 SSH
+  Clog: ''
+  Clog Auto: ''
   Clog Detection: 堵料检测
+  Clog Manual: ''
   Clog and flow health while printing: 打印时的堵料与流量状况
   Clog detection: 堵料检测
   Close: 关闭
@@ -2163,6 +2168,7 @@ translations:
   T%d has no filament loaded — this print will run out.: T%d 未加载耗材 —— 此次打印将会耗尽耗材。
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d 需要 %d 号料仓中的耗材，但该料仓为空 —— 此次打印将会耗尽耗材。
   T0: ''
+  TANGLE: ''
   TD-1 filament color detection: TD-1 耗材颜色检测
   TEMPERATURE SENSORS: 温度传感器
   THEME COLORS: 主题颜色
