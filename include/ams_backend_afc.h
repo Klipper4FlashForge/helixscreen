@@ -403,6 +403,15 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      */
     [[nodiscard]] std::vector<int> get_tool_mapping() const override;
 
+    /// AFC echoes each lane's `map` field back over the subscription, so a
+    /// restore can be confirmed against firmware truth rather than our own
+    /// optimistic write (#1270).
+    [[nodiscard]] bool reports_firmware_tool_mapping() const override {
+        return true;
+    }
+
+    [[nodiscard]] uint64_t firmware_tool_mapping_generation() const override;
+
     /**
      * @brief Set discovered lane and hub names from PrinterCapabilities
      *
