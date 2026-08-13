@@ -866,7 +866,7 @@ A backend fault reaches the user through one of **two independent channels**. Th
 
 **Cross-channel dedup.** `fault_surface_correlation` (`src/application/fault_surface_correlation.cpp`, 3 s window, exact-string match) is the shared claim ledger. The router records every detail it surfaces; the bridge's fallback toast checks it before speaking. `RecoveryModalPresenter` separately dedups on `detail` **plus** the action set — the action set is part of the identity because AFC legitimately emits byte-identical text on both channels with different affordances (#1171). Backends should populate `ErrorEvent::raw_detail` with the firmware's untranslated wording when `detail` has been rewritten, or the ledger has nothing the other channel can match.
 
-**Who owns the runout surface.** Both channels compete with a third, older surface: the generic sensor-driven modal (`FilamentRunoutHandler` on the pause edge, `PrintStatusWidget` when idle), gated by `RuntimeConfig::should_show_runout_modal()`. The rule is **one surface per printer**: that predicate returns false exactly for the backends in the table above that raise their own runout fault (AFC, Happy Hare, AD5X IFS, CFS), and true for hub backends that raise nothing (ACE, QIDI Box) — which the old blanket "is it a hub AMS" test silenced with nothing put in its place (#1250).
+**Who owns the runout surface.** Both channels compete with a third, older surface: the generic sensor-driven modal (`FilamentRunoutHandler` on the pause edge, `PrintStatusWidget` when idle), gated by `RuntimeConfig::should_show_runout_modal()`. A fourth entry point, the home-panel "Filament Sensor" tile (`FilamentSensorWidget`), opens the same `RunoutGuidanceModal` on a deliberate tap while printing or paused, and `SensorSettingsOverlay` when the tracked sensor is disabled - see "The five dispatch surfaces" below. The rule is **one surface per printer**: that predicate returns false exactly for the backends in the table above that raise their own runout fault (AFC, Happy Hare, AD5X IFS, CFS), and true for hub backends that raise nothing (ACE, QIDI Box) — which the old blanket "is it a hub AMS" test silenced with nothing put in its place (#1250).
 
 Note that for AFC, Happy Hare, AD5X IFS and CFS the generic surface is *also* structurally blind: each claims its own sensors through `owns_filament_sensor()`, so `PrinterHardware::is_ams_sensor()` hides them from the wizard's sensor picker, they never get a `FilamentSensorRole`, and `FilamentSensorManager::has_real_runout()` skips them. The suppression above is belt-and-braces for the configs where an AMS lane sensor *does* carry a role (AFC's `...eN_filament` naming is the case `has_real_runout()`'s lane-mapping branch exists for).
 
@@ -890,25 +890,28 @@ presented.
 |--------|------|
 | `include/filament_op_dispatch.h` | `plan_load()` / `plan_unload()` — which tier, which backend call, or which refusal. Also `unload_target_is_loaded()`. Header-only, takes plain values (`AmsSystemInfo` + `BackendCaps`), no `AmsBackend*` |
 | `include/filament_op_slot_resolver.h` | `resolve_op_button_slot()` — which slot a tool's buttons act on; `compute_op_button_gating()` — whether Load/Unload are enabled |
-| `src/ui/filament_op_router.{h,cpp}` | Tiers 2 and 3: `dispatch_filament_macro()` with its `ParamPolicy`, the shared `MacroParamModal`, and `filament_load_fallback_gcode()` / `filament_unload_fallback_gcode()` |
+| `src/ui/filament_op_router.{h,cpp}` | Tiers 2 and 3: `dispatch_filament_macro()` with its `ParamPolicy`, the shared `MacroParamModal`, and `filament_load_fallback_gcode()` / `filament_unload_fallback_gcode()` / `filament_purge_fallback_gcode()` |
+| `include/filament_op_execute.h` | `execute_filament_load()` / `execute_filament_unload()` / `execute_filament_purge()` - shared EXECUTION of a plan once `plan_load()`/`plan_unload()` has picked the tier: switches over `FilamentTier`, dispatches the configured macro or falls back to raw gcode. Used by `PrintStatusWidget`, `FilamentRunoutHandler`, and `FilamentSensorWidget` |
 
-Tier 1 deliberately stays with the callers — the backend call is inseparable from each
-surface's own guard, stepper, and spinner bookkeeping.
+Tier 1 deliberately stays with the callers on `FilamentPanel` and `AmsOperationSidebar` - the
+backend call there is inseparable from each surface's own guard, stepper, and spinner
+bookkeeping (the preheat state machine on the sidebar, `operation_guard_` and the on-button
+spinner on the panel). The other three surfaces share one execution layer instead
+(`filament_op_execute.h`) because none of them carry that kind of surface-owned bookkeeping.
 
-### The four dispatch surfaces
+### The five dispatch surfaces
 
 | Surface | Entry point | Raised by | Dispatches? |
 |---------|-------------|-----------|-------------|
-| Filament panel | `FilamentPanel::execute_load()` / `execute_unload()` | The Load / Unload buttons on the Filament nav panel | Yes — full ladder, `ParamPolicy::Prompt` |
-| AMS operation sidebar | `AmsOperationSidebar::handle_load_with_preheat(slot)` / `handle_unload(slot)` | Slot grid + context menu on the AMS panel and the AMS Overview panel (both own a `unique_ptr` to one) | Yes — full ladder, `ParamPolicy::Prompt` |
-| Mid-print runout dialog | `FilamentRunoutHandler::dispatch_load()` | `RunoutGuidanceModal`'s Load button during a print or runout pause | Yes — full ladder, `ParamPolicy::Suppress` |
-| Idle runout dialog | `PrintStatusWidget::show_idle_runout_modal()` | A real runout detected while STANDBY / COMPLETE / CANCELLED | **No** — hands off to the Filament panel |
+| Filament panel | `FilamentPanel::execute_load()` / `execute_unload()` | The Load / Unload buttons on the Filament nav panel | Yes - full ladder, `ParamPolicy::Prompt`, own execution |
+| AMS operation sidebar | `AmsOperationSidebar::handle_load_with_preheat(slot)` / `handle_unload(slot)` | Slot grid + context menu on the AMS panel and the AMS Overview panel (both own a `unique_ptr` to one) | Yes - full ladder, `ParamPolicy::Prompt`, own execution |
+| Mid-print runout dialog | `FilamentRunoutHandler::dispatch_load()` | `RunoutGuidanceModal`'s Load button during a print or runout pause | Yes - full ladder, `ParamPolicy::Suppress`, via `filament_op_execute.h` |
+| Idle runout dialog | `PrintStatusWidget::show_idle_runout_modal()` | A real runout detected while STANDBY / COMPLETE / CANCELLED | Yes - `PrintStatusWidget::dispatch_load()` calls `filament_op_execute.h` directly (`print_status_widget.cpp:1199`); it does not hand off to the Filament panel |
+| Home tile | `FilamentSensorWidget::handle_click()` | Tap on the "Filament Sensor" home-panel tile | Depends on state - disabled sensor opens `SensorSettingsOverlay` (no dispatch); printing shows `RunoutGuidanceModal` status-only (no dispatch); otherwise the full Load/Unload/Purge modal dispatches via `filament_op_execute.h`, same as the runout dialogs |
 
-The idle dialog is the one surviving "navigate away", and it is correct *because* it never
-dispatches: with the printer idle the Filament panel is reachable, so `set_active(PanelId::
-Filament)` inherits that panel's routing instead of forking a fourth answer. That is only
-true while it stays a pure hand-off. The moment it wants to load without leaving the modal,
-it goes through `plan_load()` like the other three.
+None of the five surfaces navigate away to dispatch anymore. `plan_load()` /
+`plan_unload()` answer the tier decision for all of them; `filament_op_execute.h` runs
+that decision for the three surfaces above that don't own a per-surface execution ladder.
 
 ### The three-tier ladder
 
@@ -970,6 +973,7 @@ carry a comment saying so. Read `include/filament_op_dispatch.h` before "fixing"
 | Is there anything at this slot to unload? | `unload_target_is_loaded()` — actively loaded, **or** filament at the toolhead, **or** it is the current slot (the runout-recovery case, #995 / #1199) |
 | Which slot do this tool's buttons act on? | `resolve_op_button_slot()` |
 | Are Load / Unload enabled right now? | `compute_op_button_gating()` — load state *and* print state |
+| How does a plan actually run? | `filament_op_execute.h` - `execute_filament_load()` / `execute_filament_unload()` / `execute_filament_purge()`, shared by `PrintStatusWidget`, `FilamentRunoutHandler`, and `FilamentSensorWidget` |
 
 **Per-surface — presentation, and correctly different.**
 
@@ -978,7 +982,8 @@ carry a comment saying so. Read `include/filament_op_dispatch.h` before "fixing"
 | `FilamentPanel` | `begin_operation_guard()` / `operation_guard_`, the `backend_op_active_` gate on `ams_action_observer_`, the on-button spinner (`op_started` / `op_succeeded` / `op_failed`), and `navigate_to_ams_panel()` on `SelectSlot` |
 | `AmsOperationSidebar` | The step model (`start_operation(StepOperationType::LOAD_FRESH / LOAD_SWAP / UNLOAD)`) and the preheat state machine (`get_load_temp_for_slot()`, `pending_load_slot_`, `check_pending_load()`, `ui_initiated_heat_`) |
 | `FilamentRunoutHandler` | Staying put. Every outcome is a toast; navigating would tear down the dialog the user is standing in |
-| All three | Toast copy, and whether to toast at all |
+| `FilamentSensorWidget` (home tile) | No navigation either - toast-only refusals, and the modal stays up for a repeated Purge tap. Also owns the tap-routing decision itself (`decide_tap_destination()` in `filament_widget_tap_policy.h`): disabled sensor vs. printing vs. everything else |
+| All of the above | Toast copy, and whether to toast at all |
 
 Two consequences worth naming, because they look like bugs and are not:
 

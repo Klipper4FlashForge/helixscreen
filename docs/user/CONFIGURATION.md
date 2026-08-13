@@ -1150,8 +1150,9 @@ Each widget object has:
 - `row` — Grid row position (0-based, top to bottom)
 - `colspan` — Number of columns the widget spans
 - `rowspan` — Number of rows the widget spans
-- `config` — (optional) Per-widget settings object. Currently used by `temp_stack` and `fan_stack` for display mode:
+- `config` — (optional) Per-widget settings object. Currently used by `temp_stack` and `fan_stack` for display mode, and by `filament` for its sensor source:
   - `display_mode` — `"stack"` (default) or `"carousel"`. Stack shows compact rows; carousel shows swipeable full-size pages. Toggle via long-press on the widget.
+  - `source` (`filament` only) - `"auto"` (default), `"runout"`, `"toolhead"`, or `"entry"`. Which sensor role the tile follows. Set via the gear icon in Edit Mode.
 
 **Available widget IDs:**
 
@@ -1167,7 +1168,7 @@ Each widget object has:
 | `humidity` | Enclosure humidity sensor | Enabled | Yes (requires sensor) |
 | `width_sensor` | Filament width sensor | Enabled | Yes (requires sensor) |
 | `probe` | Z probe status and offset | Enabled | Yes (requires probe) |
-| `filament` | Filament runout detection | Enabled | Yes (requires sensor) |
+| `filament` | Filament runout detection, tap for load/unload/purge | Enabled | Yes (requires sensor) |
 | `fan_stack` | Part, hotend, and auxiliary fan speeds (supports carousel mode with arc dials) | Enabled | No |
 | `thermistor` | Temperature sensors (chamber, enclosure, etc.) | Disabled | Yes (requires sensor) |
 | `notifications` | Pending alerts with severity badge | Enabled | No |
