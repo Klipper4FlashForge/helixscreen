@@ -60,6 +60,7 @@ constexpr FontFamily kFontFamilies[] = {
 /// Process-wide UI scale. Set once during display init; screens do not resize
 /// or change DPI at runtime (see project notes on fixed-geometry screens).
 double g_active_scale = 1.0;
+double g_auto_scale = 1.0;
 
 } // namespace
 
@@ -198,6 +199,23 @@ std::string DisplayMetrics::scaled_font_name(const std::string& font_name, doubl
     }
 
     return font_name;
+}
+
+double DisplayMetrics::scale_for_setting(int user_scale_percent, double auto_scale) {
+    const double fallback = (std::isfinite(auto_scale) && auto_scale >= 1.0) ? auto_scale : 1.0;
+    if (user_scale_percent < kMinScaleSettingPercent ||
+        user_scale_percent > kMaxScaleSettingPercent) {
+        return fallback;
+    }
+    return static_cast<double>(user_scale_percent) / 100.0;
+}
+
+void DisplayMetrics::set_auto_scale(double scale) {
+    g_auto_scale = (std::isfinite(scale) && scale >= 1.0) ? scale : 1.0;
+}
+
+double DisplayMetrics::auto_scale() {
+    return g_auto_scale;
 }
 
 void DisplayMetrics::set_active_scale(double scale) {

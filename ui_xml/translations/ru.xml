@@ -1100,6 +1100,7 @@
   <translation tag="Installing..." ru="Установка..."/>
   <translation tag="Intensity" ru="Интенсивность"/>
   <translation tag="Interactive probe calibration" ru="Интерактивная калибровка зонда"/>
+  <translation tag="Interface size. Applies after restart." ru="Размер интерфейса. Применяется после перезапуска."/>
   <translation tag="Internal error: API not available" ru="Внутренняя ошибка: API недоступен"/>
   <translation tag="Internal error: no scan result" ru="Внутренняя ошибка: нет результата сканирования"/>
   <translation tag="Invalid port number" ru="Неверный номер порта"/>
@@ -2324,7 +2325,9 @@
   <translation tag="Type to preview input field..." ru="Введите для предпросмотра поля ввода..."/>
   <translation tag="Type:" ru="Тип:"/>
   <translation tag="T{} shares slot with T{}" ru="T{} использует общий слот с T{}"/>
+  <translation tag="UI Scale" ru="Масштаб интерфейса"/>
   <translation tag="UI Sounds" ru="Звуки интерфейса"/>
+  <translation tag="UI scale applies after restart" ru="Масштаб интерфейса применяется после перезапуска"/>
   <translation tag="USB" ru="USB"/>
   <translation tag="USB DEVICES" ru="USB-УСТРОЙСТВА"/>
   <translation tag="USB drive connected" ru="USB-накопитель подключён"/>

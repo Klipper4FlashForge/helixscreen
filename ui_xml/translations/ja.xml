@@ -1100,6 +1100,7 @@
   <translation tag="Installing..." ja="インストール中..."/>
   <translation tag="Intensity" ja="強度"/>
   <translation tag="Interactive probe calibration" ja="インタラクティブプローブキャリブレーション"/>
+  <translation tag="Interface size. Applies after restart." ja="インターフェースの大きさ。再起動後に適用されます。"/>
   <translation tag="Internal error: API not available" ja="内部エラー: API を利用できません"/>
   <translation tag="Internal error: no scan result" ja="内部エラー: スキャン結果がありません"/>
   <translation tag="Invalid port number" ja="無効なポート番号"/>
@@ -2324,7 +2325,9 @@
   <translation tag="Type to preview input field..." ja="入力フィールドをプレビューするには入力してください..."/>
   <translation tag="Type:" ja="タイプ:"/>
   <translation tag="T{} shares slot with T{}" ja="T{} は T{} とスロットを共有しています"/>
+  <translation tag="UI Scale" ja="UI スケール"/>
   <translation tag="UI Sounds" ja="UIサウンド"/>
+  <translation tag="UI scale applies after restart" ja="UI スケールは再起動後に適用されます"/>
   <translation tag="USB" ja="USB"/>
   <translation tag="USB DEVICES" ja="USBデバイス"/>
   <translation tag="USB drive connected" ja="USB ドライブが接続されました"/>

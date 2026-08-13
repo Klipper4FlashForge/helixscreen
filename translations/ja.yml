@@ -1107,6 +1107,7 @@ translations:
   Installing...: インストール中...
   Intensity: 強度
   Interactive probe calibration: インタラクティブプローブキャリブレーション
+  Interface size. Applies after restart.: "インターフェースの大きさ。再起動後に適用されます。"
   'Internal error: API not available': '内部エラー: API を利用できません'
   'Internal error: no scan result': '内部エラー: スキャン結果がありません'
   Invalid port number: 無効なポート番号
@@ -2347,7 +2348,9 @@ translations:
   Type to preview input field...: 入力フィールドをプレビューするには入力してください...
   'Type:': 'タイプ:'
   T{} shares slot with T{}: T{} は T{} とスロットを共有しています
+  UI Scale: "UI スケール"
   UI Sounds: UIサウンド
+  UI scale applies after restart: "UI スケールは再起動後に適用されます"
   USB: USB
   USB DEVICES: USBデバイス
   USB drive connected: USB ドライブが接続されました

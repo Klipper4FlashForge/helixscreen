@@ -313,3 +313,69 @@ TEST_CASE("active scale defaults to 1.0 and rejects shrinking values", "[display
 
     DisplayMetrics::set_active_scale(1.0); // restore for other tests
 }
+
+// ============================================================================
+// UI scale setting
+// ============================================================================
+
+TEST_CASE("Automatic follows the DPI-derived scale", "[display_metrics][scale]") {
+    const double automatic = DisplayMetrics::kScaleSettingAutomatic;
+    REQUIRE(DisplayMetrics::scale_for_setting(automatic, 1.578) == Catch::Approx(1.578));
+    REQUIRE(DisplayMetrics::scale_for_setting(automatic, 1.0) == Catch::Approx(1.0));
+
+    // Every shipping printer resolves to 1.0, so Automatic is the identity
+    // there and the setting cannot be what changes a printer's sizing.
+    REQUIRE(DisplayMetrics::scale_for_setting(automatic, DisplayMetrics::ui_scale_for_dpi(221.5)) ==
+            Catch::Approx(1.0));
+}
+
+TEST_CASE("an explicit setting overrides the DPI-derived scale", "[display_metrics][scale]") {
+    // The point of the setting: a user on a panel we scaled wrongly, or who
+    // simply wants bigger type, wins over the measurement.
+    REQUIRE(DisplayMetrics::scale_for_setting(125, 1.578) == Catch::Approx(1.25));
+    REQUIRE(DisplayMetrics::scale_for_setting(200, 1.0) == Catch::Approx(2.0));
+
+    // 100% is a real choice, not a synonym for Automatic: it pins a high-DPI
+    // panel back to authored sizing.
+    REQUIRE(DisplayMetrics::scale_for_setting(100, 1.578) == Catch::Approx(1.0));
+}
+
+TEST_CASE("an out-of-range setting falls back to Automatic rather than clamping",
+          "[display_metrics][scale]") {
+    // A value this far out is corrupt or hand-edited. Clamping it would pin
+    // the UI to a size nobody picked and look like the setting was ignored;
+    // falling back to the measurement is the recoverable answer.
+    REQUIRE(DisplayMetrics::scale_for_setting(50, 1.578) == Catch::Approx(1.578));
+    REQUIRE(DisplayMetrics::scale_for_setting(99, 1.578) == Catch::Approx(1.578));
+    REQUIRE(DisplayMetrics::scale_for_setting(201, 1.578) == Catch::Approx(1.578));
+    REQUIRE(DisplayMetrics::scale_for_setting(-1, 1.578) == Catch::Approx(1.578));
+
+    // The ceiling is the same one the curve itself is capped at, so the
+    // setting cannot ask for a scale the DPI path would refuse to produce.
+    REQUIRE(DisplayMetrics::kMaxScaleSettingPercent ==
+            static_cast<int>(DisplayMetrics::kMaxScale * 100));
+    REQUIRE(DisplayMetrics::scale_for_setting(DisplayMetrics::kMaxScaleSettingPercent, 1.0) ==
+            Catch::Approx(DisplayMetrics::kMaxScale));
+}
+
+TEST_CASE("a bad auto scale cannot shrink the UI below authored size", "[display_metrics][scale]") {
+    // scale_for_setting is the last gate before set_active_scale, so it holds
+    // the same never-shrink floor rather than trusting its caller.
+    REQUIRE(DisplayMetrics::scale_for_setting(DisplayMetrics::kScaleSettingAutomatic, 0.4) ==
+            Catch::Approx(1.0));
+    REQUIRE(DisplayMetrics::scale_for_setting(DisplayMetrics::kScaleSettingAutomatic,
+                                              std::nan("")) == Catch::Approx(1.0));
+}
+
+TEST_CASE("the auto scale survives being overridden", "[display_metrics][scale]") {
+    // The settings UI renders "Automatic (158%)" from this, so it has to stay
+    // readable after an explicit setting has taken over active_scale().
+    DisplayMetrics::set_auto_scale(1.578);
+    DisplayMetrics::set_active_scale(DisplayMetrics::scale_for_setting(125, 1.578));
+
+    REQUIRE(DisplayMetrics::active_scale() == Catch::Approx(1.25));
+    REQUIRE(DisplayMetrics::auto_scale() == Catch::Approx(1.578));
+
+    DisplayMetrics::set_auto_scale(1.0); // restore for other tests
+    DisplayMetrics::set_active_scale(1.0);
+}

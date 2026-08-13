@@ -148,6 +148,31 @@ class DisplayMetrics {
     /// their scale is pinned to 1.0 by the deadband.
     static std::string scaled_font_name(const std::string& font_name, double scale);
 
+    /// Stored UI-scale setting meaning "follow the panel's DPI".
+    static constexpr int kScaleSettingAutomatic = 0;
+
+    /// Smallest stored setting that is not Automatic. The scale only ever
+    /// grows, so there is nothing below the authored size to offer.
+    static constexpr int kMinScaleSettingPercent = 100;
+    static constexpr int kMaxScaleSettingPercent = static_cast<int>(kMaxScale * 100);
+
+    /// The scale a stored UI-scale setting selects.
+    ///
+    /// @p user_scale_percent is the persisted setting: kScaleSettingAutomatic
+    /// to follow @p auto_scale, or an explicit percentage. Anything outside
+    /// [kMinScaleSettingPercent, kMaxScaleSettingPercent] falls back to
+    /// @p auto_scale rather than clamping — a setting that far out is a
+    /// corrupt or hand-edited value, and honouring a clamped version of it
+    /// would silently pin the UI to a size nobody chose.
+    static double scale_for_setting(int user_scale_percent, double auto_scale);
+
+    /// The DPI-derived scale, before the stored setting had its say. The
+    /// settings UI shows it as the "Automatic (150%)" hint, so it has to
+    /// survive being overridden. Set once during display init alongside
+    /// set_active_scale(); defaults to 1.0.
+    static void set_auto_scale(double scale);
+    static double auto_scale();
+
     /// The process-wide scale, resolved once during display init. Screens do
     /// not resize or change DPI at runtime, so this is set exactly once and
     /// read everywhere; it defaults to 1.0 so any code path that runs before

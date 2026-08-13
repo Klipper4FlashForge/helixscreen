@@ -1462,7 +1462,19 @@ bool Application::init_display() {
     // panels.
     const helix::ResolvedDpi resolved = helix::DisplayMetrics::resolve_dpi(
         m_args.dpi, measured_dpi, UpdateChecker::get_platform_key());
-    const double ui_scale = helix::DisplayMetrics::ui_scale_for_dpi(resolved.dpi);
+    const double auto_scale = helix::DisplayMetrics::ui_scale_for_dpi(resolved.dpi);
+    helix::DisplayMetrics::set_auto_scale(auto_scale);
+
+    // The stored UI Scale setting wins over the measurement, which is the
+    // whole point of exposing it: a panel we scale wrongly, or a user who
+    // simply wants larger type, has a way out that does not need a rebuild.
+    // Config rather than DisplaySettingsManager because this runs inside
+    // init_display(), before that manager's subjects exist — both read the
+    // same key. `--dpi` stays upstream of this, overriding the measurement
+    // that Automatic then follows.
+    const int scale_setting = Config::get_instance()->get<int>(
+        "/display/ui_scale_percent", helix::DisplayMetrics::kScaleSettingAutomatic);
+    const double ui_scale = helix::DisplayMetrics::scale_for_setting(scale_setting, auto_scale);
     helix::DisplayMetrics::set_active_scale(ui_scale);
 
     // What LVGL gets is LV_DPI_DEF scaled by the SAME factor — never a
@@ -1477,10 +1489,13 @@ bool Application::init_display() {
     int32_t effective_dpi = static_cast<int32_t>(std::lround(LV_DPI_DEF * ui_scale));
     int32_t pre_set_dpi = lv_display_get_dpi(m_display->display());
     lv_display_set_dpi(m_display->display(), effective_dpi);
-    spdlog::info("[Application] Display metrics: dpi={:.0f} (source={}) → ui_scale={:.3f}, "
-                 "lvgl_dpi={} (was {} before set)",
-                 resolved.dpi, helix::dpi_source_name(resolved.source), ui_scale, effective_dpi,
-                 pre_set_dpi);
+    spdlog::info("[Application] Display metrics: dpi={:.0f} (source={}) → ui_scale={:.3f} "
+                 "(auto={:.3f}, setting={}), lvgl_dpi={} (was {} before set)",
+                 resolved.dpi, helix::dpi_source_name(resolved.source), ui_scale, auto_scale,
+                 scale_setting == helix::DisplayMetrics::kScaleSettingAutomatic
+                     ? std::string("automatic")
+                     : std::to_string(scale_setting) + "%",
+                 effective_dpi, pre_set_dpi);
     if (pre_set_dpi < 50 && m_args.dpi == 0) {
         spdlog::warn("[Application] Display reported dpi={} before set — backend lost LV_DPI_DEF "
                      "between create and theme init. Fix-forward applied (forced to {}).",
