@@ -2513,52 +2513,6 @@
       ]
     },
     {
-      "id": "kingroon_kp3s_pro_v2",
-      "name": "Kingroon KP3S Pro V2",
-      "manufacturer": "Kingroon",
-      "image": "kingroon-kp3s-pro-v2.png",
-      "heuristics": [
-        {
-          "type": "kinematics_match",
-          "field": "kinematics",
-          "pattern": "cartesian",
-          "confidence": 40,
-          "reason": "Cartesian kinematics (bedslinger)"
-        },
-        {
-          "type": "object_exists",
-          "field": "printer_objects",
-          "pattern": "adxl345",
-          "confidence": 60,
-          "reason": "ADXL345 accelerometer (built-in input shaper)"
-        },
-        {
-          "type": "build_volume_range",
-          "field": "bed_mesh",
-          "min_x": 180,
-          "max_x": 220,
-          "min_y": 180,
-          "max_y": 220,
-          "confidence": 50,
-          "reason": "Build volume ~200mm (KP3S Pro V2 size)"
-        },
-        {
-          "type": "hostname_match",
-          "field": "hostname",
-          "pattern": "kingroon",
-          "confidence": 85,
-          "reason": "Hostname contains 'kingroon'"
-        },
-        {
-          "type": "hostname_match",
-          "field": "hostname",
-          "pattern": "kp3s",
-          "confidence": 90,
-          "reason": "Hostname contains 'kp3s'"
-        }
-      ]
-    },
-    {
       "id": "kingroon_klp1",
       "name": "Kingroon KLP1",
       "manufacturer": "Kingroon",
@@ -2591,45 +2545,6 @@
           "pattern": "klp1",
           "confidence": 95,
           "reason": "Hostname contains 'klp1'"
-        }
-      ]
-    },
-    {
-      "id": "kingroon_kp5l",
-      "name": "Kingroon KP5L",
-      "manufacturer": "Kingroon",
-      "image": "kingroon-kp5l.png",
-      "heuristics": [
-        {
-          "type": "kinematics_match",
-          "field": "kinematics",
-          "pattern": "cartesian",
-          "confidence": 40,
-          "reason": "Cartesian kinematics (bedslinger)"
-        },
-        {
-          "type": "build_volume_range",
-          "field": "bed_mesh",
-          "min_x": 280,
-          "max_x": 320,
-          "min_y": 280,
-          "max_y": 320,
-          "confidence": 50,
-          "reason": "Build volume ~300mm (KP5L size)"
-        },
-        {
-          "type": "hostname_match",
-          "field": "hostname",
-          "pattern": "kingroon",
-          "confidence": 85,
-          "reason": "Hostname contains 'kingroon'"
-        },
-        {
-          "type": "hostname_match",
-          "field": "hostname",
-          "pattern": "kp5l",
-          "confidence": 95,
-          "reason": "Hostname contains 'kp5l'"
         }
       ]
     },
@@ -5199,7 +5114,7 @@
       "id": "artillery_sidewinder_x2",
       "name": "Artillery Sidewinder X2",
       "manufacturer": "Artillery",
-      "image": "artillery-sidewinder-x2.png",
+      "image": "artillery-genius-pro.png",
       "heuristics": [
         {
           "type": "kinematics_match",
@@ -5505,7 +5420,7 @@
       "id": "kamp_user",
       "name": "KAMP (Adaptive Meshing)",
       "manufacturer": "Generic",
-      "image": "generic-klipper.png",
+      "image": "generic-corexy.png",
       "show_in_list": false,
       "note": "Klipper Adaptive Meshing & Purging macros detected - suggests advanced Klipper user",
       "heuristics": [
@@ -5536,7 +5451,7 @@
       "id": "klippain_shaketune",
       "name": "Klippain Shake&Tune",
       "manufacturer": "Generic",
-      "image": "generic-klipper.png",
+      "image": "generic-corexy.png",
       "show_in_list": false,
       "note": "Klippain Shake&Tune input shaper calibration macros detected",
       "heuristics": [
@@ -5567,7 +5482,7 @@
       "id": "ercf_mmu",
       "name": "ERCF/Happy Hare MMU",
       "manufacturer": "Generic",
-      "image": "generic-klipper.png",
+      "image": "generic-corexy.png",
       "show_in_list": false,
       "note": "Enraged Rabbit or Happy Hare multi-material unit detected",
       "heuristics": [
@@ -5605,7 +5520,7 @@
       "id": "klicky_probe",
       "name": "Klicky Probe User",
       "manufacturer": "Generic",
-      "image": "generic-klipper.png",
+      "image": "generic-corexy.png",
       "show_in_list": false,
       "note": "Klicky probe macros detected - common Voron modification",
       "heuristics": [
@@ -5636,7 +5551,7 @@
       "id": "ellis_print_tuning",
       "name": "Ellis Print Tuning",
       "manufacturer": "Generic",
-      "image": "generic-klipper.png",
+      "image": "generic-corexy.png",
       "show_in_list": false,
       "note": "Ellis tuning guide macros detected - advanced calibration setup",
       "heuristics": [
@@ -5660,44 +5575,6 @@
           "pattern": "PRESSURE_ADVANCE_CALIBRATION",
           "confidence": 80,
           "reason": "Pressure advance calibration macro"
-        }
-      ]
-    },
-    {
-      "id": "bambu_klipper",
-      "name": "Bambu Lab (Klipper)",
-      "manufacturer": "Bambu Lab",
-      "image": "bambu-lab.png",
-      "show_in_list": false,
-      "note": "Bambu Lab printer running custom Klipper firmware (rare custom mod)",
-      "heuristics": [
-        {
-          "type": "macro_match",
-          "field": "printer_objects",
-          "pattern": "BAMBU_",
-          "confidence": 95,
-          "reason": "Bambu Lab macro prefix detected"
-        },
-        {
-          "type": "hostname_match",
-          "field": "hostname",
-          "pattern": "bambu",
-          "confidence": 85,
-          "reason": "Hostname contains 'bambu'"
-        },
-        {
-          "type": "hostname_match",
-          "field": "hostname",
-          "pattern": "x1c",
-          "confidence": 90,
-          "reason": "Hostname suggests X1 Carbon"
-        },
-        {
-          "type": "hostname_match",
-          "field": "hostname",
-          "pattern": "p1",
-          "confidence": 85,
-          "reason": "Hostname suggests P1 series"
         }
       ]
     },

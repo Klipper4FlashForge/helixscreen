@@ -22,23 +22,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DB = REPO_ROOT / "assets" / "config" / "printer_database.json"
 IMG_DIR = REPO_ROOT / "assets" / "images" / "printers"
 
-# Images referenced by the database that have never existed in the tree. Each needs
-# real artwork sourced; until then those entries render as generic-corexy. Delete a
-# line the moment its .png lands — the gate fails on a stale entry so the list cannot
-# rot into a permanent excuse.
-KNOWN_MISSING = {
-    "artillery-genius-pro.png",
-    "artillery-sidewinder-x2.png",
-    "bambu-lab.png",
-    # Not a printer: the five community-config entries (KAMP, Klippain Shake&Tune,
-    # ERCF/Happy Hare, Klicky, Ellis) share this one. They are kinematics-agnostic,
-    # so no existing frame is a defensible stand-in.
-    "generic-klipper.png",
-    "kingroon-klp1.png",
-    "kingroon-kp3s-pro-v2.png",
-    "kingroon-kp5l.png",
-    "sovol-sv07.png",
-}
+# Empty, and worth keeping that way. Every database entry now names an image that
+# exists: art was drawn for the Artillery Genius Pro, Kingroon KLP1 and Sovol SV07,
+# the Sidewinder X2 shares the Genius Pro frame, the five community-config entries
+# (KAMP, Klippain Shake&Tune, ERCF/Happy Hare, Klicky, Ellis) use generic-corexy,
+# and the Bambu and two unillustrated Kingroon entries were dropped. A new entry
+# without art belongs here WITH a reason, not silently falling through to the
+# generic frame - which is what hid the previous twenty.
+KNOWN_MISSING: set[str] = set()
 
 
 def unresolved():
