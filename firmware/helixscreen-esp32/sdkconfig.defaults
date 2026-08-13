@@ -23,7 +23,28 @@ CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_COMPILER_CXX_EXCEPTIONS=y
-CONFIG_COMPILER_CXX_RTTI=y
+
+# RTTI off (IDF's own default; stated explicitly because it is a deliberate
+# constraint on the app, not an inherited value). The firmware is RTTI-free by
+# construction: shared-resource keys and "is this the concrete subclass I mean"
+# questions go through type tags and virtual kind queries instead of
+# dynamic_cast/typeid — see include/helix_type_tag.h and the kind_tag idiom on
+# ContextMenu/PanelWidget. Measured: app image 6,440,480 -> 6,132,240 bytes
+# (-301KB, 97.4% -> 92.8% of the OTA slot), almost all of it .flash.rodata
+# (1,313,948 -> 1,017,952) shedding the typeinfo name string and descriptor
+# every polymorphic type used to carry — 2,076 _ZTSZ* symbols in the map, now
+# zero. -fno-rtti also goes on the link line, which selects the no-rtti multilib
+# (lib/esp32s3/no-rtti/) so nothing pulls in the RTTI libstdc++/libc copies.
+#
+# Exceptions stay ON. GCC still emits typeinfo for thrown and caught types, so
+# catch-by-base keeps working; only the runtime *query* forms are gone. That is
+# why .eh_frame barely moves here (396,560 -> 396,200).
+#
+# Consequence to know before reintroducing either: a dynamic_cast or typeid in
+# any firmware translation unit is now a hard compile error, not a size
+# regression. Desktop still builds -frtti, and the tag-based code is
+# unconditional, so there is no per-platform divergence to maintain.
+CONFIG_COMPILER_CXX_RTTI=n
 
 # Flash reclaim (Plan 4 budget cliff). IPv6 is unused — Moonraker is IPv4 on the
 # LAN, provisioning/mdns run v4. Assertions to SILENT keeps the asserts firing
