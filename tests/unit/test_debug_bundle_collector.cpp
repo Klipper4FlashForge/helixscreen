@@ -371,6 +371,181 @@ TEST_CASE("DebugBundleCollector: filter_filament_objects handles empty and non-a
     REQUIRE(helix::DebugBundleCollector::filter_filament_objects(json(42)).empty());
 }
 
+TEST_CASE("DebugBundleCollector: extract_gcode_macro_names captures bare macro names",
+          "[debug-bundle][filament][macro-names]") {
+    // The question this exists to answer: does macro X exist on this printer?
+    // printer.cfg is stripped from the bundle before shape-collapse, so on an
+    // AD5X the whole ZMOD config is gone and nothing else can say.
+    json objects = json::array({
+        "gcode_macro A_CHANGE_FILAMENT", "gcode_macro INSERT_PRUTOK_IFS",
+        "gcode_macro _IFS_REMOVE_CURRENT_PRUTOK", "gcode_macro _G28", "extruder", "toolhead",
+        "filament_switch_sensor runout",
+        "gcode_button estop", // not a macro despite the prefix overlap
+        "gcode_macro",        // bare section name, no macro name follows
+        "gcode_macro ",       // prefix with an empty name
+    });
+
+    auto macros = helix::DebugBundleCollector::extract_gcode_macro_names(objects);
+
+    REQUIRE(macros.size() == 4);
+    // Stored bare, with the "gcode_macro " prefix stripped.
+    CHECK(macros[0].get<std::string>() == "A_CHANGE_FILAMENT");
+    CHECK(macros[1].get<std::string>() == "INSERT_PRUTOK_IFS");
+    CHECK(macros[2].get<std::string>() == "_IFS_REMOVE_CURRENT_PRUTOK");
+    CHECK(macros[3].get<std::string>() == "_G28");
+
+    // No non-macro object, and no empty entry from the degenerate prefixes -
+    // an empty string would read as a real macro whose name we lost.
+    for (const auto& m : macros) {
+        const std::string name = m.get<std::string>();
+        CHECK_FALSE(name.empty());
+        CHECK(name.find("gcode_macro") == std::string::npos);
+        CHECK(name != "estop");
+    }
+}
+
+TEST_CASE("DebugBundleCollector: extract_gcode_macro_names caps runaway configs",
+          "[debug-bundle][filament][macro-names]") {
+    json objects = json::array();
+    for (size_t i = 0; i < helix::DebugBundleCollector::kMaxGcodeMacroNames + 50; ++i) {
+        objects.push_back("gcode_macro M" + std::to_string(i));
+    }
+
+    auto macros = helix::DebugBundleCollector::extract_gcode_macro_names(objects);
+    REQUIRE(macros.size() == helix::DebugBundleCollector::kMaxGcodeMacroNames);
+    CHECK(macros[0].get<std::string>() == "M0");
+}
+
+TEST_CASE("DebugBundleCollector: extract_gcode_macro_names handles empty and non-array input",
+          "[debug-bundle][filament][macro-names]") {
+    REQUIRE(helix::DebugBundleCollector::extract_gcode_macro_names(json::array()).empty());
+    REQUIRE(helix::DebugBundleCollector::extract_gcode_macro_names(json::object()).empty());
+    REQUIRE(helix::DebugBundleCollector::extract_gcode_macro_names(json(42)).empty());
+    // A non-string element must not abort the scan of the rest.
+    json mixed = json::array({42, "gcode_macro KEPT", json::object()});
+    auto macros = helix::DebugBundleCollector::extract_gcode_macro_names(mixed);
+    REQUIRE(macros.size() == 1);
+    CHECK(macros[0].get<std::string>() == "KEPT");
+}
+
+// ============================================================================
+// printer.cfg + [include] tree [debug-bundle][printer-config]
+// ============================================================================
+
+TEST_CASE("DebugBundleCollector: parse_include_patterns finds Klipper includes",
+          "[debug-bundle][printer-config]") {
+    const std::string body = "[include mod/base.cfg]\r\n"
+                             "[include  spaced.cfg ]\n"
+                             "[include mod/*.cfg]\n"
+                             "[printer]\n"
+                             "kinematics: corexy\n"
+                             "# [include commented.cfg]\n"
+                             "  [include indented.cfg]\n"
+                             "gcode: [include inline.cfg]\n"
+                             "[include unterminated.cfg\n";
+
+    auto pats = helix::DebugBundleCollector::parse_include_patterns(body);
+
+    REQUIRE(pats.size() == 3);
+    CHECK(pats[0] == "mod/base.cfg"); // trailing CR stripped
+    CHECK(pats[1] == "spaced.cfg");   // surrounding whitespace trimmed
+    CHECK(pats[2] == "mod/*.cfg");
+
+    // A Klipper section header must start at column 0, so an indented or
+    // commented "[include ...]" is an option continuation, not a section - and
+    // treating one as an include would fetch files the printer never loads.
+    for (const auto& p : pats) {
+        CHECK(p != "commented.cfg");
+        CHECK(p != "indented.cfg");
+        CHECK(p != "inline.cfg");
+        CHECK(p != "unterminated.cfg");
+    }
+}
+
+TEST_CASE("DebugBundleCollector: glob_match does not let wildcards cross a slash",
+          "[debug-bundle][printer-config]") {
+    CHECK(helix::DebugBundleCollector::glob_match("printer.cfg", "printer.cfg"));
+    CHECK(helix::DebugBundleCollector::glob_match("mod/*.cfg", "mod/base.cfg"));
+    CHECK(helix::DebugBundleCollector::glob_match("*.cfg", "printer.cfg"));
+    CHECK(helix::DebugBundleCollector::glob_match("mod/?.cfg", "mod/a.cfg"));
+
+    // The load-bearing case: Python glob (which Klipper uses) stops '*' at a
+    // separator, so a top-level "*.cfg" must not vacuum up the whole tree.
+    CHECK_FALSE(helix::DebugBundleCollector::glob_match("*.cfg", "mod/base.cfg"));
+    CHECK_FALSE(helix::DebugBundleCollector::glob_match("mod/*.cfg", "mod/sub/base.cfg"));
+    CHECK_FALSE(helix::DebugBundleCollector::glob_match("mod/?.cfg", "mod/ab.cfg"));
+
+    CHECK_FALSE(helix::DebugBundleCollector::glob_match("printer.cfg", "printer.cfg.bak"));
+    CHECK_FALSE(helix::DebugBundleCollector::glob_match("other.cfg", "printer.cfg"));
+}
+
+TEST_CASE("DebugBundleCollector: resolve_include_pattern is relative to the including file",
+          "[debug-bundle][printer-config]") {
+    const std::vector<std::string> available = {
+        "printer.cfg",      "mod/base.cfg", "mod/ifs.cfg",
+        "mod/sub/deep.cfg", "top.cfg",      "mod/notcfg.txt",
+    };
+
+    // From printer.cfg (config root), a bare name stays at the root.
+    auto from_root =
+        helix::DebugBundleCollector::resolve_include_pattern("top.cfg", "printer.cfg", available);
+    REQUIRE(from_root.size() == 1);
+    CHECK(from_root[0] == "top.cfg");
+
+    // From mod/base.cfg, a bare name resolves INTO mod/ - resolving it at the
+    // root instead would fetch the wrong file or silently nothing.
+    auto sibling =
+        helix::DebugBundleCollector::resolve_include_pattern("ifs.cfg", "mod/base.cfg", available);
+    REQUIRE(sibling.size() == 1);
+    CHECK(sibling[0] == "mod/ifs.cfg");
+
+    // A glob expands to every match at that level and no deeper.
+    auto globbed =
+        helix::DebugBundleCollector::resolve_include_pattern("mod/*.cfg", "printer.cfg", available);
+    REQUIRE(globbed.size() == 2);
+    CHECK(globbed[0] == "mod/base.cfg");
+    CHECK(globbed[1] == "mod/ifs.cfg");
+
+    // "./" prefix normalizes to the listing's form.
+    auto dotted =
+        helix::DebugBundleCollector::resolve_include_pattern("./top.cfg", "printer.cfg", available);
+    REQUIRE(dotted.size() == 1);
+    CHECK(dotted[0] == "top.cfg");
+
+    // No match is empty, not a fabricated path.
+    CHECK(helix::DebugBundleCollector::resolve_include_pattern("missing.cfg", "printer.cfg",
+                                                               available)
+              .empty());
+}
+
+TEST_CASE("DebugBundleCollector: config bodies sanitize per line, not whole-file",
+          "[debug-bundle][printer-config][sanitize]") {
+    // A whole printer.cfg exceeds sanitize_value()'s 4 KB guard, which would
+    // return [REDACTED_LONG_VALUE] for the entire file. sanitize_text_block()
+    // is what keeps the config readable while still redacting the secrets that
+    // actually turn up in one.
+    std::string body = "[printer]\nkinematics: corexy\n"
+                       "[gcode_macro NOTIFY]\n"
+                       "gcode: RUN_SHELL_COMMAND CMD=curl https://api.telegram.org/bot123/send\n"
+                       "[spoolman]\nserver: http://user:hunter2@spool.local:7912\n"
+                       "# owner: someone@example.com\n";
+    body += std::string(5000, 'x'); // push the file past the 4 KB guard
+    body += "\n";
+
+    const std::string clean = helix::DebugBundleCollector::sanitize_text_block(body);
+
+    // Structure survives - the whole file was NOT collapsed to one marker.
+    CHECK(clean.find("kinematics: corexy") != std::string::npos);
+    CHECK(clean.find("[gcode_macro NOTIFY]") != std::string::npos);
+
+    // Secrets do not.
+    CHECK(clean.find("api.telegram.org/bot123") == std::string::npos);
+    CHECK(clean.find("hunter2") == std::string::npos);
+    CHECK(clean.find("someone@example.com") == std::string::npos);
+    CHECK(clean.find("[REDACTED_CREDENTIALS]") != std::string::npos);
+    CHECK(clean.find("[REDACTED_EMAIL]") != std::string::npos);
+}
+
 // ============================================================================
 // Realistic Moonraker config sanitization [debug-bundle][sanitize]
 // ============================================================================
