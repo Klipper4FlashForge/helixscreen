@@ -3,9 +3,12 @@
 
 #include "theme_manager.h"
 
+#include "ui_button.h"
 #include "ui_error_reporting.h"
 #include "ui_fonts.h"
 #include "ui_gradient_canvas.h"
+#include "ui_icon.h"
+#include "ui_split_button.h"
 #include "ui_switch.h"
 
 #include "asset_manager.h"
@@ -1451,6 +1454,14 @@ void theme_manager_register_responsive_fonts(lv_display_t* display) {
 
     spdlog::trace("[Theme] Responsive fonts: {} (min_dim={}px) - auto-registered {} tokens",
                   size_label, resp_res, registered);
+
+    // Three widgets memoize icon_font_* for the life of the process, and the
+    // loop above just re-pointed those constants. Without this, the first
+    // <icon size="sm"> ever built pins the face for every icon that follows, so
+    // a breakpoint change resizes type everywhere except the icons (#1210).
+    ui_icon_invalidate_font_cache();
+    ui_button_invalidate_icon_font_cache();
+    ui_split_button_invalidate_icon_font_cache();
 }
 
 /**
