@@ -186,11 +186,17 @@ class PrinterPrintState {
      * own guard against that; publishing an explicit placeholder removes the
      * input instead of the guards' need to disagree about it.
      *
-     * Re-exported as ActivePrintMediaManager::kNoThumbnailPlaceholder, which is
-     * the name the sole writer of this subject publishes it under.
+     * Re-exported as ActivePrintMediaManager::no_thumbnail_placeholder(), which
+     * is the name the sole writer of this subject publishes it under.
+     *
+     * Resolved through helix::asset_component_uri() rather than spelled as a
+     * literal: on firmware the bundle mounts at a configured root, so a raw
+     * "A:assets/images/..." misses the mount and lv_image_set_src fails to open
+     * it — LVGL then clears the widget. Identity on desktop (asset root ".").
+     * The resolved string is cached on first call, which is safe because every
+     * caller runs after helix::set_asset_root().
      */
-    static constexpr const char* kNoThumbnailPlaceholder =
-        "A:assets/images/benchy_thumbnail_white.png";
+    static const char* no_thumbnail_placeholder();
 
     /**
      * @brief Gcode filename the current thumbnail path was produced for

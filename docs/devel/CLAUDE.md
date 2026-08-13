@@ -18,6 +18,7 @@ All developer documentation lives here. When working on features, look up the re
 | `LOGGING.md` | spdlog levels, when to use info vs debug vs trace |
 | `COPYRIGHT_HEADERS.md` | SPDX license headers |
 | `RELEASE_PROCESS.md` | Release workflow, versioning |
+| `RELEASE_1_0_CHECKLIST.md` | Everything blocking `v1.0.0` and the 1.1 devel track — the atomic `release/1.0` branch cut + `RELEASE_CHANNEL` flip, open milestone issues, what is and is not verified. Delete once 1.0 ships |
 | `CI_CD_GUIDE.md` | CI pipeline, GitHub Actions |
 | `ANDROID_PLAY_STORE.md` | Play Store publishing pipeline, one-time setup, promotion flow |
 

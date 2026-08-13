@@ -526,6 +526,7 @@
   <translation tag="Correction (Ki)" fr="Correction (Ki)"/>
   <translation tag="Could not analyze PRINT_START macro. Some print options may be unavailable." fr="Impossible d&apos;analyser la macro PRINT_START. Certaines options d&apos;impression peuvent être indisponibles."/>
   <translation tag="Could not check webcam status.\nCheck printer connection." fr="Impossible de vérifier la webcam.\nVérifiez la connexion."/>
+  <translation tag="Could not confirm cancel"/>
   <translation tag="Could not forget device" fr="Impossible d&apos;oublier l&apos;appareil"/>
   <translation tag="Could not load printer database" fr="Impossible de charger la base de données dimprimantes"/>
   <translation tag="Could not parse tips database" fr="Impossible danalyser la base de données de conseils"/>
@@ -1079,6 +1080,7 @@
   <translation tag="Insert filament before resuming" fr="Insérez le filament avant de reprendre"/>
   <translation tag="Install" fr="Installer"/>
   <translation tag="Install HelixPrint Plugin" fr="Installer le plugin HelixPrint"/>
+  <translation tag="Install Older Version?"/>
   <translation tag="Install Plugin" fr="Installer le plugin"/>
   <translation tag="Install Root" fr="Racine d&apos;installation"/>
   <translation tag="Install Update" fr="Installer la mise à jour"/>
@@ -2132,6 +2134,7 @@
   <translation tag="Switch a power device on or off" fr="Allumer ou éteindre un appareil"/>
   <translation tag="Switch between light and dark themes" fr="Basculer entre les thèmes clair et sombre"/>
   <translation tag="Switch the active tool or extruder" fr="Changer d&apos;outil ou d&apos;extrudeur actif"/>
+  <translation tag="Switch to v%s"/>
   <translation tag="Switched to T{}" fr="Basculé sur T{}"/>
   <translation tag="Switches to a backup spool on runout" fr="Passe à une bobine de secours en fin de filament"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." fr="Basculement du chauffage vers MPC. Klipper va redémarrer."/>
@@ -2226,6 +2229,7 @@
   <translation tag="These tools have no matching filament loaded:" fr="Ces outils n&apos;ont pas de filament correspondant chargé :"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." fr="Cette calibration utilise la méthode de friction du papier pour définir votre Z-offset."/>
   <translation tag="This cannot be undone." fr="Cette action est irréversible."/>
+  <translation tag="This channel offers v{}, older than the installed v{}. Anything added since then will be removed."/>
   <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again."/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." fr="Cet appareil n&apos;a pas de connexion réseau filaire. Si vous désactivez le WiFi, il ne pourra être réactivé que depuis cet écran."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" fr="Cet appareil ne dispose que de {} Mo de RAM. La calibration de résonance est gourmande en mémoire et peut amener le firmware de l&apos;imprimante à signaler une erreur \&quot;Timer Too Close\&quot; ou à redémarrer en cours de test. Continuer quand même ?"/>

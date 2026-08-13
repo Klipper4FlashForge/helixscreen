@@ -46,17 +46,25 @@ bool EspHttpLane::submit_get(std::string url, size_t range_max_bytes, FetchSucce
             return false;
         }
         queue_.push_back(Job{std::move(url), cap, std::move(on_success), std::move(on_error)});
+
+        // The worker is the only thing that drains the queue and releases
+        // slots. Without it the job sits forever and its slot is never
+        // returned, so kQueueDepth failed submissions would wedge the lane for
+        // the rest of the session. Undo the push and the acquire instead.
+        if (!ensure_worker_started_locked()) {
+            queue_.pop_back();
+            slots_.release();
+            return false;
+        }
     }
 
-    ensure_worker_started();
     cv_.notify_one();
     return true;
 }
 
-void EspHttpLane::ensure_worker_started() {
-    std::lock_guard<std::mutex> lock(mutex_);
+bool EspHttpLane::ensure_worker_started_locked() {
     if (worker_started_) {
-        return;
+        return true;
     }
 
     pthread_attr_t attr;
@@ -68,10 +76,11 @@ void EspHttpLane::ensure_worker_started() {
     int rc = pthread_create(&thread, &attr, &EspHttpLane::worker_main, this);
     pthread_attr_destroy(&attr);
     if (rc != 0) {
-        ESP_LOGE(TAG, "pthread_create failed: %d — HTTP lane will not run this session", rc);
-        return; // worker_started_ stays false: a later submit_get() retries the spawn.
+        ESP_LOGE(TAG, "pthread_create failed: %d — rejecting this submission", rc);
+        return false; // worker_started_ stays false: a later submit_get() retries the spawn.
     }
     worker_started_ = true;
+    return true;
 }
 
 void* EspHttpLane::worker_main(void* self) {

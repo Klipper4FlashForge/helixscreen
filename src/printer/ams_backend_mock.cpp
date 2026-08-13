@@ -3158,8 +3158,11 @@ AmsError AmsBackendMock::execute_device_action(const std::string& action_id,
             if (!action.enabled) {
                 return AmsErrorHelper::not_supported(action.disable_reason);
             }
-            spdlog::info("[AMS Mock] Executed device action: {} with value type: {}", action_id,
-                         value.has_value() ? value.type().name() : "none");
+            // std::any's type() returns a std::type_info, which needs RTTI; the
+            // firmware builds -fno-rtti. Presence is all the log was really
+            // conveying — the mangled name told nobody anything useful.
+            spdlog::info("[AMS Mock] Executed device action: {} with value: {}", action_id,
+                         value.has_value() ? "set" : "none");
 
             // Surface brief status-display feedback for the selector-context
             // servo / gear-sync commands so --test mirrors real Happy Hare.
@@ -3176,9 +3179,12 @@ AmsError AmsBackendMock::execute_device_action(const std::string& action_id,
             } else if (action_id == "servo_down") {
                 detail = "Servo down";
             } else if (action_id == "gear_sync") {
+                // Pointer-form any_cast: returns null on a type mismatch rather
+                // than throwing, and libstdc++ implements it by comparing the
+                // stored manager function, so it works under -fno-rtti.
                 bool on = false;
-                if (value.has_value() && value.type() == typeid(bool)) {
-                    on = std::any_cast<bool>(value);
+                if (const bool* held = std::any_cast<bool>(&value)) {
+                    on = *held;
                 }
                 detail = on ? "Gear motor synced" : "Gear motor released";
             }

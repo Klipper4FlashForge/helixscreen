@@ -1226,6 +1226,12 @@ void AmsOverviewPanel::show_detail_context_menu(int slot_index, lv_obj_t* near_w
                                               int slot) {
         AmsBackend* backend = AmsState::instance().get_backend();
 
+        // EJECT / RECOVER_POSITION / SELECT_GATE / CHECK_GATE / CLEAR_SPOOL are
+        // identical in both AMS panels — see ams_dispatch_backend_action().
+        if (helix::ui::ams_dispatch_backend_action(action, slot, detail_path_canvas_)) {
+            return;
+        }
+
         switch (action) {
         case helix::ui::AmsContextMenu::MenuAction::LOAD:
             if (sidebar_) {
@@ -1255,19 +1261,6 @@ void AmsOverviewPanel::show_detail_context_menu(int slot_index, lv_obj_t* near_w
 
         case helix::ui::AmsContextMenu::MenuAction::SPOOLMAN:
             show_edit_modal(slot, /*open_on_picker=*/true);
-            break;
-
-        case helix::ui::AmsContextMenu::MenuAction::RECOVER_POSITION:
-            if (!backend) {
-                NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
-                return;
-            }
-            {
-                AmsError error = backend->recover_lane_position(slot);
-                if (error.result != AmsResult::SUCCESS) {
-                    helix::ui::notify_ams_error(error, lv_tr("Recovery failed"));
-                }
-            }
             break;
 
         case helix::ui::AmsContextMenu::MenuAction::SCAN_QR: {

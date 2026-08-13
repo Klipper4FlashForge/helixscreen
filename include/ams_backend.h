@@ -19,6 +19,9 @@
 #include "error_event.h"
 
 class IMoonrakerAPI;
+#ifdef HELIX_ENABLE_MOCKS
+class AmsBackendMock;
+#endif
 namespace helix {
 class IMoonrakerClient;
 class PrinterDiscovery;
@@ -1876,6 +1879,23 @@ class AmsBackend {
     [[nodiscard]] virtual const char* get_klipper_object_name() const {
         return "";
     }
+
+#ifdef HELIX_ENABLE_MOCKS
+    /**
+     * @brief This backend as an AmsBackendMock, or nullptr if it is not one
+     *
+     * The mock-to-mock wiring in MoonrakerManager needs the mock's simulator
+     * hook, which is not part of the AmsBackend contract. This is the RTTI-free
+     * stand-in for the `dynamic_cast<AmsBackendMock*>` it used to do — the
+     * firmware builds -fno-rtti, and the desktop build must not diverge.
+     * Compiled out entirely when mocks are disabled.
+     *
+     * @return `this` on AmsBackendMock, nullptr on every production backend
+     */
+    [[nodiscard]] virtual AmsBackendMock* as_mock() {
+        return nullptr;
+    }
+#endif
 
     /**
      * @brief Whether this backend must emit firmware-native config gcode BEFORE

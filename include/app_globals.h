@@ -16,6 +16,9 @@ class TemperatureController;
 } // namespace helix
 class IMoonrakerAPI;
 class MoonrakerManager;
+#ifdef HELIX_ENABLE_MOCKS
+class MoonrakerClientMock;
+#endif
 namespace helix {
 class PrinterState;
 }
@@ -34,6 +37,28 @@ helix::IMoonrakerClient* get_moonraker_client();
  * @param client Pointer to MoonrakerClient instance
  */
 void set_moonraker_client(helix::IMoonrakerClient* client);
+
+#ifdef HELIX_ENABLE_MOCKS
+/**
+ * @brief Get the global client under its concrete mock type
+ *
+ * Non-null only while the registered client is a MoonrakerClientMock. Consumers
+ * that need the mock-only API (AmsBackend's simulated-gcode-tool subscription)
+ * read this instead of downcasting get_moonraker_client() — the firmware builds
+ * -fno-rtti and the desktop build must not diverge.
+ *
+ * @return Pointer to the mock client, or nullptr on a real-client run
+ */
+MoonrakerClientMock* get_moonraker_client_mock();
+
+/**
+ * @brief Publish the global client under its concrete mock type
+ *
+ * Called by MoonrakerManager::create_client(), which is the one place that
+ * knows what it built. Pass nullptr when the client is real or being torn down.
+ */
+void set_moonraker_client_mock(MoonrakerClientMock* client);
+#endif
 
 /**
  * @brief Get global IMoonrakerAPI instance

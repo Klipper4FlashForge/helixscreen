@@ -6,12 +6,17 @@
 #include "ui_ams_slot.h"
 #include "ui_bypass_spool_widget.h"
 #include "ui_effects.h"
+#include "ui_error_reporting.h"
 #include "ui_filament_path_canvas.h"
 #include "ui_utils.h"
 
 #include "ams_state.h"
 #include "printer_detector.h"
 #include "ui/ams_drawing_utils.h"
+
+#if HELIX_HAS_CFS
+#include "ams_backend_cfs.h"
+#endif
 
 #include <spdlog/spdlog.h>
 
@@ -677,3 +682,112 @@ void ams_detail_pre_show_env_indicator(AmsDetailWidgets& w, int unit_index) {
         lv_obj_add_flag(w.env_indicator, LV_OBJ_FLAG_HIDDEN);
     }
 }
+
+// ============================================================================
+// Shared Context-Menu Dispatch
+// ============================================================================
+
+namespace helix {
+namespace ui {
+
+bool ams_dispatch_backend_action(AmsContextMenu::MenuAction action, int slot,
+                                 lv_obj_t* path_canvas) {
+    using MenuAction = AmsContextMenu::MenuAction;
+
+    switch (action) {
+    case MenuAction::EJECT:
+    case MenuAction::RECOVER_POSITION:
+    case MenuAction::SELECT_GATE:
+    case MenuAction::CHECK_GATE:
+    case MenuAction::CLEAR_SPOOL:
+        break;
+    default:
+        return false; // caller's own switch owns it
+    }
+
+    AmsBackend* backend = AmsState::instance().get_backend();
+    if (!backend) {
+        NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
+        return true;
+    }
+
+    switch (action) {
+    case MenuAction::EJECT: {
+        // Flip the canvas before the call: a backend that dispatches
+        // asynchronously animates while in flight, and the error arm below
+        // undoes it for the refusals that return synchronously.
+        if (path_canvas) {
+            ui_filament_path_canvas_set_eject_mode(path_canvas, true);
+        }
+        AmsError error = backend->eject_lane(slot);
+        if (error.result != AmsResult::SUCCESS) {
+            notify_ams_error(error, lv_tr("Eject failed"));
+            if (path_canvas) {
+                ui_filament_path_canvas_set_eject_mode(path_canvas, false);
+            }
+        }
+        break;
+    }
+
+    case MenuAction::RECOVER_POSITION: {
+        AmsError error = backend->recover_lane_position(slot);
+        if (error.result != AmsResult::SUCCESS) {
+            notify_ams_error(error, lv_tr("Recovery failed"));
+        }
+        break;
+    }
+
+    case MenuAction::SELECT_GATE: {
+        AmsError error = backend->select_gate(slot);
+        if (error.result != AmsResult::SUCCESS) {
+            notify_ams_error(error, lv_tr("Select slot failed"));
+        }
+        break;
+    }
+
+    case MenuAction::CHECK_GATE: {
+        AmsError error = backend->check_gate(slot);
+        if (error.result != AmsResult::SUCCESS) {
+            notify_ams_error(error, lv_tr("Check slot failed"));
+        }
+        break;
+    }
+
+    case MenuAction::CLEAR_SPOOL: {
+        // Clear spool assignment: reset material/color/spool data, keep slot status
+        SlotInfo cleared = backend->get_slot_info(slot);
+        cleared.material.clear();
+        cleared.color_rgb = AMS_DEFAULT_SLOT_COLOR;
+        cleared.color_name.clear();
+        cleared.multi_color_hexes.clear();
+        cleared.brand.clear();
+        // Drops spoolman_id AND the filament/vendor handles — leaving
+        // those behind fed a later repoint comparison against a spool
+        // this lane is no longer linked to.
+        cleared.clear_spoolman_link();
+        cleared.remaining_weight_g = -1;
+        cleared.total_weight_g = -1;
+        auto error = backend->set_slot_info(slot, cleared);
+        if (error.success()) {
+#if HELIX_HAS_CFS
+            if (backend->get_type() == AmsType::CFS) {
+                static_cast<helix::printer::AmsBackendCfs*>(backend)->clear_box_slot_profile(slot);
+            }
+#endif
+            AmsState::instance().sync_from_backend();
+            NOTIFY_INFO(lv_tr("Slot {} spool cleared"), slot + 1);
+        } else {
+            notify_ams_error(error, lv_tr("Clear failed"));
+        }
+        break;
+    }
+
+    default:
+        break; // unreachable: filtered by the guard switch above
+    }
+
+    return true;
+}
+
+} // namespace ui
+} // namespace helix

@@ -208,8 +208,7 @@ void WiFiManager::handle_init_failed(bool silent, const std::string& msg) {
     // so users aren't left WiFi-less because of a dormant NM install. Guarded
     // by tried_fallback_ to avoid infinite loops if wpa_supplicant also fails.
 #if !defined(__APPLE__) && !defined(__ANDROID__) && !defined(ESP_PLATFORM)
-    if (!tried_fallback_ && backend_ &&
-        dynamic_cast<WifiBackendNetworkManager*>(backend_.get()) != nullptr) {
+    if (!tried_fallback_ && backend_ && backend_->is_network_manager()) {
         tried_fallback_ = true;
         spdlog::warn("[WiFiManager] NetworkManager backend INIT_FAILED ({}); "
                      "falling back to wpa_supplicant",
@@ -346,8 +345,10 @@ void WiFiManager::start_scan(
 
     // A fresh scan session (e.g. the user opening network settings) is a
     // manual refresh: clear any suppression/backoff left over from a prior
-    // session and start this one's timer at the base interval. Safe to call
-    // directly — start_scan() runs on the main/LVGL thread.
+    // session and start this one's timer at the base interval. Touching
+    // scan_scheduler_ directly is safe because start_scan() is LVGL-thread-only
+    // — it creates the scan lv_timer below, and stop_scan() deletes it. Callers
+    // on any other thread must marshal via helix::ui::queue_update().
     scan_scheduler_.on_user_refresh();
 
     // Create timer for periodic scanning

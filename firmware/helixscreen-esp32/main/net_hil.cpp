@@ -161,6 +161,15 @@ void on_temp_notify(const json& msg) {
 }
 
 void* hil_thread_main(void*) {
+    // CONFIG_HELIX_HIL_MOONRAKER_URL defaults to empty — the bench address it used
+    // to carry is not something to ship. Without this check the connect below
+    // never completes and the xSemaphoreTake(portMAX_DELAY) parks this thread for
+    // good, which reads as a hung scenario rather than a missing setting.
+    if (CONFIG_HELIX_HIL_MOONRAKER_URL[0] == '\0') {
+        ESP_LOGE(TAG, "FAIL CONFIG_HELIX_HIL_MOONRAKER_URL is empty — set it in sdkconfig.local");
+        return nullptr;
+    }
+
     std::unique_ptr<helix::IMoonrakerClient> client = helix::create_platform_moonraker_client();
     s_client = client.release(); // process-lifetime singleton; see header comment
 

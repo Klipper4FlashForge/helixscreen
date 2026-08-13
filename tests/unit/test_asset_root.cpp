@@ -19,6 +19,7 @@ struct AssetRootGuard {
 } // namespace
 
 TEST_CASE("asset_path is identity under the default root", "[paths][asset_root]") {
+    AssetRootGuard guard;
     helix::set_asset_root(""); // reset to default
     REQUIRE(helix::asset_root() == ".");
     REQUIRE(helix::asset_path("ui_xml") == "ui_xml");

@@ -57,6 +57,15 @@ class SoundBackend {
         return false;
     }
 
+    /// Whether this backend emits sound through the printer rather than through
+    /// host audio hardware, and so is only usable while a Moonraker client is
+    /// connected (M300 only). SoundManager drops such a backend when the client
+    /// is cleared. A capability query rather than a dynamic_cast to the concrete
+    /// backend, because the firmware builds -fno-rtti.
+    virtual bool needs_moonraker_client() const {
+        return false;
+    }
+
     /// Set the active waveform type (only called if supports_waveforms() is true)
     virtual void set_waveform(Waveform /* w */) {}
 

@@ -58,6 +58,7 @@ bool provisioning_run_portal() {
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
@@ -102,6 +103,14 @@ constexpr int kDnsRecvTimeoutMs = 250; // bounds how often the poll loop re-chec
 // resolution is the normal case, not the exception (review MEDIUM-1).
 constexpr int kSaveJoinTimeoutMs = 40000;
 constexpr int kSavePollMs = 200;
+
+// Ceiling on how long the portal keeps the net thread parked. Nothing else
+// ends an unattended session: the dismiss flag needs a touch and s_join_succeeded
+// needs someone to submit the form, so without this the thread waits forever and
+// the bounded startup wait in app_boot.cpp never gets to run. Sized for a human
+// doing the whole flow by hand — find the SSID, switch networks, type a
+// password — not for the happy path.
+constexpr uint64_t kPortalMaxUs = 10ULL * 60 * 1'000'000; // 10 min
 
 // ---------------------------------------------------------------------------
 // Cross-thread state. Process-lifetime, deliberately never torn down — same
@@ -235,21 +244,52 @@ void hide_instructions_modal() {
 std::vector<std::string> scan_networks_bounded(std::shared_ptr<helix::WiFiManager> wifi) {
     constexpr int kScanWaitMs = 3000;
     constexpr int kScanPollMs = 200;
+    constexpr int kStopScanWaitMs = 3000;
 
     auto results = std::make_shared<std::vector<std::string>>();
     auto done = std::make_shared<std::atomic<bool>>(false);
-    wifi->start_scan([results, done](const std::vector<WiFiNetwork>& networks) {
-        results->clear();
-        for (const auto& n : networks) {
-            results->push_back(n.ssid);
-        }
-        done->store(true);
+
+    // start_scan()/stop_scan() create and delete an lv_timer and are therefore
+    // LVGL-thread-only; we are on app_net_thread_main. Hop both.
+    helix::ui::queue_update("provisioning::start_scan", [wifi, results, done]() {
+        wifi->start_scan([results, done](const std::vector<WiFiNetwork>& networks) {
+            results->clear();
+            for (const auto& n : networks) {
+                results->push_back(n.ssid);
+            }
+            done->store(true);
+        });
     });
 
     for (int waited = 0; waited < kScanWaitMs && !done->load(); waited += kScanPollMs) {
         vTaskDelay(pdMS_TO_TICKS(kScanPollMs));
     }
-    wifi->stop_scan();
+
+    // The timeout path can expire while a scan-complete dispatch is still queued,
+    // so `done` alone does not make *results safe to read. stop_scan() clears
+    // scan_callback_ under callback_mutex_, and WiFiManager's queued
+    // scan-complete lambda re-reads that callback before touching anything
+    // (wifi_manager.cpp handle_scan_complete) — both on the LVGL thread, so once
+    // stop_scan() has returned there, no later dispatch can write *results.
+    // Waiting for that specific point is what makes the read below safe.
+    auto stopped = std::make_shared<std::atomic<bool>>(false);
+    helix::ui::queue_update("provisioning::stop_scan", [wifi, stopped]() {
+        wifi->stop_scan();
+        stopped->store(true);
+    });
+
+    for (int waited = 0; waited < kStopScanWaitMs && !stopped->load(); waited += kScanPollMs) {
+        vTaskDelay(pdMS_TO_TICKS(kScanPollMs));
+    }
+    if (!stopped->load()) {
+        // The UI thread never drained the stop. *results may still be written,
+        // so return nothing rather than read it — the shared_ptr keeps the
+        // vector alive for whatever is still holding it. The portal's SSID
+        // field falls back to typed entry.
+        ESP_LOGW(TAG, "scan: stop_scan did not run within %d ms — dropping results",
+                 kStopScanWaitMs);
+        return {};
+    }
     return *results;
 }
 
@@ -460,9 +500,15 @@ esp_err_t save_post_handler(httpd_req_t* req) {
 
     s_connect_state.store(JoinState::PENDING);
     auto wifi = helix::get_wifi_manager();
-    wifi->connect(ssid, password, [](bool success, const std::string& error) {
-        s_connect_error = error;
-        s_connect_state.store(success ? JoinState::CONNECTED : JoinState::FAILED);
+    // We are on an esp_http_server task; connect() deletes the auth-fail grace
+    // lv_timer (wifi_manager.cpp cancel_auth_fail_grace), so it has to run on
+    // the LVGL thread. The poll below is unchanged — s_connect_state is already
+    // PENDING, so a not-yet-drained hop just reads as "still connecting".
+    helix::ui::queue_update("provisioning::connect", [wifi, ssid, password]() {
+        wifi->connect(ssid, password, [](bool success, const std::string& error) {
+            s_connect_error = error;
+            s_connect_state.store(success ? JoinState::CONNECTED : JoinState::FAILED);
+        });
     });
 
     int waited = 0;
@@ -736,8 +782,24 @@ bool provisioning_run_portal() {
     // with nothing to unblock this loop. Checking wifi->is_connected()
     // directly closes that window regardless of handler timing, and also
     // covers a concurrent Settings > Network join finishing first.
+    //
+    // The deadline is real elapsed time rather than a per-iteration accumulator
+    // because dns_pump_once() returns as soon as a query arrives, well short of
+    // its kDnsRecvTimeoutMs ceiling. Counting iterations would therefore run the
+    // clock fast precisely while a client is talking to the portal — the case
+    // that most needs the full window.
+    const uint64_t portal_deadline_us = static_cast<uint64_t>(esp_timer_get_time()) + kPortalMaxUs;
+    bool portal_expired = false;
     while (!s_dismiss_requested.load() && !s_join_succeeded.load() && !wifi->is_connected()) {
+        if (static_cast<uint64_t>(esp_timer_get_time()) >= portal_deadline_us) {
+            portal_expired = true;
+            break;
+        }
         dns_pump_once(dns_sock, ip_info.ip.addr);
+    }
+    if (portal_expired) {
+        ESP_LOGI(TAG, "portal: no one provisioned within %llu s — closing",
+                 (unsigned long long)(kPortalMaxUs / 1'000'000));
     }
 
     close(dns_sock);
@@ -748,8 +810,10 @@ bool provisioning_run_portal() {
     esp_wifi_set_mode(WIFI_MODE_STA);
 
     bool joined = s_join_succeeded.load() || wifi->is_connected();
-    if (joined) {
-        hide_instructions_modal(); // dismiss path already hid it via on_modal_deleted
+    if (joined || portal_expired) {
+        // Dismiss path already hid it via on_modal_deleted; the expiry path has
+        // nobody to hide it, and leaving it up would outlive the AP it points at.
+        hide_instructions_modal();
     }
     ESP_LOGI(TAG, "portal: closed (%s)", joined ? "joined" : "dismissed");
     return joined;

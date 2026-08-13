@@ -46,6 +46,8 @@ namespace helix::ui {
  * @endcode
  */
 class AmsContextMenu : public ContextMenu {
+    HELIX_CONTEXT_MENU_KIND(AmsContextMenu)
+
   public:
     /// Answers "may slot `candidate` stand in for slot `slot`?"
     ///

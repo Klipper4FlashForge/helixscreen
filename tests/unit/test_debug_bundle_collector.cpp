@@ -1147,6 +1147,168 @@ TEST_CASE("DebugBundleCollector: log_tail ships the whole ring, not the 2000-lin
 }
 
 // ============================================================================
+// pick_rotated_sibling — reach the log the crash actually landed in
+// ============================================================================
+
+namespace {
+
+using LFE = helix::DebugBundleCollector::LogFileEntry;
+
+/// Verbatim from a live Raspberry Pi's /server/files/list?root=logs. Note
+/// crowsnest.log.2026-08-11 (940 KB) is NEWER than every klippy rotation.
+std::vector<LFE> pi_logs_root() {
+    return {
+        {"moonraker.log", 5800, 1786499650.12},
+        {"crowsnest.log.2026-08-11", 940700, 1786420807.17},
+        {"crowsnest.log.2026-08-10", 940700, 1786334411.19},
+        {"moonraker.log.2026-08-09", 6048, 1786312964.48},
+        {"moonraker.log.2026-08-08", 5923, 1786212464.31},
+        {"mainsail-access.log", 0, 1785988807.40},
+        {"crowsnest.log", 940700, 1781891605.91},
+        {"klippy.log", 2604, 1781891557.42},
+        {"klippy.log.2026-06-08", 2604, 1780931356.03},
+        {"klippy.log.2026-05-22", 2604, 1779449296.39},
+    };
+}
+
+/// Verbatim from a live AD5M — same family as Vger1700's AD5X. The klippy log is
+/// printer.log here, rotations carry an hour suffix, and nested mod/ files exist.
+std::vector<LFE> ad5m_logs_root() {
+    return {
+        {"moonraker.log", 4674, 1786499650.14},
+        {"moonraker.log.2026-08-11", 6634, 1786434810.86},
+        {"moonraker.log.2026-08-10", 23304, 1786373729.02},
+        {"printer.log", 187010, 1786369835.39},
+        {"boot.log", 3335, 1786369831.22},
+        {"mod/init.log", 6960, 1786369118.39},
+        {"printer.log.2026-06-13_15", 180687, 1781379596.73},
+        {"mod/init.log.1", 7082, 1781379419.38},
+        {"printer.log.2026-06-12_12", 95071, 1781282495.09},
+        {"printer.log.2026-05-21_14", 7961683, 1779386713.19},
+    };
+}
+
+const std::vector<std::string> kKlippyStems = {"klippy.log", "printer.log"};
+const std::vector<std::string> kMoonrakerStems = {"moonraker.log"};
+
+} // namespace
+
+TEST_CASE("DebugBundleCollector: pick_rotated_sibling finds the crash's real log",
+          "[debug-bundle][klippy]") {
+    SECTION("Pi layout: klippy rotation, NOT the newer crowsnest log") {
+        // The trap. crowsnest.log.2026-08-11 is 940 KB and ~5 days newer than the
+        // newest klippy rotation, so any "newest rotated file" rule ships a
+        // webcam log in place of the crash.
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(pi_logs_root(), kKlippyStems) ==
+                "klippy.log.2026-06-08");
+    }
+
+    SECTION("Pi layout: moonraker rotation") {
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(
+                    pi_logs_root(), kMoonrakerStems) == "moonraker.log.2026-08-09");
+    }
+
+    SECTION("AD5M/AD5X layout: klippy's log is printer.log, with an hour suffix") {
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(ad5m_logs_root(), kKlippyStems) ==
+                "printer.log.2026-06-13_15");
+    }
+
+    SECTION("AD5M layout: the moonraker rotation that held the LYGVE39Y incident") {
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(
+                    ad5m_logs_root(), kMoonrakerStems) == "moonraker.log.2026-08-11");
+    }
+
+    SECTION("never the active file, however it sorts") {
+        std::vector<LFE> only_active = {{"moonraker.log", 999999, 9999999999.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(only_active, kMoonrakerStems)
+                    .empty());
+    }
+
+    SECTION("never a nested path — mod/init.log.1 is not klippy's") {
+        std::vector<LFE> nested = {{"mod/printer.log.1", 9999, 9999999999.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(nested, kKlippyStems).empty());
+    }
+
+    SECTION("never a different daemon that merely shares the suffix shape") {
+        std::vector<LFE> other = {{"crowsnest.log.2026-08-11", 940700, 9999999999.0},
+                                  {"mainsail-error.log.1", 10, 9999999999.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(other, kKlippyStems).empty());
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(other, kMoonrakerStems).empty());
+    }
+
+    SECTION("numeric rotation suffixes count too") {
+        std::vector<LFE> numeric = {{"moonraker.log", 100, 500.0},
+                                    {"moonraker.log.1", 100, 400.0},
+                                    {"moonraker.log.2", 100, 300.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(numeric, kMoonrakerStems) ==
+                "moonraker.log.1"); // newest of the rotations
+    }
+
+    SECTION("a stem that is a prefix of another name does not bleed across") {
+        // "printer.log" must not match "printer.log_backup.1" or "printer.logger.2"
+        std::vector<LFE> tricky = {{"printer.log_backup.1", 500, 9999999999.0},
+                                   {"printer.logger.2", 500, 9999999999.0},
+                                   {"printer.log.2026-01-01", 500, 100.0}};
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(tricky, kKlippyStems) ==
+                "printer.log.2026-01-01");
+    }
+
+    SECTION("empty listing is not a crash") {
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling({}, kKlippyStems).empty());
+    }
+}
+
+// ============================================================================
+// condense_klipper_log — threshold tuning for moonraker.log
+// ============================================================================
+
+TEST_CASE("DebugBundleCollector: condense threshold preserves EVERY proc_stats shutdown block",
+          "[debug-bundle][klippy]") {
+    // moonraker.log's most valuable repeated block is proc_stats._handle_shutdown(),
+    // which dumps ~30 "System Time: ... Usage: ..." samples on each Klippy
+    // shutdown. Those samples are the only host-CPU record we get for the moment
+    // of a crash.
+    //
+    // The catch: shape-collapse keeps the most RECENT occurrences, and shutdowns
+    // come in clusters — Vger1700's incident day had two, 102 lines apart. With
+    // Klipper's max_repeats=40 the SECOND (uninteresting) block keeps all 30
+    // samples while the FIRST (the actual incident) is thinned to 10. Measured
+    // on his real moonraker.log.2026-08-11.
+    auto proc_stats_block = [](int base) {
+        std::string s;
+        for (int i = 0; i < 30; ++i)
+            s += "System Time: " + std::to_string(base + i) + ".05, Usage: 4.1%, Memory: None\n";
+        return s;
+    };
+    const std::string incident = proc_stats_block(1786462400);
+    const std::string later = proc_stats_block(1786462600);
+    std::string raw = incident + "Klippy has shutdown\n" + std::string(120, 'x') + "\n" + later +
+                      "Klippy has shutdown\n";
+
+    auto count_block = [](const std::string& hay, const std::string& epoch_prefix) {
+        return count_lines_with(hay, "System Time: " + epoch_prefix);
+    };
+
+    SECTION("Klipper's threshold silently thins the incident block") {
+        // Not a defect in the Klipper path — klippy.log has no equivalent block,
+        // and this is exactly why moonraker.log cannot inherit the same number.
+        auto out = helix::DebugBundleCollector::condense_klipper_log(
+            raw, helix::DebugBundleCollector::kKlipperCondenseMaxRepeats, /*tail_lines=*/0);
+        REQUIRE(count_block(out, "17864624") < 30); // incident sacrificed
+        REQUIRE(count_block(out, "17864626") == 30);
+    }
+
+    SECTION("the moonraker threshold keeps both blocks whole") {
+        // Reads the shipping constant, not a copy of it: dropping
+        // kMoonrakerCondenseMaxRepeats back toward Klipper's value fails here.
+        auto out = helix::DebugBundleCollector::condense_klipper_log(
+            raw, helix::DebugBundleCollector::kMoonrakerCondenseMaxRepeats, /*tail_lines=*/0);
+        REQUIRE(count_block(out, "17864624") == 30);
+        REQUIRE(count_block(out, "17864626") == 30);
+    }
+}
+
+// ============================================================================
 // condense_klipper_log — Klipper config-dump elision
 // ============================================================================
 
@@ -1220,8 +1382,39 @@ TEST_CASE("DebugBundleCollector: condense_klipper_log elides every config dump i
     REQUIRE(count_lines_with(out, "config dump") == 2);
 }
 
+TEST_CASE("DebugBundleCollector: config-dump elision handles a real AD5X-sized dump",
+          "[debug-bundle][klippy]") {
+    // Measured, not guessed: Vger1700's printer.log carries a 6668-line config
+    // dump, 66% of a 10052-line file. An earlier positional bound of 5000 was
+    // written against an assumed ~1300 and would have skipped this entirely
+    // whenever the fetch cut into the first 1668 lines of the dump.
+    std::string raw = config_dump(6666, /*with_header=*/false) + "Stats 83.0: sysload=0.3\n" +
+                      "MCU 'mcu' shutdown: Timer too close\n";
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+    REQUIRE(count_lines_with(out, "cfg_key_") == 0);
+    REQUIRE(count_lines_with(out, "Timer too close") == 1);
+}
+
 TEST_CASE("DebugBundleCollector: config-dump elision does not eat unrelated content",
           "[debug-bundle][klippy]") {
+    SECTION("an orphan terminator after runtime output is left alone") {
+        // Position alone cannot separate "cut-off dump" from "stray rule line":
+        // a real dump is 6668 lines, so any bound generous enough to cover one
+        // is also generous enough to swallow thousands of real log lines. What
+        // actually separates them is that Klipper's config dump contains no
+        // runtime "Stats " line, and a live log is saturated with them.
+        std::string raw = stats_lines(30) + "MCU 'mcu' shutdown: Timer too close\n" +
+                          "=======================\n" + "after\n";
+
+        auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+        REQUIRE(count_lines_with(out, "Timer too close") == 1);
+        REQUIRE(count_lines_with(out, "after") == 1);
+        REQUIRE(count_lines_with(out, "config dump") == 0);
+    }
+
     SECTION("an orphan terminator deep in the window is left alone") {
         // The head-truncated rule drops everything BEFORE the terminator, so it
         // must only fire near the start of the window. A bare '=' rule line

@@ -51,15 +51,12 @@
 #include <unordered_set>
 
 namespace {
-// Resolved bundle path for the benchy placeholder thumbnail. Static so
-// lv_image_set_src / the idle-thumb subject can hold the pointer (it outlives
-// the widget). Identity on desktop (asset_root "."); absolute
-// (A:/assets/assets/images/...) on firmware, where a raw "A:assets/images/..."
-// literal misses the mount and lv_image_set_src fails to open it.
+// The idle hero thumbnail is the same benchy image the print-thumbnail subject
+// publishes when a file has no thumbnail of its own, so both come from one
+// resolution point. The returned pointer outlives the widget, which
+// lv_image_set_src and the idle-thumb subject both require.
 const char* benchy_thumb_path() {
-    static const std::string p =
-        helix::asset_component_uri("assets/images/benchy_thumbnail_white.png");
-    return p.c_str();
+    return helix::PrinterPrintState::no_thumbnail_placeholder();
 }
 } // namespace
 
@@ -477,7 +474,7 @@ void PrintStatusWidget::detach() {
     if (esp_thumbnail_ && print_card_active_thumb_ &&
         lv_image_get_src(print_card_active_thumb_) == esp_thumbnail_->dsc()) {
         lv_image_set_src(print_card_active_thumb_,
-                         helix::PrinterPrintState::kNoThumbnailPlaceholder);
+                         helix::PrinterPrintState::no_thumbnail_placeholder());
     }
     esp_thumbnail_.reset();
 #endif
@@ -805,7 +802,7 @@ void PrintStatusWidget::on_print_thumbnail_path_changed(const char* path) {
     }
 
     // No empty-path branch: ActivePrintMediaManager is the subject's sole writer
-    // and publishes kNoThumbnailPlaceholder — the very image this used to
+    // and publishes no_thumbnail_placeholder() — the very image this used to
     // substitute — when a file has no thumbnail, so the value is always an image.
     defer_apply_active_thumbnail(path);
 }
@@ -1509,7 +1506,7 @@ void PrintStatusWidget::print_status_layout_library_cb(lv_event_t* /*e*/) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusWidget] print_status_layout_library_cb");
     // The buttons live inside the configure picker's own card, so the menu on
     // screen when one is tapped is the picker that owns them.
-    if (auto* picker = dynamic_cast<ConfigurePicker*>(helix::ui::ContextMenu::active())) {
+    if (auto* picker = helix::ui::ContextMenu::active_as<ConfigurePicker>()) {
         picker->select_layout("library");
     }
     LVGL_SAFE_EVENT_CB_END();
@@ -1517,7 +1514,7 @@ void PrintStatusWidget::print_status_layout_library_cb(lv_event_t* /*e*/) {
 
 void PrintStatusWidget::print_status_layout_detailed_cb(lv_event_t* /*e*/) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusWidget] print_status_layout_detailed_cb");
-    if (auto* picker = dynamic_cast<ConfigurePicker*>(helix::ui::ContextMenu::active())) {
+    if (auto* picker = helix::ui::ContextMenu::active_as<ConfigurePicker>()) {
         picker->select_layout("detailed");
     }
     LVGL_SAFE_EVENT_CB_END();

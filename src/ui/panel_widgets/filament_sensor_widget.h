@@ -53,6 +53,11 @@ class FilamentSensorWidget : public PanelWidget {
     /// ContextMenu::active_as<SourcePicker>(). Same shape as ThermistorWidget's
     /// SensorPicker/ConfigurePicker.
     class SourcePicker : public helix::ui::ContextMenu {
+        // RTTI-free downcast tag for ContextMenu::active_as<SourcePicker>(). Pure
+        // virtual in the base, so omitting it makes this class abstract rather than
+        // silently answering with the base's tag. The firmware builds -fno-rtti.
+        HELIX_CONTEXT_MENU_KIND(SourcePicker)
+
       public:
         explicit SourcePicker(FilamentSensorWidget& owner) : owner_(owner) {}
         FilamentSensorWidget& owner() {

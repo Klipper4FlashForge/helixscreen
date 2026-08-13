@@ -526,6 +526,7 @@
   <translation tag="Correction (Ki)" ru="Коррекция (Ki)"/>
   <translation tag="Could not analyze PRINT_START macro. Some print options may be unavailable." ru="Не удалось проанализировать макрос PRINT_START. Некоторые параметры печати могут быть недоступны."/>
   <translation tag="Could not check webcam status.\nCheck printer connection." ru="Не удалось проверить статус веб-камеры.\nПроверьте подключение принтера."/>
+  <translation tag="Could not confirm cancel"/>
   <translation tag="Could not forget device" ru="Не удалось забыть устройство"/>
   <translation tag="Could not load printer database" ru="Не удалось загрузить базу данных принтеров"/>
   <translation tag="Could not parse tips database" ru="Не удалось разобрать базу данных советов"/>
@@ -1079,6 +1080,7 @@
   <translation tag="Insert filament before resuming" ru="Вставьте филамент перед возобновлением"/>
   <translation tag="Install" ru="Установить"/>
   <translation tag="Install HelixPrint Plugin" ru="Установить плагин HelixPrint"/>
+  <translation tag="Install Older Version?"/>
   <translation tag="Install Plugin" ru="Установить плагин"/>
   <translation tag="Install Root" ru="Корень установки"/>
   <translation tag="Install Update" ru="Установить обновление"/>
@@ -2132,6 +2134,7 @@
   <translation tag="Switch a power device on or off" ru="Включить или выключить питание"/>
   <translation tag="Switch between light and dark themes" ru="Переключение между светлой и тёмной темами"/>
   <translation tag="Switch the active tool or extruder" ru="Смена активного инструмента"/>
+  <translation tag="Switch to v%s"/>
   <translation tag="Switched to T{}" ru="Переключено на T{}"/>
   <translation tag="Switches to a backup spool on runout" ru="При обрыве переключится на резервную катушку"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." ru="Переключение управления нагревом на MPC. Klipper перезапустится."/>
@@ -2226,6 +2229,7 @@
   <translation tag="These tools have no matching filament loaded:" ru="В этих инструментах нет подходящего филамента:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." ru="Эта калибровка использует метод трения бумаги об сопло для установки Z-смещения."/>
   <translation tag="This cannot be undone." ru="Это действие нельзя отменить."/>
+  <translation tag="This channel offers v{}, older than the installed v{}. Anything added since then will be removed."/>
   <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again."/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." ru="У этого устройства нет проводного подключения к сети. Если выключить WiFi, включить его обратно можно будет только с этого экрана."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" ru="На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может привести к тому, что прошивка принтера сообщит об ошибке \&quot;Timer Too Close\&quot; или перезапустится во время теста. Всё равно продолжить?"/>
