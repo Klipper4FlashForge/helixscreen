@@ -89,6 +89,17 @@ class Ad5xIfsTestAccess {
         std::lock_guard<std::mutex> lock(b.mutex_);
         return b.build_color_list_value();
     }
+    static std::string runout_detail(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.build_runout_detail_locked();
+    }
+    static void set_runout_state(AmsBackendAd5xIfs& b, int slot, bool has_ifs_vars,
+                                 std::optional<bool> backup_variable) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.runout_slot_ = slot;
+        b.has_ifs_vars_ = has_ifs_vars;
+        b.ifs_backup_variable_ = backup_variable;
+    }
     static std::string build_types(const AmsBackendAd5xIfs& b) {
         std::lock_guard<std::mutex> lock(b.mutex_);
         return b.build_type_list_value();
@@ -10483,6 +10494,67 @@ TEST_CASE("AD5X IFS runout: backup-slot match needs type AND colour AND presence
 
     SECTION("the ran-out lane never matches itself") {
         REQUIRE(Ad5xIfsTestAccess::find_backup_slot(backend, 0) != 0);
+    }
+}
+
+// The runout detail is assembled from several translatable pieces. It used to
+// be built by concatenation -- the subject glued on in C++ and the rest left as
+// a fragment starting mid-clause ("is installed but ...", "matches.") -- which
+// no translator can reorder, so those fragments sat untranslated in all eight
+// non-English locales. Each piece is now a whole sentence with the variable
+// part as `{}`.
+//
+// These assertions pin the assembled ENGLISH only. They deliberately do not
+// claim to catch a relapse into concatenation: `who + " " + lv_tr("will switch
+// ...")` produces a byte-identical English string, so no assertion on the
+// output can tell the two apart (verified by mutating it back -- this test
+// still passed). What differs is the CATALOG, and that is guarded elsewhere:
+// re-splitting the sentence makes the whole-sentence key obsolete and the
+// fragments new, which the "no user-facing strings are missing from the
+// translation catalogs" gate in tests/shell/test_code_lint.bats fails on.
+TEST_CASE("AD5X IFS runout detail reads as whole sentences", "[ams][ad5x_ifs][runout][i18n]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_material(backend, 0, "PLA");
+    Ad5xIfsTestAccess::set_color(backend, 0, "FF0000");
+
+    const auto contains = [](const std::string& haystack, const char* needle) {
+        return haystack.find(needle) != std::string::npos;
+    };
+
+    SECTION("stock zMod names Infinite Spool Mode as the subject") {
+        Ad5xIfsTestAccess::set_runout_state(backend, 0, /*has_ifs_vars=*/false, std::nullopt);
+        const std::string detail = Ad5xIfsTestAccess::runout_detail(backend);
+
+        // Subject adjacent to its verb is exactly what concatenation could not
+        // guarantee once a translator moved either one.
+        REQUIRE(contains(detail, "Infinite Spool Mode will switch to a slot"));
+        REQUIRE(contains(detail, "No slot currently matches."));
+    }
+
+    SECTION("a matching backup slot is named in one sentence, not three pieces") {
+        Ad5xIfsTestAccess::set_port_presence(backend, 2, true);
+        Ad5xIfsTestAccess::set_material(backend, 2, "PLA");
+        Ad5xIfsTestAccess::set_color(backend, 2, "FF0000");
+        Ad5xIfsTestAccess::set_runout_state(backend, 0, /*has_ifs_vars=*/false, std::nullopt);
+
+        REQUIRE(contains(Ad5xIfsTestAccess::runout_detail(backend), "Slot 3 matches."));
+    }
+
+    SECTION("an unreadable plugin setting names the plugin as the subject") {
+        Ad5xIfsTestAccess::set_var_prefix(backend, "bambufy");
+        Ad5xIfsTestAccess::set_runout_state(backend, 0, /*has_ifs_vars=*/true, std::nullopt);
+
+        REQUIRE(contains(Ad5xIfsTestAccess::runout_detail(backend),
+                         "bambufy is installed, but its backup-spool setting could not be read"));
+    }
+
+    SECTION("backup switching turned off names the plugin as the subject") {
+        Ad5xIfsTestAccess::set_var_prefix(backend, "lessWaste");
+        Ad5xIfsTestAccess::set_runout_state(backend, 0, /*has_ifs_vars=*/true, false);
+
+        REQUIRE(contains(Ad5xIfsTestAccess::runout_detail(backend),
+                         "lessWaste is installed but its backup-spool switching is turned off"));
     }
 }
 

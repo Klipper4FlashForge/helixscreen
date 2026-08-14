@@ -43,19 +43,9 @@ translations:
   0 = computed: 0 = вычислено
   0 events queued: 0 событий в очереди
   0 slots: '{0} Слотов'
-  # Source: calibration_pid_panel.xml:368
-  0.0000 J/K: ''
-  # Source: calibration_pid_panel.xml:374
-  0.000000 K/s/K: ''
-  # Source: calibration_pid_panel.xml:380
-  0.000000 W/K: ''
-  0.4-2mm direct drive, 4-6mm bowden: 0.4-2мм для директа, 4-6мм для боудена
-  # Source: history_dashboard_panel.xml:83
-  0h: ''
-  # Source: history_dashboard_panel.xml:89, print_status_panel.xml:252, print_status_panel.xml:254
-  0m: ''
-  0°: 0°
-  1 day ago: 1 день назад
+  '0.4-2mm direct drive, 4-6mm bowden': '0.4-2мм для директа, 4-6мм для боудена'
+  '0°': '0°'
+  '1 day ago': '1 день назад'
   1 event queued: 1 событие в очереди
   1 hour ago: 1 ч. назад
   1 layer: 1 слой
@@ -173,7 +163,7 @@ translations:
   All extruder temperatures with progress bars: 'Температуры всех экструдеров с индикаторами'
   All fields are required: Все поля обязательны для заполнения
   All plugins loaded successfully: Все плагины успешно загружены
-  Allow Home Screen Editing: ''
+  Allow Home Screen Editing: 'Разрешить редактирование главного экрана'
   Allow cold load/unload: Разрешить загрузку/выгрузку без нагрева
   Allow display to sleep during active prints: Разрешить спящий режим дисплея во время
     печати
@@ -193,7 +183,7 @@ translations:
   An error occurred while loading filament.: Во время загрузки филамента произошла
     ошибка.
   # Source: probe_accuracy_modal.xml:90
-  An error occurred.: ''
+  An error occurred.: 'Произошла ошибка.'
   An internal error occurred. The app continues running — please send a debug bundle from Settings > About if it repeats.: Произошла
     внутренняя ошибка. Приложение продолжает работать — отправьте отладочный пакет
     из «Настройки > О программе», если она повторится.
@@ -506,7 +496,7 @@ translations:
   Clear All Events: Очистить все события
   Clear Console?: Очистить консоль?
   Clear Spool: Убрать катушку
-  Clear all spool failover assignments: ''
+  Clear all spool failover assignments: 'Очистить все назначения резервных катушек'
   Clear failed: Ошибка очистки
   Cleared from settings — system unpair failed, may need OS Bluetooth: Удалено из
     настроек; не удалось отменить сопряжение в системе, возможно нужен Bluetooth ОС
@@ -826,7 +816,7 @@ translations:
   Enclosure humidity sensor readings: 'Показания датчика влажности корпуса'
   Encoder: Энкодер
   Ended: Завершено
-  Endless spool failover cleared for every slot: ''
+  Endless spool failover cleared for every slot: 'Резервные катушки очищены для всех слотов'
   Enhanced {} operation in PRINT_START: Улучшена {} операция в PRINT_START
   Enhanced {} operations in PRINT_START: Улучшено {} операций в PRINT_START
   Enhancement Complete!: Улучшение завершено!
@@ -863,7 +853,7 @@ translations:
   'Error: Verification failed': 'Ошибка: проверка не удалась'
   'Error: Wrong architecture': 'Ошибка: неверная архитектура'
   'Error: `unzip` not installed': 'Ошибка: `unzip` не установлен'
-  Errors only: ''
+  Errors only: 'Только ошибки'
   Escalate to emergency stop if cancel doesn't respond: Эскалация до аварийной остановки,
     если отмена не отвечает
   Escalation Timeout: Тайм-аут эскалации
@@ -1048,11 +1038,11 @@ translations:
   Filament loaded: Филамент загружен
   Filament operation failed: Операция с филаментом не удалась
   Filament operation timed out: Операция с филаментом — время ожидания истекло
-  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  Filament ran out - nothing at the toolhead and the print is paused.: 'Филамент закончился - у печатающей головки ничего нет, печать приостановлена.'
   ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
-  : ''
-  Filament ran out at the toolhead: ''
-  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
+  : 'Филамент закончился, и CFS не нашла подходящей катушки для замены. Загрузите катушку того же материала и цвета и продолжите печать.'
+  Filament ran out at the toolhead: 'Филамент закончился у печатающей головки'
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: 'Филамент закончился. Автопополнение выключено, поэтому CFS не сменит катушку сам. Загрузите филамент и продолжите печать.'
   Filament runout: Окончание филамента
   Filament runout and motion detection sensors: Датчики окончания и движения филамента
   Filament runout detection status: 'Состояние датчика окончания филамента'
@@ -1216,7 +1206,7 @@ translations:
   How far filament is pushed back into the box on eject (mm): Насколько глубоко филамент
     задвигается обратно в коробку при извлечении (мм)
   ? How long to hold before a press counts as a long-press, in ms (raise if edit mode or other long-press actions trigger by accident)
-  : ''
+  : 'Сколько удерживать, чтобы нажатие считалось долгим, в мс (увеличьте, если режим редактирования срабатывает случайно)'
   How many labels to print: Сколько этикеток напечатать
   How the toolhead icon appears: Как отображается значок печатающей головки
   Hub: Хаб
@@ -1248,7 +1238,7 @@ translations:
   'Incompatible materials: {} cannot use {} as backup': 'Несовместимые материалы:
     {} не может использовать {} в качестве резерва'
   Indexing G-code...: Индексация G-code...
-  Infinite Spool Mode: ''
+  Infinite Spool Mode: 'Режим бесконечной катушки'
   Info: Инфо
   Initial speed for filament unloading: 'Начальная скорость выгрузки филамента'
   Initialized: Инициализировано
@@ -1270,7 +1260,7 @@ translations:
   Insert filament before resuming: Вставьте филамент перед возобновлением
   Install: Установить
   Install HelixPrint Plugin: Установить плагин HelixPrint
-  Install Older Version?: ''
+  Install Older Version?: 'Установить более старую версию?'
   Install Plugin: Установить плагин
   Install Root: Корень установки
   Install Update: Установить обновление
@@ -1342,8 +1332,6 @@ translations:
   'Klipper: ': 'Klipper: '
   Klippy Errors: Ошибки Klippy
   Klippy Shutdowns: Отключения Klippy
-  # Source: led_control_overlay.xml:31
-  LED: ''
   LED Controls: 'Управление LED'
   LED Light: 'LED-подсветка'
   LED Mode: 'Режим LED'
@@ -1371,13 +1359,11 @@ translations:
   Language, theme, brightness, and sound: Язык, тема, яркость и звук
   Last: Последняя
   # Source: history_dashboard_panel.xml:114
-  Last 7 days: ''
+  Last 7 days: 'Последние 7 дней'
   Last print cancelled: Последняя печать отменена
   Last print failed: Последняя печать не удалась
   Later: Позже
   Layer: Слой
-  # Source: print_status_panel.xml:234
-  Layer 0 / 0: ''
   Layer Height: Высота слоя
   Layer Macro captures one frame per layer change. Best for most prints.: Слоевой
     макрос захватывает один кадр при смене слоя. Подходит для большинства печатей.
@@ -1433,8 +1419,8 @@ translations:
   Locked during print: Заблокировано во время печати
   Log Level: Уровень журнала
   Logs: Журналы
-  Long Press Time: ''
-  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): ''
+  Long Press Time: 'Время долгого нажатия'
+  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): 'Долгое нажатие на сетку главного экрана переставляет виджеты (отключите, если срабатывает случайно)'
   Longest Disconnect: Самое долгое отключение
   Loosen Path A belt.: Ослабьте ремень Пути A.
   Loosen Path B belt.: Ослабьте ремень Пути B.
@@ -1443,7 +1429,7 @@ translations:
   'Lot # (optional)': 'Партия # (необязательно)'
   Lot/Batch Nr: Nr. партии/серии
   Low Memory: Мало памяти
-  Lowest notification level that interrupts with a toast: ''
+  Lowest notification level that interrupts with a toast: 'Минимальный уровень уведомления, прерывающий всплывающим сообщением'
   M to toggle: M для переключения
   'MAC:': 'MAC:'
   MACRO DEVICES: МАКРО-УСТРОЙСТВА
@@ -1627,8 +1613,6 @@ translations:
   No Spools: Нет катушек
   No USB printer detected: USB-принтер не обнаружен
   No USB printers found: USB-принтеры не найдены
-  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
-  : ''
   No automatic backup-spool package is installed: Плагин автоматической резервной катушки не установлен
   No buffer data available: Данные буфера недоступны
   No camera — use USB barcode scanner: Нет камеры — используйте USB сканер штрих-кодов
@@ -1678,7 +1662,7 @@ translations:
   No prints yet: Нет печатей
   No profiles available: Профили недоступны
   No sensors detected: Датчики не обнаружены
-  No slot currently matches.: ''
+  No slot currently matches.: 'Сейчас нет подходящего слота.'
   No spool assigned: Катушка не назначена
   No spools found — tap to retry: Катушки не найдены — нажмите для повтора
   No tape detected in printer: В принтере не обнаружена лента
@@ -1703,7 +1687,7 @@ translations:
   Not found (use phone app): Не найдено (используйте приложение на телефоне)
   Not in your spools? Set it up: Нет в ваших катушках? Настроить
   Not now: Не сейчас
-  Not yet available on this display: ''
+  Not yet available on this display: 'Пока недоступно на этом дисплее'
   Not yet calibrated: Ещё не откалибровано
   Notes: Заметки
   Notes (optional): Заметки (необязательно)
@@ -1744,8 +1728,7 @@ translations:
   'Off:': 'Выкл:'
   'On': Вкл
   On and Off macros must be different: Макросы включения и выключения должны отличаться
-  On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
-  On-screen Alerts: ''
+  On-screen Alerts: 'Экранные оповещения'
   On/Off: Вкл/Выкл
   On/Off (state-aware): Вкл/Выкл (с отслеживанием)
   'On:': 'Вкл:'
@@ -2000,7 +1983,7 @@ translations:
   Probing Failed: Ошибка зондирования
   Proceed: Продолжить
   # Source: abort_progress_modal.xml:20
-  Processing...: ''
+  Processing...: 'Обработка...'
   Profile deleted: Профиль удалён
   Profile name (e.g., default): Имя профиля (например, default)
   Profile renamed: Профиль переименован
@@ -2119,14 +2102,14 @@ translations:
   Reset: Сброс
   Reset Blade Counter: 'Сбросить счётчик лезвия'
   Reset CFS: Сброс CFS
-  Reset Endless Spool: ''
-  Reset Endless Spool?: ''
+  Reset Endless Spool: 'Сбросить бесконечную катушку'
+  Reset Endless Spool?: 'Сбросить бесконечную катушку?'
   Reset Home Screen?: Сбросить главный экран?
   Reset Motor Timer: 'Сбросить таймер мотора'
   Reset Servo Counter: 'Сбросить счётчик сервопривода'
   Reset Speed & Flow to 100%: Сбросить скорость и поток на 100%
   Reset all settings and restart wizard: Сбросить все настройки и перезапустить мастер
-  Reset endless spool failed: ''
+  Reset endless spool failed: 'Не удалось сбросить бесконечную катушку'
   Reset failed: Ошибка сброса
   Reset motor run-time counter: 'Сбросить счётчик наработки мотора'
   Reset to Default: Сбросить до умолчания
@@ -2344,7 +2327,6 @@ translations:
   'Set ': 'Установить '
   Set Active: Сделать активной
   Set PIN: Установить PIN
-  Set Up WiFi: ''
   ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
@@ -2388,9 +2370,7 @@ translations:
   Show up/down buttons on long lists: Показывать кнопки вверх/вниз в длинных списках
   Show whatever curves you last had visible on the full graph.: Показывать те кривые,
     что были видны на полном графике в последний раз.
-  Showing loaded colors: ''
-  Showing sliced colors: ''
-  Showing the 50 newest files. See more in the printer's web UI.: ''
+  Showing the 50 newest files. See more in the printer's web UI.: 'Показаны 50 последних файлов. Остальные - в веб-интерфейсе принтера.'
   Shutdown: Выключение
   Shutdown / Reboot: Выключение / Перезагрузка
   Shutdown failed: Ошибка выключения
@@ -2415,6 +2395,7 @@ translations:
   Slot %d Filament: Филамент слота %d
   Slot 1: Слот 1
   Slot {}: Слот {}
+  Slot {} matches.: 'Слот {} подходит.'
   Slot {} spool cleared: Катушка слота {} удалена
   Slot {} updated: Слот {} обновлён
   Small labels help keep controls calm and focused.: Мелкие надписи помогают сохранять
@@ -2522,7 +2503,7 @@ translations:
     токены фона приложения для светлого и тёмного режимов.
   Switch Printer: Переключить принтер
   Switch between light and dark themes: Переключение между светлой и тёмной темами
-  Switch to v%s: ''
+  Switch to v%s: 'Перейти на v%s'
   Switched to T{}: Переключено на T{}
   Switches to a backup spool on runout: При обрыве переключится на резервную катушку
   Switching heater control to MPC. Klipper will restart.: Переключение управления
@@ -2541,8 +2522,6 @@ translations:
     — печати не хватит филамента.
   T%d needs filament in slot %d, which is empty — this print will run out.: Для T%d
     нужен филамент в слоте %d, который пуст — печати не хватит филамента.
-  # Source: ams_current_tool.xml:38
-  T0: ''
   TD-1 filament color detection: Определение цвета филамента TD-1
   TEMPERATURE SENSORS: ДАТЧИКИ ТЕМПЕРАТУРЫ
   THEME COLORS: ЦВЕТА ТЕМЫ
@@ -2576,7 +2555,6 @@ translations:
   Temperature Graph Config: Настройка графика температуры
   # Source: calibration_pid_panel.xml:333
   Temperature Sensors: 'Датчики температуры'
-  Temperature control has been optimized.: ''
   Temperatures: Температуры
   Temperatures saved: Температуры сохранены
   Template: Шаблон
@@ -2656,8 +2634,8 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Эта калибровка
     использует метод трения бумаги об сопло для установки Z-смещения.
   This cannot be undone.: Это действие нельзя отменить.
-  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: ''
-  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
+  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: 'Этот канал предлагает v{}, старее установленной v{}. Всё добавленное с тех пор будет удалено.'
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: 'Это очистит назначение резервной катушки для всех катушек. Печать будет останавливаться при окончании филамента, пока вы не настроите их заново.'
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: У этого устройства нет проводного подключения к сети. Если выключить WiFi, включить его обратно можно будет только с этого экрана.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может
@@ -2857,7 +2835,6 @@ translations:
   Use Android native keyboard for text input: Использовать нативную клавиатуру Android
     для ввода текста
   Use G10/G11 firmware retraction: Использовать аппаратный ретракт G10/G11
-  Use Settings Instead: ''
   Use printer type to select image: Использовать тип принтера для выбора изображения
   VM Peak: Пик VM
   VM Size: Размер VM
@@ -2906,7 +2883,7 @@ translations:
   Warming Bed...: Прогрев стола...
   Warn: Предупреждение
   Warning: Предупреждение
-  Warnings & errors: ''
+  Warnings & errors: 'Предупреждения и ошибки'
   Watch the belt under the strobe LED. Adjust frequency until the belt appears stationary — that is the resonant frequency.: Наблюдайте
     за ремнём под стробоскопическим LED. Регулируйте частоту, пока ремень не будет
     казаться неподвижным — это и есть резонансная частота.
@@ -3014,11 +2991,7 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: Не удалось загрузить «%s»
-  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
-  : ''
   bed: стол
-  # Source: print_status_panel.xml:242
-  benchy.gcode: ''
   by Preston Brown: от Preston Brown
   chamber heater: нагреватель камеры
   complete: завершено
@@ -3040,11 +3013,8 @@ translations:
   fans: вентиляторы
   heated bed: подогреваемый стол
   idle: простой
-  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
-  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: слои
   left: осталось
-  matches.: ''
   mm before clog: мм до засора
   needs: требуется
   not detected: не обнаружено
@@ -3096,8 +3066,6 @@ translations:
   v%s available: Доступна v%s
   v{} installed! Restarting...: v{} установлена! Перезапуск...
   v{} is available. Tap to update.: v{} доступна. Нажмите для обновления.
-  ? will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
-  : ''
   you have: у вас
   '{} LED strips available': 'Доступно светодиодных лент: {}'
   '{} axis homed': Ось {} запаркована
@@ -3108,13 +3076,17 @@ translations:
   '{} critical hardware issues': '{} критических проблем с оборудованием'
   '{} filament sensors available': 'Доступно датчиков филамента: {}'
   '{} heater turned off': Нагреватель {} выключен
+  '{} is installed but its backup-spool switching is turned off, so no automatic swap will happen.': '{} установлен, но переключение на резервную катушку выключено, поэтому автоматической замены не будет.'
+  '{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap.': '{} установлен, но прочитать его настройку резервной катушки не удалось - не рассчитывайте на автоматическую замену.'
   '{} lanes': '{} слотов'
   '{} macro not configured': Макрос {} не настроен
   '{} may cause unintended changes. Are you sure?': '{} может привести к непреднамеренным
     изменениям. Вы уверены?'
   '{} more taps to {} beta features': '{} нажатий до {} бета-функций'
-  '{} needs the HelixPrint plugin. Printing original file.': ''
+  '{} needs the HelixPrint plugin. Printing original file.': 'Для {} нужен плагин HelixPrint. Печатается исходный файл.'
   '{} new hardware available': 'Доступно нового оборудования: {}'
   '{} preset{}': '{} пресет{}'
   '{} target set to {}°C': Целевая температура {} — {}°C
+  ? '{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.'
+  : '{} переключится на слот, у которого тип филамента И цвет совпадают с активной катушкой, а собственный датчик порта видит филамент.'
   '{} — response timed out': '{} — время ожидания ответа истекло'

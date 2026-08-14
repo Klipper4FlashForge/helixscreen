@@ -21,6 +21,7 @@
 #include "printer_state.h"
 #include "static_subject_registry.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -5439,16 +5440,22 @@ std::string AmsBackendAd5xIfs::build_runout_detail_locked() const {
     // the firmware-side rule is identical: ANALOG_PRUTOK (stock zMod) and
     // _RUNOUT_HEAD (lessWaste/bambufy) both require exact material AND exact
     // colour AND port-present. Only the subject of the sentence differs.
+    //
+    // Each lv_tr() below is a WHOLE sentence with the variable part as `{}`.
+    // Building these by concatenation is what the catalogs used to hold: the
+    // subject was glued on in C++ and the fragment left starting mid-clause
+    // ("is installed but ...", "matches."). No translator can place a verb from
+    // that -- German sends it to the end of the clause and Japanese reorders the
+    // whole thing -- so the fragments sat untranslated in all eight locales.
     const auto append_switchover_rule = [&](const std::string& who) {
-        detail += who + " ";
-        detail += lv_tr("will switch to a slot whose filament type AND colour both match "
-                        "the active spool and whose own port sensor reads filament present.");
+        detail += fmt::format(lv_tr("{} will switch to a slot whose filament type AND colour "
+                                    "both match the active spool and whose own port sensor "
+                                    "reads filament present."),
+                              who);
         const int backup = find_backup_slot_locked(runout_slot_);
         detail += " ";
         if (backup >= 0) {
-            detail += lv_tr("Slot");
-            detail += " " + std::to_string(backup + 1) + " ";
-            detail += lv_tr("matches.");
+            detail += fmt::format(lv_tr("Slot {} matches."), backup + 1);
         } else {
             detail += lv_tr("No slot currently matches.");
         }
@@ -5460,17 +5467,18 @@ std::string AmsBackendAd5xIfs::build_runout_detail_locked() const {
         return detail;
     }
 
+    // i18n: do not translate — plugin names as their authors spell them.
     const std::string plugin_name = (var_prefix_ == "bambufy") ? "bambufy" : "lessWaste";
     if (!ifs_backup_variable_.has_value()) {
-        detail += plugin_name + " ";
-        detail += lv_tr("is installed, but its backup-spool setting could not be read - do not "
-                        "count on an automatic swap.");
+        detail += fmt::format(lv_tr("{} is installed, but its backup-spool setting could not be "
+                                    "read - do not count on an automatic swap."),
+                              plugin_name);
         return detail;
     }
     if (!*ifs_backup_variable_) {
-        detail += plugin_name + " ";
-        detail += lv_tr("is installed but its backup-spool switching is turned off, so no "
-                        "automatic swap will happen.");
+        detail += fmt::format(lv_tr("{} is installed but its backup-spool switching is turned "
+                                    "off, so no automatic swap will happen."),
+                              plugin_name);
         return detail;
     }
 

@@ -42,19 +42,9 @@ translations:
   0 = computed: 0 = calcolato
   0 events queued: 0 eventi in coda
   0 slots: '{0} Slot'
-  # Source: calibration_pid_panel.xml:368
-  0.0000 J/K: ''
-  # Source: calibration_pid_panel.xml:374
-  0.000000 K/s/K: ''
-  # Source: calibration_pid_panel.xml:380
-  0.000000 W/K: ''
-  0.4-2mm direct drive, 4-6mm bowden: 0,4-2mm direct drive, 4-6mm bowden
-  # Source: history_dashboard_panel.xml:83
-  0h: ''
-  # Source: history_dashboard_panel.xml:89, print_status_panel.xml:252, print_status_panel.xml:254
-  0m: ''
-  0°: 0°
-  1 day ago: 1 giorno fa
+  '0.4-2mm direct drive, 4-6mm bowden': '0,4-2mm direct drive, 4-6mm bowden'
+  '0°': '0°'
+  '1 day ago': '1 giorno fa'
   1 event queued: 1 evento in coda
   1 hour ago: 1 ora fa
   1 layer: 1 strato
@@ -175,7 +165,7 @@ translations:
   All extruder temperatures with progress bars: 'Tutte le temperature degli estrusori con barre di avanzamento'
   All fields are required: Tutti i campi sono obbligatori
   All plugins loaded successfully: Tutti i plugin caricati correttamente
-  Allow Home Screen Editing: ''
+  Allow Home Screen Editing: 'Consenti la modifica della schermata iniziale'
   Allow cold load/unload: Consenti caricamento/scaricamento a freddo
   Allow display to sleep during active prints: Consenti sospensione display durante
     la stampa
@@ -197,7 +187,7 @@ translations:
   An error occurred while loading filament.: Si è verificato un errore durante il
     caricamento del filamento.
   # Source: probe_accuracy_modal.xml:90
-  An error occurred.: ''
+  An error occurred.: 'Si è verificato un errore.'
   An internal error occurred. The app continues running — please send a debug bundle from Settings > About if it repeats.: Si
     è verificato un errore interno. L'app continua a funzionare — invia un debug bundle
     da Impostazioni > Info se si ripete.
@@ -510,7 +500,7 @@ translations:
   Clear All Events: Cancella tutti gli eventi
   Clear Console?: Cancellare la console?
   Clear Spool: Rimuovi bobina
-  Clear all spool failover assignments: ''
+  Clear all spool failover assignments: 'Cancella tutte le assegnazioni di bobina di riserva'
   Clear failed: Cancellazione fallita
   Cleared from settings — system unpair failed, may need OS Bluetooth: Rimosso dalle
     impostazioni; disaccoppiamento di sistema fallito, potrebbe servire il Bluetooth
@@ -835,7 +825,7 @@ translations:
   Enclosure humidity sensor readings: 'Letture del sensore di umidità della cabina'
   Encoder: Encoder
   Ended: Terminato
-  Endless spool failover cleared for every slot: ''
+  Endless spool failover cleared for every slot: 'Bobina di riserva cancellata per tutti gli slot'
   Enhanced {} operation in PRINT_START: Migliorata {} operazione in PRINT_START
   Enhanced {} operations in PRINT_START: Migliorate {} operazioni in PRINT_START
   Enhancement Complete!: Miglioramento completato!
@@ -874,7 +864,7 @@ translations:
   'Error: Verification failed': 'Errore: Verifica fallita'
   'Error: Wrong architecture': 'Errore: Architettura errata'
   'Error: `unzip` not installed': 'Errore: `unzip` non installato'
-  Errors only: ''
+  Errors only: 'Solo errori'
   Escalate to emergency stop if cancel doesn't respond: Escalation ad arresto di emergenza
     se annulla non risponde
   Escalation Timeout: Timeout escalation
@@ -1060,11 +1050,11 @@ translations:
   Filament loaded: Filamento caricato
   Filament operation failed: Operazione filamento fallita
   Filament operation timed out: Operazione filamento — tempo scaduto
-  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  Filament ran out - nothing at the toolhead and the print is paused.: 'Filamento esaurito - non c''è più nulla alla testina e la stampa è in pausa.'
   ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
-  : ''
-  Filament ran out at the toolhead: ''
-  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
+  : 'Filamento esaurito e il CFS non ha trovato una bobina compatibile su cui passare. Carica una bobina dello stesso materiale e colore, poi riprendi.'
+  Filament ran out at the toolhead: 'Filamento esaurito alla testina'
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: 'Filamento esaurito. Il rifornimento automatico è disattivato, quindi il CFS non cambierà bobina da solo. Carica il filamento e poi riprendi.'
   Filament runout: Esaurimento filamento
   Filament runout and motion detection sensors: Sensori esaurimento filamento e rilevamento
     movimento
@@ -1233,7 +1223,7 @@ translations:
   How far filament is pushed back into the box on eject (mm): Quanto il filamento
     viene spinto indietro nella scatola durante l'espulsione (mm)
   ? How long to hold before a press counts as a long-press, in ms (raise if edit mode or other long-press actions trigger by accident)
-  : ''
+  : 'Per quanto tempo tenere premuto perché conti come pressione prolungata, in ms (aumenta se la modalità di modifica o altre azioni si attivano per sbaglio)'
   How many labels to print: Quante etichette stampare
   How the toolhead icon appears: Aspetto dell'icona della testina
   Hub: Hub
@@ -1264,7 +1254,7 @@ translations:
   'Incompatible materials: {} cannot use {} as backup': 'Materiali incompatibili:
     {} non può usare {} come riserva'
   Indexing G-code...: Indicizzazione G-code...
-  Infinite Spool Mode: ''
+  Infinite Spool Mode: 'Modalità bobina infinita'
   Info: Info
   Initial speed for filament unloading: 'Velocità iniziale per lo scarico del filamento'
   Initialized: Inizializzato
@@ -1286,7 +1276,7 @@ translations:
   Insert filament before resuming: Inserire filamento prima di riprendere
   Install: Installa
   Install HelixPrint Plugin: Installa plugin HelixPrint
-  Install Older Version?: ''
+  Install Older Version?: 'Installare una versione precedente?'
   Install Plugin: Installa plugin
   Install Root: Root di installazione
   Install Update: Installa Aggiornamento
@@ -1359,8 +1349,6 @@ translations:
   'Klipper: ': 'Klipper: '
   Klippy Errors: Errori Klippy
   Klippy Shutdowns: Arresti Klippy
-  # Source: led_control_overlay.xml:31
-  LED: ''
   LED Controls: 'Controlli LED'
   LED Light: 'Luce LED'
   LED Mode: 'Modalità LED'
@@ -1388,13 +1376,11 @@ translations:
   Language, theme, brightness, and sound: Lingua, tema, luminosità e suono
   Last: Ultima
   # Source: history_dashboard_panel.xml:114
-  Last 7 days: ''
+  Last 7 days: 'Ultimi 7 giorni'
   Last print cancelled: Ultima stampa annullata
   Last print failed: Ultima stampa fallita
   Later: Dopo
   Layer: Strato
-  # Source: print_status_panel.xml:234
-  Layer 0 / 0: ''
   Layer Height: Altezza layer
   Layer Macro captures one frame per layer change. Best for most prints.: Layer Macro
     cattura un fotogramma per ogni cambio di strato. Ideale per la maggior parte delle
@@ -1451,8 +1437,8 @@ translations:
   Locked during print: Bloccato durante la stampa
   Log Level: Livello di log
   Logs: Log
-  Long Press Time: ''
-  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): ''
+  Long Press Time: 'Durata della pressione prolungata'
+  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): 'Premi a lungo sulla griglia iniziale per riordinare i widget (disattiva se si attiva per sbaglio)'
   Longest Disconnect: Disconnessione più lunga
   Loosen Path A belt.: Allentare la cinghia del Percorso A.
   Loosen Path B belt.: Allentare la cinghia del Percorso B.
@@ -1461,7 +1447,7 @@ translations:
   'Lot # (optional)': 'Lotto # (facoltativo)'
   Lot/Batch Nr: Nr. Lotto/Batch
   Low Memory: Memoria insufficiente
-  Lowest notification level that interrupts with a toast: ''
+  Lowest notification level that interrupts with a toast: 'Livello di notifica più basso che interrompe con un messaggio a comparsa'
   M to toggle: M per alternare
   'MAC:': 'MAC:'
   MACRO DEVICES: DISPOSITIVI MACRO
@@ -1647,8 +1633,6 @@ translations:
   No Spools: Nessuna bobina
   No USB printer detected: Nessuna stampante USB rilevata
   No USB printers found: Nessuna stampante USB trovata
-  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
-  : ''
   No automatic backup-spool package is installed: Nessun plugin per bobina di riserva automatica installato
   No buffer data available: Nessun dato buffer disponibile
   No camera — use USB barcode scanner: Nessuna telecamera — usa scanner USB per codici
@@ -1699,7 +1683,7 @@ translations:
   No prints yet: Nessuna stampa
   No profiles available: Nessun profilo disponibile
   No sensors detected: Nessun sensore rilevato
-  No slot currently matches.: ''
+  No slot currently matches.: 'Attualmente nessuno slot corrisponde.'
   No spool assigned: Nessuna bobina assegnata
   No spools found — tap to retry: Nessuna bobina trovata — tocca per riprovare
   No tape detected in printer: Nessun nastro rilevato nella stampante
@@ -1724,7 +1708,7 @@ translations:
   Not found (use phone app): Non trovato (usa l’app del telefono)
   Not in your spools? Set it up: Non è tra le tue bobine? Configuralo
   Not now: Non ora
-  Not yet available on this display: ''
+  Not yet available on this display: 'Non ancora disponibile su questo display'
   Not yet calibrated: Non ancora calibrato
   Notes: Note
   Notes (optional): Note (facoltativo)
@@ -1765,8 +1749,7 @@ translations:
   'Off:': 'Off:'
   'On': 'On'
   On and Off macros must be different: Le macro On e Off devono essere diverse
-  On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
-  On-screen Alerts: ''
+  On-screen Alerts: 'Avvisi a schermo'
   On/Off: On/Off
   On/Off (state-aware): On/Off (con stato)
   'On:': 'On:'
@@ -2023,7 +2006,7 @@ translations:
   Probing Failed: Sondaggio fallito
   Proceed: Procedi
   # Source: abort_progress_modal.xml:20
-  Processing...: ''
+  Processing...: 'Elaborazione in corso...'
   Profile deleted: Profilo eliminato
   Profile name (e.g., default): Nome profilo (es. default)
   Profile renamed: Profilo rinominato
@@ -2142,15 +2125,15 @@ translations:
   Reset: Ripristina
   Reset Blade Counter: 'Ripristina il contatore della lama'
   Reset CFS: Ripristina CFS
-  Reset Endless Spool: ''
-  Reset Endless Spool?: ''
+  Reset Endless Spool: 'Ripristina la bobina infinita'
+  Reset Endless Spool?: 'Ripristinare la bobina infinita?'
   Reset Home Screen?: Ripristinare la schermata iniziale?
   Reset Motor Timer: 'Ripristina il timer del motore'
   Reset Servo Counter: 'Ripristina il contatore del servo'
   Reset Speed & Flow to 100%: Ripristina velocità e flusso al 100%
   Reset all settings and restart wizard: Ripristina tutte le impostazioni e riavvia
     procedura guidata
-  Reset endless spool failed: ''
+  Reset endless spool failed: 'Ripristino della bobina infinita non riuscito'
   Reset failed: Reset fallito
   Reset motor run-time counter: 'Ripristina il contatore delle ore di funzionamento del motore'
   Reset to Default: Ripristina predefinito
@@ -2371,7 +2354,6 @@ translations:
   'Set ': 'Imposta '
   Set Active: Imposta attivo
   Set PIN: Imposta PIN
-  Set Up WiFi: ''
   ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
@@ -2414,9 +2396,7 @@ translations:
   Show up/down buttons on long lists: Mostra i pulsanti su/giù negli elenchi lunghi
   Show whatever curves you last had visible on the full graph.: Mostra le curve che
     erano visibili l'ultima volta sul grafico completo.
-  Showing loaded colors: ''
-  Showing sliced colors: ''
-  Showing the 50 newest files. See more in the printer's web UI.: ''
+  Showing the 50 newest files. See more in the printer's web UI.: 'Vengono mostrati i 50 file più recenti. Vedi gli altri nell''interfaccia web della stampante.'
   Shutdown: Spegni
   Shutdown / Reboot: Spegni / Riavvia
   Shutdown failed: Spegnimento fallito
@@ -2442,6 +2422,7 @@ translations:
   Slot %d Filament: Filamento slot %d
   Slot 1: Slot 1
   Slot {}: Slot {}
+  Slot {} matches.: 'Lo slot {} corrisponde.'
   Slot {} spool cleared: Bobina slot {} rimossa
   Slot {} updated: Slot {} aggiornato
   Small labels help keep controls calm and focused.: Le etichette piccole aiutano
@@ -2551,7 +2532,7 @@ translations:
     i token sfondo app per modalità chiara e scura.
   Switch Printer: Cambia stampante
   Switch between light and dark themes: Passa tra tema chiaro e scuro
-  Switch to v%s: ''
+  Switch to v%s: 'Passa alla v%s'
   Switched to T{}: Passato a T{}
   Switches to a backup spool on runout: Passa a una bobina di riserva a filamento esaurito
   Switching heater control to MPC. Klipper will restart.: Passaggio controllo riscaldatore
@@ -2570,8 +2551,6 @@ translations:
     — questa stampa lo esaurirà.
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d richiede
     filamento nello slot %d, che è vuoto — questa stampa lo esaurirà.
-  # Source: ams_current_tool.xml:38
-  T0: ''
   TD-1 filament color detection: Rilevamento colore filamento TD-1
   TEMPERATURE SENSORS: SENSORI DI TEMPERATURA
   THEME COLORS: COLORI TEMA
@@ -2604,7 +2583,6 @@ translations:
   Temperature Graph Config: Configurazione grafico temperature
   # Source: calibration_pid_panel.xml:333
   Temperature Sensors: 'Sensori di temperatura'
-  Temperature control has been optimized.: ''
   Temperatures: Temperature
   Temperatures saved: Temperature salvate
   Template: Modello
@@ -2688,8 +2666,8 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Questa calibrazione
     utilizza il metodo della frizione della carta per impostare lo Z-offset.
   This cannot be undone.: Questa azione non può essere annullata.
-  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: ''
-  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
+  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: 'Questo canale offre la v{}, precedente alla v{} installata. Tutto ciò che è stato aggiunto da allora verrà rimosso.'
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: 'Questo cancella l''assegnazione della bobina di riserva di ogni bobina. La stampa si fermerà all''esaurimento finché non la riconfiguri.'
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: Questo dispositivo non dispone di una connessione di rete cablata. Se disattivi il WiFi, potrà essere riattivato solo da questa schermata.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : Questo dispositivo ha solo {} MB di RAM. La calibrazione della risonanza usa molta memoria e può causare un errore \"Timer Too Close\" nel firmware della stampante o un riavvio a metà test. Continuare comunque?
@@ -2894,7 +2872,6 @@ translations:
   Use Android native keyboard for text input: Usa la tastiera nativa di Android per
     l'inserimento testo
   Use G10/G11 firmware retraction: Usa retrazione firmware G10/G11
-  Use Settings Instead: ''
   Use printer type to select image: Usa il tipo di stampante per selezionare l'immagine
   VM Peak: Picco VM
   VM Size: Dimensione VM
@@ -2944,7 +2921,7 @@ translations:
   Warming Bed...: Preriscaldamento piano...
   Warn: Avviso
   Warning: Avviso
-  Warnings & errors: ''
+  Warnings & errors: 'Avvisi ed errori'
   Watch the belt under the strobe LED. Adjust frequency until the belt appears stationary — that is the resonant frequency.: Osserva
     la cinghia sotto il LED stroboscopico. Regola la frequenza finché la cinghia non
     appare ferma — quella è la frequenza di risonanza.
@@ -3055,11 +3032,7 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: Caricamento di \"%s\" non riuscito
-  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
-  : ''
   bed: piano
-  # Source: print_status_panel.xml:242
-  benchy.gcode: ''
   by Preston Brown: di Preston Brown
   chamber heater: riscaldatore camera
   complete: completato
@@ -3081,11 +3054,8 @@ translations:
   fans: ventole
   heated bed: piano riscaldato
   idle: inattivo
-  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
-  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: layer
   left: rimanente
-  matches.: ''
   mm before clog: mm prima dell'intasamento
   needs: richiede
   not detected: non rilevato
@@ -3137,8 +3107,6 @@ translations:
   v%s available: v%s disponibile
   v{} installed! Restarting...: v{} installata! Riavvio in corso...
   v{} is available. Tap to update.: v{} disponibile. Tocca per aggiornare.
-  ? will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
-  : ''
   you have: hai
   '{} LED strips available': '{} strisce LED disponibili'
   '{} axis homed': Asse {} in posizione
@@ -3149,13 +3117,17 @@ translations:
   '{} critical hardware issues': '{} problemi hardware critici'
   '{} filament sensors available': '{} sensori filamento disponibili'
   '{} heater turned off': Riscaldatore {} spento
+  '{} is installed but its backup-spool switching is turned off, so no automatic swap will happen.': '{} è installato ma il passaggio alla bobina di riserva è disattivato, quindi non avverrà alcun cambio automatico.'
+  '{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap.': '{} è installato, ma non è stato possibile leggere la sua impostazione della bobina di riserva - non contare su un cambio automatico.'
   '{} lanes': '{} corsie'
   '{} macro not configured': Macro {} non configurata
   '{} may cause unintended changes. Are you sure?': '{} potrebbe causare modifiche
     indesiderate. Sei sicuro?'
   '{} more taps to {} beta features': '{} tocchi per {} funzioni beta'
-  '{} needs the HelixPrint plugin. Printing original file.': ''
+  '{} needs the HelixPrint plugin. Printing original file.': '{} richiede il plugin HelixPrint. Verrà stampato il file originale.'
   '{} new hardware available': '{} nuovo hardware disponibile'
   '{} preset{}': '{} preset{}'
   '{} target set to {}°C': Obiettivo {} impostato a {}°C
+  ? '{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.'
+  : '{} passerà a uno slot il cui tipo di filamento E colore corrispondono entrambi alla bobina attiva e il cui sensore di porta rileva filamento presente.'
   '{} — response timed out': '{} — tempo scaduto'

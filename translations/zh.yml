@@ -41,19 +41,9 @@ translations:
   0 = computed: 0 = 自动计算
   0 events queued: 0 个事件已排队
   0 slots: '{0} 个料仓'
-  # Source: calibration_pid_panel.xml:368
-  0.0000 J/K: ''
-  # Source: calibration_pid_panel.xml:374
-  0.000000 K/s/K: ''
-  # Source: calibration_pid_panel.xml:380
-  0.000000 W/K: ''
-  0.4-2mm direct drive, 4-6mm bowden: 直驱 0.4-2mm，远程挤出 4-6mm
-  # Source: history_dashboard_panel.xml:83
-  0h: ''
-  # Source: history_dashboard_panel.xml:89, print_status_panel.xml:252, print_status_panel.xml:254
-  0m: ''
-  0°: 0°
-  1 day ago: 1天前
+  '0.4-2mm direct drive, 4-6mm bowden': '直驱 0.4-2mm，远程挤出 4-6mm'
+  '0°': '0°'
+  '1 day ago': '1天前'
   1 event queued: 1 个事件排队中
   1 hour ago: 1小时前
   1 layer: 1 层
@@ -162,7 +152,7 @@ translations:
   All extruder temperatures with progress bars: '所有挤出机温度及进度条'
   All fields are required: 所有字段均为必填项
   All plugins loaded successfully: 所有插件加载成功
-  Allow Home Screen Editing: ''
+  Allow Home Screen Editing: '允许编辑主屏幕'
   Allow cold load/unload: 允许冷态加载/卸载
   Allow display to sleep during active prints: 打印时允许屏幕休眠
   Allwinner: Allwinner
@@ -178,7 +168,7 @@ translations:
   An error occurred during probing.: 探测过程中发生错误。
   An error occurred while loading filament.: 加载耗材时发生错误。
   # Source: probe_accuracy_modal.xml:90
-  An error occurred.: ''
+  An error occurred.: '发生错误。'
   An internal error occurred. The app continues running — please send a debug bundle from Settings > About if it repeats.: 发生了内部错误。应用程序继续运行
     — 如果反复出现，请从设置 > 关于发送调试捆绑包。
   An unexpected printer error occurred.: 发生了意外的打印机错误。
@@ -450,7 +440,7 @@ translations:
   Clear All Events: 清除所有事件
   Clear Console?: 清空控制台？
   Clear Spool: 移除料盘
-  Clear all spool failover assignments: ''
+  Clear all spool failover assignments: '清除所有备用料盘分配'
   Clear failed: 清除失败
   Cleared from settings — system unpair failed, may need OS Bluetooth: 已从设置中清除；系统解除配对失败，可能需使用系统蓝牙设置
   Clipboard unavailable - use SSH: 剪贴板不可用 - 请使用 SSH
@@ -751,7 +741,7 @@ translations:
   Enclosure humidity sensor readings: '机箱湿度传感器读数'
   Encoder: 编码器
   Ended: 已结束
-  Endless spool failover cleared for every slot: ''
+  Endless spool failover cleared for every slot: '已清除所有料仓的无限料盘设置'
   Enhanced {} operation in PRINT_START: 增强了 PRINT_START 中的 {} 项操作
   Enhanced {} operations in PRINT_START: 增强了 PRINT_START 中的 {} 项操作
   Enhancement Complete!: 增强完成！
@@ -787,7 +777,7 @@ translations:
   'Error: Verification failed': '错误: 验证失败'
   'Error: Wrong architecture': '错误: 架构错误'
   'Error: `unzip` not installed': '错误: 未安装 `unzip`'
-  Errors only: ''
+  Errors only: '仅错误'
   Escalate to emergency stop if cancel doesn't respond: 如果取消无响应则升级为紧急停止
   Escalation Timeout: 升级超时
   Est. Duration: 预计时长
@@ -958,11 +948,11 @@ translations:
   Filament loaded: 耗材已加载
   Filament operation failed: 耗材操作失败
   Filament operation timed out: 耗材操作超时
-  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  Filament ran out - nothing at the toolhead and the print is paused.: '耗材已用尽 - 工具头处没有耗材，打印已暂停。'
   ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
-  : ''
-  Filament ran out at the toolhead: ''
-  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
+  : '耗材已用尽，且 CFS 未找到可切换的匹配料盘。请装入相同材料和颜色的料盘后恢复打印。'
+  Filament ran out at the toolhead: '工具头处耗材已用尽'
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: '耗材已用尽。自动续料已关闭，CFS 不会自行更换料盘。请装入耗材后恢复打印。'
   Filament runout: 耗材用尽
   Filament runout and motion detection sensors: 耗材用尽和运动检测传感器
   Filament runout detection status: '耗材耗尽检测状态'
@@ -1116,7 +1106,7 @@ translations:
   How Z-axis movement is displayed: Z 轴移动的显示方式
   How far filament is pushed back into the box on eject (mm): 弹出时耗材被推回料盒的距离（mm）
   ? How long to hold before a press counts as a long-press, in ms (raise if edit mode or other long-press actions trigger by accident)
-  : ''
+  : '按住多久才算长按（毫秒）。若编辑模式等误触发，请调大'
   How many labels to print: 打印多少张标签
   How the toolhead icon appears: 工具头图标的显示方式
   Hub: 集线器
@@ -1143,7 +1133,7 @@ translations:
   Include Klipper/Moonraker logs: 包含 Klipper/Moonraker 日志
   'Incompatible materials: {} cannot use {} as backup': '材料不兼容: {} 无法使用 {} 作为备用'
   Indexing G-code...: 正在索引 G-code...
-  Infinite Spool Mode: ''
+  Infinite Spool Mode: '无限料盘模式'
   Info: 信息
   Initial speed for filament unloading: '耗材卸载的初始速度'
   Initialized: 已初始化
@@ -1162,7 +1152,7 @@ translations:
   Insert filament before resuming: 恢复前请插入耗材
   Install: 安装
   Install HelixPrint Plugin: 安装 HelixPrint 插件
-  Install Older Version?: ''
+  Install Older Version?: '要安装旧版本吗？'
   Install Plugin: 安装插件
   Install Root: 安装根目录
   Install Update: 安装更新
@@ -1222,8 +1212,6 @@ translations:
   'Klipper: ': 'Klipper: '
   Klippy Errors: Klippy 错误
   Klippy Shutdowns: Klippy 关闭次数
-  # Source: led_control_overlay.xml:31
-  LED: ''
   LED Controls: 'LED 控制'
   LED Light: 'LED 灯'
   LED Mode: 'LED 模式'
@@ -1249,13 +1237,11 @@ translations:
   Language, theme, brightness, and sound: 语言、主题、亮度和声音
   Last: 最近
   # Source: history_dashboard_panel.xml:114
-  Last 7 days: ''
+  Last 7 days: '最近 7 天'
   Last print cancelled: 上次打印已取消
   Last print failed: 上次打印失败
   Later: 稍后
   Layer: 层
-  # Source: print_status_panel.xml:234
-  Layer 0 / 0: ''
   Layer Height: 层高
   Layer Macro captures one frame per layer change. Best for most prints.: 层变化宏在每次层变化时捕获一帧。适合大多数打印。
   Layer mode captures one frame per layer change. Best for most prints.: 层模式在每次换层时捕获一帧。适用于大多数打印。
@@ -1305,8 +1291,8 @@ translations:
   Locked during print: 打印期间锁定
   Log Level: 日志级别
   Logs: 日志
-  Long Press Time: ''
-  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): ''
+  Long Press Time: '长按时间'
+  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): '长按主屏幕网格可重新排列小组件（若误触请关闭）'
   Longest Disconnect: 最长断开时长
   Loosen Path A belt.: 松开路径A的皮带。
   Loosen Path B belt.: 松开路径B的皮带。
@@ -1314,7 +1300,7 @@ translations:
   'Lot # (optional)': 批号（可选）
   Lot/Batch Nr: 批次号
   Low Memory: 内存不足
-  Lowest notification level that interrupts with a toast: ''
+  Lowest notification level that interrupts with a toast: '以浮层提醒打断的最低通知级别'
   M to toggle: 按 M 切换
   'MAC:': MAC：
   MACRO DEVICES: 宏设备
@@ -1487,8 +1473,6 @@ translations:
   No Spools: 无料盘
   No USB printer detected: 未检测到 USB 打印机
   No USB printers found: 未找到 USB 打印机
-  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
-  : ''
   No automatic backup-spool package is installed: 未安装自动备用料盘插件
   No buffer data available: 无可用缓冲区数据
   No camera — use USB barcode scanner: 无摄像头 — 请使用 USB 条码扫描器
@@ -1533,7 +1517,7 @@ translations:
   No prints yet: 暂无打印记录
   No profiles available: 无可用配置
   No sensors detected: 未检测到传感器
-  No slot currently matches.: ''
+  No slot currently matches.: '当前没有匹配的料仓。'
   No spool assigned: 未分配料盘
   No spools found — tap to retry: 未找到料盘 - 点击重试
   No tape detected in printer: 打印机中未检测到标签带
@@ -1557,7 +1541,7 @@ translations:
   Not found (use phone app): 未找到 (使用手机应用)
   'Not in your spools? Set it up': 不在您的料盘中？立即设置
   Not now: 暂不
-  Not yet available on this display: ''
+  Not yet available on this display: '此屏幕暂不支持'
   Not yet calibrated: 尚未校准
   Notes: 备注
   Notes (optional): 备注（可选）
@@ -1598,8 +1582,7 @@ translations:
   'Off:': '关:'
   'On': 开
   On and Off macros must be different: 开和关的宏必须不同
-  On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
-  On-screen Alerts: ''
+  On-screen Alerts: '屏幕提醒'
   On/Off: 开/关
   On/Off (state-aware): 开/关（状态跟踪）
   'On:': '开:'
@@ -1836,7 +1819,7 @@ translations:
   Probing Failed: 探测失败
   Proceed: 继续
   # Source: abort_progress_modal.xml:20
-  Processing...: ''
+  Processing...: '处理中...'
   Profile deleted: 配置文件已删除
   Profile name (e.g., default): 配置名称（例如：default）
   Profile renamed: 配置文件已重命名
@@ -1946,14 +1929,14 @@ translations:
   Reset: 重置
   Reset Blade Counter: '重置刀片计数器'
   Reset CFS: 重置 CFS
-  Reset Endless Spool: ''
-  Reset Endless Spool?: ''
+  Reset Endless Spool: '重置无限料盘'
+  Reset Endless Spool?: '要重置无限料盘吗？'
   Reset Home Screen?: 重置主屏幕？
   Reset Motor Timer: '重置电机计时器'
   Reset Servo Counter: '重置舵机计数器'
   Reset Speed & Flow to 100%: 重置速度和流量为 100%
   Reset all settings and restart wizard: 重置所有设置并重新启动向导
-  Reset endless spool failed: ''
+  Reset endless spool failed: '重置无限料盘失败'
   Reset failed: 重置失败
   Reset motor run-time counter: '重置电机运行时间计数器'
   Reset to Default: 重置为默认
@@ -2151,7 +2134,6 @@ translations:
   'Set ': '设置 '
   Set Active: 设为活动
   Set PIN: 设置 PIN
-  Set Up WiFi: ''
   ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
@@ -2186,9 +2168,7 @@ translations:
   Show text labels on icon-only home screen widgets: 在仅图标的主屏小组件上显示文字标签
   Show up/down buttons on long lists: 在长列表中显示上/下按钮
   Show whatever curves you last had visible on the full graph.: 显示您上次在完整图表上可见的曲线。
-  Showing loaded colors: ''
-  Showing sliced colors: ''
-  Showing the 50 newest files. See more in the printer's web UI.: ''
+  Showing the 50 newest files. See more in the printer's web UI.: '仅显示最新的 50 个文件。更多请在打印机网页界面查看。'
   Shutdown: 关机
   Shutdown / Reboot: 关机 / 重启
   Shutdown failed: 关机失败
@@ -2212,6 +2192,7 @@ translations:
   Slot %d Filament: 料仓 %d 耗材
   Slot 1: 料仓 1
   Slot {}: 料仓 {}
+  Slot {} matches.: '料仓 {} 匹配。'
   Slot {} spool cleared: 槽位 {} 料盘已清除
   Slot {} updated: 槽位 {} 已更新
   Small labels help keep controls calm and focused.: 小标签有助于保持控件简洁专注。
@@ -2309,7 +2290,7 @@ translations:
   Surfaces inherit app background tokens for light and dark modes.: 表面继承应用背景色用于浅色和深色模式。
   Switch Printer: 切换打印机
   Switch between light and dark themes: 切换浅色和深色主题
-  Switch to v%s: ''
+  Switch to v%s: '切换到 v%s'
   Switched to T{}: 已切换到 T{}
   Switches to a backup spool on runout: 耗材用尽时切换到备用料盘
   Switching heater control to MPC. Klipper will restart.: 正在将加热控制切换为 MPC。Klipper 将重启。
@@ -2326,8 +2307,6 @@ translations:
   T%d has no filament loaded — this print will run out.: T%d 未加载耗材 —— 此次打印将会耗尽耗材。
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d 需要
     %d 号料仓中的耗材，但该料仓为空 —— 此次打印将会耗尽耗材。
-  # Source: ams_current_tool.xml:38
-  T0: ''
   TD-1 filament color detection: TD-1 耗材颜色检测
   TEMPERATURE SENSORS: 温度传感器
   THEME COLORS: 主题颜色
@@ -2360,7 +2339,6 @@ translations:
   Temperature Graph Config: 温度图表配置
   # Source: calibration_pid_panel.xml:333
   Temperature Sensors: '温度传感器'
-  Temperature control has been optimized.: ''
   Temperatures: 温度
   Temperatures saved: 温度已保存
   Template: 模板
@@ -2423,8 +2401,8 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: 此校准使用纸张摩擦法设置
     Z 偏移。
   This cannot be undone.: 此操作无法撤销。
-  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: ''
-  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
+  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: '此通道提供 v{}，早于已安装的 v{}。此后新增的内容都将被移除。'
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: '这会清除每个料盘的备用分配。在重新设置之前，耗材用尽时打印将停止。'
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: 此设备没有有线网络连接。关闭 WiFi 后，只能在此界面重新开启。
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : 此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \"Timer Too Close\" 错误或在测试中途重启。仍要继续吗？
@@ -2598,7 +2576,6 @@ translations:
   Uptime: 运行时长
   Use Android native keyboard for text input: 使用 Android 原生键盘进行文本输入
   Use G10/G11 firmware retraction: 使用 G10/G11 固件回抽
-  Use Settings Instead: ''
   Use printer type to select image: 使用打印机类型选择图片
   VM Peak: 虚拟内存峰值
   VM Size: 虚拟内存大小
@@ -2646,7 +2623,7 @@ translations:
   Warming Bed...: 正在预热热床...
   Warn: 警告
   Warning: 警告
-  Warnings & errors: ''
+  Warnings & errors: '警告与错误'
   Watch the belt under the strobe LED. Adjust frequency until the belt appears stationary — that is the resonant frequency.: 在频闪
     LED 下观察皮带。调整频率直到皮带看起来静止 — 那就是共振频率。
   Weak battery: 电池电量低
@@ -2741,11 +2718,7 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: \"%s\" 加载失败
-  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
-  : ''
   bed: 热床
-  # Source: print_status_panel.xml:242
-  benchy.gcode: ''
   by Preston Brown: by Preston Brown
   chamber heater: 腔体加热器
   complete: 完成
@@ -2767,11 +2740,8 @@ translations:
   fans: 风扇
   heated bed: 热床
   idle: 空闲
-  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
-  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: 层
   left: 剩余
-  matches.: ''
   mm before clog: 毫米后堵料
   needs: 需要
   not detected: 未检测到
@@ -2811,8 +2781,6 @@ translations:
   v%s available: v%s 可用
   v{} installed! Restarting...: 已安装 v{}！正在重启...
   v{} is available. Tap to update.: v{} 可用。点击以更新。
-  ? will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
-  : ''
   you have: 您有
   '{} LED strips available': '{} 条 LED 灯带可用'
   '{} axis homed': '{} 轴已归位'
@@ -2823,12 +2791,16 @@ translations:
   '{} critical hardware issues': '{} 个关键硬件问题'
   '{} filament sensors available': '{} 个耗材传感器可用'
   '{} heater turned off': '{} 加热器已关闭'
+  '{} is installed but its backup-spool switching is turned off, so no automatic swap will happen.': '{} 已安装，但其备用料盘切换已关闭，因此不会自动切换。'
+  '{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap.': '{} 已安装，但无法读取其备用料盘设置 - 请勿指望自动切换。'
   '{} lanes': '{} 个料仓'
   '{} macro not configured': '{} 宏未配置'
   '{} may cause unintended changes. Are you sure?': '{} 可能导致意外更改。确定吗？'
   '{} more taps to {} beta features': 再点击 {} 次以{}测试功能
-  '{} needs the HelixPrint plugin. Printing original file.': ''
+  '{} needs the HelixPrint plugin. Printing original file.': '{} 需要 HelixPrint 插件。将打印原始文件。'
   '{} new hardware available': '{} 个新硬件可用'
   '{} preset{}': '{} 个预设{}'
   '{} target set to {}°C': '{} 目标已设为 {}°C'
+  ? '{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.'
+  : '{} 将切换到耗材类型与颜色都与当前料盘一致、且其端口传感器检测到有耗材的料仓。'
   '{} — response timed out': '{} — 响应超时'

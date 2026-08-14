@@ -35,6 +35,10 @@ from .cpp_tables import extract_table_strings
 # placeholders (IPs, numerics, URLs) are dropped later by the skip patterns.
 TEXT_ATTRIBUTES = {"text", "label", "description", "title", "subtitle", "placeholder_tag"}
 
+# Attributes that ARE the translation key rather than a rendered default. They
+# are extracted unconditionally -- see the note at the extraction site.
+EXPLICIT_TAG_ATTRIBUTES = ("translation_tag", "label_tag")
+
 # Inline element text: <text_muted>Foo</text_muted>. The C parser
 # (lib/helix-xml/src/xml/lv_xml.c) applies this as text= + translation_tag=,
 # so it is translatable by default. Matches an open tag (capturing its
@@ -563,6 +567,24 @@ def extract_strings_from_xml(xml_path: Path) -> Set[str]:
             # Decode XML entities (named + numeric character references)
             text = _decode_xml_entities(text)
 
+            if not should_skip_text(text):
+                result.add(text)
+
+    # Explicit translate-me markers. Unlike `text=`, these are NOT suppressed by
+    # a sibling `bind_text=`: the tag is precisely what the widget re-resolves
+    # through lv_label_set_translation_tag() when the language changes, so an
+    # element that binds its live value and names its tag is asking for the tag
+    # to be translated. The `text=` beside it is only a design-time placeholder.
+    #
+    # Without this, `<x bind_text="s" text="Processing..." translation_tag="Processing..."/>`
+    # lost both halves to the bind_text skip below, and the string stayed
+    # untranslated in all nine locales while looking marked-up in the XML.
+    for attr in EXPLICIT_TAG_ATTRIBUTES:
+        for match in re.finditer(rf'(?<![\w]){attr}="([^"]*)"', content):
+            text = match.group(1)
+            if not text or text.startswith(("$", "#")):
+                continue
+            text = _decode_xml_entities(text)
             if not should_skip_text(text):
                 result.add(text)
 

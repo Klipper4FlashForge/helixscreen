@@ -42,19 +42,9 @@ translations:
   0 = computed: 0 = 自動計算
   0 events queued: 待機中のイベントなし
   0 slots: '{0} スロット'
-  # Source: calibration_pid_panel.xml:368
-  0.0000 J/K: ''
-  # Source: calibration_pid_panel.xml:374
-  0.000000 K/s/K: ''
-  # Source: calibration_pid_panel.xml:380
-  0.000000 W/K: ''
-  0.4-2mm direct drive, 4-6mm bowden: 0.4-2mm ダイレクトドライブ、4-6mm ボーデン
-  # Source: history_dashboard_panel.xml:83
-  0h: ''
-  # Source: history_dashboard_panel.xml:89, print_status_panel.xml:252, print_status_panel.xml:254
-  0m: ''
-  0°: 0°
-  1 day ago: 1日前
+  '0.4-2mm direct drive, 4-6mm bowden': '0.4-2mm ダイレクトドライブ、4-6mm ボーデン'
+  '0°': '0°'
+  '1 day ago': '1日前'
   1 event queued: 1件のイベント待機中
   1 hour ago: 1時間前
   1 layer: 1レイヤー
@@ -163,7 +153,7 @@ translations:
   All extruder temperatures with progress bars: '全エクストルーダー温度とプログレスバー'
   All fields are required: すべての項目が必須です
   All plugins loaded successfully: すべてのプラグインを正常に読み込みました
-  Allow Home Screen Editing: ''
+  Allow Home Screen Editing: 'ホーム画面の編集を許可'
   Allow cold load/unload: コールド時の装填/取り出しを許可
   Allow display to sleep during active prints: 印刷中のスリープを許可
   Allwinner: Allwinner
@@ -179,7 +169,7 @@ translations:
   An error occurred during probing.: プローブ中にエラーが発生しました。
   An error occurred while loading filament.: フィラメントの装填中にエラーが発生しました。
   # Source: probe_accuracy_modal.xml:90
-  An error occurred.: ''
+  An error occurred.: 'エラーが発生しました。'
   An internal error occurred. The app continues running — please send a debug bundle from Settings > About if it repeats.: 内部エラーが発生しました。アプリは引き続き動作します。問題が繰り返される場合は、設定
     > バージョン情報 からデバッグバンドルを送信してください。
   An unexpected printer error occurred.: 予期しないプリンターエラーが発生しました。
@@ -453,7 +443,7 @@ translations:
   Clear All Events: すべてのイベントをクリア
   Clear Console?: コンソールをクリアしますか？
   Clear Spool: スプールを解除
-  Clear all spool failover assignments: ''
+  Clear all spool failover assignments: 'すべての予備スプール割り当てを消去'
   Clear failed: クリアに失敗しました
   Cleared from settings — system unpair failed, may need OS Bluetooth: 設定から削除しました。システムのペアリング解除に失敗、OS
     の Bluetooth 設定が必要な場合があります
@@ -757,7 +747,7 @@ translations:
   Enclosure humidity sensor readings: 'エンクロージャー湿度センサーの測定値'
   Encoder: エンコーダー
   Ended: 終了
-  Endless spool failover cleared for every slot: ''
+  Endless spool failover cleared for every slot: 'すべてのスロットのエンドレススプール設定を消去しました'
   Enhanced {} operation in PRINT_START: PRINT_START 内の {} 操作を強化しました
   Enhanced {} operations in PRINT_START: PRINT_START 内の {} 操作を強化しました
   Enhancement Complete!: 改善完了！
@@ -793,7 +783,7 @@ translations:
   'Error: Verification failed': 'エラー: 検証に失敗しました'
   'Error: Wrong architecture': 'エラー: アーキテクチャが正しくありません'
   'Error: `unzip` not installed': 'エラー: `unzip` がインストールされていません'
-  Errors only: ''
+  Errors only: 'エラーのみ'
   Escalate to emergency stop if cancel doesn't respond: キャンセルが応答しない場合は緊急停止にエスカレート
   Escalation Timeout: エスカレーションタイムアウト
   Est. Duration: 予想時間
@@ -962,11 +952,11 @@ translations:
   Filament loaded: フィラメントを装填しました
   Filament operation failed: フィラメント操作に失敗しました
   Filament operation timed out: フィラメント操作がタイムアウトしました
-  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  Filament ran out - nothing at the toolhead and the print is paused.: 'フィラメントが切れました - ツールヘッドには何も残っておらず、印刷は一時停止しています。'
   ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
-  : ''
-  Filament ran out at the toolhead: ''
-  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
+  : 'フィラメントが切れましたが、CFSは切り替え可能な一致するスプールを見つけられませんでした。同じ材料と色のスプールを装填してから再開してください。'
+  Filament ran out at the toolhead: 'ツールヘッドでフィラメントが切れました'
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: 'フィラメントが切れました。自動補充がオフのため、CFSは自動でスプールを切り替えません。フィラメントを装填してから再開してください。'
   Filament runout: フィラメント切れ
   Filament runout and motion detection sensors: フィラメント切れとモーション検出センサー
   Filament runout detection status: 'フィラメント切れ検出の状態'
@@ -1121,7 +1111,7 @@ translations:
   How far filament is pushed back into the box on eject (mm): 取り出し時にフィラメントをボックスへ押し戻す距離
     (mm)
   ? How long to hold before a press counts as a long-press, in ms (raise if edit mode or other long-press actions trigger by accident)
-  : ''
+  : '長押しと判定されるまでの保持時間（ミリ秒）。編集モードなどが誤動作する場合は大きくしてください'
   How many labels to print: 印刷するラベル枚数
   How the toolhead icon appears: ツールヘッドアイコンの表示スタイル
   Hub: ハブ
@@ -1148,7 +1138,7 @@ translations:
   Include Klipper/Moonraker logs: Klipper/Moonrakerのログを含める
   'Incompatible materials: {} cannot use {} as backup': '非対応の素材: {} は {} をバックアップとして使用できません'
   Indexing G-code...: G-codeをインデックス中...
-  Infinite Spool Mode: ''
+  Infinite Spool Mode: '無限スプールモード'
   Info: 情報
   Initial speed for filament unloading: 'フィラメントアンロードの初速'
   Initialized: 初期化済み
@@ -1167,7 +1157,7 @@ translations:
   Insert filament before resuming: 再開前にフィラメントを挿入してください
   Install: インストール
   Install HelixPrint Plugin: HelixPrint プラグインをインストール
-  Install Older Version?: ''
+  Install Older Version?: '以前のバージョンをインストールしますか？'
   Install Plugin: プラグインをインストール
   Install Root: インストールルート
   Install Update: 更新をインストール
@@ -1226,8 +1216,6 @@ translations:
   'Klipper: ': 'Klipper: '
   Klippy Errors: Klippy エラー
   Klippy Shutdowns: Klippy シャットダウン
-  # Source: led_control_overlay.xml:31
-  LED: ''
   LED Controls: 'LEDコントロール'
   LED Light: 'LEDライト'
   LED Mode: 'LEDモード'
@@ -1253,13 +1241,11 @@ translations:
   Language, theme, brightness, and sound: 言語、テーマ、明るさ、サウンド
   Last: 最後
   # Source: history_dashboard_panel.xml:114
-  Last 7 days: ''
+  Last 7 days: '過去7日間'
   Last print cancelled: 前回の印刷がキャンセルされました
   Last print failed: 前回の印刷が失敗しました
   Later: 後で
   Layer: レイヤー
-  # Source: print_status_panel.xml:234
-  Layer 0 / 0: ''
   Layer Height: レイヤー高さ
   Layer Macro captures one frame per layer change. Best for most prints.: レイヤーマクロはレイヤーが変わるごとに
     1 フレームを撮影します。ほとんどの印刷に最適です。
@@ -1310,8 +1296,8 @@ translations:
   Locked during print: 印刷中はロックされています
   Log Level: ログレベル
   Logs: ログ
-  Long Press Time: ''
-  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): ''
+  Long Press Time: '長押しの時間'
+  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): 'ホーム画面のグリッドを長押しするとウィジェットを並べ替えできます（誤動作する場合はオフにしてください）'
   Longest Disconnect: 最長切断時間
   Loosen Path A belt.: パスAのベルトを緩めてください。
   Loosen Path B belt.: パスBのベルトを緩めてください。
@@ -1319,7 +1305,7 @@ translations:
   'Lot # (optional)': ロット番号（オプション）
   Lot/Batch Nr: ロット/バッチ番号
   Low Memory: メモリ不足
-  Lowest notification level that interrupts with a toast: ''
+  Lowest notification level that interrupts with a toast: 'トースト通知で割り込む最も低い通知レベル'
   M to toggle: M で切り替え
   'MAC:': 'MAC:'
   MACRO DEVICES: マクロデバイス
@@ -1493,8 +1479,6 @@ translations:
   No Spools: スプールなし
   No USB printer detected: USB プリンターが検出されません
   No USB printers found: USBプリンターが見つかりません
-  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
-  : ''
   No automatic backup-spool package is installed: 自動バックアップスプール用プラグインが未インストールです
   No buffer data available: バッファーデータがありません
   No camera — use USB barcode scanner: カメラなし — USB バーコードスキャナーを使用してください
@@ -1539,7 +1523,7 @@ translations:
   No prints yet: 印刷履歴なし
   No profiles available: 利用可能なプロファイルがありません
   No sensors detected: センサーが検出されませんでした
-  No slot currently matches.: ''
+  No slot currently matches.: '現在、一致するスロットはありません。'
   No spool assigned: スプール未割当
   No spools found — tap to retry: スプールが見つかりません — タップして再試行
   No tape detected in printer: プリンターにテープが検出されません
@@ -1563,7 +1547,7 @@ translations:
   Not found (use phone app): 見つかりません (スマホアプリを使用)
   Not in your spools? Set it up: スプールにない？登録する
   Not now: 後で
-  Not yet available on this display: ''
+  Not yet available on this display: 'このディスプレイではまだ利用できません'
   Not yet calibrated: 未キャリブレーション
   Notes: メモ
   Notes (optional): メモ（オプション）
@@ -1604,8 +1588,7 @@ translations:
   'Off:': 'オフ:'
   'On': オン
   On and Off macros must be different: オンとオフのマクロは異なるものにしてください
-  On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
-  On-screen Alerts: ''
+  On-screen Alerts: '画面上の通知'
   On/Off: オン/オフ
   On/Off (state-aware): オン/オフ（状態追跡）
   'On:': 'オン:'
@@ -1843,7 +1826,7 @@ translations:
   Probing Failed: プローブ失敗
   Proceed: 続行
   # Source: abort_progress_modal.xml:20
-  Processing...: ''
+  Processing...: '処理中...'
   Profile deleted: プロファイルを削除しました
   Profile name (e.g., default): 'プロファイル名（例: default）'
   Profile renamed: プロファイル名を変更しました
@@ -1954,14 +1937,14 @@ translations:
   Reset: リセット
   Reset Blade Counter: 'ブレードカウンターをリセット'
   Reset CFS: CFSをリセット
-  Reset Endless Spool: ''
-  Reset Endless Spool?: ''
+  Reset Endless Spool: 'エンドレススプールをリセット'
+  Reset Endless Spool?: 'エンドレススプールをリセットしますか？'
   Reset Home Screen?: ホーム画面をリセットしますか？
   Reset Motor Timer: 'モータータイマーをリセット'
   Reset Servo Counter: 'サーボカウンターをリセット'
   Reset Speed & Flow to 100%: 速度とフローを100%にリセット
   Reset all settings and restart wizard: すべての設定をリセットしてウィザードを再開
-  Reset endless spool failed: ''
+  Reset endless spool failed: 'エンドレススプールのリセットに失敗しました'
   Reset failed: リセットに失敗しました
   Reset motor run-time counter: 'モーターの稼働時間カウンターをリセット'
   Reset to Default: デフォルトにリセット
@@ -2159,7 +2142,6 @@ translations:
   'Set ': '設定 '
   Set Active: アクティブに設定
   Set PIN: PIN を設定
-  Set Up WiFi: ''
   ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
@@ -2194,9 +2176,7 @@ translations:
   Show text labels on icon-only home screen widgets: アイコンのみのホーム画面ウィジェットにテキストラベルを表示
   Show up/down buttons on long lists: 長いリストに上下ボタンを表示
   Show whatever curves you last had visible on the full graph.: フルグラフで最後に表示していた曲線を表示します。
-  Showing loaded colors: ''
-  Showing sliced colors: ''
-  Showing the 50 newest files. See more in the printer's web UI.: ''
+  Showing the 50 newest files. See more in the printer's web UI.: '最新の50ファイルを表示しています。それ以外はプリンターのWeb画面で確認してください。'
   Shutdown: シャットダウン
   Shutdown / Reboot: シャットダウン / 再起動
   Shutdown failed: シャットダウンに失敗しました
@@ -2220,6 +2200,7 @@ translations:
   Slot %d Filament: スロット %d のフィラメント
   Slot 1: スロット1
   Slot {}: スロット {}
+  Slot {} matches.: 'スロット {} が一致します。'
   Slot {} spool cleared: スロット {} のスプールをクリアしました
   Slot {} updated: スロット {} を更新しました
   Small labels help keep controls calm and focused.: 小さなラベルはコントロールを落ち着いた集中した状態に保ちます。
@@ -2317,7 +2298,7 @@ translations:
   Surfaces inherit app background tokens for light and dark modes.: サーフェスはライトモードとダークモードのアプリ背景トークンを継承します。
   Switch Printer: プリンターを切り替え
   Switch between light and dark themes: ライトテーマとダークテーマを切り替え
-  Switch to v%s: ''
+  Switch to v%s: 'v%s に切り替え'
   Switched to T{}: T{} に切替えました
   Switches to a backup spool on runout: フィラメント切れ時にバックアップスプールへ切り替えます
   Switching heater control to MPC. Klipper will restart.: ヒーター制御をMPCに切り替えます。Klipperが再起動します。
@@ -2333,8 +2314,6 @@ translations:
   T%d has no filament loaded — this print will run out.: T%d にフィラメントが装填されていません — この印刷は途中で切れます。
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d はスロット
     %d のフィラメントを必要としますが、空です — この印刷は途中で切れます。
-  # Source: ams_current_tool.xml:38
-  T0: ''
   TD-1 filament color detection: TD-1 フィラメント色検出
   TEMPERATURE SENSORS: 温度センサー
   THEME COLORS: テーマカラー
@@ -2367,7 +2346,6 @@ translations:
   Temperature Graph Config: 温度グラフ設定
   # Source: calibration_pid_panel.xml:333
   Temperature Sensors: '温度センサー'
-  Temperature control has been optimized.: ''
   Temperatures: 温度
   Temperatures saved: 温度を保存しました
   Template: テンプレート
@@ -2431,8 +2409,8 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: このキャリブレーションは紙の摩擦方式を使用して
     Z-offset を設定します。
   This cannot be undone.: この操作は元に戻せません。
-  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: ''
-  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
+  This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: 'このチャンネルが提供するのは v{} で、インストール済みの v{} より古いバージョンです。それ以降に追加されたものは削除されます。'
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: 'すべてのスプールの予備割り当てを消去します。再設定するまで、フィラメント切れで印刷が停止します。'
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: このデバイスには有線ネットワーク接続がありません。WiFiをオフにすると、この画面からのみオンに戻せます。
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : このデバイスの RAM は {} MB しかありません。共振キャリブレーションはメモリを大量に消費し、プリンターのファームウェアが \"Timer Too Close\" エラーを報告したり、テスト中に再起動したりする可能性があります。それでも続行しますか？
@@ -2607,7 +2585,6 @@ translations:
   Uptime: 稼働時間
   Use Android native keyboard for text input: テキスト入力に Android ネイティブキーボードを使用
   Use G10/G11 firmware retraction: G10/G11 ファームウェアリトラクションを使用
-  Use Settings Instead: ''
   Use printer type to select image: プリンタータイプで画像を選択
   VM Peak: VM ピーク
   VM Size: VM サイズ
@@ -2655,7 +2632,7 @@ translations:
   Warming Bed...: ベッド予熱中...
   Warn: 警告
   Warning: 警告
-  Warnings & errors: ''
+  Warnings & errors: '警告とエラー'
   Watch the belt under the strobe LED. Adjust frequency until the belt appears stationary — that is the resonant frequency.: ストロボ
     LED の下でベルトを観察してください。ベルトが静止して見えるまで周波数を調整します — それが共振周波数です。
   Weak battery: バッテリー残量低下
@@ -2751,11 +2728,7 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: \"%s\" の読み込みに失敗しました
-  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
-  : ''
   bed: ベッド
-  # Source: print_status_panel.xml:242
-  benchy.gcode: ''
   by Preston Brown: by Preston Brown
   chamber heater: チャンバーヒーター
   complete: 完了
@@ -2777,11 +2750,8 @@ translations:
   fans: ファン
   heated bed: ヒートベッド
   idle: アイドル
-  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
-  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: レイヤー
   left: 残り
-  matches.: ''
   mm before clog: 詰まりまでの距離 (mm)
   needs: 必要
   not detected: 未検出
@@ -2821,8 +2791,6 @@ translations:
   v%s available: v%s が利用可能です
   v{} installed! Restarting...: v{} をインストールしました！再起動中...
   v{} is available. Tap to update.: v{} が利用可能です。タップして更新してください。
-  ? will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
-  : ''
   you have: 現在は
   '{} LED strips available': '{} 個の LED ストリップが利用可能です'
   '{} axis homed': '{} 軸がホーミング済み'
@@ -2833,12 +2801,16 @@ translations:
   '{} critical hardware issues': '{} 個の重要なハードウェアの問題'
   '{} filament sensors available': '{} 個のフィラメントセンサーが利用可能です'
   '{} heater turned off': '{} ヒーターをオフにしました'
+  '{} is installed but its backup-spool switching is turned off, so no automatic swap will happen.': '{} はインストールされていますが、予備スプールへの切り替えがオフになっているため、自動切り替えは行われません。'
+  '{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap.': '{} はインストールされていますが、予備スプールの設定を読み取れませんでした - 自動切り替えを当てにしないでください。'
   '{} lanes': '{} レーン'
   '{} macro not configured': '{} マクロが未設定です'
   '{} may cause unintended changes. Are you sure?': '{} は意図しない変更を引き起こす可能性があります。よろしいですか？'
   '{} more taps to {} beta features': あと{}回タップでベータ機能を{}
-  '{} needs the HelixPrint plugin. Printing original file.': ''
+  '{} needs the HelixPrint plugin. Printing original file.': '{} には HelixPrint プラグインが必要です。元のファイルを印刷します。'
   '{} new hardware available': '{} 個の新しいハードウェアが利用可能です'
   '{} preset{}': '{} 個のプリセット{}'
   '{} target set to {}°C': '{} 目標温度を {}°C に設定しました'
+  ? '{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.'
+  : '{} は、フィラメントの種類と色の両方がアクティブなスプールと一致し、かつ自身のポートセンサーがフィラメントを検知しているスロットに切り替えます。'
   '{} — response timed out': '{} — 応答タイムアウト'
