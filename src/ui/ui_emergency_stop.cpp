@@ -148,6 +148,15 @@ void EmergencyStopOverlay::deinit_subjects() {
     print_start_phase_observer_.reset();
     klippy_state_observer_.reset();
 
+    // Same reasoning as the dialog pointers above, one level up: init() stored
+    // borrowed pointers, and neither object survives what this runs ahead of.
+    // Production always re-inits before the next create() (a soft restart re-runs
+    // Application::init_panel_subjects()), but tests own a PrinterState per
+    // fixture and never re-init, so leaving these set hands the next test a
+    // singleton pointing at freed objects. Every consumer is null-guarded.
+    printer_state_ = nullptr;
+    api_ = nullptr;
+
     spdlog::debug("[EmergencyStop] Subjects deinitialized");
 }
 
@@ -162,12 +171,19 @@ void EmergencyStopOverlay::create() {
         return;
     }
 
+    // This singleton outlives any given PrinterState — tests own one per fixture,
+    // and a soft restart (Add Printer) tears the whole tree down and rebuilds it.
+    // deinit_subjects() flips this token before lv_subject_deinit() frees the
+    // observer nodes, which is the only thing that stops the guards below from
+    // calling lv_observer_remove() on freed memory (THREADING.md §5).
+    const SubjectLifetime ps_subjects = printer_state_->get_subjects_lifetime();
+
     // Subscribe to print state changes for automatic visibility updates
     // The estop_visible subject drives XML bindings in home_panel, controls_panel,
     // and print_status_panel (no FAB - buttons are embedded in each panel)
     print_state_observer_ = observe_int_sync<EmergencyStopOverlay>(
         printer_state_->get_print_state_enum_subject(), this,
-        [](EmergencyStopOverlay* self, int /*state*/) { self->update_visibility(); });
+        [](EmergencyStopOverlay* self, int /*state*/) { self->update_visibility(); }, ps_subjects);
 
     // The pre-print preparing phase (homing, heating, leveling) is physical
     // movement during which Moonraker still reports STANDBY — so the job-state
@@ -176,7 +192,7 @@ void EmergencyStopOverlay::create() {
     // from the moment motion starts, not just after PRINTING begins.
     print_start_phase_observer_ = observe_int_sync<EmergencyStopOverlay>(
         printer_state_->get_print_start_phase_subject(), this,
-        [](EmergencyStopOverlay* self, int /*phase*/) { self->update_visibility(); });
+        [](EmergencyStopOverlay* self, int /*phase*/) { self->update_visibility(); }, ps_subjects);
 
     // Reset the initial-fire guard so each (re)subscription — including
     // soft-restart after Add Printer — drops the subject's placeholder
@@ -244,7 +260,8 @@ void EmergencyStopOverlay::create() {
                     },
                     nullptr);
             }
-        });
+        },
+        ps_subjects);
 
     // Initial visibility update
     update_visibility();
