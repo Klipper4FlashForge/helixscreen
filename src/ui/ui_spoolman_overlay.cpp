@@ -860,9 +860,19 @@ void SpoolmanOverlay::resolve_spoolman_target_with_root(const std::string& confi
             } else if (root >= 0) {
                 // Derive the config root from the root config, never from the [server]
                 // file: on COSMOS the latter would put helixscreen.conf inside the
-                // vendor directory.
-                info = helix::MoonrakerConfigManager::config_path_from_relative(
+                // vendor directory. The reported name may be absolute and in a tree
+                // the file API does not serve, so resolve it to a candidate first.
+                const auto root_candidates = helix::MoonrakerConfigManager::candidate_config_paths(
                     files[static_cast<size_t>(root)].filename, config_root_abs);
+                if (root_candidates.empty()) {
+                    info.error = "Moonraker loads its config from '" +
+                                 files[static_cast<size_t>(root)].filename +
+                                 "', which HelixScreen cannot address through the file "
+                                 "manager's config folder. Add the [spoolman] section by hand.";
+                } else {
+                    info = helix::MoonrakerConfigManager::config_path_from_relative(
+                        root_candidates.front());
+                }
             } else {
                 info.error = "Moonraker did not report which configuration files it loaded, "
                              "so HelixScreen cannot tell where [spoolman] belongs.";
@@ -887,29 +897,22 @@ void SpoolmanOverlay::resolve_spoolman_target_with_root(const std::string& confi
                 }
             }
 
-            // The file we intend to touch must itself be addressable through the file
-            // API's config root — a target outside it is the K2 situation all over again.
-            helix::ConfigPathInfo target_info;
-            if (!target_path.empty())
-                target_info = helix::MoonrakerConfigManager::config_path_from_relative(
-                    target_path, config_root_abs);
-
             // files[] names anything outside the root config's own directory by
-            // ABSOLUTE path. server.files.* cannot take that string, so translate
-            // before either is used as a file-API path. Both are the identity for
-            // the relative names every stock install reports. The raw names stay
-            // for the operator-facing messages, which should say what Moonraker
-            // said.
-            const std::string target_api_path =
-                helix::MoonrakerConfigManager::file_api_path(target_path, config_root_abs);
-            const std::string verify_api_path =
-                helix::MoonrakerConfigManager::file_api_path(verify_path, config_root_abs);
+            // ABSOLUTE path, and on the AD5M that path is in a tree the file manager
+            // does not serve even though the same file IS served under the config
+            // root by its tail. So resolve each to a ranked list of candidates and
+            // let content-verification pick the winner. The raw names stay for the
+            // operator-facing messages, which should say what Moonraker said.
+            const auto target_candidates =
+                helix::MoonrakerConfigManager::candidate_config_paths(target_path, config_root_abs);
+            const auto verify_candidates =
+                helix::MoonrakerConfigManager::candidate_config_paths(verify_path, config_root_abs);
 
             // === MAIN THREAD: apply the resolution, then verify by content ===
-            token.defer("SpoolmanOverlay::resolve_target", [this, info, target_info, target_path,
-                                                            target_api_path, verify_api_path,
-                                                            required, in_place, path_authoritative,
-                                                            on_done]() {
+            token.defer("SpoolmanOverlay::resolve_target", [this, info, target_path,
+                                                            target_candidates, verify_path,
+                                                            verify_candidates, required, in_place,
+                                                            path_authoritative, on_done]() {
                 SpoolmanConfigTarget res;
 
                 if (!info.uploadable) {
@@ -918,9 +921,11 @@ void SpoolmanOverlay::resolve_spoolman_target_with_root(const std::string& confi
                     on_done(res);
                     return;
                 }
-                if (!target_path.empty() && !target_info.uploadable) {
+                if (!target_path.empty() && target_candidates.empty()) {
                     res.status = SpoolmanConfigTarget::Status::Unreachable;
-                    res.detail = target_info.error;
+                    res.detail = "Moonraker loads '" + target_path +
+                                 "', which HelixScreen cannot address through the file "
+                                 "manager's config folder. Add the [spoolman] section by hand.";
                     on_done(res);
                     return;
                 }
@@ -928,8 +933,10 @@ void SpoolmanOverlay::resolve_spoolman_target_with_root(const std::string& confi
                 config_paths_ = info;
                 write_mode_ =
                     in_place ? SpoolmanWriteMode::InPlace : SpoolmanWriteMode::IncludeFile;
-                spoolman_config_path_ =
-                    in_place ? target_api_path : config_paths_.path_for("helixscreen.conf");
+                // In place, the verified winner replaces this below; it is the best
+                // guess until then.
+                spoolman_config_path_ = in_place ? target_candidates.front()
+                                                 : config_paths_.path_for("helixscreen.conf");
 
                 // Absolute paths already proved reachability and there is nothing to
                 // cross-check against; anything else is verified by content.
@@ -941,7 +948,7 @@ void SpoolmanOverlay::resolve_spoolman_target_with_root(const std::string& confi
                     return;
                 }
 
-                if (required.empty() || verify_api_path.empty()) {
+                if (required.empty() || verify_candidates.empty()) {
                     res.status = SpoolmanConfigTarget::Status::Unreachable;
                     res.detail = "Moonraker reported config file '" + info.config_filename +
                                  "' with no section list, so HelixScreen cannot confirm it "
@@ -954,7 +961,8 @@ void SpoolmanOverlay::resolve_spoolman_target_with_root(const std::string& confi
                 // maps correctly, and the write target sits under that same root.
                 // Only the in-place path needs the target's own content, and there
                 // verify_path is the target.
-                verify_config_reachable(verify_api_path, required, in_place, on_done);
+                verify_config_reachable(verify_path, verify_candidates, 0, required, in_place,
+                                        on_done);
             });
         },
         [this, token, on_done](const MoonrakerError& err) {
@@ -970,14 +978,32 @@ void SpoolmanOverlay::resolve_spoolman_target_with_root(const std::string& confi
         });
 }
 
-void SpoolmanOverlay::verify_config_reachable(const std::string& target_path,
+void SpoolmanOverlay::verify_config_reachable(const std::string& reported_name,
+                                              const std::vector<std::string>& candidates,
+                                              size_t index,
                                               const std::vector<std::string>& required_sections,
-                                              bool in_place, SpoolmanTargetCallback on_done) {
+                                              bool in_place, SpoolmanTargetCallback on_done,
+                                              const std::string& last_detail) {
+    if (index >= candidates.size()) {
+        SpoolmanConfigTarget res;
+        res.status = SpoolmanConfigTarget::Status::Unreachable;
+        res.detail = "Moonraker loaded '" + reported_name +
+                     "' but no file under the writable config folder matches it, so its "
+                     "real config lives outside the area HelixScreen can write.";
+        // Keep why the closest candidate was rejected — "no match" alone does not
+        // tell an operator whether the file was absent or simply the wrong one.
+        if (!last_detail.empty())
+            res.detail += " (" + last_detail + ")";
+        on_done(res);
+        return;
+    }
+
+    const std::string candidate = candidates[index];
     auto token = lifetime_.token();
 
     api_->transfers().download_file(
-        "config", target_path,
-        [this, token, required_sections, target_path, in_place,
+        "config", candidate,
+        [this, token, required_sections, reported_name, candidates, index, candidate, in_place,
          on_done](const std::string& content) {
             // === BG THREAD: pure string comparison, no `this` ===
             // Moonraker reports the sections it parsed when it last started, so a file
@@ -994,59 +1020,81 @@ void SpoolmanOverlay::verify_config_reachable(const std::string& target_path,
                 missing += s;
             }
 
-            token.defer("SpoolmanOverlay::verify_config_reachable", [this, mismatch, drifted,
-                                                                     missing, match, target_path,
-                                                                     content, in_place, on_done]() {
-                SpoolmanConfigTarget res;
-                if (mismatch) {
-                    res.status = SpoolmanConfigTarget::Status::Unreachable;
-                    res.detail = "a file named '" + target_path +
-                                 "' exists under the writable config folder but is not the "
-                                 "config Moonraker loaded (missing section(s): " +
-                                 missing +
-                                 "). Moonraker is reading its config from somewhere else.";
-                    on_done(res);
-                    return;
-                }
+            token.defer("SpoolmanOverlay::verify_config_reachable",
+                        [this, mismatch, drifted, missing, match, reported_name, candidates, index,
+                         candidate, content, required_sections, in_place, on_done]() {
+                            if (mismatch) {
+                                // Wrong file under a plausible name. Try the next
+                                // candidate rather than writing to it.
+                                spdlog::info("[{}] '{}' is not the config Moonraker loaded as "
+                                             "'{}' (missing section(s): {}); trying the next "
+                                             "candidate",
+                                             get_name(), candidate, reported_name, missing);
+                                verify_config_reachable(
+                                    reported_name, candidates, index + 1, required_sections,
+                                    in_place, on_done,
+                                    "a file named '" + candidate +
+                                        "' exists under the writable config folder but is not "
+                                        "the config Moonraker loaded; missing section(s): " +
+                                        missing);
+                                return;
+                            }
 
-                if (drifted) {
-                    spdlog::info("[{}] {} matches {}/{} of the sections Moonraker "
-                                 "reported; it has been edited since Moonraker last "
-                                 "restarted (missing: {}). Proceeding.",
-                                 get_name(), target_path, match.matched, match.total, missing);
-                }
+                            if (drifted) {
+                                spdlog::info("[{}] {} matches {}/{} of the sections Moonraker "
+                                             "reported; it has been edited since Moonraker last "
+                                             "restarted (missing: {}). Proceeding.",
+                                             get_name(), candidate, match.matched, match.total,
+                                             missing);
+                            }
 
-                spdlog::debug("[{}] Verified {} under the config root is the config "
-                              "Moonraker loaded",
-                              get_name(), target_path);
+                            // The one line that says which path won, and for which
+                            // reported name. Info level on purpose: this is the first
+                            // thing to read in a live log when a write goes astray.
+                            spdlog::info("[{}] Resolved Moonraker's '{}' to '{}' under the "
+                                         "config root (candidate {} of {})",
+                                         get_name(), reported_name, candidate, index + 1,
+                                         candidates.size());
 
-                if (in_place) {
-                    check_stale_helix_conf(target_path, content, on_done);
-                    return;
-                }
-                res.status = SpoolmanConfigTarget::Status::Undefined;
-                res.path = spoolman_config_path_;
-                on_done(res);
-            });
+                            if (in_place) {
+                                // The verified candidate IS the write target here.
+                                spoolman_config_path_ = candidate;
+                                check_stale_helix_conf(candidate, content, on_done);
+                                return;
+                            }
+                            SpoolmanConfigTarget res;
+                            res.status = SpoolmanConfigTarget::Status::Undefined;
+                            res.path = spoolman_config_path_;
+                            on_done(res);
+                        });
         },
-        [this, token, target_path, on_done](const MoonrakerError& err) {
+        [this, token, reported_name, candidates, index, candidate, required_sections, in_place,
+         on_done](const MoonrakerError& err) {
             auto msg = err.message;
             bool not_found = (err.type == MoonrakerErrorType::FILE_NOT_FOUND);
-            token.defer("SpoolmanOverlay::verify_config_error", [msg, not_found, target_path,
-                                                                 on_done]() {
-                SpoolmanConfigTarget res;
-                res.status = SpoolmanConfigTarget::Status::Unreachable;
-                if (not_found) {
-                    res.detail = "Moonraker loaded '" + target_path +
-                                 "' but no such file exists under the writable config folder, "
-                                 "so its real config lives outside the area HelixScreen can "
-                                 "write.";
-                } else {
-                    res.detail =
-                        "could not read '" + target_path + "' from the config folder (" + msg + ")";
-                }
-                on_done(res);
-            });
+            token.defer("SpoolmanOverlay::verify_config_error",
+                        [this, msg, not_found, reported_name, candidates, index, candidate,
+                         required_sections, in_place, on_done]() {
+                            if (not_found) {
+                                // Only a genuine 404 justifies moving on. Anything else
+                                // is a transport problem, and treating it as "wrong
+                                // path" would walk the whole list on a flaky link.
+                                spdlog::info("[{}] No '{}' under the config root for "
+                                             "Moonraker's '{}'; trying the next candidate",
+                                             get_name(), candidate, reported_name);
+                                verify_config_reachable(reported_name, candidates, index + 1,
+                                                        required_sections, in_place, on_done,
+                                                        "no '" + candidate +
+                                                            "' exists under the writable config "
+                                                            "folder");
+                                return;
+                            }
+                            SpoolmanConfigTarget res;
+                            res.status = SpoolmanConfigTarget::Status::Unreachable;
+                            res.detail = "could not read '" + candidate +
+                                         "' from the config folder (" + msg + ")";
+                            on_done(res);
+                        });
         });
 }
 

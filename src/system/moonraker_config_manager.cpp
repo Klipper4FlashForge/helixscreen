@@ -188,12 +188,66 @@ MoonrakerConfigManager::config_path_from_relative(const std::string& filename,
     return info;
 }
 
-std::string MoonrakerConfigManager::file_api_path(const std::string& filename,
-                                                  const std::string& config_root_abs) {
-    const ConfigPathInfo info = config_path_from_relative(filename, config_root_abs);
-    if (!info.uploadable)
-        return "";
-    return info.path_for(info.config_filename);
+std::vector<std::string>
+MoonrakerConfigManager::candidate_config_paths(const std::string& reported_filename,
+                                               const std::string& config_root_abs) {
+    std::vector<std::string> out;
+
+    const std::string reported = trim(reported_filename);
+    if (reported.empty())
+        return out;
+    // A traversal is discarded whole rather than sanitised: there is no reading of
+    // ".." that we want to turn into a path we then write to.
+    if (reported.find("..") != std::string::npos)
+        return out;
+
+    auto add = [&out](const std::string& candidate) {
+        if (candidate.empty() || candidate.front() == '/')
+            return;
+        if (std::find(out.begin(), out.end(), candidate) == out.end())
+            out.push_back(candidate);
+    };
+
+    // Case 1: already the relative form the file API wants.
+    if (reported.front() != '/') {
+        add(reported);
+        return out;
+    }
+
+    // Case 2: absolute, and inside the file manager's config root.
+    std::string root = trim(config_root_abs);
+    while (root.size() > 1 && root.back() == '/')
+        root.pop_back();
+
+    std::string abs = reported;
+    while (abs.size() > 1 && abs.back() == '/')
+        abs.pop_back();
+    if (!root.empty() && abs == root)
+        return out; // the config root directory itself, not a file inside it
+
+    if (!root.empty()) {
+        // The prefix must end on a component boundary, or ".../config" would
+        // swallow ".../config_backup/x.conf".
+        const std::string prefix = (root == "/") ? root : root + "/";
+        if (reported.compare(0, prefix.size(), prefix) == 0) {
+            add(reported.substr(prefix.size()));
+            return out;
+        }
+    }
+
+    // Case 3: absolute and outside the root. Moonraker may still be naming a file
+    // the file manager serves under a different tree (AD5M). The tail after the
+    // last "config/" component is the strongest guess, the basename the weakest.
+    const std::string marker = "/config/";
+    const size_t last = reported.rfind(marker);
+    if (last != std::string::npos)
+        add(reported.substr(last + marker.size()));
+
+    const size_t slash = reported.rfind('/');
+    if (slash != std::string::npos)
+        add(reported.substr(slash + 1));
+
+    return out;
 }
 
 std::string

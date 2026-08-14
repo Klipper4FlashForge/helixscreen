@@ -137,15 +137,34 @@ class MoonrakerConfigManager {
     static ConfigPathInfo config_path_from_relative(const std::string& filename,
                                                     const std::string& config_root_abs = "");
 
-    /// The path `server.files.*` addresses `filename` by, or "" when unreachable.
+    /// Candidate config-root-relative paths for a filename Moonraker reported,
+    /// most trustworthy first. Each must still be proved by content before use.
     ///
-    /// Everything Moonraker reports in server.config's files[] has to make this
-    /// trip before it can be uploaded or downloaded: an entry outside the root
-    /// config's own directory is named by ABSOLUTE path, and passing that string
-    /// to the file API addresses a different file (or none). The identity for the
-    /// relative names every stock install reports.
-    static std::string file_api_path(const std::string& filename,
-                                     const std::string& config_root_abs = "");
+    /// server.config names files relative to the ROOT config's parent directory,
+    /// falling back to an absolute path for anything outside it; the file API
+    /// addresses files relative to the file manager's "config" root. Those are the
+    /// same directory on a stock install and different ones on real firmware, so
+    /// the reported name cannot be handed to server.files.* unexamined. In order:
+    ///
+    ///   1. Already relative — the file API takes it as-is (K1, U1, K2).
+    ///   2. Absolute and under `config_root_abs` — strip the prefix, on a path
+    ///      component boundary so ".../config" cannot swallow ".../config_backup".
+    ///   3. Absolute and outside it — SPECULATE from the tail: the part after the
+    ///      last "config/" component, then the bare basename. Flashforge AD5M
+    ///      reports /root/printer_data/config/... while its file manager root is
+    ///      /opt/config, and the same files are served under the root by their
+    ///      tail (the two trees are linked). A path test alone would reject a
+    ///      perfectly writable config.
+    ///
+    /// A speculative candidate is safe because nothing is written on the strength
+    /// of a path: verify_config_reachable() downloads the candidate and grades it
+    /// with classify_section_match() against the sections Moonraker reported. A
+    /// coincidentally-named stray file fails that and is refused.
+    ///
+    /// Any `..` anywhere in the reported name discards it entirely rather than
+    /// being sanitised, so a traversal can never reach a write target.
+    static std::vector<std::string> candidate_config_paths(const std::string& reported_filename,
+                                                           const std::string& config_root_abs = "");
 
     /// Append a section if it is not already present.
     ///

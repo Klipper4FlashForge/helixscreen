@@ -404,17 +404,32 @@ class SpoolmanOverlay : public OverlayBase {
                                const std::string& detail);
 
     /**
-     * @brief Confirm the config file Moonraker loaded is the one we would write to
+     * @brief Prove by content which candidate path is the config Moonraker loaded
      *
-     * Most Moonraker builds never expose their config file's absolute path, so the path
-     * check alone cannot prove reachability. This downloads the candidate file through
-     * the file API's "config" root and confirms it defines every section Moonraker
-     * reported loading from it. A missing file — or one whose sections don't match —
-     * means the real config lives somewhere we cannot write, and setup aborts.
+     * Most Moonraker builds never expose their config file's absolute path, and the
+     * name they do report cannot be trusted as a file-API path — so the path check
+     * alone can prove nothing. This walks `candidates` from
+     * MoonrakerConfigManager::candidate_config_paths(), downloading each through the
+     * file API's "config" root and confirming it defines the sections Moonraker
+     * reported. That content proof is what makes a speculative candidate safe.
+     *
+     * Moves to the next candidate ONLY on a genuine 404 or a Mismatch verdict; any
+     * other error aborts, because walking the whole list on a flaky link would turn
+     * a transport problem into a wrong-file write. Each step logs at info level, and
+     * so does the winner — a live log has to say which path was chosen and why.
+     *
+     * @param reported_name The name Moonraker gave, for messages and logs.
+     * @param candidates    Ranked file-API paths, most trustworthy first.
+     * @param index         Which candidate to try; callers start at 0.
+     * @param last_detail   Why the previous candidate was rejected, carried forward so
+     *                      the final "nothing matched" message can say which it was and
+     *                      whether it was absent or merely the wrong file.
      */
-    void verify_config_reachable(const std::string& target_path,
+    void verify_config_reachable(const std::string& reported_name,
+                                 const std::vector<std::string>& candidates, size_t index,
                                  const std::vector<std::string>& required_sections, bool in_place,
-                                 SpoolmanTargetCallback on_done);
+                                 SpoolmanTargetCallback on_done,
+                                 const std::string& last_detail = "");
 
     /**
      * @brief Guard against a stale, not-yet-loaded helixscreen.conf before writing in place
