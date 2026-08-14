@@ -1277,6 +1277,58 @@ fi
 echo ""
 
 SECTION_START=$(date +%s)
+echo -n "🖥️  Checking DRM dumb-buffer mmap offset width..."
+
+# DRM allocates dumb-buffer mmap offsets from 4 GiB upward, so a 32-bit off_t
+# truncates them and the mapping fails. HelixScreen then falls back to fbdev and
+# the KMS path is silently dead on every 32-bit device (pi32).
+if [ -f "scripts/check_drm_mmap_lfs.py" ]; then
+  if python3 scripts/check_drm_mmap_lfs.py >/tmp/drm_mmap_lfs.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    echo "✅ DRM mmap uses a 64-bit file offset"
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/drm_mmap_lfs.out
+    echo "   Run: python3 scripts/check_drm_mmap_lfs.py"
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_drm_mmap_lfs.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
+echo -n "📄 Checking gcode reader large-file support..."
+
+# The static_assert in gcode_data_source.cpp only fires on a 32-bit build, and
+# pi32/ad5m/cc1/k1 are in release.yml's matrix rather than build.yml's - so a
+# dropped mk/rules.mk override stays green here and detonates at release.
+if [ -f "scripts/check_gcode_lfs.py" ]; then
+  if python3 scripts/check_gcode_lfs.py >/tmp/gcode_lfs.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    echo "✅ gcode reader builds with a 64-bit off_t"
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/gcode_lfs.out
+    echo "   Run: python3 scripts/check_gcode_lfs.py"
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_gcode_lfs.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
 echo -n "🖼️  Checking guarded ThumbnailCache access..."
 
 if [ -f "scripts/check_thumbnail_cache_guard.py" ]; then
