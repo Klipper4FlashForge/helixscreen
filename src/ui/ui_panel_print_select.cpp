@@ -1706,9 +1706,22 @@ void PrintSelectPanel::set_api(IMoonrakerAPI* api) {
         auto* self = this;
         api_->register_method_callback(
             "notify_filelist_changed", filelist_handler_name_, [self](const json& msg) {
-                spdlog::info(
-                    "[{}] notify_filelist_changed received: {}", self->get_name(),
-                    msg.dump(-1, ' ', false, json::error_handler_t::replace).substr(0, 500));
+                // Action + path only, never the raw payload. The full dump ran
+                // ~344 bytes a line, and an AFC printer fires this constantly
+                // (AFC rewrites AFC/AFC.var.unit on every SET_* command), so on
+                // one debug bundle it burned 97 KB of a ring that has to hold
+                // the whole session. Nothing downstream reads the other fields.
+                std::string action = "?";
+                std::string path;
+                if (msg.contains("params") && msg["params"].is_array() && !msg["params"].empty()) {
+                    const json& p = msg["params"][0];
+                    action = p.value("action", "?");
+                    if (p.contains("item") && p["item"].is_object()) {
+                        const json& item = p["item"];
+                        path = item.value("root", "") + ":" + item.value("path", "");
+                    }
+                }
+                spdlog::info("[{}] notify_filelist_changed: {} {}", self->get_name(), action, path);
 
                 // Check if we're on the printer source (not USB)
                 bool is_usb_active = self->usb_source_ && self->usb_source_->is_usb_active();
