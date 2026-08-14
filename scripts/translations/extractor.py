@@ -26,6 +26,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Set, Dict, List, Tuple, Optional
 
+from .cpp_tables import extract_table_strings
+
 # Attributes that contain translatable text.
 # placeholder_tag is the explicit translation key for text-input placeholders
 # (mirrors how label/label_tag and text/translation_tag pair up); the textarea
@@ -449,6 +451,21 @@ def extract_strings_from_cpp(cpp_path: Path) -> Set[str]:
 
             if not should_skip_cpp_text(text):
                 result.add(text)
+
+    # Static tables whose entries the UI translates through a variable
+    # (lv_tr(def.display_name) and friends), which the call-site patterns above
+    # cannot see. Suppression markers still apply, so a table row can opt out
+    # with a trailing `// i18n: do not translate`.
+    for text in extract_table_strings(content):
+        for match in _STRING_LITERAL_RE.finditer(content):
+            if match.group(1) != text:
+                continue
+            if _marker_applies(content, match.start(1), I18N_DO_NOT_TRANSLATE_RE) or _marker_applies(
+                content, match.start(1), I18N_UNIVERSAL_RE
+            ):
+                break
+        else:
+            result.add(text)
 
     return result
 
