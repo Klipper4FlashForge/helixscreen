@@ -920,46 +920,54 @@ void SpoolmanOverlay::verify_config_reachable(const std::string& target_path,
         [this, token, required_sections, target_path, in_place,
          on_done](const std::string& content) {
             // === BG THREAD: pure string comparison, no `this` ===
-            bool matches =
-                helix::MoonrakerConfigManager::defines_all_sections(content, required_sections);
+            // Moonraker reports the sections it parsed when it last started, so a file
+            // edited since then legitimately disagrees with the list. Only a wholesale
+            // disagreement means we are looking at a different file.
+            auto match =
+                helix::MoonrakerConfigManager::classify_section_match(content, required_sections);
+            bool mismatch = match.verdict == helix::SectionMatch::Mismatch;
+            bool drifted = match.verdict == helix::SectionMatch::Drifted;
             std::string missing;
-            if (!matches) {
-                for (const auto& s : required_sections) {
-                    if (helix::MoonrakerConfigManager::has_section(content, s))
-                        continue;
-                    if (!missing.empty())
-                        missing += ", ";
-                    missing += s;
-                }
+            for (const auto& s : match.missing) {
+                if (!missing.empty())
+                    missing += ", ";
+                missing += s;
             }
 
-            token.defer("SpoolmanOverlay::verify_config_reachable",
-                        [this, matches, missing, target_path, content, in_place, on_done]() {
-                            SpoolmanConfigTarget res;
-                            if (!matches) {
-                                res.status = SpoolmanConfigTarget::Status::Unreachable;
-                                res.detail =
-                                    "a file named '" + target_path +
-                                    "' exists under the writable config folder but is not the "
-                                    "config Moonraker loaded (missing section(s): " +
-                                    missing +
-                                    "). Moonraker is reading its config from somewhere else.";
-                                on_done(res);
-                                return;
-                            }
+            token.defer("SpoolmanOverlay::verify_config_reachable", [this, mismatch, drifted,
+                                                                     missing, match, target_path,
+                                                                     content, in_place, on_done]() {
+                SpoolmanConfigTarget res;
+                if (mismatch) {
+                    res.status = SpoolmanConfigTarget::Status::Unreachable;
+                    res.detail = "a file named '" + target_path +
+                                 "' exists under the writable config folder but is not the "
+                                 "config Moonraker loaded (missing section(s): " +
+                                 missing +
+                                 "). Moonraker is reading its config from somewhere else.";
+                    on_done(res);
+                    return;
+                }
 
-                            spdlog::debug("[{}] Verified {} under the config root is the config "
-                                          "Moonraker loaded",
-                                          get_name(), target_path);
+                if (drifted) {
+                    spdlog::info("[{}] {} matches {}/{} of the sections Moonraker "
+                                 "reported; it has been edited since Moonraker last "
+                                 "restarted (missing: {}). Proceeding.",
+                                 get_name(), target_path, match.matched, match.total, missing);
+                }
 
-                            if (in_place) {
-                                check_stale_helix_conf(target_path, content, on_done);
-                                return;
-                            }
-                            res.status = SpoolmanConfigTarget::Status::Undefined;
-                            res.path = spoolman_config_path_;
-                            on_done(res);
-                        });
+                spdlog::debug("[{}] Verified {} under the config root is the config "
+                              "Moonraker loaded",
+                              get_name(), target_path);
+
+                if (in_place) {
+                    check_stale_helix_conf(target_path, content, on_done);
+                    return;
+                }
+                res.status = SpoolmanConfigTarget::Status::Undefined;
+                res.path = spoolman_config_path_;
+                on_done(res);
+            });
         },
         [this, token, target_path, on_done](const MoonrakerError& err) {
             auto msg = err.message;

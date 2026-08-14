@@ -104,20 +104,63 @@ MoonrakerConfigManager::find_files_defining_section(const std::vector<LoadedConf
     return hits;
 }
 
+SectionMatchResult
+MoonrakerConfigManager::classify_section_match(const std::string& content,
+                                               const std::vector<std::string>& required) {
+    SectionMatchResult r;
+    r.total = required.size();
+    for (const auto& name : required) {
+        if (has_section(content, name))
+            ++r.matched;
+        else
+            r.missing.push_back(name);
+    }
+    // An empty required list matches vacuously rather than dividing by zero.
+    if (r.matched == r.total)
+        r.verdict = SectionMatch::Match;
+    else if (r.matched * 2 > r.total)
+        r.verdict = SectionMatch::Drifted;
+    else
+        r.verdict = SectionMatch::Mismatch;
+    return r;
+}
+
 ConfigPathInfo
-MoonrakerConfigManager::config_path_from_relative(const std::string& relative_filename) {
+MoonrakerConfigManager::config_path_from_relative(const std::string& filename,
+                                                  const std::string& config_root_abs) {
     ConfigPathInfo info;
-    std::string rel = trim(relative_filename);
+    std::string rel = trim(filename);
 
     if (rel.empty()) {
         info.error = "Moonraker did not report the name of its configuration file.";
         return info;
     }
     if (rel[0] == '/') {
-        info.error = "Moonraker loads its config from the absolute path " + rel +
-                     ", which is outside the writable config directory. HelixScreen cannot "
-                     "edit it remotely — add the [spoolman] section by hand.";
-        return info;
+        // Moonraker falls back to the full absolute path for any file outside the root
+        // config's own directory. Such a file is still reachable when it happens to sit
+        // under the file manager's config root, so strip that root and carry on through
+        // the relative logic below — which keeps the `..` and subdir handling.
+        std::string root = trim(config_root_abs);
+        while (root.size() > 1 && root.back() == '/')
+            root.pop_back();
+        // The prefix must end on a path component boundary, or ".../config" would
+        // swallow ".../config_backup/x.conf".
+        const std::string prefix = (root == "/") ? root : root + "/";
+
+        if (root.empty() || rel.compare(0, prefix.size(), prefix) != 0) {
+            info.error = "Moonraker loads its config from the absolute path " + rel +
+                         ", which is outside the writable config directory. HelixScreen cannot "
+                         "edit it remotely — add the [spoolman] section by hand.";
+            return info;
+        }
+
+        const std::string absolute = rel;
+        rel = rel.substr(prefix.size());
+        if (rel.empty()) {
+            // The root directory itself, not a file inside it.
+            info.error = "Moonraker reported a config path with no file name (" + absolute + ").";
+            return info;
+        }
     }
     // ".." would escape the config root; the file API rejects it and so do we.
     if (rel.find("..") != std::string::npos) {

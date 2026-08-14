@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,6 +39,25 @@ struct LoadedConfigFile {
     std::vector<std::string> sections;
 };
 
+/// How well a config file's contents line up with the sections Moonraker reported.
+///
+/// Moonraker serves the section list it parsed when it last started, so a file edited
+/// since then legitimately disagrees with it. Only a wholesale disagreement means the
+/// file is not the one Moonraker loaded.
+enum class SectionMatch {
+    Match,    ///< every reported section is present
+    Drifted,  ///< a majority are present: the loaded file, edited since the last restart
+    Mismatch, ///< too few present to be the file Moonraker loaded
+};
+
+struct SectionMatchResult {
+    SectionMatch verdict = SectionMatch::Mismatch;
+    size_t matched = 0;
+    size_t total = 0;
+    /// Reported sections absent from the content, in the order they were reported.
+    std::vector<std::string> missing;
+};
+
 class MoonrakerConfigManager {
   public:
     static bool has_section(const std::string& content, const std::string& section_name);
@@ -52,6 +72,20 @@ class MoonrakerConfigManager {
     /// HelixScreen adds), but it can never be missing one that Moonraker says it loaded.
     static bool defines_all_sections(const std::string& content,
                                      const std::vector<std::string>& required);
+
+    /// Grade `content` against the section list Moonraker reported for it.
+    ///
+    /// The strict superset test above cannot tell "this is a different file" from
+    /// "this is the file, edited since Moonraker last restarted" — and the latter is
+    /// ordinary: uninstalling HelixScreen removes `[update_manager helixscreen]` from
+    /// moonraker.conf while a long-running Moonraker keeps reporting it. A strict
+    /// majority of matching sections is treated as drift and is safe to proceed on;
+    /// anything less is a genuinely different file.
+    ///
+    /// An empty `required` yields Match vacuously — callers that need a section list
+    /// to prove anything must guard that case themselves.
+    static SectionMatchResult classify_section_match(const std::string& content,
+                                                     const std::vector<std::string>& required);
 
     /// Index of the file best able to *prove* the config root is addressable.
     ///
@@ -88,11 +122,20 @@ class MoonrakerConfigManager {
     find_files_defining_section(const std::vector<LoadedConfigFile>& files,
                                 const std::string& section_name);
 
-    /// Build a ConfigPathInfo from a config-root-relative filename reported by files[].
+    /// Build a ConfigPathInfo from a filename reported by files[].
     ///
-    /// Rejects absolute paths and paths escaping the root — those cannot be addressed
-    /// through the file API's "config" root.
-    static ConfigPathInfo config_path_from_relative(const std::string& relative_filename);
+    /// Moonraker names each loaded file relative to the ROOT config file's parent
+    /// directory, falling back to the full absolute path when the file lies outside it.
+    /// An absolute name is therefore not automatically out of reach: when it sits under
+    /// the file manager's writable `config` root it is addressable through the file API.
+    /// Pass that root as `config_root_abs` to have the prefix stripped (on a path
+    /// component boundary, trailing slash optional); with no root supplied an absolute
+    /// name is rejected, as there is nothing to judge it against.
+    ///
+    /// Paths escaping the root via `..` are always rejected — the file API rejects them
+    /// and so do we.
+    static ConfigPathInfo config_path_from_relative(const std::string& filename,
+                                                    const std::string& config_root_abs = "");
 
     /// Append a section if it is not already present.
     ///
