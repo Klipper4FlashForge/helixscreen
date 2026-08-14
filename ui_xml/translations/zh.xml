@@ -4,6 +4,7 @@
   <translation tag=" elapsed · " zh=" 已用 · "/>
   <translation tag=" frames" zh=" 帧"/>
   <translation tag=" left" zh=" 剩余"/>
+  <translation tag="&quot;%s&quot; failed to load" zh="&quot;%s&quot; 加载失败"/>
   <translation tag="%.1f Hz difference" zh="%.1f Hz 差异"/>
   <translation tag="%d additional fan%s" zh="%d 个额外风扇%s"/>
   <translation tag="%d disabled" zh="%d 个已禁用"/>
@@ -544,7 +545,7 @@
   <translation tag="Corner roundness" zh="圆角程度"/>
   <translation tag="Correction (Ki)" zh="校正 (Ki)"/>
   <translation tag="Could not analyze PRINT_START macro. Some print options may be unavailable." zh="无法分析 PRINT_START 宏。部分打印选项可能不可用。"/>
-  <translation tag="Could not check webcam status.\nCheck printer connection." zh="无法检查摄像头状态。\n请检查打印机连接。"/>
+  <translation tag="Could not check webcam status.&#10;Check printer connection." zh="无法检查摄像头状态。&#10;请检查打印机连接。"/>
   <translation tag="Could not forget device" zh="无法忘记设备"/>
   <translation tag="Could not load printer database" zh="无法加载打印机数据库"/>
   <translation tag="Could not parse tips database" zh="无法解析提示数据库"/>
@@ -832,8 +833,8 @@
   <translation tag="Failed to discard recovery data: {}" zh="放弃恢复数据失败: {}"/>
   <translation tag="Failed to download G-code for modification: {}" zh="下载 G-code 进行修改失败: {}"/>
   <translation tag="Failed to download G-code for remap: {}" zh="下载用于重新映射的 G-code 失败：{}"/>
-  <translation tag="Failed to download helixscreen.conf.\nCheck printer connection." zh="下载 helixscreen.conf 失败。\n请检查打印机连接。"/>
-  <translation tag="Failed to download moonraker.conf.\nCheck printer connection." zh="下载 moonraker.conf 失败。\n请检查打印机连接。"/>
+  <translation tag="Failed to download helixscreen.conf.&#10;Check printer connection." zh="下载 helixscreen.conf 失败。&#10;请检查打印机连接。"/>
+  <translation tag="Failed to download moonraker.conf.&#10;Check printer connection." zh="下载 moonraker.conf 失败。&#10;请检查打印机连接。"/>
   <translation tag="Failed to duplicate spool" zh="复制线轴失败"/>
   <translation tag="Failed to enable tuning tower" zh="启用调优塔失败"/>
   <translation tag="Failed to exclude &apos;{}&apos;: {}" zh="排除 &apos;{}&apos; 失败: {}"/>
@@ -901,9 +902,9 @@
   <translation tag="Failed to toggle timelapse: {}" zh="切换延时摄影失败: {}"/>
   <translation tag="Failed to turn off heaters: {}" zh="关闭加热器失败: {}"/>
   <translation tag="Failed to unload: {}" zh="卸载失败: {}"/>
-  <translation tag="Failed to update configuration.\nCheck printer connection." zh="更新配置失败。\n请检查打印机连接。"/>
+  <translation tag="Failed to update configuration.&#10;Check printer connection." zh="更新配置失败。&#10;请检查打印机连接。"/>
   <translation tag="Failed to update moonraker.conf." zh="更新 moonraker.conf 失败。"/>
-  <translation tag="Failed to update moonraker.conf.\nCheck printer connection." zh="更新 moonraker.conf 失败。\n请检查打印机连接。"/>
+  <translation tag="Failed to update moonraker.conf.&#10;Check printer connection." zh="更新 moonraker.conf 失败。&#10;请检查打印机连接。"/>
   <translation tag="Failed to update phase tracking" zh="更新相位跟踪失败"/>
   <translation tag="Failed to upload modified G-code: {}" zh="上传修改后的 G-code 失败: {}"/>
   <translation tag="Failed to upload remapped G-code: {}" zh="上传重新映射的 G-code 失败：{}"/>
@@ -988,7 +989,7 @@
   <translation tag="Found 1 printer" zh="找到 1 台打印机"/>
   <translation tag="Framerate" zh="帧率"/>
   <translation tag="Frequency Delta" zh="频率差"/>
-  <translation tag="Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15 Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match. Above 90% is excellent; below 70% suggests uneven tension." zh="频率差: 路径 A 与 B 之间的差异。理想情况下低于 5 Hz;超过 15 Hz 需要调整。\n\n路径相似度: 振动曲线的匹配程度。高于 90% 为优秀;低于 70% 说明张力不均。"/>
+  <translation tag="Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15 Hz needs adjustment.&#10;&#10;Path Similarity: How closely the vibration profiles match. Above 90% is excellent; below 70% suggests uneven tension." zh="频率差: 路径 A 与 B 之间的差异。理想情况下低于 5 Hz;超过 15 Hz 需要调整。&#10;&#10;路径相似度: 振动曲线的匹配程度。高于 90% 为优秀;低于 70% 说明张力不均。"/>
   <translation tag="From Buffer" zh="来自缓冲区"/>
   <translation tag="From Version" zh="起始版本"/>
   <translation tag="Full" zh="完整"/>
@@ -996,7 +997,7 @@
   <translation tag="G-code Preview" zh="G-code 预览"/>
   <translation tag="G-code commands will appear here" zh="G-code 命令将显示在此处"/>
   <translation tag="GCode Console" zh="G-code 控制台"/>
-  <translation tag="Game Over!\nScore: {}\nTap to restart" zh="游戏结束！\n得分：{}\n点按重新开始"/>
+  <translation tag="Game Over!&#10;Score: {}&#10;Tap to restart" zh="游戏结束！&#10;得分：{}&#10;点按重新开始"/>
   <translation tag="Gear Buffer Speed" zh="齿轮缓冲区速度"/>
   <translation tag="Gear Spool Speed" zh="齿轮料盘速度"/>
   <translation tag="Gear Unload Speed" zh="齿轮卸载速度"/>
@@ -1044,7 +1045,7 @@
   <translation tag="Heating (%d°C below minimum)" zh="加热中（低于最低温度 %d°C）"/>
   <translation tag="Heating Bed..." zh="正在加热热床..."/>
   <translation tag="Heating Nozzle..." zh="正在加热喷嘴..."/>
-  <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" zh="加热至 %d\xC2\xB0C... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to %d°C... %.0f°C" zh="加热至 %d°C... %.0f°C"/>
   <translation tag="Heating to {}°C before {}..." zh="正在加热至{}°C，然后{}..."/>
   <translation tag="Heating to {}°C for {}..." zh="正在加热至{}°C，持续{}..."/>
   <translation tag="Heating to {}°C..." zh="正在加热至{}°C..."/>
@@ -1142,7 +1143,7 @@
   <translation tag="Install script not found. Use the remote install command instead." zh="未找到安装脚本。请改用远程安装命令。"/>
   <translation tag="Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history." zh="在高级设置中安装 HelixPrint 插件，即可在不影响打印历史的情况下重新映射耗材。"/>
   <translation tag="Install the HelixPrint plugin to enable fast G-code modifications. Run this command via SSH on your printer:" zh="安装 HelixPrint 插件以启用快速 G-code 修改。通过 SSH 在打印机上运行此命令："/>
-  <translation tag="Install the timelapse plugin via SSH,\nthen tap \&quot;Check Again\&quot;." zh="通过SSH安装延时摄影插件，\n然后点击&quot;重新检查&quot;。"/>
+  <translation tag="Install the timelapse plugin via SSH,&#10;then tap &quot;Check Again&quot;." zh="通过SSH安装延时摄影插件，&#10;然后点击&quot;重新检查&quot;。"/>
   <translation tag="Install timelapse plugin" zh="安装延时摄影插件"/>
   <translation tag="Installation Failed" zh="安装失败"/>
   <translation tag="Installation failed" zh="安装失败"/>
@@ -1374,7 +1375,7 @@
   <translation tag="Month" zh="月"/>
   <translation tag="Moonraker" zh="Moonraker"/>
   <translation tag="Moonraker restarted but Spoolman not connected. Check server." zh="Moonraker 已重启但 Spoolman 未连接。请检查服务器。"/>
-  <translation tag="Moonraker restarting...\nWaiting for reconnection..." zh="Moonraker 重启中...\n等待重新连接..."/>
+  <translation tag="Moonraker restarting...&#10;Waiting for reconnection..." zh="Moonraker 重启中...&#10;等待重新连接..."/>
   <translation tag="Moonraker: " zh="Moonraker: "/>
   <translation tag="More points = more accurate, but takes longer." zh="点数越多越精确，但耗时更长。"/>
   <translation tag="Motion" zh="运动"/>
@@ -1402,7 +1403,7 @@
   <translation tag="My Custom Theme" zh="我的自定义主题"/>
   <translation tag="My Panel" zh="我的面板"/>
   <translation tag="My Printer" zh="我的打印机"/>
-  <translation tag="NEW HIGH SCORE!\n{}\nTap to play again" zh="新纪录！\n{}\n点按再玩一次"/>
+  <translation tag="NEW HIGH SCORE!&#10;{}&#10;Tap to play again" zh="新纪录！&#10;{}&#10;点按再玩一次"/>
   <translation tag="NEWLY DISCOVERED" zh="新发现"/>
   <translation tag="Name" zh="名称"/>
   <translation tag="Name (optional)" zh="名称（可选）"/>
@@ -1452,7 +1453,7 @@
   <translation tag="No buffer data available" zh="无可用缓冲区数据"/>
   <translation tag="No camera — use USB barcode scanner" zh="无摄像头 — 请使用 USB 条码扫描器"/>
   <translation tag="No chamber temperature sensor detected" zh="未检测到腔体温度传感器"/>
-  <translation tag="No changes selected.\n\nClick Cancel to close." zh="未选择任何更改。\n\n点击取消以关闭。"/>
+  <translation tag="No changes selected.&#10;&#10;Click Cancel to close." zh="未选择任何更改。&#10;&#10;点击取消以关闭。"/>
   <translation tag="No changes to revert" zh="没有可撤销的更改"/>
   <translation tag="No color" zh="无颜色"/>
   <translation tag="No dryer available. Store filament in a sealed dry box with desiccant for best results." zh="无可用烘干机。建议将耗材存放在带干燥剂的密封干燥箱中。"/>
@@ -1500,7 +1501,7 @@
   <translation tag="No temperature sensors detected" zh="未检测到温度传感器"/>
   <translation tag="No timelapse videos found" zh="未找到延时视频"/>
   <translation tag="No vendors found" zh="未找到供应商"/>
-  <translation tag="No webcam detected.\nA webcam is required for timelapse." zh="未检测到摄像头。\n延时摄影需要摄像头。"/>
+  <translation tag="No webcam detected.&#10;A webcam is required for timelapse." zh="未检测到摄像头。&#10;延时摄影需要摄像头。"/>
   <translation tag="No width sensor detected" zh="未检测到宽度传感器"/>
   <translation tag="None" zh="无"/>
   <translation tag="None (disable)" zh="无 (禁用)"/>
@@ -1664,7 +1665,7 @@
   <translation tag="Plugin installed successfully" zh="插件安装成功"/>
   <translation tag="Plugin installed successfully." zh="插件安装成功。"/>
   <translation tag="Plugin installed successfully. Moonraker is restarting..." zh="插件安装成功。Moonraker 正在重启..."/>
-  <translation tag="Plugin not responding after restart.\nIt may need more time to load." zh="重启后插件无响应。\n可能需要更多时间加载。"/>
+  <translation tag="Plugin not responding after restart.&#10;It may need more time to load." zh="重启后插件无响应。&#10;可能需要更多时间加载。"/>
   <translation tag="Plugin uninstalled successfully." zh="插件卸载成功。"/>
   <translation tag="Plugins" zh="插件"/>
   <translation tag="Plugins are discovered on application startup" zh="插件在应用程序启动时被发现"/>
@@ -1843,7 +1844,7 @@
   <translation tag="Ready to Apply" zh="准备应用"/>
   <translation tag="Ready to load" zh="准备装载"/>
   <translation tag="Reason" zh="原因"/>
-  <translation tag="Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?" zh="原因：{}\n\n打印机无法恢复此次打印。要从头重新开始吗？"/>
+  <translation tag="Reason: {}&#10;&#10;The printer cannot resume this print. Restart from the beginning?" zh="原因：{}&#10;&#10;打印机无法恢复此次打印。要从头重新开始吗？"/>
   <translation tag="Reboot" zh="重启"/>
   <translation tag="Reboot failed" zh="重启失败"/>
   <translation tag="Reboot failed — host is still reachable" zh="重启失败 — 主机仍可访问"/>
@@ -1963,7 +1964,7 @@
   <translation tag="Role:" zh="角色："/>
   <translation tag="Rotating tips and helpful information" zh="轮播提示与实用信息"/>
   <translation tag="Rotation" zh="旋转"/>
-  <translation tag="Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)" zh="旋转: %d\xc2\xb0 - 剩余%ds (或等待重试)"/>
+  <translation tag="Rotation: %d° - %ds remaining (or wait to retry)" zh="旋转: %d° - 剩余%ds (或等待重试)"/>
   <translation tag="Rounded" zh="圆角"/>
   <translation tag="Run" zh="运行"/>
   <translation tag="Run Calibration Wizard" zh="运行校准向导"/>
@@ -2102,7 +2103,7 @@
   <translation tag="Set " zh="设置 "/>
   <translation tag="Set Active" zh="设为活动"/>
   <translation tag="Set PIN" zh="设置 PIN"/>
-  <translation tag="Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope" zh="将手机频闪应用设置为 %.1f Hz 并对准皮带。调整直到皮带看起来静止不动。\n\n推荐应用:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"/>
+  <translation tag="Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.&#10;&#10;Recommended apps:&#10;  Android: Strobily, Strobe Light&#10;  iOS: Strobe Light Tachometer, myStroboscope" zh="将手机频闪应用设置为 %.1f Hz 并对准皮带。调整直到皮带看起来静止不动。&#10;&#10;推荐应用:&#10;  Android: Strobily, Strobe Light&#10;  iOS: Strobe Light Tachometer, myStroboscope"/>
   <translation tag="Set local timezone for time display" zh="设置本地时区以显示时间"/>
   <translation tag="Set logging verbosity for troubleshooting" zh="设置日志详细级别以便故障排除"/>
   <translation tag="Set up" zh="设置"/>
@@ -2234,7 +2235,7 @@
   <translation tag="Stop Drying" zh="停止干燥"/>
   <translation tag="Stop Print?" zh="停止打印？"/>
   <translation tag="Stop failed" zh="停止失败"/>
-  <translation tag="Stop printing \&quot;{}\&quot;?\n\nThis cannot be undone after 5 seconds." zh="停止打印 \&quot;{}\&quot;？\n\n5秒后将无法撤销。"/>
+  <translation tag="Stop printing &quot;{}&quot;?&#10;&#10;This cannot be undone after 5 seconds." zh="停止打印 &quot;{}&quot;？&#10;&#10;5秒后将无法撤销。"/>
   <translation tag="Stopped between Hub and Toolhead" zh="停在集线器与工具头之间"/>
   <translation tag="Stopped between Lane and Hub" zh="停在料仓与集线器之间"/>
   <translation tag="Stopped between Spool and Lane" zh="停在料盘与料仓之间"/>
@@ -2280,7 +2281,7 @@
   <translation tag="Tap anywhere if this text is right-side up" zh="如果文字方向正确请点击任意位置"/>
   <translation tag="Tap anywhere to begin" zh="点击任意位置开始"/>
   <translation tag="Tap anywhere to begin calibration" zh="点击任意位置开始校准"/>
-  <translation tag="Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" zh="点击十字准星（第 %1$d 个点，共 3 个）\xe2\x80\x94 触摸 %2$d / %3$d"/>
+  <translation tag="Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d" zh="点击十字准星（第 %1$d 个点，共 3 个）— 触摸 %2$d / %3$d"/>
   <translation tag="Tap to assign" zh="点击分配"/>
   <translation tag="Target Frequency" zh="目标频率"/>
   <translation tag="Target Temperature" zh="目标温度"/>
@@ -2315,7 +2316,7 @@
   <translation tag="Test Screensaver" zh="测试屏保"/>
   <translation tag="Test Tracker" zh="测试追踪器"/>
   <translation tag="Test label printed" zh="测试标签已打印"/>
-  <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" zh="测试旋转: %d\xc2\xb0 (%d/%d) - 剩余%ds"/>
+  <translation tag="Testing rotation: %d° (%d/%d) - %ds remaining" zh="测试旋转: %d° (%d/%d) - 剩余%ds"/>
   <translation tag="Testing, servo, and motor operations" zh="测试、舵机与电机操作"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." zh="感谢！匿名使用数据有助于改进 HelixScreen。"/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." zh="感谢！完全匿名的使用数据有助于改进 HelixScreen。"/>
@@ -2325,7 +2326,7 @@
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." zh="为防止动画屏保干扰打印，已在此设备上将其关闭。您可以在设置 &gt; 显示中重新启用。"/>
   <translation tag="The filament system reported an error" zh="耗材系统报告错误"/>
   <translation tag="The heater will cycle on and off several times." zh="加热器将多次开关循环。"/>
-  <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." zh="电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"/>
+  <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." zh="电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。&#10;&#10;使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." zh="打印已暂停。现在切换工具会移动工具头并更换喷嘴处的耗材。切换完成后请恢复打印。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" zh="打印机已停止此打印且无法恢复。从头重新开始？"/>
   <translation tag="The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear." zh="打印机尚未归位。继续将对所有轴执行归位操作，移动工具头。请确保热床上没有障碍物。"/>
@@ -2352,8 +2353,8 @@
   <translation tag="This channel offers v{}, older than the installed v{}. Anything added since then will be removed." zh="此通道提供 v{}，早于已安装的 v{}。此后新增的内容都将被移除。"/>
   <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again." zh="这会清除每个料盘的备用分配。在重新设置之前，耗材用尽时打印将停止。"/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." zh="此设备没有有线网络连接。关闭 WiFi 后，只能在此界面重新开启。"/>
-  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" zh="此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \&quot;Timer Too Close\&quot; 错误或在测试中途重启。仍要继续吗？"/>
-  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" zh="此设备内存极少。共振校准会占用大量内存，可能导致 \&quot;Timer Too Close\&quot; 错误。仍要继续吗？"/>
+  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a &quot;Timer Too Close&quot; error or restart mid-test. Continue anyway?" zh="此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 &quot;Timer Too Close&quot; 错误或在测试中途重启。仍要继续吗？"/>
+  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" zh="此设备内存极少。共振校准会占用大量内存，可能导致 &quot;Timer Too Close&quot; 错误。仍要继续吗？"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" zh="这与关联的 Spoolman 料盘不匹配。是否添加为新料盘，或更新关联料盘以匹配？"/>
   <translation tag="This file was sliced for {} but {} is loaded." zh="此文件为 {} 切片，但当前加载的是 {}。"/>
   <translation tag="This is exactly the data that will be sent" zh="这正是将要发送的数据"/>
@@ -2431,7 +2432,7 @@
   <translation tag="Touch anywhere to verify accuracy" zh="触摸任意位置验证精度"/>
   <translation tag="Touch input did not track the new calibration. Your previous settings were kept." zh="触摸输入未能跟随新的校准，已保留您之前的设置。"/>
   <translation tag="Touch screen to wake from sleep" zh="触摸屏幕唤醒"/>
-  <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" zh="触摸目标（第 %1$d 个点，共 3 个）\xe2\x80\x94 触摸 %2$d / %3$d"/>
+  <translation tag="Touch the target (point %1$d of 3) — touch %2$d of %3$d" zh="触摸目标（第 %1$d 个点，共 3 个）— 触摸 %2$d / %3$d"/>
   <translation tag="TouchCalibration" zh="触摸校准"/>
   <translation tag="Trace" zh="跟踪"/>
   <translation tag="Trigger" zh="触发器"/>
@@ -2457,7 +2458,7 @@
   <translation tag="USB drive removed" zh="U 盘已移除"/>
   <translation tag="USB printer access denied — check permissions" zh="USB 打印机访问被拒绝 — 请检查权限"/>
   <translation tag="Understanding Results" zh="了解结果"/>
-  <translation tag="Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency \u2014 matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other." zh="皮带张力不均会导致层错位、VFA(垂直细纹)和振纹等打印瑕疵。\n\n此工具会振动每条皮带路径并测量共振频率 \u2014 频率匹配意味着张力均衡。\n\n对于 CoreXY,路径 A 与 B 应相差在几 Hz 以内。"/>
+  <translation tag="Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.&#10;&#10;This tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.&#10;&#10;For CoreXY, Path A and B should be within a few Hz of each other." zh="皮带张力不均会导致层错位、VFA(垂直细纹)和振纹等打印瑕疵。&#10;&#10;此工具会振动每条皮带路径并测量共振频率 — 频率匹配意味着张力均衡。&#10;&#10;对于 CoreXY,路径 A 与 B 应相差在几 Hz 以内。"/>
   <translation tag="Uninstall HelixPrint Plugin" zh="卸载 HelixPrint 插件"/>
   <translation tag="Uninstall script not found." zh="未找到卸载脚本。"/>
   <translation tag="Uninstall: Coming soon" zh="卸载: 即将推出"/>
@@ -2602,13 +2603,13 @@
   <translation tag="Y Offset" zh="Y 偏移"/>
   <translation tag="Y jog blocked at bed edge" zh="Y 轴移动已限制在热床边缘"/>
   <translation tag="Y:" zh="Y："/>
-  <translation tag="YOU WIN!\nScore: {}\nTap to play again" zh="你赢了！\n得分：{}\n点按再玩一次"/>
+  <translation tag="YOU WIN!&#10;Score: {}&#10;Tap to play again" zh="你赢了！&#10;得分：{}&#10;点按再玩一次"/>
   <translation tag="Year" zh="年"/>
   <translation tag="Yes" zh="是"/>
-  <translation tag="You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically." zh="现在开始打印时可以跳过这些操作。\n\n在每次开始打印前，请在打印详情中查找新的选项。\n\n已自动保存配置备份。"/>
+  <translation tag="You can now skip these operations when starting prints.&#10;&#10;Look for the new options in the print details before starting each print.&#10;&#10;A backup of your config was saved automatically." zh="现在开始打印时可以跳过这些操作。&#10;&#10;在每次开始打印前，请在打印详情中查找新的选项。&#10;&#10;已自动保存配置备份。"/>
   <translation tag="You can skip this and calibrate later in Settings." zh="您可以跳过此步骤，稍后在设置中进行校准。"/>
   <translation tag="You have unsaved changes. Discard them?" zh="您有未保存的更改。是否丢弃？"/>
-  <translation tag="Your PRINT_START macro will be updated to give you control over:\n\n" zh="您的 PRINT_START 宏将被更新，以便您控制以下内容：\n\n"/>
+  <translation tag="Your PRINT_START macro will be updated to give you control over:&#10;&#10;" zh="您的 PRINT_START 宏将被更新，以便您控制以下内容：&#10;&#10;"/>
   <translation tag="Your completed prints will appear here" zh="您完成的打印将显示在此处"/>
   <translation tag="Your print start is already fully configured!" zh="您的打印启动已完全配置！"/>
   <translation tag="Your printer has an automatic filament changer" zh="您的打印机配有自动换色系统"/>
@@ -2638,7 +2639,6 @@
   <translation tag="Z-offset saved - Klipper restarting..." zh="Z 偏移已保存 - Klipper 重启中..."/>
   <translation tag="Z:" zh="Z:"/>
   <translation tag="Z: 0.000" zh="Z: 0.000"/>
-  <translation tag="\&quot;%s\&quot; failed to load" zh="\&quot;%s\&quot; 加载失败"/>
   <translation tag="bed" zh="热床"/>
   <translation tag="by Preston Brown" zh="by Preston Brown"/>
   <translation tag="chamber heater" zh="腔体加热器"/>
