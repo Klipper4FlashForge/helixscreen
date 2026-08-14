@@ -122,6 +122,7 @@ translations:
   Accelerometer communication failed. Try again.: 加速度センサーとの通信に失敗しました。再試行してください。
   Accept: 承認
   'Accepted Z Position: 0.000': '確定Z位置: 0.000'
+  'Accepted Z Position: {:.3f}': '確定したZ位置: {:.3f}'
   Accessories: 'アクセサリー'
   Accuracy: 精度
   'Act:': '実測:'
@@ -174,6 +175,7 @@ translations:
     > バージョン情報 からデバッグバンドルを送信してください。
   An unexpected printer error occurred.: 予期しないプリンターエラーが発生しました。
   An update is available: 更新があります
+  Analyzing data... {}%: 'データを解析中... {}%'
   Android logcat: Android logcat
   Animations: アニメーション
   Anonymous data to help improve HelixScreen: HelixScreen改善のための匿名データ
@@ -333,6 +335,7 @@ translations:
   Calibrate your touchscreen for accurate input: タッチスクリーンの入力精度をキャリブレートします
   Calibrate, tune jitter and scroll feel: キャリブレーション、ジッターとスクロール感度の調整
   Calibrated: キャリブレーション済み
+  Calibrating {} axis...: '{} 軸をキャリブレーション中...'
   Calibrating...: キャリブレーション中...
   Calibration & Tools: キャリブレーションとツール
   Calibration Complete!: キャリブレーション完了！
@@ -468,7 +471,11 @@ translations:
   Complete!: 完了！
   Completed: 完了
   Completed in %d probe%s: '%d 回のプローブ%sで完了'
+  Completed just now: 'たった今完了しました'
   Completed prints will appear here: 完了した印刷がここに表示されます
+  Completed {}d ago: '{} 日前に完了'
+  Completed {}h ago: '{} 時間前に完了'
+  Completed {}m ago: '{} 分前に完了'
   Computing calibration...: キャリブレーション計算中...
   Config Dir: 設定ディレクトリ
   Config-defined (read-only): 設定で定義済み（読み取り専用）
@@ -1013,6 +1020,7 @@ translations:
   G-code Preview: G-code プレビュー
   G-code commands will appear here: G-code コマンドがここに表示されます
   GCode Console: 'Gコードコンソール'
+  'Game Over!\nScore: {}\nTap to restart': 'ゲームオーバー！\nスコア: {}\nタップでリスタート'
   Gear Buffer Speed: 'ギアのバッファ速度'
   Gear Spool Speed: 'ギアのスプール速度'
   Gear Unload Speed: 'ギアのアンロード速度'
@@ -1193,6 +1201,7 @@ translations:
     で HelixScreen コミュニティに参加して、ディスカッション、ヒント、トラブルシューティング支援、機能リクエストを共有しましょう。
   Jump directly to motion control / jogging: '動作制御／ジョグへ直接移動'
   Just now: たった今
+  Just queued: 'たった今キューへ追加'
   KEYBOARD LAYOUT: キーボードレイアウト
   KLICKY CONTROLS: Klickyコントロール
   Keep Navigation Bar: ナビゲーションバーを維持
@@ -1320,6 +1329,7 @@ translations:
   MISSING CONFIGURED: 設定済みが見つかりません
   MMU command failed: MMU コマンドに失敗しました
   MPC: MPC
+  MPC thermal model calibrated for {} at {}°C.: '{} のMPC熱モデルを {}°C で校正しました。'
   Machine Limits: 機械制限
   Macro: マクロ
   Macro Browser: マクロブラウザ
@@ -1380,6 +1390,8 @@ translations:
   Measurement Failed: 測定失敗
   Measuring Path A... %d%%: パス A を測定中... %d%%
   Measuring Path B... %d%%: パス B を測定中... %d%%
+  Measuring accelerometer noise...: '加速度センサーのノイズを測定中...'
+  Measuring vibrations... {}%: '振動を測定中... {}%'
   Memory: メモリ
   Memory (MB): メモリ (MB)
   Memory Snapshot: メモリースナップショット
@@ -1432,6 +1444,7 @@ translations:
   My Custom Theme: マイカスタムテーマ
   My Panel: マイパネル
   My Printer: マイプリンター
+  NEW HIGH SCORE!\n{}\nTap to play again: 'ハイスコア更新！\n{}\nタップでもう一度'
   NEWLY DISCOVERED: 新規検出
   Name: 名前
   Name (optional): 名前（オプション）
@@ -1824,6 +1837,8 @@ translations:
   Probing Bed Screws...: ベッドネジをプローブ中...
   Probing Bed...: ベッドをプローブ中...
   Probing Failed: プローブ失敗
+  Probing point {} of {}: 'プローブ点 {} / {}'
+  Probing... ({} points): 'プローブ中... ({} 点)'
   Proceed: 続行
   # Source: abort_progress_modal.xml:20
   Processing...: '処理中...'
@@ -1853,8 +1868,11 @@ translations:
   Quad Gantry Level: クアッドガントリーレベル
   Quad Gantry Level complete: QGL 完了
   Quad Gantry Level started...: QGL を開始しました...
+  'Queue: Paused': 'キュー: 一時停止'
   'Queue: Ready': 'キュー: 準備完了'
   Queued print jobs: 'キューに入った印刷ジョブ'
+  Queued {}h {}m ago: '{} 時間 {} 分前にキューへ追加'
+  Queued {}m ago: '{} 分前にキューへ追加'
   Quick: 簡易
   Quick Actions: クイックアクション
   Quick Button 1: クイックボタン1
@@ -2018,6 +2036,8 @@ translations:
   Running {}...: '{} を実行中...'
   Runout: 'フィラメント切れ'
   Runout Sensor: フィラメント切れセンサー
+  ? 'SAVE_CONFIG failed: {}. Z-offset was applied but not saved. Run SAVE_CONFIG manually or the offset will be lost on restart.'
+  : 'SAVE_CONFIG に失敗しました: {}。Zオフセットは適用されましたが保存されていません。SAVE_CONFIG を手動で実行しないと、再起動時にオフセットが失われます。'
   SETTINGS: 設定
   SHIPPED IMAGES: 付属画像
   SOFTWARE: ソフトウェア
@@ -2070,6 +2090,8 @@ translations:
   Scanning for networks...: ネットワークをスキャン中...
   Scanning...: スキャン中...
   'Score: 0': 'スコア: 0'
+  'Score: {}': 'スコア: {}'
+  'Score: {}  |  Best: {}': 'スコア: {}  |  ベスト: {}'
   Screen: '画面'
   Screen Blank: 画面消灯
   Screen Dim: 画面減光
@@ -2323,6 +2345,7 @@ translations:
   Takes 3-5 min. Do not interrupt.: 3〜5分かかります。中断しないでください。
   Tap + to add: + をタップして追加
   Tap again to confirm this orientation: もう一度タップしてこの向きを確定
+  Tap an object to exclude it | {} objects ({} excluded): 'オブジェクトをタップして除外 | {} 個 ({} 個除外済み)'
   Tap anywhere if this text is right-side up: この文字が正しい向きならどこかをタップ
   Tap anywhere to begin: どこかをタップして開始
   Tap anywhere to begin calibration: どこかをタップしてキャリブレーション開始
@@ -2346,6 +2369,7 @@ translations:
   Temperature Graph Config: 温度グラフ設定
   # Source: calibration_pid_panel.xml:333
   Temperature Sensors: '温度センサー'
+  Temperature control optimized for {} at {}°C.: '{} の温度制御を {}°C で最適化しました。'
   Temperatures: 温度
   Temperatures saved: 温度を保存しました
   Template: テンプレート
@@ -2679,6 +2703,7 @@ translations:
   X Axis: X軸
   X Offset: Xオフセット
   X axis applied, but Y axis failed: X軸は適用されましたが、Y軸は失敗しました
+  X axis done, starting Y...: 'X軸が完了しました。Y軸を開始します...'
   X jog blocked at bed edge: X軸移動はベッド端でブロックされました
   'X:': 'X:'
   XY: XY
@@ -2687,6 +2712,7 @@ translations:
   Y Offset: Yオフセット
   Y jog blocked at bed edge: Y軸移動はベッド端でブロックされました
   'Y:': 'Y:'
+  'YOU WIN!\nScore: {}\nTap to play again': 'クリア！\nスコア: {}\nタップでもう一度'
   Year: 年
   'Yes': はい
   ? You can now skip these operations when starting prints.\n\nLook for the new options
@@ -2765,7 +2791,6 @@ translations:
   remaining: 残り
   remaining before clog detection triggers: 残りで詰まり検出が作動します
   rendering: レンダリング中
-  set to: に設定
   slots): スロット)
   started: 開始
   steppers: ステッパー
@@ -2799,7 +2824,11 @@ translations:
   '{} configured item not found': 設定された項目 {} 個が見つかりません
   '{} configured items not found': 設定された項目 {} 個が見つかりません
   '{} critical hardware issues': '{} 個の重要なハードウェアの問題'
+  '{} disabled': '{} を無効にしました'
+  '{} enabled': '{} を有効にしました'
+  '{} failed: {}': '{} に失敗しました: {}'
   '{} filament sensors available': '{} 個のフィラメントセンサーが利用可能です'
+  '{} filament • {}': 'フィラメント {} • {}'
   '{} heater turned off': '{} ヒーターをオフにしました'
   '{} is installed but its backup-spool switching is turned off, so no automatic swap will happen.': '{} はインストールされていますが、予備スプールへの切り替えがオフになっているため、自動切り替えは行われません。'
   '{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap.': '{} はインストールされていますが、予備スプールの設定を読み取れませんでした - 自動切り替えを当てにしないでください。'
@@ -2810,6 +2839,9 @@ translations:
   '{} needs the HelixPrint plugin. Printing original file.': '{} には HelixPrint プラグインが必要です。元のファイルを印刷します。'
   '{} new hardware available': '{} 個の新しいハードウェアが利用可能です'
   '{} preset{}': '{} 個のプリセット{}'
+  '{} set to {}': '{} を {} に設定しました'
+  '{} set to {} {}': '{} を {} {} に設定しました'
+  '{} started': '{} を開始しました'
   '{} target set to {}°C': '{} 目標温度を {}°C に設定しました'
   ? '{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.'
   : '{} は、フィラメントの種類と色の両方がアクティブなスプールと一致し、かつ自身のポートセンサーがフィラメントを検知しているスロットに切り替えます。'

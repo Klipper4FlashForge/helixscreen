@@ -124,6 +124,7 @@ translations:
     Try again.
   Accept: Accept
   'Accepted Z Position: 0.000': 'Accepted Z Position: 0.000'
+  'Accepted Z Position: {:.3f}': 'Accepted Z Position: {:.3f}'
   Accessories: Accessories
   Accuracy: Accuracy
   'Act:': 'Act:'
@@ -185,6 +186,7 @@ translations:
     from Settings > About if it repeats.
   An unexpected printer error occurred.: An unexpected printer error occurred.
   An update is available: An update is available
+  Analyzing data... {}%: Analyzing data... {}%
   Android logcat: Android logcat
   Animations: Animations
   Anonymous data to help improve HelixScreen: Anonymous data to help improve HelixScreen
@@ -353,6 +355,7 @@ translations:
     input
   Calibrate, tune jitter and scroll feel: Calibrate, tune jitter and scroll feel
   Calibrated: Calibrated
+  Calibrating {} axis...: Calibrating {} axis...
   Calibrating...: Calibrating...
   Calibration & Tools: Calibration & Tools
   Calibration Complete!: Calibration Complete!
@@ -508,7 +511,11 @@ translations:
   Complete!: Complete!
   Completed: Completed
   Completed in %d probe%s: Completed in %d probe%s
+  Completed just now: Completed just now
   Completed prints will appear here: Completed prints will appear here
+  Completed {}d ago: Completed {}d ago
+  Completed {}h ago: Completed {}h ago
+  Completed {}m ago: Completed {}m ago
   Computing calibration...: Computing calibration...
   Config Dir: Config Dir
   Config-defined (read-only): Config-defined (read-only)
@@ -1081,6 +1088,7 @@ translations:
   G-code Preview: G-code Preview
   G-code commands will appear here: G-code commands will appear here
   GCode Console: GCode Console
+  'Game Over!\nScore: {}\nTap to restart': 'Game Over!\nScore: {}\nTap to restart'
   Gear Buffer Speed: Gear Buffer Speed
   Gear Spool Speed: Gear Spool Speed
   Gear Unload Speed: Gear Unload Speed
@@ -1284,6 +1292,7 @@ translations:
     and feature requests.
   Jump directly to motion control / jogging: Jump directly to motion control / jogging
   Just now: Just now
+  Just queued: Just queued
   KEYBOARD LAYOUT: KEYBOARD LAYOUT
   KLICKY CONTROLS: KLICKY CONTROLS
   Keep Navigation Bar: Keep Navigation Bar
@@ -1420,6 +1429,7 @@ translations:
   MISSING CONFIGURED: MISSING CONFIGURED
   MMU command failed: MMU command failed
   MPC: MPC
+  MPC thermal model calibrated for {} at {}°C.: MPC thermal model calibrated for {} at {}°C.
   Machine Limits: Machine Limits
   Macro: Macro
   Macro Browser: Macro Browser
@@ -1482,6 +1492,8 @@ translations:
   Measurement Failed: Measurement Failed
   Measuring Path A... %d%%: Measuring Path A... %d%%
   Measuring Path B... %d%%: Measuring Path B... %d%%
+  Measuring accelerometer noise...: Measuring accelerometer noise...
+  Measuring vibrations... {}%: Measuring vibrations... {}%
   Memory: Memory
   Memory (MB): Memory (MB)
   Memory Snapshot: Memory Snapshot
@@ -1539,6 +1551,7 @@ translations:
   My Custom Theme: My Custom Theme
   My Panel: My Panel
   My Printer: My Printer
+  NEW HIGH SCORE!\n{}\nTap to play again: NEW HIGH SCORE!\n{}\nTap to play again
   NEWLY DISCOVERED: NEWLY DISCOVERED
   Name: Name
   Name (optional): Name (optional)
@@ -1952,6 +1965,8 @@ translations:
   Probing Bed Screws...: Probing Bed Screws...
   Probing Bed...: Probing Bed...
   Probing Failed: Probing Failed
+  Probing point {} of {}: Probing point {} of {}
+  Probing... ({} points): Probing... ({} points)
   Proceed: Proceed
   # Source: abort_progress_modal.xml:20
   Processing...: Processing...
@@ -1983,8 +1998,11 @@ translations:
   Quad Gantry Level: Quad Gantry Level
   Quad Gantry Level complete: Quad Gantry Level complete
   Quad Gantry Level started...: Quad Gantry Level started...
+  'Queue: Paused': 'Queue: Paused'
   'Queue: Ready': 'Queue: Ready'
   Queued print jobs: Queued print jobs
+  Queued {}h {}m ago: Queued {}h {}m ago
+  Queued {}m ago: Queued {}m ago
   Quick: Quick
   Quick Actions: Quick Actions
   Quick Button 1: Quick Button 1
@@ -2160,6 +2178,8 @@ translations:
   Running {}...: Running {}...
   Runout: Runout
   Runout Sensor: Runout Sensor
+  ? 'SAVE_CONFIG failed: {}. Z-offset was applied but not saved. Run SAVE_CONFIG manually or the offset will be lost on restart.'
+  : 'SAVE_CONFIG failed: {}. Z-offset was applied but not saved. Run SAVE_CONFIG manually or the offset will be lost on restart.'
   SETTINGS: SETTINGS
   SHIPPED IMAGES: SHIPPED IMAGES
   SOFTWARE: SOFTWARE
@@ -2217,6 +2237,8 @@ translations:
   Scanning for networks...: Scanning for networks...
   Scanning...: Scanning...
   'Score: 0': 'Score: 0'
+  'Score: {}': 'Score: {}'
+  'Score: {}  |  Best: {}': 'Score: {}  |  Best: {}'
   Screen: Screen
   Screen Blank: Screen Blank
   Screen Dim: Screen Dim
@@ -2497,6 +2519,7 @@ translations:
   Takes 3-5 min. Do not interrupt.: Takes 3-5 min. Do not interrupt.
   Tap + to add: Tap + to add
   Tap again to confirm this orientation: Tap again to confirm this orientation
+  Tap an object to exclude it | {} objects ({} excluded): Tap an object to exclude it | {} objects ({} excluded)
   Tap anywhere if this text is right-side up: Tap anywhere if this text is right-side
     up
   Tap anywhere to begin: Tap anywhere to begin
@@ -2521,6 +2544,7 @@ translations:
   Temperature Graph Config: Temperature Graph Config
   # Source: calibration_pid_panel.xml:333
   Temperature Sensors: Temperature Sensors
+  Temperature control optimized for {} at {}°C.: Temperature control optimized for {} at {}°C.
   Temperatures: Temperatures
   Temperatures saved: Temperatures saved
   Template: Template
@@ -2897,6 +2921,7 @@ translations:
   X Axis: X Axis
   X Offset: X Offset
   X axis applied, but Y axis failed: X axis applied, but Y axis failed
+  X axis done, starting Y...: X axis done, starting Y...
   X jog blocked at bed edge: X jog blocked at bed edge
   'X:': 'X:'
   XY: XY
@@ -2905,6 +2930,7 @@ translations:
   Y Offset: Y Offset
   Y jog blocked at bed edge: Y jog blocked at bed edge
   'Y:': 'Y:'
+  'YOU WIN!\nScore: {}\nTap to play again': 'YOU WIN!\nScore: {}\nTap to play again'
   Year: Year
   'Yes': 'Yes'
   ? You can now skip these operations when starting prints.\n\nLook for the new options
@@ -2991,7 +3017,6 @@ translations:
   remaining: remaining
   remaining before clog detection triggers: remaining before clog detection triggers
   rendering: rendering
-  set to: set to
   slots): slots)
   started: started
   steppers: steppers
@@ -3031,7 +3056,11 @@ translations:
   '{} configured item not found': '{} configured item not found'
   '{} configured items not found': '{} configured items not found'
   '{} critical hardware issues': '{} critical hardware issues'
+  '{} disabled': '{} disabled'
+  '{} enabled': '{} enabled'
+  '{} failed: {}': '{} failed: {}'
   '{} filament sensors available': '{} filament sensors available'
+  '{} filament • {}': '{} filament • {}'
   '{} heater turned off': '{} heater turned off'
   '{} is installed but its backup-spool switching is turned off, so no automatic swap will happen.': '{} is installed but its backup-spool switching is turned off, so no automatic swap will happen.'
   '{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap.': '{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap.'
@@ -3043,6 +3072,9 @@ translations:
   '{} needs the HelixPrint plugin. Printing original file.': '{} needs the HelixPrint plugin. Printing original file.'
   '{} new hardware available': '{} new hardware available'
   '{} preset{}': '{} preset{}'
+  '{} set to {}': '{} set to {}'
+  '{} set to {} {}': '{} set to {} {}'
+  '{} started': '{} started'
   '{} target set to {}°C': '{} target set to {}°C'
   ? '{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.'
   : '{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.'

@@ -132,6 +132,7 @@ translations:
     Tente novamente.
   Accept: Aceitar
   'Accepted Z Position: 0.000': 'Posição Z Aceita: 0.000'
+  'Accepted Z Position: {:.3f}': 'Posição Z aceita: {:.3f}'
   Accessories: 'Acessórios'
   Accuracy: Precisão
   'Act:': 'Real:'
@@ -194,6 +195,7 @@ translations:
     em Configurações > Sobre se isso se repetir.
   An unexpected printer error occurred.: Ocorreu um erro inesperado na impressora.
   An update is available: Uma atualização está disponível
+  Analyzing data... {}%: 'Analisando dados... {}%'
   Android logcat: Logcat do Android
   Animations: Animações
   Anonymous data to help improve HelixScreen: Dados anônimos para melhorar o HelixScreen
@@ -367,6 +369,7 @@ translations:
   Calibrate, tune jitter and scroll feel: Calibrar, ajustar tremulação e sensação
     de rolagem
   Calibrated: Calibrado
+  Calibrating {} axis...: 'Calibrando o eixo {}...'
   Calibrating...: Calibrando...
   Calibration & Tools: Calibração e Ferramentas
   Calibration Complete!: Calibração Concluída!
@@ -532,7 +535,11 @@ translations:
   Complete!: Concluído!
   Completed: Concluído
   Completed in %d probe%s: Concluído em %d sondagem%s
+  Completed just now: 'Concluído agora mesmo'
   Completed prints will appear here: Impressões concluídas aparecerão aqui
+  Completed {}d ago: 'Concluído há {} dias'
+  Completed {}h ago: 'Concluído há {} h'
+  Completed {}m ago: 'Concluído há {} min'
   Computing calibration...: Calculando calibração...
   Config Dir: Diretório de Configuração
   Config-defined (read-only): Definido na configuração (somente leitura)
@@ -1119,6 +1126,7 @@ translations:
   G-code Preview: Visualização G-code
   G-code commands will appear here: Os comandos G-code aparecerão aqui
   GCode Console: 'Console G-code'
+  'Game Over!\nScore: {}\nTap to restart': 'Fim de jogo!\nPontuação: {}\nToque para reiniciar'
   Gear Buffer Speed: 'Velocidade da engrenagem a partir do buffer'
   Gear Spool Speed: 'Velocidade da engrenagem a partir do carretel'
   Gear Unload Speed: 'Velocidade de descarregamento da engrenagem'
@@ -1327,6 +1335,7 @@ translations:
     de problemas e solicitações de recursos.
   Jump directly to motion control / jogging: 'Ir diretamente ao controle de movimento / jog'
   Just now: Agora mesmo
+  Just queued: 'Recém-adicionado à fila'
   KEYBOARD LAYOUT: LAYOUT DO TECLADO
   KLICKY CONTROLS: CONTROLES KLICKY
   Keep Navigation Bar: Manter barra de navegação
@@ -1468,6 +1477,7 @@ translations:
   MISSING CONFIGURED: CONFIGURAÇÃO FALTANDO
   MMU command failed: Falha no comando MMU
   MPC: MPC
+  MPC thermal model calibrated for {} at {}°C.: 'Modelo térmico MPC calibrado para {} a {}°C.'
   Machine Limits: Limites da Máquina
   Macro: Macro
   Macro Browser: Navegador de Macros
@@ -1532,6 +1542,8 @@ translations:
   Measurement Failed: Medição falhou
   Measuring Path A... %d%%: Medindo Caminho A... %d%%
   Measuring Path B... %d%%: Medindo Caminho B... %d%%
+  Measuring accelerometer noise...: 'Medindo o ruído do acelerômetro...'
+  Measuring vibrations... {}%: 'Medindo vibrações... {}%'
   Memory: Memória
   Memory (MB): Memória (MB)
   Memory Snapshot: Captura de Memória
@@ -1589,6 +1601,7 @@ translations:
   My Custom Theme: Meu Tema Personalizado
   My Panel: Meu Painel
   My Printer: Minha Impressora
+  NEW HIGH SCORE!\n{}\nTap to play again: 'NOVO RECORDE!\n{}\nToque para jogar de novo'
   NEWLY DISCOVERED: RECÉM DESCOBERTO
   Name: Nome
   Name (optional): Nome (opcional)
@@ -2010,6 +2023,8 @@ translations:
   Probing Bed Screws...: Sondando Parafusos da Mesa...
   Probing Bed...: Sondando Mesa...
   Probing Failed: Sondagem Falhou
+  Probing point {} of {}: 'Ponto de sondagem {} de {}'
+  Probing... ({} points): 'Sondando... ({} pontos)'
   Proceed: Prosseguir
   # Source: abort_progress_modal.xml:20
   Processing...: 'Processando...'
@@ -2041,8 +2056,11 @@ translations:
   Quad Gantry Level: Nivelamento Quad Gantry
   Quad Gantry Level complete: QGL concluído
   Quad Gantry Level started...: QGL iniciado...
+  'Queue: Paused': 'Fila: Pausada'
   'Queue: Ready': 'Fila: Pronta'
   Queued print jobs: 'Trabalhos de impressão na fila'
+  Queued {}h {}m ago: 'Na fila há {} h {} min'
+  Queued {}m ago: 'Na fila há {} min'
   Quick: Rápido
   Quick Actions: Ações Rápidas
   Quick Button 1: Botão Rápido 1
@@ -2220,6 +2238,8 @@ translations:
   Running {}...: Executando {}...
   Runout: 'Fim de filamento'
   Runout Sensor: Sensor de Fim de Filamento
+  ? 'SAVE_CONFIG failed: {}. Z-offset was applied but not saved. Run SAVE_CONFIG manually or the offset will be lost on restart.'
+  : 'SAVE_CONFIG falhou: {}. O Z-offset foi aplicado mas não salvo. Execute SAVE_CONFIG manualmente ou o offset será perdido ao reiniciar.'
   SETTINGS: CONFIGURAÇÕES
   SHIPPED IMAGES: IMAGENS INCLUÍDAS
   SOFTWARE: SOFTWARE
@@ -2280,6 +2300,8 @@ translations:
   Scanning for networks...: Escaneando redes...
   Scanning...: Escaneando...
   'Score: 0': 'Pontuação: 0'
+  'Score: {}': 'Pontuação: {}'
+  'Score: {}  |  Best: {}': 'Pontuação: {}  |  Melhor: {}'
   Screen: 'Tela'
   Screen Blank: Tela Apagada
   Screen Dim: Escurecimento da Tela
@@ -2570,6 +2592,7 @@ translations:
   Takes 3-5 min. Do not interrupt.: Leva 3-5 min. Não interrompa.
   Tap + to add: Toque em + para adicionar
   Tap again to confirm this orientation: Toque novamente para confirmar esta orientação
+  Tap an object to exclude it | {} objects ({} excluded): 'Toque em um objeto para excluí-lo | {} objetos ({} excluídos)'
   Tap anywhere if this text is right-side up: Toque em qualquer lugar se este texto
     estiver correto
   Tap anywhere to begin: Toque em qualquer lugar para começar
@@ -2594,6 +2617,7 @@ translations:
   Temperature Graph Config: Config do Gráfico de Temperatura
   # Source: calibration_pid_panel.xml:333
   Temperature Sensors: 'Sensores de temperatura'
+  Temperature control optimized for {} at {}°C.: 'Controle de temperatura otimizado para {} a {}°C.'
   Temperatures: Temperaturas
   Temperatures saved: Temperaturas salvas
   Template: Modelo
@@ -2987,6 +3011,7 @@ translations:
   X Axis: Eixo X
   X Offset: Offset X
   X axis applied, but Y axis failed: Eixo X aplicado, mas eixo Y falhou
+  X axis done, starting Y...: 'Eixo X concluído, iniciando Y...'
   X jog blocked at bed edge: Movimento X bloqueado na borda da mesa
   'X:': 'X:'
   XY: XY
@@ -2995,6 +3020,7 @@ translations:
   Y Offset: Offset Y
   Y jog blocked at bed edge: Movimento Y bloqueado na borda da mesa
   'Y:': 'Y:'
+  'YOU WIN!\nScore: {}\nTap to play again': 'VOCÊ VENCEU!\nPontuação: {}\nToque para jogar de novo'
   Year: Ano
   'Yes': Sim
   ? You can now skip these operations when starting prints.\n\nLook for the new options
@@ -3082,7 +3108,6 @@ translations:
   remaining before clog detection triggers: restante antes da detecção de obstrução
     ser acionada
   rendering: renderizando
-  set to: definido para
   slots): slots)
   started: iniciado
   steppers: motores de passo
@@ -3126,7 +3151,11 @@ translations:
   '{} configured item not found': '{} item configurado não encontrado'
   '{} configured items not found': '{} itens configurados não encontrados'
   '{} critical hardware issues': '{} problemas críticos de hardware'
+  '{} disabled': '{} desabilitado'
+  '{} enabled': '{} habilitado'
+  '{} failed: {}': '{} falhou: {}'
   '{} filament sensors available': '{} sensores de filamento disponíveis'
+  '{} filament • {}': '{} de filamento • {}'
   '{} heater turned off': Aquecedor {} desligado
   '{} is installed but its backup-spool switching is turned off, so no automatic swap will happen.': '{} está instalado mas sua troca para carretel reserva está desligada, então não haverá troca automática.'
   '{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap.': '{} está instalado, mas não foi possível ler sua configuração de carretel reserva - não conte com uma troca automática.'
@@ -3138,6 +3167,9 @@ translations:
   '{} needs the HelixPrint plugin. Printing original file.': '{} precisa do plugin HelixPrint. Imprimindo o arquivo original.'
   '{} new hardware available': '{} novo hardware disponível'
   '{} preset{}': '{} predefinição{}'
+  '{} set to {}': '{} definido para {}'
+  '{} set to {} {}': '{} definido para {} {}'
+  '{} started': '{} iniciado'
   '{} target set to {}°C': '{} configurado para {}°C'
   ? '{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.'
   : '{} mudará para um slot cujo tipo de filamento E cor correspondam ao carretel ativo e cujo próprio sensor de porta detecte filamento presente.'
