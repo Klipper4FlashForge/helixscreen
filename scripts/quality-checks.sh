@@ -713,6 +713,35 @@ else
   echo "⚠️  check_responsive_token_scope.py not found — skipping"
 fi
 
+echo ""
+
+echo "📜 Checking panel-widget scroll declarations..."
+
+# <lv_obj> keeps LVGL's LV_OBJ_FLAG_SCROLLABLE default, which is ON. Our theme
+# overrides lv_obj's size/border/background/padding but NOT scrollable, so an
+# author who reads it as a pure layout container gets a scroll container. That
+# shipped chevrons drawn over the print-status thumbnail on an 800x480 K-Touch
+# (7d69130df), and inside a drag-scrolled home grid it also steals the drag.
+#
+# Ratcheting baseline. The rule is declared INTENT - scrollable="true" passes
+# just as well as "false"; only saying nothing fails. The remaining 21 sites are
+# not fixed in bulk on purpose: each needs its author's intent, and some really
+# should scroll. The number may go DOWN, never up.
+if [ -f "scripts/check_panel_widget_scrollable.py" ]; then
+  if python3 scripts/check_panel_widget_scrollable.py --max-allowed 21 --summary \
+      >/tmp/panel_widget_scrollable.out 2>&1; then
+    tail -1 /tmp/panel_widget_scrollable.out
+  else
+    cat /tmp/panel_widget_scrollable.out
+    echo "   Run: python3 scripts/check_panel_widget_scrollable.py --list"
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_panel_widget_scrollable.py not found - skipping"
+fi
+
+echo ""
+
 # ESP32 firmware app_srcs manifest drift. The manifest is a hand-maintained
 # subset of src/ (v1 Core+AMS cut); a new src/ file that misses it breaks the
 # firmware link ~25 min into esp32-build CI. This makes the drift loud here.
