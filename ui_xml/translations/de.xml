@@ -60,6 +60,7 @@
   <translation tag="120 seconds" de="120 Sekunden"/>
   <translation tag="15 seconds" de="15 Sekunden"/>
   <translation tag="180°" de="180°"/>
+  <translation tag="180° Upside Down"/>
   <translation tag="2 min" de="2 Min"/>
   <translation tag="2 minutes" de="2 Minuten"/>
   <translation tag="2. Place paper between nozzle and bed" de="2. Papier zwischen Düse und Bett legen"/>
@@ -67,6 +68,7 @@
   <translation tag="20 minutes" de="20 Minuten"/>
   <translation tag="24 Hour" de="24 Stunden"/>
   <translation tag="270°" de="270°"/>
+  <translation tag="270° Clockwise"/>
   <translation tag="2D Heatmap" de="2D-Heatmap"/>
   <translation tag="2D Layers" de="2D-Schichten"/>
   <translation tag="3. Adjust screws, then re-probe to verify" de="3. Schrauben einstellen, dann erneut prüfen"/>
@@ -84,6 +86,7 @@
   <translation tag="5V" de="5V"/>
   <translation tag="60 seconds" de="60 Sekunden"/>
   <translation tag="90°" de="90°"/>
+  <translation tag="90° Clockwise"/>
   <translation tag="= Loosen" de="= Lösen"/>
   <translation tag="= Tighten" de="= Anziehen"/>
   <translation tag="A" de="A"/>
@@ -1505,6 +1508,7 @@
   <translation tag="No width sensor detected" de="Kein Breitensensor erkannt"/>
   <translation tag="None" de="Keine"/>
   <translation tag="None (disable)" de="Keine (deaktivieren)"/>
+  <translation tag="Normal"/>
   <translation tag="Not Enough Filament" de="Nicht genug Filament"/>
   <translation tag="Not Now" de="Nicht jetzt"/>
   <translation tag="Not calibrated" de="Nicht kalibriert"/>
@@ -2034,6 +2038,7 @@
   <translation tag="Screen" de="Bildschirm"/>
   <translation tag="Screen Blank" de="Bildschirm aus"/>
   <translation tag="Screen Dim" de="Bildschirm dimmen"/>
+  <translation tag="Screen Rotation"/>
   <translation tag="Screen dims to lower brightness after period of inactivity" de="Bildschirm dimmt nach Inaktivitätszeitraum auf niedrigere Helligkeit"/>
   <translation tag="Screen lock and PIN settings" de="Bildschirmsperre und PIN-Einstellungen"/>
   <translation tag="Screen reboot failed" de="Neustart des Bildschirms fehlgeschlagen"/>
@@ -2447,6 +2452,7 @@
   <translation tag="Turn On LEDs" de="LEDs einschalten"/>
   <translation tag="Turn on LEDs when printer starts" de="LEDs beim Druckerstart einschalten"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" de="Extruder-Heizung nach Laden oder Entladen ausschalten"/>
+  <translation tag="Turn the picture to match how the screen is mounted. Applies after restart."/>
   <translation tag="Type" de="Typ"/>
   <translation tag="Type to preview input field..." de="Tippen Sie zur Vorschau des Eingabefeldes..."/>
   <translation tag="Type:" de="Typ:"/>

@@ -60,6 +60,7 @@ translations:
   120 seconds: 120 seconds
   15 seconds: 15 seconds
   180°: 180°
+  180° Upside Down: 180° Upside Down
   2 min: 2 min
   2 minutes: 2 minutes
   2. Place paper between nozzle and bed: 2. Place paper between nozzle and bed
@@ -68,6 +69,7 @@ translations:
   20 minutes: 20 minutes
   24 Hour: 24 Hour
   270°: 270°
+  270° Clockwise: 270° Clockwise
   2D Heatmap: 2D Heatmap
   2D Layers: 2D Layers
   3. Adjust screws, then re-probe to verify: 3. Adjust screws, then re-probe to verify
@@ -85,6 +87,7 @@ translations:
   5V: 5V
   60 seconds: 60 seconds
   90°: 90°
+  90° Clockwise: 90° Clockwise
   = Loosen: = Loosen
   = Tighten: = Tighten
   A: A
@@ -1660,6 +1663,7 @@ translations:
   No width sensor detected: No width sensor detected
   None: None
   None (disable): None (disable)
+  Normal: Normal
   Not Enough Filament: Not Enough Filament
   Not Now: Not Now
   Not calibrated: Not calibrated
@@ -2241,6 +2245,7 @@ translations:
   Screen: Screen
   Screen Blank: Screen Blank
   Screen Dim: Screen Dim
+  Screen Rotation: Screen Rotation
   Screen dims to lower brightness after period of inactivity: Screen dims to lower
     brightness after period of inactivity
   Screen lock and PIN settings: Screen lock and PIN settings
@@ -2736,6 +2741,7 @@ translations:
   Turn On LEDs: Turn On LEDs
   Turn on LEDs when printer starts: Turn on LEDs when printer starts
   Turn the extruder heater off after a load or unload finishes: Turn the extruder heater off after a load or unload finishes
+  Turn the picture to match how the screen is mounted. Applies after restart.: Turn the picture to match how the screen is mounted. Applies after restart.
   Type: Type
   Type to preview input field...: Type to preview input field...
   'Type:': 'Type:'

@@ -60,6 +60,7 @@ translations:
   120 seconds: 120 秒
   15 seconds: 15 秒
   180°: 180°
+  180° Upside Down: ''
   2 min: '2分钟'
   2 minutes: 2 分钟
   2. Place paper between nozzle and bed: 2. 将纸张放在喷嘴和热床之间
@@ -67,6 +68,7 @@ translations:
   20 minutes: 20分钟
   24 Hour: 24 小时
   270°: 270°
+  270° Clockwise: ''
   2D Heatmap: 2D 热图
   2D Layers: 2D 图层
   3. Adjust screws, then re-probe to verify: 3. 调整螺丝，然后重新探测以验证
@@ -84,6 +86,7 @@ translations:
   5V: 5V
   60 seconds: 60 秒
   90°: 90°
+  90° Clockwise: ''
   = Loosen: = 松开
   = Tighten: = 拧紧
   A: 辅
@@ -1549,6 +1552,7 @@ translations:
   No width sensor detected: '未检测到宽度传感器'
   None: 无
   None (disable): 无 (禁用)
+  Normal: ''
   Not Enough Filament: 耗材不足
   Not Now: 暂不
   Not calibrated: 未校准
@@ -2096,6 +2100,7 @@ translations:
   Screen: '屏幕'
   Screen Blank: 屏幕熄灭
   Screen Dim: 屏幕变暗
+  Screen Rotation: ''
   Screen dims to lower brightness after period of inactivity: 一段时间不活动后屏幕会降低亮度
   Screen lock and PIN settings: 屏幕锁定和 PIN 设置
   Screen reboot failed: 屏幕重启失败
@@ -2539,6 +2544,7 @@ translations:
   Turn On LEDs: '打开 LED'
   Turn on LEDs when printer starts: 打印机启动时开启 LED
   Turn the extruder heater off after a load or unload finishes: 加载或卸载完成后关闭挤出机加热器
+  Turn the picture to match how the screen is mounted. Applies after restart.: ''
   Type: 类型
   Type to preview input field...: 输入以预览输入框...
   'Type:': '类型:'

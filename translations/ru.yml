@@ -63,6 +63,7 @@ translations:
   120 seconds: 120 секунд
   15 seconds: 15 секунд
   180°: 180°
+  180° Upside Down: ''
   2 min: '2 мин'
   2 minutes: 2 минуты
   2. Place paper between nozzle and bed: 2. Положите бумагу между соплом и столом
@@ -71,6 +72,7 @@ translations:
   20 minutes: 20 минут
   24 Hour: 24 часа
   270°: 270°
+  270° Clockwise: ''
   2D Heatmap: 2D тепловая карта
   2D Layers: 2D слои
   3. Adjust screws, then re-probe to verify: 3. Отрегулируйте винты, затем перепроверьте
@@ -89,6 +91,7 @@ translations:
   5V: 5V
   60 seconds: 60 секунд
   90°: 90°
+  90° Clockwise: ''
   = Loosen: = Ослабить
   = Tighten: = Затянуть
   A: A
@@ -1687,6 +1690,7 @@ translations:
   No width sensor detected: 'Датчик диаметра не обнаружен'
   None: Нет
   None (disable): Нет (отключить)
+  Normal: ''
   Not Enough Filament: Недостаточно филамента
   Not Now: Не сейчас
   Not calibrated: Не откалиброван
@@ -2271,6 +2275,7 @@ translations:
   Screen: 'Экран'
   Screen Blank: Гашение экрана
   Screen Dim: Затемнение экрана
+  Screen Rotation: ''
   Screen dims to lower brightness after period of inactivity: Экран затемняется после
     периода простоя
   Screen lock and PIN settings: Блокировка экрана и настройки PIN
@@ -2773,6 +2778,7 @@ translations:
   Turn On LEDs: 'Включить LED'
   Turn on LEDs when printer starts: Включать LED при запуске принтера
   Turn the extruder heater off after a load or unload finishes: Выключать нагреватель экструдера после загрузки или выгрузки
+  Turn the picture to match how the screen is mounted. Applies after restart.: ''
   Type: Тип
   Type to preview input field...: Введите для предпросмотра поля ввода...
   'Type:': 'Тип:'
