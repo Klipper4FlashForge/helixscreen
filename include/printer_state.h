@@ -1755,6 +1755,19 @@ class PrinterState {
     }
 
     /**
+     * @brief Get capability subject for Spoolman availability
+     *
+     * Returns 1 when Moonraker reports a reachable Spoolman, 0 otherwise. The
+     * int form of is_spoolman_available(), for observers. Prefer this over
+     * `lv_xml_get_subject(nullptr, "printer_has_spoolman")`: the XML lookup
+     * misses whenever subjects were initialised without XML registration, and
+     * it misses *silently*, leaving the caller with no observer at all.
+     */
+    lv_subject_t* get_printer_has_spoolman_subject() {
+        return capabilities_state_.get_printer_has_spoolman_subject();
+    }
+
+    /**
      * @brief Get capability subject for purge line (priming)
      */
     lv_subject_t* get_printer_has_purge_line_subject() {
