@@ -1196,7 +1196,7 @@ if [ -f "scripts/check_imperative_ui.py" ]; then
   # as deliberate pragmatism (the XML engine couldn't express it at the time), some
   # are plain mistakes — both are debt. The number may go DOWN (port a site, then
   # lower this baseline) but must never go up.
-  if python3 scripts/check_imperative_ui.py --max-allowed 384 --summary >/tmp/imperative_ui.out 2>&1; then
+  if python3 scripts/check_imperative_ui.py --max-allowed 380 --summary >/tmp/imperative_ui.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/imperative_ui.out
@@ -1256,7 +1256,7 @@ if [ -f "scripts/check_timer_destructor_cancel.py" ]; then
   # cancel through cleanup()/detach()/deinit_subjects() passes. Timers whose
   # callback is LifetimeToken-guarded or routed through a singleton accessor are
   # safe by another mechanism — annotate those `// TIMER_DTOR_OK: <reason>`.
-  if python3 scripts/check_timer_destructor_cancel.py --max-allowed 3 >/tmp/timer_dtor.out 2>&1; then
+  if python3 scripts/check_timer_destructor_cancel.py --max-allowed 0 >/tmp/timer_dtor.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/timer_dtor.out
