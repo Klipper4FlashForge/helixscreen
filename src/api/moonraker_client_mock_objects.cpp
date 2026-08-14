@@ -53,6 +53,10 @@ json get_mock_gcode_macro_config() {
     return cfg;
 }
 
+json get_mock_accel_config() {
+    return {{"adxl345", json::object()}, {"resonance_tester", json::object()}};
+}
+
 // Minimal Happy Hare "mmu" status for --real-ams: a static 4-gate setup with a
 // mix of loaded/empty gates. gate_status is the load-bearing field — it's what
 // AmsBackendHappyHare::parse_mmu_state() uses to size the slot registry and
@@ -179,6 +183,13 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
             if (objects.contains("configfile")) {
                 // Build config section with input_shaper if configured
                 json config_section = {};
+
+                // Accelerometer. The subscribe handler below and
+                // populate_capabilities() both already report it; without it
+                // here the query handler was the odd one out, so the discovery
+                // sequence saw a printer with no accelerometer.
+                config_section.merge_patch(get_mock_accel_config());
+
                 if (self->is_input_shaper_configured()) {
                     config_section["input_shaper"] = {
                         {"shaper_type_x", "mzv"},   {"shaper_freq_x", "36.7"},
@@ -650,8 +661,7 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                         {"pid_kd", 1194.093}}}}},
                     // config section contains raw Klipper config keys (used for sensor discovery)
                     {"config", [&]() {
-                         json cfg = {{"adxl345", json::object()},
-                                     {"resonance_tester", json::object()}};
+                         json cfg = get_mock_accel_config();
                          if (self->is_input_shaper_configured()) {
                              cfg["input_shaper"] = {
                                  {"shaper_type_x", "mzv"},   {"shaper_freq_x", "36.7"},

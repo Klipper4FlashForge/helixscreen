@@ -5,6 +5,7 @@
 
 #include "ui_update_queue.h"
 
+#include "accel_sensor_manager.h"
 #include "app_globals.h"
 #include "config.h"
 #include "helix_version.h"
@@ -723,11 +724,19 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
 
                                 // Seed probe sensor z_offset from configfile (some probe
                                 // modules like flashforge_loadcell return null in status).
-                                // Must run on main thread — update_subjects() sets LVGL subjects.
-                                nlohmann::json cfg_for_probe = cfg;
-                                helix::ui::queue_update([cfg_for_probe]() {
+                                // Accelerometers have no get_status(), so configfile.config
+                                // is the ONLY place they appear — this is the sole caller
+                                // that fills AccelSensorManager, which Settings > Sensors,
+                                // telemetry and detect_belt_hardware() all read.
+                                // Both must run on main thread — update_subjects() sets
+                                // LVGL subjects. discover_from_config() rebuilds its list
+                                // from scratch, so a reconnect re-run cannot duplicate.
+                                nlohmann::json cfg_for_sensors = cfg;
+                                helix::ui::queue_update([cfg_for_sensors]() {
                                     helix::sensors::ProbeSensorManager::instance()
-                                        .discover_from_config(cfg_for_probe);
+                                        .discover_from_config(cfg_for_sensors);
+                                    helix::sensors::AccelSensorManager::instance()
+                                        .discover_from_config(cfg_for_sensors);
                                 });
 
                                 // Update LED controller with configfile data (effect targets +

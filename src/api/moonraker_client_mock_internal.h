@@ -153,6 +153,17 @@ void register_queue_handlers(std::unordered_map<std::string, MethodHandler>& reg
 json get_mock_gcode_macro_config();
 
 /**
+ * @brief Get mock accelerometer configfile entries
+ *
+ * Accelerometer modules have no get_status(), so Klipper never lists them in
+ * printer.objects.list — configfile.config is the only place they appear.
+ * Single source of truth for populate_capabilities(), discover_printer() and
+ * the objects.query / objects.subscribe handlers, which previously carried
+ * separate copies and disagreed: the query handler omitted it entirely.
+ */
+json get_mock_accel_config();
+
+/**
  * @brief Get mock Happy Hare "mmu" status (--real-ams)
  *
  * Minimal static 4-gate setup with a mix of loaded/empty gates. The only
