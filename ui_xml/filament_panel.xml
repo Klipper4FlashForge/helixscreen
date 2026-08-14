@@ -178,7 +178,7 @@
                 hidden="true">
 
           <!-- AMS mini status (auto-binds to AmsState, fills width, stretches to row height) -->
-          <ams_mini_status flex_grow="1" height="100%"/>
+          <ams_mini_status name="ams_mini_status" flex_grow="1" height="100%"/>
           <!-- Manage Button (shown when single-tool AMS, hidden when multi-tool) -->
           <ui_button name="btn_manage_slots"
                      width="content" height="#button_height" text="Manage" translation_tag="Manage"
