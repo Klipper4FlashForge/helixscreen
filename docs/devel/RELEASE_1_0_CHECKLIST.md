@@ -30,11 +30,17 @@ also cannot help if 1.1.0 > 1.0.0, which is exactly the dangerous case: publishi
 
 ## 2. Before tagging `v1.0.0`
 
-- [ ] Close or punt the open 1.0-milestone issues:
-  - #1201 — Toolchanger: `can_unload_from_toolhead` assumes one mounted tool; IDEX has two carriages
-  - #1065 — AD5X native ZMOD IFS: purge-timeout + Chan-authority/power-cycle gaps
-  - #986 — Sovol SV06 Ace bugs
-- [ ] `VERSION.txt`: `0.99.111` → `1.0.0`. Every existing install is on `0.99.x`,
+- [ ] Close the open 1.0-milestone issues:
+  - #1272 — Print stats between HS and Mainsail don't match (lifetime totals truncated
+    at the 500-job history cache)
+  - #1262 — Accelerometers never discovered: Settings > Sensors is empty on every
+    printer that has one
+  - #1260 — Orphaned printer presets: a DB entry with no `preset` key applies none
+    of its preset's settings
+- [ ] Green CI on `main`. `Build`, `esp32-build`, and the nightly suite were all red
+      on 2026-08-14; the first two have known causes and fixes, the nightly SIGSEGV in
+      `test_recovery_dialog_threading.cpp` is still unreproduced.
+- [ ] `VERSION.txt`: `0.99.113` → `1.0.0`. Every existing install is on `0.99.x`,
       so this is an ordinary forward step for the updater — no special handling.
 - [ ] Confirm the `ALLOW_CHANNEL_DOWNGRADE` repository variable is **unset**. It
       is the escape hatch for the downgrade guard and must be off by default.
