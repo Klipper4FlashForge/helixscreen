@@ -3191,6 +3191,49 @@ TEST_CASE("Config::init() consumes the fresh-install marker", "[core][config][mo
     REQUIRE_FALSE(std::filesystem::exists(env.fresh_marker()));
 }
 
+TEST_CASE("Config::init() keeps a shipped preset when the marker cannot be deleted",
+          "[core][config][moonraker-update]") {
+    TarballTestEnv env("tarball_marker_readonly");
+
+    env.write_config({{"preset", "k1"},
+                      {"wizard_completed", false},
+                      {"display", {{"rotate", 270}}},
+                      {"printer", {{"heaters", {{"bed", "heater_bed"}}}}}});
+    env.write_backup({{"config_version", CURRENT_CONFIG_VERSION},
+                      {"active_printer_id", "other"},
+                      {"brightness", 80},
+                      {"printers", {{"other", {{"moonraker_host", "192.168.1.50"}}}}}});
+    env.write_fresh_marker();
+
+    // Read-only storage: the marker survives because unlink needs write on the
+    // directory. Restore the mode however the test exits so the fixture can
+    // still clean up.
+    struct ModeGuard {
+        std::filesystem::path p;
+        ~ModeGuard() {
+            std::error_code ec;
+            std::filesystem::permissions(p, std::filesystem::perms::owner_all,
+                                         std::filesystem::perm_options::add, ec);
+        }
+    } guard{env.dir};
+    std::filesystem::permissions(env.dir, std::filesystem::perms::owner_write,
+                                 std::filesystem::perm_options::remove);
+
+    Config test_config;
+    REQUIRE_NOTHROW(test_config.init(env.config_path));
+
+    // The delete really did fail - otherwise this test proves nothing about
+    // the read-only path.
+    REQUIRE(std::filesystem::exists(env.fresh_marker()));
+
+    // fs::remove takes an error_code, so a failed delete is not fatal. The
+    // config also cannot be stamped on read-only storage, so the marker keeps
+    // answering for the same undeletable document on every later boot - which
+    // is the stable outcome, not a stale verdict about a different one.
+    REQUIRE(test_config.get<int>("/display/rotate", -1) == 270);
+    REQUIRE(test_config.get<int>("/brightness", -1) == -1);
+}
+
 TEST_CASE("Config::init() discards a shipped preset with no fresh-install marker",
           "[core][config][moonraker-update]") {
     TarballTestEnv env("tarball_no_marker_clobber");
