@@ -1393,6 +1393,13 @@ bool Application::init_display() {
     // onPause/onResume, so m_backgrounded never flips and the reconnect is
     // skipped. This sleep callback closes that gap (#1245).
     //
+    // Android ONLY, deliberately. force_reconnect() tears the socket down and
+    // rebuilds it synchronously on whatever thread calls it, and this callback
+    // runs on the UI thread. The Linux fbdev/DRM fleet never backgrounds the
+    // process on display sleep — the connection stays up and the health timer
+    // keeps running — so there is nothing to re-establish on wake, and running
+    // the teardown anyway only exposes the main loop to blocking inside it.
+    //
     // Registered here, alongside the DisplayManager that owns the callback list,
     // rather than in connect_moonraker(): that runs again on every printer
     // switch, and register_sleep_callback() only appends — there is no
@@ -1400,6 +1407,7 @@ bool Application::init_display() {
     // force_reconnect() per wake. init_display() runs once per process, and the
     // captured `this` owns m_display, so the callback list cannot outlive it.
     // m_moonraker is read lazily at wake time and need not exist yet.
+#ifdef __ANDROID__
     m_display->register_sleep_callback([this](bool sleeping) {
         if (!sleeping && m_moonraker && m_moonraker->client()) {
             // Debounce: on_enter_foreground() may have already called
@@ -1418,6 +1426,7 @@ bool Application::init_display() {
             m_moonraker->client()->force_reconnect();
         }
     });
+#endif
 
 #ifdef __ANDROID__
     {
