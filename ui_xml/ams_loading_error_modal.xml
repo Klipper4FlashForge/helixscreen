@@ -6,16 +6,19 @@
 <component>
   <!-- Dialog card -->
   <view name="ams_loading_error_modal"
-        extends="ui_dialog" width="70%" height="content" style_min_width="300" style_max_width="400" align="center"
-        flex_flow="column" style_flex_main_place="start" style_pad_gap="0">
+        extends="ui_dialog" width="70%" height="content" style_min_width="300" style_max_width="400"
+        style_max_height="85%" align="center" flex_flow="column" style_flex_main_place="start" style_pad_gap="0"
+        scrollable="false">
     <!-- Header: danger icon + title + close. Close wired in C++ via wire_cancel_button("btn_close"). -->
     <modal_header icon_src="alert_circle"
                   icon_variant="danger" title="Loading Error" title_tag="Loading Error" hide_close="false"/>
     <!-- Horizontal divider -->
     <divider_horizontal/>
-    <!-- Error message content -->
+    <!-- Error message content. Capped + scrollable so a long backend fault string
+         scrolls inside the card instead of growing it off both screen edges. -->
     <lv_obj width="100%"
-            height="content" style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_md" scrollable="false">
+            height="content" style_max_height="#dialog_content_max" style_pad_all="#space_lg" flex_flow="column"
+            style_pad_gap="#space_md" scrollable="true" scroll_snap_y="none">
       <!-- Error message text -->
       <text_body name="error_message"
                  width="100%" text="An error occurred while loading filament."
