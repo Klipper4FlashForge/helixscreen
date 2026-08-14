@@ -164,6 +164,25 @@ json get_mock_gcode_macro_config();
 json get_mock_accel_config();
 
 /**
+ * @brief Get the mock probe's configfile.config section
+ *
+ * Keyed off HELIX_MOCK_PROBE_TYPE — the same variable that picks the probe
+ * object in populate_capabilities() and the probe status in
+ * dispatch_initial_state() — so all three stay in step. Returns an empty object
+ * for "none".
+ *
+ * Values are STRINGS, matching Klipper: configfile.config is the verbatim
+ * printer.cfg text, and ProbeSensorManager::discover_from_config() parses
+ * z_offset with std::stof.
+ *
+ * The "loadcell" profile deliberately disagrees with the status payload, which
+ * reports z_offset: null. That is the flashforge_loadcell shape the config
+ * seeding exists for, and it is the only profile where the seeded value is
+ * observably different from what a status update would have produced.
+ */
+json get_mock_probe_config();
+
+/**
  * @brief Get mock Happy Hare "mmu" status (--real-ams)
  *
  * Minimal static 4-gate setup with a mix of loaded/empty gates. The only

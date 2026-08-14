@@ -13,6 +13,7 @@
 #include "moonraker_client_mock_internal.h"
 #include "power_device_state.h"
 #include "printer_state.h"
+#include "probe_sensor_manager.h"
 #include "runtime_config.h"
 #include "sensor_state.h"
 
@@ -641,6 +642,9 @@ void MoonrakerClientMock::populate_capabilities() {
     mock_config["printer"] = {{"kinematics", mock_kinematics}};
     // Add gcode_macro entries for param detection (shared with configfile.config response)
     mock_config.merge_patch(mock_internal::get_mock_gcode_macro_config());
+    // Probe section — shared with the configfile.config query/subscribe responses
+    // so all three payloads describe the same probe.
+    mock_config.merge_patch(mock_internal::get_mock_probe_config());
 
     std::unordered_set<std::string> macros_snapshot;
     discovery_.modify_hardware([&](PrinterDiscovery& hw) {
@@ -869,6 +873,21 @@ void MoonrakerClientMock::discover_printer(
             // Must be called BEFORE discovery_complete to match real implementation timing
             spdlog::debug("[MoonrakerClientMock] Invoking early hardware discovery callback");
             discovery_.invoke_hardware_discovered();
+
+            // Seed probe z_offset from the mock configfile, mirroring Step 4 of
+            // MoonrakerDiscoverySequence. This shortcut of a discover_printer()
+            // never queries configfile, so without it the whole configfile→probe
+            // path — the one that rescues probes whose runtime status reports a
+            // null z_offset — is unreachable under --test.
+            //
+            // Queued, not called inline, for ordering: ProbeSensorManager's
+            // sensor list is populated by the hardware-discovered callback just
+            // above, which Application also queues. Seeding runs on a sensor list
+            // that does not exist yet if it jumps the queue. FIFO puts it second.
+            helix::ui::queue_update("MoonrakerClientMock::probe_config_seed", []() {
+                helix::sensors::ProbeSensorManager::instance().discover_from_config(
+                    mock_internal::get_mock_probe_config());
+            });
 
             // Invoke discovery complete callback with hardware (for PrinterState binding)
             discovery_.invoke_discovery_complete();
