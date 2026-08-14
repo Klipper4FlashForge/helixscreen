@@ -744,6 +744,23 @@ else
   echo "⚠️  printer database or image gate not found — skipping"
 fi
 
+# An async pytest case whose plugin is not in requirements.txt does not read as a
+# missing dependency: plain pytest collects it and fails it with "async def
+# functions are not natively supported", so CI shows N broken tests instead. That
+# is how the moonraker-plugin suite went red for a day while passing locally on a
+# .venv that had pytest-asyncio installed by hand. The gate also catches the
+# mirror case — an unmarked async test, which strict mode SKIPS silently.
+if [ -f "scripts/check_pytest_asyncio_deps.py" ]; then
+  if python3 scripts/check_pytest_asyncio_deps.py >/tmp/pytest_asyncio_deps.out 2>&1; then
+    cat /tmp/pytest_asyncio_deps.out
+  else
+    cat /tmp/pytest_asyncio_deps.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  pytest asyncio deps gate not found — skipping"
+fi
+
 echo ""
 
 # ====================================================================
