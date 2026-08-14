@@ -1071,7 +1071,7 @@ translations:
   Heating (%d°C below minimum): '"加熱中（最低温度より%d°C低い）"'
   Heating Bed...: ベッド加熱中...
   Heating Nozzle...: ノズル加熱中...
-  Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: '%d\xC2\xB0Cに加熱中... %.0f\xC2\xB0C'
+  Heating to %d°C... %.0f°C: '%d°Cに加熱中... %.0f°C'
   Heating to {}°C before {}...: '{}°Cに加熱中（{}の前）...'
   Heating to {}°C for {}...: '{}°Cに加熱中（{}）...'
   Heating to {}°C...: '{}°Cに加熱中...'
@@ -2018,7 +2018,7 @@ translations:
   'Role:': '役割:'
   Rotating tips and helpful information: '入れ替わるヒントと役立つ情報'
   Rotation: 回転
-  'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': '回転: %d\xc2\xb0 - %ds残り
+  'Rotation: %d° - %ds remaining (or wait to retry)': '回転: %d° - %ds残り
     (待つと再試行)'
   Rounded: ラウンド
   Run: 実行
@@ -2349,8 +2349,8 @@ translations:
   Tap anywhere if this text is right-side up: この文字が正しい向きならどこかをタップ
   Tap anywhere to begin: どこかをタップして開始
   Tap anywhere to begin calibration: どこかをタップしてキャリブレーション開始
-  Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: 十字をタップ（ポイント
-    %1$d / 3）\xe2\x80\x94 タッチ %2$d / %3$d
+  Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d: 十字をタップ（ポイント
+    %1$d / 3）— タッチ %2$d / %3$d
   Tap to assign: タップして割当
   Target Frequency: 目標周波数
   Target Temperature: 目標温度
@@ -2386,7 +2386,7 @@ translations:
   Test Screensaver: スクリーンセーバーをテスト
   Test Tracker: テストトラッカー
   Test label printed: テストラベル印刷完了
-  'Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining': '回転テスト: %d\xc2\xb0 (%d/%d)
+  'Testing rotation: %d° (%d/%d) - %ds remaining': '回転テスト: %d° (%d/%d)
     - %ds残り'
   Testing, servo, and motor operations: 'テスト・サーボ・モーター操作'
   Thanks! Anonymous usage data helps improve HelixScreen.: ご協力ありがとうございます！匿名の使用データが
@@ -2528,8 +2528,8 @@ translations:
   Touch anywhere to verify accuracy: どこかをタッチして精度を確認
   Touch input did not track the new calibration. Your previous settings were kept.: タッチ入力が新しいキャリブレーションに追従しませんでした。以前の設定を維持しました。
   Touch screen to wake from sleep: 画面をタッチしてスリープ解除
-  Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: ターゲットをタッチ（ポイント
-    %1$d / 3）\xe2\x80\x94 タッチ %2$d / %3$d
+  Touch the target (point %1$d of 3) — touch %2$d of %3$d: ターゲットをタッチ（ポイント
+    %1$d / 3）— タッチ %2$d / %3$d
   TouchCalibration: タッチキャリブレーション
   Trace: トレース
   Trigger: トリガー

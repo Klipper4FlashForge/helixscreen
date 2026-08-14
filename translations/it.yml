@@ -1178,7 +1178,7 @@ translations:
   Heating (%d°C below minimum): Riscaldamento (%d°C sotto il minimo)
   Heating Bed...: Riscaldamento piatto...
   Heating Nozzle...: Riscaldamento ugello...
-  Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Riscaldamento a %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to %d°C... %.0f°C: Riscaldamento a %d°C... %.0f°C
   Heating to {}°C before {}...: Riscaldamento a {}°C prima di {}...
   Heating to {}°C for {}...: Riscaldamento a {}°C per {}...
   Heating to {}°C...: Riscaldamento a {}°C...
@@ -2210,7 +2210,7 @@ translations:
   'Role:': 'Ruolo:'
   Rotating tips and helpful information: 'Suggerimenti a rotazione e informazioni utili'
   Rotation: Rotazione
-  'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': 'Rotazione: %d\xc2\xb0
+  'Rotation: %d° - %ds remaining (or wait to retry)': 'Rotazione: %d°
     - %ds rimanenti (o attendi per riprovare)'
   Rounded: Arrotondato
   Run: Esegui
@@ -2586,8 +2586,8 @@ translations:
   Tap anywhere if this text is right-side up: Tocca ovunque se questo testo è dritto
   Tap anywhere to begin: Tocca ovunque per iniziare
   Tap anywhere to begin calibration: Tocca ovunque per avviare la calibrazione
-  Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Tocca il mirino
-    (punto %1$d di 3) \xe2\x80\x94 tocco %2$d di %3$d
+  Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d: Tocca il mirino
+    (punto %1$d di 3) — tocco %2$d di %3$d
   Tap to assign: Tocca per assegnare
   Target Frequency: Frequenza obiettivo
   Target Temperature: Temperatura target
@@ -2624,7 +2624,7 @@ translations:
   Test Screensaver: Prova salvaschermo
   Test Tracker: Test Tracker
   Test label printed: Etichetta di prova stampata
-  'Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining': 'Test rotazione: %d\xc2\xb0
+  'Testing rotation: %d° (%d/%d) - %ds remaining': 'Test rotazione: %d°
     (%d/%d) - %ds rimanenti'
   Testing, servo, and motor operations: 'Operazioni di test, servo e motore'
   Thanks! Anonymous usage data helps improve HelixScreen.: Grazie! I dati anonimi
@@ -2804,8 +2804,8 @@ translations:
   Touch anywhere to verify accuracy: Tocca ovunque per verificare la precisione
   Touch input did not track the new calibration. Your previous settings were kept.: L'input touch non ha seguito la nuova calibrazione. Sono state mantenute le impostazioni precedenti.
   Touch screen to wake from sleep: Tocca lo schermo per riattivare
-  Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Tocca il bersaglio
-    (punto %1$d di 3) \xe2\x80\x94 tocco %2$d di %3$d
+  Touch the target (point %1$d of 3) — touch %2$d of %3$d: Tocca il bersaglio
+    (punto %1$d di 3) — tocco %2$d di %3$d
   TouchCalibration: Calibrazione touch
   Trace: Traccia
   Trigger: Attivazione

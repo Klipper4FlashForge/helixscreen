@@ -1044,7 +1044,7 @@
   <translation tag="Heating (%d°C below minimum)" ja="&quot;加熱中（最低温度より%d°C低い）&quot;"/>
   <translation tag="Heating Bed..." ja="ベッド加熱中..."/>
   <translation tag="Heating Nozzle..." ja="ノズル加熱中..."/>
-  <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" ja="%d\xC2\xB0Cに加熱中... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to %d°C... %.0f°C" ja="%d°Cに加熱中... %.0f°C"/>
   <translation tag="Heating to {}°C before {}..." ja="{}°Cに加熱中（{}の前）..."/>
   <translation tag="Heating to {}°C for {}..." ja="{}°Cに加熱中（{}）..."/>
   <translation tag="Heating to {}°C..." ja="{}°Cに加熱中..."/>
@@ -1963,7 +1963,7 @@
   <translation tag="Role:" ja="役割:"/>
   <translation tag="Rotating tips and helpful information" ja="入れ替わるヒントと役立つ情報"/>
   <translation tag="Rotation" ja="回転"/>
-  <translation tag="Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)" ja="回転: %d\xc2\xb0 - %ds残り (待つと再試行)"/>
+  <translation tag="Rotation: %d° - %ds remaining (or wait to retry)" ja="回転: %d° - %ds残り (待つと再試行)"/>
   <translation tag="Rounded" ja="ラウンド"/>
   <translation tag="Run" ja="実行"/>
   <translation tag="Run Calibration Wizard" ja="キャリブレーションウィザードを実行"/>
@@ -2280,7 +2280,7 @@
   <translation tag="Tap anywhere if this text is right-side up" ja="この文字が正しい向きならどこかをタップ"/>
   <translation tag="Tap anywhere to begin" ja="どこかをタップして開始"/>
   <translation tag="Tap anywhere to begin calibration" ja="どこかをタップしてキャリブレーション開始"/>
-  <translation tag="Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" ja="十字をタップ（ポイント %1$d / 3）\xe2\x80\x94 タッチ %2$d / %3$d"/>
+  <translation tag="Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d" ja="十字をタップ（ポイント %1$d / 3）— タッチ %2$d / %3$d"/>
   <translation tag="Tap to assign" ja="タップして割当"/>
   <translation tag="Target Frequency" ja="目標周波数"/>
   <translation tag="Target Temperature" ja="目標温度"/>
@@ -2315,7 +2315,7 @@
   <translation tag="Test Screensaver" ja="スクリーンセーバーをテスト"/>
   <translation tag="Test Tracker" ja="テストトラッカー"/>
   <translation tag="Test label printed" ja="テストラベル印刷完了"/>
-  <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" ja="回転テスト: %d\xc2\xb0 (%d/%d) - %ds残り"/>
+  <translation tag="Testing rotation: %d° (%d/%d) - %ds remaining" ja="回転テスト: %d° (%d/%d) - %ds残り"/>
   <translation tag="Testing, servo, and motor operations" ja="テスト・サーボ・モーター操作"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." ja="ご協力ありがとうございます！匿名の使用データが HelixScreen の改善に役立ちます。"/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." ja="ご協力ありがとうございます！完全匿名の使用データが HelixScreen の改善に役立ちます。"/>
@@ -2431,7 +2431,7 @@
   <translation tag="Touch anywhere to verify accuracy" ja="どこかをタッチして精度を確認"/>
   <translation tag="Touch input did not track the new calibration. Your previous settings were kept." ja="タッチ入力が新しいキャリブレーションに追従しませんでした。以前の設定を維持しました。"/>
   <translation tag="Touch screen to wake from sleep" ja="画面をタッチしてスリープ解除"/>
-  <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" ja="ターゲットをタッチ（ポイント %1$d / 3）\xe2\x80\x94 タッチ %2$d / %3$d"/>
+  <translation tag="Touch the target (point %1$d of 3) — touch %2$d of %3$d" ja="ターゲットをタッチ（ポイント %1$d / 3）— タッチ %2$d / %3$d"/>
   <translation tag="TouchCalibration" ja="タッチキャリブレーション"/>
   <translation tag="Trace" ja="トレース"/>
   <translation tag="Trigger" ja="トリガー"/>

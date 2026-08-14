@@ -1044,7 +1044,7 @@
   <translation tag="Heating (%d°C below minimum)" zh="加热中（低于最低温度 %d°C）"/>
   <translation tag="Heating Bed..." zh="正在加热热床..."/>
   <translation tag="Heating Nozzle..." zh="正在加热喷嘴..."/>
-  <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" zh="加热至 %d\xC2\xB0C... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to %d°C... %.0f°C" zh="加热至 %d°C... %.0f°C"/>
   <translation tag="Heating to {}°C before {}..." zh="正在加热至{}°C，然后{}..."/>
   <translation tag="Heating to {}°C for {}..." zh="正在加热至{}°C，持续{}..."/>
   <translation tag="Heating to {}°C..." zh="正在加热至{}°C..."/>
@@ -1963,7 +1963,7 @@
   <translation tag="Role:" zh="角色："/>
   <translation tag="Rotating tips and helpful information" zh="轮播提示与实用信息"/>
   <translation tag="Rotation" zh="旋转"/>
-  <translation tag="Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)" zh="旋转: %d\xc2\xb0 - 剩余%ds (或等待重试)"/>
+  <translation tag="Rotation: %d° - %ds remaining (or wait to retry)" zh="旋转: %d° - 剩余%ds (或等待重试)"/>
   <translation tag="Rounded" zh="圆角"/>
   <translation tag="Run" zh="运行"/>
   <translation tag="Run Calibration Wizard" zh="运行校准向导"/>
@@ -2280,7 +2280,7 @@
   <translation tag="Tap anywhere if this text is right-side up" zh="如果文字方向正确请点击任意位置"/>
   <translation tag="Tap anywhere to begin" zh="点击任意位置开始"/>
   <translation tag="Tap anywhere to begin calibration" zh="点击任意位置开始校准"/>
-  <translation tag="Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" zh="点击十字准星（第 %1$d 个点，共 3 个）\xe2\x80\x94 触摸 %2$d / %3$d"/>
+  <translation tag="Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d" zh="点击十字准星（第 %1$d 个点，共 3 个）— 触摸 %2$d / %3$d"/>
   <translation tag="Tap to assign" zh="点击分配"/>
   <translation tag="Target Frequency" zh="目标频率"/>
   <translation tag="Target Temperature" zh="目标温度"/>
@@ -2315,7 +2315,7 @@
   <translation tag="Test Screensaver" zh="测试屏保"/>
   <translation tag="Test Tracker" zh="测试追踪器"/>
   <translation tag="Test label printed" zh="测试标签已打印"/>
-  <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" zh="测试旋转: %d\xc2\xb0 (%d/%d) - 剩余%ds"/>
+  <translation tag="Testing rotation: %d° (%d/%d) - %ds remaining" zh="测试旋转: %d° (%d/%d) - 剩余%ds"/>
   <translation tag="Testing, servo, and motor operations" zh="测试、舵机与电机操作"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." zh="感谢！匿名使用数据有助于改进 HelixScreen。"/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." zh="感谢！完全匿名的使用数据有助于改进 HelixScreen。"/>
@@ -2431,7 +2431,7 @@
   <translation tag="Touch anywhere to verify accuracy" zh="触摸任意位置验证精度"/>
   <translation tag="Touch input did not track the new calibration. Your previous settings were kept." zh="触摸输入未能跟随新的校准，已保留您之前的设置。"/>
   <translation tag="Touch screen to wake from sleep" zh="触摸屏幕唤醒"/>
-  <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" zh="触摸目标（第 %1$d 个点，共 3 个）\xe2\x80\x94 触摸 %2$d / %3$d"/>
+  <translation tag="Touch the target (point %1$d of 3) — touch %2$d of %3$d" zh="触摸目标（第 %1$d 个点，共 3 个）— 触摸 %2$d / %3$d"/>
   <translation tag="TouchCalibration" zh="触摸校准"/>
   <translation tag="Trace" zh="跟踪"/>
   <translation tag="Trigger" zh="触发器"/>

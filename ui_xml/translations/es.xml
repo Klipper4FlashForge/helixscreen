@@ -1044,7 +1044,7 @@
   <translation tag="Heating (%d°C below minimum)" es="Calentando (%d°C por debajo del mínimo)"/>
   <translation tag="Heating Bed..." es="Calentando cama..."/>
   <translation tag="Heating Nozzle..." es="Calentando boquilla..."/>
-  <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" es="Calentando a %d\xC2\xB0C... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to %d°C... %.0f°C" es="Calentando a %d°C... %.0f°C"/>
   <translation tag="Heating to {}°C before {}..." es="Calentando a {}°C antes de {}..."/>
   <translation tag="Heating to {}°C for {}..." es="Calentando a {}°C durante {}..."/>
   <translation tag="Heating to {}°C..." es="Calentando a {}°C..."/>
@@ -1963,7 +1963,7 @@
   <translation tag="Role:" es="Rol:"/>
   <translation tag="Rotating tips and helpful information" es="Consejos rotativos e información útil"/>
   <translation tag="Rotation" es="Rotación"/>
-  <translation tag="Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)" es="Rotación: %d\xc2\xb0 - %ds restantes (o espere para reintentar)"/>
+  <translation tag="Rotation: %d° - %ds remaining (or wait to retry)" es="Rotación: %d° - %ds restantes (o espere para reintentar)"/>
   <translation tag="Rounded" es="Redondeado"/>
   <translation tag="Run" es="Ejecutar"/>
   <translation tag="Run Calibration Wizard" es="Ejecutar el asistente de calibración"/>
@@ -2280,7 +2280,7 @@
   <translation tag="Tap anywhere if this text is right-side up" es="Toque en cualquier lugar si este texto está derecho"/>
   <translation tag="Tap anywhere to begin" es="Toca en cualquier lugar para comenzar"/>
   <translation tag="Tap anywhere to begin calibration" es="Toca en cualquier lugar para iniciar la calibración"/>
-  <translation tag="Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" es="Toca la cruz (punto %1$d de 3) \xe2\x80\x94 toque %2$d de %3$d"/>
+  <translation tag="Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d" es="Toca la cruz (punto %1$d de 3) — toque %2$d de %3$d"/>
   <translation tag="Tap to assign" es="Toca para asignar"/>
   <translation tag="Target Frequency" es="Frecuencia objetivo"/>
   <translation tag="Target Temperature" es="Temperatura Objetivo"/>
@@ -2315,7 +2315,7 @@
   <translation tag="Test Screensaver" es="Probar Salvapantallas"/>
   <translation tag="Test Tracker" es="Rastreador de Pruebas"/>
   <translation tag="Test label printed" es="Etiqueta de prueba impresa"/>
-  <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" es="Probando rotación: %d\xc2\xb0 (%d/%d) - %ds restantes"/>
+  <translation tag="Testing rotation: %d° (%d/%d) - %ds remaining" es="Probando rotación: %d° (%d/%d) - %ds restantes"/>
   <translation tag="Testing, servo, and motor operations" es="Operaciones de prueba, servo y motor"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." es="¡Gracias! Los datos de uso anónimos ayudan a mejorar HelixScreen."/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." es="¡Gracias! Los datos de uso TOTALMENTE anónimos ayudan a mejorar HelixScreen."/>
@@ -2431,7 +2431,7 @@
   <translation tag="Touch anywhere to verify accuracy" es="Toca en cualquier lugar para verificar la precisión"/>
   <translation tag="Touch input did not track the new calibration. Your previous settings were kept." es="La entrada táctil no siguió la nueva calibración. Se conservó su configuración anterior."/>
   <translation tag="Touch screen to wake from sleep" es="Toque la pantalla para despertar de la suspensión"/>
-  <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" es="Toca el objetivo (punto %1$d de 3) \xe2\x80\x94 toque %2$d de %3$d"/>
+  <translation tag="Touch the target (point %1$d of 3) — touch %2$d of %3$d" es="Toca el objetivo (punto %1$d de 3) — toque %2$d de %3$d"/>
   <translation tag="TouchCalibration" es="Calibración táctil"/>
   <translation tag="Trace" es="Traza"/>
   <translation tag="Trigger" es="Disparador"/>

@@ -1163,7 +1163,7 @@ translations:
   Heating (%d°C below minimum): Нагрев (%d°C ниже минимума)
   Heating Bed...: Нагрев стола...
   Heating Nozzle...: Нагрев сопла...
-  Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Нагрев до %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to %d°C... %.0f°C: Нагрев до %d°C... %.0f°C
   Heating to {}°C before {}...: Нагрев до {}°C перед «{}»...
   Heating to {}°C for {}...: Нагрев до {}°C в течение {}...
   Heating to {}°C...: Нагрев до {}°C...
@@ -2186,7 +2186,7 @@ translations:
   'Role:': 'Тип:'
   Rotating tips and helpful information: 'Сменяющиеся советы и полезная информация'
   Rotation: Поворот
-  'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': 'Поворот: %d\xc2\xb0
+  'Rotation: %d° - %ds remaining (or wait to retry)': 'Поворот: %d°
     - осталось %ds (или подождите для повтора)'
   Rounded: Скруглённый
   Run: Запуск
@@ -2558,8 +2558,8 @@ translations:
     правильно
   Tap anywhere to begin: Нажмите в любом месте для начала
   Tap anywhere to begin calibration: Нажмите в любом месте для начала калибровки
-  Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Нажмите на
-    перекрестие (точка %1$d из 3) \xe2\x80\x94 касание %2$d из %3$d
+  Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d: Нажмите на
+    перекрестие (точка %1$d из 3) — касание %2$d из %3$d
   Tap to assign: Нажмите для назначения
   Target Frequency: Целевая частота
   Target Temperature: Целевая температура
@@ -2596,7 +2596,7 @@ translations:
   Test Screensaver: Проверить заставку
   Test Tracker: Трекер тестов
   Test label printed: Тестовая этикетка напечатана
-  'Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining': 'Тест поворота: %d\xc2\xb0
+  'Testing rotation: %d° (%d/%d) - %ds remaining': 'Тест поворота: %d°
     (%d/%d) - осталось %ds'
   Testing, servo, and motor operations: 'Тестирование, сервопривод и работа моторов'
   Thanks! Anonymous usage data helps improve HelixScreen.: Спасибо! Анонимные данные
@@ -2769,8 +2769,8 @@ translations:
   Touch anywhere to verify accuracy: Коснитесь в любом месте для проверки точности
   Touch input did not track the new calibration. Your previous settings were kept.: Сенсорный ввод не соответствовал новой калибровке. Прежние настройки сохранены.
   Touch screen to wake from sleep: Коснитесь экрана для выхода из сна
-  Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Коснитесь цели
-    (точка %1$d из 3) \xe2\x80\x94 касание %2$d из %3$d
+  Touch the target (point %1$d of 3) — touch %2$d of %3$d: Коснитесь цели
+    (точка %1$d из 3) — касание %2$d из %3$d
   TouchCalibration: Калибровка касания
   Trace: Трассировка
   Trigger: Триггер

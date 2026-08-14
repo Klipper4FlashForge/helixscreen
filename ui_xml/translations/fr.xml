@@ -1044,7 +1044,7 @@
   <translation tag="Heating (%d°C below minimum)" fr="Chauffe (%d°C sous le minimum)"/>
   <translation tag="Heating Bed..." fr="Chauffe du plateau..."/>
   <translation tag="Heating Nozzle..." fr="Chauffe de la buse..."/>
-  <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" fr="Chauffe à %d\xC2\xB0C... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to %d°C... %.0f°C" fr="Chauffe à %d°C... %.0f°C"/>
   <translation tag="Heating to {}°C before {}..." fr="Chauffe à {}°C avant {}..."/>
   <translation tag="Heating to {}°C for {}..." fr="Chauffe à {}°C pendant {}..."/>
   <translation tag="Heating to {}°C..." fr="Chauffe à {}°C..."/>
@@ -1963,7 +1963,7 @@
   <translation tag="Role:" fr="Rôle :"/>
   <translation tag="Rotating tips and helpful information" fr="Astuces défilantes et informations utiles"/>
   <translation tag="Rotation" fr="Rotation"/>
-  <translation tag="Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)" fr="Rotation : %d\xc2\xb0 - %ds restantes (ou attendre pour réessayer)"/>
+  <translation tag="Rotation: %d° - %ds remaining (or wait to retry)" fr="Rotation : %d° - %ds restantes (ou attendre pour réessayer)"/>
   <translation tag="Rounded" fr="Arrondi"/>
   <translation tag="Run" fr="Exécuter"/>
   <translation tag="Run Calibration Wizard" fr="Lancer l&apos;assistant de calibration"/>
@@ -2280,7 +2280,7 @@
   <translation tag="Tap anywhere if this text is right-side up" fr="Appuyez n&apos;importe où si ce texte est à l&apos;endroit"/>
   <translation tag="Tap anywhere to begin" fr="Appuyez n&apos;importe où pour commencer"/>
   <translation tag="Tap anywhere to begin calibration" fr="Appuyez n&apos;importe où pour démarrer la calibration"/>
-  <translation tag="Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" fr="Appuyez sur la cible (point %1$d sur 3) \xe2\x80\x94 appui %2$d sur %3$d"/>
+  <translation tag="Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d" fr="Appuyez sur la cible (point %1$d sur 3) — appui %2$d sur %3$d"/>
   <translation tag="Tap to assign" fr="Appuyez pour assigner"/>
   <translation tag="Target Frequency" fr="Fréquence cible"/>
   <translation tag="Target Temperature" fr="Température cible"/>
@@ -2315,7 +2315,7 @@
   <translation tag="Test Screensaver" fr="Tester l&apos;économiseur d&apos;écran"/>
   <translation tag="Test Tracker" fr="Test Tracker"/>
   <translation tag="Test label printed" fr="Étiquette de test imprimée"/>
-  <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" fr="Test de rotation : %d\xc2\xb0 (%d/%d) - %ds restantes"/>
+  <translation tag="Testing rotation: %d° (%d/%d) - %ds remaining" fr="Test de rotation : %d° (%d/%d) - %ds restantes"/>
   <translation tag="Testing, servo, and motor operations" fr="Opérations de test, servo et moteur"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." fr="Merci ! Les données d&apos;utilisation anonymes aident à améliorer HelixScreen."/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." fr="Merci ! Les données d&apos;utilisation TOTALEMENT anonymes aident à améliorer HelixScreen."/>
@@ -2431,7 +2431,7 @@
   <translation tag="Touch anywhere to verify accuracy" fr="Touchez n&apos;importe où pour vérifier la précision"/>
   <translation tag="Touch input did not track the new calibration. Your previous settings were kept." fr="La saisie tactile n&apos;a pas suivi la nouvelle calibration. Vos paramètres précédents ont été conservés."/>
   <translation tag="Touch screen to wake from sleep" fr="Touchez l&apos;écran pour sortir de veille"/>
-  <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" fr="Touchez la cible (point %1$d sur 3) \xe2\x80\x94 appui %2$d sur %3$d"/>
+  <translation tag="Touch the target (point %1$d of 3) — touch %2$d of %3$d" fr="Touchez la cible (point %1$d sur 3) — appui %2$d sur %3$d"/>
   <translation tag="TouchCalibration" fr="Calibration tactile"/>
   <translation tag="Trace" fr="Trace"/>
   <translation tag="Trigger" fr="Déclencheur"/>

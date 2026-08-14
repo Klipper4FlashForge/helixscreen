@@ -174,6 +174,64 @@ def _join_adjacent_literals(captured: str) -> str:
     return "".join(pieces)
 
 
+# A `\x` escape and the hex digits it consumes. Capped at two digits: a single
+# byte cannot hold more, and every real call site splits the literal ("\xC2\xB0"
+# "C") precisely so the escape stops there.
+_HEX_ESCAPE_RE = re.compile(r"\\x([0-9a-fA-F]{1,2})")
+
+
+def decode_c_escapes(literal: str) -> str:
+    """Resolve `\\xNN` escapes in a C source literal the way the compiler does.
+
+    The runtime translation key is whatever the compiler emits, so a source
+    literal "%d\\xc2\\xb0" must extract as "%d°": the two escapes are raw BYTES
+    that together form one UTF-8 character, not two Latin-1 code points (which
+    is what codecs' "unicode_escape" would give).
+
+    Only `\\x` is resolved. `\\n`, `\\t`, `\\"` and `\\\\` are passed through
+    verbatim, because keys are stored as XML attribute values in the runtime
+    packs and XML attribute-value normalization collapses a real newline to a
+    space, so a decoded `\\n` could not survive the round trip.
+
+    A malformed escape (`\\x` with no hex digit) or a byte run that is not valid
+    UTF-8 (a truncated multi-byte sequence) leaves the literal untouched rather
+    than substituting a replacement character, so the corruption stays visible
+    to the translation gates instead of shipping as a mangled key.
+    """
+    if "\\x" not in literal:
+        return literal
+
+    out = bytearray()
+    i = 0
+    n = len(literal)
+    while i < n:
+        ch = literal[i]
+        if ch != "\\":
+            out += ch.encode("utf-8")
+            i += 1
+            continue
+        # An escape: consume the backslash and the character it escapes as one
+        # unit, so a literal backslash (\\) can never introduce a hex escape.
+        if i + 1 >= n:
+            out += b"\\"
+            i += 1
+            continue
+        if literal[i + 1] == "x":
+            m = _HEX_ESCAPE_RE.match(literal, i)
+            if m is None:
+                return literal  # `\x` with no hex digits - not valid C
+            out.append(int(m.group(1), 16))
+            i = m.end()
+            continue
+        out += literal[i : i + 2].encode("utf-8")
+        i += 2
+
+    try:
+        return out.decode("utf-8")
+    except UnicodeDecodeError:
+        return literal
+
+
 def _marker_applies(content: str, literal_pos: int, marker_re) -> bool:
     """
     Return True if a suppression marker matching ``marker_re`` applies to the
@@ -416,6 +474,8 @@ def extract_strings_from_cpp(cpp_path: Path) -> Set[str]:
             text = match.group(1)
             if is_adjacent:
                 text = _join_adjacent_literals(text)
+            # The key must equal what the compiler produces, not the source form.
+            text = decode_c_escapes(text)
 
             # lv_tr() strings are explicitly marked - always include them, EXCEPT
             # when a `// i18n: universal` marker applies (the string renders the
@@ -469,7 +529,7 @@ def extract_strings_from_cpp(cpp_path: Path) -> Set[str]:
             ):
                 break
         else:
-            result.add(text)
+            result.add(decode_c_escapes(text))
 
     return result
 

@@ -1196,7 +1196,7 @@ translations:
   Heating (%d°C below minimum): Chauffe (%d°C sous le minimum)
   Heating Bed...: Chauffe du plateau...
   Heating Nozzle...: Chauffe de la buse...
-  Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Chauffe à %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to %d°C... %.0f°C: Chauffe à %d°C... %.0f°C
   Heating to {}°C before {}...: Chauffe à {}°C avant {}...
   Heating to {}°C for {}...: Chauffe à {}°C pendant {}...
   Heating to {}°C...: Chauffe à {}°C...
@@ -2237,7 +2237,7 @@ translations:
   'Role:': 'Rôle :'
   Rotating tips and helpful information: 'Astuces défilantes et informations utiles'
   Rotation: Rotation
-  'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': 'Rotation : %d\xc2\xb0
+  'Rotation: %d° - %ds remaining (or wait to retry)': 'Rotation : %d°
     - %ds restantes (ou attendre pour réessayer)'
   Rounded: Arrondi
   Run: Exécuter
@@ -2618,8 +2618,8 @@ translations:
     à l'endroit
   Tap anywhere to begin: Appuyez n'importe où pour commencer
   Tap anywhere to begin calibration: Appuyez n'importe où pour démarrer la calibration
-  Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Appuyez sur
-    la cible (point %1$d sur 3) \xe2\x80\x94 appui %2$d sur %3$d
+  Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d: Appuyez sur
+    la cible (point %1$d sur 3) — appui %2$d sur %3$d
   Tap to assign: Appuyez pour assigner
   Target Frequency: Fréquence cible
   Target Temperature: Température cible
@@ -2656,7 +2656,7 @@ translations:
   Test Screensaver: Tester l'économiseur d'écran
   Test Tracker: Test Tracker
   Test label printed: Étiquette de test imprimée
-  'Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining': 'Test de rotation : %d\xc2\xb0
+  'Testing rotation: %d° (%d/%d) - %ds remaining': 'Test de rotation : %d°
     (%d/%d) - %ds restantes'
   Testing, servo, and motor operations: 'Opérations de test, servo et moteur'
   Thanks! Anonymous usage data helps improve HelixScreen.: Merci ! Les données d'utilisation
@@ -2844,8 +2844,8 @@ translations:
   Touch anywhere to verify accuracy: Touchez n'importe où pour vérifier la précision
   Touch input did not track the new calibration. Your previous settings were kept.: La saisie tactile n'a pas suivi la nouvelle calibration. Vos paramètres précédents ont été conservés.
   Touch screen to wake from sleep: Touchez l'écran pour sortir de veille
-  Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Touchez la cible
-    (point %1$d sur 3) \xe2\x80\x94 appui %2$d sur %3$d
+  Touch the target (point %1$d of 3) — touch %2$d of %3$d: Touchez la cible
+    (point %1$d sur 3) — appui %2$d sur %3$d
   TouchCalibration: Calibration tactile
   Trace: Trace
   Trigger: Déclencheur

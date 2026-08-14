@@ -1143,7 +1143,7 @@ translations:
   Heating (%d°C below minimum): Heating (%d°C below minimum)
   Heating Bed...: Heating Bed...
   Heating Nozzle...: Heating Nozzle...
-  Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Heating to %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to %d°C... %.0f°C: Heating to %d°C... %.0f°C
   Heating to {}°C before {}...: Heating to {}°C before {}...
   Heating to {}°C for {}...: Heating to {}°C for {}...
   Heating to {}°C...: Heating to {}°C...
@@ -2157,7 +2157,7 @@ translations:
   'Role:': 'Role:'
   Rotating tips and helpful information: Rotating tips and helpful information
   Rotation: Rotation
-  'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': 'Rotation: %d\xc2\xb0
+  'Rotation: %d° - %ds remaining (or wait to retry)': 'Rotation: %d°
     - %ds remaining (or wait to retry)'
   Rounded: Rounded
   Run: Run
@@ -2524,8 +2524,8 @@ translations:
     up
   Tap anywhere to begin: Tap anywhere to begin
   Tap anywhere to begin calibration: Tap anywhere to begin calibration
-  Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Tap the crosshair
-    (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d
+  Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d: Tap the crosshair
+    (point %1$d of 3) — touch %2$d of %3$d
   Tap to assign: Tap to assign
   Target Frequency: Target Frequency
   Target Temperature: Target Temperature
@@ -2562,7 +2562,7 @@ translations:
   Test Screensaver: Test Screensaver
   Test Tracker: Test Tracker
   Test label printed: Test label printed
-  'Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining': 'Testing rotation: %d\xc2\xb0
+  'Testing rotation: %d° (%d/%d) - %ds remaining': 'Testing rotation: %d°
     (%d/%d) - %ds remaining'
   Testing, servo, and motor operations: Testing, servo, and motor operations
   Thanks! Anonymous usage data helps improve HelixScreen.: Thanks! Anonymous usage
@@ -2730,8 +2730,8 @@ translations:
   Touch anywhere to verify accuracy: Touch anywhere to verify accuracy
   Touch input did not track the new calibration. Your previous settings were kept.: Touch input did not track the new calibration. Your previous settings were kept.
   Touch screen to wake from sleep: Touch screen to wake from sleep
-  Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Touch the target
-    (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d
+  Touch the target (point %1$d of 3) — touch %2$d of %3$d: Touch the target
+    (point %1$d of 3) — touch %2$d of %3$d
   TouchCalibration: TouchCalibration
   Trace: Trace
   Trigger: Trigger

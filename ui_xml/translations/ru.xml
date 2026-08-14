@@ -1044,7 +1044,7 @@
   <translation tag="Heating (%d°C below minimum)" ru="Нагрев (%d°C ниже минимума)"/>
   <translation tag="Heating Bed..." ru="Нагрев стола..."/>
   <translation tag="Heating Nozzle..." ru="Нагрев сопла..."/>
-  <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" ru="Нагрев до %d\xC2\xB0C... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to %d°C... %.0f°C" ru="Нагрев до %d°C... %.0f°C"/>
   <translation tag="Heating to {}°C before {}..." ru="Нагрев до {}°C перед «{}»..."/>
   <translation tag="Heating to {}°C for {}..." ru="Нагрев до {}°C в течение {}..."/>
   <translation tag="Heating to {}°C..." ru="Нагрев до {}°C..."/>
@@ -1963,7 +1963,7 @@
   <translation tag="Role:" ru="Тип:"/>
   <translation tag="Rotating tips and helpful information" ru="Сменяющиеся советы и полезная информация"/>
   <translation tag="Rotation" ru="Поворот"/>
-  <translation tag="Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)" ru="Поворот: %d\xc2\xb0 - осталось %ds (или подождите для повтора)"/>
+  <translation tag="Rotation: %d° - %ds remaining (or wait to retry)" ru="Поворот: %d° - осталось %ds (или подождите для повтора)"/>
   <translation tag="Rounded" ru="Скруглённый"/>
   <translation tag="Run" ru="Запуск"/>
   <translation tag="Run Calibration Wizard" ru="Запустить мастер калибровки"/>
@@ -2280,7 +2280,7 @@
   <translation tag="Tap anywhere if this text is right-side up" ru="Нажмите в любом месте, если текст расположен правильно"/>
   <translation tag="Tap anywhere to begin" ru="Нажмите в любом месте для начала"/>
   <translation tag="Tap anywhere to begin calibration" ru="Нажмите в любом месте для начала калибровки"/>
-  <translation tag="Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" ru="Нажмите на перекрестие (точка %1$d из 3) \xe2\x80\x94 касание %2$d из %3$d"/>
+  <translation tag="Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d" ru="Нажмите на перекрестие (точка %1$d из 3) — касание %2$d из %3$d"/>
   <translation tag="Tap to assign" ru="Нажмите для назначения"/>
   <translation tag="Target Frequency" ru="Целевая частота"/>
   <translation tag="Target Temperature" ru="Целевая температура"/>
@@ -2315,7 +2315,7 @@
   <translation tag="Test Screensaver" ru="Проверить заставку"/>
   <translation tag="Test Tracker" ru="Трекер тестов"/>
   <translation tag="Test label printed" ru="Тестовая этикетка напечатана"/>
-  <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" ru="Тест поворота: %d\xc2\xb0 (%d/%d) - осталось %ds"/>
+  <translation tag="Testing rotation: %d° (%d/%d) - %ds remaining" ru="Тест поворота: %d° (%d/%d) - осталось %ds"/>
   <translation tag="Testing, servo, and motor operations" ru="Тестирование, сервопривод и работа моторов"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." ru="Спасибо! Анонимные данные использования помогают улучшить HelixScreen."/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." ru="Спасибо! ПОЛНОСТЬЮ анонимные данные использования помогают улучшить HelixScreen."/>
@@ -2431,7 +2431,7 @@
   <translation tag="Touch anywhere to verify accuracy" ru="Коснитесь в любом месте для проверки точности"/>
   <translation tag="Touch input did not track the new calibration. Your previous settings were kept." ru="Сенсорный ввод не соответствовал новой калибровке. Прежние настройки сохранены."/>
   <translation tag="Touch screen to wake from sleep" ru="Коснитесь экрана для выхода из сна"/>
-  <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" ru="Коснитесь цели (точка %1$d из 3) \xe2\x80\x94 касание %2$d из %3$d"/>
+  <translation tag="Touch the target (point %1$d of 3) — touch %2$d of %3$d" ru="Коснитесь цели (точка %1$d из 3) — касание %2$d из %3$d"/>
   <translation tag="TouchCalibration" ru="Калибровка касания"/>
   <translation tag="Trace" ru="Трассировка"/>
   <translation tag="Trigger" ru="Триггер"/>

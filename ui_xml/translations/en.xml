@@ -1044,7 +1044,7 @@
   <translation tag="Heating (%d°C below minimum)" en="Heating (%d°C below minimum)"/>
   <translation tag="Heating Bed..." en="Heating Bed..."/>
   <translation tag="Heating Nozzle..." en="Heating Nozzle..."/>
-  <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" en="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to %d°C... %.0f°C" en="Heating to %d°C... %.0f°C"/>
   <translation tag="Heating to {}°C before {}..." en="Heating to {}°C before {}..."/>
   <translation tag="Heating to {}°C for {}..." en="Heating to {}°C for {}..."/>
   <translation tag="Heating to {}°C..." en="Heating to {}°C..."/>
@@ -1963,7 +1963,7 @@
   <translation tag="Role:" en="Role:"/>
   <translation tag="Rotating tips and helpful information" en="Rotating tips and helpful information"/>
   <translation tag="Rotation" en="Rotation"/>
-  <translation tag="Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)" en="Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)"/>
+  <translation tag="Rotation: %d° - %ds remaining (or wait to retry)" en="Rotation: %d° - %ds remaining (or wait to retry)"/>
   <translation tag="Rounded" en="Rounded"/>
   <translation tag="Run" en="Run"/>
   <translation tag="Run Calibration Wizard" en="Run Calibration Wizard"/>
@@ -2280,7 +2280,7 @@
   <translation tag="Tap anywhere if this text is right-side up" en="Tap anywhere if this text is right-side up"/>
   <translation tag="Tap anywhere to begin" en="Tap anywhere to begin"/>
   <translation tag="Tap anywhere to begin calibration" en="Tap anywhere to begin calibration"/>
-  <translation tag="Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" en="Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d"/>
+  <translation tag="Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d" en="Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d"/>
   <translation tag="Tap to assign" en="Tap to assign"/>
   <translation tag="Target Frequency" en="Target Frequency"/>
   <translation tag="Target Temperature" en="Target Temperature"/>
@@ -2315,7 +2315,7 @@
   <translation tag="Test Screensaver" en="Test Screensaver"/>
   <translation tag="Test Tracker" en="Test Tracker"/>
   <translation tag="Test label printed" en="Test label printed"/>
-  <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" en="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining"/>
+  <translation tag="Testing rotation: %d° (%d/%d) - %ds remaining" en="Testing rotation: %d° (%d/%d) - %ds remaining"/>
   <translation tag="Testing, servo, and motor operations" en="Testing, servo, and motor operations"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." en="Thanks! Anonymous usage data helps improve HelixScreen."/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." en="Thanks! TOTALLY anonymous usage data helps improve HelixScreen."/>
@@ -2431,7 +2431,7 @@
   <translation tag="Touch anywhere to verify accuracy" en="Touch anywhere to verify accuracy"/>
   <translation tag="Touch input did not track the new calibration. Your previous settings were kept." en="Touch input did not track the new calibration. Your previous settings were kept."/>
   <translation tag="Touch screen to wake from sleep" en="Touch screen to wake from sleep"/>
-  <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" en="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d"/>
+  <translation tag="Touch the target (point %1$d of 3) — touch %2$d of %3$d" en="Touch the target (point %1$d of 3) — touch %2$d of %3$d"/>
   <translation tag="TouchCalibration" en="TouchCalibration"/>
   <translation tag="Trace" en="Trace"/>
   <translation tag="Trigger" en="Trigger"/>

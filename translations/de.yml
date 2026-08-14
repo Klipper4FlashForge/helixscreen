@@ -1192,7 +1192,7 @@ translations:
   Heating (%d°C below minimum): Aufheizen (%d°C unter Minimum)
   Heating Bed...: Bett aufheizen...
   Heating Nozzle...: Düse aufheizen...
-  Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Aufheizen auf %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to %d°C... %.0f°C: Aufheizen auf %d°C... %.0f°C
   Heating to {}°C before {}...: Aufheizen auf {}°C vor {}...
   Heating to {}°C for {}...: Aufheizen auf {}°C für {}...
   Heating to {}°C...: Aufheizen auf {}°C...
@@ -2221,7 +2221,7 @@ translations:
   'Role:': 'Rolle:'
   Rotating tips and helpful information: 'Wechselnde Tipps und hilfreiche Informationen'
   Rotation: Drehung
-  'Rotation: %d\xc2\xb0 - %ds remaining (or wait to retry)': 'Drehung: %d\xc2\xb0
+  'Rotation: %d° - %ds remaining (or wait to retry)': 'Drehung: %d°
     - %ds verbleibend (oder warten zum Wiederholen)'
   Rounded: Abgerundet
   Run: Ausführen
@@ -2595,8 +2595,8 @@ translations:
     richtig herum ist
   Tap anywhere to begin: Tippen Sie irgendwo, um zu beginnen
   Tap anywhere to begin calibration: Tippen Sie irgendwo, um die Kalibrierung zu starten
-  Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Fadenkreuz
-    antippen (Punkt %1$d von 3) \xe2\x80\x94 Berührung %2$d von %3$d
+  Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d: Fadenkreuz
+    antippen (Punkt %1$d von 3) — Berührung %2$d von %3$d
   Tap to assign: Zum Zuweisen tippen
   Target Frequency: Zielfrequenz
   Target Temperature: Zieltemperatur
@@ -2633,7 +2633,7 @@ translations:
   Test Screensaver: Bildschirmschoner testen
   Test Tracker: Test-Tracker
   Test label printed: Testetikett gedruckt
-  'Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining': 'Drehung testen: %d\xc2\xb0
+  'Testing rotation: %d° (%d/%d) - %ds remaining': 'Drehung testen: %d°
     (%d/%d) - %ds verbleibend'
   Testing, servo, and motor operations: 'Test-, Servo- und Motorfunktionen'
   Thanks! Anonymous usage data helps improve HelixScreen.: Danke! Anonyme Nutzungsdaten
@@ -2818,8 +2818,8 @@ translations:
     überprüfen
   Touch input did not track the new calibration. Your previous settings were kept.: Die Touch-Eingabe folgte der neuen Kalibrierung nicht. Ihre vorherigen Einstellungen wurden beibehalten.
   Touch screen to wake from sleep: Touchscreen berühren zum Aufwecken
-  Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Ziel berühren
-    (Punkt %1$d von 3) \xe2\x80\x94 Berührung %2$d von %3$d
+  Touch the target (point %1$d of 3) — touch %2$d of %3$d: Ziel berühren
+    (Punkt %1$d von 3) — Berührung %2$d von %3$d
   TouchCalibration: Touch-Kalibrierung
   Trace: Trace
   Trigger: Auslöser
