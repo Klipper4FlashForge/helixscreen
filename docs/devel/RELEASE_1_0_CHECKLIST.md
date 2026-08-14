@@ -132,8 +132,31 @@ while running 0.99.111):
 
 - [ ] The downgrade path on a **real device**, not desktop mock. In particular the
       install actually completing and the older binary coming up on its own config.
-- [ ] A full devel → stable → devel config round trip with real settings. The unit
-      tests pin the version stamp and unknown-key survival
-      (`tests/unit/test_config_migration_future.cpp`); they do not prove every
-      individual migration is idempotent if a stamp is ever rolled back by some
-      other route.
+- [x] **A full devel → stable → devel config round trip — verified 2026-08-14, safe
+      for the reachable range.** `tests/unit/test_config_migration_future.cpp` now
+      carries 10 round-trip cases (tag `[config][migration][roundtrip]`) driving a
+      populated config — two printers, macros, LED auto-state maps, filament slot
+      overrides, widget layout, material presets, a captured touch affine. Rollback
+      to config_version 18/19/20 and back is **byte-identical on the whole
+      document**, and a sweep of 43 untargeted settings survives every rollback
+      depth. Mutation-verified.
+
+      **Five migrations are NOT idempotent**, and are pinned as current behavior
+      rather than fixed: `config.cpp:343` (jitter 15→5, fires below v3), `:446` and
+      `:488` (brightness 50→80, below v7/v9), `:457` (toolhead_style 2→5/3→2, a
+      rotation — below v8), `:812` (writes `recheck_pending` unconditionally, below
+      v18; the flag can invalidate a captured touch calibration at boot via
+      `should_invalidate_legacy_calibration`).
+
+      **Why this is accepted, not a blocker:** every one of them requires rolling
+      the stamp below config_version 18, i.e. below v0.99.80 (2026-06-18). The
+      in-app updater only ever offers what a channel's manifest serves — after the
+      cut that is 1.0.0 on stable and 1.1.x on beta — so reaching that range means
+      hand-installing a 2026-06 build. Not a path the product exposes. The
+      forward-compat guard (v0.99.112, `7e3d6f05d`) additionally stops a newer
+      config being stamped down at all, and both 1.0 and 1.1 carry it.
+
+      If a migration below v18 ever becomes reachable again, `:812` and `:457` are
+      the two to fix first — `:457` is a rotation and cannot be made idempotent
+      without a marker.
+
