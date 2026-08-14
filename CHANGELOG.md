@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.113] - 2026-08-13
+
+A fix release for two problems that showed up in the field on the Adventurer 5X. Uploading a
+debug bundle crashed the app outright on nearly every printer, and because the crash happened
+inside the reporting path itself, the bundles that would have reported it never arrived.
+Separately, Wi-Fi setup in the first-run wizard could sit on "Connecting" forever after a
+password was entered, with no timeout and no way back to the form. Nine languages also pick up
+a large batch of text that had been silently falling back to English.
+
+### Fixed
+
+- Uploading a debug bundle no longer crashes on any printer whose `printer.cfg` has more than
+  one `[include]` line, which is very nearly all of them. Introduced in 0.99.112.
+- Wi-Fi setup in the first-run wizard now reports a timeout after 45 seconds instead of showing
+  "Connecting" indefinitely. Cancelling an attempt no longer leaves every later password prompt
+  stuck on a spinner with no fields to fill in.
+- Debug bundles no longer download and process each log file twice. On a 473 MB printer that was
+  an extra multi-megabyte fetch and parse on every single upload.
+- Printer details in a debug bundle are now captured before the upload starts rather than read
+  from the upload thread, closing a rare crash.
+- Text that the interface translates indirectly - filament type names and several status
+  messages - now appears in all nine languages instead of falling back to English.
+- Filament runout guidance on the Adventurer 5X is now written as whole sentences, so it can be
+  translated properly instead of being stitched together from untranslatable fragments.
+- The Active Spool widget shows the filament brand from Spoolman
+  ([#1264](https://github.com/prestonbrown/helixscreen/issues/1264)).
+- Spoolman weight polling now starts at boot, and spool labels refresh when identity details
+  arrive rather than staying blank.
+- AFC lane maps that arrive as a list are parsed correctly, and the AFC mock no longer reports a
+  vendor that real AFC hardware never sends.
+- Four chatty log sources no longer crowd out useful history in the debug-bundle ring buffer.
+
+### Changed
+
+- Constants throughout the codebase were renamed from `kCamelCase` to `UPPER_SNAKE_CASE`, the
+  convention the contributor docs always specified. No behaviour change.
+
 ## [0.99.112] - 2026-08-13
 
 The temperature graph becomes interactive: tap a plotted line and it captions the sample
@@ -5056,6 +5093,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.113]: https://github.com/prestonbrown/helixscreen/compare/v0.99.112...v0.99.113
 [0.99.112]: https://github.com/prestonbrown/helixscreen/compare/v0.99.111...v0.99.112
 [0.99.111]: https://github.com/prestonbrown/helixscreen/compare/v0.99.108...v0.99.111
 [0.99.110]: https://github.com/prestonbrown/helixscreen/compare/v0.99.109...v0.99.110
