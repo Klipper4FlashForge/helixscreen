@@ -6,6 +6,7 @@
 #include "ui_update_queue.h"
 
 #include "../tests/mocks/mock_printer_state.h"
+#include "accel_sensor_manager.h"
 #include "app_globals.h"
 #include "gcode_parser.h"
 #include "macro_param_cache.h"
@@ -612,9 +613,7 @@ void MoonrakerClientMock::populate_capabilities() {
     // Mock accelerometer configuration for input shaper wizard testing
     // Real Klipper doesn't expose accelerometers in objects list (no get_status()),
     // so we simulate what parse_config_keys() would find from configfile.config
-    json mock_config;
-    mock_config["adxl345"] = json::object();
-    mock_config["resonance_tester"] = json::object();
+    json mock_config = mock_internal::get_mock_accel_config();
     // Bed screws — same story as the accelerometers: screws_tilt_adjust has no
     // get_status(), so Klipper never lists it and the capability is detected
     // from configfile.config. Without this the whole mock screws-tilt state
@@ -752,6 +751,16 @@ void MoonrakerClientMock::discover_printer(
 
     // Populate hardware based on printer type (may have already been done in constructor)
     populate_hardware();
+
+    // This shortcut never queries configfile, so the accelerometer seeding the
+    // real sequence does in moonraker_discovery_sequence.cpp is missing here.
+    // Without it AccelSensorManager stays empty under --test and Settings >
+    // Sensors shows no accelerometer on a mock printer that reports one.
+    // Main thread only — discover_from_config() sets LVGL subjects.
+    json accel_config = mock_internal::get_mock_accel_config();
+    helix::ui::queue_update([accel_config]() {
+        helix::sensors::AccelSensorManager::instance().discover_from_config(accel_config);
+    });
 
     // Generate synthetic bed mesh data (may have already been done in constructor)
     generate_mock_bed_mesh();
