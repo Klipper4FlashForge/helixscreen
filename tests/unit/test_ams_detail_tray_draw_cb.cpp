@@ -107,7 +107,8 @@ TEST_CASE_METHOD(AmsDetailTrayFixture, "ams_detail_update_tray does not squat LV
     lv_obj_delete(w.root);
 }
 
-TEST_CASE_METHOD(AmsDetailTrayFixture, "ams_detail_update_tray attaches draw callbacks idempotently",
+TEST_CASE_METHOD(AmsDetailTrayFixture,
+                 "ams_detail_update_tray attaches draw callbacks idempotently",
                  "[ams][ui][user_flags]") {
     AmsDetailWidgets w = make_tray_widgets(test_screen());
 
