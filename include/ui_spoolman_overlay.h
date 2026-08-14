@@ -19,6 +19,7 @@
 
 #include "moonraker_config_manager.h"
 #include "overlay_base.h"
+#include "system/moonraker_local_probe.h"
 
 #include <lvgl/lvgl.h>
 
@@ -289,6 +290,17 @@ class SpoolmanOverlay : public OverlayBase {
     /// against a natively-configured Moonraker while reporting success.
     std::string spoolman_config_path_;
 
+    /// Absolute path of the file manager's writable "config" root, from
+    /// server.files.roots. Empty when Moonraker did not report one, which is the
+    /// pre-existing behaviour: an absolute config path is then out of reach.
+    std::string config_root_abs_;
+
+    /// The local-write fallback in force for the current setup attempt.
+    ///
+    /// Non-viable for every ordinary printer. Cleared at the start of each attempt
+    /// so a plan from a previous one can never redirect a healthy write to disk.
+    helix::diag::LocalIncludePlan local_plan_;
+
     /// Default values
     static constexpr bool DEFAULT_SYNC_ENABLED = true;
     static constexpr int DEFAULT_REFRESH_INTERVAL_SECONDS = 30;
@@ -352,6 +364,40 @@ class SpoolmanOverlay : public OverlayBase {
      * @param on_done Invoked on the MAIN thread with the resolution.
      */
     void resolve_spoolman_target(SpoolmanTargetCallback on_done);
+
+    /**
+     * @brief Resolution proper, once the file manager's config root is known
+     *
+     * Split out only so the root can be fetched first: Moonraker names a config
+     * outside the root config's own directory by absolute path, and without the
+     * root there is nothing to judge such a path against.
+     *
+     * @param config_root_abs Absolute path of the writable "config" root, or ""
+     *                        when Moonraker did not report one — in which case
+     *                        an absolute config path is treated as unreachable,
+     *                        exactly as before.
+     */
+    void resolve_spoolman_target_with_root(const std::string& config_root_abs,
+                                           SpoolmanTargetCallback on_done);
+
+    /// Look up the writable "config" root, then run @p next on the MAIN thread.
+    /// Delivers "" — never fails — when the roots are unavailable.
+    void with_config_root(std::function<void(const std::string&)> next);
+
+    /**
+     * @brief Last resort when Moonraker's config is unreachable but it runs here
+     *
+     * Stock Creality K2 loads /usr/share/moonraker/moonraker.conf while the file
+     * manager's config root is /mnt/UDISK/printer_data/config, so no Moonraker
+     * call can edit the config. HelixScreen runs on that printer, so the file is
+     * reachable as an ordinary local file. Falls back to fail_config_unreachable()
+     * whenever it cannot prove all of that.
+     */
+    void try_local_config_fallback(const std::string& detail, const std::string& host,
+                                   const std::string& port);
+
+    /// Append the planned `[include]` to Moonraker's config on the local disk.
+    void append_include_locally();
 
     /// Shared error surface: log the detail, show a status line and a red toast.
     void report_spoolman_error(const char* status_text, const char* toast_text,

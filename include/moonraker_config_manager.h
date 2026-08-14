@@ -137,6 +137,16 @@ class MoonrakerConfigManager {
     static ConfigPathInfo config_path_from_relative(const std::string& filename,
                                                     const std::string& config_root_abs = "");
 
+    /// The path `server.files.*` addresses `filename` by, or "" when unreachable.
+    ///
+    /// Everything Moonraker reports in server.config's files[] has to make this
+    /// trip before it can be uploaded or downloaded: an entry outside the root
+    /// config's own directory is named by ABSOLUTE path, and passing that string
+    /// to the file API addresses a different file (or none). The identity for the
+    /// relative names every stock install reports.
+    static std::string file_api_path(const std::string& filename,
+                                     const std::string& config_root_abs = "");
+
     /// Append a section if it is not already present.
     ///
     /// Idempotent by design: when the section exists the content is returned unchanged.
@@ -161,8 +171,20 @@ class MoonrakerConfigManager {
                                                          const std::string& data_path);
 
     static std::string remove_section(const std::string& content, const std::string& section_name);
-    static bool has_include_line(const std::string& moonraker_content);
-    static std::string add_include_line(const std::string& moonraker_content);
+
+    /// True when `moonraker_content` already includes exactly `include_target`.
+    ///
+    /// The comparison is literal, and deliberately so: Moonraker resolves a relative
+    /// include against the *including* file's directory, so "helixscreen.conf" in a
+    /// vendor moonraker.conf under /usr/share names a different file than the
+    /// absolute path to the one under the writable config root. Treating them as
+    /// interchangeable would leave the real include unwritten (Creality K2).
+    static bool has_include_line(const std::string& moonraker_content,
+                                 const std::string& include_target = "helixscreen.conf");
+
+    /// Insert `[include <include_target>]` before the first section, if absent.
+    static std::string add_include_line(const std::string& moonraker_content,
+                                        const std::string& include_target = "helixscreen.conf");
     static std::string get_section_value(const std::string& content,
                                          const std::string& section_name, const std::string& key);
 };

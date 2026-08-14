@@ -188,6 +188,14 @@ MoonrakerConfigManager::config_path_from_relative(const std::string& filename,
     return info;
 }
 
+std::string MoonrakerConfigManager::file_api_path(const std::string& filename,
+                                                  const std::string& config_root_abs) {
+    const ConfigPathInfo info = config_path_from_relative(filename, config_root_abs);
+    if (!info.uploadable)
+        return "";
+    return info.path_for(info.config_filename);
+}
+
 std::string
 MoonrakerConfigManager::add_section(const std::string& content, const std::string& section_name,
                                     const std::vector<std::pair<std::string, std::string>>& entries,
@@ -428,15 +436,17 @@ std::string MoonrakerConfigManager::remove_section(const std::string& content,
     return result;
 }
 
-bool MoonrakerConfigManager::has_include_line(const std::string& moonraker_content) {
-    return has_section(moonraker_content, "include helixscreen.conf");
+bool MoonrakerConfigManager::has_include_line(const std::string& moonraker_content,
+                                              const std::string& include_target) {
+    return has_section(moonraker_content, "include " + include_target);
 }
 
-std::string MoonrakerConfigManager::add_include_line(const std::string& moonraker_content) {
-    if (has_include_line(moonraker_content))
+std::string MoonrakerConfigManager::add_include_line(const std::string& moonraker_content,
+                                                     const std::string& include_target) {
+    if (has_include_line(moonraker_content, include_target))
         return moonraker_content;
 
-    const std::string include_block = "[include helixscreen.conf]\n\n";
+    const std::string include_block = "[include " + include_target + "]\n\n";
 
     // Find the first non-comment section header and insert before it
     std::istringstream stream(moonraker_content);

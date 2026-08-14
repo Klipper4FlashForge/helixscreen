@@ -1533,3 +1533,130 @@ TEST_CASE("verify dispatch: U1 drift proceeds, K2 stray and decoy still fail",
     auto cb1 = cb1_server_config_files();
     CHECK(simulate_verify(cb1_moonraker_conf_text(), cb1[0].sections) == VerifyOutcome::Proceed);
 }
+
+// ============================================================================
+// Include line with an explicit target
+//
+// The K2 needs `[include /mnt/UDISK/printer_data/config/helixscreen.conf]` in a
+// vendor moonraker.conf that lives in /usr/share/moonraker: a bare
+// "helixscreen.conf" there resolves against the vendor directory, where no such
+// file exists — and Moonraker refuses to start on an include it cannot match.
+// ============================================================================
+
+TEST_CASE("has_include_line finds an absolute include target", "[config_manager][include_line]") {
+    const std::string target = "/mnt/UDISK/printer_data/config/helixscreen.conf";
+    const std::string content = "[server]\nhost: 0.0.0.0\n[include " + target + "]\n";
+
+    CHECK(MoonrakerConfigManager::has_include_line(content, target));
+}
+
+TEST_CASE("has_include_line does not accept a relative include for an absolute target",
+          "[config_manager][include_line]") {
+    // The K2 trap: this line exists and points somewhere else entirely.
+    const std::string content = "[include helixscreen.conf]\n[server]\n";
+
+    CHECK_FALSE(MoonrakerConfigManager::has_include_line(
+        content, "/mnt/UDISK/printer_data/config/helixscreen.conf"));
+}
+
+TEST_CASE("has_include_line does not accept an absolute include for the relative default",
+          "[config_manager][include_line]") {
+    const std::string content = "[include /mnt/UDISK/printer_data/config/helixscreen.conf]\n";
+
+    CHECK_FALSE(MoonrakerConfigManager::has_include_line(content));
+}
+
+TEST_CASE("has_include_line still defaults to the relative helixscreen.conf",
+          "[config_manager][include_line]") {
+    CHECK(MoonrakerConfigManager::has_include_line("[include helixscreen.conf]\n[server]\n"));
+    CHECK_FALSE(MoonrakerConfigManager::has_include_line("[server]\nhost: 0.0.0.0\n"));
+}
+
+TEST_CASE("add_include_line inserts an absolute target before the first section",
+          "[config_manager][include_line]") {
+    const std::string target = "/mnt/UDISK/printer_data/config/helixscreen.conf";
+    const std::string content = "# vendor config\n[server]\nhost: 0.0.0.0\n";
+
+    std::string out = MoonrakerConfigManager::add_include_line(content, target);
+
+    CHECK(out.find("[include " + target + "]") != std::string::npos);
+    CHECK(MoonrakerConfigManager::has_include_line(out, target));
+    // Nothing that was there is lost.
+    CHECK(out.find("# vendor config") != std::string::npos);
+    CHECK(out.find("[server]") != std::string::npos);
+    CHECK(out.find("host: 0.0.0.0") != std::string::npos);
+    // The include must precede the sections it is meant to extend.
+    CHECK(out.find("[include ") < out.find("[server]"));
+}
+
+TEST_CASE("add_include_line with an absolute target is idempotent",
+          "[config_manager][include_line]") {
+    const std::string target = "/mnt/UDISK/printer_data/config/helixscreen.conf";
+    std::string once = MoonrakerConfigManager::add_include_line("[server]\n", target);
+    std::string twice = MoonrakerConfigManager::add_include_line(once, target);
+
+    CHECK(once == twice);
+}
+
+TEST_CASE("add_include_line still defaults to the relative helixscreen.conf",
+          "[config_manager][include_line]") {
+    std::string out = MoonrakerConfigManager::add_include_line("[server]\n");
+    CHECK(out.find("[include helixscreen.conf]") != std::string::npos);
+}
+
+// ============================================================================
+// file_api_path: the name Moonraker reports -> the path the file API takes
+//
+// Moonraker names a config outside the root config's own directory by ABSOLUTE
+// path. Once such a path is accepted as reachable (it is, when it sits under the
+// writable config root), handing that absolute string straight to
+// server.files.* addresses a file that does not exist — the upload lands
+// somewhere else entirely, or 404s, while the UI reports success.
+// ============================================================================
+
+TEST_CASE("file_api_path strips the config root off an absolute name",
+          "[config_manager][config_path]") {
+    // Exactly what a K2 reports for a helixscreen.conf pulled in by an absolute
+    // [include] from a vendor moonraker.conf.
+    CHECK(MoonrakerConfigManager::file_api_path("/mnt/UDISK/printer_data/config/helixscreen.conf",
+                                                "/mnt/UDISK/printer_data/config") ==
+          "helixscreen.conf");
+}
+
+TEST_CASE("file_api_path keeps the subdirectory of an absolute name",
+          "[config_manager][config_path]") {
+    CHECK(MoonrakerConfigManager::file_api_path("/usr/data/printer_data/config/sub/dir/x.conf",
+                                                "/usr/data/printer_data/config") ==
+          "sub/dir/x.conf");
+}
+
+TEST_CASE("file_api_path is the identity on the relative names every other printer reports",
+          "[config_manager][config_path]") {
+    // The K1 control and every stock install. Passing a root must not disturb these.
+    CHECK(MoonrakerConfigManager::file_api_path(
+              "moonraker.conf", "/usr/data/printer_data/config") == "moonraker.conf");
+    CHECK(MoonrakerConfigManager::file_api_path(
+              "sub/helixscreen.conf", "/usr/data/printer_data/config") == "sub/helixscreen.conf");
+    // ...and with no root supplied at all.
+    CHECK(MoonrakerConfigManager::file_api_path("moonraker.conf") == "moonraker.conf");
+    CHECK(MoonrakerConfigManager::file_api_path("sub/helixscreen.conf") == "sub/helixscreen.conf");
+}
+
+TEST_CASE("file_api_path returns empty for anything the file API cannot reach",
+          "[config_manager][config_path]") {
+    // Outside the root, no root to judge against, escaping via .., and no name.
+    CHECK(MoonrakerConfigManager::file_api_path("/usr/share/moonraker/moonraker.conf",
+                                                "/mnt/UDISK/printer_data/config")
+              .empty());
+    CHECK(MoonrakerConfigManager::file_api_path("/mnt/UDISK/printer_data/config/x.conf").empty());
+    CHECK(MoonrakerConfigManager::file_api_path("../outside.conf", "/mnt/UDISK/printer_data/config")
+              .empty());
+    CHECK(MoonrakerConfigManager::file_api_path("", "/mnt/UDISK/printer_data/config").empty());
+}
+
+TEST_CASE("file_api_path is not fooled by a sibling sharing the root's prefix",
+          "[config_manager][config_path]") {
+    CHECK(MoonrakerConfigManager::file_api_path("/mnt/UDISK/printer_data/config_backup/m.conf",
+                                                "/mnt/UDISK/printer_data/config")
+              .empty());
+}

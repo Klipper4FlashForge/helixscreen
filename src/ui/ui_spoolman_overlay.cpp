@@ -22,6 +22,8 @@
 #include "ui_update_queue.h"
 
 #include "ams_state.h"
+#include "config.h"
+#include "host_identity.h"
 #include "http_executor.h"
 #include "hv/requests.h"
 #include "i_moonraker_api.h"
@@ -35,6 +37,7 @@
 #include <spdlog/spdlog.h>
 
 #include <memory>
+#include <unistd.h>
 
 #include "hv/json.hpp"
 
@@ -729,8 +732,52 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
         return;
     }
 
+    // Moonraker names a config file outside the root config's own directory by
+    // absolute path, and only the file manager's roots say which absolute paths
+    // are writable. Fetch that first; "" keeps the pre-existing semantics.
+    with_config_root([this, on_done](const std::string& root) {
+        resolve_spoolman_target_with_root(root, on_done);
+    });
+}
+
+void SpoolmanOverlay::with_config_root(std::function<void(const std::string&)> next) {
+    if (!api_) {
+        next("");
+        return;
+    }
+
+    auto token = lifetime_.token();
+    api_->files().get_file_roots(
+        [this, token, next](const std::vector<FileRoot>& roots) {
+            // === BG THREAD: pure lookup into a local ===
+            const std::string root = helix::writable_root_path(roots, "config");
+            token.defer("SpoolmanOverlay::config_root", [this, root, next]() {
+                config_root_abs_ = root;
+                spdlog::debug("[{}] Writable config root: '{}'", get_name(), root);
+                next(root);
+            });
+        },
+        [this, token, next](const MoonrakerError& err) {
+            auto msg = err.message;
+            token.defer("SpoolmanOverlay::config_root_error", [this, msg, next]() {
+                // Not fatal. Older forks have no server.files.roots, and without a
+                // root we simply keep treating an absolute config path as out of
+                // reach — which is what every release before this one did.
+                spdlog::debug("[{}] server.files.roots unavailable ({}); "
+                              "absolute config paths stay unreachable",
+                              get_name(), msg);
+                config_root_abs_.clear();
+                next("");
+            });
+        });
+}
+
+void SpoolmanOverlay::resolve_spoolman_target_with_root(const std::string& config_root_abs,
+                                                        SpoolmanTargetCallback on_done) {
+    auto token = lifetime_.token();
+
     api_->rest().get_server_config(
-        [this, token, on_done](const RestResponse& resp) {
+        [this, token, config_root_abs, on_done](const RestResponse& resp) {
             // === BG THREAD: parse into locals only, never touch `this` ===
             std::string config_file; // absolute path, when this build exposes it
             std::string data_path;   // ditto
@@ -815,7 +862,7 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
                 // file: on COSMOS the latter would put helixscreen.conf inside the
                 // vendor directory.
                 info = helix::MoonrakerConfigManager::config_path_from_relative(
-                    files[static_cast<size_t>(root)].filename);
+                    files[static_cast<size_t>(root)].filename, config_root_abs);
             } else {
                 info.error = "Moonraker did not report which configuration files it loaded, "
                              "so HelixScreen cannot tell where [spoolman] belongs.";
@@ -844,12 +891,25 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
             // API's config root — a target outside it is the K2 situation all over again.
             helix::ConfigPathInfo target_info;
             if (!target_path.empty())
-                target_info = helix::MoonrakerConfigManager::config_path_from_relative(target_path);
+                target_info = helix::MoonrakerConfigManager::config_path_from_relative(
+                    target_path, config_root_abs);
+
+            // files[] names anything outside the root config's own directory by
+            // ABSOLUTE path. server.files.* cannot take that string, so translate
+            // before either is used as a file-API path. Both are the identity for
+            // the relative names every stock install reports. The raw names stay
+            // for the operator-facing messages, which should say what Moonraker
+            // said.
+            const std::string target_api_path =
+                helix::MoonrakerConfigManager::file_api_path(target_path, config_root_abs);
+            const std::string verify_api_path =
+                helix::MoonrakerConfigManager::file_api_path(verify_path, config_root_abs);
 
             // === MAIN THREAD: apply the resolution, then verify by content ===
             token.defer("SpoolmanOverlay::resolve_target", [this, info, target_info, target_path,
-                                                            verify_path, required, in_place,
-                                                            path_authoritative, on_done]() {
+                                                            target_api_path, verify_api_path,
+                                                            required, in_place, path_authoritative,
+                                                            on_done]() {
                 SpoolmanConfigTarget res;
 
                 if (!info.uploadable) {
@@ -869,7 +929,7 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
                 write_mode_ =
                     in_place ? SpoolmanWriteMode::InPlace : SpoolmanWriteMode::IncludeFile;
                 spoolman_config_path_ =
-                    in_place ? target_path : config_paths_.path_for("helixscreen.conf");
+                    in_place ? target_api_path : config_paths_.path_for("helixscreen.conf");
 
                 // Absolute paths already proved reachability and there is nothing to
                 // cross-check against; anything else is verified by content.
@@ -881,7 +941,7 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
                     return;
                 }
 
-                if (required.empty() || verify_path.empty()) {
+                if (required.empty() || verify_api_path.empty()) {
                     res.status = SpoolmanConfigTarget::Status::Unreachable;
                     res.detail = "Moonraker reported config file '" + info.config_filename +
                                  "' with no section list, so HelixScreen cannot confirm it "
@@ -894,7 +954,7 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
                 // maps correctly, and the write target sits under that same root.
                 // Only the in-place path needs the target's own content, and there
                 // verify_path is the target.
-                verify_config_reachable(verify_path, required, in_place, on_done);
+                verify_config_reachable(verify_api_path, required, in_place, on_done);
             });
         },
         [this, token, on_done](const MoonrakerError& err) {
@@ -1053,13 +1113,17 @@ void SpoolmanOverlay::check_stale_helix_conf(const std::string& target_path,
 }
 
 void SpoolmanOverlay::resolve_config_location(const std::string& host, const std::string& port) {
+    // A plan left over from a previous attempt must never redirect a healthy
+    // write to the local filesystem.
+    local_plan_ = {};
+
     resolve_spoolman_target([this, host, port](const SpoolmanConfigTarget& res) {
         switch (res.status) {
         case SpoolmanConfigTarget::Status::Ambiguous:
             fail_config_ambiguous(res.detail);
             return;
         case SpoolmanConfigTarget::Status::Unreachable:
-            fail_config_unreachable(res.detail);
+            try_local_config_fallback(res.detail, host, port);
             return;
         case SpoolmanConfigTarget::Status::Defined:
             spdlog::info("[{}] Updating [spoolman] in place in {}", get_name(), res.path);
@@ -1071,6 +1135,79 @@ void SpoolmanOverlay::resolve_config_location(const std::string& host, const std
             configure_spoolman(host, port);
             return;
         }
+    });
+}
+
+void SpoolmanOverlay::try_local_config_fallback(const std::string& detail, const std::string& host,
+                                                const std::string& port) {
+    std::string moonraker_host;
+    if (Config* cfg = Config::get_instance())
+        moonraker_host = cfg->get<std::string>(cfg->df() + "moonraker_host", "localhost");
+
+    // Both gates must hold. Our /proc says nothing about a printer across the
+    // network, and without a writable root there is nowhere to put the file the
+    // include would name — an include with no matching file stops Moonraker dead.
+    if (!helix::is_moonraker_on_same_host(moonraker_host) || config_root_abs_.empty()) {
+        fail_config_unreachable(detail);
+        return;
+    }
+
+    auto token = lifetime_.token();
+    const std::string root = config_root_abs_;
+    helix::http::HttpExecutor::slow().submit([this, token, root, detail, host, port]() {
+        // === BG THREAD: /proc walk (blocking IO) + pure planning, never touch `this` ===
+        auto plan = helix::diag::plan_local_include(helix::diag::find_moonraker_processes(), root);
+        if (plan.viable && ::access(plan.vendor_config_abs.c_str(), W_OK) != 0) {
+            plan.viable = false;
+            plan.error = plan.vendor_config_abs + " is not writable by HelixScreen";
+        }
+
+        token.defer("SpoolmanOverlay::local_fallback_plan", [this, plan, detail, host, port]() {
+            if (!plan.viable) {
+                spdlog::info("[{}] No local-write fallback: {}", get_name(), plan.error);
+                fail_config_unreachable(detail);
+                return;
+            }
+
+            spdlog::info("[{}] Moonraker reads {} from the local disk; writing {} and "
+                         "including it from there",
+                         get_name(), plan.vendor_config_abs, plan.helix_conf_abs);
+
+            local_plan_ = plan;
+            config_paths_.uploadable = true;
+            config_paths_.upload_subdir.clear();
+            write_mode_ = SpoolmanWriteMode::IncludeFile;
+            spoolman_config_path_ = plan.helix_conf_upload;
+
+            // Step 1 of the bootstrap: create helixscreen.conf through the file
+            // API. append_include_locally() is step 2 — see the ordering note there.
+            configure_spoolman(host, port);
+        });
+    });
+}
+
+void SpoolmanOverlay::append_include_locally() {
+    auto token = lifetime_.token();
+    const auto plan = local_plan_;
+
+    helix::http::HttpExecutor::slow().submit([this, token, plan]() {
+        // === BG THREAD: blocking file IO, never touch `this` ===
+        std::string err;
+        const bool ok = helix::diag::append_include_to_local_config(plan.vendor_config_abs,
+                                                                    plan.helix_conf_abs, err);
+
+        token.defer("SpoolmanOverlay::local_include_written", [this, ok, err, plan]() {
+            if (!ok) {
+                spdlog::error("[{}] Could not add '{}' to {}: {}", get_name(), plan.include_line,
+                              plan.vendor_config_abs, err);
+                set_setup_status(lv_tr("Failed to update moonraker.conf."), true);
+                set_connecting(false);
+                return;
+            }
+            spdlog::info("[{}] Added '{}' to {}", get_name(), plan.include_line,
+                         plan.vendor_config_abs);
+            restart_and_verify();
+        });
     });
 }
 
@@ -1166,6 +1303,18 @@ void SpoolmanOverlay::finish_configure(
 }
 
 void SpoolmanOverlay::ensure_moonraker_include() {
+    if (local_plan_.viable) {
+        // ORDER IS A SAFETY REQUIREMENT, and this is the second half of it.
+        // helixscreen.conf was uploaded through the file API before we got here,
+        // so by the time the [include] naming it lands, the file it names exists.
+        // Doing these the other way round leaves Moonraker with an include it
+        // cannot match, and Moonraker treats that as fatal: it raises
+        // ConfigError("No files matching include directive") and refuses to start,
+        // taking the printer's whole web stack down with it.
+        append_include_locally();
+        return;
+    }
+
     auto token = lifetime_.token();
     const std::string moonraker_path = config_paths_.path_for(config_paths_.config_filename);
     api_->transfers().download_file(
