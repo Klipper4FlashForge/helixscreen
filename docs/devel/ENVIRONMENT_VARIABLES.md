@@ -276,6 +276,15 @@ HELIX_FORCE_ROTATION_PROBE=1 ./build/bin/helix-screen
 - Skips entirely if: rotation is already configured (config, env var, or CLI), or the probe has already run
 - Runs after translations are loaded (Phase 8c) so probe strings are translatable via `lv_tr()`
 
+**The probe cannot be driven by `helix-screen ctl`.** It blocks in startup Phase 8b, and the
+remote-control server does not start until Phase 14c - measured at 0.45s *after* the probe
+gives up, so there is no socket to connect to while any probe screen is on display. `ctl press`
+would not reach it in any case: that drives the synthetic `RemotePointer` indev, while the probe
+reads the built-in pointer's callback directly. A tap has to come from the real touchscreen or
+mouse. Cover tap-detection logic with the `[rotation_probe]` unit tests instead
+(`tests/unit/test_rotation_probe_tap_detection.cpp`), and use `HELIX_FORCE_ROTATION_PROBE=1` for
+what it can still show you: that the probe runs, cycles, times out, and hands off cleanly.
+
 ### `HELIX_SCREEN_SIZE`
 
 Override the screen resolution. Alternative to the `-s` / `--size` command-line flag, useful for persistent configuration via `helixscreen.env` or systemd `EnvironmentFile`.
