@@ -3087,7 +3087,11 @@ void Application::setup_discovery_callbacks() {
                     // channel from it (invalidate first: cache_identity() is
                     // insert-if-absent, so a stale entry would win otherwise).
                     SpoolmanManager::invalidate_identity(spool.id);
-                    SpoolmanManager::cache_identity(spool);
+                    if (SpoolmanManager::cache_identity(spool)) {
+                        // Tell the label consumers a name they could not resolve
+                        // before is available now (#1264).
+                        AmsState::instance().bump_slots_version();
+                    }
 
                     SlotInfo slot;
                     slot.slot_index = -2;
