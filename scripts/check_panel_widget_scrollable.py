@@ -52,15 +52,28 @@
 #   check_panel_widget_scrollable.py --summary         # counts only
 #   check_panel_widget_scrollable.py --list            # every site, file:line
 #   check_panel_widget_scrollable.py --rule child      # one rule only
+#   check_panel_widget_scrollable.py --staged-only     # post-commit tree (pre-commit hook)
+#
+# --staged-only is NOT "only staged files". It scans the tree the commit WILL
+# create (index content for staged paths, HEAD for the rest), built via
+# `git write-tree`. The ratchet baseline is a whole-tree count, so the check has
+# to see a whole tree; --staged-only makes that tree the would-be-committed one
+# rather than the dirty working one, so another session's unstaged WIP cannot
+# make a clean commit fail. The pre-commit hook (quality-checks.sh) passes this
+# flag; CI and manual runs use the default whole-working-tree scan.
 
 import argparse
 import fnmatch
 import os
 import re
+import subprocess
 import sys
 
 SCAN_DIR = os.path.join('ui_xml', 'components')
 SCAN_GLOB = 'panel_widget_*.xml'
+
+# git speaks posix paths, os.path.join does not on every host.
+SCAN_PREFIX = SCAN_DIR.replace(os.sep, '/') + '/'
 
 # The one extends= that is already safe: ui_card's create handler clears
 # LV_OBJ_FLAG_SCROLLABLE before XML attributes are applied.
@@ -92,12 +105,8 @@ def is_panel_widget(path):
     return fnmatch.fnmatch(os.path.basename(path), SCAN_GLOB)
 
 
-def scan_file(path):
-    try:
-        src = open(path, errors='ignore').read()
-    except OSError:
-        return []
-
+def scan_source(path, src):
+    """Scan already-sourced text. `path` is only carried into the report."""
     src = strip_comments(src)
     lines = src.split('\n')
     hits = []
@@ -124,6 +133,103 @@ def scan_file(path):
     return hits
 
 
+def repo_root():
+    out = subprocess.run(['git', 'rev-parse', '--show-toplevel'],
+                         capture_output=True, text=True, check=False).stdout.strip()
+    return out or os.getcwd()
+
+
+def _git_text(args, root):
+    """Run git in root, return stdout (text). Never raises."""
+    return subprocess.run(['git', '-C', root] + args,
+                          capture_output=True, text=True, check=False).stdout
+
+
+def _catfile_batch(root, revs, rels):
+    """Yield (rel, text) for each blob rev via one `git cat-file --batch`.
+
+    The byte-count header makes this robust to newlines/binary in content, and
+    one streaming process beats spawning a `git show` per file.
+    """
+    proc = subprocess.Popen(['git', '-C', root, 'cat-file', '--batch'],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    try:
+        for rev, rel in zip(revs, rels):
+            proc.stdin.write((rev + '\n').encode())
+            proc.stdin.flush()
+            header = proc.stdout.readline().decode('utf-8', 'replace').split()
+            # "<sha> blob <size>" - skip "missing" / non-blob (submodule) entries.
+            if len(header) < 3 or header[1] != 'blob':
+                continue
+            size = int(header[2])
+            content = proc.stdout.read(size)
+            proc.stdout.read(1)  # trailing newline after each blob
+            yield (rel, content.decode('utf-8', 'ignore'))
+    finally:
+        if proc.stdin is not None:
+            proc.stdin.close()
+        proc.wait()
+
+
+def _in_scope(rel):
+    """True if rel is a file the gate scans - mirrors the default walk's scope.
+
+    Default mode walks ui_xml/components/ for panel_widget_*.xml; the
+    post-commit mode (ls-tree) sees the WHOLE tree, so it must apply the same
+    scoping or it would count every other XML file in the repo and the ratchet
+    would stop meaning anything.
+    """
+    return rel.startswith(SCAN_PREFIX) and is_panel_widget(rel)
+
+
+def collect(args, root):
+    """Yield (path, source) for every file to scan, content already sourced.
+
+    Three modes:
+      - positional paths: read each from the working tree (fixtures, ad-hoc).
+        Scope still holds - a hand-passed component that is not a panel widget
+        is out of scope, not an exemption to argue about.
+      - --staged-only: the POST-COMMIT TREE - `git write-tree` builds the tree
+        the commit WILL create (index content for staged paths, HEAD for the
+        rest), so unstaged WIP from another session never counts. Blobs stream
+        through one `git cat-file --batch`. This is what the pre-commit hook
+        needs: the ratchet baseline is a whole-tree count, so the check must
+        still see a whole tree, just the would-be-committed one rather than the
+        dirty working one.
+      - default: the whole working tree (CI, manual runs).
+    """
+    if args.paths:
+        for p in args.paths:
+            if not is_panel_widget(p):
+                continue
+            try:
+                yield (p, open(p, errors='ignore').read())
+            except OSError:
+                continue
+        return
+
+    if args.staged_only:
+        # The tree this commit will produce, materialised as one tree object;
+        # ls-tree lists its files, cat-file --batch streams their blobs.
+        tree = _git_text(['write-tree'], root).strip()
+        if not tree:
+            return  # not a git repo / no index - nothing to check
+        rels = [f for f in _git_text(['ls-tree', '-r', '--name-only', tree],
+                                     root).split('\n') if f and _in_scope(f)]
+        yield from _catfile_batch(root, [f'{tree}:{r}' for r in rels], rels)
+        return
+
+    # Default: the whole working tree, relative to wherever the gate was run.
+    targets = []
+    for walk_root, _, files in os.walk(SCAN_DIR):
+        targets += [os.path.join(walk_root, f) for f in files if is_panel_widget(f)]
+    for path in sorted(targets):
+        try:
+            yield (path, open(path, errors='ignore').read())
+        except OSError:
+            continue
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -133,22 +239,17 @@ def main():
     ap.add_argument('--summary', action='store_true', help='Per-rule counts only')
     ap.add_argument('--list', action='store_true', help='Print every site')
     ap.add_argument('--rule', choices=RULES, help='Restrict to one rule')
+    ap.add_argument('--staged-only', action='store_true',
+                    help='Scan the post-commit tree (index + HEAD), not the '
+                         'dirty working tree - what the pre-commit hook uses so '
+                         'unstaged WIP from another session cannot trip the ratchet')
     ap.add_argument('paths', nargs='*',
                     help=f'Files to scan (default: {SCAN_DIR}/{SCAN_GLOB})')
     args = ap.parse_args()
 
-    if args.paths:
-        # Scope holds even for explicit paths: a hand-passed component that is not
-        # a panel widget is out of scope, not an exemption to argue about.
-        targets = [p for p in args.paths if is_panel_widget(p) and os.path.isfile(p)]
-    else:
-        targets = []
-        for root, _, files in os.walk(SCAN_DIR):
-            targets += [os.path.join(root, f) for f in files if is_panel_widget(f)]
-
     hits = []
-    for path in sorted(targets):
-        hits += scan_file(path)
+    for path, src in collect(args, repo_root()):
+        hits += scan_source(path, src)
     if args.rule:
         hits = [h for h in hits if h[2] == args.rule]
 

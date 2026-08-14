@@ -235,3 +235,150 @@ run_gate() {
         scripts/quality-checks.sh
     [ "$status" -eq 0 ]
 }
+
+# ------------------------------------------- post-commit tree (--staged-only)
+#
+# --staged-only is NOT "only staged files" - it scans the tree the commit WILL
+# create (index applied over HEAD via `git write-tree`). The pre-commit hook
+# uses it so another session's unstaged WIP cannot trip the ratchet on a clean
+# commit. Scanning only the staged path list would collapse the count to near
+# zero and the ratchet would stop constraining anything, so these pin that the
+# whole would-be-committed tree is what gets counted.
+
+GATE_ABS="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/scripts/check_panel_widget_scrollable.py"
+
+# A declared (passing) panel widget, and the same widget with the attribute
+# dropped. The gate's scope is a path + filename glob, so the fixtures have to
+# live at ui_xml/components/panel_widget_*.xml inside the throwaway repo.
+CLEAN_XML='<component>
+  <view name="panel_widget_x" extends="lv_obj" scrollable="false">
+    <lv_obj name="card" width="100%" scrollable="false"/>
+  </view>
+</component>'
+
+DIRTY_XML='<component>
+  <view name="panel_widget_x" extends="lv_obj" scrollable="false">
+    <lv_obj name="card" width="100%"/>
+  </view>
+</component>'
+
+# Throwaway git repo with a clean committed baseline. NEVER the real repo: a
+# concurrent session owns the real index.
+setup_tmp_repo() {
+    TMP_REPO="$(mktemp -d "${BATS_TEST_TMPDIR:-${BATS_TMPDIR:-/tmp}}/pw-scroll-XXXXXX")"
+    cd "$TMP_REPO" || return 1
+    git init -q
+    git config user.email "test@example.com"
+    git config user.name "Test"
+    mkdir -p ui_xml/components
+    printf '%s\n' "$CLEAN_XML" > ui_xml/components/panel_widget_base.xml
+    git add ui_xml/components/panel_widget_base.xml
+    git commit -qm base
+}
+
+@test "--staged-only ignores a violation left as UNSTAGED WIP" {
+    # The whole point of the flag: another session's dirty file is not part of
+    # the tree this commit creates, so it must not fail a clean commit.
+    setup_tmp_repo
+    printf '%s\n' "$DIRTY_XML" > ui_xml/components/panel_widget_wip.xml
+    run python3 "$GATE_ABS" --staged-only --list
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"panel_widget_wip"* ]]
+    [[ "$output" != *"[child]"* ]]
+}
+
+@test "--staged-only counts a violation in a STAGED file" {
+    setup_tmp_repo
+    printf '%s\n' "$DIRTY_XML" > ui_xml/components/panel_widget_new.xml
+    git add ui_xml/components/panel_widget_new.xml
+    run python3 "$GATE_ABS" --staged-only --list
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"[child]"* ]]
+    [[ "$output" == *"panel_widget_new.xml"* ]]
+}
+
+@test "--staged-only still counts the UNTOUCHED rest of the tree" {
+    # The ratchet baseline is a whole-tree count. If --staged-only only looked at
+    # the staged paths, a commit touching one file would report ~0 and the
+    # baseline would mean nothing. The committed violation must still show up
+    # alongside the staged one.
+    setup_tmp_repo
+    printf '%s\n' "$DIRTY_XML" > ui_xml/components/panel_widget_old.xml
+    git add ui_xml/components/panel_widget_old.xml
+    git commit -qm old
+    printf '%s\n' "$CLEAN_XML" > ui_xml/components/panel_widget_new.xml
+    git add ui_xml/components/panel_widget_new.xml
+    run python3 "$GATE_ABS" --staged-only --list
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"panel_widget_old.xml"* ]]
+    [[ "$output" == *"TOTAL"*"1"* ]]
+}
+
+@test "a STAGED fix lowers the count under --staged-only" {
+    setup_tmp_repo
+    printf '%s\n' "$DIRTY_XML" > ui_xml/components/panel_widget_base.xml
+    git add ui_xml/components/panel_widget_base.xml
+    git commit -qm regress
+    run python3 "$GATE_ABS" --staged-only
+    [ "$status" -eq 1 ]
+
+    printf '%s\n' "$CLEAN_XML" > ui_xml/components/panel_widget_base.xml
+    git add ui_xml/components/panel_widget_base.xml
+    run python3 "$GATE_ABS" --staged-only --summary
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"TOTAL"*"0"* ]]
+}
+
+@test "--staged-only sees the STAGED blob, not unstaged dirt heaped on top" {
+    # A file can be staged clean and then gather more WT edits. The commit ships
+    # the staged blob, so that is the one the hook must evaluate.
+    setup_tmp_repo
+    printf '%s\n' "$CLEAN_XML" > ui_xml/components/panel_widget_base.xml
+    git add ui_xml/components/panel_widget_base.xml
+    printf '%s\n' "$DIRTY_XML" > ui_xml/components/panel_widget_base.xml
+    run python3 "$GATE_ABS" --staged-only --list
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"[child]"* ]]
+}
+
+@test "--staged-only scopes the tree listing to panel_widget components" {
+    # ls-tree hands over the WHOLE tree, so without the scope filter every other
+    # XML file in the repo would be counted and the ratchet would be nonsense.
+    setup_tmp_repo
+    mkdir -p ui_xml/other
+    printf '%s\n' "$DIRTY_XML" > ui_xml/other/panel_widget_elsewhere.xml
+    printf '%s\n' "$DIRTY_XML" > ui_xml/components/not_a_panel_widget.xml
+    git add ui_xml
+    run python3 "$GATE_ABS" --staged-only --list
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"[child]"* ]]
+}
+
+@test "--staged-only degrades gracefully outside a git repo" {
+    NOT_A_REPO="$(mktemp -d "${BATS_TEST_TMPDIR:-${BATS_TMPDIR:-/tmp}}/pw-norepo-XXXXXX")"
+    cd "$NOT_A_REPO" || return 1
+    run python3 "$GATE_ABS" --staged-only --max-allowed "$BASELINE"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Traceback"* ]]
+}
+
+@test "--staged-only degrades gracefully on a repo with an empty index" {
+    EMPTY_REPO="$(mktemp -d "${BATS_TEST_TMPDIR:-${BATS_TMPDIR:-/tmp}}/pw-empty-XXXXXX")"
+    cd "$EMPTY_REPO" || return 1
+    git init -q
+    run python3 "$GATE_ABS" --staged-only --summary
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Traceback"* ]]
+    [[ "$output" == *"TOTAL"*"0"* ]]
+}
+
+@test "quality-checks.sh passes --staged-only through when STAGED_ONLY is true" {
+    # A mode nothing passes is dead code. Pin both halves: the STAGED_ONLY
+    # branch that sets the args, and the invocation that expands them.
+    run grep -B2 'PW_SCROLLABLE_ARGS="--staged-only"' scripts/quality-checks.sh
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'STAGED_ONLY'* ]]
+    run grep -E 'check_panel_widget_scrollable\.py --max-allowed [0-9]+ --summary \$PW_SCROLLABLE_ARGS' \
+        scripts/quality-checks.sh
+    [ "$status" -eq 0 ]
+}

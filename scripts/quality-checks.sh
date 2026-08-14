@@ -728,7 +728,16 @@ echo "📜 Checking panel-widget scroll declarations..."
 # not fixed in bulk on purpose: each needs its author's intent, and some really
 # should scroll. The number may go DOWN, never up.
 if [ -f "scripts/check_panel_widget_scrollable.py" ]; then
-  if python3 scripts/check_panel_widget_scrollable.py --max-allowed 21 --summary \
+  # Pre-commit: scan the post-commit tree (index + HEAD), not the dirty working
+  # tree - so another session's unstaged WIP cannot trip the ratchet on a clean
+  # commit. CI and manual runs use the whole-working-tree scan (no flag).
+  if [ "$STAGED_ONLY" = true ]; then
+    PW_SCROLLABLE_ARGS="--staged-only"
+  else
+    PW_SCROLLABLE_ARGS=""
+  fi
+  # shellcheck disable=SC2086
+  if python3 scripts/check_panel_widget_scrollable.py --max-allowed 21 --summary $PW_SCROLLABLE_ARGS \
       >/tmp/panel_widget_scrollable.out 2>&1; then
     tail -1 /tmp/panel_widget_scrollable.out
   else
