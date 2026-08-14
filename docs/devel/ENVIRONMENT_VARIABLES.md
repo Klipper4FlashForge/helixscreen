@@ -1861,6 +1861,28 @@ something to leave enabled on a shared machine. Pin `HELIX_REMOTE_SOCKET` when m
 instance could be running, since a bare `ctl` silently drives whichever started first and
 still reports success. See `docs/devel/HELIXCTL.md`.
 
+### `HELIX_HANG_THRESHOLD_SEC`
+
+How long the LVGL main loop may go without ticking before it is reported as hung. The main loop bumps a counter every iteration and `MemoryMonitor`'s existing background thread samples it; when the counter stops moving for this long, the stall is logged at error level, recorded to telemetry as `ui`/`main_loop_hang`, and left as a crash-handler breadcrumb.
+
+Detection only — nothing is killed. A deadlocked UI thread leaves the process alive and the screen lit, so `helix-watchdog` cannot see it: it supervises process exit, and by that measure the app is perfectly healthy.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `0`–`3600` seconds. `0` disables detection. Out-of-range and unparseable values are ignored with a warning. |
+| **Default** | `60` (`MainLoopHangDetector::DEFAULT_THRESHOLD_MS`) |
+| **File** | `src/application/application.cpp` (wiring), `include/main_loop_heartbeat.h` (logic) |
+
+```bash
+# Trip it quickly while testing the detector
+HELIX_HANG_THRESHOLD_SEC=5 ./build/bin/helix-screen --test -vv
+
+# Turn it off entirely
+HELIX_HANG_THRESHOLD_SEC=0 ./build/bin/helix-screen
+```
+
+The threshold has to clear the longest *legitimate* main-thread block, and those are real: the startup XML parse alone runs about 8s on an AD5M. Detection is only armed after the loop has completed its first iteration, so a slow startup can never register as a stall.
+
 ### `HELIX_LOG_RING_LINES`
 
 Size the in-memory log ring, in messages. The ring sink is what a debug bundle harvests — it holds recent lines that the WARN-level file/syslog sinks never persisted, which is the whole point of attaching a bundle to a bug report. Shrink it on a device where even a few hundred KB matters.
