@@ -517,11 +517,18 @@ table before taking the fourth:**
 maps `user_1` and `user_2` for `<bind_flag_if_*>` but stops there, so `USER_3`
 is the bit XML cannot reach and therefore cannot clear by accident.
 
-> **`USER_1` already has two meanings.** `src/ui/ui_ams_detail.cpp` reuses it as
-> a one-time init guard on the AMS slot grid, unrelated to dialogs. The
-> theme walk in `theme_manager.cpp` looks up the parent chain for `USER_1` to
-> decide "am I inside a dialog", so an AMS slot grid reads as a dialog to it.
-> That collision is the reason this ledger exists. Do not add a third meaning.
+> **A flag is a global namespace. Treat a spare bit as a last resort.**
+> `src/ui/ui_ams_detail.cpp` once reused `USER_1` as a private "draw callback
+> already attached" guard on the AMS slot grid. Because the theme walk in
+> `theme_manager.cpp` looks up the parent chain for `USER_1` to answer "am I
+> inside a dialog", that made an AMS slot grid read as a dialog, and any input
+> placed inside it would have quietly picked up dialog styling. The guard is now
+> an idempotent `lv_obj_remove_event_cb()` before `lv_obj_add_event_cb()`, which
+> needs no bit at all.
+>
+> Before claiming `USER_2`, check whether you need a flag. An "already did this
+> once" guard usually does not: removing the callback before adding it is
+> idempotent by construction, and it cannot collide with anyone.
 
 ### Widget Factory Pattern
 

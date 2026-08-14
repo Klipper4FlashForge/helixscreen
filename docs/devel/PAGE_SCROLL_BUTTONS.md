@@ -114,10 +114,11 @@ Tiles are marked at the single place one is created,
 second path: the widget pool recycles `PanelWidget` C++ instances, not LVGL
 objects, and the object tree is always cleaned and rebuilt.
 
-**Consequence to know about:** `panel_widget_nozzle_temps` is the one tile whose
-root sets `scrollable="true"` on purpose. It drags to scroll and gets no
-chevrons. If a home widget ever genuinely needs paging, the fix is a narrow
-opt-back-in, not removing the cut.
+`panel_widget_nozzle_temps` is the one tile whose root sets `scrollable="true"`
+on purpose. It drags to scroll and gets no chevrons, which is the intended
+outcome: a tile is small enough that the arrows would cover most of what it is
+showing, and a short drag scrolls it anyway. If some future widget genuinely
+needs paging, add a narrow opt-back-in rather than removing the cut.
 
 ---
 
