@@ -490,6 +490,39 @@ public:
 };
 ```
 
+### Tile Marking and the User-Flag Ledger
+
+Every widget tile root is tagged with `helix::PANEL_WIDGET_TILE_FLAG`
+(`include/panel_widget.h`), set at the one place a tile is created in
+`src/ui/panel_widget_manager.cpp`, immediately after `lv_obj_set_name()`. One
+set site is enough: the reuse map recycles `PanelWidget` C++ instances, not LVGL
+objects, and the object tree is always cleaned and rebuilt.
+
+The mark exists so that tree walks which only make sense at page level can stop
+at a tile. Its first consumer is `PageScrollAutoInject` - see
+[PAGE_SCROLL_BUTTONS.md](PAGE_SCROLL_BUTTONS.md) for why a chevron gutter inside
+a grid-sized tile is the wrong affordance at the wrong scale.
+
+LVGL gives the application four user flag bits. Three are claimed. **Check this
+table before taking the fourth:**
+
+| Flag | Owner | Meaning |
+|------|-------|---------|
+| `LV_OBJ_FLAG_USER_1` | `src/ui/ui_dialog.cpp` | "inside a dialog", read by `theme_manager.cpp` for elevated-surface input styling |
+| `LV_OBJ_FLAG_USER_2` | *free* | reachable from XML, so prefer it for anything a binding should toggle |
+| `LV_OBJ_FLAG_USER_3` | `include/panel_widget.h` | `PANEL_WIDGET_TILE_FLAG`, home widget tile root |
+| `LV_OBJ_FLAG_USER_4` | `src/ui/ui_sound_preview_overlay.cpp` | suppress the button tap sound, read in `ui_button.cpp` |
+
+`USER_3` was chosen over `USER_2` deliberately. helix-xml's `flag_to_enum()`
+maps `user_1` and `user_2` for `<bind_flag_if_*>` but stops there, so `USER_3`
+is the bit XML cannot reach and therefore cannot clear by accident.
+
+> **`USER_1` already has two meanings.** `src/ui/ui_ams_detail.cpp` reuses it as
+> a one-time init guard on the AMS slot grid, unrelated to dialogs. The
+> theme walk in `theme_manager.cpp` looks up the parent chain for `USER_1` to
+> decide "am I inside a dialog", so an AMS slot grid reads as a dialog to it.
+> That collision is the reason this ledger exists. Do not add a third meaning.
+
 ### Widget Factory Pattern
 
 Each widget registers a factory function at startup via `register_widget_factory()`. The registry (`include/panel_widget_registry.h`) pairs an ID string with a factory lambda:
