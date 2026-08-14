@@ -372,6 +372,21 @@ class WiFiManager {
     void deliver_auth_failure();                          // grace elapsed — failure is real
     static void auth_fail_grace_timer_cb(lv_timer_t* timer);
 
+    // Connect watchdog. The wpa_supplicant backend's connect_network() returns as soon as
+    // SELECT_NETWORK is accepted; whether the attempt ever resolves depends entirely on a
+    // CONNECTED or AUTH_FAILED arriving on the monitor socket. Events that map to neither
+    // (CTRL-EVENT-ASSOC-REJECT, CTRL-EVENT-NETWORK-NOT-FOUND, a bare 4-way-handshake-timeout
+    // DISCONNECTED) leave the attempt pending forever — and handle_disconnected() deliberately
+    // swallows DISCONNECTED while connecting_in_progress_ is set, so nothing else can clear it.
+    // That hung the first-run wizard on "Connecting" on AD5X. NetworkManager cannot hit this:
+    // nmcli carries its own timeout. Touched on the UI thread only (connect()/disconnect(), the
+    // queue_update apply lambdas, and the timer callback).
+    lv_timer_t* connect_timeout_timer_ = nullptr;
+    void start_connect_timeout();   // arm once the async connect path is entered
+    void cancel_connect_timeout();  // attempt resolved, superseded, or aborted
+    void deliver_connect_timeout(); // watchdog elapsed — report failure to the caller
+    static void connect_timeout_timer_cb(lv_timer_t* timer);
+
     // Event handling
     void handle_scan_complete(const std::string& event_data);
     void handle_connected(const std::string& event_data);
