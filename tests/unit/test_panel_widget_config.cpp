@@ -598,7 +598,6 @@ TEST_CASE("PanelWidgetRegistry: all defs have non-null required fields",
         REQUIRE(def.display_name != nullptr);
         REQUIRE(def.icon != nullptr);
         REQUIRE(def.description != nullptr);
-        REQUIRE(def.translation_tag != nullptr);
         // hardware_gate_subject CAN be nullptr (always-available widgets)
     }
 }

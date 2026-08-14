@@ -30,9 +30,9 @@ from translations.cpp_tables import extract_table_strings  # noqa: E402
 WIDGET_TABLE = dedent("""\
     static std::vector<PanelWidgetDef> s_widget_defs = {
         {"printer_image", "Printer Image", "rotate_3d", "3D printer visualization",
-         "Printer Image", nullptr, nullptr, true, 2, 2, 1, 1, 4, 3},
+         nullptr, nullptr, true, 2, 2, 1, 1, 4, 3},
         {"power_device", "Power", "power_cycle", "Toggle Moonraker power devices",
-         "Power", "power_device_count", "Requires Moonraker power device",
+         "power_device_count", "Requires Moonraker power device",
          false, 1, 1, 1, 1, 1, 1, true},
     };
 """)

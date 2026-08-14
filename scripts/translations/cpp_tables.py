@@ -188,13 +188,12 @@ def _block_after(content: str, marker_re) -> Optional[tuple]:
 # Table shapes
 # ---------------------------------------------------------------------------
 
-# PanelWidgetDef: id, display_name, icon, description, translation_tag,
+# PanelWidgetDef: id, display_name, icon, description,
 #                 hardware_gate_subject, hardware_gate_hint, ...
 # display_name and description render in the widget catalog; hardware_gate_hint
 # is the "Requires ..." / "No ... detected" line under an unavailable widget.
-# translation_tag (4) is deliberately NOT collected: nothing reads that field.
 _WIDGET_DEFS_RE = re.compile(r"s_widget_defs\s*=\s*")
-_WIDGET_FIELDS = (1, 3, 6)
+_WIDGET_FIELDS = (1, 3, 5)
 
 # DeviceSection: id, label, display_order, description
 _DEVICE_SECTION_FN_RE = re.compile(r"std::vector\s*<\s*DeviceSection\s*>\s*\w+\s*\([^)]*\)\s*")
@@ -217,15 +216,15 @@ _DESIGNATED_FIELDS = {"label", "description"}
 
 def _is_widget_row(fields: List[str]) -> bool:
     """
-    PanelWidgetDef row: id, display_name, icon, description, translation_tag,
-    gate_subject, gate_hint, then the layout numbers. The first four cells are
-    literals (never nullptr) and at least the two spans follow.
+    PanelWidgetDef row: id, display_name, icon, description, gate_subject,
+    gate_hint, then default_enabled and the layout numbers. The first four cells
+    are literals (never nullptr); the two gate cells are a literal or nullptr.
     """
-    if len(fields) < 8:
+    if len(fields) < 7:
         return False
     if any(_literal_at(fields[i]) is None for i in (0, 1, 2, 3)):
         return False
-    return _is_bool(fields[7])
+    return _is_bool(fields[6])
 
 
 def _is_section_row(fields: List[str]) -> bool:
