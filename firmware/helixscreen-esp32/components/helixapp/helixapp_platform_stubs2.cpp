@@ -53,6 +53,11 @@ void DisplayManager::register_resize_callback(ResizeCallback) {}
 bool DisplayManager::needs_touch_calibration() const {
     return false;
 }
+// The real body asks the display backend whether a calibratable touch panel is
+// attached; the slice has no backend, so the settings entry stays hidden.
+bool DisplayManager::supports_touch_calibration() const {
+    return false;
+}
 
 // --- crash_handler breadcrumbs (Linux signal-context crash pipeline) --------
 namespace crash_handler {
