@@ -90,6 +90,18 @@
       <!-- ================================================================== -->
       <setting_group>
         <setting_group_header title="DISPLAY" title_tag="DISPLAY" icon="light" hide_icon="false"/>
+        <!-- Screen Rotation: first in the group so a user staring at a sideways
+             screen reaches it with the least scrolling. Hidden where the display
+             backend ignores /display/rotate (SDL desktop builds). -->
+        <setting_dropdown_row name="row_display_rotation"
+                              label="Screen Rotation" label_tag="Screen Rotation" icon="rotate_right"
+                              description="Turn the picture to match how the screen is mounted. Applies after restart."
+                              description_tag="Turn the picture to match how the screen is mounted. Applies after restart."
+                              options="Normal&#10;90° Clockwise&#10;180° Upside Down&#10;270° Clockwise"
+                              options_tag="Normal&#10;90° Clockwise&#10;180° Upside Down&#10;270° Clockwise"
+                              callback="on_display_rotation_changed">
+          <bind_flag_if_eq subject="settings_rotation_available" flag="hidden" ref_value="0"/>
+        </setting_dropdown_row>
         <!-- Dark Mode Toggle -->
         <setting_toggle_row name="row_dark_mode"
                             label="Dark Mode" label_tag="Dark Mode" icon="light_off"

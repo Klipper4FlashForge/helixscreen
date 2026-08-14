@@ -59,6 +59,7 @@
   <translation tag="120 seconds" fr="120 secondes"/>
   <translation tag="15 seconds" fr="15 secondes"/>
   <translation tag="180°" fr="180°"/>
+  <translation tag="180° Upside Down"/>
   <translation tag="2 min" fr="2 min"/>
   <translation tag="2 minutes" fr="2 minutes"/>
   <translation tag="2. Place paper between nozzle and bed" fr="2. Placez du papier entre la buse et le plateau"/>
@@ -66,6 +67,7 @@
   <translation tag="20 minutes" fr="20 minutes"/>
   <translation tag="24 Hour" fr="24 heures"/>
   <translation tag="270°" fr="270°"/>
+  <translation tag="270° Clockwise"/>
   <translation tag="2D Heatmap" fr="Carte thermique 2D"/>
   <translation tag="2D Layers" fr="Couches 2D"/>
   <translation tag="3. Adjust screws, then re-probe to verify" fr="3. Ajustez les vis, puis re-palpez pour vérifier"/>
@@ -83,6 +85,7 @@
   <translation tag="5V" fr="5V"/>
   <translation tag="60 seconds" fr="60 secondes"/>
   <translation tag="90°" fr="90°"/>
+  <translation tag="90° Clockwise"/>
   <translation tag="= Loosen" fr="= Desserrer"/>
   <translation tag="= Tighten" fr="= Serrer"/>
   <translation tag="A" fr="A"/>
@@ -1504,6 +1507,7 @@
   <translation tag="No width sensor detected" fr="Aucun capteur de diamètre détecté"/>
   <translation tag="None" fr="Aucun"/>
   <translation tag="None (disable)" fr="Aucun (désactiver)"/>
+  <translation tag="Normal"/>
   <translation tag="Not Enough Filament" fr="Filament insuffisant"/>
   <translation tag="Not Now" fr="Pas maintenant"/>
   <translation tag="Not calibrated" fr="Non calibré"/>
@@ -2033,6 +2037,7 @@
   <translation tag="Screen" fr="Écran"/>
   <translation tag="Screen Blank" fr="Extinction de lécran"/>
   <translation tag="Screen Dim" fr="Atténuation de l&apos;écran"/>
+  <translation tag="Screen Rotation"/>
   <translation tag="Screen dims to lower brightness after period of inactivity" fr="L&apos;écran s&apos;atténue après une période d&apos;inactivité"/>
   <translation tag="Screen lock and PIN settings" fr="Verrouillage de l&apos;écran et paramètres PIN"/>
   <translation tag="Screen reboot failed" fr="Échec du redémarrage de l&apos;écran"/>
@@ -2446,6 +2451,7 @@
   <translation tag="Turn On LEDs" fr="Allumer les LED"/>
   <translation tag="Turn on LEDs when printer starts" fr="Allumer les LED au démarrage de l&apos;imprimante"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" fr="Éteindre le chauffage de l&apos;extrudeur après un chargement ou un déchargement"/>
+  <translation tag="Turn the picture to match how the screen is mounted. Applies after restart."/>
   <translation tag="Type" fr="Type"/>
   <translation tag="Type to preview input field..." fr="Tapez pour prévisualiser le champ de saisie..."/>
   <translation tag="Type:" fr="Type :"/>

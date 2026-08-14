@@ -249,6 +249,23 @@ HELIX_DISPLAY_ROTATION=180 ./build/bin/helix-screen
 
 **Touch auto-rotation:** On fbdev, touch coordinates are automatically rotated to match the display rotation for non-USB-HID devices (e.g., Goodix, sun4i_ts). USB HID touchscreens (e.g., BTT HDMI) report logical coordinates natively and are not transformed. `HELIX_TOUCH_SWAP_AXES` is still available as a manual override for edge cases.
 
+### `HELIX_SHOW_ROTATION_SETTING`
+
+Reveal the **Screen Rotation** row in Settings → Display & Sound on an SDL desktop build. The row is hidden there by default because SDL renders in DIRECT mode and ignores `/display/rotate` entirely, so the control would be inert. Only affects visibility - the setting still writes `/display/rotate` and still takes effect on the next start of an fbdev/DRM build.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `1` (show the row) |
+| **Default** | Unset (row hidden on SDL, always shown on fbdev/DRM) |
+| **Files** | `src/system/display_settings_manager.cpp`, `ui_xml/settings_display_sound_overlay.xml` |
+
+```bash
+# Drive the rotation row on desktop
+HELIX_SHOW_ROTATION_SETTING=1 ./build/bin/helix-screen --test -vv
+```
+
+Unlike `HELIX_FORCE_ROTATION_PROBE`, this does not start the interactive probe.
+
 ### `HELIX_FORCE_ROTATION_PROBE`
 
 Force the rotation probe to run on next startup, even if it has already run or a rotation is configured. Useful for testing the probe UI on SDL or re-running on a device.

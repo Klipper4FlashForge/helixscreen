@@ -59,6 +59,7 @@
   <translation tag="120 seconds" zh="120 秒"/>
   <translation tag="15 seconds" zh="15 秒"/>
   <translation tag="180°" zh="180°"/>
+  <translation tag="180° Upside Down"/>
   <translation tag="2 min" zh="2分钟"/>
   <translation tag="2 minutes" zh="2 分钟"/>
   <translation tag="2. Place paper between nozzle and bed" zh="2. 将纸张放在喷嘴和热床之间"/>
@@ -66,6 +67,7 @@
   <translation tag="20 minutes" zh="20分钟"/>
   <translation tag="24 Hour" zh="24 小时"/>
   <translation tag="270°" zh="270°"/>
+  <translation tag="270° Clockwise"/>
   <translation tag="2D Heatmap" zh="2D 热图"/>
   <translation tag="2D Layers" zh="2D 图层"/>
   <translation tag="3. Adjust screws, then re-probe to verify" zh="3. 调整螺丝，然后重新探测以验证"/>
@@ -83,6 +85,7 @@
   <translation tag="5V" zh="5V"/>
   <translation tag="60 seconds" zh="60 秒"/>
   <translation tag="90°" zh="90°"/>
+  <translation tag="90° Clockwise"/>
   <translation tag="= Loosen" zh="= 松开"/>
   <translation tag="= Tighten" zh="= 拧紧"/>
   <translation tag="A" zh="辅"/>
@@ -1504,6 +1507,7 @@
   <translation tag="No width sensor detected" zh="未检测到宽度传感器"/>
   <translation tag="None" zh="无"/>
   <translation tag="None (disable)" zh="无 (禁用)"/>
+  <translation tag="Normal"/>
   <translation tag="Not Enough Filament" zh="耗材不足"/>
   <translation tag="Not Now" zh="暂不"/>
   <translation tag="Not calibrated" zh="未校准"/>
@@ -2033,6 +2037,7 @@
   <translation tag="Screen" zh="屏幕"/>
   <translation tag="Screen Blank" zh="屏幕熄灭"/>
   <translation tag="Screen Dim" zh="屏幕变暗"/>
+  <translation tag="Screen Rotation"/>
   <translation tag="Screen dims to lower brightness after period of inactivity" zh="一段时间不活动后屏幕会降低亮度"/>
   <translation tag="Screen lock and PIN settings" zh="屏幕锁定和 PIN 设置"/>
   <translation tag="Screen reboot failed" zh="屏幕重启失败"/>
@@ -2446,6 +2451,7 @@
   <translation tag="Turn On LEDs" zh="打开 LED"/>
   <translation tag="Turn on LEDs when printer starts" zh="打印机启动时开启 LED"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" zh="加载或卸载完成后关闭挤出机加热器"/>
+  <translation tag="Turn the picture to match how the screen is mounted. Applies after restart."/>
   <translation tag="Type" zh="类型"/>
   <translation tag="Type to preview input field..." zh="输入以预览输入框..."/>
   <translation tag="Type:" zh="类型:"/>

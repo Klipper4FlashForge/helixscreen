@@ -59,6 +59,7 @@
   <translation tag="120 seconds" ru="120 секунд"/>
   <translation tag="15 seconds" ru="15 секунд"/>
   <translation tag="180°" ru="180°"/>
+  <translation tag="180° Upside Down"/>
   <translation tag="2 min" ru="2 мин"/>
   <translation tag="2 minutes" ru="2 минуты"/>
   <translation tag="2. Place paper between nozzle and bed" ru="2. Положите бумагу между соплом и столом"/>
@@ -66,6 +67,7 @@
   <translation tag="20 minutes" ru="20 минут"/>
   <translation tag="24 Hour" ru="24 часа"/>
   <translation tag="270°" ru="270°"/>
+  <translation tag="270° Clockwise"/>
   <translation tag="2D Heatmap" ru="2D тепловая карта"/>
   <translation tag="2D Layers" ru="2D слои"/>
   <translation tag="3. Adjust screws, then re-probe to verify" ru="3. Отрегулируйте винты, затем перепроверьте"/>
@@ -83,6 +85,7 @@
   <translation tag="5V" ru="5V"/>
   <translation tag="60 seconds" ru="60 секунд"/>
   <translation tag="90°" ru="90°"/>
+  <translation tag="90° Clockwise"/>
   <translation tag="= Loosen" ru="= Ослабить"/>
   <translation tag="= Tighten" ru="= Затянуть"/>
   <translation tag="A" ru="A"/>
@@ -1504,6 +1507,7 @@
   <translation tag="No width sensor detected" ru="Датчик диаметра не обнаружен"/>
   <translation tag="None" ru="Нет"/>
   <translation tag="None (disable)" ru="Нет (отключить)"/>
+  <translation tag="Normal"/>
   <translation tag="Not Enough Filament" ru="Недостаточно филамента"/>
   <translation tag="Not Now" ru="Не сейчас"/>
   <translation tag="Not calibrated" ru="Не откалиброван"/>
@@ -2033,6 +2037,7 @@
   <translation tag="Screen" ru="Экран"/>
   <translation tag="Screen Blank" ru="Гашение экрана"/>
   <translation tag="Screen Dim" ru="Затемнение экрана"/>
+  <translation tag="Screen Rotation"/>
   <translation tag="Screen dims to lower brightness after period of inactivity" ru="Экран затемняется после периода простоя"/>
   <translation tag="Screen lock and PIN settings" ru="Блокировка экрана и настройки PIN"/>
   <translation tag="Screen reboot failed" ru="Ошибка перезагрузки экрана"/>
@@ -2446,6 +2451,7 @@
   <translation tag="Turn On LEDs" ru="Включить LED"/>
   <translation tag="Turn on LEDs when printer starts" ru="Включать LED при запуске принтера"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" ru="Выключать нагреватель экструдера после загрузки или выгрузки"/>
+  <translation tag="Turn the picture to match how the screen is mounted. Applies after restart."/>
   <translation tag="Type" ru="Тип"/>
   <translation tag="Type to preview input field..." ru="Введите для предпросмотра поля ввода..."/>
   <translation tag="Type:" ru="Тип:"/>

@@ -59,6 +59,7 @@
   <translation tag="120 seconds" it="120 secondi"/>
   <translation tag="15 seconds" it="15 secondi"/>
   <translation tag="180°" it="180°"/>
+  <translation tag="180° Upside Down"/>
   <translation tag="2 min" it="2 min"/>
   <translation tag="2 minutes" it="2 minuti"/>
   <translation tag="2. Place paper between nozzle and bed" it="2. Posizionare carta tra ugello e piano"/>
@@ -66,6 +67,7 @@
   <translation tag="20 minutes" it="20 minuti"/>
   <translation tag="24 Hour" it="24 ore"/>
   <translation tag="270°" it="270°"/>
+  <translation tag="270° Clockwise"/>
   <translation tag="2D Heatmap" it="Mappa termica 2D"/>
   <translation tag="2D Layers" it="Strati 2D"/>
   <translation tag="3. Adjust screws, then re-probe to verify" it="3. Regolare le viti, poi risondare per verificare"/>
@@ -83,6 +85,7 @@
   <translation tag="5V" it="5V"/>
   <translation tag="60 seconds" it="60 secondi"/>
   <translation tag="90°" it="90°"/>
+  <translation tag="90° Clockwise"/>
   <translation tag="= Loosen" it="= Allentare"/>
   <translation tag="= Tighten" it="= Stringere"/>
   <translation tag="A" it="A"/>
@@ -1504,6 +1507,7 @@
   <translation tag="No width sensor detected" it="Nessun sensore di larghezza rilevato"/>
   <translation tag="None" it="Nessuno"/>
   <translation tag="None (disable)" it="Nessuno (disabilita)"/>
+  <translation tag="Normal"/>
   <translation tag="Not Enough Filament" it="Filamento insufficiente"/>
   <translation tag="Not Now" it="Non ora"/>
   <translation tag="Not calibrated" it="Non calibrato"/>
@@ -2033,6 +2037,7 @@
   <translation tag="Screen" it="Schermo"/>
   <translation tag="Screen Blank" it="Schermo spento"/>
   <translation tag="Screen Dim" it="Attenuazione schermo"/>
+  <translation tag="Screen Rotation"/>
   <translation tag="Screen dims to lower brightness after period of inactivity" it="Lo schermo si attenua dopo un periodo di inattività"/>
   <translation tag="Screen lock and PIN settings" it="Blocco schermo e impostazioni PIN"/>
   <translation tag="Screen reboot failed" it="Riavvio schermo fallito"/>
@@ -2446,6 +2451,7 @@
   <translation tag="Turn On LEDs" it="Accendi i LED"/>
   <translation tag="Turn on LEDs when printer starts" it="Accendi LED all&apos;avvio della stampante"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" it="Spegni il riscaldatore dell&apos;estrusore al termine di un caricamento o scaricamento"/>
+  <translation tag="Turn the picture to match how the screen is mounted. Applies after restart."/>
   <translation tag="Type" it="Tipo"/>
   <translation tag="Type to preview input field..." it="Digita per visualizzare anteprima campo input..."/>
   <translation tag="Type:" it="Tipo:"/>

@@ -64,6 +64,7 @@ translations:
   120 seconds: 120 secondes
   15 seconds: 15 secondes
   180°: 180°
+  180° Upside Down: ''
   2 min: '2 min'
   2 minutes: 2 minutes
   2. Place paper between nozzle and bed: 2. Placez du papier entre la buse et le plateau
@@ -72,6 +73,7 @@ translations:
   20 minutes: 20 minutes
   24 Hour: 24 heures
   270°: 270°
+  270° Clockwise: ''
   2D Heatmap: Carte thermique 2D
   2D Layers: Couches 2D
   3. Adjust screws, then re-probe to verify: 3. Ajustez les vis, puis re-palpez pour
@@ -91,6 +93,7 @@ translations:
   5V: 5V
   60 seconds: 60 secondes
   90°: 90°
+  90° Clockwise: ''
   = Loosen: = Desserrer
   = Tighten: = Serrer
   A: A
@@ -1727,6 +1730,7 @@ translations:
   No width sensor detected: 'Aucun capteur de diamètre détecté'
   None: Aucun
   None (disable): Aucun (désactiver)
+  Normal: ''
   Not Enough Filament: Filament insuffisant
   Not Now: Pas maintenant
   Not calibrated: Non calibré
@@ -2325,6 +2329,7 @@ translations:
   Screen: 'Écran'
   Screen Blank: Extinction de lécran
   Screen Dim: Atténuation de l'écran
+  Screen Rotation: ''
   Screen dims to lower brightness after period of inactivity: L'écran s'atténue après
     une période d'inactivité
   Screen lock and PIN settings: Verrouillage de l'écran et paramètres PIN
@@ -2861,6 +2866,7 @@ translations:
   Turn On LEDs: 'Allumer les LED'
   Turn on LEDs when printer starts: Allumer les LED au démarrage de l'imprimante
   Turn the extruder heater off after a load or unload finishes: Éteindre le chauffage de l'extrudeur après un chargement ou un déchargement
+  Turn the picture to match how the screen is mounted. Applies after restart.: ''
   Type: Type
   Type to preview input field...: Tapez pour prévisualiser le champ de saisie...
   'Type:': 'Type :'

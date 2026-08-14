@@ -59,6 +59,7 @@
   <translation tag="120 seconds" ja="120秒"/>
   <translation tag="15 seconds" ja="15秒"/>
   <translation tag="180°" ja="180°"/>
+  <translation tag="180° Upside Down"/>
   <translation tag="2 min" ja="2分"/>
   <translation tag="2 minutes" ja="2分"/>
   <translation tag="2. Place paper between nozzle and bed" ja="2. ノズルとベッドの間に紙を置いてください"/>
@@ -66,6 +67,7 @@
   <translation tag="20 minutes" ja="20分"/>
   <translation tag="24 Hour" ja="24時間"/>
   <translation tag="270°" ja="270°"/>
+  <translation tag="270° Clockwise"/>
   <translation tag="2D Heatmap" ja="2Dヒートマップ"/>
   <translation tag="2D Layers" ja="2Dレイヤー"/>
   <translation tag="3. Adjust screws, then re-probe to verify" ja="3. ネジを調整し、再度プローブして確認してください"/>
@@ -83,6 +85,7 @@
   <translation tag="5V" ja="5V"/>
   <translation tag="60 seconds" ja="60秒"/>
   <translation tag="90°" ja="90°"/>
+  <translation tag="90° Clockwise"/>
   <translation tag="= Loosen" ja="= 緩める"/>
   <translation tag="= Tighten" ja="= 締める"/>
   <translation tag="A" ja="A"/>
@@ -1504,6 +1507,7 @@
   <translation tag="No width sensor detected" ja="幅センサーが検出されません"/>
   <translation tag="None" ja="なし"/>
   <translation tag="None (disable)" ja="なし (無効)"/>
+  <translation tag="Normal"/>
   <translation tag="Not Enough Filament" ja="フィラメントが不足しています"/>
   <translation tag="Not Now" ja="今はしない"/>
   <translation tag="Not calibrated" ja="キャリブレーション未実施"/>
@@ -2033,6 +2037,7 @@
   <translation tag="Screen" ja="画面"/>
   <translation tag="Screen Blank" ja="画面消灯"/>
   <translation tag="Screen Dim" ja="画面減光"/>
+  <translation tag="Screen Rotation"/>
   <translation tag="Screen dims to lower brightness after period of inactivity" ja="一定時間操作がないと画面の明るさが下がります"/>
   <translation tag="Screen lock and PIN settings" ja="画面ロックと PIN の設定"/>
   <translation tag="Screen reboot failed" ja="画面の再起動に失敗しました"/>
@@ -2446,6 +2451,7 @@
   <translation tag="Turn On LEDs" ja="LEDを点灯"/>
   <translation tag="Turn on LEDs when printer starts" ja="プリンター起動時に LED を点灯"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" ja="装填または排出の完了後にエクストルーダーヒーターをオフにします"/>
+  <translation tag="Turn the picture to match how the screen is mounted. Applies after restart."/>
   <translation tag="Type" ja="タイプ"/>
   <translation tag="Type to preview input field..." ja="入力フィールドをプレビューするには入力してください..."/>
   <translation tag="Type:" ja="タイプ:"/>
