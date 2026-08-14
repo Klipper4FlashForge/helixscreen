@@ -1665,8 +1665,33 @@ void Config::init(const std::string& config_path) {
                 // type_error.302, which lands in the catch below and destroys the
                 // user's settings.json (renamed .corrupt, then reset to defaults)
                 // over a single bad field.
+                //
+                // The packaged document alone cannot say which of the two
+                // happened: a fresh install ships the identical bytes, and
+                // neither the backup's age (the archive's stored mtime is the
+                // release build date, newer than the backup in both cases) nor
+                // its richness differs between them.  The installer settles it.
+                // It leaves FRESH_INSTALL_MARKER beside settings.json whenever
+                // it kept the packaged config because no user config existed to
+                // restore; Moonraker's rmtree() removes the marker and the
+                // re-extract does not bring it back, since it is not in the
+                // archive.  Consumed here so it only ever answers for the
+                // config it shipped beside.
                 if (helix::json_util::safe_int(data, "config_version", 0) == 0) {
-                    std::string backup_src = find_backup(config_backup_search_paths());
+                    const fs::path fresh_marker =
+                        fs::path(path).parent_path() / AppConstants::Update::FRESH_INSTALL_MARKER;
+                    std::error_code marker_ec;
+                    const bool installer_kept_it = fs::exists(fresh_marker, marker_ec);
+                    if (installer_kept_it) {
+                        spdlog::info("[Config] Packaged config kept - installer marked a fresh "
+                                     "install ({})",
+                                     fresh_marker.string());
+                        fs::remove(fresh_marker, marker_ec);
+                    }
+
+                    std::string backup_src = installer_kept_it
+                                                 ? std::string{}
+                                                 : find_backup(config_backup_search_paths());
                     if (!backup_src.empty()) {
                         try {
                             auto backup_data = json::parse(std::ifstream(backup_src));
