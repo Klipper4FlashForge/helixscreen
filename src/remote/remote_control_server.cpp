@@ -338,6 +338,7 @@ void RemoteControlServer::register_builtin_handlers() {
     };
     handlers_["geom"] = [this](const nlohmann::json& p) { return handle_geom(p); };
     handlers_["text"] = [this](const nlohmann::json& p) { return handle_text(p); };
+    handlers_["set_text"] = [this](const nlohmann::json& p) { return handle_set_text(p); };
     handlers_["get_const"] = [this](const nlohmann::json& p) { return handle_get_const(p); };
     handlers_["wake"] = [this](const nlohmann::json& p) { return handle_wake(p); };
 
@@ -1939,6 +1940,43 @@ nlohmann::json RemoteControlServer::handle_text(const nlohmann::json& params) {
             }
         }
         return {{"text", value}, {"path", path_of(holder)}, {"source", source}};
+    });
+}
+
+nlohmann::json RemoteControlServer::handle_set_text(const nlohmann::json& params) {
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
+    }
+    if (!params.contains("text") || !params["text"].is_string()) {
+        throw std::invalid_argument("Missing required parameter: text");
+    }
+    const std::string text = params["text"].get<std::string>();
+
+    return execute_on_ui_thread([params, text]() -> nlohmann::json {
+        lv_obj_t* widget = resolve_widget(params);
+        if (!widget) {
+            throw std::invalid_argument("Widget not found: " + target_label(params));
+        }
+        // Resolve the same way `text` reads it: the named widget is often a
+        // wrapper whose label is a descendant.
+        lv_obj_t* holder = widget;
+        std::string existing, source;
+        if (!read_widget_text(holder, existing, source)) {
+            holder = find_text_descendant(widget);
+            if (!holder || !read_widget_text(holder, existing, source)) {
+                throw std::invalid_argument("Widget has no text: " + target_label(params));
+            }
+        }
+        if (!lv_obj_check_type(holder, &lv_label_class)) {
+            throw std::invalid_argument("Not a label, cannot set text: " + target_label(params));
+        }
+        // Writes straight to the label. A label driven by bind_text is restored
+        // the next time its subject changes — set the subject instead when one
+        // exists. This exists for text the app sets imperatively, which is
+        // otherwise unreachable from a test (e.g. the AMS loading-error message,
+        // which comes from a backend field rather than a subject).
+        lv_label_set_text(holder, text.c_str());
+        return {{"set", text}, {"path", path_of(holder)}};
     });
 }
 
