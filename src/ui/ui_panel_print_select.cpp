@@ -574,9 +574,9 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
             // every 5s and frequently returns identical data, and
             // ToastManager has no dedup, so toasting here unconditionally
             // would spam the same message on every poll (review finding).
-            constexpr size_t kEsp32MaxFileCount = 50;
+            constexpr size_t ESP32_MAX_FILE_COUNT = 50;
             bool esp32_list_capped =
-                cap_print_file_list_to_newest(panel->file_list_, kEsp32MaxFileCount);
+                cap_print_file_list_to_newest(panel->file_list_, ESP32_MAX_FILE_COUNT);
 #endif
 
             panel->merge_history_into_file_list(); // Populate history status for each file
@@ -1490,10 +1490,10 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
 
                     size_t file_idx = d->index;
                     std::string filename_copy = d->filename;
-                    constexpr size_t kEsp32ThumbnailMaxBytes = 512 * 1024;
+                    constexpr size_t ESP32_THUMBNAIL_MAX_BYTES = 512 * 1024;
 
                     self->api_->transfers().download_file_partial(
-                        "gcodes", d->thumb_path, kEsp32ThumbnailMaxBytes,
+                        "gcodes", d->thumb_path, ESP32_THUMBNAIL_MAX_BYTES,
                         // Success callback — runs on the EspHttpLane worker thread.
                         [self, panel_tok, file_idx, filename_copy](const std::string& png_bytes) {
                             auto thumb = helix::ui::EspPsramThumbnail::create(png_bytes);

@@ -6392,14 +6392,14 @@ TEST_CASE("AD5X IFS coalesces a burst of color-change triggers into one debounce
     const uint32_t submit_before = Ad5xIfsTestAccess::zcolor_worker_submit_count(backend);
     REQUIRE_FALSE(Ad5xIfsTestAccess::zcolor_schedule_armed(backend));
 
-    constexpr int kBurst = 20;
-    for (int i = 0; i < kBurst; ++i) {
+    constexpr int BURST = 20;
+    for (int i = 0; i < BURST; ++i) {
         Ad5xIfsTestAccess::on_gcode_response_line(backend,
                                                   "// CHANGE_ZCOLOR SLOT=2 HEX=F72224 TYPE=PLA");
     }
 
     // Every trigger is seen (diagnostic counter rises by the full burst)...
-    CHECK(Ad5xIfsTestAccess::zcolor_schedule_count(backend) == sched_before + kBurst);
+    CHECK(Ad5xIfsTestAccess::zcolor_schedule_count(backend) == sched_before + BURST);
     // ...but only ONE debounce worker was submitted; the rest hit the armed gate.
     CHECK(Ad5xIfsTestAccess::zcolor_worker_submit_count(backend) == submit_before + 1);
     CHECK(Ad5xIfsTestAccess::zcolor_schedule_armed(backend));
@@ -8455,14 +8455,14 @@ namespace {
 // The exact swatch grid zmod renders for "Select color" (bundle 482NB943,
 // 17:34:19.0-19.2 and 17:35:29.6-29.9). Order matters: the bug landed the slot
 // on whichever entry came LAST, so #161616 is the value that showed on screen.
-const std::vector<std::string> kZmodPalette = {
+const std::vector<std::string> ZMOD_PALETTE = {
     "ffffff", "fef043", "dcf478", "0acc38", "067749", "0c6283", "0de2a0", "75d9f3",
     "45a8f9", "2750e0", "46328e", "a03cf7", "f330f9", "d4b0dc", "f95d73", "f72224",
     "7c4b00", "f98d33", "fdebd5", "d3c4a3", "af7836", "898989", "bcbcbc", "161616"};
 
 // zmod's stock material whitelist, in render order (17:34:35.849-35.886).
 // PETG-CF is last, so that is the type the slot ended up displaying.
-const std::vector<std::string> kZmodMaterials = {"PLA", "PLA-CF", "SILK",   "TPU",
+const std::vector<std::string> ZMOD_MATERIALS = {"PLA", "PLA-CF", "SILK",   "TPU",
                                                  "ABS", "PETG",   "PETG-CF"};
 
 std::string palette_button(int slot1, const std::string& type, const std::string& hex) {
@@ -8498,7 +8498,7 @@ TEST_CASE("AD5X IFS regression: COLOR palette render never moves the slot (#1065
     Ad5xIfsTestAccess::set_material(backend, 0, "PETG");
     const size_t syncs_before = Ad5xIfsTestAccess::external_sync_count(backend);
 
-    for (const auto& hex : kZmodPalette) {
+    for (const auto& hex : ZMOD_PALETTE) {
         REQUIRE_FALSE(
             Ad5xIfsTestAccess::on_gcode_response_line(backend, palette_button(1, "PETG", hex)));
         // Not just "ends correct" — never moves at all.
@@ -8506,7 +8506,7 @@ TEST_CASE("AD5X IFS regression: COLOR palette render never moves the slot (#1065
         REQUIRE(backend.get_slot_info(0).material == "PETG");
     }
 
-    for (const auto& type : kZmodMaterials) {
+    for (const auto& type : ZMOD_MATERIALS) {
         REQUIRE_FALSE(
             Ad5xIfsTestAccess::on_gcode_response_line(backend, material_button(1, type, "898989")));
         REQUIRE(backend.get_slot_info(0).material == "PETG");
@@ -8544,7 +8544,7 @@ TEST_CASE("AD5X IFS regression: type change surfaces on the menu re-render, not 
     Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
 
     // "Select material type" renders; every entry is a candidate, PETG-CF last.
-    for (const auto& type : kZmodMaterials) {
+    for (const auto& type : ZMOD_MATERIALS) {
         REQUIRE_FALSE(
             Ad5xIfsTestAccess::on_gcode_response_line(backend, material_button(1, type, "F330F9")));
     }
@@ -10317,18 +10317,18 @@ TEST_CASE_METHOD(Ad5xRunoutFixture,
     // number: a predicate hardcoding the short constant fires early on a
     // long-dwell config, and one hardcoding the long constant never fires on a
     // short-dwell config. Either way a REQUIRE below goes red.
-    constexpr auto kSlack = std::chrono::seconds(5);
-    auto dwell_is_load_bearing = [this, kSlack](AmsBackendAd5xIfs& b) {
+    constexpr auto SLACK = std::chrono::seconds(5);
+    auto dwell_is_load_bearing = [this, SLACK](AmsBackendAd5xIfs& b) {
         set_print_state(helix::PrintJobState::PAUSED);
         seat_then_drop_head(b);
         REQUIRE(Ad5xIfsTestAccess::head_empty_armed(b));
 
         const auto dwell = Ad5xIfsTestAccess::runout_confirm_delay(b);
-        REQUIRE(dwell > kSlack); // the two probes have to straddle it
+        REQUIRE(dwell > SLACK); // the two probes have to straddle it
 
         // Just short of the dwell: armed, paused, idle — everything else holds.
         // A too-short threshold raises here.
-        Ad5xIfsTestAccess::age_head_empty(b, dwell - kSlack);
+        Ad5xIfsTestAccess::age_head_empty(b, dwell - SLACK);
         REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(b));
         REQUIRE_FALSE(Ad5xIfsTestAccess::runout_active(b));
         REQUIRE(Ad5xIfsTestAccess::action(b) == AmsAction::IDLE);
@@ -10337,7 +10337,7 @@ TEST_CASE_METHOD(Ad5xRunoutFixture,
         REQUIRE(Ad5xIfsTestAccess::head_empty_armed(b));
 
         // Just past it. A too-long threshold fails to raise here.
-        Ad5xIfsTestAccess::age_head_empty(b, dwell + kSlack);
+        Ad5xIfsTestAccess::age_head_empty(b, dwell + SLACK);
         REQUIRE(Ad5xIfsTestAccess::evaluate_runout(b));
         REQUIRE(Ad5xIfsTestAccess::runout_active(b));
         REQUIRE(Ad5xIfsTestAccess::action(b) == AmsAction::ERROR);

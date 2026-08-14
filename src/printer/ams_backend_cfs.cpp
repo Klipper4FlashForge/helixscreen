@@ -1783,8 +1783,8 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
     // legitimate user choice and we don't want to silently drop it. The
     // caller (set_slot_info, which sets color_set=true on the override) is
     // responsible for only invoking this when a real color was chosen.
-    constexpr int kCfsMaxSlots = 16; // 4 units × 4 slots
-    if (global_index < 0 || global_index >= kCfsMaxSlots) {
+    constexpr int CFS_MAX_SLOTS = 16; // 4 units × 4 slots
+    if (global_index < 0 || global_index >= CFS_MAX_SLOTS) {
         spdlog::debug("{} push_slot_color_to_firmware: skipping invalid slot {}", backend_log_tag(),
                       global_index);
         return;
@@ -1894,14 +1894,14 @@ AmsError AmsBackendCfs::set_tool_mapping(int tool_number, int slot_index) {
     //
     // Example: set_tool_mapping(0, 5) sends "BOX_MODIFY_TN T1A=T2B" — when the
     // slicer emits T0/T1A, the CFS routes from physical slot T2B (index 5).
-    constexpr int kCfsMaxSlots = 16; // 4 units × 4 slots
-    if (tool_number < 0 || tool_number >= kCfsMaxSlots) {
+    constexpr int CFS_MAX_SLOTS = 16; // 4 units × 4 slots
+    if (tool_number < 0 || tool_number >= CFS_MAX_SLOTS) {
         return AmsError(AmsResult::INVALID_TOOL,
                         "Tool " + std::to_string(tool_number) + " out of range",
                         "Invalid tool number", "");
     }
-    if (slot_index < 0 || slot_index >= kCfsMaxSlots) {
-        return AmsErrorHelper::invalid_slot(slot_index, kCfsMaxSlots - 1);
+    if (slot_index < 0 || slot_index >= CFS_MAX_SLOTS) {
+        return AmsErrorHelper::invalid_slot(slot_index, CFS_MAX_SLOTS - 1);
     }
 
     std::string tool_tnn = CfsMaterialDb::slot_to_tnn(tool_number);
@@ -2068,8 +2068,8 @@ bool AmsBackendCfs::detect_fork_dialect(const nlohmann::json& box_json) {
 std::string AmsBackendCfs::slot_set_gcode(int global_slot_index, const std::string& material,
                                           uint32_t color_rgb, const std::string& brand,
                                           const std::string& name, int spoolman_id) {
-    constexpr int kCfsMaxSlots = 16; // 4 units × 4 slots
-    if (global_slot_index < 0 || global_slot_index >= kCfsMaxSlots) {
+    constexpr int CFS_MAX_SLOTS = 16; // 4 units × 4 slots
+    if (global_slot_index < 0 || global_slot_index >= CFS_MAX_SLOTS) {
         spdlog::error("[AMS CFS] Invalid slot index for slot-set: {}", global_slot_index);
         return "";
     }
@@ -2095,8 +2095,8 @@ std::string AmsBackendCfs::slot_set_gcode(int global_slot_index, const std::stri
 std::string AmsBackendCfs::load_gcode(int idx, CfsMacroVariant variant) {
     if (variant == CfsMacroVariant::Fork) {
         // The Box T command owns the complete load or change operation.
-        constexpr int kCfsMaxSlots = 16;
-        if (idx < 0 || idx >= kCfsMaxSlots) {
+        constexpr int CFS_MAX_SLOTS = 16;
+        if (idx < 0 || idx >= CFS_MAX_SLOTS) {
             spdlog::error("[AMS CFS] Invalid slot index for load: {}", idx);
             return "";
         }
@@ -2174,8 +2174,8 @@ std::string AmsBackendCfs::swap_gcode(int idx, CfsMacroVariant variant) {
         // BOX_CHANGE; that name appears only in a user-written alias macro that
         // this firmware does not define.
         //
-        constexpr int kCfsMaxSlots = 16;
-        if (idx < 0 || idx >= kCfsMaxSlots) {
+        constexpr int CFS_MAX_SLOTS = 16;
+        if (idx < 0 || idx >= CFS_MAX_SLOTS) {
             spdlog::error("[AMS CFS] Invalid slot index for swap: {}", idx);
             return "";
         }

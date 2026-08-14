@@ -964,8 +964,8 @@ AmsError AmsBackendMock::set_tool_mapping(int tool_number, int slot_index) {
     // slicer files often reference T0..T7 even when only 4 lanes exist. The
     // sentinel for "too large" is arbitrary; 64 is generous and matches the
     // production slot_registry behavior of growing on demand.
-    constexpr int kMaxToolIndex = 64;
-    if (tool_number < 0 || tool_number >= kMaxToolIndex) {
+    constexpr int MAX_TOOL_INDEX = 64;
+    if (tool_number < 0 || tool_number >= MAX_TOOL_INDEX) {
         return AmsError(AmsResult::INVALID_TOOL,
                         "Tool " + std::to_string(tool_number) + " out of range",
                         "Invalid tool number", "");

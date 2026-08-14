@@ -534,7 +534,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // This is also what restores retention across an eject now that
     // parse_afc_stepper honours AFC's clears: firmware truth clears, and the
     // override re-supplies the identity the user attached.
-    static constexpr const char* kOverrideNamespace = "helix-screen-afc-overrides";
+    static constexpr const char* OVERRIDE_NAMESPACE = "helix-screen-afc-overrides";
     std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
     std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
     /// Layer the user override over firmware values. Callers hold mutex_.
@@ -1047,7 +1047,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// printer.AFC.message is a FIFO head and each clear pops one entry, so a
     /// single send leaves the next queued error on screen. Armed by clear_fault(),
     /// spent one per status delta that still carries a message. Hitting zero is
-    /// the abnormal exit — see kMessageDrainMaxClears.
+    /// the abnormal exit — see MESSAGE_DRAIN_MAX_CLEARS.
     int message_drain_budget_ = 0;
 
     /// Set by parse_afc_state() while holding mutex_; consumed by
@@ -1085,7 +1085,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// _get_message(clear=False) — so an error raised by the caller's own
     /// follow-up action (the sidebar sends AFC_RESET right after clear_fault())
     /// can be swallowed unseen anywhere inside the 5 s window.
-    static constexpr int kMessageDrainMaxClears = 10;
+    static constexpr int MESSAGE_DRAIN_MAX_CLEARS = 10;
 
     /// Sends one queued AFC_CLEAR_MESSAGE if the drain is armed and a message is
     /// still present. Must be called WITHOUT mutex_ held.

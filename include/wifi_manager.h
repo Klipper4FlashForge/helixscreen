@@ -85,7 +85,7 @@ class WiFiManager {
      *
      * Scans for available networks and invokes callback with results.
      * Scanning continues automatically, on an interval that backs off from
-     * ScanScheduler::kBaseIntervalMs up to ScanScheduler::kMaxIntervalMs as
+     * ScanScheduler::BASE_INTERVAL_MS up to ScanScheduler::MAX_INTERVAL_MS as
      * results stay unchanged (and suppresses entirely once connected and
      * stable), until stop_scan() is called. See ScanScheduler.
      *
@@ -437,7 +437,7 @@ class WiFiManager {
     // periodic timer (10 s base) surfaces a genuinely broken scan on its next
     // tick. Main-thread only: connect/forget/disconnect and start_scan() are
     // all UI-initiated, as is the scan timer callback.
-    static constexpr auto kAssociationGrace = std::chrono::seconds(5);
+    static constexpr auto ASSOCIATION_GRACE = std::chrono::seconds(5);
     std::chrono::steady_clock::time_point last_association_change_{};
     void mark_association_change();
     bool in_association_grace() const;

@@ -58,7 +58,7 @@ void WiFiManager::mark_association_change() {
 bool WiFiManager::in_association_grace() const {
     if (last_association_change_.time_since_epoch().count() == 0)
         return false;
-    return (std::chrono::steady_clock::now() - last_association_change_) < kAssociationGrace;
+    return (std::chrono::steady_clock::now() - last_association_change_) < ASSOCIATION_GRACE;
 }
 
 // Overridable in tests via WiFiManagerTestAccess so has_non_wifi_network_path()
@@ -345,8 +345,8 @@ void WiFiManager::start_scan(
     spdlog::debug("[WiFiManager] Scan callback registered");
 
     spdlog::info("[WiFiManager] Starting periodic network scan (interval backs off {}ms-{}ms)",
-                 helix::wifi::ScanScheduler::kBaseIntervalMs,
-                 helix::wifi::ScanScheduler::kMaxIntervalMs);
+                 helix::wifi::ScanScheduler::BASE_INTERVAL_MS,
+                 helix::wifi::ScanScheduler::MAX_INTERVAL_MS);
 
     // A fresh scan session (e.g. the user opening network settings) is a
     // manual refresh: clear any suppression/backoff left over from a prior
@@ -358,7 +358,7 @@ void WiFiManager::start_scan(
 
     // Create timer for periodic scanning
     scan_timer_ =
-        lv_timer_create(scan_timer_callback, helix::wifi::ScanScheduler::kBaseIntervalMs, this);
+        lv_timer_create(scan_timer_callback, helix::wifi::ScanScheduler::BASE_INTERVAL_MS, this);
     spdlog::debug("[WiFiManager] Timer created: {}", (void*)scan_timer_);
 
     // Trigger immediate scan
@@ -400,7 +400,7 @@ void WiFiManager::start_scan(
         } else if (in_association_grace()) {
             spdlog::debug("[WiFiManager] Scan trigger failed within {}s of an association change "
                           "we initiated — suppressing user warning",
-                          kAssociationGrace.count());
+                          ASSOCIATION_GRACE.count());
         } else {
             NOTIFY_WARNING("WiFi scan failed. Try again.");
         }

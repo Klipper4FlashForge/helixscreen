@@ -107,7 +107,7 @@ auto ignore_events() {
 
 /// Matches only the periodic pending-count line, not the tracker's other
 /// "[Request Tracker] ..." output (cancellations, timeouts).
-constexpr const char* kPendingLine = "pending request(s); oldest";
+constexpr const char* PENDING_LINE = "pending request(s); oldest";
 
 } // namespace
 
@@ -132,7 +132,7 @@ TEST_CASE("check_timeouts stays silent for a queue that is draining normally",
     REQUIRE(tracker.cancel(2));
     tracker.check_timeouts(ignore_events());
 
-    REQUIRE(logs.count_containing(kPendingLine) == 0);
+    REQUIRE(logs.count_containing(PENDING_LINE) == 0);
 }
 
 TEST_CASE("check_timeouts logs once the oldest pending request ages past the floor",
@@ -148,12 +148,12 @@ TEST_CASE("check_timeouts logs once the oldest pending request ages past the flo
         tracker, 1, make_pending_request("printer.objects.query", age));
 
     tracker.check_timeouts(ignore_events());
-    REQUIRE(logs.count_containing(kPendingLine) == 1);
+    REQUIRE(logs.count_containing(PENDING_LINE) == 1);
 
     // Signature unchanged on the next tick — the existing throttle still applies,
     // so an aging request does not turn into a per-tick stream.
     tracker.check_timeouts(ignore_events());
-    REQUIRE(logs.count_containing(kPendingLine) == 1);
+    REQUIRE(logs.count_containing(PENDING_LINE) == 1);
 }
 
 TEST_CASE("check_timeouts still escalates a stuck request to warn",
@@ -167,7 +167,7 @@ TEST_CASE("check_timeouts still escalates a stuck request to warn",
 
     tracker.check_timeouts(ignore_events());
 
-    REQUIRE(logs.count_containing(kPendingLine) == 1);
+    REQUIRE(logs.count_containing(PENDING_LINE) == 1);
     REQUIRE(logs.count_containing("warning") == 1);
 }
 
@@ -185,7 +185,7 @@ TEST_CASE("check_timeouts does not warn on a blocking G-code script that is mere
 
     tracker.check_timeouts(ignore_events());
 
-    REQUIRE(logs.count_containing(kPendingLine) == 1);
+    REQUIRE(logs.count_containing(PENDING_LINE) == 1);
     REQUIRE(logs.count_containing("warning") == 0);
 }
 
@@ -203,6 +203,6 @@ TEST_CASE("check_timeouts still warns on a G-code script past its own longer thr
 
     tracker.check_timeouts(ignore_events());
 
-    REQUIRE(logs.count_containing(kPendingLine) == 1);
+    REQUIRE(logs.count_containing(PENDING_LINE) == 1);
     REQUIRE(logs.count_containing("warning") == 1);
 }

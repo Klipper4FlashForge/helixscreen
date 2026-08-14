@@ -456,15 +456,15 @@ json DebugBundleCollector::collect_printer_info(const PrinterSnapshot& snap) {
 // =============================================================================
 
 size_t DebugBundleCollector::resolve_log_tail_lines(int requested, size_t ring_capacity) {
-    // Historical fixed size, and logging_init's own floor (kMinRingLines). Used
+    // Historical fixed size, and logging_init's own floor (MIN_RING_LINES). Used
     // when there is no ring to measure, so the file/syslog cascade still gets a
     // bound rather than an open-ended read.
-    constexpr size_t kFallbackLogTailLines = 2000;
+    constexpr size_t FALLBACK_LOG_TAIL_LINES = 2000;
 
     if (requested > 0) {
         return static_cast<size_t>(requested);
     }
-    return ring_capacity > 0 ? ring_capacity : kFallbackLogTailLines;
+    return ring_capacity > 0 ? ring_capacity : FALLBACK_LOG_TAIL_LINES;
 }
 
 std::string DebugBundleCollector::collect_log_tail(int num_lines) {
@@ -921,8 +921,8 @@ json DebugBundleCollector::filter_filament_objects(const json& object_list) {
 }
 
 json DebugBundleCollector::extract_gcode_macro_names(const json& object_list) {
-    static constexpr const char* kPrefix = "gcode_macro ";
-    static constexpr size_t kPrefixLen = 12; // strlen("gcode_macro ")
+    static constexpr const char* PREFIX = "gcode_macro ";
+    static constexpr size_t PREFIX_LEN = 12; // strlen("gcode_macro ")
 
     json result = json::array();
     if (!object_list.is_array())
@@ -932,15 +932,15 @@ json DebugBundleCollector::extract_gcode_macro_names(const json& object_list) {
         if (!obj.is_string())
             continue;
         const std::string name = obj.get<std::string>();
-        if (name.compare(0, kPrefixLen, kPrefix) != 0)
+        if (name.compare(0, PREFIX_LEN, PREFIX) != 0)
             continue;
         // Store the bare name: "gcode_macro A_CHANGE_FILAMENT" -> "A_CHANGE_FILAMENT".
         // A macro named exactly "gcode_macro " with nothing after it is not a
         // thing Klipper accepts, but an empty push would read as a real entry.
-        if (name.size() <= kPrefixLen)
+        if (name.size() <= PREFIX_LEN)
             continue;
-        result.push_back(name.substr(kPrefixLen));
-        if (result.size() >= kMaxGcodeMacroNames)
+        result.push_back(name.substr(PREFIX_LEN));
+        if (result.size() >= MAX_GCODE_MACRO_NAMES)
             break;
     }
     return result;
@@ -1092,15 +1092,15 @@ static std::vector<PlatformFile> platform_diagnostic_files(const std::string& pl
 
 // Fetch a text file from Moonraker. Returns body + HTTP status; an HTTP-status
 // of 404 is a normal "not present on this device" signal callers should treat
-// as skip-silently. Truncates the body at kMaxTextBytes to keep bundles small.
+// as skip-silently. Truncates the body at MAX_TEXT_BYTES to keep bundles small.
 static RawHttpResult http_get_text(const std::string& base_url, const std::string& endpoint,
                                    int timeout_sec) {
     auto raw = http_get_raw(base_url, endpoint, timeout_sec);
     // Cap text-file capture at 256 KB. Diagnostic files we currently ship are
     // < 8 KB; the cap is a guardrail against future entries that grow large.
-    constexpr size_t kMaxTextBytes = 256 * 1024;
-    if (raw.body.size() > kMaxTextBytes) {
-        raw.body.resize(kMaxTextBytes);
+    constexpr size_t MAX_TEXT_BYTES = 256 * 1024;
+    if (raw.body.size() > MAX_TEXT_BYTES) {
+        raw.body.resize(MAX_TEXT_BYTES);
         raw.body += "\n[truncated]\n";
     }
     return raw;
@@ -1273,11 +1273,11 @@ json DebugBundleCollector::walk_include_tree(const std::string& root,
         // dangling for every pattern after the first match.
         const std::string path = queue[i];
 
-        if (files.size() >= kMaxConfigFiles) {
+        if (files.size() >= MAX_CONFIG_FILES) {
             truncate_reason = "file count";
             break;
         }
-        if (total_bytes >= kMaxConfigBytes) {
+        if (total_bytes >= MAX_CONFIG_BYTES) {
             truncate_reason = "byte budget";
             break;
         }
@@ -1393,15 +1393,15 @@ static std::string line_shape(const std::string& line) {
 /// Klipper's config dump markers (klippy/configfile.py, PrinterConfig::log_config).
 /// The whole of printer.cfg is written between them on every start and on every
 /// log rollover.
-static constexpr const char* kKlipperConfigHeader = "===== Config file =====";
-static constexpr const char* kKlipperConfigFooter = "=======================";
+static constexpr const char* KLIPPER_CONFIG_HEADER = "===== Config file =====";
+static constexpr const char* KLIPPER_CONFIG_FOOTER = "=======================";
 
 /// Klipper's per-second runtime stats line. Used as the discriminator for an
 /// orphan footer: the config dump contains no line starting with "Stats " (the
 /// dump indents every continuation with a tab, and config keys are lowercase),
 /// while a live log window is saturated with them. Measured on Vger1700's
 /// printer.log: 0 before the footer, 3284 after.
-static constexpr const char* kKlipperStatsPrefix = "Stats ";
+static constexpr const char* KLIPPER_STATS_PREFIX = "Stats ";
 
 /// Positional backstop for a lone footer, used alongside the "no Stats yet"
 /// rule above. Deliberately generous: a real AD5X+ZMOD dump is 6668 lines, not
@@ -1409,7 +1409,7 @@ static constexpr const char* kKlipperStatsPrefix = "Stats ";
 /// the elision whenever the fetch cuts near the top of a dump. The Stats rule
 /// is what actually prevents over-reach; this only caps the damage in a window
 /// that somehow contains no runtime output at all.
-static constexpr size_t kOrphanFooterMaxIndex = 25000;
+static constexpr size_t ORPHAN_FOOTER_MAX_INDEX = 25000;
 
 /// Drop Klipper's config dump(s) from a raw log window, in place.
 ///
@@ -1446,7 +1446,7 @@ static void strip_klipper_config_dumps(std::vector<std::string>& lines) {
         const std::string& line = lines[i];
 
         if (header_at != std::string::npos) {
-            if (line == kKlipperConfigFooter) {
+            if (line == KLIPPER_CONFIG_FOOTER) {
                 note_elision(i - header_at + 1);
                 header_at = std::string::npos;
                 ++dumps_closed;
@@ -1454,7 +1454,7 @@ static void strip_klipper_config_dumps(std::vector<std::string>& lines) {
             continue; // inside the dump: header, body, and footer all go
         }
 
-        if (line == kKlipperConfigHeader) {
+        if (line == KLIPPER_CONFIG_HEADER) {
             header_at = i;
             continue;
         }
@@ -1466,15 +1466,15 @@ static void strip_klipper_config_dumps(std::vector<std::string>& lines) {
         //   - no runtime "Stats " line has been seen, which is what actually
         //     distinguishes a cut-off dump from a stray rule line in a live log;
         //   - a generous positional backstop for a window with no runtime output.
-        if (line == kKlipperConfigFooter && dumps_closed == 0 && !runtime_output_seen &&
-            i <= kOrphanFooterMaxIndex) {
+        if (line == KLIPPER_CONFIG_FOOTER && dumps_closed == 0 && !runtime_output_seen &&
+            i <= ORPHAN_FOOTER_MAX_INDEX) {
             out.clear();
             note_elision(i + 1);
             ++dumps_closed;
             continue;
         }
 
-        if (!runtime_output_seen && line.rfind(kKlipperStatsPrefix, 0) == 0) {
+        if (!runtime_output_seen && line.rfind(KLIPPER_STATS_PREFIX, 0) == 0) {
             runtime_output_seen = true;
         }
         out.push_back(line);
@@ -1794,28 +1794,28 @@ std::string DebugBundleCollector::prepend_rotated_predecessor(const std::string&
 std::string DebugBundleCollector::collect_klipper_log_tail(int num_lines) {
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
-        return collect_local_log_tail("klippy.log", num_lines, kKlipperCondenseMaxRepeats);
+        return collect_local_log_tail("klippy.log", num_lines, KLIPPER_CONDENSE_MAX_REPEATS);
     // 4 MiB of raw klippy.log is ~80 minutes of Klipper's 1-Stats-line-per-second
     // output, versus ~10 minutes for the old 512 KiB tail. condense_klipper_log()
     // then strips the Stats padding, so the retained payload stays in the same
     // ballpark as before while reaching far enough back to contain the incident
     // (bundle UJCCQP6S: 615 of 635 captured lines were Stats, and the MCU
     // shutdown being investigated had scrolled off hours earlier).
-    constexpr int kKlipperTailBytes = 4 * 1024 * 1024;
+    constexpr int KLIPPER_TAIL_BYTES = 4 * 1024 * 1024;
     int raw_bytes = 0;
-    auto body = fetch_log_tail(base_url, "/server/files/klippy.log", num_lines, kKlipperTailBytes,
-                               kKlipperCondenseMaxRepeats, &raw_bytes);
+    auto body = fetch_log_tail(base_url, "/server/files/klippy.log", num_lines, KLIPPER_TAIL_BYTES,
+                               KLIPPER_CONDENSE_MAX_REPEATS, &raw_bytes);
     if (body.empty())
-        return collect_local_log_tail("klippy.log", num_lines, kKlipperCondenseMaxRepeats);
+        return collect_local_log_tail("klippy.log", num_lines, KLIPPER_CONDENSE_MAX_REPEATS);
 
     // klippy.log is the fragile one. Klipper's handler rotates on a clock jump,
     // and an RTC-less printer jumps its clock on every boot — Vger1700's device
     // carried both printer.log.1970-01-01 and printer.log.2025-12-31 as proof.
     // "klippy.log" is a Moonraker alias; on AD5M/AD5X the real file is
     // printer.log, so rotations must be matched under both names.
-    static const std::vector<std::string> kStems = {"klippy.log", "printer.log"};
-    return prepend_rotated_predecessor(base_url, kStems, body, raw_bytes, kKlipperTailBytes,
-                                       num_lines, kKlipperCondenseMaxRepeats);
+    static const std::vector<std::string> STEMS = {"klippy.log", "printer.log"};
+    return prepend_rotated_predecessor(base_url, STEMS, body, raw_bytes, KLIPPER_TAIL_BYTES,
+                                       num_lines, KLIPPER_CONDENSE_MAX_REPEATS);
 }
 
 std::string DebugBundleCollector::collect_moonraker_log_tail(int num_lines) {
@@ -1834,16 +1834,16 @@ std::string DebugBundleCollector::collect_moonraker_log_tail(int num_lines) {
     // klippy.log with it while moonraker.log kept the whole incident.
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
-        return collect_local_log_tail("moonraker.log", num_lines, kMoonrakerCondenseMaxRepeats);
+        return collect_local_log_tail("moonraker.log", num_lines, MOONRAKER_CONDENSE_MAX_REPEATS);
     int raw_bytes = 0;
     auto body = fetch_log_tail(base_url, "/server/files/moonraker.log", num_lines,
-                               kMoonrakerTailBytes, kMoonrakerCondenseMaxRepeats, &raw_bytes);
+                               MOONRAKER_TAIL_BYTES, MOONRAKER_CONDENSE_MAX_REPEATS, &raw_bytes);
     if (body.empty())
-        return collect_local_log_tail("moonraker.log", num_lines, kMoonrakerCondenseMaxRepeats);
+        return collect_local_log_tail("moonraker.log", num_lines, MOONRAKER_CONDENSE_MAX_REPEATS);
 
-    static const std::vector<std::string> kStems = {"moonraker.log"};
-    return prepend_rotated_predecessor(base_url, kStems, body, raw_bytes, kMoonrakerTailBytes,
-                                       num_lines, kMoonrakerCondenseMaxRepeats);
+    static const std::vector<std::string> STEMS = {"moonraker.log"};
+    return prepend_rotated_predecessor(base_url, STEMS, body, raw_bytes, MOONRAKER_TAIL_BYTES,
+                                       num_lines, MOONRAKER_CONDENSE_MAX_REPEATS);
 }
 
 // =============================================================================

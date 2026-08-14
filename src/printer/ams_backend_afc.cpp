@@ -143,7 +143,7 @@ std::string afc_state_detail(std::string_view raw) {
         const char* token;
         const char* label;
     };
-    static constexpr StateLabel kLabels[] = {
+    static constexpr StateLabel LABELS[] = {
         {"idle", "Idle"},
         {"initialized", "Initialized"},
         {"loading", "Loading"},
@@ -157,16 +157,16 @@ std::string afc_state_detail(std::string_view raw) {
         {"toolpickup", "Picking up tool"},
     };
     const std::string token = ams_normalize_state_token(raw);
-    for (const auto& e : kLabels) {
+    for (const auto& e : LABELS) {
         if (token == e.token)
             return lv_tr(e.label);
     }
     return humanize_state(raw);
 }
 
-// [L067] kLabels feeds lv_tr() through a variable, which the translation
+// [L067] LABELS feeds lv_tr() through a variable, which the translation
 // extractor cannot see. Name each label literally here so it lands in the
-// catalogs. Keep in sync with kLabels above.
+// catalogs. Keep in sync with LABELS above.
 // clang-format off
 void afc_state_translation_hints_() {
     (void)lv_tr("Idle"); (void)lv_tr("Initialized"); (void)lv_tr("Loading");
@@ -264,7 +264,7 @@ void AmsBackendAfc::on_started() {
     // ingest AFC's as if the user had authored them.
     if (api_) {
         override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
-            api_, "afc", helix::ams::lane_key_style_for(get_type()), kOverrideNamespace);
+            api_, "afc", helix::ams::lane_key_style_for(get_type()), OVERRIDE_NAMESPACE);
         auto loaded = override_store_->load_blocking();
         const auto loaded_count = loaded.size();
         {
@@ -460,8 +460,8 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
         // Arm the drain. printer.AFC.message is a FIFO head — one clear pops one
         // entry, so a second queued error would otherwise stay on screen and look
         // exactly like the Reset having done nothing. The drain runs until the
-        // queue reports empty; kMessageDrainMaxClears is only the runaway guard.
-        message_drain_budget_ = kMessageDrainMaxClears;
+        // queue reports empty; MESSAGE_DRAIN_MAX_CLEARS is only the runaway guard.
+        message_drain_budget_ = MESSAGE_DRAIN_MAX_CLEARS;
         message_drain_pending_ = false;
         // Bound the arm in wall-clock time. If the queue was already empty, no
         // later delta will carry `message` at all, so the empty-message disarm
@@ -486,7 +486,7 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
     // keeps printer.AFC.message populated long after current_state returns to
     // Idle, and AFC_RESET does not touch it.
     spdlog::info("[AMS AFC] Clearing fault (draining message queue, max {} clears)",
-                 kMessageDrainMaxClears);
+                 MESSAGE_DRAIN_MAX_CLEARS);
     // execute_gcode_notify, matching cancel(): the user pressed a button, so a
     // failed RESET_FAILURE must surface rather than being logged silently.
     AmsError failure_reset = execute_gcode_notify(
@@ -528,7 +528,7 @@ void AmsBackendAfc::maybe_drain_message_queue() {
             // the budget is spent, so nothing downstream records it.
             spdlog::warn("[AMS AFC] Message drain reached its {}-clear cap; sending the "
                          "last clear and stopping",
-                         kMessageDrainMaxClears);
+                         MESSAGE_DRAIN_MAX_CLEARS);
         }
     }
 
@@ -899,7 +899,7 @@ std::string to_lower_copy(const std::string& s) {
 
 /// Highest tool number a lane may claim. Anything above this is treated as
 /// garbage rather than grown into, so a malformed field cannot size a vector.
-constexpr int kAfcMaxToolNumber = 64;
+constexpr int AFC_MAX_TOOL_NUMBER = 64;
 
 /// Parse AFC's per-lane `map` field into tool numbers, in the order AFC sent them.
 ///
@@ -926,7 +926,7 @@ std::vector<int> parse_afc_lane_map(const nlohmann::json& map_value) {
             return;
         try {
             const int tool = std::stoi(digits);
-            if (tool >= 0 && tool <= kAfcMaxToolNumber)
+            if (tool >= 0 && tool <= AFC_MAX_TOOL_NUMBER)
                 out.push_back(tool);
         } catch (...) {
             // Out of int range — skip
@@ -1002,14 +1002,14 @@ bool AmsBackendAfc::is_narration_drift_candidate(const std::string& line) const 
 
     // ...minus the lines AFC emits every toolchange that have no phase by design.
     // Without this the log would report them as drift forever.
-    static constexpr const char* kKnownPhaseless[] = {
+    static constexpr const char* KNOWN_PHASELESS[] = {
         "tool change",
         "toolchange",
         "already loaded",
         "total change time",
         "rotation distance reset",
     };
-    for (const char* known : kKnownPhaseless) {
+    for (const char* known : KNOWN_PHASELESS) {
         if (s.find(known) != std::string::npos)
             return false;
     }
@@ -3194,21 +3194,21 @@ void AmsBackendAfc::check_afc_feature_level(const nlohmann::json& lane_status) {
     if (!config) {
         return;
     }
-    constexpr const char* kNoticeShownKey = "/ams/afc_upgrade_notice_shown";
+    constexpr const char* NOTICE_SHOWN_KEY = "/ams/afc_upgrade_notice_shown";
 
     if (modern) {
         // Re-arm, so a downgrade is reported again rather than silently accepted.
-        if (config->get<bool>(kNoticeShownKey, false)) {
-            config->set<bool>(kNoticeShownKey, false);
+        if (config->get<bool>(NOTICE_SHOWN_KEY, false)) {
+            config->set<bool>(NOTICE_SHOWN_KEY, false);
             config->save();
         }
         return;
     }
 
-    if (config->get<bool>(kNoticeShownKey, false)) {
+    if (config->get<bool>(NOTICE_SHOWN_KEY, false)) {
         return; // Already told them once; do not nag on every boot.
     }
-    config->set<bool>(kNoticeShownKey, true);
+    config->set<bool>(NOTICE_SHOWN_KEY, true);
     config->save();
 
     // Advisory, not an error — nothing is broken, some detail is just missing.
@@ -3443,17 +3443,17 @@ void AmsBackendAfc::query_afc_configfile_topology() {
                 // configfile.settings, so `[AFC_extruder T1]` arrives as
                 // "afc_extruder t1". The section suffix is matched
                 // case-insensitively against the names AFC.extruders publishes.
-                static constexpr const char* kExtruderPrefix = "afc_extruder ";
-                static constexpr const char* kToolchangerPrefix = "afc_toolchanger ";
+                static constexpr const char* EXTRUDER_PREFIX = "afc_extruder ";
+                static constexpr const char* TOOLCHANGER_PREFIX = "afc_toolchanger ";
                 std::unordered_map<std::string, std::string> found;
                 bool saw_toolchanger = false;
                 for (auto it = settings.begin(); it != settings.end(); ++it) {
                     const std::string key = to_lower_copy(it.key());
-                    if (key.rfind(kToolchangerPrefix, 0) == 0) {
+                    if (key.rfind(TOOLCHANGER_PREFIX, 0) == 0) {
                         saw_toolchanger = true;
                         continue;
                     }
-                    if (key.rfind(kExtruderPrefix, 0) != 0 || !it.value().is_object()) {
+                    if (key.rfind(EXTRUDER_PREFIX, 0) != 0 || !it.value().is_object()) {
                         continue;
                     }
                     const auto& section = it.value();
@@ -3461,7 +3461,7 @@ void AmsBackendAfc::query_afc_configfile_topology() {
                         !section["extruder_name"].is_string()) {
                         continue;
                     }
-                    found[key.substr(std::strlen(kExtruderPrefix))] =
+                    found[key.substr(std::strlen(EXTRUDER_PREFIX))] =
                         section["extruder_name"].get<std::string>();
                 }
 
