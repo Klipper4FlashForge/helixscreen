@@ -1279,10 +1279,15 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
                                                       "hubs",
                                                       "extruders",
                                                       "buffers"});
+    // "current_map" (AFC virtual tools, #605) names which of a multi-tool lane's
+    // T-commands is active. The subscription is a strict allowlist, so a field
+    // missing here never reaches parse_afc_stepper at all. Older AFC simply does not
+    // publish it and Moonraker omits what an object does not have, so asking for it
+    // is safe against every version.
     static const json afc_stepper_fields =
-        json::array({"buffer_status", "color", "dist_hub", "extruder", "filament_status", "hub",
-                     "load", "loaded_to_hub", "map", "material", "prep", "runout_lane", "spool_id",
-                     "status", "tool_loaded", "weight"});
+        json::array({"buffer_status", "color", "current_map", "dist_hub", "extruder",
+                     "filament_status", "hub", "load", "loaded_to_hub", "map", "material", "prep",
+                     "runout_lane", "spool_id", "status", "tool_loaded", "weight"});
     static const json afc_hub_fields = json::array({"state", "afc_bowden_length"});
     static const json afc_buffer_fields = json::array(
         {"state", "distance_to_fault", "error_sensitivity", "fault_detection_enabled", "lanes"});
