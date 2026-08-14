@@ -164,3 +164,124 @@ def test_long_message_scrolls_instead_of_growing_the_card(shutdown_app):
         "message container reports no scroll range, so the cap is truncating "
         f"content rather than making it reachable (h={scroll['h']}, "
         f"content_h={scroll['content_h']})")
+
+
+# ============================================================================
+# AMS loading-error modal
+#
+# The AFC position diagram sits OUTSIDE this modal's scrollable text area, so it
+# never scrolls out of view — which also means it counts against the card's fixed
+# height budget. #dialog_content_max is documented in globals.xml as sized for a
+# header + divider + one button row, so this card is already over that allowance
+# and the arithmetic deserves pinning rather than trusting.
+#
+# Reaching it: the AMS panel is not on the navbar. Go to the filament panel and
+# click the mini AMS status widget, which pushes the ams_panel overlay; the modal
+# is then raised by ams_action reaching ERROR (9).
+# ============================================================================
+
+_AMS_ACTION_ERROR = 9  # AmsAction::ERROR, ams_types.h
+
+# A recognised AFC fault publishes its stop point here and the <afc_fault_path>
+# graphic binds `hidden` to it, so setting it directly is enough to show the
+# diagram without needing a backend that produces the matching fault text.
+_AFC_SEGMENT_VISIBLE = 2
+
+
+@pytest.fixture
+def ams_error_app(request, tmp_path):
+    """An instance sitting on the AMS loading-error modal, held open.
+
+    The panel dismisses this modal as soon as ams_action leaves ERROR, and the
+    mock pushes its own state back within ~400ms, so the modal is only briefly
+    real. `freeze` pins it; subjects still propagate while frozen, which is what
+    lets the diagram be toggled afterwards.
+    """
+    size = getattr(request, "param", "480x272")
+    if not _BINARY.exists():
+        pytest.skip(f"{_BINARY} not built — run `make -j`")
+
+    before_size = os.environ.get("HELIX_SCREEN_SIZE")
+    before_ams = os.environ.get("HELIX_MOCK_AMS")
+    os.environ["HELIX_SCREEN_SIZE"] = size
+    os.environ["HELIX_MOCK_AMS"] = "afc"
+    try:
+        app = HelixApp(binary=_BINARY, socket_path=tmp_path / "control.sock",
+                       log_path=tmp_path / "app.log")
+        with app:
+            app.navigate("filament")
+            app.wait_idle()
+            app.click("ams_mini_status")
+            app.wait_idle()
+            assert "ams_panel" in app.current().get("overlays", []), (
+                "clicking the mini AMS status did not open the AMS panel")
+
+            # Racing the mock's next state push: set, freeze, confirm, retry.
+            for _ in range(5):
+                app.set("ams_action", _AMS_ACTION_ERROR)
+                app.freeze()
+                if _geom(app, "ams_loading_error_modal") is not None:
+                    break
+                app.unfreeze()
+            else:
+                pytest.fail("could not pin the AMS loading-error modal open")
+
+            # The mock's fault text is a short generic sentence, which leaves the
+            # card ~138px on a 272px panel — far enough from any cap that no cap
+            # mutation could fail these tests. This message comes from a backend
+            # field rather than a subject, so `set_text` is the only way to reach
+            # it and make the height budget actually load-bearing.
+            app.ctl("set_text", "error_message", _LONG_REASON)
+            app.wait_idle()
+
+            try:
+                yield app, size
+            finally:
+                app.unfreeze()
+    finally:
+        for key, val in (("HELIX_SCREEN_SIZE", before_size),
+                         ("HELIX_MOCK_AMS", before_ams)):
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = val
+
+
+def test_ams_error_modal_fits_the_screen(ams_error_app):
+    app, size = ams_error_app
+    screen_h = int(size.split("x")[1])
+
+    card = _geom(app, "ams_loading_error_modal")
+    assert card is not None
+    top, bottom = card["y"], card["y"] + card["h"]
+    assert top >= 0, f"{size}: card starts above the screen at y={top}"
+    assert bottom <= screen_h, (
+        f"{size}: card runs {bottom - screen_h}px past the bottom "
+        f"(y={top} h={card['h']})")
+
+
+def test_ams_error_modal_fits_with_the_fault_diagram(ams_error_app):
+    """The pinned diagram is extra fixed chrome — the tightest case on a micro panel."""
+    app, size = ams_error_app
+    screen_h = int(size.split("x")[1])
+
+    app.set("afc_fault_segment", _AFC_SEGMENT_VISIBLE)
+    app.wait_idle()
+
+    diagram = _geom(app, "fault_path")
+    assert diagram is not None, "fault_path did not appear for a recognised segment"
+
+    card = _geom(app, "ams_loading_error_modal")
+    primary = _geom(app, "btn_primary")
+    assert card is not None and primary is not None
+
+    card_bottom = card["y"] + card["h"]
+    assert card["y"] >= 0 and card_bottom <= screen_h, (
+        f"{size}: card {card['y']}..{card_bottom} outside 0..{screen_h}")
+
+    # The button row is the last child, so a card pinned at its cap clips it first.
+    btn_bottom = primary["y"] + primary["h"]
+    assert btn_bottom <= card_bottom, (
+        f"{size}: Retry runs {btn_bottom - card_bottom}px past the card "
+        f"(card y={card['y']} h={card['h']}, button y={primary['y']} h={primary['h']}, "
+        f"diagram h={diagram['h']})")
