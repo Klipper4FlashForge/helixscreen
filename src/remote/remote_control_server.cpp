@@ -1048,7 +1048,18 @@ static bool glob_match(const char* pat, const char* str) {
     return *pat == '\0';
 }
 
-// Every visible, named widget in a subtree whose name matches the pattern.
+// Every visible widget in a subtree whose name matches the pattern.
+//
+// A widget the author never named is not nameless: lv_obj_get_name_resolved()
+// crafts "<class>_<index>" for it ("lv_label_0"), and lv_obj_find_by_name()
+// already matches that form, so it was addressable all along and only this
+// walker hid it. Reporting it costs nothing — the crafted name is built on
+// demand, never stored, which matters on the ESP32 target where naming every
+// widget for real would be paid in heap.
+//
+// Explicit names are still the better answer for anything a test drives: a
+// crafted index counts siblings, so inserting a widget renumbers the ones
+// after it.
 static void collect_glob_matches(lv_obj_t* parent, const std::string& pattern,
                                  std::vector<lv_obj_t*>& out) {
     if (!parent) {
@@ -1060,14 +1071,12 @@ static void collect_glob_matches(lv_obj_t* parent, const std::string& pattern,
         if (!child || lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
             continue; // hidden subtree — not on screen, same rule as describe_walk
         }
+        char resolved[128];
+        lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
         const char* raw = lv_obj_get_name(child);
-        if (raw && raw[0] != '\0') {
-            char resolved[128];
-            lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
-            const char* name = resolved[0] != '\0' ? resolved : raw;
-            if (glob_match(pattern.c_str(), name)) {
-                out.push_back(child);
-            }
+        const char* name = resolved[0] != '\0' ? resolved : raw;
+        if (name && name[0] != '\0' && glob_match(pattern.c_str(), name)) {
+            out.push_back(child);
         }
         collect_glob_matches(child, pattern, out);
     }
@@ -1182,13 +1191,14 @@ static void collect_by_name(lv_obj_t* parent, const std::string& name,
         if (!child || lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
             continue;
         }
+        // Unnamed widgets match on LVGL's crafted "<class>_<index>" — see the
+        // note on collect_glob_matches.
+        char resolved[128];
+        lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
         const char* raw = lv_obj_get_name(child);
-        if (raw && raw[0] != '\0') {
-            char resolved[128];
-            lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
-            if (name == (resolved[0] != '\0' ? resolved : raw)) {
-                out.push_back(child);
-            }
+        const char* candidate = resolved[0] != '\0' ? resolved : raw;
+        if (candidate && name == candidate) {
+            out.push_back(child);
         }
         collect_by_name(child, name, out);
     }
