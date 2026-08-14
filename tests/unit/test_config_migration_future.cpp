@@ -28,10 +28,13 @@
 // static function in config.cpp), same as the v18/v21 migration tests.
 
 #include "config.h"
+#include "config_testing.h"
+#include "platform_capabilities.h"
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -556,6 +559,43 @@ TEST_CASE_METHOD(MigrationFutureFixture,
 
     CHECK(replay_from(baseline, 3)["input"]["jitter_threshold"] == 15);
     CHECK(replay_from(baseline, 2)["input"]["jitter_threshold"] == 5);
+}
+
+TEST_CASE_METHOD(MigrationFutureFixture,
+                 "Config round trip: a rollback past v16 re-disables the screensaver on a "
+                 "constrained tier",
+                 "[config][migration][roundtrip]") {
+    // The fifth replay, invisible to the sweep above: migrate_v15_to_v16()
+    // (config.cpp:740) returns early on STANDARD hardware, which is what a
+    // desktop test host detects, so every other test in this file exercises the
+    // no-op branch. Forcing the tier is the only way to see the real one.
+    //
+    // Milder than the other four — it re-fires only for a user who deliberately
+    // re-selected Flying Toasters after the first migration, and the migration
+    // is arguably right that the setting breaks prints on this hardware. Pinned
+    // so the behaviour is a decision rather than an accident.
+    struct TierGuard {
+        ~TierGuard() {
+            helix::config_testing::set_forced_tier_for_migration(std::nullopt);
+        }
+    } tier_guard;
+    helix::config_testing::set_forced_tier_for_migration(helix::PlatformTier::BASIC);
+
+    // A current-stamp config runs no migration, so Flying Toasters standing at
+    // 1 here is the user's own choice — either they never hit v15→v16, or they
+    // hit it and re-selected the screensaver afterwards.
+    const json baseline = boot(populated_config());
+    REQUIRE(baseline["display"]["screensaver_type"] == 1);
+
+    // A rollback past the v15→v16 gate overrides that choice.
+    const json replayed = replay_from(baseline, 15);
+    CHECK(replayed["display"]["screensaver_type"] == 0);
+    CHECK(replayed["display"]["screensaver_migration_notice_pending"] == true);
+
+    // One version later the gate is not crossed and the choice stands.
+    const json safe = replay_from(baseline, 16);
+    CHECK(safe["display"]["screensaver_type"] == 1);
+    CHECK_FALSE(safe["display"].contains("screensaver_migration_notice_pending"));
 }
 
 TEST_CASE_METHOD(MigrationFutureFixture,
