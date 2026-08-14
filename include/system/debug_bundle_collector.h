@@ -10,10 +10,33 @@
 
 namespace helix {
 
+/**
+ * @brief PrinterState/LVGL-derived inputs to the bundle's `printer` section.
+ *
+ * Captured on the main thread by snapshot_printer_state(), then carried into
+ * the collect worker as plain data. The section used to read the subjects
+ * itself, which meant lv_subject_get_string() / lv_subject_get_int() and a
+ * reference into PrinterState's unguarded printer_type_ all ran on the
+ * HttpExecutor slow lane — a torn read at best, a use-after-free if
+ * set_printer_type() landed mid-copy. Same shape as UpdateDiagnostics below,
+ * and it makes the section assemblable in a test without a live PrinterState.
+ */
+struct PrinterSnapshot {
+    bool captured = false;       ///< false = default-constructed, never filled
+    std::string model;           ///< PrinterState::get_printer_type(), copied
+    std::string klipper_version; ///< klipper_version subject, "" if unset
+    int connection_state = -1;   ///< printer_connection_state subject; -1 = unavailable
+    int klippy_state = -1;       ///< klippy_state subject; -1 = unavailable
+};
+
 struct BundleOptions {
     bool include_klipper_logs = false;
     bool include_moonraker_logs = false;
     std::string user_note;
+    /// Filled by upload_async() on the main thread. Left uncaptured by direct
+    /// collect() callers, which are main-thread themselves and get a snapshot
+    /// taken inline instead.
+    PrinterSnapshot printer;
 };
 
 struct BundleResult {
@@ -21,6 +44,17 @@ struct BundleResult {
     std::string share_code;
     std::string error_message;
 };
+
+/// One config file as the include walker sees it. `status` is the HTTP status
+/// (404 = a stale [include] of a deleted file, skipped silently).
+struct ConfigFetchResult {
+    int status = 0;
+    std::string body;
+};
+
+/// Injection point for walk_include_tree(): maps a config path to its contents.
+/// Production passes a Moonraker GET; tests pass a table.
+using ConfigFetcher = std::function<ConfigFetchResult(const std::string& path)>;
 
 /**
  * @brief Inputs to the bundle's `update` section.
@@ -52,9 +86,19 @@ class DebugBundleCollector {
     using ResultCallback = std::function<void(const BundleResult&)>;
     static void upload_async(const BundleOptions& options, ResultCallback callback);
 
+    /// Read PrinterState and its LVGL subjects into plain data.
+    ///
+    /// MAIN THREAD ONLY. lv_subject_get_string() hands back the subject's live
+    /// buffer, and PrinterState::get_printer_type() returns a reference to a
+    /// member with no mutex, so both must be copied where the writer cannot be
+    /// running concurrently.
+    static PrinterSnapshot snapshot_printer_state();
+
     /// Individual collectors (public for testing)
     static nlohmann::json collect_system_info();
-    static nlohmann::json collect_printer_info();
+    /// Pure assembly from a snapshot — touches no LVGL and no PrinterState, so
+    /// it is safe on the collect worker and testable without either.
+    static nlohmann::json collect_printer_info(const PrinterSnapshot& snap);
     /// `num_lines <= 0` (the default) ships the whole ring — see
     /// resolve_log_tail_lines().
     static std::string collect_log_tail(int num_lines = 0);
@@ -216,6 +260,23 @@ class DebugBundleCollector {
     /// sanitize_value; see kMaxConfigBytes for why not whole-file).
     static nlohmann::json collect_printer_config();
 
+    /// Breadth-first walk of `root`'s `[include]` tree (public for testing).
+    ///
+    /// Split out from collect_printer_config() so the traversal is reachable
+    /// without Moonraker: the loop grows its own work queue while iterating it,
+    /// which is exactly the shape that shipped a use-after-free in v0.99.112,
+    /// and it had no coverage because the only caller needed a live printer.
+    ///
+    /// Returns a JSON object of path -> sanitized body (or `{"error": ...}` for
+    /// a non-2xx that is not 404). `truncated_out` receives "" or the reason the
+    /// walk stopped early; `bytes_out` receives the raw byte total. Both
+    /// optional.
+    static nlohmann::json walk_include_tree(const std::string& root,
+                                            const std::vector<std::string>& available,
+                                            const ConfigFetcher& fetch,
+                                            std::string* truncated_out = nullptr,
+                                            size_t* bytes_out = nullptr);
+
     /// Klipper `[include <pattern>]` targets, in file order (public for testing).
     /// Returns the raw patterns; resolution against the config root is
     /// resolve_include_pattern()'s job.
@@ -335,16 +396,24 @@ class DebugBundleCollector {
     /// runs it through condense_klipper_log() at that threshold. The condenser is
     /// shape-based, not Klipper-specific, so moonraker.log uses it too — with its
     /// own threshold, see kMoonrakerCondenseMaxRepeats.
+    ///
+    /// `raw_bytes_out`, when non-null, receives how many bytes the fetch actually
+    /// pulled off the wire, before condensing and the line cap. That is the only
+    /// honest measure of how much of `tail_bytes` the file was able to fill —
+    /// the returned string is post-condense and is smaller by an order of
+    /// magnitude. prepend_rotated_predecessor() needs the raw figure.
     static std::string fetch_log_tail(const std::string& base_url, const std::string& endpoint,
                                       int num_lines, int tail_bytes = 524288,
-                                      int condense_max_repeats = 0);
+                                      int condense_max_repeats = 0, int* raw_bytes_out = nullptr);
 
     /// Prepend the newest rotated predecessor when the active log is too short to
     /// have used its byte budget. See the definition for why that predicate is
-    /// the right trigger.
+    /// the right trigger. `active_raw_bytes` is the pre-condense fetch size from
+    /// fetch_log_tail()'s `raw_bytes_out`, NOT active_body.size().
     static std::string prepend_rotated_predecessor(const std::string& base_url,
                                                    const std::vector<std::string>& stems,
-                                                   const std::string& active_body, int tail_bytes,
+                                                   const std::string& active_body,
+                                                   int active_raw_bytes, int tail_bytes,
                                                    int num_lines, int condense_max_repeats);
 
     /// Check if a key name matches a sensitive pattern

@@ -13,6 +13,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <zlib.h>
@@ -183,8 +184,141 @@ TEST_CASE("DebugBundleCollector: BundleResult defaults are reasonable", "[debug-
 
 TEST_CASE("DebugBundleCollector: collect_printer_info() returns valid JSON", "[debug-bundle]") {
     // Printer may not be connected, but should not crash
-    json printer = helix::DebugBundleCollector::collect_printer_info();
+    json printer = helix::DebugBundleCollector::collect_printer_info(
+        helix::DebugBundleCollector::snapshot_printer_state());
     REQUIRE(printer.is_object());
+}
+
+TEST_CASE("DebugBundleCollector: collect_printer_info() renders a snapshot without PrinterState",
+          "[debug-bundle]") {
+    // The section is pure assembly now, so the whole state table is reachable
+    // without a live printer — and without the LVGL subject reads that used to
+    // happen on the upload worker.
+    helix::PrinterSnapshot snap;
+    snap.captured = true;
+    snap.model = "Adventurer 5X";
+    snap.klipper_version = "v0.13.0-746-ZMOD";
+    snap.connection_state = 2; // connected
+    snap.klippy_state = 2;     // shutdown
+
+    const json printer = helix::DebugBundleCollector::collect_printer_info(snap);
+    CHECK(printer["model"] == "Adventurer 5X");
+    CHECK(printer["klipper_version"] == "v0.13.0-746-ZMOD");
+    CHECK(printer["connection_state"] == "connected");
+    CHECK(printer["klippy_state"] == "shutdown");
+
+    SECTION("out-of-range enums are dropped rather than indexing off the table") {
+        helix::PrinterSnapshot bad;
+        bad.captured = true;
+        bad.connection_state = 99;
+        bad.klippy_state = -1;
+        const json out = helix::DebugBundleCollector::collect_printer_info(bad);
+        CHECK_FALSE(out.contains("connection_state"));
+        CHECK_FALSE(out.contains("klippy_state"));
+    }
+
+    SECTION("an uncaptured snapshot still yields a well-formed object") {
+        const json out = helix::DebugBundleCollector::collect_printer_info({});
+        REQUIRE(out.is_object());
+        CHECK_FALSE(out.contains("klipper_version"));
+    }
+}
+
+// ============================================================================
+// walk_include_tree() — the traversal that shipped a UAF in v0.99.112
+// ============================================================================
+
+namespace {
+/// Fetcher backed by a table; anything not in the table is a 404.
+helix::ConfigFetcher table_fetcher(const std::map<std::string, std::string>& files) {
+    return [files](const std::string& path) {
+        auto it = files.find(path);
+        if (it == files.end())
+            return helix::ConfigFetchResult{404, ""};
+        return helix::ConfigFetchResult{200, it->second};
+    };
+}
+} // namespace
+
+TEST_CASE("DebugBundleCollector: walk_include_tree follows a multi-include root",
+          "[debug-bundle]") {
+    // THE REGRESSION CASE. The walk binds a name to queue[i] and pushes onto
+    // `queue` while still iterating the remaining [include] patterns of the same
+    // file. With `const std::string&` the first push reallocated (an
+    // initializer-list vector has capacity exactly 1) and every later pattern
+    // read freed memory — SIGBUS on the AD5X's mips build. Two includes in the
+    // root is the minimum that reproduces it, so this must stay >= 2.
+    const std::vector<std::string> available = {"printer.cfg", "a.cfg", "b.cfg", "c.cfg"};
+    auto fetch = table_fetcher({
+        {"printer.cfg", "[include a.cfg]\n[include b.cfg]\n[include c.cfg]\n"},
+        {"a.cfg", "[stepper_x]\nstep_pin: PA1\n"},
+        {"b.cfg", "[stepper_y]\nstep_pin: PA2\n"},
+        {"c.cfg", "[stepper_z]\nstep_pin: PA3\n"},
+    });
+
+    std::string truncated = "sentinel";
+    size_t bytes = 0;
+    const json files = helix::DebugBundleCollector::walk_include_tree("printer.cfg", available,
+                                                                      fetch, &truncated, &bytes);
+
+    REQUIRE(files.is_object());
+    CHECK(files.size() == 4);
+    CHECK(files.contains("printer.cfg"));
+    CHECK(files.contains("a.cfg"));
+    CHECK(files.contains("b.cfg"));
+    CHECK(files.contains("c.cfg"));
+    CHECK(truncated.empty());
+    CHECK(bytes > 0);
+}
+
+TEST_CASE("DebugBundleCollector: walk_include_tree terminates on an include cycle",
+          "[debug-bundle]") {
+    const std::vector<std::string> available = {"printer.cfg", "loop.cfg"};
+    auto fetch = table_fetcher({
+        {"printer.cfg", "[include loop.cfg]\n"},
+        {"loop.cfg", "[include printer.cfg]\n[include loop.cfg]\n"},
+    });
+
+    const json files =
+        helix::DebugBundleCollector::walk_include_tree("printer.cfg", available, fetch);
+    CHECK(files.size() == 2); // seen-set stops the cycle
+}
+
+TEST_CASE("DebugBundleCollector: walk_include_tree resolves nested relative includes",
+          "[debug-bundle]") {
+    // An include inside mod/base.cfg is relative to mod/, and a glob must not
+    // cross a '/'.
+    const std::vector<std::string> available = {"printer.cfg", "mod/base.cfg", "mod/ifs.cfg",
+                                                "mod/sub/deep.cfg"};
+    auto fetch = table_fetcher({
+        {"printer.cfg", "[include mod/base.cfg]\n"},
+        {"mod/base.cfg", "[include ifs.cfg]\n[include *.cfg]\n"},
+        {"mod/ifs.cfg", "[ifs]\n"},
+        {"mod/sub/deep.cfg", "[deep]\n"},
+    });
+
+    const json files =
+        helix::DebugBundleCollector::walk_include_tree("printer.cfg", available, fetch);
+    CHECK(files.contains("mod/ifs.cfg"));
+    CHECK_FALSE(files.contains("mod/sub/deep.cfg")); // '*' does not cross '/'
+}
+
+TEST_CASE("DebugBundleCollector: walk_include_tree reports HTTP errors but skips 404s",
+          "[debug-bundle]") {
+    const std::vector<std::string> available = {"printer.cfg", "gone.cfg", "broken.cfg"};
+    auto fetch = [](const std::string& path) {
+        if (path == "printer.cfg")
+            return helix::ConfigFetchResult{200, "[include gone.cfg]\n[include broken.cfg]\n"};
+        if (path == "broken.cfg")
+            return helix::ConfigFetchResult{500, ""};
+        return helix::ConfigFetchResult{404, ""};
+    };
+
+    const json files =
+        helix::DebugBundleCollector::walk_include_tree("printer.cfg", available, fetch);
+    CHECK_FALSE(files.contains("gone.cfg")); // a stale include is Klipper's problem, not ours
+    REQUIRE(files.contains("broken.cfg"));
+    CHECK(files["broken.cfg"]["error"] == "HTTP 500");
 }
 
 // ============================================================================
