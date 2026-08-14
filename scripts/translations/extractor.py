@@ -150,6 +150,10 @@ LANGUAGE_NAMES = {
 # capture the full run via ADJACENT_LITERALS_GROUP and are post-processed by
 # _join_adjacent_literals().
 ADJACENT_LITERALS_GROUP = r'((?:"(?:[^"\\]|\\.)*"\s*)+)'
+# An lv_tr() argument, capturing its whole adjacent-literal run. Exported so
+# the translation gates can enumerate the real runtime keys rather than
+# re-deriving the pattern.
+LV_TR_RUN_RE = re.compile(r"lv_tr\s*\(\s*" + ADJACENT_LITERALS_GROUP)
 CPP_TRANSLATABLE_PATTERNS = [
     # lv_tr("text") - explicitly marked for translation (handles escaped quotes
     # and adjacent literal concatenation across multiple lines)
@@ -174,62 +178,133 @@ def _join_adjacent_literals(captured: str) -> str:
     return "".join(pieces)
 
 
-# A `\x` escape and the hex digits it consumes. Capped at two digits: a single
-# byte cannot hold more, and every real call site splits the literal ("\xC2\xB0"
-# "C") precisely so the escape stops there.
-_HEX_ESCAPE_RE = re.compile(r"\\x([0-9a-fA-F]{1,2})")
+# `\x` consumes hex digits greedily (C99 6.4.4.4), which is exactly why real
+# call sites split the literal: "Heating to %d\xC2\xB0" "C" stops the escape at
+# the closing quote instead of reading the C as a third hex digit.
+_HEX_ESCAPE_RE = re.compile(r"\\x([0-9a-fA-F]+)")
+_OCTAL_ESCAPE_RE = re.compile(r"\\([0-7]{1,3})")
+# Universal character names: \uXXXX and \UXXXXXXXX, encoded by the compiler as
+# UTF-8. ui_panel_belt_tension.cpp writes its em dash as —.
+_UCN_ESCAPE_RE = re.compile(r"\\u([0-9a-fA-F]{4})|\\U([0-9a-fA-F]{8})")
+
+# Single-character C escapes, mapped to the byte the compiler emits.
+_SIMPLE_ESCAPES = {
+    "n": b"\n",
+    "t": b"\t",
+    "r": b"\r",
+    "a": b"\a",
+    "b": b"\b",
+    "f": b"\f",
+    "v": b"\v",
+    "e": b"\x1b",  # GNU extension
+    "\\": b"\\",
+    '"': b'"',
+    "'": b"'",
+    "?": b"?",
+}
+
+
+def _resolve_literal_bytes(body: str):
+    """Resolve one C string-literal body to the bytes the compiler emits.
+
+    Returns None if the literal contains a malformed escape, so callers can
+    leave the input untouched rather than guess at corrupt input.
+    """
+    out = bytearray()
+    i = 0
+    n = len(body)
+    while i < n:
+        ch = body[i]
+        if ch != "\\":
+            out += ch.encode("utf-8")
+            i += 1
+            continue
+        if i + 1 >= n:
+            return None  # trailing lone backslash - not valid C
+        nxt = body[i + 1]
+        if nxt == "x":
+            m = _HEX_ESCAPE_RE.match(body, i)
+            if m is None:
+                return None  # `\x` with no hex digits
+            value = int(m.group(1), 16)
+            if value > 0xFF:
+                return None  # hex escape out of range for a byte
+            out.append(value)
+            i = m.end()
+            continue
+        if nxt in "01234567":
+            m = _OCTAL_ESCAPE_RE.match(body, i)
+            value = int(m.group(1), 8)
+            if value > 0xFF:
+                return None
+            out.append(value)
+            i = m.end()
+            continue
+        if nxt in "uU":
+            m = _UCN_ESCAPE_RE.match(body, i)
+            if m is None:
+                return None
+            out += chr(int(m.group(1) or m.group(2), 16)).encode("utf-8")
+            i = m.end()
+            continue
+        if nxt in _SIMPLE_ESCAPES:
+            out += _SIMPLE_ESCAPES[nxt]
+            i += 2
+            continue
+        return None  # unknown escape
+    return bytes(out)
 
 
 def decode_c_escapes(literal: str) -> str:
-    """Resolve `\\xNN` escapes in a C source literal the way the compiler does.
+    """Resolve the escapes in one C source literal the way the compiler does.
 
     The runtime translation key is whatever the compiler emits, so a source
     literal "%d\\xc2\\xb0" must extract as "%d°": the two escapes are raw BYTES
     that together form one UTF-8 character, not two Latin-1 code points (which
     is what codecs' "unicode_escape" would give).
 
-    Only `\\x` is resolved. `\\n`, `\\t`, `\\"` and `\\\\` are passed through
-    verbatim, because keys are stored as XML attribute values in the runtime
-    packs and XML attribute-value normalization collapses a real newline to a
-    space, so a decoded `\\n` could not survive the round trip.
+    All C escapes are resolved, including `\\n`. A key holding a real newline
+    still survives the runtime pack because generate_translations.py emits it as
+    the numeric character reference `&#10;` - a literal newline in an XML
+    attribute value would be normalized to a space (XML 1.0 s3.3.3), but a
+    character reference is appended to the normalized value as-is.
 
-    A malformed escape (`\\x` with no hex digit) or a byte run that is not valid
-    UTF-8 (a truncated multi-byte sequence) leaves the literal untouched rather
-    than substituting a replacement character, so the corruption stays visible
-    to the translation gates instead of shipping as a mangled key.
+    A malformed escape, or a byte run that is not valid UTF-8 (a truncated
+    multi-byte sequence), leaves the literal untouched rather than substituting
+    a replacement character, so the corruption stays visible to the translation
+    gates instead of shipping as a mangled key.
     """
-    if "\\x" not in literal:
+    if "\\" not in literal:
         return literal
-
-    out = bytearray()
-    i = 0
-    n = len(literal)
-    while i < n:
-        ch = literal[i]
-        if ch != "\\":
-            out += ch.encode("utf-8")
-            i += 1
-            continue
-        # An escape: consume the backslash and the character it escapes as one
-        # unit, so a literal backslash (\\) can never introduce a hex escape.
-        if i + 1 >= n:
-            out += b"\\"
-            i += 1
-            continue
-        if literal[i + 1] == "x":
-            m = _HEX_ESCAPE_RE.match(literal, i)
-            if m is None:
-                return literal  # `\x` with no hex digits - not valid C
-            out.append(int(m.group(1), 16))
-            i = m.end()
-            continue
-        out += literal[i : i + 2].encode("utf-8")
-        i += 2
-
+    raw = _resolve_literal_bytes(literal)
+    if raw is None:
+        return literal
     try:
-        return out.decode("utf-8")
+        return raw.decode("utf-8")
     except UnicodeDecodeError:
         return literal
+
+
+def resolve_cpp_literal_run(captured: str) -> str:
+    """Resolve a run of adjacent C++ string literals to its runtime value.
+
+    C++ resolves escapes per literal TOKEN and concatenates the resulting BYTE
+    sequences, so both steps have to happen in that order: resolving after the
+    join would let a `\\x` escape run past the quote that was written to stop
+    it, and decoding each token to text separately would break a UTF-8
+    character deliberately split across two literals.
+    """
+    pieces = _STRING_LITERAL_RE.findall(captured)
+    out = bytearray()
+    for piece in pieces:
+        raw = _resolve_literal_bytes(piece)
+        if raw is None:
+            return _join_adjacent_literals(captured)
+        out += raw
+    try:
+        return bytes(out).decode("utf-8")
+    except UnicodeDecodeError:
+        return _join_adjacent_literals(captured)
 
 
 def _marker_applies(content: str, literal_pos: int, marker_re) -> bool:
@@ -471,11 +546,11 @@ def extract_strings_from_cpp(cpp_path: Path) -> Set[str]:
         is_lv_tr = "lv_tr" in pattern
         is_adjacent = ADJACENT_LITERALS_GROUP in pattern
         for match in re.finditer(pattern, content):
-            text = match.group(1)
-            if is_adjacent:
-                text = _join_adjacent_literals(text)
             # The key must equal what the compiler produces, not the source form.
-            text = decode_c_escapes(text)
+            if is_adjacent:
+                text = resolve_cpp_literal_run(match.group(1))
+            else:
+                text = decode_c_escapes(match.group(1))
 
             # lv_tr() strings are explicitly marked - always include them, EXCEPT
             # when a `// i18n: universal` marker applies (the string renders the

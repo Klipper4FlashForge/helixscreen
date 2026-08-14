@@ -4,6 +4,7 @@ translations:
   ' elapsed · ': ' истёк · '
   ' frames': ' кадров'
   ' left': ' осталось'
+  '"%s" failed to load': Не удалось загрузить «%s»
   '%.1f Hz difference': Разница %.1f Гц
   '%d additional fan%s': '%d дополнительный вентилятор%s'
   '%d disabled': '%d отключено'
@@ -620,8 +621,8 @@ translations:
   Could not analyze PRINT_START macro. Some print options may be unavailable.: Не
     удалось проанализировать макрос PRINT_START. Некоторые параметры печати могут
     быть недоступны.
-  Could not check webcam status.\nCheck printer connection.: Не удалось проверить
-    статус веб-камеры.\nПроверьте подключение принтера.
+  ? "Could not check webcam status.\nCheck printer connection."
+  : "Не удалось проверить статус веб-камеры.\nПроверьте подключение принтера."
   Could not forget device: Не удалось забыть устройство
   Could not load printer database: Не удалось загрузить базу данных принтеров
   Could not parse tips database: Не удалось разобрать базу данных советов
@@ -928,10 +929,10 @@ translations:
     изменения: {}'
   'Failed to download G-code for remap: {}': 'Не удалось скачать G-code для переназначения:
     {}'
-  Failed to download helixscreen.conf.\nCheck printer connection.: Не удалось скачать
-    helixscreen.conf.\nПроверьте подключение принтера.
-  Failed to download moonraker.conf.\nCheck printer connection.: Не удалось скачать
-    moonraker.conf.\nПроверьте подключение принтера.
+  ? "Failed to download helixscreen.conf.\nCheck printer connection."
+  : "Не удалось скачать helixscreen.conf.\nПроверьте подключение принтера."
+  ? "Failed to download moonraker.conf.\nCheck printer connection."
+  : "Не удалось скачать moonraker.conf.\nПроверьте подключение принтера."
   Failed to duplicate spool: Не удалось дублировать катушку
   Failed to enable tuning tower: Не удалось включить башню настройки
   'Failed to exclude ''{}'': {}': 'Не удалось исключить ''{}'': {}'
@@ -1001,11 +1002,11 @@ translations:
   'Failed to toggle timelapse: {}': 'Не удалось переключить таймлапс: {}'
   'Failed to turn off heaters: {}': 'Не удалось выключить нагреватели: {}'
   'Failed to unload: {}': 'Не удалось выгрузить: {}'
-  Failed to update configuration.\nCheck printer connection.: Не удалось обновить
-    конфигурацию.\nПроверьте подключение принтера.
+  ? "Failed to update configuration.\nCheck printer connection."
+  : "Не удалось обновить конфигурацию.\nПроверьте подключение принтера."
   Failed to update moonraker.conf.: Не удалось обновить moonraker.conf.
-  Failed to update moonraker.conf.\nCheck printer connection.: Не удалось обновить
-    moonraker.conf.\nПроверьте подключение принтера.
+  ? "Failed to update moonraker.conf.\nCheck printer connection."
+  : "Не удалось обновить moonraker.conf.\nПроверьте подключение принтера."
   Failed to update phase tracking: Не удалось обновить отслеживание фазы
   'Failed to upload modified G-code: {}': 'Не удалось загрузить изменённый G-code:
     {}'
@@ -1095,12 +1096,8 @@ translations:
   Found 1 printer: Найден 1 принтер
   Framerate: Частота кадров
   Frequency Delta: Разница частот
-  ? 'Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15
-    Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match.
-    Above 90% is excellent; below 70% suggests uneven tension.'
-  : 'Разница частот: разница между путями A и B. В идеале менее 5 Гц; более 15 Гц
-    требует регулировки.\n\nСходство путей: насколько близко совпадают профили вибрации.
-    Выше 90% — отлично; ниже 70% указывает на неравномерное натяжение.'
+  ? "Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15 Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match. Above 90% is excellent; below 70% suggests uneven tension."
+  : "Разница частот: разница между путями A и B. В идеале менее 5 Гц; более 15 Гц требует регулировки.\n\nСходство путей: насколько близко совпадают профили вибрации. Выше 90% — отлично; ниже 70% указывает на неравномерное натяжение."
   From Buffer: Из буфера
   From Version: С версии
   Full: Полный
@@ -1108,7 +1105,8 @@ translations:
   G-code Preview: Просмотр G-code
   G-code commands will appear here: Здесь будут отображаться G-code команды
   GCode Console: 'Консоль G-code'
-  'Game Over!\nScore: {}\nTap to restart': 'Игра окончена!\nСчёт: {}\nНажмите, чтобы начать заново'
+  ? "Game Over!\nScore: {}\nTap to restart"
+  : "Игра окончена!\nСчёт: {}\nНажмите, чтобы начать заново"
   Gear Buffer Speed: 'Скорость шестерни от буфера'
   Gear Spool Speed: 'Скорость шестерни от катушки'
   Gear Unload Speed: 'Скорость выгрузки шестерни'
@@ -1281,8 +1279,8 @@ translations:
   'Install the HelixPrint plugin to enable fast G-code modifications. Run this command via SSH on your printer:': 'Установите
     плагин HelixPrint для быстрой модификации G-code. Выполните эту команду через
     SSH на вашем принтере:'
-  Install the timelapse plugin via SSH,\nthen tap \"Check Again\".: Установите плагин
-    таймлапс через SSH,\nзатем нажмите "Проверить снова".
+  ? "Install the timelapse plugin via SSH,\nthen tap \"Check Again\"."
+  : "Установите плагин таймлапс через SSH,\nзатем нажмите \"Проверить снова\"."
   Install timelapse plugin: Установить плагин таймлапса
   Installation Failed: Ошибка установки
   Installation failed: Ошибка установки
@@ -1542,8 +1540,8 @@ translations:
   Moonraker: Moonraker
   Moonraker restarted but Spoolman not connected. Check server.: Moonraker перезапущен,
     но Spoolman не подключен. Проверьте сервер.
-  Moonraker restarting...\nWaiting for reconnection...: Moonraker перезапускается...\nОжидание
-    переподключения...
+  ? "Moonraker restarting...\nWaiting for reconnection..."
+  : "Moonraker перезапускается...\nОжидание переподключения..."
   'Moonraker: ': 'Moonraker: '
   More points = more accurate, but takes longer.: Больше точек — точнее, но дольше.
   Motion: Движение
@@ -1576,7 +1574,8 @@ translations:
   My Custom Theme: Моя тема
   My Panel: Моя панель
   My Printer: Мой принтер
-  NEW HIGH SCORE!\n{}\nTap to play again: 'НОВЫЙ РЕКОРД!\n{}\nНажмите, чтобы сыграть снова'
+  ? "NEW HIGH SCORE!\n{}\nTap to play again"
+  : "НОВЫЙ РЕКОРД!\n{}\nНажмите, чтобы сыграть снова"
   NEWLY DISCOVERED: НЕДАВНО ОБНАРУЖЕНО
   Name: Название
   Name (optional): Название (необязательно)
@@ -1630,8 +1629,8 @@ translations:
   No buffer data available: Данные буфера недоступны
   No camera — use USB barcode scanner: Нет камеры — используйте USB сканер штрих-кодов
   No chamber temperature sensor detected: 'Датчик температуры камеры не обнаружен'
-  No changes selected.\n\nClick Cancel to close.: Изменения не выбраны.\n\nНажмите
-    «Отмена», чтобы закрыть.
+  ? "No changes selected.\n\nClick Cancel to close."
+  : "Изменения не выбраны.\n\nНажмите «Отмена», чтобы закрыть."
   No changes to revert: Нет изменений для отката
   No color: Без цвета
   No dryer available. Store filament in a sealed dry box with desiccant for best results.: Сушилка
@@ -1683,8 +1682,8 @@ translations:
   No temperature sensors detected: 'Датчики температуры не обнаружены'
   No timelapse videos found: Таймлапс-видео не найдены
   No vendors found: Производители не найдены
-  No webcam detected.\nA webcam is required for timelapse.: Веб-камера не обнаружена.\nДля
-    таймлапса необходима веб-камера.
+  ? "No webcam detected.\nA webcam is required for timelapse."
+  : "Веб-камера не обнаружена.\nДля таймлапса необходима веб-камера."
   No width sensor detected: 'Датчик диаметра не обнаружен'
   None: Нет
   None (disable): Нет (отключить)
@@ -1860,8 +1859,8 @@ translations:
   Plugin installed successfully.: Плагин успешно установлен.
   Plugin installed successfully. Moonraker is restarting...: Плагин успешно установлен.
     Moonraker перезапускается...
-  Plugin not responding after restart.\nIt may need more time to load.: Плагин не
-    отвечает после перезапуска.\nВозможно, ему нужно больше времени для загрузки.
+  ? "Plugin not responding after restart.\nIt may need more time to load."
+  : "Плагин не отвечает после перезапуска.\nВозможно, ему нужно больше времени для загрузки."
   Plugin uninstalled successfully.: Плагин успешно удалён.
   Plugins: Плагины
   Plugins are discovered on application startup: Плагины обнаруживаются при запуске
@@ -2057,8 +2056,8 @@ translations:
   Ready to Apply: Готово к применению
   Ready to load: Готов к загрузке
   Reason: Причина
-  'Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?': 'Причина:
-    {}\n\nПринтер не может возобновить эту печать. Начать заново?'
+  ? "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
+  : "Причина: {}\n\nПринтер не может возобновить эту печать. Начать заново?"
   Reboot: Перезагрузка
   Reboot failed: Ошибка перезагрузки
   Reboot failed — host is still reachable: Ошибка перезагрузки — хост всё ещё доступен
@@ -2349,12 +2348,8 @@ translations:
   'Set ': 'Установить '
   Set Active: Сделать активной
   Set PIN: Установить PIN
-  ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
-    appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
-    Strobe Light Tachometer, myStroboscope'
-  : 'Установите приложение-стробоскоп на телефоне на %.1f Гц и направьте на ремень.
-    Регулируйте, пока ремень не будет казаться неподвижным.\n\nРекомендуемые приложения:\n  Android:
-    Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope'
+  ? "Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"
+  : "Установите приложение-стробоскоп на телефоне на %.1f Гц и направьте на ремень. Регулируйте, пока ремень не будет казаться неподвижным.\n\nРекомендуемые приложения:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"
   Set local timezone for time display: Установить часовой пояс для отображения времени
   Set logging verbosity for troubleshooting: Установить уровень детализации журнала
     для устранения неполадок
@@ -2502,7 +2497,8 @@ translations:
   Stop Drying: Остановить сушку
   Stop Print?: Остановить печать?
   Stop failed: Ошибка остановки
-  Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: 'Остановить печать \"{}\"?\n\nЭто нельзя будет отменить через 5 секунд.'
+  ? "Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds."
+  : "Остановить печать \"{}\"?\n\nЭто нельзя будет отменить через 5 секунд."
   Stopped between Hub and Toolhead: Остановка между хабом и печатающей головкой
   Stopped between Lane and Hub: Остановка между слотом и хабом
   Stopped between Spool and Lane: Остановка между катушкой и слотом
@@ -2616,14 +2612,8 @@ translations:
   The filament system reported an error: Система филамента сообщила об ошибке
   The heater will cycle on and off several times.: Нагреватель будет несколько раз
     включаться и выключаться.
-  ? The motor vibrates the belt while a strobe light flashes at the same frequency.
-    When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse
-    the frequency buttons to sweep through values until the belt looks stationary,
-    then lock the reading.
-  : Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень
-    кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте
-    кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным,
-    затем зафиксируйте показание.
+  ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
+  : "Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным, затем зафиксируйте показание."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   : Печать на паузе. Смена инструмента сейчас переместит печатающую головку и заменит филамент в сопле. Возобновите печать после завершения смены.
   The printer halted this print and cannot resume it. Restart from the beginning?: Принтер
@@ -2661,13 +2651,10 @@ translations:
   This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: 'Этот канал предлагает v{}, старее установленной v{}. Всё добавленное с тех пор будет удалено.'
   This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: 'Это очистит назначение резервной катушки для всех катушек. Печать будет останавливаться при окончании филамента, пока вы не настроите их заново.'
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: У этого устройства нет проводного подключения к сети. Если выключить WiFi, включить его обратно можно будет только с этого экрана.
-  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
-  : На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может
-    привести к тому, что прошивка принтера сообщит об ошибке \"Timer Too Close\" или перезапустится
-    во время теста. Всё равно продолжить?
-  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
-  : На этом устройстве очень мало ОЗУ. Калибровка резонансов требует много памяти и может
-    вызвать ошибку \"Timer Too Close\". Всё равно продолжить?
+  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a "Timer Too Close" error or restart mid-test. Continue anyway?
+  : На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может привести к тому, что прошивка принтера сообщит об ошибке "Timer Too Close" или перезапустится во время теста. Всё равно продолжить?
+  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a "Timer Too Close" error. Continue anyway?
+  : На этом устройстве очень мало ОЗУ. Калибровка резонансов требует много памяти и может вызвать ошибку "Timer Too Close". Всё равно продолжить?
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Это не совпадает с привязанной катушкой Spoolman. Добавить как новую катушку или обновить привязанную?
   This file was sliced for {} but {} is loaded.: Файл нарезан для {}, но загружен
     {}.
@@ -2798,15 +2785,8 @@ translations:
   USB printer access denied — check permissions: Доступ к USB-принтеру запрещён —
     проверьте разрешения
   Understanding Results: Понимание результатов
-  ? Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine
-    artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the
-    resonant frequency \u2014 matched frequencies mean balanced tension.\n\nFor CoreXY,
-    Path A and B should be within a few Hz of each other.
-  : Неравномерное натяжение ремня вызывает дефекты печати, такие как смещения слоёв,
-    VFA (вертикальные мелкие артефакты) и ringing.\n\nЭтот инструмент вибрирует каждый
-    путь ремня и измеряет резонансную частоту \u2014 совпадающие частоты означают
-    сбалансированное натяжение.\n\nДля CoreXY пути A и B должны отличаться на несколько
-    Гц.
+  ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
+  : "Неравномерное натяжение ремня вызывает дефекты печати, такие как смещения слоёв, VFA (вертикальные мелкие артефакты) и ringing.\n\nЭтот инструмент вибрирует каждый путь ремня и измеряет резонансную частоту — совпадающие частоты означают сбалансированное натяжение.\n\nДля CoreXY пути A и B должны отличаться на несколько Гц."
   Uninstall HelixPrint Plugin: Удалить плагин HelixPrint
   Uninstall script not found.: Скрипт удаления не найден.
   'Uninstall: Coming soon': 'Удаление: Скоро появится'
@@ -2968,21 +2948,18 @@ translations:
   Y Offset: Смещение Y
   Y jog blocked at bed edge: Перемещение по Y заблокировано на краю стола
   'Y:': 'Y:'
-  'YOU WIN!\nScore: {}\nTap to play again': 'ПОБЕДА!\nСчёт: {}\nНажмите, чтобы сыграть снова'
+  ? "YOU WIN!\nScore: {}\nTap to play again"
+  : "ПОБЕДА!\nСчёт: {}\nНажмите, чтобы сыграть снова"
   Year: Год
   'Yes': Да
-  ? You can now skip these operations when starting prints.\n\nLook for the new options
-    in the print details before starting each print.\n\nA backup of your config was
-    saved automatically.
-  : Теперь вы можете пропускать эти операции при запуске печати.\n\nИщите новые параметры
-    в деталях печати перед началом каждой печати.\n\nРезервная копия вашей конфигурации
-    была сохранена автоматически.
+  ? "You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically."
+  : "Теперь вы можете пропускать эти операции при запуске печати.\n\nИщите новые параметры в деталях печати перед началом каждой печати.\n\nРезервная копия вашей конфигурации была сохранена автоматически."
   You can skip this and calibrate later in Settings.: Вы можете пропустить это и откалибровать
     позже в настройках.
   You have unsaved changes. Discard them?: У вас есть несохранённые изменения. Отменить
     их?
-  Your PRINT_START macro will be updated to give you control over:\n\n: Ваш макрос
-    PRINT_START будет обновлён, чтобы дать вам контроль над:\n\n
+  ? "Your PRINT_START macro will be updated to give you control over:\n\n"
+  : "Ваш макрос PRINT_START будет обновлён, чтобы дать вам контроль над:\n\n"
   Your completed prints will appear here: Ваши завершённые печати появятся здесь
   Your print start is already fully configured!: Ваш старт печати уже полностью настроен!
   Your printer has an automatic filament changer: Ваш принтер оснащён автоматическим
@@ -3016,7 +2993,6 @@ translations:
   Z-offset saved - Klipper restarting...: Z-смещение сохранено — Klipper перезапускается...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
-  \"%s\" failed to load: Не удалось загрузить «%s»
   bed: стол
   by Preston Brown: от Preston Brown
   chamber heater: нагреватель камеры

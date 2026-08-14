@@ -40,10 +40,7 @@ SRC_DIR = REPO_ROOT / "src"
 TRANS_DIR = REPO_ROOT / "translations"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
-from translations.extractor import (  # noqa: E402
-    _join_adjacent_literals,
-    decode_c_escapes,
-)
+from translations.extractor import resolve_cpp_literal_run  # noqa: E402
 
 # A single C/printf conversion specifier (handles flags, width, precision,
 # length modifiers, and positional %N$ args). %% is excluded by the caller.
@@ -70,7 +67,7 @@ LV_TR_LITERAL_RE = re.compile(r'lv_tr\(\s*((?:"(?:[^"\\]|\\.)*"\s*)+)')
 
 def lv_tr_tag(match) -> str:
     """The translation key an lv_tr() match resolves to at runtime."""
-    return decode_c_escapes(_join_adjacent_literals(match.group(1)))
+    return resolve_cpp_literal_run(match.group(1))
 
 # A {fmt} replacement field (after {{/}} escapes are stripped).
 FMT_FIELD_RE = re.compile(r"\{([^{}]*)\}")
@@ -158,19 +155,22 @@ def _iter_locales():
             yield locale, trans
 
 
-# A C hex escape surviving into a stored translation string. The extractor
-# resolves these, so one reaching the YAML means the key was captured in its
-# source form and can never match the byte sequence the compiler emits.
-RAW_HEX_ESCAPE_RE = re.compile(r"\\x[0-9a-fA-F]")
+# A C escape sequence surviving into a stored translation string. The extractor
+# resolves all of these, so one reaching the YAML means the key was captured in
+# its source form and can never match what the compiler emits. Matching any
+# backslash would be equally correct today (no translation legitimately contains
+# one), but naming the escapes keeps the failure message specific.
+UNRESOLVED_ESCAPE_RE = re.compile(r"\\(?:x[0-9a-fA-F]|[nrtabfve0-7\\\"']|u[0-9a-fA-F]{4})")
 
 
-def check_raw_hex_escapes() -> list:
-    """Report every YAML key or value still carrying a literal \\xNN escape.
+def check_unresolved_escapes() -> list:
+    """Report every YAML key or value still carrying a literal C escape.
 
-    lv_tr("%d\\xc2\\xb0") looks up a key containing the degree sign, because the
-    compiler resolved the escape. A key stored as the eight characters of the
-    escape sequence misses forever, and LVGL falls back to rendering the tag --
-    so the user sees the raw escape text in every locale, including English.
+    lv_tr("%d\\xc2\\xb0") looks up a key containing the degree sign, and
+    lv_tr("a\\nb") looks up one containing a real newline, because the compiler
+    resolved the escape. A key stored as the characters of the escape sequence
+    misses forever, and LVGL falls back to rendering the tag -- so the user sees
+    the raw escape text in every locale, including English.
     """
     problems = []
     for yml in sorted(TRANS_DIR.glob("*.yml")):
@@ -179,24 +179,24 @@ def check_raw_hex_escapes() -> list:
         if not isinstance(trans, dict):
             continue
         for key, val in trans.items():
-            if RAW_HEX_ESCAPE_RE.search(key):
+            if UNRESOLVED_ESCAPE_RE.search(key):
                 problems.append((yml.stem, "key", key))
-            if isinstance(val, str) and RAW_HEX_ESCAPE_RE.search(val):
+            if isinstance(val, str) and UNRESOLVED_ESCAPE_RE.search(val):
                 problems.append((yml.stem, "value", val))
     return problems
 
 
 def check(verbose: bool) -> int:
-    raw_escapes = check_raw_hex_escapes()
-    if raw_escapes:
-        print("✗ Translation strings carrying an unresolved C hex escape:\n")
-        for locale, kind, text in raw_escapes:
+    escapes = check_unresolved_escapes()
+    if escapes:
+        print("✗ Translation strings carrying an unresolved C escape:\n")
+        for locale, kind, text in escapes:
             print(f"  [{locale}] {kind}: {text!r}")
         print(
-            f"\n{len(raw_escapes)} occurrence(s). A \\xNN escape is resolved by the C++\n"
-            "compiler, so a key holding the escape literally never matches at runtime\n"
-            "and the raw text is rendered instead. Replace it with the character it\n"
-            "encodes in translations/<locale>.yml, then run: make translations"
+            f"\n{len(escapes)} occurrence(s). A C escape is resolved by the compiler, so\n"
+            "a key holding the escape literally never matches at runtime and the raw\n"
+            "text is rendered instead. Store the characters the escape encodes in\n"
+            "translations/<locale>.yml, then run: make translations"
         )
         return 1
 

@@ -4,6 +4,7 @@ translations:
   ' elapsed · ': ' 已用 · '
   ' frames': ' 帧'
   ' left': ' 剩余'
+  '"%s" failed to load': '"%s" 加载失败'
   '%.1f Hz difference': '%.1f Hz 差异'
   '%d additional fan%s': '%d 个额外风扇%s'
   '%d disabled': '%d 个已禁用'
@@ -553,7 +554,8 @@ translations:
   Correction (Ki): 校正 (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: 无法分析
     PRINT_START 宏。部分打印选项可能不可用。
-  Could not check webcam status.\nCheck printer connection.: 无法检查摄像头状态。\n请检查打印机连接。
+  ? "Could not check webcam status.\nCheck printer connection."
+  : "无法检查摄像头状态。\n请检查打印机连接。"
   Could not forget device: 无法忘记设备
   Could not load printer database: 无法加载打印机数据库
   Could not parse tips database: 无法解析提示数据库
@@ -845,10 +847,10 @@ translations:
   'Failed to discard recovery data: {}': '放弃恢复数据失败: {}'
   'Failed to download G-code for modification: {}': '下载 G-code 进行修改失败: {}'
   'Failed to download G-code for remap: {}': 下载用于重新映射的 G-code 失败：{}
-  Failed to download helixscreen.conf.\nCheck printer connection.: 下载 helixscreen.conf
-    失败。\n请检查打印机连接。
-  Failed to download moonraker.conf.\nCheck printer connection.: 下载 moonraker.conf
-    失败。\n请检查打印机连接。
+  ? "Failed to download helixscreen.conf.\nCheck printer connection."
+  : "下载 helixscreen.conf 失败。\n请检查打印机连接。"
+  ? "Failed to download moonraker.conf.\nCheck printer connection."
+  : "下载 moonraker.conf 失败。\n请检查打印机连接。"
   Failed to duplicate spool: 复制线轴失败
   Failed to enable tuning tower: 启用调优塔失败
   'Failed to exclude ''{}'': {}': '排除 ''{}'' 失败: {}'
@@ -916,9 +918,11 @@ translations:
   'Failed to toggle timelapse: {}': '切换延时摄影失败: {}'
   'Failed to turn off heaters: {}': '关闭加热器失败: {}'
   'Failed to unload: {}': '卸载失败: {}'
-  Failed to update configuration.\nCheck printer connection.: 更新配置失败。\n请检查打印机连接。
+  ? "Failed to update configuration.\nCheck printer connection."
+  : "更新配置失败。\n请检查打印机连接。"
   Failed to update moonraker.conf.: 更新 moonraker.conf 失败。
-  Failed to update moonraker.conf.\nCheck printer connection.: 更新 moonraker.conf 失败。\n请检查打印机连接。
+  ? "Failed to update moonraker.conf.\nCheck printer connection."
+  : "更新 moonraker.conf 失败。\n请检查打印机连接。"
   Failed to update phase tracking: 更新相位跟踪失败
   'Failed to upload modified G-code: {}': '上传修改后的 G-code 失败: {}'
   'Failed to upload remapped G-code: {}': 上传重新映射的 G-code 失败：{}
@@ -1004,11 +1008,8 @@ translations:
   Found 1 printer: 找到 1 台打印机
   Framerate: 帧率
   Frequency Delta: 频率差
-  ? 'Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15
-    Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match.
-    Above 90% is excellent; below 70% suggests uneven tension.'
-  : '频率差: 路径 A 与 B 之间的差异。理想情况下低于 5 Hz;超过 15 Hz 需要调整。\n\n路径相似度: 振动曲线的匹配程度。高于 90% 为优秀;低于
-    70% 说明张力不均。'
+  ? "Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15 Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match. Above 90% is excellent; below 70% suggests uneven tension."
+  : "频率差: 路径 A 与 B 之间的差异。理想情况下低于 5 Hz;超过 15 Hz 需要调整。\n\n路径相似度: 振动曲线的匹配程度。高于 90% 为优秀;低于 70% 说明张力不均。"
   From Buffer: 来自缓冲区
   From Version: 起始版本
   Full: 完整
@@ -1016,7 +1017,8 @@ translations:
   G-code Preview: G-code 预览
   G-code commands will appear here: G-code 命令将显示在此处
   GCode Console: 'G-code 控制台'
-  'Game Over!\nScore: {}\nTap to restart': '游戏结束！\n得分：{}\n点按重新开始'
+  ? "Game Over!\nScore: {}\nTap to restart"
+  : "游戏结束！\n得分：{}\n点按重新开始"
   Gear Buffer Speed: '齿轮缓冲区速度'
   Gear Spool Speed: '齿轮料盘速度'
   Gear Unload Speed: '齿轮卸载速度'
@@ -1170,7 +1172,8 @@ translations:
     HelixPrint 插件，即可在不影响打印历史的情况下重新映射耗材。
   'Install the HelixPrint plugin to enable fast G-code modifications. Run this command via SSH on your printer:': 安装
     HelixPrint 插件以启用快速 G-code 修改。通过 SSH 在打印机上运行此命令：
-  Install the timelapse plugin via SSH,\nthen tap \"Check Again\".: 通过SSH安装延时摄影插件，\n然后点击"重新检查"。
+  ? "Install the timelapse plugin via SSH,\nthen tap \"Check Again\"."
+  : "通过SSH安装延时摄影插件，\n然后点击\"重新检查\"。"
   Install timelapse plugin: 安装延时摄影插件
   Installation Failed: 安装失败
   Installation failed: 安装失败
@@ -1409,7 +1412,8 @@ translations:
   Moonraker: Moonraker
   Moonraker restarted but Spoolman not connected. Check server.: Moonraker 已重启但 Spoolman
     未连接。请检查服务器。
-  Moonraker restarting...\nWaiting for reconnection...: Moonraker 重启中...\n等待重新连接...
+  ? "Moonraker restarting...\nWaiting for reconnection..."
+  : "Moonraker 重启中...\n等待重新连接..."
   'Moonraker: ': 'Moonraker: '
   More points = more accurate, but takes longer.: 点数越多越精确，但耗时更长。
   Motion: 运动
@@ -1439,7 +1443,8 @@ translations:
   My Custom Theme: 我的自定义主题
   My Panel: 我的面板
   My Printer: 我的打印机
-  NEW HIGH SCORE!\n{}\nTap to play again: '新纪录！\n{}\n点按再玩一次'
+  ? "NEW HIGH SCORE!\n{}\nTap to play again"
+  : "新纪录！\n{}\n点按再玩一次"
   NEWLY DISCOVERED: 新发现
   Name: 名称
   Name (optional): 名称（可选）
@@ -1490,7 +1495,8 @@ translations:
   No buffer data available: 无可用缓冲区数据
   No camera — use USB barcode scanner: 无摄像头 — 请使用 USB 条码扫描器
   No chamber temperature sensor detected: '未检测到腔体温度传感器'
-  No changes selected.\n\nClick Cancel to close.: 未选择任何更改。\n\n点击取消以关闭。
+  ? "No changes selected.\n\nClick Cancel to close."
+  : "未选择任何更改。\n\n点击取消以关闭。"
   No changes to revert: 没有可撤销的更改
   No color: 无颜色
   No dryer available. Store filament in a sealed dry box with desiccant for best results.: 无可用烘干机。建议将耗材存放在带干燥剂的密封干燥箱中。
@@ -1538,7 +1544,8 @@ translations:
   No temperature sensors detected: '未检测到温度传感器'
   No timelapse videos found: 未找到延时视频
   No vendors found: 未找到供应商
-  No webcam detected.\nA webcam is required for timelapse.: 未检测到摄像头。\n延时摄影需要摄像头。
+  ? "No webcam detected.\nA webcam is required for timelapse."
+  : "未检测到摄像头。\n延时摄影需要摄像头。"
   No width sensor detected: '未检测到宽度传感器'
   None: 无
   None (disable): 无 (禁用)
@@ -1708,7 +1715,8 @@ translations:
   Plugin installed successfully: 插件安装成功
   Plugin installed successfully.: 插件安装成功。
   Plugin installed successfully. Moonraker is restarting...: 插件安装成功。Moonraker 正在重启...
-  Plugin not responding after restart.\nIt may need more time to load.: 重启后插件无响应。\n可能需要更多时间加载。
+  ? "Plugin not responding after restart.\nIt may need more time to load."
+  : "重启后插件无响应。\n可能需要更多时间加载。"
   Plugin uninstalled successfully.: 插件卸载成功。
   Plugins: 插件
   Plugins are discovered on application startup: 插件在应用程序启动时被发现
@@ -1890,7 +1898,8 @@ translations:
   Ready to Apply: 准备应用
   Ready to load: 准备装载
   Reason: 原因
-  'Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?': 原因：{}\n\n打印机无法恢复此次打印。要从头重新开始吗？
+  ? "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
+  : "原因：{}\n\n打印机无法恢复此次打印。要从头重新开始吗？"
   Reboot: 重启
   Reboot failed: 重启失败
   Reboot failed — host is still reachable: 重启失败 — 主机仍可访问
@@ -2156,11 +2165,8 @@ translations:
   'Set ': '设置 '
   Set Active: 设为活动
   Set PIN: 设置 PIN
-  ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
-    appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
-    Strobe Light Tachometer, myStroboscope'
-  : '将手机频闪应用设置为 %.1f Hz 并对准皮带。调整直到皮带看起来静止不动。\n\n推荐应用:\n  Android: Strobily, Strobe
-    Light\n  iOS: Strobe Light Tachometer, myStroboscope'
+  ? "Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"
+  : "将手机频闪应用设置为 %.1f Hz 并对准皮带。调整直到皮带看起来静止不动。\n\n推荐应用:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"
   Set local timezone for time display: 设置本地时区以显示时间
   Set logging verbosity for troubleshooting: 设置日志详细级别以便故障排除
   Set up: 设置
@@ -2294,7 +2300,8 @@ translations:
   Stop Drying: 停止干燥
   Stop Print?: 停止打印？
   Stop failed: 停止失败
-  Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: '停止打印 \"{}\"？\n\n5秒后将无法撤销。'
+  ? "Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds."
+  : "停止打印 \"{}\"？\n\n5秒后将无法撤销。"
   Stopped between Hub and Toolhead: 停在集线器与工具头之间
   Stopped between Lane and Hub: 停在料仓与集线器之间
   Stopped between Spool and Lane: 停在料盘与料仓之间
@@ -2395,11 +2402,8 @@ translations:
   : 为防止动画屏保干扰打印，已在此设备上将其关闭。您可以在设置 > 显示中重新启用。
   The filament system reported an error: 耗材系统报告错误
   The heater will cycle on and off several times.: 加热器将多次开关循环。
-  ? The motor vibrates the belt while a strobe light flashes at the same frequency.
-    When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse
-    the frequency buttons to sweep through values until the belt looks stationary,
-    then lock the reading.
-  : 电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。
+  ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
+  : "电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   : 打印已暂停。现在切换工具会移动工具头并更换喷嘴处的耗材。切换完成后请恢复打印。
   The printer halted this print and cannot resume it. Restart from the beginning?: 打印机已停止此打印且无法恢复。从头重新开始？
@@ -2428,10 +2432,10 @@ translations:
   This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: '此通道提供 v{}，早于已安装的 v{}。此后新增的内容都将被移除。'
   This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: '这会清除每个料盘的备用分配。在重新设置之前，耗材用尽时打印将停止。'
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: 此设备没有有线网络连接。关闭 WiFi 后，只能在此界面重新开启。
-  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
-  : 此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \"Timer Too Close\" 错误或在测试中途重启。仍要继续吗？
-  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
-  : 此设备内存极少。共振校准会占用大量内存，可能导致 \"Timer Too Close\" 错误。仍要继续吗？
+  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a "Timer Too Close" error or restart mid-test. Continue anyway?
+  : 此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 "Timer Too Close" 错误或在测试中途重启。仍要继续吗？
+  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a "Timer Too Close" error. Continue anyway?
+  : 此设备内存极少。共振校准会占用大量内存，可能导致 "Timer Too Close" 错误。仍要继续吗？
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: 这与关联的 Spoolman 料盘不匹配。是否添加为新料盘，或更新关联料盘以匹配？
   This file was sliced for {} but {} is loaded.: 此文件为 {} 切片，但当前加载的是 {}。
   This is exactly the data that will be sent: 这正是将要发送的数据
@@ -2546,12 +2550,8 @@ translations:
   USB drive removed: U 盘已移除
   USB printer access denied — check permissions: USB 打印机访问被拒绝 — 请检查权限
   Understanding Results: 了解结果
-  ? Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine
-    artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the
-    resonant frequency \u2014 matched frequencies mean balanced tension.\n\nFor CoreXY,
-    Path A and B should be within a few Hz of each other.
-  : 皮带张力不均会导致层错位、VFA(垂直细纹)和振纹等打印瑕疵。\n\n此工具会振动每条皮带路径并测量共振频率 \u2014 频率匹配意味着张力均衡。\n\n对于
-    CoreXY,路径 A 与 B 应相差在几 Hz 以内。
+  ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
+  : "皮带张力不均会导致层错位、VFA(垂直细纹)和振纹等打印瑕疵。\n\n此工具会振动每条皮带路径并测量共振频率 — 频率匹配意味着张力均衡。\n\n对于 CoreXY,路径 A 与 B 应相差在几 Hz 以内。"
   Uninstall HelixPrint Plugin: 卸载 HelixPrint 插件
   Uninstall script not found.: 未找到卸载脚本。
   'Uninstall: Coming soon': '卸载: 即将推出'
@@ -2703,17 +2703,16 @@ translations:
   Y Offset: Y 偏移
   Y jog blocked at bed edge: Y 轴移动已限制在热床边缘
   'Y:': Y：
-  'YOU WIN!\nScore: {}\nTap to play again': '你赢了！\n得分：{}\n点按再玩一次'
+  ? "YOU WIN!\nScore: {}\nTap to play again"
+  : "你赢了！\n得分：{}\n点按再玩一次"
   Year: 年
   'Yes': 是
-  ? You can now skip these operations when starting prints.\n\nLook for the new options
-    in the print details before starting each print.\n\nA backup of your config was
-    saved automatically.
-  : 现在开始打印时可以跳过这些操作。\n\n在每次开始打印前，请在打印详情中查找新的选项。\n\n已自动保存配置备份。
+  ? "You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically."
+  : "现在开始打印时可以跳过这些操作。\n\n在每次开始打印前，请在打印详情中查找新的选项。\n\n已自动保存配置备份。"
   You can skip this and calibrate later in Settings.: 您可以跳过此步骤，稍后在设置中进行校准。
   You have unsaved changes. Discard them?: 您有未保存的更改。是否丢弃？
-  Your PRINT_START macro will be updated to give you control over:\n\n: 您的 PRINT_START
-    宏将被更新，以便您控制以下内容：\n\n
+  ? "Your PRINT_START macro will be updated to give you control over:\n\n"
+  : "您的 PRINT_START 宏将被更新，以便您控制以下内容：\n\n"
   Your completed prints will appear here: 您完成的打印将显示在此处
   Your print start is already fully configured!: 您的打印启动已完全配置！
   Your printer has an automatic filament changer: 您的打印机配有自动换色系统
@@ -2743,7 +2742,6 @@ translations:
   Z-offset saved - Klipper restarting...: Z 偏移已保存 - Klipper 重启中...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
-  \"%s\" failed to load: \"%s\" 加载失败
   bed: 热床
   by Preston Brown: by Preston Brown
   chamber heater: 腔体加热器

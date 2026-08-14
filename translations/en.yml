@@ -4,6 +4,7 @@ translations:
   ' elapsed · ': ' elapsed · '
   ' frames': ' frames'
   ' left': ' left'
+  '"%s" failed to load': '"%s" failed to load'
   '%.1f Hz difference': '%.1f Hz difference'
   '%d additional fan%s': '%d additional fan%s'
   '%d disabled': '%d disabled'
@@ -604,8 +605,8 @@ translations:
   Correction (Ki): Correction (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: Could
     not analyze PRINT_START macro. Some print options may be unavailable.
-  Could not check webcam status.\nCheck printer connection.: Could not check webcam
-    status.\nCheck printer connection.
+  ? "Could not check webcam status.\nCheck printer connection."
+  : "Could not check webcam status.\nCheck printer connection."
   Could not forget device: Could not forget device
   Could not load printer database: Could not load printer database
   Could not parse tips database: Could not parse tips database
@@ -910,10 +911,10 @@ translations:
     modification: {}'
   'Failed to download G-code for remap: {}': 'Failed to download G-code for remap:
     {}'
-  Failed to download helixscreen.conf.\nCheck printer connection.: Failed to download
-    helixscreen.conf.\nCheck printer connection.
-  Failed to download moonraker.conf.\nCheck printer connection.: Failed to download
-    moonraker.conf.\nCheck printer connection.
+  ? "Failed to download helixscreen.conf.\nCheck printer connection."
+  : "Failed to download helixscreen.conf.\nCheck printer connection."
+  ? "Failed to download moonraker.conf.\nCheck printer connection."
+  : "Failed to download moonraker.conf.\nCheck printer connection."
   Failed to duplicate spool: Failed to duplicate spool
   Failed to enable tuning tower: Failed to enable tuning tower
   'Failed to exclude ''{}'': {}': 'Failed to exclude ''{}'': {}'
@@ -982,11 +983,11 @@ translations:
   'Failed to toggle timelapse: {}': 'Failed to toggle timelapse: {}'
   'Failed to turn off heaters: {}': 'Failed to turn off heaters: {}'
   'Failed to unload: {}': 'Failed to unload: {}'
-  Failed to update configuration.\nCheck printer connection.: Failed to update configuration.\nCheck
-    printer connection.
+  ? "Failed to update configuration.\nCheck printer connection."
+  : "Failed to update configuration.\nCheck printer connection."
   Failed to update moonraker.conf.: Failed to update moonraker.conf.
-  Failed to update moonraker.conf.\nCheck printer connection.: Failed to update moonraker.conf.\nCheck
-    printer connection.
+  ? "Failed to update moonraker.conf.\nCheck printer connection."
+  : "Failed to update moonraker.conf.\nCheck printer connection."
   Failed to update phase tracking: Failed to update phase tracking
   'Failed to upload modified G-code: {}': 'Failed to upload modified G-code: {}'
   'Failed to upload remapped G-code: {}': 'Failed to upload remapped G-code: {}'
@@ -1075,12 +1076,8 @@ translations:
   Found 1 printer: Found 1 printer
   Framerate: Framerate
   Frequency Delta: Frequency Delta
-  ? 'Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15
-    Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match.
-    Above 90% is excellent; below 70% suggests uneven tension.'
-  : 'Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15
-    Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match.
-    Above 90% is excellent; below 70% suggests uneven tension.'
+  ? "Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15 Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match. Above 90% is excellent; below 70% suggests uneven tension."
+  : "Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15 Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match. Above 90% is excellent; below 70% suggests uneven tension."
   From Buffer: From Buffer
   From Version: From Version
   Full: Full
@@ -1088,7 +1085,8 @@ translations:
   G-code Preview: G-code Preview
   G-code commands will appear here: G-code commands will appear here
   GCode Console: GCode Console
-  'Game Over!\nScore: {}\nTap to restart': 'Game Over!\nScore: {}\nTap to restart'
+  ? "Game Over!\nScore: {}\nTap to restart"
+  : "Game Over!\nScore: {}\nTap to restart"
   Gear Buffer Speed: Gear Buffer Speed
   Gear Spool Speed: Gear Spool Speed
   Gear Unload Speed: Gear Unload Speed
@@ -1260,8 +1258,8 @@ translations:
   'Install the HelixPrint plugin to enable fast G-code modifications. Run this command via SSH on your printer:': 'Install
     the HelixPrint plugin to enable fast G-code modifications. Run this command via
     SSH on your printer:'
-  Install the timelapse plugin via SSH,\nthen tap \"Check Again\".: Install the timelapse
-    plugin via SSH,\nthen tap \"Check Again\".
+  ? "Install the timelapse plugin via SSH,\nthen tap \"Check Again\"."
+  : "Install the timelapse plugin via SSH,\nthen tap \"Check Again\"."
   Install timelapse plugin: Install timelapse plugin
   Installation Failed: Installation Failed
   Installation failed: Installation failed
@@ -1516,8 +1514,8 @@ translations:
   Moonraker: Moonraker
   Moonraker restarted but Spoolman not connected. Check server.: Moonraker restarted
     but Spoolman not connected. Check server.
-  Moonraker restarting...\nWaiting for reconnection...: Moonraker restarting...\nWaiting
-    for reconnection...
+  ? "Moonraker restarting...\nWaiting for reconnection..."
+  : "Moonraker restarting...\nWaiting for reconnection..."
   'Moonraker: ': 'Moonraker: '
   More points = more accurate, but takes longer.: More points = more accurate, but
     takes longer.
@@ -1551,7 +1549,8 @@ translations:
   My Custom Theme: My Custom Theme
   My Panel: My Panel
   My Printer: My Printer
-  NEW HIGH SCORE!\n{}\nTap to play again: NEW HIGH SCORE!\n{}\nTap to play again
+  ? "NEW HIGH SCORE!\n{}\nTap to play again"
+  : "NEW HIGH SCORE!\n{}\nTap to play again"
   NEWLY DISCOVERED: NEWLY DISCOVERED
   Name: Name
   Name (optional): Name (optional)
@@ -1604,8 +1603,8 @@ translations:
   No buffer data available: No buffer data available
   No camera — use USB barcode scanner: No camera — use USB barcode scanner
   No chamber temperature sensor detected: No chamber temperature sensor detected
-  No changes selected.\n\nClick Cancel to close.: No changes selected.\n\nClick Cancel
-    to close.
+  ? "No changes selected.\n\nClick Cancel to close."
+  : "No changes selected.\n\nClick Cancel to close."
   No changes to revert: No changes to revert
   No color: No color
   No dryer available. Store filament in a sealed dry box with desiccant for best results.: No
@@ -1656,8 +1655,8 @@ translations:
   No temperature sensors detected: No temperature sensors detected
   No timelapse videos found: No timelapse videos found
   No vendors found: No vendors found
-  No webcam detected.\nA webcam is required for timelapse.: No webcam detected.\nA
-    webcam is required for timelapse.
+  ? "No webcam detected.\nA webcam is required for timelapse."
+  : "No webcam detected.\nA webcam is required for timelapse."
   No width sensor detected: No width sensor detected
   None: None
   None (disable): None (disable)
@@ -1834,8 +1833,8 @@ translations:
   Plugin installed successfully.: Plugin installed successfully.
   Plugin installed successfully. Moonraker is restarting...: Plugin installed successfully.
     Moonraker is restarting...
-  Plugin not responding after restart.\nIt may need more time to load.: Plugin not
-    responding after restart.\nIt may need more time to load.
+  ? "Plugin not responding after restart.\nIt may need more time to load."
+  : "Plugin not responding after restart.\nIt may need more time to load."
   Plugin uninstalled successfully.: Plugin uninstalled successfully.
   Plugins: Plugins
   Plugins are discovered on application startup: Plugins are discovered on application
@@ -2028,8 +2027,8 @@ translations:
   Ready to Apply: Ready to Apply
   Ready to load: Ready to load
   Reason: Reason
-  'Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?': 'Reason:
-    {}\n\nThe printer cannot resume this print. Restart from the beginning?'
+  ? "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
+  : "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
   Reboot: Reboot
   Reboot failed: Reboot failed
   Reboot failed — host is still reachable: Reboot failed — host is still reachable
@@ -2319,12 +2318,8 @@ translations:
   'Set ': 'Set '
   Set Active: Set Active
   Set PIN: Set PIN
-  ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
-    appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
-    Strobe Light Tachometer, myStroboscope'
-  : 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
-    appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
-    Strobe Light Tachometer, myStroboscope'
+  ? "Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"
+  : "Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"
   Set local timezone for time display: Set local timezone for time display
   Set logging verbosity for troubleshooting: Set logging verbosity for troubleshooting
   Set up: Set up
@@ -2468,8 +2463,8 @@ translations:
   Stop Drying: Stop Drying
   Stop Print?: Stop Print?
   Stop failed: Stop failed
-  Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: Stop printing \"{}\"?\n\nThis
-    cannot be undone after 5 seconds.
+  ? "Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds."
+  : "Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds."
   Stopped between Hub and Toolhead: Stopped between Hub and Toolhead
   Stopped between Lane and Hub: Stopped between Lane and Hub
   Stopped between Spool and Lane: Stopped between Spool and Lane
@@ -2582,14 +2577,8 @@ translations:
   The filament system reported an error: The filament system reported an error
   The heater will cycle on and off several times.: The heater will cycle on and off
     several times.
-  ? The motor vibrates the belt while a strobe light flashes at the same frequency.
-    When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse
-    the frequency buttons to sweep through values until the belt looks stationary,
-    then lock the reading.
-  : The motor vibrates the belt while a strobe light flashes at the same frequency.
-    When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse
-    the frequency buttons to sweep through values until the belt looks stationary,
-    then lock the reading.
+  ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
+  : "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   : The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   The printer halted this print and cannot resume it. Restart from the beginning?: The
@@ -2625,10 +2614,10 @@ translations:
   This channel offers v{}, older than the installed v{}. Anything added since then will be removed.: This channel offers v{}, older than the installed v{}. Anything added since then will be removed.
   This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: This clears every spool's failover assignment. The print will stop on runout until you set up failover again.
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.
-  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
-  : This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
-  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
-  : This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
+  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a "Timer Too Close" error or restart mid-test. Continue anyway?
+  : This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a "Timer Too Close" error or restart mid-test. Continue anyway?
+  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a "Timer Too Close" error. Continue anyway?
+  : This device has very little RAM. Resonance calibration is memory-intensive and may cause a "Timer Too Close" error. Continue anyway?
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?
   This file was sliced for {} but {} is loaded.: This file was sliced for {} but {}
     is loaded.
@@ -2759,14 +2748,8 @@ translations:
   USB printer access denied — check permissions: USB printer access denied — check
     permissions
   Understanding Results: Understanding Results
-  ? Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine
-    artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the
-    resonant frequency \u2014 matched frequencies mean balanced tension.\n\nFor CoreXY,
-    Path A and B should be within a few Hz of each other.
-  : Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine
-    artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the
-    resonant frequency \u2014 matched frequencies mean balanced tension.\n\nFor CoreXY,
-    Path A and B should be within a few Hz of each other.
+  ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
+  : "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
   Uninstall HelixPrint Plugin: Uninstall HelixPrint Plugin
   Uninstall script not found.: Uninstall script not found.
   'Uninstall: Coming soon': 'Uninstall: Coming soon'
@@ -2930,20 +2913,17 @@ translations:
   Y Offset: Y Offset
   Y jog blocked at bed edge: Y jog blocked at bed edge
   'Y:': 'Y:'
-  'YOU WIN!\nScore: {}\nTap to play again': 'YOU WIN!\nScore: {}\nTap to play again'
+  ? "YOU WIN!\nScore: {}\nTap to play again"
+  : "YOU WIN!\nScore: {}\nTap to play again"
   Year: Year
   'Yes': 'Yes'
-  ? You can now skip these operations when starting prints.\n\nLook for the new options
-    in the print details before starting each print.\n\nA backup of your config was
-    saved automatically.
-  : You can now skip these operations when starting prints.\n\nLook for the new options
-    in the print details before starting each print.\n\nA backup of your config was
-    saved automatically.
+  ? "You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically."
+  : "You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically."
   You can skip this and calibrate later in Settings.: You can skip this and calibrate
     later in Settings.
   You have unsaved changes. Discard them?: You have unsaved changes. Discard them?
-  Your PRINT_START macro will be updated to give you control over:\n\n: Your PRINT_START
-    macro will be updated to give you control over:\n\n
+  ? "Your PRINT_START macro will be updated to give you control over:\n\n"
+  : "Your PRINT_START macro will be updated to give you control over:\n\n"
   Your completed prints will appear here: Your completed prints will appear here
   Your print start is already fully configured!: Your print start is already fully
     configured!
@@ -2978,7 +2958,6 @@ translations:
   Z-offset saved - Klipper restarting...: Z-offset saved - Klipper restarting...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
-  \"%s\" failed to load: \"%s\" failed to load
   bed: bed
   by Preston Brown: by Preston Brown
   chamber heater: chamber heater
