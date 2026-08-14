@@ -42,15 +42,33 @@ also cannot help if 1.1.0 > 1.0.0, which is exactly the dangerous case: publishi
       `test_recovery_dialog_threading.cpp` is still unreproduced.
 - [ ] `VERSION.txt`: `0.99.113` → `1.0.0`. Every existing install is on `0.99.x`,
       so this is an ordinary forward step for the updater — no special handling.
-- [ ] Confirm the `ALLOW_CHANNEL_DOWNGRADE` repository variable is **unset**. It
+- [x] Confirm the `ALLOW_CHANNEL_DOWNGRADE` repository variable is **unset**. It
       is the escape hatch for the downgrade guard and must be off by default.
-- [ ] Decide on **tar.gz Phase 2**. Dropping tar.gz production is a separate,
-      telemetry-gated rollout that is *not* automatically part of 1.0 — Phase 1
-      (zip-primary manifest) shipped in `a8d2320ee`. Re-pull telemetry before
-      deciding; the last count was 3 of 510 active devices on pre-v0.99.31, none
-      self-updating. If Phase 2 is in scope for 1.0, `generate-manifest.sh` and
-      `dev-release.sh` must be converted off their `*.tar.gz` globs **in the same
-      change** as the `mk/cross.mk` / `release.yml` producer edits.
+      *Verified 2026-08-14 (`gh variable list`): not set.*
+- [x] **tar.gz Phase 2 — DEFERRED, not in 1.0.** Decided 2026-08-14 on fresh
+      telemetry (549 actives, 30d).
+
+      The pre-v0.99.31 count this item was written around is still tiny (3–5 of
+      549, ~0.5–0.9%, none meaningfully self-updating) — but it was never the
+      real gate. `scripts/generate-manifest.sh:36` sets
+      `ZIP_EXCLUDE_PLATFORMS="ad5m ad5x cc1 k1 k2 snapmaker-u1"`, six platforms
+      deliberately served tar.gz as their **only** manifest asset because
+      pre-v0.99.102 updaters verify with `unzip -tqq` and BusyBox lacks `unzip -t`
+      before 1.32 (K1 ships 1.31.1, AD5M 1.29.3, K2's OpenWrt has none — #993).
+      **Those six platforms are 344 of 549 actives, 62.7% of the fleet.** Dropping
+      tar.gz production today strands the majority, not the stragglers.
+
+      v0.99.102 (which fixes the verifier) shipped 2026-07-26; the 7-day view has
+      those fleets at 80–100% on 102+, but the 30-day view is 40–50%, and the
+      long-tail device that boots monthly is exactly the one that would brick.
+
+      **Decision rule for later: Phase 2 unblocks when `ZIP_EXCLUDE_PLATFORMS` is
+      empty**, not when the pre-v0.99.31 count reaches zero. Retire platforms from
+      that list one at a time as each fleet clears v0.99.102. Realistically 1.1+.
+
+      Caveat on all of the above: telemetry is opt-in and default OFF, so 549 is a
+      self-selected floor. The bias runs the wrong way — a user who disables
+      telemetry is plausibly the same user who does not update.
 
 ---
 
@@ -70,10 +88,13 @@ The two-track routing has never run end-to-end against real R2. Verify both.
       populated: `stable` uses `/releases/latest` (excludes prereleases —
       correct), `beta` scans for the first prerelease.
 
-**Known behaviour change to watch:** `stable` no longer publishes to the `dev`
-channel. Anyone currently pinned to Dev who is tracking the stable line stops
-receiving updates until a beta/devel release publishes. Check the Dev population
-first — telemetry reports `auto_update_channel`.
+**Known behaviour change — checked, nobody is affected.** `stable` no longer
+publishes to the `dev` channel, so anyone pinned to Dev while tracking the stable
+line would stop receiving updates. Telemetry 2026-08-14 (`auto_update_channel`
+from raw `settings_snapshot` events, 483 of 484 actives reporting):
+**Stable 453 (93.8%), Beta 30 (6.2%), Dev 0.** Re-confirmed on a 3-day August
+sample: Stable 34, Beta 2, Dev 0. Nobody is on Dev — consistent with the dropdown
+being a 7-tap easter egg. No action needed.
 
 ---
 
