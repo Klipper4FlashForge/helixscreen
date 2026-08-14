@@ -120,6 +120,7 @@
   <translation tag="Accelerometer communication failed. Try again." ja="加速度センサーとの通信に失敗しました。再試行してください。"/>
   <translation tag="Accept" ja="承認"/>
   <translation tag="Accepted Z Position: 0.000" ja="確定Z位置: 0.000"/>
+  <translation tag="Accepted Z Position: {:.3f}" ja="確定したZ位置: {:.3f}"/>
   <translation tag="Accessories" ja="アクセサリー"/>
   <translation tag="Accuracy" ja="精度"/>
   <translation tag="Act:" ja="実測:"/>
@@ -170,6 +171,7 @@
   <translation tag="An internal error occurred. The app continues running — please send a debug bundle from Settings &gt; About if it repeats." ja="内部エラーが発生しました。アプリは引き続き動作します。問題が繰り返される場合は、設定 &gt; バージョン情報 からデバッグバンドルを送信してください。"/>
   <translation tag="An unexpected printer error occurred." ja="予期しないプリンターエラーが発生しました。"/>
   <translation tag="An update is available" ja="更新があります"/>
+  <translation tag="Analyzing data... {}%" ja="データを解析中... {}%"/>
   <translation tag="Android logcat" ja="Android logcat"/>
   <translation tag="Animations" ja="アニメーション"/>
   <translation tag="Anonymous data to help improve HelixScreen" ja="HelixScreen改善のための匿名データ"/>
@@ -327,6 +329,7 @@
   <translation tag="Calibrate your touchscreen for accurate input" ja="タッチスクリーンの入力精度をキャリブレートします"/>
   <translation tag="Calibrate, tune jitter and scroll feel" ja="キャリブレーション、ジッターとスクロール感度の調整"/>
   <translation tag="Calibrated" ja="キャリブレーション済み"/>
+  <translation tag="Calibrating {} axis..." ja="{} 軸をキャリブレーション中..."/>
   <translation tag="Calibrating..." ja="キャリブレーション中..."/>
   <translation tag="Calibration &amp; Tools" ja="キャリブレーションとツール"/>
   <translation tag="Calibration Complete!" ja="キャリブレーション完了！"/>
@@ -458,7 +461,11 @@
   <translation tag="Complete!" ja="完了！"/>
   <translation tag="Completed" ja="完了"/>
   <translation tag="Completed in %d probe%s" ja="%d 回のプローブ%sで完了"/>
+  <translation tag="Completed just now" ja="たった今完了しました"/>
   <translation tag="Completed prints will appear here" ja="完了した印刷がここに表示されます"/>
+  <translation tag="Completed {}d ago" ja="{} 日前に完了"/>
+  <translation tag="Completed {}h ago" ja="{} 時間前に完了"/>
+  <translation tag="Completed {}m ago" ja="{} 分前に完了"/>
   <translation tag="Computing calibration..." ja="キャリブレーション計算中..."/>
   <translation tag="Config Dir" ja="設定ディレクトリ"/>
   <translation tag="Config-defined (read-only)" ja="設定で定義済み（読み取り専用）"/>
@@ -989,6 +996,7 @@
   <translation tag="G-code Preview" ja="G-code プレビュー"/>
   <translation tag="G-code commands will appear here" ja="G-code コマンドがここに表示されます"/>
   <translation tag="GCode Console" ja="Gコードコンソール"/>
+  <translation tag="Game Over!\nScore: {}\nTap to restart" ja="ゲームオーバー！\nスコア: {}\nタップでリスタート"/>
   <translation tag="Gear Buffer Speed" ja="ギアのバッファ速度"/>
   <translation tag="Gear Spool Speed" ja="ギアのスプール速度"/>
   <translation tag="Gear Unload Speed" ja="ギアのアンロード速度"/>
@@ -1160,6 +1168,7 @@
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." ja="Discord で HelixScreen コミュニティに参加して、ディスカッション、ヒント、トラブルシューティング支援、機能リクエストを共有しましょう。"/>
   <translation tag="Jump directly to motion control / jogging" ja="動作制御／ジョグへ直接移動"/>
   <translation tag="Just now" ja="たった今"/>
+  <translation tag="Just queued" ja="たった今キューへ追加"/>
   <translation tag="KEYBOARD LAYOUT" ja="キーボードレイアウト"/>
   <translation tag="KLICKY CONTROLS" ja="Klickyコントロール"/>
   <translation tag="Keep Navigation Bar" ja="ナビゲーションバーを維持"/>
@@ -1281,6 +1290,7 @@
   <translation tag="MISSING CONFIGURED" ja="設定済みが見つかりません"/>
   <translation tag="MMU command failed" ja="MMU コマンドに失敗しました"/>
   <translation tag="MPC" ja="MPC"/>
+  <translation tag="MPC thermal model calibrated for {} at {}°C." ja="{} のMPC熱モデルを {}°C で校正しました。"/>
   <translation tag="Machine Limits" ja="機械制限"/>
   <translation tag="Macro" ja="マクロ"/>
   <translation tag="Macro Browser" ja="マクロブラウザ"/>
@@ -1341,6 +1351,8 @@
   <translation tag="Measurement Failed" ja="測定失敗"/>
   <translation tag="Measuring Path A... %d%%" ja="パス A を測定中... %d%%"/>
   <translation tag="Measuring Path B... %d%%" ja="パス B を測定中... %d%%"/>
+  <translation tag="Measuring accelerometer noise..." ja="加速度センサーのノイズを測定中..."/>
+  <translation tag="Measuring vibrations... {}%" ja="振動を測定中... {}%"/>
   <translation tag="Memory" ja="メモリ"/>
   <translation tag="Memory (MB)" ja="メモリ (MB)"/>
   <translation tag="Memory Snapshot" ja="メモリースナップショット"/>
@@ -1390,6 +1402,7 @@
   <translation tag="My Custom Theme" ja="マイカスタムテーマ"/>
   <translation tag="My Panel" ja="マイパネル"/>
   <translation tag="My Printer" ja="マイプリンター"/>
+  <translation tag="NEW HIGH SCORE!\n{}\nTap to play again" ja="ハイスコア更新！\n{}\nタップでもう一度"/>
   <translation tag="NEWLY DISCOVERED" ja="新規検出"/>
   <translation tag="Name" ja="名前"/>
   <translation tag="Name (optional)" ja="名前（オプション）"/>
@@ -1771,6 +1784,8 @@
   <translation tag="Probing Bed Screws..." ja="ベッドネジをプローブ中..."/>
   <translation tag="Probing Bed..." ja="ベッドをプローブ中..."/>
   <translation tag="Probing Failed" ja="プローブ失敗"/>
+  <translation tag="Probing point {} of {}" ja="プローブ点 {} / {}"/>
+  <translation tag="Probing... ({} points)" ja="プローブ中... ({} 点)"/>
   <translation tag="Proceed" ja="続行"/>
   <translation tag="Processing..." ja="処理中..."/>
   <translation tag="Profile deleted" ja="プロファイルを削除しました"/>
@@ -1799,8 +1814,11 @@
   <translation tag="Quad Gantry Level" ja="クアッドガントリーレベル"/>
   <translation tag="Quad Gantry Level complete" ja="QGL 完了"/>
   <translation tag="Quad Gantry Level started..." ja="QGL を開始しました..."/>
+  <translation tag="Queue: Paused" ja="キュー: 一時停止"/>
   <translation tag="Queue: Ready" ja="キュー: 準備完了"/>
   <translation tag="Queued print jobs" ja="キューに入った印刷ジョブ"/>
+  <translation tag="Queued {}h {}m ago" ja="{} 時間 {} 分前にキューへ追加"/>
+  <translation tag="Queued {}m ago" ja="{} 分前にキューへ追加"/>
   <translation tag="Quick" ja="簡易"/>
   <translation tag="Quick Actions" ja="クイックアクション"/>
   <translation tag="Quick Button 1" ja="クイックボタン1"/>
@@ -1962,6 +1980,7 @@
   <translation tag="Running {}..." ja="{} を実行中..."/>
   <translation tag="Runout" ja="フィラメント切れ"/>
   <translation tag="Runout Sensor" ja="フィラメント切れセンサー"/>
+  <translation tag="SAVE_CONFIG failed: {}. Z-offset was applied but not saved. Run SAVE_CONFIG manually or the offset will be lost on restart." ja="SAVE_CONFIG に失敗しました: {}。Zオフセットは適用されましたが保存されていません。SAVE_CONFIG を手動で実行しないと、再起動時にオフセットが失われます。"/>
   <translation tag="SETTINGS" ja="設定"/>
   <translation tag="SHIPPED IMAGES" ja="付属画像"/>
   <translation tag="SOFTWARE" ja="ソフトウェア"/>
@@ -2009,6 +2028,8 @@
   <translation tag="Scanning for networks..." ja="ネットワークをスキャン中..."/>
   <translation tag="Scanning..." ja="スキャン中..."/>
   <translation tag="Score: 0" ja="スコア: 0"/>
+  <translation tag="Score: {}" ja="スコア: {}"/>
+  <translation tag="Score: {}  |  Best: {}" ja="スコア: {}  |  ベスト: {}"/>
   <translation tag="Screen" ja="画面"/>
   <translation tag="Screen Blank" ja="画面消灯"/>
   <translation tag="Screen Dim" ja="画面減光"/>
@@ -2255,6 +2276,7 @@
   <translation tag="Takes 3-5 min. Do not interrupt." ja="3〜5分かかります。中断しないでください。"/>
   <translation tag="Tap + to add" ja="+ をタップして追加"/>
   <translation tag="Tap again to confirm this orientation" ja="もう一度タップしてこの向きを確定"/>
+  <translation tag="Tap an object to exclude it | {} objects ({} excluded)" ja="オブジェクトをタップして除外 | {} 個 ({} 個除外済み)"/>
   <translation tag="Tap anywhere if this text is right-side up" ja="この文字が正しい向きならどこかをタップ"/>
   <translation tag="Tap anywhere to begin" ja="どこかをタップして開始"/>
   <translation tag="Tap anywhere to begin calibration" ja="どこかをタップしてキャリブレーション開始"/>
@@ -2276,6 +2298,7 @@
   <translation tag="Temperature Graph" ja="温度グラフ"/>
   <translation tag="Temperature Graph Config" ja="温度グラフ設定"/>
   <translation tag="Temperature Sensors" ja="温度センサー"/>
+  <translation tag="Temperature control optimized for {} at {}°C." ja="{} の温度制御を {}°C で最適化しました。"/>
   <translation tag="Temperatures" ja="温度"/>
   <translation tag="Temperatures saved" ja="温度を保存しました"/>
   <translation tag="Template" ja="テンプレート"/>
@@ -2570,6 +2593,7 @@
   <translation tag="X Axis" ja="X軸"/>
   <translation tag="X Offset" ja="Xオフセット"/>
   <translation tag="X axis applied, but Y axis failed" ja="X軸は適用されましたが、Y軸は失敗しました"/>
+  <translation tag="X axis done, starting Y..." ja="X軸が完了しました。Y軸を開始します..."/>
   <translation tag="X jog blocked at bed edge" ja="X軸移動はベッド端でブロックされました"/>
   <translation tag="X:" ja="X:"/>
   <translation tag="XY" ja="XY"/>
@@ -2578,6 +2602,7 @@
   <translation tag="Y Offset" ja="Yオフセット"/>
   <translation tag="Y jog blocked at bed edge" ja="Y軸移動はベッド端でブロックされました"/>
   <translation tag="Y:" ja="Y:"/>
+  <translation tag="YOU WIN!\nScore: {}\nTap to play again" ja="クリア！\nスコア: {}\nタップでもう一度"/>
   <translation tag="Year" ja="年"/>
   <translation tag="Yes" ja="はい"/>
   <translation tag="You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically." ja="印刷開始時にこれらの操作をスキップできるようになりました。\n\n各印刷を開始する前に、印刷の詳細で新しいオプションを確認してください。\n\n設定のバックアップが自動的に保存されました。"/>
@@ -2651,7 +2676,6 @@
   <translation tag="remaining" ja="残り"/>
   <translation tag="remaining before clog detection triggers" ja="残りで詰まり検出が作動します"/>
   <translation tag="rendering" ja="レンダリング中"/>
-  <translation tag="set to" ja="に設定"/>
   <translation tag="slots)" ja="スロット)"/>
   <translation tag="started" ja="開始"/>
   <translation tag="steppers" ja="ステッパー"/>
@@ -2685,7 +2709,11 @@
   <translation tag="{} configured item not found" ja="設定された項目 {} 個が見つかりません"/>
   <translation tag="{} configured items not found" ja="設定された項目 {} 個が見つかりません"/>
   <translation tag="{} critical hardware issues" ja="{} 個の重要なハードウェアの問題"/>
+  <translation tag="{} disabled" ja="{} を無効にしました"/>
+  <translation tag="{} enabled" ja="{} を有効にしました"/>
+  <translation tag="{} failed: {}" ja="{} に失敗しました: {}"/>
   <translation tag="{} filament sensors available" ja="{} 個のフィラメントセンサーが利用可能です"/>
+  <translation tag="{} filament • {}" ja="フィラメント {} • {}"/>
   <translation tag="{} heater turned off" ja="{} ヒーターをオフにしました"/>
   <translation tag="{} is installed but its backup-spool switching is turned off, so no automatic swap will happen." ja="{} はインストールされていますが、予備スプールへの切り替えがオフになっているため、自動切り替えは行われません。"/>
   <translation tag="{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap." ja="{} はインストールされていますが、予備スプールの設定を読み取れませんでした - 自動切り替えを当てにしないでください。"/>
@@ -2696,6 +2724,9 @@
   <translation tag="{} needs the HelixPrint plugin. Printing original file." ja="{} には HelixPrint プラグインが必要です。元のファイルを印刷します。"/>
   <translation tag="{} new hardware available" ja="{} 個の新しいハードウェアが利用可能です"/>
   <translation tag="{} preset{}" ja="{} 個のプリセット{}"/>
+  <translation tag="{} set to {}" ja="{} を {} に設定しました"/>
+  <translation tag="{} set to {} {}" ja="{} を {} {} に設定しました"/>
+  <translation tag="{} started" ja="{} を開始しました"/>
   <translation tag="{} target set to {}°C" ja="{} 目標温度を {}°C に設定しました"/>
   <translation tag="{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present." ja="{} は、フィラメントの種類と色の両方がアクティブなスプールと一致し、かつ自身のポートセンサーがフィラメントを検知しているスロットに切り替えます。"/>
   <translation tag="{} — response timed out" ja="{} — 応答タイムアウト"/>

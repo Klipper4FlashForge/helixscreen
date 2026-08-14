@@ -120,6 +120,7 @@
   <translation tag="Accelerometer communication failed. Try again." es="Error de comunicación con el acelerómetro. Intente de nuevo."/>
   <translation tag="Accept" es="Aceptar"/>
   <translation tag="Accepted Z Position: 0.000" es="Posición Z aceptada: 0.000"/>
+  <translation tag="Accepted Z Position: {:.3f}" es="Posición Z aceptada: {:.3f}"/>
   <translation tag="Accessories" es="Accesorios"/>
   <translation tag="Accuracy" es="Precisión"/>
   <translation tag="Act:" es="Act:"/>
@@ -170,6 +171,7 @@
   <translation tag="An internal error occurred. The app continues running — please send a debug bundle from Settings &gt; About if it repeats." es="Ocurrió un error interno. La aplicación sigue funcionando — envíe un paquete de depuración desde Ajustes &gt; Acerca de si se repite."/>
   <translation tag="An unexpected printer error occurred." es="Ocurrió un error inesperado en la impresora."/>
   <translation tag="An update is available" es="Hay una actualización disponible"/>
+  <translation tag="Analyzing data... {}%" es="Analizando datos... {}%"/>
   <translation tag="Android logcat" es="Android logcat"/>
   <translation tag="Animations" es="Animaciones"/>
   <translation tag="Anonymous data to help improve HelixScreen" es="Datos anónimos para mejorar HelixScreen"/>
@@ -327,6 +329,7 @@
   <translation tag="Calibrate your touchscreen for accurate input" es="Calibrar la pantalla táctil para una entrada precisa"/>
   <translation tag="Calibrate, tune jitter and scroll feel" es="Calibrar, ajustar jitter y sensibilidad de desplazamiento"/>
   <translation tag="Calibrated" es="Calibrado"/>
+  <translation tag="Calibrating {} axis..." es="Calibrando el eje {}..."/>
   <translation tag="Calibrating..." es="Calibrando..."/>
   <translation tag="Calibration &amp; Tools" es="Calibración y herramientas"/>
   <translation tag="Calibration Complete!" es="¡Calibración Completa!"/>
@@ -458,7 +461,11 @@
   <translation tag="Complete!" es="¡Completo!"/>
   <translation tag="Completed" es="Completado"/>
   <translation tag="Completed in %d probe%s" es="Completado en %d sondeo%s"/>
+  <translation tag="Completed just now" es="Completado justo ahora"/>
   <translation tag="Completed prints will appear here" es="Los impresiones completadas aparecerán aquí"/>
+  <translation tag="Completed {}d ago" es="Completado hace {} días"/>
+  <translation tag="Completed {}h ago" es="Completado hace {} h"/>
+  <translation tag="Completed {}m ago" es="Completado hace {} min"/>
   <translation tag="Computing calibration..." es="Calculando calibración..."/>
   <translation tag="Config Dir" es="Directorio de Configuración"/>
   <translation tag="Config-defined (read-only)" es="Definido en configuración (solo lectura)"/>
@@ -989,6 +996,7 @@
   <translation tag="G-code Preview" es="Vista Previa de G-code"/>
   <translation tag="G-code commands will appear here" es="Los comandos G-code aparecerán aquí"/>
   <translation tag="GCode Console" es="Consola de G-code"/>
+  <translation tag="Game Over!\nScore: {}\nTap to restart" es="¡Fin del juego!\nPuntuación: {}\nToca para reiniciar"/>
   <translation tag="Gear Buffer Speed" es="Velocidad del engranaje desde el buffer"/>
   <translation tag="Gear Spool Speed" es="Velocidad del engranaje desde la bobina"/>
   <translation tag="Gear Unload Speed" es="Velocidad de descarga del engranaje"/>
@@ -1160,6 +1168,7 @@
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." es="Únase a la comunidad de HelixScreen en Discord para discusión, consejos, ayuda con la solución de problemas y solicitudes de funciones."/>
   <translation tag="Jump directly to motion control / jogging" es="Ir directamente al control de movimiento / desplazamiento"/>
   <translation tag="Just now" es="Justo ahora"/>
+  <translation tag="Just queued" es="Recién puesto en cola"/>
   <translation tag="KEYBOARD LAYOUT" es="DISTRIBUCIÓN DE TECLADO"/>
   <translation tag="KLICKY CONTROLS" es="CONTROLES KLICKY"/>
   <translation tag="Keep Navigation Bar" es="Mantener barra de navegación"/>
@@ -1281,6 +1290,7 @@
   <translation tag="MISSING CONFIGURED" es="CONFIGURADO FALTANTE"/>
   <translation tag="MMU command failed" es="Error en comando MMU"/>
   <translation tag="MPC" es="MPC"/>
+  <translation tag="MPC thermal model calibrated for {} at {}°C." es="Modelo térmico MPC calibrado para {} a {}°C."/>
   <translation tag="Machine Limits" es="Límites de la Máquina"/>
   <translation tag="Macro" es="Macro"/>
   <translation tag="Macro Browser" es="Explorador de Macros"/>
@@ -1341,6 +1351,8 @@
   <translation tag="Measurement Failed" es="Medición fallida"/>
   <translation tag="Measuring Path A... %d%%" es="Midiendo la trayectoria A... %d%%"/>
   <translation tag="Measuring Path B... %d%%" es="Midiendo la trayectoria B... %d%%"/>
+  <translation tag="Measuring accelerometer noise..." es="Midiendo el ruido del acelerómetro..."/>
+  <translation tag="Measuring vibrations... {}%" es="Midiendo vibraciones... {}%"/>
   <translation tag="Memory" es="Memoria"/>
   <translation tag="Memory (MB)" es="Memoria (MB)"/>
   <translation tag="Memory Snapshot" es="Instantánea de memoria"/>
@@ -1390,6 +1402,7 @@
   <translation tag="My Custom Theme" es="Mi Tema Personalizado"/>
   <translation tag="My Panel" es="Mi Panel"/>
   <translation tag="My Printer" es="Mi Impresora"/>
+  <translation tag="NEW HIGH SCORE!\n{}\nTap to play again" es="¡NUEVO RÉCORD!\n{}\nToca para jugar de nuevo"/>
   <translation tag="NEWLY DISCOVERED" es="RECIÉN DESCUBIERTO"/>
   <translation tag="Name" es="Nombre"/>
   <translation tag="Name (optional)" es="Nombre (opcional)"/>
@@ -1771,6 +1784,8 @@
   <translation tag="Probing Bed Screws..." es="Sondeando Tornillos de Cama..."/>
   <translation tag="Probing Bed..." es="Sondeando Cama..."/>
   <translation tag="Probing Failed" es="Sondeo Fallido"/>
+  <translation tag="Probing point {} of {}" es="Punto de sondeo {} de {}"/>
+  <translation tag="Probing... ({} points)" es="Sondeando... ({} puntos)"/>
   <translation tag="Proceed" es="Continuar"/>
   <translation tag="Processing..." es="Procesando..."/>
   <translation tag="Profile deleted" es="Perfil eliminado"/>
@@ -1799,8 +1814,11 @@
   <translation tag="Quad Gantry Level" es="Nivelación de Pórtico Cuádruple"/>
   <translation tag="Quad Gantry Level complete" es="QGL completado"/>
   <translation tag="Quad Gantry Level started..." es="QGL iniciado..."/>
+  <translation tag="Queue: Paused" es="Cola: Pausada"/>
   <translation tag="Queue: Ready" es="Cola: Lista"/>
   <translation tag="Queued print jobs" es="Trabajos de impresión en cola"/>
+  <translation tag="Queued {}h {}m ago" es="En cola desde hace {} h {} min"/>
+  <translation tag="Queued {}m ago" es="En cola desde hace {} min"/>
   <translation tag="Quick" es="Rápido"/>
   <translation tag="Quick Actions" es="Acciones Rápidas"/>
   <translation tag="Quick Button 1" es="Botón Rápido 1"/>
@@ -1962,6 +1980,7 @@
   <translation tag="Running {}..." es="Ejecutando {}..."/>
   <translation tag="Runout" es="Agotamiento"/>
   <translation tag="Runout Sensor" es="Sensor de Agotamiento"/>
+  <translation tag="SAVE_CONFIG failed: {}. Z-offset was applied but not saved. Run SAVE_CONFIG manually or the offset will be lost on restart." es="SAVE_CONFIG falló: {}. El Z-offset se aplicó pero no se guardó. Ejecuta SAVE_CONFIG manualmente o se perderá al reiniciar."/>
   <translation tag="SETTINGS" es="AJUSTES"/>
   <translation tag="SHIPPED IMAGES" es="IMÁGENES INCLUIDAS"/>
   <translation tag="SOFTWARE" es="SOFTWARE"/>
@@ -2009,6 +2028,8 @@
   <translation tag="Scanning for networks..." es="Buscando redes..."/>
   <translation tag="Scanning..." es="Escaneando..."/>
   <translation tag="Score: 0" es="Puntuación: 0"/>
+  <translation tag="Score: {}" es="Puntuación: {}"/>
+  <translation tag="Score: {}  |  Best: {}" es="Puntuación: {}  |  Mejor: {}"/>
   <translation tag="Screen" es="Pantalla"/>
   <translation tag="Screen Blank" es="Pantalla en blanco"/>
   <translation tag="Screen Dim" es="Atenuación de Pantalla"/>
@@ -2255,6 +2276,7 @@
   <translation tag="Takes 3-5 min. Do not interrupt." es="Tarda 3-5 min. No interrumpa."/>
   <translation tag="Tap + to add" es="Toca + para añadir"/>
   <translation tag="Tap again to confirm this orientation" es="Toque de nuevo para confirmar esta orientación"/>
+  <translation tag="Tap an object to exclude it | {} objects ({} excluded)" es="Toca un objeto para excluirlo | {} objetos ({} excluidos)"/>
   <translation tag="Tap anywhere if this text is right-side up" es="Toque en cualquier lugar si este texto está derecho"/>
   <translation tag="Tap anywhere to begin" es="Toca en cualquier lugar para comenzar"/>
   <translation tag="Tap anywhere to begin calibration" es="Toca en cualquier lugar para iniciar la calibración"/>
@@ -2276,6 +2298,7 @@
   <translation tag="Temperature Graph" es="Gráfico de temperatura"/>
   <translation tag="Temperature Graph Config" es="Configuración del Gráfico de Temperatura"/>
   <translation tag="Temperature Sensors" es="Sensores de temperatura"/>
+  <translation tag="Temperature control optimized for {} at {}°C." es="Control de temperatura optimizado para {} a {}°C."/>
   <translation tag="Temperatures" es="Temperaturas"/>
   <translation tag="Temperatures saved" es="Temperaturas guardadas"/>
   <translation tag="Template" es="Plantilla"/>
@@ -2570,6 +2593,7 @@
   <translation tag="X Axis" es="Eje X"/>
   <translation tag="X Offset" es="Desfase X"/>
   <translation tag="X axis applied, but Y axis failed" es="Eje X aplicado, pero eje Y falló"/>
+  <translation tag="X axis done, starting Y..." es="Eje X terminado, empezando con Y..."/>
   <translation tag="X jog blocked at bed edge" es="Movimiento X bloqueado en el borde de la cama"/>
   <translation tag="X:" es="X:"/>
   <translation tag="XY" es="XY"/>
@@ -2578,6 +2602,7 @@
   <translation tag="Y Offset" es="Desfase Y"/>
   <translation tag="Y jog blocked at bed edge" es="Movimiento Y bloqueado en el borde de la cama"/>
   <translation tag="Y:" es="Y:"/>
+  <translation tag="YOU WIN!\nScore: {}\nTap to play again" es="¡GANASTE!\nPuntuación: {}\nToca para jugar de nuevo"/>
   <translation tag="Year" es="Año"/>
   <translation tag="Yes" es="Sí"/>
   <translation tag="You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically." es="Ahora puede omitir estas operaciones al iniciar impresiones.\n\nBusque las nuevas opciones en los detalles de impresión antes de iniciar cada impresión.\n\nSe guardó automáticamente una copia de seguridad de su configuración."/>
@@ -2651,7 +2676,6 @@
   <translation tag="remaining" es="restante"/>
   <translation tag="remaining before clog detection triggers" es="restante antes de que se active la detección de obstrucción"/>
   <translation tag="rendering" es="renderizando"/>
-  <translation tag="set to" es="establecido en"/>
   <translation tag="slots)" es="ranuras)"/>
   <translation tag="started" es="iniciado"/>
   <translation tag="steppers" es="motores paso a paso"/>
@@ -2685,7 +2709,11 @@
   <translation tag="{} configured item not found" es="{} elemento configurado no encontrado"/>
   <translation tag="{} configured items not found" es="{} elementos configurados no encontrados"/>
   <translation tag="{} critical hardware issues" es="{} problemas de hardware crítico"/>
+  <translation tag="{} disabled" es="{} desactivado"/>
+  <translation tag="{} enabled" es="{} activado"/>
+  <translation tag="{} failed: {}" es="{} falló: {}"/>
   <translation tag="{} filament sensors available" es="{} sensores de filamento disponibles"/>
+  <translation tag="{} filament • {}" es="{} de filamento • {}"/>
   <translation tag="{} heater turned off" es="Calentador {} apagado"/>
   <translation tag="{} is installed but its backup-spool switching is turned off, so no automatic swap will happen." es="{} está instalado pero su cambio a bobina de reserva está desactivado, así que no habrá ningún cambio automático."/>
   <translation tag="{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap." es="{} está instalado, pero no se pudo leer su ajuste de bobina de reserva - no cuentes con un cambio automático."/>
@@ -2696,6 +2724,9 @@
   <translation tag="{} needs the HelixPrint plugin. Printing original file." es="{} necesita el plugin HelixPrint. Se imprimirá el archivo original."/>
   <translation tag="{} new hardware available" es="{} nuevo hardware disponible"/>
   <translation tag="{} preset{}" es="{} preajuste{}"/>
+  <translation tag="{} set to {}" es="{} ajustado a {}"/>
+  <translation tag="{} set to {} {}" es="{} ajustado a {} {}"/>
+  <translation tag="{} started" es="{} iniciado"/>
   <translation tag="{} target set to {}°C" es="{} configurado a {}°C"/>
   <translation tag="{} will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present." es="{} cambiará a una ranura cuyo tipo de filamento Y color coincidan con la bobina activa y cuyo propio sensor de puerto detecte filamento."/>
   <translation tag="{} — response timed out" es="{} — tiempo de espera agotado"/>
