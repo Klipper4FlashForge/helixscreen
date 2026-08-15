@@ -18,10 +18,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(tr -d '[:space:]' < "$repo_root/VERSION.txt")"
 
-# Compute versionCode = major*10000 + minor*100 + patch (matches build.gradle).
+# Compute versionCode = major*1000000 + minor*1000 + patch (matches build.gradle).
 IFS='.' read -r v_major v_minor v_patch_raw <<< "$version"
 v_patch="${v_patch_raw%%-*}"  # strip pre-release suffix (e.g. 0-beta → 0)
-version_code=$(( v_major * 10000 + v_minor * 100 + v_patch ))
+if [ "$v_minor" -gt 999 ] || [ "$v_patch" -gt 999 ]; then
+    echo "error: version '$version' overflows the versionCode lanes (minor and patch" >&2
+    echo "       must each stay under 1000); widen the packing here and in" >&2
+    echo "       android/app/build.gradle together." >&2
+    exit 1
+fi
+version_code=$(( v_major * 1000000 + v_minor * 1000 + v_patch ))
 
 out_path="${1:-$repo_root/android/fastlane/metadata/android/en-US/changelogs/$version_code.txt}"
 mkdir -p "$(dirname "$out_path")"
