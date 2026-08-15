@@ -6,6 +6,7 @@
 #include "../test_helpers/update_queue_test_access.h"
 #include "app_globals.h"
 #include "print_history_manager.h"
+#include "printer_discovery.h"
 #include "printer_state.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
 #include "tool_state.h"
@@ -234,10 +235,10 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter nozzle text (decidegree ro
     // XML's temp_display widgets bind directly to bed_temp / chamber_temp.
 }
 
-TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter multi-tool label and gate",
+TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter multi-extruder label and gate",
                  "[print_status][formatter][multi_tool]") {
-    // Same hazard as the other tests, but for ToolState's tool_count subject:
-    // tear down any inherited formatter before re-initing the subject it observes.
+    // Same hazard as the other tests, but for ToolState's subjects: tear down any
+    // inherited formatter before re-initing the ones it observes.
     PrintStatusWidget::destroy_formatter_for_test();
 
     ToolState::instance().init_subjects(false);
@@ -245,22 +246,35 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter multi-tool label and gate"
     FormatterScope fs;
     auto& ts = ToolState::instance();
 
-    // Single tool — no label, gate=0
-    lv_subject_set_int(ts.get_tool_count_subject(), 1);
+    // Driven through a real tool list, not a poked tool_count: the gate counts
+    // hotends, and set_ams_topology() inflates the tool count to one entry per
+    // filament lane on printers that have exactly one.
+    auto discovery_with = [](const std::vector<std::string>& objects) {
+        helix::PrinterDiscovery disc;
+        disc.parse_objects(nlohmann::json(objects));
+        return disc;
+    };
+
+    // Single extruder — no label, gate=0
+    auto single = discovery_with({"extruder", "heater_bed", "fan"});
+    ts.init_tools(single);
     UpdateQueueTestAccess::drain_all(UpdateQueue::instance());
+    REQUIRE(ts.extruder_count() == 1);
     REQUIRE(lv_subject_get_int(lv_xml_get_subject(nullptr, "print_status_multi_tool")) == 0);
     REQUIRE(std::string(lv_subject_get_string(
                 lv_xml_get_subject(nullptr, "print_status_nozzle_tool_label"))) == "");
 
-    // Two tools — gate=1, label tracks active (default index = 0)
-    lv_subject_set_int(ts.get_tool_count_subject(), 2);
+    // Two extruders — gate=1, label tracks active (default index = 0)
+    auto dual = discovery_with({"extruder", "extruder1", "heater_bed", "fan"});
+    ts.init_tools(dual);
     UpdateQueueTestAccess::drain_all(UpdateQueue::instance());
+    REQUIRE(ts.extruder_count() == 2);
     REQUIRE(lv_subject_get_int(lv_xml_get_subject(nullptr, "print_status_multi_tool")) == 1);
     REQUIRE(std::string(lv_subject_get_string(
                 lv_xml_get_subject(nullptr, "print_status_nozzle_tool_label"))) == "T0");
 
     // Back to single — gate=0, label cleared
-    lv_subject_set_int(ts.get_tool_count_subject(), 1);
+    ts.init_tools(single);
     UpdateQueueTestAccess::drain_all(UpdateQueue::instance());
     REQUIRE(lv_subject_get_int(lv_xml_get_subject(nullptr, "print_status_multi_tool")) == 0);
     REQUIRE(std::string(lv_subject_get_string(

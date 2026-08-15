@@ -47,6 +47,7 @@
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <string_view>
 #include <unordered_set>
@@ -1520,10 +1521,12 @@ void PrintStatusWidget::show_nozzle_tool_picker(lv_obj_t* anchor) {
     if (nozzle_picker_.is_visible() || !parent_screen_ || !anchor)
         return;
 
-    // Single-tool printer: picker has nothing useful to offer. The whole
+    // Single-hotend printer: picker has nothing useful to offer. The whole
     // nozzle group is now the click target (chevron is visual-only), so this
-    // can fire on a regular print and should be a clean no-op.
-    if (lv_subject_get_int(ToolState::instance().get_tool_count_subject()) <= 1) {
+    // can fire on a regular print and should be a clean no-op. Counts nozzles
+    // rather than tools, matching the print_status_multi_tool gate that hides
+    // the chevron — an AMS's filament lanes all feed the one hotend.
+    if (!ToolState::instance().has_multiple_extruders()) {
         return;
     }
 
@@ -1581,10 +1584,9 @@ void PrintStatusWidget::NozzleToolPicker::on_created(lv_obj_t* backdrop) {
                 NozzleToolPicker* picker = payload->picker;
                 picker->hide();
 
-                picker->owner_.nozzle_tool_override_ = tool_key;
-                picker->owner_.config_["nozzle_tool_override"] = tool_key;
-                if (s_formatter_)
-                    s_formatter_->set_nozzle_tool_override(tool_key);
+                // apply_nozzle_tool_override records whichever pin actually took
+                // effect, so a name the formatter refuses never reaches config.
+                picker->owner_.apply_nozzle_tool_override(tool_key);
                 LVGL_SAFE_EVENT_CB_END();
             },
             LV_EVENT_CLICKED, nullptr);
@@ -1602,26 +1604,63 @@ void PrintStatusWidget::NozzleToolPicker::on_created(lv_obj_t* backdrop) {
     };
 
     add_row(lv_tr("Follow active tool"), "auto");
-    // Use the same display names PrinterTemperatureState exposes — "Nozzle 1",
-    // "Nozzle 2", ... — for parity with the temp_graph config modal and the
-    // multi-tool nozzle_temps widget.
-    const auto& exts = owner_.printer_state_.temperature_state().extruders();
-    int count = ToolState::instance().tool_count();
-    for (int i = 0; i < count; ++i) {
-        std::string name = (i == 0) ? "extruder" : ("extruder" + std::to_string(i));
-        std::string label;
-        auto it = exts.find(name);
-        if (it != exts.end() && !it->second.display_name.empty()) {
-            label = it->second.display_name;
-        } else {
-            // Fallback when extruders haven't been discovered yet.
-            label = (i == 0) ? std::string(lv_tr("Nozzle"))
-                             : std::string(lv_tr("Nozzle")) + " " + std::to_string(i + 1);
-        }
-        add_row(label.c_str(), name);
+    const auto options =
+        build_nozzle_tool_options(owner_.printer_state_.temperature_state().extruders());
+    for (const auto& opt : options) {
+        add_row(opt.label.c_str(), opt.extruder_name);
     }
 
-    spdlog::debug("[PrintStatusWidget] Nozzle tool picker built with {} tools", count);
+    spdlog::debug("[PrintStatusWidget] Nozzle tool picker built with {} nozzle(s)", options.size());
+}
+
+std::vector<PrintStatusWidget::NozzleToolOption> PrintStatusWidget::build_nozzle_tool_options(
+    const std::unordered_map<std::string, helix::ExtruderInfo>& extruders) {
+    std::vector<NozzleToolOption> options;
+    options.reserve(extruders.size());
+    for (const auto& [name, info] : extruders) {
+        // Anything that is not a Klipper extruder object cannot be pinned — the
+        // formatter resolves the row's key straight to a per-extruder subject.
+        if (!helix::is_extruder_name(name)) {
+            continue;
+        }
+        NozzleToolOption opt;
+        opt.extruder_name = name;
+        // Use the display name PrinterTemperatureState already assigned —
+        // "Nozzle 1", "Nozzle 2", ... — for parity with the temp_graph config
+        // modal and the multi-tool nozzle_temps widget.
+        if (!info.display_name.empty()) {
+            opt.label = info.display_name;
+        } else {
+            const int index = helix::tool_number_for_extruder(name).value_or(0);
+            opt.label = index == 0 ? std::string(lv_tr("Nozzle"))
+                                   : std::string(lv_tr("Nozzle")) + " " + std::to_string(index + 1);
+        }
+        options.push_back(std::move(opt));
+    }
+    // extruders() is an unordered_map, so impose the printer's own order:
+    // "extruder" first, then extruder1, extruder2, ... A plain name sort would
+    // put extruder10 ahead of extruder2.
+    std::sort(options.begin(), options.end(), [](const auto& a, const auto& b) {
+        return helix::tool_number_for_extruder(a.extruder_name).value_or(0) <
+               helix::tool_number_for_extruder(b.extruder_name).value_or(0);
+    });
+    return options;
+}
+
+bool PrintStatusWidget::apply_nozzle_tool_override(const std::string& tool_key) {
+    const bool accepted = !s_formatter_ || s_formatter_->set_nozzle_tool_override(tool_key);
+    // A refused pin leaves the formatter bound to the active extruder, so the
+    // widget has to record "auto" too. Writing the rejected name instead left
+    // config disagreeing with what is on screen until the next attach() repaired
+    // it (see attach()'s set_nozzle_tool_override fallback).
+    const std::string effective = accepted ? tool_key : std::string("auto");
+    nozzle_tool_override_ = effective;
+    config_["nozzle_tool_override"] = effective;
+    if (!accepted) {
+        spdlog::info("[PrintStatusWidget] nozzle pin '{}' has no matching extruder — kept auto",
+                     tool_key);
+    }
+    return accepted;
 }
 
 // ============================================================================
@@ -1882,13 +1921,18 @@ bool PrintStatusWidget::DetailedFormatter::set_nozzle_tool_override(
 }
 
 void PrintStatusWidget::DetailedFormatter::update_multi_tool() {
-    int count = lv_subject_get_int(ToolState::instance().get_tool_count_subject());
-    lv_subject_set_int(&PrintStatusWidget::multi_tool_subject_, count > 1 ? 1 : 0);
+    // Gated on physical extruders, not tool_count(): set_ams_topology() expands
+    // ToolState's tool list to one entry per filament SLOT, so a 4-lane AMS or a
+    // 16-wide AD5X tool map reports many "tools" behind a single hotend. Naming
+    // which nozzle you are looking at only means something when there is more
+    // than one nozzle. Matches the nozzle_icon badge gate in ui_ams_tool_text.
+    const bool multi = ToolState::instance().has_multiple_extruders();
+    lv_subject_set_int(&PrintStatusWidget::multi_tool_subject_, multi ? 1 : 0);
 }
 
 void PrintStatusWidget::DetailedFormatter::update_tool_label() {
-    int count = lv_subject_get_int(ToolState::instance().get_tool_count_subject());
-    if (count <= 1) {
+    auto& tools = ToolState::instance();
+    if (!tools.has_multiple_extruders()) {
         nozzle_tool_label_buf_[0] = '\0';
     } else {
         // Label tracks what the user is VIEWING — the pinned tool when one
@@ -1896,15 +1940,15 @@ void PrintStatusWidget::DetailedFormatter::update_tool_label() {
         // broken right after a pin ("I picked Nozzle 2 but it still says T0").
         int idx = -1;
         // Defend against hand-edited config — the name has to parse as a
-        // Klipper extruder AND land in range before it is trusted.
+        // Klipper extruder AND name an extruder this printer has.
         if (const auto parsed = helix::tool_number_for_extruder(current_nozzle_override_)) {
-            if (*parsed < count) {
+            if (*parsed < tools.extruder_count()) {
                 idx = *parsed;
             }
         }
         if (idx < 0) {
             // "auto", unrecognized, or out-of-range → follow active tool.
-            idx = ToolState::instance().active_tool_index();
+            idx = tools.active_tool_index();
         }
         snprintf(nozzle_tool_label_buf_, sizeof(nozzle_tool_label_buf_), "T%d", idx);
     }
@@ -2006,7 +2050,7 @@ PrintStatusWidget::DetailedFormatter::DetailedFormatter() {
         s_formatter_->filament_used_observer_.reset();
         s_formatter_->nozzle_temp_observer_.reset();
         s_formatter_->nozzle_target_observer_.reset();
-        s_formatter_->tool_count_observer_.reset();
+        s_formatter_->tools_version_observer_.reset();
         s_formatter_->active_tool_observer_.reset();
         s_formatter_->arc_value_observer_.reset();
         s_formatter_->nozzle_temp_lifetime_.reset();
@@ -2049,9 +2093,11 @@ PrintStatusWidget::DetailedFormatter::DetailedFormatter() {
     update_filament_text();
     update_nozzle_text();
 
-    // Multi-tool: observe tool_count + active_tool to drive gate and T<n> label
-    tool_count_observer_ = observe_int_sync<DetailedFormatter>(
-        ToolState::instance().get_tool_count_subject(), this,
+    // Multi-extruder: observe the tool-list version + active_tool to drive the
+    // gate and the T<n> label. tools_version bumps on every tool-list rebuild,
+    // including the ones that leave the count alone.
+    tools_version_observer_ = observe_int_sync<DetailedFormatter>(
+        ToolState::instance().get_tools_version_subject(), this,
         [](DetailedFormatter* self, int) {
             self->update_multi_tool();
             self->update_tool_label();
@@ -2111,7 +2157,7 @@ PrintStatusWidget::DetailedFormatter::~DetailedFormatter() {
     filament_used_observer_.reset();
     nozzle_temp_observer_.reset();
     nozzle_target_observer_.reset();
-    tool_count_observer_.reset();
+    tools_version_observer_.reset();
     active_tool_observer_.reset();
     arc_value_observer_.reset();
     nozzle_temp_lifetime_.reset();
