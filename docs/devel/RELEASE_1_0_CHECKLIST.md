@@ -30,16 +30,14 @@ also cannot help if 1.1.0 > 1.0.0, which is exactly the dangerous case: publishi
 
 ## 2. Before tagging `v1.0.0`
 
-- [ ] Close the open 1.0-milestone issues:
-  - #1272 — Print stats between HS and Mainsail don't match (lifetime totals truncated
-    at the 500-job history cache)
-  - #1262 — Accelerometers never discovered: Settings > Sensors is empty on every
-    printer that has one
-  - #1260 — Orphaned printer presets: a DB entry with no `preset` key applies none
-    of its preset's settings
-- [ ] Green CI on `main`. `Build`, `esp32-build`, and the nightly suite were all red
-      on 2026-08-14; the first two have known causes and fixes, the nightly SIGSEGV in
-      `test_recovery_dialog_threading.cpp` is still unreproduced.
+- [x] Close the open 1.0-milestone issues. **All closed; the 1.0 milestone is
+      0 open / 18 closed as of 2026-08-15.** (#1272 print stats, #1262 sensor
+      registry, #1260 orphaned printer presets.)
+- [x] Green CI on `main`. **Green as of 2026-08-15.** `Build`, `esp32-build`,
+      `XML Lint`, and `Code Quality` all passed on `ee9abcb95` (2026-08-14
+      21:46), and the Nightly Full Test Suite passed 2026-08-15 04:28 -
+      including the `test_recovery_dialog_threading.cpp` SIGSEGV that had been
+      unreproduced. Watch whether it recurs rather than treating it as fixed.
 - [ ] `VERSION.txt`: `0.99.113` → `1.0.0`. Every existing install is on `0.99.x`,
       so this is an ordinary forward step for the updater — no special handling.
 - [x] Confirm the `ALLOW_CHANNEL_DOWNGRADE` repository variable is **unset**. It
@@ -82,6 +80,18 @@ The two-track routing has never run end-to-end against real R2. Verify both.
 - [ ] First `beta` tag from `main`: confirm `beta/manifest.json` **and**
       `dev/manifest.json` both move, that the GitHub release is marked
       prerelease, and that `notify-website` did **not** fire.
+
+      **`beta/manifest.json` does not exist yet and is actively 404ing.** Zone
+      analytics for 2026-08-08..15 show **150 failed polls, ~19/day**, against
+      `/beta/manifest.json` - consistent with the 30 Beta-channel installs in
+      the telemetry split below. Those devices have been failing every update
+      check silently for as long as the object has been missing. The tag from
+      `main` creates it and fixes them; nothing else is needed. If the cut
+      slips, publishing a beta manifest pointing at the current stable release
+      would un-strand them in the meantime.
+
+      Verify after the cut that the error count for `beta` in the dashboard's
+      CDN fleet metric drops to zero (`TELEMETRY_ADMIN.md` § "Fleet size").
 - [ ] Confirm an app on the Beta channel is offered the devel build, and an app on
       Stable is not.
 - [ ] Sanity-check the GitHub API fallback paths once R2 has both channels
