@@ -362,6 +362,13 @@ else ifeq ($(PLATFORM_TARGET),cc1)
     ENABLE_SCREENSAVER := no
     ENABLE_EVDEV := yes
     BUILD_SUBDIR := cc1
+    # Mock backends are dev/test scaffolding. The Makefile defaults ENABLE_MOCKS
+    # to yes and no cross target has ever overridden it, so every shipped device
+    # binary has carried the full mock Moonraker client. mk/cross.mk is included
+    # before the Makefile's `?=`, so setting it here wins. The
+    # #ifdef HELIX_ENABLE_MOCKS guards at every consumer are already complete --
+    # the ESP32 port builds this way today.
+    ENABLE_MOCKS := no
     # Strip binary for size on memory-constrained device
     STRIP_BINARY := yes
     FONT_TIERS := micro tiny
@@ -754,6 +761,30 @@ CFLAGS += -DHELIX_MAX_FONT_TIER=$(HELIX_MAX_FONT_TIER)
 CXXFLAGS += -DHELIX_MAX_FONT_TIER=$(HELIX_MAX_FONT_TIER)
 SUBMODULE_CFLAGS += -DHELIX_MAX_FONT_TIER=$(HELIX_MAX_FONT_TIER)
 SUBMODULE_CXXFLAGS += -DHELIX_MAX_FONT_TIER=$(HELIX_MAX_FONT_TIER)
+
+# =============================================================================
+# Size flags for the memory-constrained boards
+# =============================================================================
+# On these devices helix-screen's file-backed text competes for page cache with
+# Klipper: measured on a CC1, Klipper takes 3675 major faults and Moonraker 5526
+# while helix-screen takes 68, because helix-screen's working set is what drives
+# the reclaim. A Klipper stalled on flash IO is a "Timer too close".
+#
+# -DNDEBUG   drops assert() and nlohmann's JSON_ASSERT. LVGL's asserts are
+#            controlled separately by LV_USE_ASSERT_* and are unaffected.
+# -fno-rtti  the codebase is already RTTI-free by policy and lint-enforced
+#            (tests/shell/test_code_lint.bats); a grep for non-comment
+#            typeid/dynamic_cast across src/ and include/ returns zero. The
+#            ESP32 firmware already builds this way via ESP-IDF's
+#            CONFIG_COMPILER_CXX_RTTI. Applied to our C++ only, NOT to
+#            SUBMODULE_CXXFLAGS -- libhv throws, and its catch clauses want
+#            typeinfo for the thrown types.
+ifeq ($(PLATFORM_TARGET),cc1)
+    CFLAGS += -DNDEBUG
+    CXXFLAGS += -DNDEBUG -fno-rtti
+    SUBMODULE_CFLAGS += -DNDEBUG
+    SUBMODULE_CXXFLAGS += -DNDEBUG
+endif
 
 # For size-optimized targets, override -O2 with -Os
 # (GCC uses last optimization flag, but this makes it explicit)
