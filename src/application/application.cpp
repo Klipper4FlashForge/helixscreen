@@ -1548,11 +1548,9 @@ bool Application::init_display() {
                      layout.name());
     });
 
-    // Initialize tips manager
-    TipsManager* tips_mgr = TipsManager::get_instance();
-    if (!tips_mgr->init(helix::find_readable("printing_tips.json"))) {
-        spdlog::warn("[Application] Failed to initialize tips manager");
-    }
+    // Tips are NOT loaded here. TipsManager::get_instance() parses the database
+    // on first use instead, so a session that never displays the tips widget
+    // never pays the 105 KB parse or keeps its cache resident.
 
     spdlog::debug("[Application] Display initialized");
     helix::MemoryMonitor::log_now("after_display_init");
