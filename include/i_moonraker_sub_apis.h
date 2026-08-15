@@ -127,8 +127,20 @@ class IFilesAPI {
     using ErrorCallback = std::function<void(const MoonrakerError&)>;
     using FileListCallback = std::function<void(const std::vector<FileInfo>&)>;
     using FileMetadataCallback = std::function<void(const FileMetadata&)>;
+    using FileRootsCallback = std::function<void(const std::vector<FileRoot>&)>;
 
     virtual ~IFilesAPI() = default;
+
+    /**
+     * @brief List the file manager's roots and where they live on disk
+     *
+     * server.files.roots is the only Moonraker call that gives an absolute path for
+     * a writable directory. Everything else it reports about its own config is
+     * relative to a root the caller is trying to identify in the first place, so
+     * without this an absolute `[include /some/where.conf]` cannot be told apart
+     * from an unreachable one (stock Creality K2).
+     */
+    virtual void get_file_roots(FileRootsCallback on_success, ErrorCallback on_error) = 0;
 
     virtual void list_files(const std::string& root, const std::string& path, bool recursive,
                             FileListCallback on_success, ErrorCallback on_error) = 0;
