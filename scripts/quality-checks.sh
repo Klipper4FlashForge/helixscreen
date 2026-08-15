@@ -788,6 +788,24 @@ fi
 # is how the moonraker-plugin suite went red for a day while passing locally on a
 # .venv that had pytest-asyncio installed by hand. The gate also catches the
 # mirror case — an unmarked async test, which strict mode SKIPS silently.
+# Font tier coverage: the C++ font guards are `#if HELIX_MAX_FONT_TIER >= N`
+# (a threshold) while mk/fonts.mk selects sources from the declared FONT_TIERS
+# (a set), and cross.mk derives MAX from the highest declared tier. A platform
+# that skips a middle tier makes those disagree and fails to link -- k2 declares
+# "large xlarge", so `>= 3` compiles a reference to noto_sans_26 that its
+# sources would not contain. Invisible on x86 (all guards true) and only the
+# release matrix cross-builds k2, so it would surface long after the commit.
+echo ""
+echo "${BOLD}🔠 Checking font tier coverage...${RESET}"
+if [ -f "scripts/check_font_tier_coverage.py" ]; then
+  if python3 scripts/check_font_tier_coverage.py >/tmp/font_tier_coverage.out 2>&1; then
+    cat /tmp/font_tier_coverage.out
+  else
+    cat /tmp/font_tier_coverage.out
+    EXIT_CODE=1
+  fi
+fi
+
 if [ -f "scripts/check_pytest_asyncio_deps.py" ]; then
   if python3 scripts/check_pytest_asyncio_deps.py >/tmp/pytest_asyncio_deps.out 2>&1; then
     cat /tmp/pytest_asyncio_deps.out
