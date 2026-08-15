@@ -116,6 +116,28 @@ def nonShippableConfig = [
     '.helix-screen.lock', '*.corrupt'
 ]
 
+// Host-only service plumbing. Unlike nonShippableConfig above these ARE tracked
+// files and are correct to ship on a Linux install — they are simply inert in an
+// APK. Android has no systemd, no SysV init, no polkit, no udev, and the two
+// binaries that would consume any of it (helix_splash.cpp, helix_watchdog.cpp)
+// are excluded from the Android build in app/jni/CMakeLists.txt.
+//
+// Deliberately narrow: every entry here has zero references from src/ or
+// include/. helixscreen.env, helixscreen.init and helixscreen-update.service
+// are NOT listed — they are named from translation units that Android does
+// compile (config.cpp, log_collector.cpp, update_checker.cpp), so dropping them
+// would be a behaviour change rather than a packaging one.
+def hostOnlyConfig = [
+    'helixscreen.service',              // systemd unit
+    'refresh-service-units.sh',         // systemd unit maintenance
+    'ensure-polkit-rule.sh',            // polkit
+    'helixscreen-network.pkla',         // polkit
+    '99-helixscreen-backlight.rules',   // udev
+    '99-helixscreen-usb-printers.rules',// udev
+    'helixscreen-k2-procd-shim.sh',     // Creality K2 procd
+    'helixscreen-ustreamer-k2.sh'       // Creality K2 camera
+]
+
 // Same globs as regexes, for the post-copy audit below. Only '*' appears in
 // these patterns; everything around it is quoted literally.
 def nonShippableConfigPatterns = nonShippableConfig.collect {
@@ -145,6 +167,7 @@ task copyAssets(type: Copy) {
     from('../../config') {
         into 'config'
         exclude nonShippableConfig
+        exclude hostOnlyConfig
     }
     into 'src/main/assets'
 }
