@@ -604,6 +604,24 @@ class NavigationManager {
     // it without going through go_back(); the scrub hook is what keeps
     // overlay_backdrop_ from outliving it.
     void adopt_overlay_backdrop(lv_obj_t* screen);
+    /**
+     * @brief Re-take the overlay backdrop snapshot from the live widget tree
+     *
+     * The backdrop is a frozen bitmap of the screen as it looked when the first
+     * overlay opened, so anything outside the overlay — the navigation bar —
+     * stops tracking the widgets beneath it. A setting whose UI lives in an
+     * overlay but whose effect lands in the navbar (show_printer_switcher) would
+     * otherwise appear to do nothing until the stack popped.
+     *
+     * Hides every screen child except the app layout and un-hides the base
+     * panel, so the new snapshot captures the same content the original did
+     * rather than the overlays and the outgoing backdrop stacked on top of it.
+     * The replacement is inserted directly above the outgoing one, which is then
+     * deleted deferred — z-order is preserved without touching the overlays.
+     *
+     * No-op when no backdrop is live. Safe to call from a subject observer.
+     */
+    void refresh_overlay_backdrop();
 
     // Event callbacks
     static void backdrop_click_event_cb(lv_event_t* e);
@@ -712,6 +730,7 @@ class NavigationManager {
     ObserverGuard connection_state_observer_;
     ObserverGuard klippy_state_observer_;
     ObserverGuard printer_dot_observer_;
+    ObserverGuard printer_switcher_observer_;
 
     // Printer connection status dot widget
     lv_obj_t* printer_dot_widget_ = nullptr;
