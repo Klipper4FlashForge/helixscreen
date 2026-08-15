@@ -2518,6 +2518,13 @@ define release-clean-assets
 	@find $(1)/assets/fonts -name '.clang-format' -delete 2>/dev/null || true
 	@find $(1)/assets -name '*.icns' -delete 2>/dev/null || true
 	@find $(1)/assets -name 'mdi-icon-metadata.json.gz' -delete 2>/dev/null || true
+	@# assets/sounds is 919 KB of MOD/MED tracker modules, playable only where
+	@# the tracker player is compiled in. TRACKER_CXXFLAGS (Makefile, sound
+	@# section) is the same switch that gates that code, so the payload and the
+	@# player can't drift apart. AD5M has sound but deliberately no tracker --
+	@# its single core busy-waits and kills prints -- and CC1/K1/K2/MIPS have
+	@# neither, so all of them were shipping music they can never play.
+	$(if $(TRACKER_CXXFLAGS),,@rm -rf $(1)/assets/sounds)
 endef
 
 # PII / runtime-state files that must NEVER ship in a release tarball.
