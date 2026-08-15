@@ -687,21 +687,7 @@ void PrintStatusWidget::handle_library_last() {
         return;
     }
 
-    const auto& jobs = history->get_jobs();
-    if (jobs.empty()) {
-        spdlog::info("[PrintStatusWidget] Library: Print Last - no jobs in history");
-        return;
-    }
-
-    // Find most recent job where the file still exists
-    const PrintHistoryJob* last_job = nullptr;
-    for (const auto& job : jobs) {
-        if (job.exists) {
-            last_job = &job;
-            break;
-        }
-    }
-
+    const PrintHistoryJob* last_job = history->get_newest_existing_job();
     if (!last_job) {
         spdlog::info("[PrintStatusWidget] Library: Print Last - no files exist on disk");
         return;
@@ -815,16 +801,19 @@ void PrintStatusWidget::apply_esp_psram_thumbnail() {
 
 std::string PrintStatusWidget::get_last_print_thumbnail_path() const {
     auto* history = get_print_history_manager();
-    if (!history || !history->is_loaded()) {
+    if (!history) {
         return {};
     }
 
-    const auto& jobs = history->get_jobs();
-    if (jobs.empty()) {
+    // A deleted file's thumbnail never 404s: the cache is keyed on the job's
+    // relative path and validated against its `modified` stamp, neither of
+    // which changes when the gcode is removed. Skipping the job is the only
+    // thing that stops the dead file's image being served.
+    const PrintHistoryJob* newest = history->get_newest_existing_job();
+    if (!newest) {
         return {};
     }
-
-    const auto& job = jobs.front();
+    const auto& job = *newest;
 
     // Select the best thumbnail for the widget's actual rendered size
     if (!job.thumbnails.empty() && print_card_thumb_ && lv_obj_is_valid(print_card_thumb_)) {
@@ -858,18 +847,14 @@ std::string PrintStatusWidget::get_last_print_thumbnail_path() const {
 
 time_t PrintStatusWidget::get_last_print_source_modified() const {
     auto* history = get_print_history_manager();
-    if (!history || !history->is_loaded()) {
+    if (!history) {
         return 0;
     }
 
-    const auto& jobs = history->get_jobs();
-    if (jobs.empty()) {
-        return 0;
-    }
-
-    // Same head entry get_last_print_thumbnail_path() picks its key from, so the
+    // Same entry get_last_print_thumbnail_path() picks its key from, so the
     // freshness stamp always describes the key it is validating.
-    return static_cast<time_t>(jobs.front().modified);
+    const PrintHistoryJob* newest = history->get_newest_existing_job();
+    return newest ? static_cast<time_t>(newest->modified) : 0;
 }
 
 void PrintStatusWidget::defer_reset_print_card_to_idle() {
@@ -991,17 +976,7 @@ void PrintStatusWidget::set_thumb_on_widgets(const char* src) {
 
 void PrintStatusWidget::update_last_print_availability() {
     auto* history = get_print_history_manager();
-    last_print_available_ = false;
-
-    if (history && history->is_loaded()) {
-        const auto& jobs = history->get_jobs();
-        for (const auto& job : jobs) {
-            if (job.exists) {
-                last_print_available_ = true;
-                break;
-            }
-        }
-    }
+    last_print_available_ = history && history->get_newest_existing_job() != nullptr;
 
     // Apply to both full and compact "Print Last" rows
     lv_obj_t* rows[] = {library_row_last_, compact_row_last_};
@@ -1938,14 +1913,20 @@ void PrintStatusWidget::DetailedFormatter::update_tool_label() {
 
 void PrintStatusWidget::DetailedFormatter::update_idle_fields() {
     auto* hm = get_print_history_manager();
-    if (!hm || !hm->is_loaded() || hm->get_jobs().empty()) {
+    // The tile's whole job is to offer a reprint, so it describes the newest
+    // print that can still be reprinted. When the newest history entry names a
+    // file the user has since deleted, that entry is not it - and when nothing
+    // survives, the tile presents as never-printed (empty name, disabled
+    // Reprint via print_status_idle_has_last).
+    const PrintHistoryJob* newest = hm ? hm->get_newest_existing_job() : nullptr;
+    if (!newest) {
         lv_subject_copy_string(&idle_filename_subject_, "");
         lv_subject_copy_string(&idle_when_subject_, "Never printed");
         lv_subject_copy_string(&idle_meta_subject_, "");
         lv_subject_set_int(&idle_has_last_subject_, 0);
         return;
     }
-    const PrintHistoryJob& job = hm->get_jobs().front();
+    const PrintHistoryJob& job = *newest;
     snprintf(idle_filename_buf_, sizeof(idle_filename_buf_), "%s", job.filename.c_str());
     lv_subject_copy_string(&idle_filename_subject_, idle_filename_buf_);
 
