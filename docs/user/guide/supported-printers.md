@@ -27,6 +27,7 @@ Runs directly on the printer's built-in 4.3" screen as a replacement for the sto
 **What works:**
 - Full temperature, motion, bed mesh (with 3D visualization), fan, and macro control on the printer's own display
 - Reliable on-device operation tuned for the AD5M's embedded hardware
+- **Firmware-managed Z-offset** when running ZMOD — the offset is stored by the firmware, and HelixScreen shows the stored value while idle rather than the 0.000 the firmware leaves in Klipper between prints. See [Printing → Z-Offset](printing.md#z-offset--baby-steps)
 
 **Requirements:** Forge-X or Klipper-Mod firmware (which provides Moonraker). See [Installation → Adventurer 5M](../INSTALL.md#flashforge-adventurer-5m--5m-pro).
 
@@ -44,6 +45,7 @@ The AD5X's four-color **IFS (Intelligent Filament System)** is fully integrated,
 - **External-spool bypass mode** for feeding a spool directly
 - **[Spoolman](filament-tracking.md) integration** for assigning tracked spools to slots
 - **Infinite Spool Mode** reporting — when a slot runs out, the IFS automatically switches to another slot with the same filament type *and* color, if one is loaded. HelixScreen tells you this plainly on the runout screen and in the AMS panel
+- **Firmware-managed Z-offset** — ZMOD stores the offset itself, so there is no Save step. HelixScreen shows the *stored* value while the printer is idle, where other interfaces read 0.000, and adjusts from it correctly. See [Printing → Z-Offset](printing.md#z-offset--baby-steps)
 
 **Requirements:** ZMOD firmware v1.7.0 or newer (a community firmware mod, separate from FlashForge stock). See [Installation → Adventurer 5X](../INSTALL.md#flashforge-adventurer-5x).
 

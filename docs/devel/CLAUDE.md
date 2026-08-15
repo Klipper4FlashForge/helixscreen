@@ -64,6 +64,7 @@ All developer documentation lives here. When working on features, look up the re
 | `PRINT_CONTROL_BUTTONS.md` | PrintControlButtons controller: owned subjects, pure view function, optimistic pending-action machine, 2x1 home widget, panel delegation |
 | `PRINT_START_PROFILES.md` | Print start phase detection, JSON profiles |
 | `PRINT_START_INTEGRATION.md` | User-facing macro setup for print start tracking |
+| `Z_OFFSET_PERSISTENCE.md` | Firmware that stores the z-offset outside `gcode_move` and zeroes the live one between prints (ZMOD on AD5M/AD5X): why the idle reading lies, the `persisted_z_offset` subjects, the relative-vs-absolute `SET_GCODE_OFFSET` rule, and the one-row recipe for adding a firmware |
 | `POWER_LOSS_RECOVERY.md` | Resume-after-power-loss: the passive Snapmaker backend vs the **active, side-effectful** Creality probe, capability detection via `print_stats.power_loss` presence, and the mandatory probe-before-resume safety invariant |
 | `UPDATE_SYSTEM.md` | Update channels (stable/beta/dev), R2 CDN, Moonraker updater |
 | `SOUND_SYSTEM.md` | Audio architecture, JSON themes, backends (SDL, PWM, M300). User guide: `../user/guide/settings.md#sound-settings` |

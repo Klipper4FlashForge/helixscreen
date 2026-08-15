@@ -21,6 +21,7 @@
 #include "probe_sensor_manager.h"
 #include "sensor_state.h"
 #include "unit_conversions.h"
+#include "z_offset_persistence.h"
 
 #include <algorithm>
 #include <cctype>
@@ -1340,6 +1341,13 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
         subscription_objects["save_variables"] = nullptr;
     }
 
+    // Firmware that keeps the authoritative z-offset outside gcode_move needs
+    // whatever object stores it; without this the Z-offset row reads 0.000
+    // whenever such a printer is idle. See include/z_offset_persistence.h.
+    for (const auto& obj : helix::zoffset::required_status_objects(hw)) {
+        subscription_objects[obj] = nullptr;
+    }
+
     // ACE (Anycubic ACE Pro — ValgACE/BunnyACE/DuckACE Klipper drivers, native
     // GoKlipper `filament_hub`, or the Kobra S1 mainline-Python fork's
     // `ace_instance_N` objects, #1107). Subscribe the real detected object
@@ -1478,6 +1486,10 @@ void MoonrakerDiscoverySequence::complete_discovery_subscription(uint64_t seq) {
     }
     if (hw.mmu_type() == AmsType::AD5X_IFS) {
         spdlog::info("[Moonraker Client] Subscribing to save_variables (AD5X IFS)");
+    }
+    if (helix::zoffset::firmware_persists_z_offset(hw)) {
+        spdlog::info("[Moonraker Client] Subscribing persisted z-offset objects ({})",
+                     helix::zoffset::persistence_provider_name(hw));
     }
     if (hw.mmu_type() == AmsType::ACE) {
         spdlog::info("[Moonraker Client] Subscribing to ace object (Anycubic ACE)");

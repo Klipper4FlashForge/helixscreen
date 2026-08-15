@@ -256,9 +256,10 @@ class Application {
     // Steps the deferred hardware-setup offer will run if accepted. Held here
     // because modal_show_confirmation() carries a single void* user_data.
     std::vector<helix::wizard::StepId> m_pending_hardware_setup_steps;
-    // Guards the ZMOD persistent-z-offset enablement (SAVE_ZMOD_DATA LOAD_ZOFFSET=1)
-    // so it is sent at most once per app session. Intentionally NOT reset on reconnect.
-    bool m_zmod_zoffset_enabled = false;
+    // Guards the firmware z-offset persistence enablement (see
+    // include/z_offset_persistence.h) so it is sent at most once per app session.
+    // Intentionally NOT reset on reconnect.
+    bool m_zoffset_persistence_enabled = false;
     // Hardware-shape fingerprint from the most recent on_discovery_complete.
     // When a reconnect's fingerprint matches (hardware unchanged), expensive
     // user-facing side-effects (LED chip population, hardware validation

@@ -320,10 +320,10 @@ The central `PrinterState` class was decomposed into 13 focused domain classes, 
 PrinterState (orchestrator)
 ├── PrinterTemperatureState      # Nozzle, bed, chamber temps + targets
 │   └── ExtruderInfo[]           # Per-extruder: name, temp/target subjects (heap-allocated)
-├── PrinterMotionState           # Position, speed, homed axes
+├── PrinterMotionState           # Position, speed, homed axes, live + persisted z-offset
 ├── PrinterFanState              # Fan speeds, types
 ├── PrinterPrintState            # Print progress, filename, layers, ETA
-├── PrinterCalibrationState      # PID, Z-offset, bed mesh status
+├── PrinterCalibrationState      # PID, Z-offset *calibration* runs, bed mesh status
 ├── PrinterCapabilitiesState     # QGL, probe, firmware features
 ├── PrinterExcludedObjectsState  # Object exclusion during prints
 ├── PrinterNetworkState          # WiFi, Ethernet, hostname

@@ -425,6 +425,18 @@ api->suppress_disconnect_modal(15000);
 6. **IMoonrakerDomainService deleted:** `BedMeshProfile` and `GcodeStoreEntry` now in `moonraker_types.h`
 7. **UI abstraction boundary:** UI code uses API proxy methods, never `get_client()` or `get_moonraker_client()`
 
+## Capability-Driven Subscriptions
+
+`printer.objects.subscribe` **replaces** the whole per-connection subscription, so
+every capability that needs an object must contribute it to the single union map
+built by `MoonrakerDiscoverySequence::build_subscription_objects()`.
+
+Firmware-persisted z-offset is one such capability: on printers whose firmware keeps
+the offset outside `gcode_move`, the storing object is added by
+`helix::zoffset::required_status_objects(hw)` (`include/z_offset_persistence.h`) —
+`save_variables` on ZMOD. The builder asks the capability question and never names a
+firmware; see the vendor-abstraction rule in the root `CLAUDE.md`.
+
 ## Multi-Tool & Multi-Extruder Subscriptions
 
 When `PrinterDiscovery` detects multiple extruders or a tool changer, additional Moonraker subscription keys are registered:

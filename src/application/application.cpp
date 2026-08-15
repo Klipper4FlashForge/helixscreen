@@ -217,7 +217,7 @@
 #include "tips_manager.h"
 #include "tool_state.h"
 #include "xml_registration.h"
-#include "zmod_zoffset.h"
+#include "z_offset_persistence.h"
 
 #include <lvgl/src/misc/cache/instance/lv_image_cache.h>
 #include <spdlog/spdlog.h>
@@ -2719,13 +2719,14 @@ void Application::setup_discovery_callbacks() {
             crash_handler::breadcrumb::note("disc", "post_init_fans",
                                             static_cast<long>(hw.fans().size()));
 
-            // Enable ZMOD persistent z-offset reload once per session, only when
-            // idle. ZMOD saves any z-offset the user dials in, but reloading it on
-            // the next print is off by default — SAVE_ZMOD_DATA LOAD_ZOFFSET=1 turns
-            // it on so HelixScreen z-offset adjustments survive prints/reboots. The
-            // print_active subject is not yet applied from this discovery's status
-            // (see the reconfig-wizard gate below), so consult status_snapshot
-            // directly to avoid injecting gcode over a live print.
+            // Turn on the firmware's own z-offset persistence once per session,
+            // only when idle. Some firmwares store the offset themselves but ship
+            // with reload-at-print-start off, so adjustments made here would not
+            // survive. Which printers need it, and what to send, lives in
+            // include/z_offset_persistence.h. The print_active subject is not yet
+            // applied from this discovery's status (see the reconfig-wizard gate
+            // below), so consult status_snapshot directly to avoid injecting gcode
+            // over a live print.
             {
                 bool print_active =
                     lv_subject_get_int(get_printer_state().get_print_active_subject()) != 0;
@@ -2733,19 +2734,20 @@ void Application::setup_discovery_callbacks() {
                     helix::PrinterPrintState::status_indicates_active_print(*status_snapshot)) {
                     print_active = true;
                 }
-                if (helix::zmod::should_enable_persistent_zoffset(
-                        api->hardware().has_macro("SAVE_ZMOD_DATA"), print_active,
-                        app->m_zmod_zoffset_enabled)) {
-                    app->m_zmod_zoffset_enabled = true;
-                    spdlog::info("[ZMOD] Enabling persistent z-offset (SAVE_ZMOD_DATA "
-                                 "LOAD_ZOFFSET=1)");
+                const std::string enable_gcode =
+                    helix::zoffset::persistence_enable_gcode(api->hardware());
+                if (helix::zoffset::should_enable_persistence(!enable_gcode.empty(), print_active,
+                                                              app->m_zoffset_persistence_enabled)) {
+                    app->m_zoffset_persistence_enabled = true;
+                    spdlog::info("[ZOffset] Enabling firmware z-offset persistence ({})",
+                                 helix::zoffset::persistence_provider_name(api->hardware()));
                     // Fire-and-forget: callbacks are LOG-ONLY and capture nothing that
                     // can dangle, so the background response thread is lifetime-safe.
                     api->execute_gcode(
-                        "SAVE_ZMOD_DATA LOAD_ZOFFSET=1",
-                        []() { spdlog::info("[ZMOD] Persistent z-offset enabled"); },
+                        enable_gcode,
+                        []() { spdlog::info("[ZOffset] Firmware z-offset persistence enabled"); },
                         [](const MoonrakerError& err) {
-                            spdlog::warn("[ZMOD] Failed to enable persistent z-offset: {}",
+                            spdlog::warn("[ZOffset] Failed to enable z-offset persistence: {}",
                                          err.message);
                         },
                         0, /*silent=*/true);

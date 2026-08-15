@@ -168,6 +168,7 @@ src/printer/printer_versions_state.cpp
 src/printer/sensor_state.cpp
 src/printer/slot_registry.cpp
 src/printer/snapmaker_resume.cpp
+src/printer/z_offset_persistence.cpp
 src/printer/plr_backend.cpp
 src/printer/plr_offer.cpp
 src/printer/standard_macros.cpp

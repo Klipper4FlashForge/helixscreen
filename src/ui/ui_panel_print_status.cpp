@@ -58,6 +58,7 @@
 #include "ui/fan_spin_animation.h"
 #include "ui/ui_widget_helpers.h"
 #include "wizard_config_paths.h"
+#include "z_offset_utils.h"
 
 #include <spdlog/spdlog.h>
 
@@ -2934,9 +2935,13 @@ void PrintStatusPanel::on_flow_factor_changed(int flow) {
     spdlog::trace("[{}] Flow factor updated: {}%", get_name(), flow);
 }
 
-void PrintStatusPanel::on_gcode_z_offset_changed(int microns) {
-    // Delegate to tune overlay singleton
-    get_print_tune_overlay().update_z_offset_display(microns);
+void PrintStatusPanel::on_gcode_z_offset_changed(int /* microns */) {
+    // Delegate to tune overlay singleton. Resolve the value rather than forwarding
+    // the raw live offset: ZMOD zeroes that outside a print, and handing the
+    // overlay a phantom zero would make its next baby-step adjust from the wrong
+    // base.
+    get_print_tune_overlay().update_z_offset_display(
+        helix::zoffset::displayed_z_offset_microns(printer_state_));
 }
 
 void PrintStatusPanel::on_led_state_changed(int state) {

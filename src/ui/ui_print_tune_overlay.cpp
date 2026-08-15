@@ -275,8 +275,10 @@ void PrintTuneOverlay::sync_to_state() {
     flow_percent_ = flow;
     update_display();
 
-    // Sync Z offset from PrinterState
-    int z_offset_microns = lv_subject_get_int(printer_state_->get_gcode_z_offset_subject());
+    // Sync Z offset from PrinterState. Firmware that persists the offset itself
+    // (ZMOD) zeroes the live one outside a print, so adjusting from it while idle
+    // would baby-step away from a phantom zero.
+    int z_offset_microns = helix::zoffset::displayed_z_offset_microns(*printer_state_);
     update_z_offset_display(z_offset_microns);
 
     // Sync the visual indicator
@@ -473,16 +475,31 @@ void PrintTuneOverlay::handle_z_offset_changed(double delta) {
                                       sizeof(tune_z_offset_buf_));
     lv_subject_copy_string(&tune_z_offset_subject_, tune_z_offset_buf_);
 
+    const int delta_microns = static_cast<int>(std::lround(delta * 1000.0));
+    const int current_microns = static_cast<int>(std::lround(current_z_offset_ * 1000.0));
+    const int base_microns = current_microns - delta_microns;
+    // Read the live offset before the optimistic write below overwrites it.
+    const int live_microns =
+        printer_state_ ? lv_subject_get_int(printer_state_->get_gcode_z_offset_subject()) : 0;
+    const bool adjusting_from_persisted = printer_state_ && base_microns != live_microns;
+
     // Track pending delta for "unsaved adjustment" notification in Controls panel
     if (printer_state_) {
-        int delta_microns = static_cast<int>(std::lround(delta * 1000.0));
         printer_state_->add_pending_z_offset_delta(delta_microns);
 
         // Immediately update the gcode_z_offset subject so Controls panel reflects the change
         // (otherwise it waits for Moonraker to broadcast the status update)
-        int current_microns = static_cast<int>(std::lround(current_z_offset_ * 1000.0));
         if (auto* subj = printer_state_->get_gcode_z_offset_subject()) {
             lv_subject_set_int(subj, current_microns);
+        }
+        // When the base came from the firmware-persisted value we are about to
+        // send an absolute Z=, which ZMOD's override stores verbatim. Move the
+        // persisted subject with it so the Controls row does not show the stale
+        // number until save_variables is broadcast back.
+        if (adjusting_from_persisted) {
+            if (auto* subj = printer_state_->get_persisted_z_offset_subject()) {
+                lv_subject_set_int(subj, current_microns);
+            }
         }
     }
 
@@ -499,11 +516,11 @@ void PrintTuneOverlay::handle_z_offset_changed(double delta) {
         }
     }
 
-    // Send SET_GCODE_OFFSET Z_ADJUST command to Klipper.
-    // MOVE=1 makes the toolhead physically move to the new offset immediately,
-    // which is essential for baby stepping during a print. Without it, the offset
-    // only takes effect on the next Z move in gcode. Only add MOVE=1 when all
-    // axes are homed (matching Mainsail behavior) to avoid Klipper errors.
+    // Send the offset change to Klipper. MOVE=1 makes the toolhead physically
+    // move to the new offset immediately, which is essential for baby stepping
+    // during a print. Without it, the offset only takes effect on the next Z move
+    // in gcode. Only add MOVE=1 when all axes are homed (matching Mainsail
+    // behavior) to avoid Klipper errors.
     if (api_) {
         bool all_homed = false;
         if (printer_state_) {
@@ -511,9 +528,11 @@ void PrintTuneOverlay::handle_z_offset_changed(double delta) {
             all_homed = axes && strchr(axes, 'x') && strchr(axes, 'y') && strchr(axes, 'z');
         }
 
-        char gcode[96];
-        std::snprintf(gcode, sizeof(gcode), "SET_GCODE_OFFSET Z_ADJUST=%.3f%s", delta,
-                      all_homed ? " MOVE=1" : "");
+        // Relative Z_ADJUST resolves against homing_origin, so it is only right
+        // when the base we adjusted from IS the live offset. See
+        // helix::zoffset::build_z_adjust_gcode().
+        std::string gcode = helix::zoffset::build_z_adjust_gcode(base_microns, live_microns,
+                                                                 delta_microns, all_homed);
         api_->execute_gcode(
             gcode, [delta]() { spdlog::debug("[PrintTuneOverlay] Z adjusted {:+.3f}mm", delta); },
             [](const MoonrakerError& err) {

@@ -31,6 +31,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -1139,6 +1140,44 @@ class PrinterState {
      */
     lv_subject_t* get_gcode_z_offset_subject() {
         return motion_state_.get_gcode_z_offset_subject();
+    }
+
+    /**
+     * @brief Get the firmware-persisted Z-offset subject (microns)
+     *
+     * ZMOD stores the offset the next print will apply in
+     * save_variables.gcode_offsets.z and zeroes gcode_move's live offset outside
+     * a print, so this - not get_gcode_z_offset_subject() - is the truthful
+     * reading while idle. Only meaningful when
+     * get_persisted_z_offset_valid_subject() reads 1.
+     * Delegated to PrinterMotionState component.
+     */
+    lv_subject_t* get_persisted_z_offset_subject() {
+        return motion_state_.get_persisted_z_offset_subject();
+    }
+
+    /**
+     * @brief Get whether a firmware-persisted Z-offset has been reported (0/1)
+     *
+     * Separate from the value because 0 microns is a legitimate stored offset.
+     * Reads 0 on every non-ZMOD printer.
+     * Delegated to PrinterMotionState component.
+     */
+    lv_subject_t* get_persisted_z_offset_valid_subject() {
+        return motion_state_.get_persisted_z_offset_valid_subject();
+    }
+
+    /**
+     * @brief Firmware-persisted Z-offset in microns, or nullopt when unknown
+     *
+     * Convenience wrapper over the two subjects above for the display/adjust
+     * helpers in helix::zoffset.
+     */
+    std::optional<int> get_persisted_z_offset_microns() {
+        if (lv_subject_get_int(motion_state_.get_persisted_z_offset_valid_subject()) == 0) {
+            return std::nullopt;
+        }
+        return lv_subject_get_int(motion_state_.get_persisted_z_offset_subject());
     }
 
     // ========================================================================

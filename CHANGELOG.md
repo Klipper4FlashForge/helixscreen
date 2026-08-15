@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Z-offset now reads true while idle on ZMOD printers (AD5M / AD5X)** — ZMOD keeps
+  the real offset in its own storage and clears Klipper's live offset when a print
+  ends, so the Z-Offset row showed 0.000 whenever the printer was idle even though a
+  real offset was stored and would be applied to the next print. HelixScreen now
+  reads the stored value and shows that while idle, falling back to the live offset
+  during a print and on every other printer.
+- **Baby-stepping while idle no longer discards a stored z-offset** — on the same
+  printers an idle adjustment was sent relative to the live offset, which ZMOD had
+  zeroed, so the firmware persisted just the nudge and the user's real offset was
+  lost. Idle adjustments are now sent as an absolute value computed from the offset
+  actually shown.
+
 ## [0.99.114] - 2026-08-14
 
 <!-- whatsnew
