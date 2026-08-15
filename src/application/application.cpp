@@ -3407,6 +3407,11 @@ void Application::init_action_prompt() {
                 gcode, []() { spdlog::debug("[ActionPrompt] Gcode executed successfully"); },
                 [gcode](const MoonrakerError& err) {
                     spdlog::error("[ActionPrompt] Gcode execution failed: {}", err.message);
+                    // The modal already closed on the button press, and this
+                    // error_cb marks the call caller-handled so the `!!`
+                    // GcodeError toast is suppressed for the same failure.
+                    // Without this the user sees nothing at all.
+                    helix::ui::report_action_prompt_gcode_failure(err.user_message());
                 },
                 IMoonrakerAPI::MACRO_TIMEOUT_MS);
         });

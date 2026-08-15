@@ -145,4 +145,24 @@ class ActionPromptModal : public Modal {
     static void on_button_cb(lv_event_t* e);
 };
 
+/**
+ * @brief Show the user why a prompt button's gcode did not run.
+ *
+ * The modal closes on every button press by design and waits for the firmware
+ * to push a replacement prompt, so a macro that aborts leaves the screen empty.
+ * The RPC layer will not fill that gap: supplying an error callback at all
+ * marks the call caller-handled in MoonrakerRequestTracker::route_response(),
+ * which records the message in rpc_error_correlation and suppresses the
+ * independent `!!` GcodeError toast for the same failure. This is the toast
+ * that replaces it.
+ *
+ * Safe to call from the WebSocket background thread - the notification layer
+ * marshals to the main thread itself.
+ *
+ * @param error_message Klipper's message from the failed RPC (MoonrakerError::
+ *                      user_message()). Empty falls back to a generic string so
+ *                      the toast is never blank.
+ */
+void report_action_prompt_gcode_failure(const std::string& error_message);
+
 } // namespace helix::ui

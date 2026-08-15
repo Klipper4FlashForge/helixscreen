@@ -3,6 +3,8 @@
 
 #include "action_prompt_modal.h"
 
+#include "ui_error_reporting.h"
+
 #include "sound_manager.h"
 #include "theme_manager.h"
 
@@ -383,6 +385,22 @@ void ActionPromptModal::on_button_cb(lv_event_t* e) {
 
     SoundManager::instance().play("button_tap");
     cbd->modal->handle_button_click(cbd->gcode);
+}
+
+// ============================================================================
+// Failure reporting
+// ============================================================================
+
+void report_action_prompt_gcode_failure(const std::string& error_message) {
+    // Same presentation as every other failed macro in the UI (ui_panel_controls,
+    // ui_panel_filament). NOTIFY_ERROR marshals to the main thread itself, which
+    // matters here: the RPC error callback fires on the WebSocket thread.
+    //
+    // Klipper's own wording is the useful part ("Extruder not hot enough"); the
+    // generic string only stands in when the transport gave us nothing.
+    const std::string detail =
+        error_message.empty() ? std::string(lv_tr("Unknown error")) : error_message;
+    NOTIFY_ERROR(lv_tr("Macro failed: {}"), detail);
 }
 
 } // namespace helix::ui
