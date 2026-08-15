@@ -905,9 +905,14 @@ echo ""
 # excluded from FORMATTING but not from the validation pass above - the generator
 # still has to emit well-formed XML. Same exclusion as mk/format.mk; format-xml.py
 # self-guards via GENERATED_DIRS, but the xmllint fallback below does not.
+#
+# android/ is excluded on the staged path for a different reason: AndroidManifest.xml
+# and res/values/*.xml are Android-toolchain XML, not LVGL component XML, so this
+# formatter's house style does not apply to them. Only the staged path can reach
+# them - the find below walks ui_xml/ alone. Mirrors FOREIGN_DIRS in format-xml.py.
 echo "📐 Checking XML formatting..."
 if [ "$STAGED_ONLY" = true ]; then
-  XML_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "\.xml$" | grep -v "^ui_xml/translations/" || true)
+  XML_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "\.xml$" | grep -v "^ui_xml/translations/" | grep -v "^android/" || true)
 else
   XML_FILES=$(find ui_xml -name "*.xml" -not -path "ui_xml/translations/*" 2>/dev/null || true)
 fi
