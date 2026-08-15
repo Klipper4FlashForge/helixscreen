@@ -461,6 +461,89 @@ Each AMS backend manages its own Moonraker subscriptions independently. When `Am
 
 ---
 
+## Locating Moonraker's Config File
+
+Anything that edits Moonraker's configuration (today: Spoolman setup, in
+`ui_spoolman_overlay.cpp`) has to answer one question first — **which file on disk did
+Moonraker actually load, and can the file API reach it?** The reported name is not an
+answer, and the difference has produced silent-failure bugs on three firmwares.
+
+### Why the reported name is not a path
+
+`server.config` names each loaded file **relative to the root config's own parent
+directory**, falling back to the full absolute path for anything outside it.
+`server.files.*` addresses files **relative to the file manager's `config` root**. Those
+are the same directory on a stock install and different ones on real firmware:
+
+| Firmware | file manager `config` root | `server.config` reports | Same? |
+|---|---|---|---|
+| Raspberry Pi, CB1 | `~/printer_data/config` | `moonraker.conf` | yes |
+| Creality K1 | `/usr/data/printer_data/config` | `moonraker.conf` | yes |
+| Snapmaker U1 | `/oem/printer_data/config` | a relative subpath | yes |
+| Creality K2 | `/mnt/UDISK/printer_data/config` | `moonraker.conf` | **no** — the real config is `/usr/share/moonraker/moonraker.conf`, launched via `-c`, and 404s over HTTP |
+| Flashforge AD5M | `/opt/config` | absolute paths under `/root/printer_data/config` | **yes, but only by luck** — that path is a symlink to `/opt/config`, so the same files *are* served under the root by their tail |
+
+### The resolution chain
+
+`MoonrakerConfigManager::candidate_config_paths()` turns a reported name into a **ranked
+list**, and `SpoolmanOverlay::verify_config_reachable()` proves the winner by downloading
+it and grading its sections. Nothing is ever written on the strength of a path alone.
+
+1. **Already relative** — the file API takes it verbatim.
+2. **Absolute and under the `config` root** (from `server.files.roots`, the only call that
+   reports an absolute writable path) — strip the prefix, on a component boundary so
+   `.../config` cannot swallow `.../config_backup`.
+3. **Absolute and outside it** — *speculate* from the tail after the last `config/`
+   component, then the bare basename.
+
+Case 3 is a guess, and `candidates_are_speculative()` says so. A guessed candidate must
+match Moonraker's section list **exactly**; only a derived one may lean on drift
+tolerance. The two compound otherwise: a stray `moonraker.conf` under the writable root
+shares the whole stock section set with the vendor config, so a guessed path plus a
+fractional match rule writes confidently to a file Moonraker never reads.
+
+### Section drift vs. a different file
+
+Moonraker serves the section list it parsed **when it last started**, so a file edited
+since then legitimately disagrees with it — uninstalling HelixScreen strips
+`[update_manager helixscreen]` while a long-running Moonraker keeps reporting it.
+`classify_section_match()` grades by **how many sections went missing**, not what fraction
+survived: tolerance is one always, a quarter of the list once that is more. A
+fraction-of-total rule scores a decoy well above chance, because two unrelated
+`moonraker.conf` files agree on everything stock and differ only in the extras.
+
+### The local-write fallback (K2 only, in practice)
+
+When the config is genuinely outside anything the file API serves *and* Moonraker runs on
+this host, `moonraker_local_probe.cpp` reads its `-c`/`-d` from `/proc` and edits the file
+directly. Three things make that safe enough to ship:
+
+- **Order.** `helixscreen.conf` is uploaded through the file API **first**; the absolute
+  `[include]` naming it is appended **second**. An include with no matching file makes
+  Moonraker raise `ConfigError` and refuse to start, taking the printer's web stack down.
+- **The include is absolute.** Moonraker resolves a relative include against the
+  *including* file's directory — a bare `helixscreen.conf` in a vendor config under
+  `/usr/share` names a file that does not exist.
+- **Durability.** Read whole, append, write to a temp file in the same directory, `fsync`,
+  `rename`, `fsync` the directory. The rename alone orders only the directory entry, not
+  the data, which is exactly how a power cut yields a zero-length `moonraker.conf`.
+  Symlinked configs are resolved first, or `rename` would replace the link itself.
+
+Two gates keep it narrow. `SpoolmanConfigTarget::proved_out_of_reach` distinguishes "the
+file API answered and the config is not under a root it serves" from "we could not tell" —
+a dropped socket must never license editing vendor firmware. And `plan_local_include()`
+refuses when the config already resolves inside the writable root, compared through
+`fs::weakly_canonical()` rather than string prefixes, because on the AD5M the two are one
+directory named two ways.
+
+**Code:** `include/moonraker_config_manager.h`, `include/system/moonraker_local_probe.h`,
+`src/ui/ui_spoolman_overlay.cpp`.
+**Tests:** `tests/unit/test_config_path_candidates.cpp`,
+`test_moonraker_local_include_plan.cpp`, `test_local_config_append.cpp`,
+`test_moonraker_file_roots.cpp`.
+
+---
+
 ## See Also
 
 - `docs/devel/TESTING.md` - General testing guide

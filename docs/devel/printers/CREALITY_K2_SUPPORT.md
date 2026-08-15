@@ -45,6 +45,16 @@ All K2 models use Allwinner ARM Cortex-A7 dual-core processors running Tina Linu
 - **armv7l** — Dual-core Cortex-A7 (NOT Cortex-A53). Lower performance than K1 series.
 - **480x800 display** — The panel is 480x800 portrait, same as all other K2 models (`lcm_id=gc9503cv_ue_480_800` in cmdline confirms). HelixScreen software-rotates portrait→landscape (applies to all K2). The 480x1600 seen in `/sys/class/graphics/fb0/virtual_size` is a double-buffered virtual framebuffer (two stacked 480x800 buffers), not a taller panel.
 - **Python 3.9** — Available at `/usr/bin/python3`.
+- **Moonraker's config is outside the file API** — stock firmware launches
+  `moonraker.py -c /usr/share/moonraker/moonraker.conf`, while the file manager's only
+  writable `config` root is `/mnt/UDISK/printer_data/config`. So
+  `GET /server/files/config/moonraker.conf` is a 404 and **no HTTP call can edit
+  Moonraker's configuration on this printer.** HelixScreen falls back to writing the file
+  locally; it is the only supported printer that needs to. See
+  [MOONRAKER_ARCHITECTURE.md § Locating Moonraker's Config File](../MOONRAKER_ARCHITECTURE.md#locating-moonrakers-config-file).
+  A `moonraker.conf` **does** sometimes exist under the writable root — left by earlier
+  HelixScreen releases — and it is a decoy: it shares the stock section set with the real
+  config and Moonraker never reads it.
 
 ## Cross-Compilation
 
