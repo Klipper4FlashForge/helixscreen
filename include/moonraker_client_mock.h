@@ -441,7 +441,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      * @param heaters List of heater names (e.g., "extruder", "heater_bed")
      */
     void set_heaters(std::vector<std::string> heaters) {
-        discovery_.heaters() = std::move(heaters);
+        {
+            std::lock_guard<std::mutex> lock(discovery_mutex_);
+            discovery_.heaters() = std::move(heaters);
+        }
         rebuild_hardware_from_lists();
     }
 
@@ -450,7 +453,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      * @param fans List of fan names (e.g., "fan", "heater_fan hotend_fan")
      */
     void set_fans(std::vector<std::string> fans) {
-        discovery_.fans() = std::move(fans);
+        {
+            std::lock_guard<std::mutex> lock(discovery_mutex_);
+            discovery_.fans() = std::move(fans);
+        }
         rebuild_hardware_from_lists();
     }
 
@@ -459,7 +465,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      * @param leds List of LED names (e.g., "neopixel chamber_light")
      */
     void set_leds(std::vector<std::string> leds) {
-        discovery_.leds() = std::move(leds);
+        {
+            std::lock_guard<std::mutex> lock(discovery_mutex_);
+            discovery_.leds() = std::move(leds);
+        }
         rebuild_hardware_from_lists();
     }
 
@@ -468,7 +477,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      * @param sensors List of sensor names (e.g., "temperature_sensor chamber")
      */
     void set_sensors(std::vector<std::string> sensors) {
-        discovery_.sensors() = std::move(sensors);
+        {
+            std::lock_guard<std::mutex> lock(discovery_mutex_);
+            discovery_.sensors() = std::move(sensors);
+        }
         rebuild_hardware_from_lists();
     }
 
@@ -477,7 +489,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      * @param sensors List of filament sensor names (e.g., "filament_switch_sensor fsensor")
      */
     void set_filament_sensors(std::vector<std::string> sensors) {
-        discovery_.filament_sensors() = std::move(sensors);
+        {
+            std::lock_guard<std::mutex> lock(discovery_mutex_);
+            discovery_.filament_sensors() = std::move(sensors);
+        }
         rebuild_hardware_from_lists();
     }
 
@@ -1290,6 +1305,25 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     std::atomic<bool> simulation_running_{false};
     std::mutex sim_mutex_;           // For condition variable wait
     std::condition_variable sim_cv_; // For interruptible sleep during shutdown
+
+    // Protects the discovery_ name lists (heaters/fans/sensors/leds/filament_sensors)
+    // against the temperature simulation thread.
+    //
+    // connect() starts that thread, and discover_printer() then REASSIGNS those
+    // vectors on the calling thread — `discovery_.fans() = {...}` frees every old
+    // std::string buffer while the simulation loop is iterating them. ASan caught
+    // this as two heap-use-after-frees (memcpy and memcmp on freed string data)
+    // from FullStackTestFixture, whose constructor does exactly that sequence.
+    //
+    // Lock discipline, verified against the call graph — do not nest these:
+    //   LOCKED   populate_hardware(), populate_capabilities(),
+    //            rebuild_hardware_from_lists(), the discovery-list setters below
+    //            (assignment only), the simulation loop's per-iteration snapshot,
+    //            and has_chamber_sensor() — the loop's third read path, which
+    //            reaches discovery_.sensors() through a call rather than inline
+    //   UNLOCKED override_chamber_heater() — reached ONLY from populate_capabilities()
+    //            and rebuild_hardware_from_lists(), both of which already hold it
+    mutable std::mutex discovery_mutex_;
 
     // Restart simulation thread (for RESTART/FIRMWARE_RESTART commands)
     std::thread restart_thread_;

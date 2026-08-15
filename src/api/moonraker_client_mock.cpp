@@ -179,6 +179,12 @@ int MoonrakerClientMock::get_total_layers() const {
 }
 
 bool MoonrakerClientMock::has_chamber_sensor() const {
+    // The simulation thread calls this every iteration while discover_printer()
+    // is still reassigning discovery_.sensors() on the calling thread — the same
+    // heap-use-after-free the writers below guard against. Neither caller (here
+    // and dispatch_historical_temperatures()) holds the lock, so taking it here
+    // cannot self-deadlock.
+    std::lock_guard<std::mutex> discovery_lock(discovery_mutex_);
     for (const auto& s : discovery_.sensors()) {
         if (s == "temperature_sensor chamber") {
             return true;
@@ -201,6 +207,9 @@ void MoonrakerClientMock::update_cached_chamber_key() {
     }
 }
 
+// PRECONDITION: caller holds discovery_mutex_. Reached only from
+// populate_capabilities() and rebuild_hardware_from_lists(), both of which take it.
+// Locking here instead would self-deadlock — discovery_mutex_ is not recursive.
 void MoonrakerClientMock::override_chamber_heater(const std::string& heater_obj) {
     auto& heaters = discovery_.heaters();
     heaters.erase(
@@ -387,6 +396,10 @@ int MoonrakerClientMock::connect(const char* url, std::function<void()> on_conne
 }
 
 void MoonrakerClientMock::populate_capabilities() {
+    // Held for the whole body: the simulation thread may already be running (connect()
+    // starts it before discover_printer() calls this) and iterates these same lists.
+    std::lock_guard<std::mutex> discovery_lock(discovery_mutex_);
+
     // Create mock Klipper object list for capabilities parsing
     json mock_objects = json::array();
 
@@ -687,6 +700,10 @@ void MoonrakerClientMock::populate_capabilities() {
 }
 
 void MoonrakerClientMock::rebuild_hardware_from_lists() {
+    // See populate_capabilities(). The set_* helpers release their own lock before
+    // calling this, so taking it here is a fresh acquisition, not a nested one.
+    std::lock_guard<std::mutex> discovery_lock(discovery_mutex_);
+
     // Lightweight re-parse: build objects array from current discovery lists only.
     // Used by test helpers (set_heaters, set_fans, etc.) that need to update hardware()
     // without adding hardcoded common objects from populate_capabilities().
@@ -886,6 +903,10 @@ bool MoonrakerClientMock::is_mock_toolchanger() const {
 }
 
 void MoonrakerClientMock::populate_hardware() {
+    // See populate_capabilities(). The clear()/assign below are exactly the writes
+    // that freed string buffers out from under the simulation thread.
+    std::lock_guard<std::mutex> discovery_lock(discovery_mutex_);
+
     // Clear existing data (in discovery sequence)
     discovery_.heaters().clear();
     discovery_.sensors().clear();
@@ -4234,10 +4255,19 @@ void MoonrakerClientMock::temperature_simulation_loop() {
             status_obj["webhooks"] = {{"state", state_str}};
         }
 
+        // Snapshot under the lock rather than iterating discovery_ directly: the
+        // list can be reassigned on the main thread mid-iteration. Copy is cheap
+        // (a handful of short names) and keeps the lock off the JSON building below.
+        std::vector<std::string> fans_snapshot;
+        {
+            std::lock_guard<std::mutex> discovery_lock(discovery_mutex_);
+            fans_snapshot = discovery_.fans();
+        }
+
         // Auto-controlled heater_fans follow extruder temperature, matching
         // Klipper behavior. Apply BEFORE the explicit-override loop so users
         // can still pin a fan speed via M106 for testing.
-        for (const auto& fan_name : discovery_.fans()) {
+        for (const auto& fan_name : fans_snapshot) {
             if (fan_name.rfind("heater_fan ", 0) == 0) {
                 status_obj[fan_name] = {{"speed", hotend_fan_speed}};
             }
@@ -4297,8 +4327,15 @@ void MoonrakerClientMock::temperature_simulation_loop() {
                 {"current_object", current_obj.empty() ? json(nullptr) : json(current_obj)}};
         }
 
+        // Snapshot under the lock — same reasoning as fans_snapshot above.
+        std::vector<std::string> sensors_snapshot;
+        {
+            std::lock_guard<std::mutex> discovery_lock(discovery_mutex_);
+            sensors_snapshot = discovery_.sensors();
+        }
+
         // Add temperature sensor data for all sensors in the discovery sensors list
-        for (const auto& s : discovery_.sensors()) {
+        for (const auto& s : sensors_snapshot) {
             if (s.rfind("temperature_sensor ", 0) == 0) {
                 std::string sensor_name = s.substr(19);
                 double temp = 25.0;
