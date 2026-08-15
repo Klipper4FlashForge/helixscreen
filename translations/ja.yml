@@ -61,7 +61,7 @@ translations:
   120 seconds: 120秒
   15 seconds: 15秒
   180°: 180°
-  180° Upside Down: ''
+  180° Upside Down: 180° 上下反転
   2 min: '2分'
   2 minutes: 2分
   2. Place paper between nozzle and bed: 2. ノズルとベッドの間に紙を置いてください
@@ -69,7 +69,7 @@ translations:
   20 minutes: 20分
   24 Hour: 24時間
   270°: 270°
-  270° Clockwise: ''
+  270° Clockwise: 270° 時計回り
   2D Heatmap: 2Dヒートマップ
   2D Layers: 2Dレイヤー
   3. Adjust screws, then re-probe to verify: 3. ネジを調整し、再度プローブして確認してください
@@ -87,7 +87,7 @@ translations:
   5V: 5V
   60 seconds: 60秒
   90°: 90°
-  90° Clockwise: ''
+  90° Clockwise: 90° 時計回り
   = Loosen: = 緩める
   = Tighten: = 締める
   A: A
@@ -1560,10 +1560,10 @@ translations:
   No width sensor detected: '幅センサーが検出されません'
   None: なし
   None (disable): なし (無効)
-  Normal: ''
+  Normal: 標準
   Not Enough Filament: フィラメントが不足しています
   Not Now: 今はしない
-  Not available here. Update from a terminal.: ''
+  Not available here. Update from a terminal.: ここでは利用できません。ターミナルから更新してください。
   Not calibrated: キャリブレーション未実施
   Not configured: 未設定
   Not connected: 未接続
@@ -2046,7 +2046,7 @@ translations:
   Run brush cleaning sequence: 'ブラシ清掃シーケンスを実行'
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): ノズルがコールドの状態でもフィラメントの装填/取り出しを実行（ノズルを自身で加熱するマクロ向け）
   Run test sequence on all lanes: '全レーンでテストシーケンスを実行'
-  Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: ''
+  Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: このプリンターのターミナルで HelixScreen インストーラーを --update 付きで実行してください。プラットフォーム別のコマンドはスキャンして確認できます。
   Run without parameter prompt: パラメータ入力なしで実行
   Run {}?: '{} を実行しますか？'
   Running {}...: '{} を実行中...'
@@ -2111,7 +2111,7 @@ translations:
   Screen: '画面'
   Screen Blank: 画面消灯
   Screen Dim: 画面減光
-  Screen Rotation: ''
+  Screen Rotation: 画面の回転
   Screen dims to lower brightness after period of inactivity: 一定時間操作がないと画面の明るさが下がります
   Screen lock and PIN settings: 画面ロックと PIN の設定
   Screen reboot failed: 画面の再起動に失敗しました
@@ -2556,7 +2556,7 @@ translations:
   Turn On LEDs: 'LEDを点灯'
   Turn on LEDs when printer starts: プリンター起動時に LED を点灯
   Turn the extruder heater off after a load or unload finishes: 装填または排出の完了後にエクストルーダーヒーターをオフにします
-  Turn the picture to match how the screen is mounted. Applies after restart.: ''
+  Turn the picture to match how the screen is mounted. Applies after restart.: 画面の取り付け向きに合わせて表示を回転します。再起動後に適用されます。
   Type: タイプ
   Type to preview input field...: 入力フィールドをプレビューするには入力してください...
   'Type:': 'タイプ:'
@@ -2606,7 +2606,7 @@ translations:
   Update Channel: 更新チャンネル
   Update Failed: 更新失敗
   Update Success: 更新成功
-  Update from a Terminal: ''
+  Update from a Terminal: ターミナルから更新
   Update installed!: アップデートをインストールしました！
   Update your security PIN: セキュリティ PIN を更新
   Updating Configuration...: 設定を更新中...

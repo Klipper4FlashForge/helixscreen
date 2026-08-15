@@ -60,7 +60,7 @@
   <translation tag="120 seconds" it="120 secondi"/>
   <translation tag="15 seconds" it="15 secondi"/>
   <translation tag="180°" it="180°"/>
-  <translation tag="180° Upside Down"/>
+  <translation tag="180° Upside Down" it="180° capovolto"/>
   <translation tag="2 min" it="2 min"/>
   <translation tag="2 minutes" it="2 minuti"/>
   <translation tag="2. Place paper between nozzle and bed" it="2. Posizionare carta tra ugello e piano"/>
@@ -68,7 +68,7 @@
   <translation tag="20 minutes" it="20 minuti"/>
   <translation tag="24 Hour" it="24 ore"/>
   <translation tag="270°" it="270°"/>
-  <translation tag="270° Clockwise"/>
+  <translation tag="270° Clockwise" it="270° in senso orario"/>
   <translation tag="2D Heatmap" it="Mappa termica 2D"/>
   <translation tag="2D Layers" it="Strati 2D"/>
   <translation tag="3. Adjust screws, then re-probe to verify" it="3. Regolare le viti, poi risondare per verificare"/>
@@ -86,7 +86,7 @@
   <translation tag="5V" it="5V"/>
   <translation tag="60 seconds" it="60 secondi"/>
   <translation tag="90°" it="90°"/>
-  <translation tag="90° Clockwise"/>
+  <translation tag="90° Clockwise" it="90° in senso orario"/>
   <translation tag="= Loosen" it="= Allentare"/>
   <translation tag="= Tighten" it="= Stringere"/>
   <translation tag="A" it="A"/>
@@ -1508,10 +1508,10 @@
   <translation tag="No width sensor detected" it="Nessun sensore di larghezza rilevato"/>
   <translation tag="None" it="Nessuno"/>
   <translation tag="None (disable)" it="Nessuno (disabilita)"/>
-  <translation tag="Normal"/>
+  <translation tag="Normal" it="Normale"/>
   <translation tag="Not Enough Filament" it="Filamento insufficiente"/>
   <translation tag="Not Now" it="Non ora"/>
-  <translation tag="Not available here. Update from a terminal."/>
+  <translation tag="Not available here. Update from a terminal." it="Non disponibile qui. Aggiorna da un terminale."/>
   <translation tag="Not calibrated" it="Non calibrato"/>
   <translation tag="Not configured" it="Non configurato"/>
   <translation tag="Not connected" it="Non connesso"/>
@@ -1981,7 +1981,7 @@
   <translation tag="Run brush cleaning sequence" it="Esegui la sequenza di pulizia con spazzola"/>
   <translation tag="Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves)" it="Esegui caricamento/scaricamento filamento anche quando l&apos;ugello è freddo (per macro che riscaldano l&apos;ugello autonomamente)"/>
   <translation tag="Run test sequence on all lanes" it="Esegui la sequenza di test su tutte le corsie"/>
-  <translation tag="Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform."/>
+  <translation tag="Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform." it="Esegui l&apos;installer di HelixScreen con --update da un terminale su questa stampante. Scansiona per il comando della tua piattaforma."/>
   <translation tag="Run without parameter prompt" it="Esegui senza richiesta parametri"/>
   <translation tag="Run {}?" it="Eseguire {}?"/>
   <translation tag="Running {}..." it="Esecuzione {}..."/>
@@ -2040,7 +2040,7 @@
   <translation tag="Screen" it="Schermo"/>
   <translation tag="Screen Blank" it="Schermo spento"/>
   <translation tag="Screen Dim" it="Attenuazione schermo"/>
-  <translation tag="Screen Rotation"/>
+  <translation tag="Screen Rotation" it="Rotazione schermo"/>
   <translation tag="Screen dims to lower brightness after period of inactivity" it="Lo schermo si attenua dopo un periodo di inattività"/>
   <translation tag="Screen lock and PIN settings" it="Blocco schermo e impostazioni PIN"/>
   <translation tag="Screen reboot failed" it="Riavvio schermo fallito"/>
@@ -2454,7 +2454,7 @@
   <translation tag="Turn On LEDs" it="Accendi i LED"/>
   <translation tag="Turn on LEDs when printer starts" it="Accendi LED all&apos;avvio della stampante"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" it="Spegni il riscaldatore dell&apos;estrusore al termine di un caricamento o scaricamento"/>
-  <translation tag="Turn the picture to match how the screen is mounted. Applies after restart."/>
+  <translation tag="Turn the picture to match how the screen is mounted. Applies after restart." it="Ruota l&apos;immagine in base a come è montato lo schermo. Ha effetto dopo il riavvio."/>
   <translation tag="Type" it="Tipo"/>
   <translation tag="Type to preview input field..." it="Digita per visualizzare anteprima campo input..."/>
   <translation tag="Type:" it="Tipo:"/>
@@ -2503,7 +2503,7 @@
   <translation tag="Update Channel" it="Canale Aggiornamenti"/>
   <translation tag="Update Failed" it="Aggiornamento Fallito"/>
   <translation tag="Update Success" it="Aggiornamento riuscito"/>
-  <translation tag="Update from a Terminal"/>
+  <translation tag="Update from a Terminal" it="Aggiorna da un terminale"/>
   <translation tag="Update installed!" it="Aggiornamento installato!"/>
   <translation tag="Update your security PIN" it="Aggiorna il tuo PIN di sicurezza in questa installazione."/>
   <translation tag="Updating Configuration..." it="Aggiornamento configurazione..."/>

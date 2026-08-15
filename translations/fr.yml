@@ -65,7 +65,7 @@ translations:
   120 seconds: 120 secondes
   15 seconds: 15 secondes
   180°: 180°
-  180° Upside Down: ''
+  180° Upside Down: 180° à l'envers
   2 min: '2 min'
   2 minutes: 2 minutes
   2. Place paper between nozzle and bed: 2. Placez du papier entre la buse et le plateau
@@ -74,7 +74,7 @@ translations:
   20 minutes: 20 minutes
   24 Hour: 24 heures
   270°: 270°
-  270° Clockwise: ''
+  270° Clockwise: 270° dans le sens horaire
   2D Heatmap: Carte thermique 2D
   2D Layers: Couches 2D
   3. Adjust screws, then re-probe to verify: 3. Ajustez les vis, puis re-palpez pour
@@ -94,7 +94,7 @@ translations:
   5V: 5V
   60 seconds: 60 secondes
   90°: 90°
-  90° Clockwise: ''
+  90° Clockwise: 90° dans le sens horaire
   = Loosen: = Desserrer
   = Tighten: = Serrer
   A: A
@@ -1728,10 +1728,10 @@ translations:
   No width sensor detected: 'Aucun capteur de diamètre détecté'
   None: Aucun
   None (disable): Aucun (désactiver)
-  Normal: ''
+  Normal: Normal
   Not Enough Filament: Filament insuffisant
   Not Now: Pas maintenant
-  Not available here. Update from a terminal.: ''
+  Not available here. Update from a terminal.: Indisponible ici. Mettez à jour depuis un terminal.
   Not calibrated: Non calibré
   Not configured: Non configuré
   Not connected: Non connecté
@@ -2255,7 +2255,7 @@ translations:
     le filament même lorsque la buse est froide (pour les macros qui chauffent la
     buse elles-mêmes)
   Run test sequence on all lanes: 'Exécuter la séquence de test sur toutes les voies'
-  Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: ''
+  Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: Lancez l'installateur HelixScreen avec --update depuis un terminal sur cette imprimante. Scannez pour obtenir la commande adaptée à votre plateforme.
   Run without parameter prompt: Exécuter sans demande de paramètre
   Run {}?: Exécuter {} ?
   Running {}...: Exécution de {}...
@@ -2328,7 +2328,7 @@ translations:
   Screen: 'Écran'
   Screen Blank: Extinction de lécran
   Screen Dim: Atténuation de l'écran
-  Screen Rotation: ''
+  Screen Rotation: Rotation de l'écran
   Screen dims to lower brightness after period of inactivity: L'écran s'atténue après
     une période d'inactivité
   Screen lock and PIN settings: Verrouillage de l'écran et paramètres PIN
@@ -2853,7 +2853,7 @@ translations:
   Turn On LEDs: 'Allumer les LED'
   Turn on LEDs when printer starts: Allumer les LED au démarrage de l'imprimante
   Turn the extruder heater off after a load or unload finishes: Éteindre le chauffage de l'extrudeur après un chargement ou un déchargement
-  Turn the picture to match how the screen is mounted. Applies after restart.: ''
+  Turn the picture to match how the screen is mounted. Applies after restart.: Fait pivoter l'image selon l'orientation de montage de l'écran. Prend effet après redémarrage.
   Type: Type
   Type to preview input field...: Tapez pour prévisualiser le champ de saisie...
   'Type:': 'Type :'
@@ -2907,7 +2907,7 @@ translations:
   Update Channel: Canal de mise à jour
   Update Failed: Mise à jour échouée
   Update Success: Mise à jour réussie
-  Update from a Terminal: ''
+  Update from a Terminal: Mettre à jour depuis un terminal
   Update installed!: Mise à jour installée !
   Update your security PIN: Mettez à jour votre PIN de sécurité
     sur cette installation.
