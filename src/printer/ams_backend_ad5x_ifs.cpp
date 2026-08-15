@@ -2539,12 +2539,24 @@ std::vector<int> AmsBackendAd5xIfs::get_tool_mapping() const {
         return {};
     }
     std::vector<int> result(TOOL_MAP_SIZE, -1);
+    int highest_mapped = -1;
     for (size_t t = 0; t < TOOL_MAP_SIZE; ++t) {
         int port = tool_map_[t];
         if (port >= 1 && port <= NUM_PORTS) {
             result[t] = port - 1;
+            highest_mapped = static_cast<int>(t);
         }
     }
+    // Stop at the highest tool the firmware actually maps. AmsState's
+    // build_ams_topology() takes ToolTopology::tool_count straight from this
+    // vector's length, so returning all 16 addressable T-numbers made a 4-port,
+    // single-hotend AD5X advertise a 16-tool machine. Trailing -1 padding is the
+    // only thing dropped: entries below the cut keep their index, so an unmapped
+    // T1 stays a -1 hole rather than sliding T2 down into its place. An entirely
+    // unmapped register yields an empty vector, which is what the !has_ifs_vars_
+    // path above already returns and what build_ams_topology() reads as "fall
+    // back to a 1:1 map from the slot count".
+    result.resize(static_cast<size_t>(highest_mapped + 1));
     return result;
 }
 

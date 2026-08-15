@@ -962,6 +962,81 @@ TEST_CASE("AD5X IFS get_system_info", "[ams][ad5x_ifs]") {
 }
 
 // ==========================================================================
+// 9b. get_tool_mapping() advertises only the tools the firmware actually maps
+//
+// build_ams_topology() (ams_state.cpp) takes ToolTopology::tool_count straight
+// from this vector's length, and ToolState turns that into the tool list every
+// tool-count consumer reads. A 4-port AD5X with one hotend must therefore not
+// hand back all 16 addressable T-numbers.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS get_tool_mapping drops the trailing unmapped tools", "[ams][ad5x_ifs]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+    Ad5xIfsTestAccess::handle_status(backend, make_save_variables(standard_variables()));
+
+    auto mapping = backend.get_tool_mapping();
+    REQUIRE(mapping.size() == 4);
+    REQUIRE(mapping == std::vector<int>{0, 1, 2, 3});
+
+    // The firmware register itself is untouched — only the advertised topology
+    // shrinks, so the 16-wide system_info view still reports every T-number.
+    REQUIRE(backend.get_system_info().tool_to_slot_map.size() == 16);
+}
+
+TEST_CASE("AD5X IFS get_tool_mapping keeps a mid-range hole", "[ams][ad5x_ifs]") {
+    // tool_to_slot[i] is indexed BY tool number, so an unmapped T1 has to stay
+    // a -1 hole rather than collapsing T2 down into its place.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+    auto vars = standard_variables();
+    // T0 -> port 1, T1 unmapped, T2 -> port 3, everything above unmapped.
+    vars["less_waste_tools"] = json::array({1, 5, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5});
+    Ad5xIfsTestAccess::handle_status(backend, make_save_variables(vars));
+
+    auto mapping = backend.get_tool_mapping();
+    REQUIRE(mapping == std::vector<int>{0, -1, 2});
+}
+
+TEST_CASE("AD5X IFS get_tool_mapping is empty when nothing is mapped", "[ams][ad5x_ifs]") {
+    // Same answer the !has_ifs_vars_ path already gives, which build_ams_topology
+    // reads as "fall back to a 1:1 map from the slot count".
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+    auto vars = standard_variables();
+    vars["less_waste_tools"] = json::array({5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5});
+    Ad5xIfsTestAccess::handle_status(backend, make_save_variables(vars));
+
+    REQUIRE(backend.get_tool_mapping().empty());
+}
+
+TEST_CASE("AD5X IFS set_tool_mapping still addresses the full 0..15 tool range",
+          "[ams][ad5x_ifs]") {
+    // Trimming is a topology decision, not a firmware one: zmod's _IFS_VARS tool
+    // map is 16 wide and the user can still pin a lane to T15.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+    Ad5xIfsTestAccess::handle_status(backend, make_save_variables(standard_variables()));
+
+    // The gcode write fails with a null api_, but the local map is applied first.
+    backend.set_tool_mapping(15, 0);
+    REQUIRE(Ad5xIfsTestAccess::tool_map(backend)[15] == 1); // port = slot + 1
+
+    auto mapping = backend.get_tool_mapping();
+    REQUIRE(mapping.size() == 16);
+    REQUIRE(mapping[15] == 0);
+    for (size_t t = 4; t < 15; ++t) {
+        INFO("tool " << t);
+        REQUIRE(mapping[t] == -1);
+    }
+
+    // One past the top is still rejected, and leaves the map alone.
+    auto before = Ad5xIfsTestAccess::tool_map(backend);
+    REQUIRE_FALSE(backend.set_tool_mapping(AmsBackendAd5xIfs::TOOL_MAP_SIZE, 0).success());
+    REQUIRE(Ad5xIfsTestAccess::tool_map(backend) == before);
+}
+
+// ==========================================================================
 // 10. Bypass mode
 // ==========================================================================
 
