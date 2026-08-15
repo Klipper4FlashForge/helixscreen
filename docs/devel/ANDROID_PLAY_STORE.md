@@ -95,7 +95,18 @@ A release build now refuses to produce an artifact it cannot sign properly, at t
 
 Google is phasing in a requirement that the developer behind a package name be a verified identity. Where we stand:
 
-- **`org.helixscreen.app` has never been published**, so this is a **new package-name registration** in Play Console — enter the package name plus the signing certificate's public key and you are done. There is no APK ownership challenge; that step only applies to *existing* package names, where Google has to confirm the person registering actually controls the app already.
+- **Registration requires an ownership challenge, even though the app has never been on Play.** The docs describe a lighter path for "new" package names, but `org.helixscreen.app` has real installs from sideloaded GitHub-release APKs, so Play Console treats it as existing: adding the fingerprint leaves the package in **Draft** with `Keys: 0` until an APK signed by that key is uploaded. Draft is not registered.
+
+  The challenge does **not** want our real app — Google's instruction is to use an empty project matching the package name, so the upload is a ~2 KB stub, not the 117 MB release APK:
+
+  1. Play Console → Android developer verification → the package → **Verify** on the fingerprint row, and copy the snippet it shows (a bare ~26-character token, no `key=` prefix).
+  2. Build a throwaway Gradle project with `applicationId "org.helixscreen.app"`, no code, and the snippet in `app/src/main/assets/adi-registration.properties`.
+  3. Build `assembleRelease` unsigned, then sign by hand so the keystore password never enters a file or env var:
+     `apksigner sign --ks ~/.android-keystore/helixscreen-upload.jks --ks-key-alias helixscreen-upload --out signed.apk app-release-unsigned.apk`
+  4. Confirm before uploading: `apksigner verify --print-certs signed.apk` must report the registered fingerprint. Add `--min-sdk-version 21` if you want to see the v1/v2 rows — at the APK's own `minSdk 28` apksigner reports them `false` because it does not evaluate them in that range, which looks like a signing failure and is not one.
+  5. Upload it in the Verify flow.
+
+  Keep the stub out of the repo. It is account-specific, single-use, and never distributed — Google only reads its signature.
 - **Register both signing keys.** With Play App Signing accepted (see above), Play-served installs carry Google's app signing key and GitHub-release APKs carry our upload key. Multiple keys per package name are supported — register both, or one channel's installs are unverifiable. The two fingerprints come from different places, and only one of them is ours to print:
 
   | Key | SHA-256 fingerprint from |
