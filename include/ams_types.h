@@ -4,6 +4,7 @@
 #pragma once
 
 #include "filament_database.h"
+#include "klipper_extruder_naming.h"
 
 #include <algorithm>
 #include <any>
@@ -1400,46 +1401,6 @@ namespace helix {
 [[nodiscard]] inline bool should_unload_before_bypass(const AmsSystemInfo& info,
                                                       bool allows_implicit_chaining) {
     return allows_implicit_chaining && info.current_slot >= 0 && info.filament_loaded;
-}
-
-/**
- * @brief Tool number implied by a Klipper extruder name: "extruder" = 0, "extruderN" = N.
- *
- * A positional convention, and the third of three numbering systems that can all
- * disagree on one machine: Klipper's `tool T<n>` objects, AFC's per-lane `map`
- * aliases, and extruder-name position. On the reporter's toolchanger AFC maps T0
- * to the `extruder5` lane while Klipper's `tool T0` is `extruder`
- * (prestonbrown/helixscreen#1229).
- *
- * Returns nullopt rather than a fallback for anything that is not an
- * `extruder`-prefixed name, so callers must decide what an unidentifiable
- * extruder means. Badge rendering needs that distinction: silently mapping an
- * empty name to 0 would label every toolhead "E0" on backends that never
- * populate SlotInfo::extruder_name at all.
- *
- * @param ext_name Klipper extruder object name, e.g. "extruder" or "extruder5"
- * @return Tool number, or nullopt if @p ext_name is not a valid extruder name
- */
-[[nodiscard]] inline std::optional<int> tool_number_for_extruder(std::string_view ext_name) {
-    constexpr std::string_view PREFIX = "extruder";
-    if (ext_name == PREFIX) {
-        return 0;
-    }
-    if (ext_name.size() <= PREFIX.size() || ext_name.substr(0, PREFIX.size()) != PREFIX) {
-        return std::nullopt;
-    }
-    const std::string_view digits = ext_name.substr(PREFIX.size());
-    // No real machine has a four-digit extruder index; the bound also keeps the
-    // accumulate below well clear of overflow without pulling in <climits>.
-    if (digits.size() > 3 || !std::all_of(digits.begin(), digits.end(),
-                                          [](unsigned char c) { return std::isdigit(c) != 0; })) {
-        return std::nullopt;
-    }
-    int value = 0;
-    for (const char c : digits) {
-        value = value * 10 + (c - '0');
-    }
-    return value;
 }
 
 } // namespace helix

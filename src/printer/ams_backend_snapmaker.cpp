@@ -10,6 +10,7 @@
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
 #include "json_utils.h"
+#include "klipper_extruder_naming.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "pause_cause.h"
@@ -1118,14 +1119,10 @@ void AmsBackendSnapmaker::handle_status_update(const nlohmann::json& notificatio
             const auto& th = status["toolhead"];
             if (th.contains("extruder") && th["extruder"].is_string()) {
                 auto ext_name = th["extruder"].get<std::string>();
-                // "extruder" = 0, "extruder1" = 1, etc.
-                if (ext_name == "extruder") {
-                    active = 0;
-                } else if (ext_name.size() > 8 && ext_name.rfind("extruder", 0) == 0) {
-                    try {
-                        active = std::stoi(ext_name.substr(8));
-                    } catch (...) {
-                    }
+                // "extruder" = 0, "extruder1" = 1, etc. An unparseable name
+                // leaves whatever the per-extruder state loop above decided.
+                if (const auto tool_number = helix::tool_number_for_extruder(ext_name)) {
+                    active = *tool_number;
                 }
                 has_extruder_data = true;
             }
