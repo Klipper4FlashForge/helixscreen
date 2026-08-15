@@ -502,6 +502,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcToolchangerStatusHelper;
     friend class AfcStatusDispatchHelper;
     friend class AfcEjectPrintGateHelper;
+    friend class AfcSharedExtruderHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -754,13 +755,44 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     void query_afc_configfile_topology();
 
     /**
+     * @brief Klipper extruder object name for an AFC_extruder section name.
+     *
+     * The two coincide on the common `[AFC_extruder extruder1]` shape and
+     * diverge on anything else — `[AFC_extruder e0]\nextruder_name: extruder`.
+     * AFC keys its own tool indices on the latter (AFC_extruder.py:223,
+     * consumed at AFC_Toolchanger.py:231-232), so this is the only correct
+     * bridge from what AFC's status frames name to what Klipper names.
+     *
+     * Returns @p section_name unchanged when configfile has not answered, which
+     * is right for every standard install and the best available guess for the
+     * rest. This is the single point where that substitution happens; nothing
+     * outside it should be parsing an AFC-sourced extruder string.
+     *
+     * Caller must hold mutex_.
+     */
+    [[nodiscard]] std::string klipper_extruder_name_unlocked(const std::string& section_name) const;
+
+    /**
+     * @brief AFC_extruder SECTION name for a tool index, or "" if unknown.
+     *
+     * The inverse of tool_index_for_extruder_unlocked(). AFC registers its
+     * per-extruder mux commands (UPDATE_TOOLHEAD_SENSORS, SAVE_EXTRUDER_VALUES,
+     * AFC_SET_EXTRUDER_LED) on the SECTION name — `register_mux_command(...,
+     * "EXTRUDER", self.name, ...)` where `self.name` is the section suffix
+     * (AFC_extruder.py:221, :364-369) — so any G-code we address to an extruder
+     * needs this direction, never the Klipper name.
+     *
+     * Caller must hold mutex_.
+     */
+    [[nodiscard]] std::string afc_extruder_section_for_tool_unlocked(int tool_index) const;
+
+    /**
      * @brief Tool index for an AFC_extruder section name, or -1 if unknown.
      *
-     * Prefers the configfile-sourced `extruder_name`; falls back to the section
-     * name itself, which is the same string on the overwhelmingly common
-     * `[AFC_extruder extruder1]` shape. Returns -1 rather than guessing 0 when
-     * neither resolves — every toolhead silently claiming T0 is worse than a
-     * toolhead with no attribution.
+     * Resolves through klipper_extruder_name_unlocked() and then the single
+     * `extruder<N>` grammar in helix::tool_number_for_extruder(). Returns -1
+     * rather than guessing 0 when neither resolves — every toolhead silently
+     * claiming T0 is worse than a toolhead with no attribution.
      *
      * Caller must hold mutex_.
      */
@@ -1145,8 +1177,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Unit-level info from flat string units and unit Klipper objects
     std::vector<AfcUnitInfo> unit_infos_; ///< Parsed from flat string "Type Name" units
 
-    // Extruder names from top-level AFC.extruders array (for multi-extruder iteration)
-    std::vector<std::string> extruder_names_; ///< e.g., {"extruder", "extruder1", ...}
+    /// AFC_extruder SECTION names from the top-level AFC.extruders array, e.g.
+    /// {"extruder", "extruder1", …} on a stock config and {"e0", "e1", …} on a
+    /// renamed one. These are Klipper object keys ("AFC_extruder " + name) and
+    /// G-code mux keys, NOT Klipper extruder names — go through
+    /// klipper_extruder_name_unlocked() before deriving a tool number.
+    std::vector<std::string> extruder_names_;
 
     /// AFC_extruder SECTION name -> Klipper extruder name, read from
     /// configfile.settings["afc_extruder <section>"]["extruder_name"]. Empty

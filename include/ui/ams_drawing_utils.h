@@ -207,6 +207,11 @@ struct UnitToolLayout {
     int min_virtual_tool = -1;   ///< Minimum mapped_tool value (for labeling)
     int hub_tool_label =
         -1; ///< Override label for HUB units (from extruder index, -1 = use min_virtual_tool)
+    /// Extruder this unit's single nozzle belongs to, as an opaque name. Set
+    /// only for one-nozzle units whose lanes all agree; empty otherwise. Two
+    /// units naming the same extruder feed one nozzle — that is string
+    /// identity, so it holds for names no numbering scheme can parse.
+    std::string extruder_identity;
 };
 
 /**

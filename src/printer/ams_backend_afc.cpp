@@ -2651,9 +2651,14 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         spdlog::trace("[AMS AFC] Lane {} hub routing: {}", lane_name, hub);
     }
 
-    // Parse extruder name for shared-extruder deduplication
+    // Extruder name, for shared-extruder dedup and for toolhead identity.
+    // AFC names the SECTION here; SlotInfo::extruder_name is documented as the
+    // Klipper name and its consumers parse it as one, so resolve at this
+    // boundary rather than leaving every reader to guess which it holds.
+    // Dedup works either way (it compares strings), so an unanswered configfile
+    // costs identity, never the grouping.
     if (data.contains("extruder") && data["extruder"].is_string()) {
-        slot.extruder_name = data["extruder"].get<std::string>();
+        slot.extruder_name = klipper_extruder_name_unlocked(data["extruder"].get<std::string>());
     }
 
     // Parse endless spool backup from "runout_lane" field
@@ -3118,9 +3123,14 @@ void AmsBackendAfc::rebuild_unit_map_from_klipper() {
                         // For HUB units, derive physical tool label from extruder
                         // name. An unrecognisable name leaves hub_tool_label at its
                         // -1 "absent" default rather than inventing a number.
+                        // ui.extruders holds AFC SECTION names, so this must go
+                        // through the resolver — parsing them directly left every
+                        // unit at -1 on a renamed config and defeated the
+                        // cross-unit nozzle merge entirely.
                         if (ui.topology == PathTopology::HUB && ui.extruders.size() == 1) {
-                            if (const auto n = helix::tool_number_for_extruder(ui.extruders[0])) {
-                                sys_unit.hub_tool_label = *n;
+                            const int n = tool_index_for_extruder_unlocked(ui.extruders[0]);
+                            if (n >= 0) {
+                                sys_unit.hub_tool_label = n;
                             }
                         }
                         break;
@@ -3533,6 +3543,15 @@ void AmsBackendAfc::query_afc_configfile_topology() {
                               "toolchanger section {}",
                               extruder_klipper_names_.size(),
                               saw_toolchanger ? "present" : "absent");
+
+                // This query races the first status frames — on the reporter's
+                // machine it landed 17ms after the units were first mapped, so
+                // every toolhead label was derived from names it could not yet
+                // resolve. Redo that derivation now rather than carrying wrong
+                // labels until AFC happens to push another unit frame.
+                if (!extruder_klipper_names_.empty() && !unit_infos_.empty()) {
+                    rebuild_unit_map_from_klipper();
+                }
             });
         },
         [](const MoonrakerError& err) {
@@ -3542,46 +3561,45 @@ void AmsBackendAfc::query_afc_configfile_topology() {
         });
 }
 
+std::string AmsBackendAfc::klipper_extruder_name_unlocked(const std::string& section_name) const {
+    // configfile-sourced th_extruder_name is authoritative — it is what AFC
+    // itself indexes on, and the section name is free to be anything. Taken
+    // only when it actually names an extruder: AFC accepts any value
+    // containing "extruder" (AFC_extruder.py:384), so a config can carry one
+    // that no numbering can read, and the section name is the better guess
+    // then. Checking here rather than at each caller keeps one fallback chain.
+    const auto it = extruder_klipper_names_.find(to_lower_copy(section_name));
+    if (it != extruder_klipper_names_.end() && helix::tool_number_for_extruder(it->second)) {
+        return it->second;
+    }
+    // Fall back to the section name. `[AFC_extruder extruder1]` is what AFC's
+    // own docs show and what every published config uses, and on v1.1.0 (no
+    // extruder_name option at all) it is the ONLY thing that exists.
+    return section_name;
+}
+
+std::string AmsBackendAfc::afc_extruder_section_for_tool_unlocked(int tool_index) const {
+    if (tool_index < 0) {
+        return "";
+    }
+    for (const auto& section : extruder_names_) {
+        const auto n = helix::tool_number_for_extruder(klipper_extruder_name_unlocked(section));
+        if (n && *n == tool_index) {
+            return section;
+        }
+    }
+    return "";
+}
+
 int AmsBackendAfc::tool_index_for_extruder_unlocked(const std::string& ext_name) const {
     // Mirrors AFC_Toolchanger.py:231-232 (v1.2.0):
     //     name = lane.extruder_obj.th_extruder_name
     //     tool_index = 0 if name == "extruder" else int(name.replace("extruder", ""))
-    auto index_of = [](const std::string& klipper_name) -> int {
-        if (klipper_name == "extruder") {
-            return 0;
-        }
-        const auto pos = klipper_name.find("extruder");
-        if (pos == std::string::npos) {
-            return -1;
-        }
-        std::string rest = klipper_name;
-        rest.erase(pos, std::strlen("extruder"));
-        if (rest.empty() || rest.find_first_not_of("0123456789") != std::string::npos) {
-            return -1;
-        }
-        try {
-            return std::stoi(rest);
-        } catch (const std::exception&) {
-            return -1;
-        }
-    };
-
-    // configfile-sourced th_extruder_name is authoritative — it is what AFC
-    // itself indexes on, and the section name is free to be anything.
-    auto it = extruder_klipper_names_.find(to_lower_copy(ext_name));
-    if (it != extruder_klipper_names_.end()) {
-        const int idx = index_of(it->second);
-        if (idx >= 0) {
-            return idx;
-        }
-    }
-
-    // Fall back to the section name. `[AFC_extruder extruder1]` is what AFC's
-    // own docs show and what every published config uses, and on v1.1.0 (no
-    // extruder_name option at all) it is the ONLY thing that exists.
-    const int derived = index_of(ext_name);
-    if (derived >= 0) {
-        return derived;
+    // helix::tool_number_for_extruder() is that grammar, hardened and shared —
+    // it is the only copy, so a toolhead cannot be numbered one way here and
+    // another way in the badge or lane-attribution path.
+    if (const auto n = helix::tool_number_for_extruder(klipper_extruder_name_unlocked(ext_name))) {
+        return *n;
     }
 
     if (extruder_tool_index_warned_.insert(ext_name).second) {
@@ -3839,8 +3857,10 @@ void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot, bool afc_st
 
             system_info_.mount_state = MountState::MOUNTED;
             // mounted_tool is an int for consumers that predate extruder-name
-            // identity; an unparseable name keeps the historical 0 fallback.
-            system_info_.mounted_tool = helix::tool_number_for_extruder(mounted_name).value_or(0);
+            // identity. -1 is its "unknown" value, already used by the NONE
+            // branch above; the old .value_or(0) here meant a renamed config
+            // had every extruder in turn claim to be T0 as it was parsed.
+            system_info_.mounted_tool = tool_index_for_extruder_unlocked(mounted_name);
 
             // The mounted extruder names its own seated lane. Precise even where
             // several lanes feed one extruder, which a lane→tool map cannot be.
@@ -3940,10 +3960,13 @@ void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot, bool afc_st
         // filament" note), so that is true on essentially every real multi-tool
         // machine. The suppression would never fire in production and only look
         // fixed in a fixture with no per-extruder data.
+        // extruder_sensors_ is keyed by AFC SECTION name, so this needs the
+        // resolver too; parsing the key directly matched nothing on a renamed
+        // config and silently took the "no evidence" branch below every frame.
         const AfcExtruderSensors* mounted_sensors = nullptr;
         for (const auto& entry : extruder_sensors_) {
-            const auto tool_num = helix::tool_number_for_extruder(entry.first);
-            if (tool_num && *tool_num == system_info_.mounted_tool) {
+            const int tool_num = tool_index_for_extruder_unlocked(entry.first);
+            if (tool_num >= 0 && tool_num == system_info_.mounted_tool) {
                 mounted_sensors = &entry.second;
                 break;
             }
@@ -5870,9 +5893,19 @@ AmsError AmsBackendAfc::execute_device_action(const std::string& action_id, cons
         try {
             float val = std::any_cast<float>(value);
 
-            std::string ext_name = "extruder";
-            if (th_tool > 0) {
-                ext_name = "extruder" + std::to_string(th_tool);
+            // UPDATE_TOOLHEAD_SENSORS / SAVE_EXTRUDER_VALUES are mux commands
+            // keyed on the AFC_extruder SECTION name (AFC_extruder.py:364-369,
+            // muxed on self.name = the section suffix), not on the Klipper
+            // extruder name. Rebuilding "extruder<N>" here addressed a mux key
+            // that does not exist on a renamed config, so both commands failed.
+            // Same key the sibling AFC_SET_EXTRUDER_LED action already uses.
+            std::string ext_name;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                ext_name = afc_extruder_section_for_tool_unlocked(th_tool);
+            }
+            if (ext_name.empty()) {
+                ext_name = (th_tool > 0) ? "extruder" + std::to_string(th_tool) : "extruder";
             }
 
             std::string param;
