@@ -345,6 +345,18 @@ class SpoolmanOverlay : public OverlayBase {
         std::string path;    ///< config-root-relative path of the target file
         std::string content; ///< contents of `path` (Defined only)
         std::string detail;  ///< operator-facing explanation for Ambiguous / Unreachable
+
+        /// Unreachable only: the file API was ASKED and answered, and the answer was
+        /// that Moonraker's config is not under a root it serves.
+        ///
+        /// The distinction matters because Unreachable also covers "we could not
+        /// tell" — a dropped WebSocket, a 500 from the file manager, a build that
+        /// reports no section list. Those must not license
+        /// try_local_config_fallback() to edit a vendor firmware file and restart
+        /// Moonraker, because the ordinary path might well succeed on the next try.
+        /// Set it only where every candidate was actually downloaded and judged, or
+        /// where no addressable path exists at all.
+        bool proved_out_of_reach = false;
     };
 
   private:
@@ -418,9 +430,18 @@ class SpoolmanOverlay : public OverlayBase {
      * a transport problem into a wrong-file write. Each step logs at info level, and
      * so does the winner — a live log has to say which path was chosen and why.
      *
+     * Two candidates are held to a stricter standard than a plain Drifted verdict:
+     * a `speculative` one, whose path was inferred from the tail of a foreign
+     * absolute path rather than derived from the config root, must match Moonraker's
+     * section list EXACTLY — drift tolerance and a guessed path compound into a
+     * confident write to an unrelated file of the same name. And on the in-place
+     * path the candidate must actually define `[spoolman]`, since that section is
+     * the whole reason this file was selected.
+     *
      * @param reported_name The name Moonraker gave, for messages and logs.
      * @param candidates    Ranked file-API paths, most trustworthy first.
      * @param index         Which candidate to try; callers start at 0.
+     * @param speculative   From MoonrakerConfigManager::candidates_are_speculative().
      * @param last_detail   Why the previous candidate was rejected, carried forward so
      *                      the final "nothing matched" message can say which it was and
      *                      whether it was absent or merely the wrong file.
@@ -428,7 +449,7 @@ class SpoolmanOverlay : public OverlayBase {
     void verify_config_reachable(const std::string& reported_name,
                                  const std::vector<std::string>& candidates, size_t index,
                                  const std::vector<std::string>& required_sections, bool in_place,
-                                 SpoolmanTargetCallback on_done,
+                                 bool speculative, SpoolmanTargetCallback on_done,
                                  const std::string& last_detail = "");
 
     /**

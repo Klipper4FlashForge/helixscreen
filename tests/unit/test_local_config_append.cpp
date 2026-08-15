@@ -231,3 +231,81 @@ TEST_CASE("append keeps the original file's permission bits", "[local_append]") 
     CHECK(fs::status(path).permissions() == before);
     CHECK(read_file(path).rfind(VENDOR, 0) == 0);
 }
+
+TEST_CASE("a symlinked config is followed, not replaced", "[local_append]") {
+    // Embedded firmware routinely reaches a config through a link. rename() replaces
+    // whatever sits at the path, so following the link first is the difference
+    // between editing Moonraker's config and quietly severing it.
+    TempDir tmp;
+    const std::string real = tmp.file("real-moonraker.conf");
+    const std::string link = tmp.file("moonraker.conf");
+    write_file(real, VENDOR);
+
+    std::error_code ec;
+    fs::create_symlink(real, link, ec);
+    if (ec)
+        SKIP("cannot create symlinks here: " + ec.message());
+
+    std::string err;
+    REQUIRE(append_include_to_local_config(link, TARGET, err));
+    CHECK(err.empty());
+
+    // The link survives as a link, and the file it names got the include.
+    CHECK(fs::is_symlink(fs::symlink_status(link)));
+    CHECK(fs::read_symlink(link).string() == real);
+    CHECK(read_file(real).find(INCLUDE) != std::string::npos);
+    CHECK(read_file(real).rfind(VENDOR, 0) == 0);
+
+    // And no temp file was left in either name's directory.
+    CHECK(file_count(tmp.path()) == 2);
+}
+
+TEST_CASE("a symlinked config is still idempotent through the link", "[local_append]") {
+    TempDir tmp;
+    const std::string real = tmp.file("real-moonraker.conf");
+    const std::string link = tmp.file("moonraker.conf");
+    write_file(real, VENDOR);
+
+    std::error_code ec;
+    fs::create_symlink(real, link, ec);
+    if (ec)
+        SKIP("cannot create symlinks here: " + ec.message());
+
+    std::string err;
+    REQUIRE(append_include_to_local_config(link, TARGET, err));
+    const std::string after_first = read_file(real);
+    REQUIRE(append_include_to_local_config(link, TARGET, err));
+    CHECK(read_file(real) == after_first);
+}
+
+TEST_CASE("a dangling symlink is refused rather than materialised", "[local_append]") {
+    // Creating the file would replace a config we could not read with one defining
+    // no [server] — the same reason a missing config is an error, not a create.
+    TempDir tmp;
+    const std::string link = tmp.file("moonraker.conf");
+
+    std::error_code ec;
+    fs::create_symlink(tmp.file("nowhere.conf"), link, ec);
+    if (ec)
+        SKIP("cannot create symlinks here: " + ec.message());
+
+    std::string err;
+    CHECK_FALSE(append_include_to_local_config(link, TARGET, err));
+    CHECK_FALSE(err.empty());
+    CHECK_FALSE(fs::exists(tmp.file("nowhere.conf")));
+}
+
+TEST_CASE("the appended config is readable back in full after the rename", "[local_append]") {
+    // Guards the fsync-then-rename rewrite: the replacement must be complete and
+    // byte-identical to what was intended, not merely present.
+    TempDir tmp;
+    const std::string path = tmp.file("moonraker.conf");
+    write_file(path, VENDOR);
+
+    std::string err;
+    REQUIRE(append_include_to_local_config(path, TARGET, err));
+
+    const std::string expect = std::string(VENDOR) + INCLUDE + "\n";
+    CHECK(read_file(path) == expect);
+    CHECK(fs::file_size(path) == expect.size());
+}

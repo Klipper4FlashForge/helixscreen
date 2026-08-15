@@ -149,7 +149,9 @@ struct LocalIncludePlan {
  *
  * Not viable when the loaded config already sits under @p config_root_abs. That
  * is not the K2 situation, and writing the file behind Moonraker's back there
- * would paper over whatever else made the file API fail.
+ * would paper over whatever else made the file API fail. Both sides are resolved
+ * through symlinks before that comparison — on the AD5M /root/printer_data/config
+ * IS /opt/config, and a literal prefix test would miss it.
  */
 LocalIncludePlan plan_local_include(const std::vector<ProcMatch>& procs,
                                     const std::string& config_root_abs);
@@ -160,9 +162,14 @@ LocalIncludePlan plan_local_include(const std::vector<ProcMatch>& procs,
  * The one write in this module, and the riskiest thing in the Spoolman flow: the
  * file belongs to the vendor firmware and a half-written one leaves the printer
  * with a Moonraker that will not start. So the existing content is read whole,
- * the new line appended, the result written to a temp file in the same directory
- * and renamed over the original — a crash mid-write loses the temp file, not the
- * config.
+ * the new line appended, the result written to a temp file in the same directory,
+ * fsync'd, and renamed over the original, with the directory fsync'd after — a
+ * crash OR a power cut mid-write loses the temp file, not the config. (The rename
+ * alone would order only the directory entry, not the temp file's data: with
+ * delayed allocation that is exactly how a power cut yields a zero-length config.)
+ *
+ * A @p config_abs that is a symlink is resolved first and the real file edited,
+ * since rename() would otherwise replace the link itself with a regular file.
  *
  * Idempotent, and it shares MoonrakerConfigManager::has_include_line() with the
  * file-API path so the two can never disagree about whether a write is needed:

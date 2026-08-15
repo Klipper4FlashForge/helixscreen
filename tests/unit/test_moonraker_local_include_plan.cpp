@@ -16,7 +16,9 @@
 
 #include "system/moonraker_local_probe.h"
 
+#include <filesystem>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 #include "../catch_amalgamated.hpp"
@@ -167,4 +169,73 @@ TEST_CASE("a trailing slash on the config root does not double up", "[local_incl
     REQUIRE(plan.viable);
     CHECK(plan.helix_conf_abs == "/mnt/UDISK/printer_data/config/helixscreen.conf");
     CHECK(plan.include_line == "[include /mnt/UDISK/printer_data/config/helixscreen.conf]");
+}
+
+// ============================================================================
+// Symlinked trees — the AD5M
+//
+// /root/printer_data/config is a symlink to /opt/config (verified on the device,
+// 2026-08-15), so Moonraker's -c and the file manager's root name ONE directory
+// two ways. A literal prefix test calls that a local-write case and would edit a
+// vendor file behind Moonraker's back on a printer whose config the file API
+// addresses perfectly well.
+// ============================================================================
+
+TEST_CASE("AD5M: a config reached through a symlinked root is not a local-write case",
+          "[local_include]") {
+    namespace fs = std::filesystem;
+
+    // Build the real shape rather than assert on strings: plan_local_include()
+    // resolves through the filesystem, so the link has to exist.
+    const fs::path base =
+        fs::temp_directory_path() / ("helix-linkplan-" + std::to_string(::getpid()));
+    std::error_code ec;
+    fs::remove_all(base, ec);
+    fs::create_directories(base / "opt" / "config", ec);
+    fs::create_directories(base / "root" / "printer_data", ec);
+    fs::create_symlink(base / "opt" / "config", base / "root" / "printer_data" / "config", ec);
+    if (ec) {
+        fs::remove_all(base, ec);
+        SKIP("cannot create symlinks here: " + ec.message());
+    }
+
+    const std::string root = (base / "opt" / "config").string();
+    const std::string reported =
+        (base / "root" / "printer_data" / "config" / "moonraker.conf").string();
+    std::vector<ProcMatch> procs = {
+        {455, "/usr/bin/python3 /opt/moonraker/moonraker.py -c " + reported}};
+
+    auto plan = plan_local_include(procs, root);
+
+    CHECK_FALSE(plan.viable);
+    CHECK(plan.error.find("already inside the writable config root") != std::string::npos);
+
+    fs::remove_all(base, ec);
+}
+
+TEST_CASE("a genuinely foreign tree stays a local-write case even with links around",
+          "[local_include]") {
+    // The mirror of the above: resolving symlinks must not swallow the K2, where
+    // the vendor config really does live outside anything the file API serves.
+    namespace fs = std::filesystem;
+
+    const fs::path base =
+        fs::temp_directory_path() / ("helix-linkplan-foreign-" + std::to_string(::getpid()));
+    std::error_code ec;
+    fs::remove_all(base, ec);
+    fs::create_directories(base / "mnt" / "UDISK" / "printer_data" / "config", ec);
+    fs::create_directories(base / "usr" / "share" / "moonraker", ec);
+
+    const std::string root = (base / "mnt" / "UDISK" / "printer_data" / "config").string();
+    const std::string vendor = (base / "usr" / "share" / "moonraker" / "moonraker.conf").string();
+    std::vector<ProcMatch> procs = {
+        {455, "/usr/bin/python3 /usr/share/moonraker/moonraker.py -c " + vendor}};
+
+    auto plan = plan_local_include(procs, root);
+
+    REQUIRE(plan.viable);
+    CHECK(plan.vendor_config_abs == vendor);
+    CHECK(plan.helix_conf_abs == root + "/helixscreen.conf");
+
+    fs::remove_all(base, ec);
 }

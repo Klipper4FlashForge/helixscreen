@@ -10,6 +10,21 @@
 
 using helix::MoonrakerConfigManager;
 
+namespace {
+
+/// Exact-match predicate: every section Moonraker reported is present.
+///
+/// classify_section_match() grades DEGREES of agreement, which is what production
+/// needs; most assertions below only care about the clean case, and read better
+/// spelled as one. A file may still carry sections Moonraker never reported (the
+/// `[include ...]` line HelixScreen adds) — only absences count against it.
+bool defines_all(const std::string& content, const std::vector<std::string>& required) {
+    return MoonrakerConfigManager::classify_section_match(content, required).verdict ==
+           helix::SectionMatch::Match;
+}
+
+} // namespace
+
 // ============================================================================
 // Task 1: has_section
 // ============================================================================
@@ -694,14 +709,14 @@ TEST_CASE("K2 case: a stray file under the config root fails the section match",
     // setup errors out instead of reporting a false success.
     auto files = k2_server_config_files();
     std::string stray = "[include helixscreen.conf]\n";
-    CHECK_FALSE(MoonrakerConfigManager::defines_all_sections(stray, files[0].sections));
+    CHECK_FALSE(defines_all(stray, files[0].sections));
 }
 
 TEST_CASE("K2 case: a partially-matching file still fails the section match",
           "[config_manager][config_path]") {
     auto files = k2_server_config_files();
     std::string partial = "[server]\nhost: 0.0.0.0\n";
-    CHECK_FALSE(MoonrakerConfigManager::defines_all_sections(partial, files[0].sections));
+    CHECK_FALSE(defines_all(partial, files[0].sections));
 }
 
 TEST_CASE("standard layout: the loaded config under the config root passes the section match",
@@ -713,7 +728,7 @@ TEST_CASE("standard layout: the loaded config under the config root passes the s
                        "[machine]\nprovider: systemd_dbus\n"
                        "[authorization]\nforce_logins: False\n"
                        "[octoprint_compat]\n[history]\n";
-    CHECK(MoonrakerConfigManager::defines_all_sections(real, files[0].sections));
+    CHECK(defines_all(real, files[0].sections));
 }
 
 TEST_CASE("section match survives HelixScreen adding its include line",
@@ -725,7 +740,7 @@ TEST_CASE("section match survives HelixScreen adding its include line",
     std::string real = "[server]\n[file_manager]\n[database]\n[data_store]\n[machine]\n"
                        "[authorization]\n[octoprint_compat]\n[history]\n";
     auto with_include = MoonrakerConfigManager::add_include_line(real);
-    CHECK(MoonrakerConfigManager::defines_all_sections(with_include, files[0].sections));
+    CHECK(defines_all(with_include, files[0].sections));
 }
 
 TEST_CASE("list_sections enumerates sections and ignores comments",
@@ -738,10 +753,11 @@ TEST_CASE("list_sections enumerates sections and ignores comments",
     CHECK(MoonrakerConfigManager::list_sections("").empty());
 }
 
-TEST_CASE("defines_all_sections is a subset test", "[config_manager][config_path]") {
-    CHECK(MoonrakerConfigManager::defines_all_sections("[a]\n[b]\n", {}));
-    CHECK(MoonrakerConfigManager::defines_all_sections("[a]\n[b]\n", {"a"}));
-    CHECK_FALSE(MoonrakerConfigManager::defines_all_sections("[a]\n", {"a", "b"}));
+TEST_CASE("the Match verdict is a subset test, not equality", "[config_manager][config_path]") {
+    // Extra sections never disqualify a file — only missing ones do.
+    CHECK(defines_all("[a]\n[b]\n", {}));
+    CHECK(defines_all("[a]\n[b]\n", {"a"}));
+    CHECK_FALSE(defines_all("[a]\n", {"a", "b"}));
 }
 
 // ============================================================================
@@ -793,8 +809,7 @@ TEST_CASE("CB1: standard layout passes the section match with no spurious error"
     // The regression that matters on the working-machine side: if this ever fails we
     // emit a "config not writable" error on a perfectly healthy Fluidd install.
     auto files = cb1_server_config_files();
-    CHECK(
-        MoonrakerConfigManager::defines_all_sections(cb1_moonraker_conf_text(), files[0].sections));
+    CHECK(defines_all(cb1_moonraker_conf_text(), files[0].sections));
 }
 
 TEST_CASE("CB1: list_sections captures spaced section names verbatim",
@@ -855,19 +870,18 @@ TEST_CASE("CB1: an [include] line in the text does not perturb the match",
     for (const auto& s : files[0].sections)
         CHECK(s.rfind("include", 0) != 0);
 
-    CHECK(
-        MoonrakerConfigManager::defines_all_sections(cb1_moonraker_conf_text(), files[0].sections));
+    CHECK(defines_all(cb1_moonraker_conf_text(), files[0].sections));
 
     // Adding HelixScreen's own include line on top must also not break it.
     auto with_ours = MoonrakerConfigManager::add_include_line(cb1_moonraker_conf_text());
-    CHECK(MoonrakerConfigManager::defines_all_sections(with_ours, files[0].sections));
+    CHECK(defines_all(with_ours, files[0].sections));
 }
 
 TEST_CASE("CB1: the included .cfg matches its own reported sections",
           "[config_manager][config_path]") {
     auto files = cb1_server_config_files();
     std::string obico = "[update_manager moonraker-obico]\norigin: https://example/obico.git\n";
-    CHECK(MoonrakerConfigManager::defines_all_sections(obico, files[1].sections));
+    CHECK(defines_all(obico, files[1].sections));
 }
 
 TEST_CASE("CB1: upsert rewrites the existing [spoolman] URL without disturbing the file",
@@ -883,7 +897,7 @@ TEST_CASE("CB1: upsert rewrites the existing [spoolman] URL without disturbing t
     CHECK(result.find("192.168.1.58") == std::string::npos);
     // Every section Moonraker reported still present, include line intact, and a
     // neighbouring key untouched.
-    CHECK(MoonrakerConfigManager::defines_all_sections(result, files[0].sections));
+    CHECK(defines_all(result, files[0].sections));
     CHECK(result.find("[include moonraker-obico-update.cfg]") != std::string::npos);
     CHECK(MoonrakerConfigManager::get_section_value(result, "update_manager", "channel") == "dev");
 }
@@ -960,7 +974,7 @@ TEST_CASE("CB1 shape: in-place write changes the URL and adds no include",
     // Exactly one [spoolman], and the rest of the config survives.
     size_t first = result.find("[spoolman]");
     CHECK(result.find("[spoolman]", first + 1) == std::string::npos);
-    CHECK(MoonrakerConfigManager::defines_all_sections(result, files[0].sections));
+    CHECK(defines_all(result, files[0].sections));
 }
 
 TEST_CASE("fresh shape: no [spoolman] anywhere uses the include flow", "[config_manager][target]") {
@@ -1053,7 +1067,7 @@ TEST_CASE("idempotence: CB1 in-place setup converges after a second run",
     CHECK_FALSE(MoonrakerConfigManager::has_include_line(run1));
     size_t sec = run1.find("[spoolman]");
     CHECK(run1.find("[spoolman]", sec + 1) == std::string::npos);
-    CHECK(MoonrakerConfigManager::defines_all_sections(run1, files[0].sections));
+    CHECK(defines_all(run1, files[0].sections));
 }
 
 // ============================================================================
@@ -1392,8 +1406,7 @@ TEST_CASE("classify_section_match: the U1 drift case is Drifted, not Mismatch",
     CHECK(m.missing[0] == "update_manager helixscreen");
 
     // The old strict test is exactly what failed here.
-    CHECK_FALSE(
-        MoonrakerConfigManager::defines_all_sections(u1_moonraker_conf_text(), files[0].sections));
+    CHECK_FALSE(defines_all(u1_moonraker_conf_text(), files[0].sections));
 }
 
 TEST_CASE("classify_section_match: an unedited config is a clean Match",
@@ -1431,27 +1444,69 @@ TEST_CASE("classify_section_match: the K2 decoy with only [server] is a Mismatch
     CHECK(m.total == 8);
 }
 
-TEST_CASE("classify_section_match: exactly half present is a Mismatch, one more is Drifted",
+TEST_CASE("classify_section_match: drift is graded by how many went missing, not what fraction "
+          "survived",
           "[config_manager][config_path][drift]") {
-    // The threshold is a strict majority: matched * 2 > total.
+    // Two unrelated moonraker.conf files agree on the whole stock section set, so a
+    // majority is not evidence of anything. The threshold is an ABSOLUTE count:
+    // one missing always, a quarter of the list once that is more.
     const std::vector<std::string> required = {"a", "b", "c", "d", "e", "f", "g", "h"};
+
+    // 8 sections tolerate 2 missing.
+    CHECK(MoonrakerConfigManager::drift_tolerance(8) == 2);
+
+    auto six =
+        MoonrakerConfigManager::classify_section_match("[a]\n[b]\n[c]\n[d]\n[e]\n[f]\n", required);
+    CHECK(six.matched == 6);
+    CHECK(six.verdict == helix::SectionMatch::Drifted);
+
+    // A strict majority — which the old rule accepted — is now a different file.
+    auto majority =
+        MoonrakerConfigManager::classify_section_match("[a]\n[b]\n[c]\n[d]\n[e]\n", required);
+    CHECK(majority.matched == 5);
+    CHECK(majority.missing.size() == 3);
+    CHECK(majority.verdict == helix::SectionMatch::Mismatch);
 
     auto half = MoonrakerConfigManager::classify_section_match("[a]\n[b]\n[c]\n[d]\n", required);
     CHECK(half.matched == 4);
-    CHECK(half.total == 8);
     CHECK(half.verdict == helix::SectionMatch::Mismatch);
 
-    auto over =
-        MoonrakerConfigManager::classify_section_match("[a]\n[b]\n[c]\n[d]\n[e]\n", required);
-    CHECK(over.matched == 5);
-    CHECK(over.verdict == helix::SectionMatch::Drifted);
-
-    // Odd totals: 1 of 3 is a minority, 2 of 3 a majority.
+    // Short lists still get one free section, or a single uninstall would read as a
+    // wrong file on a firmware that loads almost nothing.
     const std::vector<std::string> three = {"a", "b", "c"};
-    CHECK(MoonrakerConfigManager::classify_section_match("[a]\n", three).verdict ==
-          helix::SectionMatch::Mismatch);
+    CHECK(MoonrakerConfigManager::drift_tolerance(3) == 1);
     CHECK(MoonrakerConfigManager::classify_section_match("[a]\n[b]\n", three).verdict ==
           helix::SectionMatch::Drifted);
+    CHECK(MoonrakerConfigManager::classify_section_match("[a]\n", three).verdict ==
+          helix::SectionMatch::Mismatch);
+}
+
+TEST_CASE("classify_section_match: a decoy sharing the stock section set is still a Mismatch",
+          "[config_manager][config_path][drift]") {
+    // The regression the majority rule opened: an unrelated moonraker.conf left under
+    // the writable config root by an earlier HelixScreen release shares every stock
+    // section with the vendor config Moonraker actually loaded, and differs only in
+    // the extras. Under a fraction rule it scored well above the bar and got written
+    // to; the file Moonraker reads never changed and setup reported success.
+    const std::vector<std::string> vendor = {"server",
+                                             "file_manager",
+                                             "database",
+                                             "data_store",
+                                             "machine",
+                                             "authorization",
+                                             "history",
+                                             "update_manager mainsail",
+                                             "update_manager fluidd",
+                                             "webcam",
+                                             "job_queue",
+                                             "announcements"};
+    const std::string decoy = "[server]\n[file_manager]\n[database]\n[data_store]\n[machine]\n"
+                              "[authorization]\n[history]\n[webcam]\n";
+
+    auto m = MoonrakerConfigManager::classify_section_match(decoy, vendor);
+    CHECK(m.matched == 8);
+    CHECK(m.total == 12);
+    CHECK(m.verdict == helix::SectionMatch::Mismatch);
 }
 
 TEST_CASE("classify_section_match: nothing present is a Mismatch",
@@ -1478,28 +1533,37 @@ TEST_CASE("classify_section_match: missing names come back in the reported order
           "[config_manager][config_path][drift]") {
     // Spaced names are one section each — the message the user reads must name them
     // exactly as Moonraker did.
-    const std::vector<std::string> required = {"server", "update_manager mainsail",
+    const std::vector<std::string> required = {"server",         "update_manager mainsail",
                                                "update_manager", "history",
-                                               "update_manager helixscreen"};
+                                               "machine",        "database",
+                                               "file_manager",   "update_manager helixscreen"};
     auto m = MoonrakerConfigManager::classify_section_match(
-        "[server]\n[update_manager]\n[history]\n", required);
+        "[server]\n[update_manager]\n[history]\n[machine]\n[database]\n[file_manager]\n", required);
     CHECK(m.verdict == helix::SectionMatch::Drifted);
     REQUIRE(m.missing.size() == 2);
     CHECK(m.missing[0] == "update_manager mainsail");
     CHECK(m.missing[1] == "update_manager helixscreen");
 }
 
-TEST_CASE("classify_section_match agrees with defines_all_sections on the Match verdict",
+TEST_CASE("Match means every reported section is genuinely present",
           "[config_manager][config_path][drift]") {
-    // defines_all_sections stays the primitive; Match must mean exactly what it means.
+    // Checked against has_section() directly rather than against a second aggregate,
+    // so the verdict is pinned to the primitive and not to a restatement of itself.
     auto files = k2_server_config_files();
     std::string real = "[server]\n[file_manager]\n[database]\n[data_store]\n[machine]\n"
                        "[authorization]\n[octoprint_compat]\n[history]\n";
-    CHECK(MoonrakerConfigManager::defines_all_sections(real, files[0].sections));
-    CHECK(MoonrakerConfigManager::classify_section_match(real, files[0].sections).verdict ==
-          helix::SectionMatch::Match);
 
-    // And an added include line still leaves it a Match, not a Drift.
+    auto m = MoonrakerConfigManager::classify_section_match(real, files[0].sections);
+    REQUIRE(m.verdict == helix::SectionMatch::Match);
+    CHECK(m.missing.empty());
+    CHECK(m.matched == files[0].sections.size());
+    for (const auto& s : files[0].sections) {
+        INFO("section=" << s);
+        CHECK(MoonrakerConfigManager::has_section(real, s));
+    }
+
+    // An added include line gives the file a section Moonraker never reported. That
+    // must stay a Match, or a second setup run would refuse the file it just wrote.
     auto with_include = MoonrakerConfigManager::add_include_line(real);
     CHECK(MoonrakerConfigManager::classify_section_match(with_include, files[0].sections).verdict ==
           helix::SectionMatch::Match);

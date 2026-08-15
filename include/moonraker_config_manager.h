@@ -46,7 +46,7 @@ struct LoadedConfigFile {
 /// file is not the one Moonraker loaded.
 enum class SectionMatch {
     Match,    ///< every reported section is present
-    Drifted,  ///< a majority are present: the loaded file, edited since the last restart
+    Drifted,  ///< all but a few are present: the loaded file, edited since the last restart
     Mismatch, ///< too few present to be the file Moonraker loaded
 };
 
@@ -65,27 +65,38 @@ class MoonrakerConfigManager {
     /// Names of every section defined in `content`, in order of appearance.
     static std::vector<std::string> list_sections(const std::string& content);
 
-    /// True when every section named in `required` is defined in `content`.
-    ///
-    /// Deliberately a subset test, not equality: a reachable config file may legitimately
-    /// carry sections Moonraker does not report back (notably the `[include ...]` line
-    /// HelixScreen adds), but it can never be missing one that Moonraker says it loaded.
-    static bool defines_all_sections(const std::string& content,
-                                     const std::vector<std::string>& required);
-
     /// Grade `content` against the section list Moonraker reported for it.
     ///
-    /// The strict superset test above cannot tell "this is a different file" from
-    /// "this is the file, edited since Moonraker last restarted" — and the latter is
-    /// ordinary: uninstalling HelixScreen removes `[update_manager helixscreen]` from
-    /// moonraker.conf while a long-running Moonraker keeps reporting it. A strict
-    /// majority of matching sections is treated as drift and is safe to proceed on;
-    /// anything less is a genuinely different file.
+    /// A strict "defines every reported section" test cannot tell "this is a different
+    /// file" from "this is the file, edited since Moonraker last restarted" — and the
+    /// latter is ordinary: uninstalling HelixScreen removes `[update_manager
+    /// helixscreen]` from moonraker.conf while a long-running Moonraker keeps
+    /// reporting it.
+    ///
+    /// Match is that strict test: every reported section present. A file may still
+    /// carry sections Moonraker never reported (notably the `[include ...]` line
+    /// HelixScreen itself adds) — only absences count against it.
+    ///
+    /// Drift is therefore graded by how MANY sections went missing, not by what
+    /// fraction survived. Real drift is a handful of sections deleted since the last
+    /// restart — one uninstalled app, or a few. Two unrelated moonraker.conf files,
+    /// by contrast, agree on the whole stock set (`[server]`, `[file_manager]`,
+    /// `[authorization]`, `[database]`, …) and differ only in the extras, so a
+    /// fraction-of-total rule scores a decoy well above chance. Tolerance is one
+    /// missing section always, and a quarter of the list once it is large enough for
+    /// that to be more.
     ///
     /// An empty `required` yields Match vacuously — callers that need a section list
     /// to prove anything must guard that case themselves.
     static SectionMatchResult classify_section_match(const std::string& content,
                                                      const std::vector<std::string>& required);
+
+    /// How many sections may be absent and still count as drift rather than a
+    /// different file. Exposed so tests and callers can state the rule once.
+    static size_t drift_tolerance(size_t total) {
+        const size_t quarter = total / 4;
+        return quarter > 1 ? quarter : 1;
+    }
 
     /// Index of the file best able to *prove* the config root is addressable.
     ///
@@ -118,6 +129,10 @@ class MoonrakerConfigManager {
     /// Because this walks the files Moonraker actually loaded, a helixscreen.conf
     /// pulled in by an `[include]` from a previous run is counted just like a natively
     /// defined section — which is exactly what makes duplicate detection work.
+    ///
+    /// Entries with no filename are skipped, as they are by the two index selectors
+    /// above: a hit the caller cannot name is a hit it cannot address either, and
+    /// returning one hands the caller a write target it has no path for.
     static std::vector<size_t>
     find_files_defining_section(const std::vector<LoadedConfigFile>& files,
                                 const std::string& section_name);
@@ -165,6 +180,23 @@ class MoonrakerConfigManager {
     /// being sanitised, so a traversal can never reach a write target.
     static std::vector<std::string> candidate_config_paths(const std::string& reported_filename,
                                                            const std::string& config_root_abs = "");
+
+    /// True when candidate_config_paths() could only GUESS at the file API path.
+    ///
+    /// Cases 1 and 2 above derive the path: the reported name either already is one,
+    /// or is an absolute path the config root demonstrably contains. Case 3 infers
+    /// one from the tail of a path in a tree the file manager does not serve, and
+    /// every candidate it produces is a guess — a file of that name under the config
+    /// root may be the same file reached another way (AD5M) or an unrelated stray
+    /// (Creality K2, where HelixScreen's own earlier releases left one behind).
+    ///
+    /// The distinction is whole-list, not per-candidate: a reported name is either
+    /// resolvable or it is not. Callers should demand a stricter content proof of a
+    /// speculative candidate — SectionMatch::Match rather than Drifted — because
+    /// drift tolerance and a guessed path compound into a confident write to the
+    /// wrong file.
+    static bool candidates_are_speculative(const std::string& reported_filename,
+                                           const std::string& config_root_abs = "");
 
     /// Append a section if it is not already present.
     ///

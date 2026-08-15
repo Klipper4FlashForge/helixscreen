@@ -48,15 +48,6 @@ std::vector<std::string> MoonrakerConfigManager::list_sections(const std::string
     return sections;
 }
 
-bool MoonrakerConfigManager::defines_all_sections(const std::string& content,
-                                                  const std::vector<std::string>& required) {
-    for (const auto& name : required) {
-        if (!has_section(content, name))
-            return false;
-    }
-    return true;
-}
-
 int MoonrakerConfigManager::select_primary_config_index(
     const std::vector<LoadedConfigFile>& files) {
     // Moonraker's root config is the file defining [server].
@@ -94,6 +85,11 @@ MoonrakerConfigManager::find_files_defining_section(const std::vector<LoadedConf
                                                     const std::string& section_name) {
     std::vector<size_t> hits;
     for (size_t i = 0; i < files.size(); ++i) {
+        // A hit we cannot name is a hit we cannot address. Both index selectors above
+        // skip these; returning one here would hand the caller a write target with no
+        // path, and the in-place branch has no other source for one.
+        if (files[i].filename.empty())
+            continue;
         for (const auto& s : files[i].sections) {
             if (s == section_name) {
                 hits.push_back(i);
@@ -118,7 +114,7 @@ MoonrakerConfigManager::classify_section_match(const std::string& content,
     // An empty required list matches vacuously rather than dividing by zero.
     if (r.matched == r.total)
         r.verdict = SectionMatch::Match;
-    else if (r.matched * 2 > r.total)
+    else if (r.missing.size() <= drift_tolerance(r.total))
         r.verdict = SectionMatch::Drifted;
     else
         r.verdict = SectionMatch::Mismatch;
@@ -248,6 +244,36 @@ MoonrakerConfigManager::candidate_config_paths(const std::string& reported_filen
         add(reported.substr(slash + 1));
 
     return out;
+}
+
+bool MoonrakerConfigManager::candidates_are_speculative(const std::string& reported_filename,
+                                                        const std::string& config_root_abs) {
+    const std::string reported = trim(reported_filename);
+
+    // Nothing to grade: candidate_config_paths() returns an empty list for these, so
+    // there is no candidate whose trustworthiness the caller could be asking about.
+    if (reported.empty() || reported.find("..") != std::string::npos)
+        return false;
+
+    // Case 1: already relative — the file API takes it verbatim. Not a guess.
+    if (reported.front() != '/')
+        return false;
+
+    std::string root = trim(config_root_abs);
+    while (root.size() > 1 && root.back() == '/')
+        root.pop_back();
+    if (root.empty())
+        return true; // no root to strip against, so the tail is all we have
+
+    std::string abs = reported;
+    while (abs.size() > 1 && abs.back() == '/')
+        abs.pop_back();
+    if (abs == root)
+        return false; // the root directory itself yields no candidates at all
+
+    // Case 2: the root demonstrably contains it — the strip is derived, not guessed.
+    const std::string prefix = (root == "/") ? root : root + "/";
+    return reported.compare(0, prefix.size(), prefix) != 0;
 }
 
 std::string
