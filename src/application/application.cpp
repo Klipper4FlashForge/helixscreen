@@ -1946,8 +1946,15 @@ bool Application::init_panel_subjects() {
 }
 
 bool Application::init_ui() {
-    // Create entire UI from XML
+    // Create entire UI from XML. Timed because this builds all six panel
+    // subtrees in one call — the other half of what per-panel deferral would
+    // move off boot and onto the first navigation.
+    auto layout_t0 = std::chrono::steady_clock::now();
     m_app_layout = static_cast<lv_obj_t*>(lv_xml_create(m_screen, "app_layout", nullptr));
+    spdlog::debug(
+        "[Application] app_layout XML create took {:.1f}ms",
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - layout_t0)
+            .count());
     if (!m_app_layout) {
         spdlog::error("[Application] Failed to create app_layout from XML");
         return false;
