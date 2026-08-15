@@ -748,7 +748,7 @@ SpoolVisual create_spool_visual(lv_obj_t* container, int32_t spool_size) {
     }
     sv.spool_size = spool_size;
 
-    int32_t container_size = spool_size + 8; // Extra room for badge
+    int32_t container_size = spool_size + SPOOL_VISUAL_BADGE_MARGIN_PX; // Extra room for badge
     lv_obj_set_size(container, container_size, container_size);
 
     if (sv.use_3d) {
