@@ -2523,6 +2523,15 @@ DEV_PANEL_XML := gcode_test_panel.xml glyphs_panel.xml step_test_panel.xml test_
 define release-copy-xml-config
 	@cp -r ui_xml config $(1)/
 	@rm -f $(addprefix $(1)/ui_xml/,$(DEV_PANEL_XML))
+	@# Minify the STAGED copy only -- never ui_xml/ in the source tree. The XML
+	@# engine keeps a verbatim copy of every component's <view> source text alive
+	@# for the whole session (lv_xml_component.c extract_view_content: it is
+	@# re-parsed on each lv_xml_create, so it cannot be freed), which makes shipped
+	@# comments and indentation permanently resident heap on every device. Fails
+	@# loudly rather than shipping unminified: this is not an optional nicety on
+	@# the 114 MB boards, and a silent skip is how the FONT_TIERS trim went
+	@# unnoticed for months.
+	@python3 scripts/minify_xml_tree.py $(1)/ui_xml
 endef
 
 # Bake release_info.json (consumed by Moonraker's type:web self-update) into the
