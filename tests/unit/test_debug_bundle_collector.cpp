@@ -994,6 +994,7 @@ helix::UpdateDiagnostics healthy_diag() {
     helix::UpdateDiagnostics d;
     d.install_root = "/opt/helixscreen";
     d.install_parent_writable = true;
+    d.install_root_writable = true;
     d.self_update_supported = true;
     d.externally_managed = false;
     d.channel = "stable";
@@ -1011,6 +1012,7 @@ TEST_CASE("DebugBundleCollector: build_update_info reports a healthy install as 
 
     REQUIRE(upd["install_root"].get<std::string>() == "/opt/helixscreen");
     REQUIRE(upd["install_parent_writable"].get<bool>() == true);
+    REQUIRE(upd["install_root_writable"].get<bool>() == true);
     REQUIRE(upd["self_update_supported"].get<bool>() == true);
     REQUIRE(upd["externally_managed"].get<bool>() == false);
     REQUIRE(upd["suppressed"].get<bool>() == false);
@@ -1030,6 +1032,7 @@ TEST_CASE("DebugBundleCollector: build_update_info marks a read-only install tre
     auto d = healthy_diag();
     // Neither writable nor escalatable — a genuinely read-only rootfs.
     d.install_parent_writable = false;
+    d.install_root_writable = false;
     d.self_update_supported = false;
 
     json upd = helix::DebugBundleCollector::build_update_info(d);
@@ -1041,20 +1044,43 @@ TEST_CASE("DebugBundleCollector: build_update_info marks a read-only install tre
     REQUIRE(upd["externally_managed"].get<bool>() == false);
 }
 
-TEST_CASE("DebugBundleCollector: build_update_info leaves a sudo-updatable install unsuppressed",
+TEST_CASE("DebugBundleCollector: build_update_info leaves an in-place-updatable install "
+          "unsuppressed",
           "[debug-bundle][update]") {
-    // The standard Pi shape: /opt is root-owned so the parent isn't writable by
-    // the service user, but install.sh escalates and the swap works. Reporting
-    // this as suppressed is what sent the last "updates are disabled" diagnosis
-    // down the wrong branch, so the two fields must not be conflated.
+    // The standalone-display shape: /opt is root-owned so no rename can happen
+    // there, but the root itself is owned by the service user, and install.sh
+    // replaces its contents in place. Reporting this as suppressed is the bug
+    // that locked a user out for good, so the three fields must stay distinct:
+    // WHICH route is open is the entire diagnostic value.
     auto d = healthy_diag();
     d.install_parent_writable = false;
+    d.install_root_writable = true;
     d.self_update_supported = true;
 
     json upd = helix::DebugBundleCollector::build_update_info(d);
 
     REQUIRE(upd["suppressed"].get<bool>() == false);
     REQUIRE(upd["install_parent_writable"].get<bool>() == false);
+    REQUIRE(upd["install_root_writable"].get<bool>() == true);
+    REQUIRE(upd["self_update_supported"].get<bool>() == true);
+}
+
+TEST_CASE("DebugBundleCollector: build_update_info keeps the sudo-only install distinguishable",
+          "[debug-bundle][update]") {
+    // Neither writability term open, yet self_update_supported() said yes: the
+    // answer came from root escalation alone. Worth telling apart from the two
+    // cases above, because it is the one that stops working the moment the app
+    // runs under the shipped systemd unit (NoNewPrivileges=true blocks sudo).
+    auto d = healthy_diag();
+    d.install_parent_writable = false;
+    d.install_root_writable = false;
+    d.self_update_supported = true;
+
+    json upd = helix::DebugBundleCollector::build_update_info(d);
+
+    REQUIRE(upd["suppressed"].get<bool>() == false);
+    REQUIRE(upd["install_parent_writable"].get<bool>() == false);
+    REQUIRE(upd["install_root_writable"].get<bool>() == false);
     REQUIRE(upd["self_update_supported"].get<bool>() == true);
 }
 

@@ -658,9 +658,24 @@ bool root_escalation_available() {
 }
 
 bool compute_self_update_supported(const std::string& install_root, bool can_escalate) {
-    // Self-update swaps the install root via rename ("mv <root> <root>.old;
-    // mv <new> <root>"), which needs write permission on the PARENT directory —
-    // rename mutates the parent's directory entries, not the root itself.
+    // install.sh applies an update one of two ways, and this predicate must
+    // recognise BOTH or it hides an updater that would have worked:
+    //
+    //   atomic swap    "mv <root> <root>.old; mv <new> <root>" — renames mutate
+    //                  the PARENT's directory entries, so it needs write
+    //                  permission on the parent, not on the root.
+    //   in-place       delete the root's contents (bar config/) and move the new
+    //                  ones in. Everything happens INSIDE the root, so it needs
+    //                  write permission on the root alone. install.sh picks this
+    //                  automatically when the parent is not writable
+    //                  (scripts/install.sh, "replacing install contents in-place").
+    //
+    // Testing only the parent was a false negative on the standalone-display
+    // layout: no local Klipper, so detect_pi_install_dir() falls through to
+    // /opt/helixscreen, whose parent is root-owned. The service user owns the root
+    // itself (the unit's ExecStartPre chowns it), so the in-place path applies
+    // fine — but the gate hid the updater, permanently, since the fix for it can
+    // only arrive through an update.
     if (install_root.empty()) {
         // Unresolvable layout (bind-mounted binary). Conservative: assume
         // supported — the installer's own fallbacks and the explicit
@@ -668,31 +683,35 @@ bool compute_self_update_supported(const std::string& install_root, bool can_esc
         return true;
     }
     const std::string parent = std::filesystem::path(install_root).parent_path().string();
+    if (!parent.empty() && helix::paths::is_writable_dir(parent)) {
+        return true; // atomic swap
+    }
     if (parent.empty()) {
         return true; // no parent to test (e.g. a bare relative name) — don't block.
     }
-    if (helix::paths::is_writable_dir(parent)) {
-        return true;
+    if (helix::paths::is_writable_dir(install_root)) {
+        return true; // in-place replacement
     }
-    // Parent isn't writable by this user. That is NOT the same as impossible:
-    // install.sh escalates with sudo for exactly these steps, so the swap still
-    // runs on the common /opt/helixscreen + non-root service user layout. Only a
-    // box with neither write access nor root is genuinely stuck (read-only rootfs).
+    // Neither path is open to this user. That is still NOT the same as impossible:
+    // install.sh escalates with sudo when it can. Only a box with no write access
+    // anywhere in the install tree and no route to root is genuinely stuck.
     return can_escalate;
 }
 
 bool self_update_supported() {
     static const bool cached = []() {
         const std::string root = app_get_install_root();
-        // Ask without escalation first so the writable-parent case never pays for
-        // the sudo probe.
+        // Ask without escalation first so a writable install tree never pays for
+        // the sudo probe. That matters beyond speed: the shipped systemd unit sets
+        // NoNewPrivileges=true, which makes sudo fail regardless of sudoers, so
+        // escalation is a dead end for exactly the services that need it most.
         if (compute_self_update_supported(root, /*can_escalate=*/false)) {
             return true;
         }
         const bool escalate = root_escalation_available();
         if (!escalate) {
-            spdlog::info("[Updates] Self-update unsupported: parent of {} is not writable and "
-                         "root is not obtainable",
+            spdlog::info("[Updates] Self-update unsupported: neither {} nor its parent is "
+                         "writable and root is not obtainable",
                          root);
         }
         return compute_self_update_supported(root, escalate);

@@ -410,16 +410,24 @@ bool updates_externally_managed();
 bool root_escalation_available();
 
 // Pure predicate: can an in-app self-update PHYSICALLY be applied to this install
-// tree? Self-update swaps the install root by renaming it ("mv <root> <root>.old;
-// mv <new> <root>"), which requires write permission on the install root's PARENT
-// directory (rename mutates the parent's entries).
+// tree? It must recognise BOTH of the routes install.sh implements, since hiding
+// the updater is permanent — the fix for a false negative can only ship inside an
+// update the user is being prevented from installing:
 //
-// True when the parent is writable outright (helix::paths::is_writable_dir), and
-// ALSO when it isn't but `can_escalate` says the swap can run as root anyway —
-// the standard Pi layout installs to /opt/helixscreen and runs the service as an
-// unprivileged user, so the parent (/opt) is root-owned even though install.sh
-// can and does sudo the swap. Without that second term the updater hides itself
-// on a perfectly updatable machine.
+//   parent writable  → atomic swap ("mv <root> <root>.old; mv <new> <root>").
+//                      rename mutates the PARENT's entries, so that is what it
+//                      needs write permission on.
+//   root writable    → in-place replacement: delete the root's contents (bar
+//                      config/) and move the new ones in, entirely inside the
+//                      root. install.sh selects this by itself whenever the
+//                      parent is not writable.
+//   can_escalate     → neither is open, but the steps can run as root anyway.
+//
+// The root-writable term is what covers the standalone-display Pi: no local
+// Klipper, so the installer falls through to /opt/helixscreen, whose parent is
+// root-owned while the root itself is chowned to the service user. Escalation is
+// NOT a substitute there — the shipped unit sets NoNewPrivileges=true, so sudo
+// cannot succeed from the app or from the install.sh it forks.
 //
 // An empty install_root (unresolvable/bind-mounted layout) or an empty parent
 // returns TRUE conservatively, deferring to the installer fallbacks and the
@@ -429,12 +437,11 @@ bool root_escalation_available();
 bool compute_self_update_supported(const std::string& install_root, bool can_escalate);
 
 // Cached wrapper over compute_self_update_supported(app_get_install_root(), ...).
-// False only when the install-root parent isn't writable AND root can't be
-// obtained — a genuinely read-only rootfs — so the in-app updater won't offer an
-// update it physically cannot apply. root_escalation_available() is consulted
-// lazily: an already-writable parent answers the question with no sudo probe at
-// all, which is every root-run embedded platform. Read once and cached (like
-// app_get_install_root()).
+// False only when NEITHER the install root nor its parent is writable AND root
+// can't be obtained — a genuinely read-only rootfs — so the in-app updater won't
+// offer an update it physically cannot apply. root_escalation_available() is
+// consulted lazily: a writable install tree answers the question with no sudo
+// probe at all. Read once and cached (like app_get_install_root()).
 bool self_update_supported();
 
 // Pure predicate behind in_app_updates_suppressed(), split out for testing so

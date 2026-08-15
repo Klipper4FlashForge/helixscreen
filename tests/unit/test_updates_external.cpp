@@ -117,10 +117,12 @@ TEST_CASE("compute_self_update_supported is TRUE on a non-writable parent when r
         SKIP("running as root: access(W_OK) ignores permission bits");
     }
 
-    // The standard Pi layout: install root under a root-owned parent (/opt),
-    // service running as an unprivileged user. install.sh escalates with sudo for
-    // the swap (scripts/install.sh check_permissions), so this install IS
-    // updatable and the updater must not hide itself.
+    // Escalation as the sole deciding term: neither the parent nor the root is
+    // writable (the root does not exist here), so only can_escalate can answer.
+    // That is the root-run embedded platforms, where geteuid()==0 short-circuits
+    // the probe. It is NOT the /opt + unprivileged-service layout, which the unit's
+    // NoNewPrivileges=true puts out of sudo's reach entirely — that one is covered
+    // by the in-place case above, via write access to the root itself.
     std::error_code ec;
     const std::filesystem::path base = std::filesystem::temp_directory_path(ec) /
                                        ("helix_selfupdate_sudo_" + std::to_string(::getpid()));
@@ -142,8 +144,49 @@ TEST_CASE("compute_self_update_supported is TRUE on a non-writable parent when r
     std::filesystem::remove_all(base, ec);
 }
 
-TEST_CASE("compute_self_update_supported is FALSE when the parent is read-only and root is not "
-          "reachable",
+TEST_CASE("compute_self_update_supported is TRUE on a read-only parent when the install root "
+          "itself is writable",
+          "[update][external]") {
+    if (::geteuid() == 0) {
+        SKIP("running as root: access(W_OK) ignores permission bits");
+    }
+
+    // The standalone-display layout, and the one that was hidden in the field:
+    // no local Klipper, so install.sh falls through to /opt/helixscreen. /opt is
+    // root-owned (no rename, no atomic swap) but the root itself is chowned to
+    // the service user by the unit's ExecStartPre. install.sh detects exactly
+    // this and replaces the root's CONTENTS in place, so the install updates
+    // fine and the updater must not hide itself.
+    //
+    // Escalation is deliberately false here: the shipped unit sets
+    // NoNewPrivileges=true, so sudo cannot rescue this case even where sudoers
+    // would allow it. If this term is dropped the user is locked out for good,
+    // because the fix can only reach them through an update.
+    std::error_code ec;
+    const std::filesystem::path base = std::filesystem::temp_directory_path(ec) /
+                                       ("helix_selfupdate_inplace_" + std::to_string(::getpid()));
+    const std::filesystem::path root = base / "helixscreen";
+    std::filesystem::create_directories(root, ec);
+    REQUIRE_FALSE(ec);
+
+    // Root writable (0700), parent not (0500).
+    std::filesystem::permissions(root, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace, ec);
+    REQUIRE_FALSE(ec);
+    std::filesystem::permissions(
+        base, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+        std::filesystem::perm_options::replace, ec);
+    REQUIRE_FALSE(ec);
+
+    CHECK(compute_self_update_supported(root.string(), /*can_escalate=*/false));
+
+    std::filesystem::permissions(base, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace, ec);
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("compute_self_update_supported is FALSE when neither the root nor its parent is "
+          "writable and root is not reachable",
           "[update][external]") {
     if (::geteuid() == 0) {
         // root bypasses W_OK permission bits on a normal fs (access(W_OK) still
@@ -154,21 +197,30 @@ TEST_CASE("compute_self_update_supported is FALSE when the parent is read-only a
     std::error_code ec;
     const std::filesystem::path base = std::filesystem::temp_directory_path(ec) /
                                        ("helix_selfupdate_ro_" + std::to_string(::getpid()));
-    std::filesystem::create_directories(base, ec);
+    const std::filesystem::path root = base / "helixscreen";
+    std::filesystem::create_directories(root, ec);
     REQUIRE_FALSE(ec);
 
-    // Drop write on the parent (0500: owner read + exec only). rename() into it
-    // then fails → self-update can't physically apply.
+    // Drop write on BOTH (0500: owner read + exec only). rename() into the parent
+    // fails, and so does rewriting the root's contents → nothing can apply.
+    // Innermost first: an unwritable parent still permits chmod on its children.
+    std::filesystem::permissions(
+        root, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+        std::filesystem::perm_options::replace, ec);
+    REQUIRE_FALSE(ec);
     std::filesystem::permissions(
         base, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
         std::filesystem::perm_options::replace, ec);
     REQUIRE_FALSE(ec);
 
-    const std::string install_root = (base / "helixscreen").string();
-    CHECK_FALSE(compute_self_update_supported(install_root, /*can_escalate=*/false));
+    CHECK_FALSE(compute_self_update_supported(root.string(), /*can_escalate=*/false));
+    // Root still rescues it — this is a permissions problem, not a read-only mount.
+    CHECK(compute_self_update_supported(root.string(), /*can_escalate=*/true));
 
     // Restore write so remove_all can clean up.
     std::filesystem::permissions(base, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace, ec);
+    std::filesystem::permissions(root, std::filesystem::perms::owner_all,
                                  std::filesystem::perm_options::replace, ec);
     std::filesystem::remove_all(base, ec);
 }

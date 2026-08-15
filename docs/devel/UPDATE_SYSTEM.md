@@ -66,27 +66,46 @@ of two independent reasons, and telling them apart is the first thing to establi
 | Firmware owns updates | `updates_externally_managed()` — the `HELIX_DISABLE_AUTO_UPDATES` env flag, nothing else | "Managed by your firmware" |
 | Self-update can't physically apply | `!self_update_supported()` | "Updates aren't available on this installation" |
 
-`self_update_supported()` exists because the install applies by renaming the install root
-(`mv <root> <root>.old; mv <new> <root>`), which mutates the **parent** directory's entries.
-So it is true when either:
+`self_update_supported()` must recognise **every** route `install.sh` can take to apply an
+update, because suppression is a one-way door: the fix for a false negative can only ship
+inside an update the user is being prevented from installing. It is true when any of:
 
-1. the parent of the install root is writable by the service user, **or**
-2. root is reachable — `geteuid() == 0`, or `sudo -n true` succeeds.
+1. the **parent** of the install root is writable by the service user → `install.sh` takes the
+   atomic swap (`mv <root> <root>.old; mv <new> <root>`); rename mutates the parent's entries,
+   which is why the parent is what matters, **or**
+2. the **install root itself** is writable → `install.sh` takes the in-place path: delete the
+   root's contents (bar `config/`) and move the new ones in, entirely inside the root. It
+   selects this by itself whenever the parent is not writable, **or**
+3. root is reachable — `geteuid() == 0`, or `sudo -n true` succeeds.
 
-The second term is not optional. The default Pi layout installs to `/opt/helixscreen` and runs
-the service as an unprivileged user, so the parent (`/opt`) is root-owned and term 1 is false
-on a machine that updates perfectly well: `install.sh` sets `SUDO="sudo"` in
-`check_permissions()` and escalates the privileged steps itself. Gating on writability alone
-hides the updater from the most common Raspberry Pi install there is.
+Term 2 is what covers the standalone-display layout: no local Klipper or Moonraker, so
+`detect_pi_install_dir()` falls through every ecosystem check to the `/opt/helixscreen`
+fallback. `/opt` is root-owned, so term 1 is false — but the root itself is chowned to the
+service user by the unit's `ExecStartPre`, so the install updates fine.
 
-The sudo probe runs at most once per process, only when term 1 already failed, and is bounded
-at 2s so a network-backed sudoers lookup can't stall startup.
+**Term 3 cannot rescue term 2's absence, despite what it looks like.** `config/helixscreen.service`
+sets `NoNewPrivileges=true`, which strips setuid on `execve`, so `sudo` fails from the app and
+from the `install.sh` it forks regardless of what sudoers says. Escalation only ever answers
+for installs that are already root (`geteuid() == 0` — every root-run embedded platform) or
+that run outside the shipped unit. `install.sh` knows this and has `_has_no_new_privs()`
+branches throughout; the in-place update path is one of them.
+
+The sudo probe runs at most once per process, only when terms 1 and 2 have both failed, and is
+bounded at 2s so a network-backed sudoers lookup can't stall startup.
 
 Debug bundles carry all of this under `update`: `install_parent_writable` (term 1),
-`self_update_supported` (the OR), `externally_managed`, and `suppressed`. A
-`false` / `true` pair for the first two is the ordinary sudo-escalating Pi; `false` / `false`
-is a genuinely read-only install. The `[UpdateChecker] ... suppressed (firmware-managed or
-install tree not writable)` log line does **not** distinguish them — use the bundle fields.
+`install_root_writable` (term 2), `self_update_supported` (the OR of all three),
+`externally_managed`, and `suppressed`. Read the first three together:
+
+| parent | root | supported | Meaning |
+|--------|------|-----------|---------|
+| true   | —    | true      | ordinary home-directory / ecosystem install, atomic swap |
+| false  | true | true      | `/opt` standalone-display install, in-place update |
+| false  | false| true      | running as root, or outside the shipped unit — sudo is carrying it |
+| false  | false| false     | genuinely stuck; the user must re-run the installer |
+
+The `[UpdateChecker] ... suppressed` log line names which branch fired, but the bundle fields
+are what separate the four shapes above.
 
 ---
 

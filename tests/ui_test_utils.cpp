@@ -881,6 +881,12 @@ bool updates_externally_managed() {
 
 // Mirror of src/app_globals.cpp compute_self_update_supported / self_update_supported /
 // in_app_updates_suppressed (app_globals.o is excluded from the test link).
+//
+// Keep the branch structure identical to the original, comments aside. A mirror that
+// drifts turns the tests below into a test of this file: the parent-only version of
+// this predicate was a false negative that hid the updater on every /opt install, and
+// nothing here would have noticed, because the assertions would have been passing
+// against the same wrong logic.
 #include "system/helix_paths.h"
 
 #include <unistd.h> // geteuid
@@ -889,11 +895,14 @@ bool compute_self_update_supported(const std::string& install_root, bool can_esc
         return true;
     }
     const std::string parent = std::filesystem::path(install_root).parent_path().string();
+    if (!parent.empty() && helix::paths::is_writable_dir(parent)) {
+        return true; // atomic swap
+    }
     if (parent.empty()) {
         return true;
     }
-    if (helix::paths::is_writable_dir(parent)) {
-        return true;
+    if (helix::paths::is_writable_dir(install_root)) {
+        return true; // in-place replacement
     }
     return can_escalate;
 }

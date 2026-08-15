@@ -65,8 +65,9 @@ using ConfigFetcher = std::function<ConfigFetchResult(const std::string& path)>;
  */
 struct UpdateDiagnostics {
     std::string install_root;            ///< app_get_install_root() ("" if unresolvable)
-    bool install_parent_writable = true; ///< dirname(install_root) writable WITHOUT escalation
-    bool self_update_supported = true;   ///< self_update_supported(): writable OR root reachable
+    bool install_parent_writable = true; ///< dirname(install_root) writable → atomic swap
+    bool install_root_writable = true;   ///< install_root itself writable → in-place update
+    bool self_update_supported = true;   ///< self_update_supported(): either of those OR root
     bool externally_managed = false;     ///< updates_externally_managed()
     std::string channel;                 ///< "stable"|"beta"|"dev"; "" → "unknown"
     std::string r2_base_url;             ///< effective manifest base URL; "" → "unknown"
