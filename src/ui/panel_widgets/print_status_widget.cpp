@@ -24,6 +24,7 @@
 #include "filament_op_router.h"
 #include "filament_sensor_manager.h"
 #include "format_utils.h"
+#include "klipper_extruder_naming.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
@@ -1919,18 +1920,11 @@ void PrintStatusWidget::DetailedFormatter::update_tool_label() {
         // is set, otherwise the currently active tool. Anything else looks
         // broken right after a pin ("I picked Nozzle 2 but it still says T0").
         int idx = -1;
-        if (current_nozzle_override_ == "extruder") {
-            idx = 0;
-        } else if (current_nozzle_override_.rfind("extruder", 0) == 0 &&
-                   current_nozzle_override_.size() > 8) {
-            // Defend against hand-edited config — atoi parses leading digits
-            // only; check the parsed index is in range before trusting it.
-            const char* suffix = current_nozzle_override_.c_str() + 8;
-            if (suffix[0] >= '0' && suffix[0] <= '9') {
-                int parsed = std::atoi(suffix);
-                if (parsed >= 0 && parsed < count) {
-                    idx = parsed;
-                }
+        // Defend against hand-edited config — the name has to parse as a
+        // Klipper extruder AND land in range before it is trusted.
+        if (const auto parsed = helix::tool_number_for_extruder(current_nozzle_override_)) {
+            if (*parsed < count) {
+                idx = *parsed;
             }
         }
         if (idx < 0) {
