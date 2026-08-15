@@ -13,6 +13,12 @@ lib/sdl2/build/
 node_modules/
 package-lock.json
 
+# ...except the Cloudflare Worker packages, whose lockfiles CI needs. The
+# Server Tests workflow runs `npm ci`, which requires a committed lockfile and
+# installs the exact same tree every run. Without these, a floating transitive
+# dependency can turn CI red overnight with no code change.
+!server/*/package-lock.json
+
 # Python virtual environment
 .venv/
 
