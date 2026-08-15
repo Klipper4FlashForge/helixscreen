@@ -392,7 +392,7 @@ Fetching the files into a separate field gives the content back without putting 
 competition with the incident, and beats the log copy anyway — that one arrives head-truncated
 whenever the byte window slices through the dump.
 
-Budget: `kMaxConfigBytes` (512 KB) and `kMaxConfigFiles` (40). A full ZMOD AD5X config is ~250 KB
+Budget: `MAX_CONFIG_BYTES` (512 KB) and `MAX_CONFIG_FILES` (40). A full ZMOD AD5X config is ~250 KB
 across its includes, so it fits whole. Hitting either cap records `printer_config.truncated` with
 the reason rather than silently shortening.
 

@@ -313,7 +313,7 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     // AFC. See AmsBackendAfc for the full rationale.
     //
     // Written blind — no Happy Hare hardware on hand; mirrors AFC exactly.
-    static constexpr const char* kOverrideNamespace = "helix-screen-hh-overrides";
+    static constexpr const char* OVERRIDE_NAMESPACE = "helix-screen-hh-overrides";
     std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
     std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
     void apply_overrides(SlotInfo& slot, int slot_index);

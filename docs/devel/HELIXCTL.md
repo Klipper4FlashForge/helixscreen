@@ -243,7 +243,7 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 |---------|---------|
 | `ping` | Health check — answers `pong` once the control server is accepting |
 | `status` | Panel, connection state, and printer status in one response |
-| `navigate <panel>` | Go to a base panel |
+| `navigate <panel>` | Go to a base panel, exactly as tapping its navbar button does — **pops any open overlay stack**, honours the connection/Klipper gating (a blocked panel is an error, not a silent no-op), and a second `navigate home` while already on Home resets the carousel |
 | `cd <container>` | Move the working directory — see below. **No UI side effect** |
 | `go_back`, `back` | Pop the current overlay |
 | `help`, `?` | Print the command list (same as `-h`/`--help`) |
@@ -325,6 +325,7 @@ curl -s -X POST http://127.0.0.1:7130/rpc -d '{"jsonrpc":"2.0","id":1,
 | `scroll <target> [dx dy]` | Scroll a widget into view, or by a delta |
 | `focus <target>` | Focus a widget through its input group. Fires the real `LV_EVENT_FOCUSED`, so a registered textarea raises the on-screen keyboard — `click` does not, and leaves it hidden. Fails if the widget is not in an input group |
 | `text <target>` | Read a widget's text: `lv_label`, `lv_textarea`, or `lv_dropdown` (its selected option). Descends into a composite (e.g. a button wrapping a label) the same way `click` descends to a value-control. Raises rather than returning `""` if the widget has no text concept at all — an empty label and "not a text widget" are different facts |
+| `set_text <target> <text>` | Overwrite a **label's** text. Resolves the target the same way `text` reads it, so a composite works. For labels the app sets imperatively — a value that comes from a backend field rather than a subject, so `set` cannot reach it (e.g. the AMS loading-error message). A label driven by `bind_text` is restored the next time its subject changes; set the subject instead when one exists |
 | `geom <target> [depth]` | Measured geometry: position, size, declared-vs-computed size, flex/scroll state |
 | `get_const [scope] <name>` | Resolve an XML `#const` to the value the renderer actually sees |
 

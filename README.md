@@ -133,12 +133,15 @@ See [docs/devel/GALLERY.md](docs/devel/GALLERY.md) for the full gallery.
 | Elegoo Centauri Carbon | armv7-a | Tested² |
 | x86 Mini PC (Debian) | x86_64 | Tested |
 | macOS / Linux desktop | x86_64 / ARM64 | Development / CI |
+| Android phone / tablet | arm64 / x86_64 | Experimental⁴ |
 
 ¹ QIDI models with Linux framebuffer displays (Q2, Max 4) only. Stock firmware runs standard Moonraker and works directly; community firmware like [FreeDi](https://github.com/Phil1988/FreeDi), [53Aries/Q2-Firmware](https://github.com/53Aries/Q2-Firmware), or [FreeQIDI](https://github.com/Phil1988/FreeQIDI) is optional. Older models (X-Smart 3, X-Plus 3, X-Max 3, Q1 Pro, Plus 4) ship with QIDI's MKS PI smart-panel (a TJC serial HMI that *is* the UI; TJC is the Chinese OEM that Nextion licenses globally) and are **not compatible for on-device install** without a screen replacement — see [QIDI_SUPPORT.md → Display Compatibility](docs/devel/printers/QIDI_SUPPORT.md#display-compatibility) for why. Remote-control mode works on all six QIDI models regardless.
 
 ² Elegoo Centauri Carbon requires the community [OpenCentauri COSMOS](https://github.com/OpenCentauri/cosmos) firmware ([docs](https://docs.opencentauri.cc/klipper-conversion/cosmos/cosmos/); stock Elegoo firmware has no SSH, Klipper, or Moonraker). Ships with factory white-balance calibration for the 4.3" panel.
 
 ³ Snapmaker U1 needs SSH access. Stock firmware (1.2+) provides it via the **Root access** option in printer settings; the community [PAXX Extended Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware) enables SSH by default and is the easiest path. Tested on PAXX 1.3.x/1.4.x; the stock-firmware path is unverified on a real stock device. Reinstall HelixScreen after any firmware update — it resets system files and the stock screen returns until you reinstall.
+
+⁴ Android is a **remote** client only. It monitors and controls a printer over your network and does not replace a printer's own panel. Needs Android 9.0 or newer, and runs in landscape. Not on Google Play yet, so you install the APK yourself from a [GitHub release](https://github.com/prestonbrown/helixscreen/releases/latest). See [Android app](docs/user/INSTALL.md#android-app-experimental).
 
 ## Installation
 
@@ -166,6 +169,8 @@ Add `--clean` to wipe HelixScreen's settings and start fresh (it asks for confir
 Also available through [KIAUH](https://github.com/dw-0/kiauh) as an extension.
 
 **Flashforge AD5M/Pro:** We provide a [ready-made firmware image](https://github.com/prestonbrown/ff5m) (Forge-X fork with HelixScreen pre-configured) — just flash from a USB drive. Or install manually on an existing Forge-X/Klipper Mod setup.
+
+**Android (experimental):** There is an Android build for watching and controlling a printer from a phone or tablet. It is not on Google Play yet, so download the APK from the [latest release](https://github.com/prestonbrown/helixscreen/releases/latest) and install it. `helixscreen-android-arm64-v<VERSION>.apk` covers essentially any modern phone or tablet. Nothing gets installed on the printer; the app just needs to reach Moonraker on your network. See [Android app](docs/user/INSTALL.md#android-app-experimental).
 
 See the [Installation Guide](docs/user/INSTALL.md) for detailed instructions, display configuration, and troubleshooting.
 

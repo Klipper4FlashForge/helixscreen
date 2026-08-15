@@ -18,10 +18,11 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(tr -d '[:space:]' < "$repo_root/VERSION.txt")"
 
-# Compute versionCode = major*10000 + minor*100 + patch (matches build.gradle).
-IFS='.' read -r v_major v_minor v_patch_raw <<< "$version"
-v_patch="${v_patch_raw%%-*}"  # strip pre-release suffix (e.g. 0-beta → 0)
-version_code=$(( v_major * 10000 + v_minor * 100 + v_patch ))
+# The versionCode names the output file, and release.yml reads that same path
+# back to upload it. Both sides resolve it through android-version-code.sh so
+# the packing has one definition; a local copy here is what let the two drift.
+# Its overflow / malformed-version errors surface on stderr and abort (set -e).
+version_code="$("$repo_root/scripts/android-version-code.sh" "$version")"
 
 out_path="${1:-$repo_root/android/fastlane/metadata/android/en-US/changelogs/$version_code.txt}"
 mkdir -p "$(dirname "$out_path")"

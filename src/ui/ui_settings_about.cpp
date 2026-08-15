@@ -10,6 +10,7 @@
 
 #include "ui_callback_helpers.h"
 #include "ui_event_safety.h"
+#include "ui_info_qr_modal.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_panel_history_dashboard.h"
@@ -24,11 +25,11 @@
 #else
 // Fallback when contributors.h is not generated (e.g., Android CMake builds
 // without git available). Keep in sync with actual contributors from git log.
-inline constexpr const char* kContributors[] = {
+inline constexpr const char* CONTRIBUTORS[] = {
     "Andrew Basson",  "Justin Hayes", "Pierre Poissinger", "Preston Brown", "RNGIllSkillz",
     "Sergei Rozhkov", "Timo V",
 };
-inline constexpr int kContributorCount = sizeof(kContributors) / sizeof(kContributors[0]);
+inline constexpr int CONTRIBUTOR_COUNT = sizeof(CONTRIBUTORS) / sizeof(CONTRIBUTORS[0]);
 #endif
 #include "format_utils.h"
 #include "helix_version.h"
@@ -144,6 +145,7 @@ void AboutSettingsOverlay::register_callbacks() {
         {"on_about_update_channel_changed", on_about_update_channel_changed},
         {"on_about_check_updates_clicked", on_about_check_updates_clicked},
         {"on_about_install_update_clicked", on_about_install_update_clicked},
+        {"on_about_updates_unavailable_clicked", on_about_updates_unavailable_clicked},
         {"on_about_print_hours_clicked", on_about_print_hours_clicked},
         {"on_update_download_start", on_about_update_download_start},
         {"on_update_download_cancel", on_about_update_download_cancel},
@@ -269,11 +271,11 @@ void AboutSettingsOverlay::setup_contributor_marquee() {
     // Build a single concatenated string: "Name1  •  Name2  •  Name3  •  "
     // Trailing separator ensures continuity when LVGL wraps circular scroll
     std::string text;
-    for (int i = 0; i < kContributorCount; i++) {
+    for (int i = 0; i < CONTRIBUTOR_COUNT; i++) {
         if (i > 0) {
             text += "  \xe2\x80\xa2  ";
         }
-        text += kContributors[i];
+        text += CONTRIBUTORS[i];
     }
     text += "  \xe2\x80\xa2  ";
 
@@ -286,7 +288,7 @@ void AboutSettingsOverlay::setup_contributor_marquee() {
     lv_obj_set_style_anim_duration(marquee_content_, text.size() * 100, 0);
 
     spdlog::debug("[{}] Contributor marquee set up with {} contributors", get_name(),
-                  kContributorCount);
+                  CONTRIBUTOR_COUNT);
 }
 
 // ============================================================================
@@ -415,8 +417,8 @@ void AboutSettingsOverlay::hide_update_download_modal() {
 // ============================================================================
 
 // 7-tap easter egg constants (shared by version and printer name callbacks)
-static constexpr int kSecretTapCount = 7;
-static constexpr uint32_t kSecretTapTimeoutMs = 2000;
+static constexpr int SECRET_TAP_COUNT = 7;
+static constexpr uint32_t SECRET_TAP_TIMEOUT_MS = 2000;
 
 void AboutSettingsOverlay::on_about_printer_name_clicked(lv_event_t*) {
     static int tap_count = 0;
@@ -424,13 +426,13 @@ void AboutSettingsOverlay::on_about_printer_name_clicked(lv_event_t*) {
 
     uint32_t now = lv_tick_get();
 
-    if (now - last_tap_time > kSecretTapTimeoutMs) {
+    if (now - last_tap_time > SECRET_TAP_TIMEOUT_MS) {
         tap_count = 0;
     }
     last_tap_time = now;
     tap_count++;
 
-    int remaining = kSecretTapCount - tap_count;
+    int remaining = SECRET_TAP_COUNT - tap_count;
 
     if (remaining > 0 && remaining <= 3) {
         char buf[32];
@@ -449,13 +451,13 @@ void AboutSettingsOverlay::on_about_version_clicked(lv_event_t*) {
 
     uint32_t now = lv_tick_get();
 
-    if (now - last_tap_time > kSecretTapTimeoutMs) {
+    if (now - last_tap_time > SECRET_TAP_TIMEOUT_MS) {
         tap_count = 0;
     }
     last_tap_time = now;
     tap_count++;
 
-    int remaining = kSecretTapCount - tap_count;
+    int remaining = SECRET_TAP_COUNT - tap_count;
 
     if (remaining > 0 && remaining <= 3) {
         Config* config = Config::get_instance();
@@ -526,6 +528,34 @@ void AboutSettingsOverlay::on_about_check_updates_clicked(lv_event_t* /*e*/) {
     LVGL_SAFE_EVENT_CB_BEGIN("[AboutSettings] on_about_check_updates_clicked");
     spdlog::info("[AboutSettings] Check for updates requested");
     UpdateChecker::instance().check_for_updates();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void AboutSettingsOverlay::on_about_updates_unavailable_clicked(lv_event_t* /*e*/) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[AboutSettings] on_about_updates_unavailable_clicked");
+    spdlog::info("[AboutSettings] Updates-unavailable notice tapped");
+
+    // Reached only when self_update_supported() is false and updates are not
+    // firmware-managed: this box can see that a new version exists but cannot
+    // apply one itself. The command is the whole payload — without it the row
+    // states a problem and offers nothing, which is what made the suppressed
+    // state a dead end. The QR points at the docs for the longer story.
+    auto* modal = new helix::ui::InfoQrModal({
+        .icon = "console",
+        .title = lv_tr("Update from a Terminal"),
+        // No command in here on purpose. The one-liner is not portable across the
+        // platforms this runs on — BusyBox firmwares (K1, K2, AD5M, CC1) ship ash
+        // with no bash, and several have wget but no curl — so any single literal
+        // would be wrong somewhere, baked into a binary, and only fixable by the
+        // release the user cannot install. The docs can say the right thing per
+        // platform and can be corrected without shipping anything.
+        .message = lv_tr("Run the HelixScreen installer with --update from a "
+                         "terminal on this printer. Scan for the command for "
+                         "your platform."),
+        .url = "https://helixscreen.org/docs/guide/getting-started/",
+        .url_text = "helixscreen.org/docs",
+    });
+    modal->show_modal(lv_screen_active());
     LVGL_SAFE_EVENT_CB_END();
 }
 

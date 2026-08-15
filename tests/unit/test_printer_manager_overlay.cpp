@@ -26,7 +26,7 @@ namespace {
 void sentinel_observer_cb(lv_observer_t*, lv_subject_t*) {}
 
 /// One of the four subjects PrinterManagerOverlay::init_subjects() publishes.
-constexpr const char* kOwnedSubjectName = "pm_name_editing";
+constexpr const char* OWNED_SUBJECT_NAME = "pm_name_editing";
 
 } // namespace
 
@@ -117,7 +117,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
         overlay.init_subjects();
         REQUIRE(overlay.are_subjects_initialized());
 
-        lv_subject_t* owned = SubjectDebugRegistry::instance().lookup_by_name(kOwnedSubjectName);
+        lv_subject_t* owned = SubjectDebugRegistry::instance().lookup_by_name(OWNED_SUBJECT_NAME);
         REQUIRE(owned != nullptr);
 
         observer = lv_subject_add_observer_obj(owned, sentinel_observer_cb, sentinel, nullptr);
@@ -149,7 +149,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "PrinterManagerOverlay: destructor safe withou
     // observer hook must still be attached.
     PrinterManagerOverlay owner;
     owner.init_subjects();
-    lv_subject_t* owned = SubjectDebugRegistry::instance().lookup_by_name(kOwnedSubjectName);
+    lv_subject_t* owned = SubjectDebugRegistry::instance().lookup_by_name(OWNED_SUBJECT_NAME);
     REQUIRE(owned != nullptr);
 
     lv_obj_t* sentinel = lv_obj_create(test_screen());
@@ -165,7 +165,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "PrinterManagerOverlay: destructor safe withou
         // Destructor runs here - it must be a no-op.
     }
 
-    REQUIRE(SubjectDebugRegistry::instance().lookup_by_name(kOwnedSubjectName) == owned);
+    REQUIRE(SubjectDebugRegistry::instance().lookup_by_name(OWNED_SUBJECT_NAME) == owned);
     REQUIRE(lv_obj_get_event_count(sentinel) == baseline_events + 1);
 
     // Owner is still alive; drop the observer before the sentinel so teardown

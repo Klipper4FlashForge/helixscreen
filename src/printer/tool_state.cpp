@@ -17,6 +17,7 @@
 #include "data_root_resolver.h"
 #include "i_moonraker_api.h"
 #include "json_utils.h"
+#include "klipper_extruder_naming.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_discovery.h"
 #include "state/subject_macros.h"
@@ -144,8 +145,7 @@ void ToolState::init_tools(const helix::PrinterDiscovery& hardware) {
         // Collect extruder names from heaters (sorted for index mapping)
         std::vector<std::string> extruder_names;
         for (const auto& h : hardware.heaters()) {
-            if (h == "extruder" ||
-                (h.size() > 8 && h.rfind("extruder", 0) == 0 && std::isdigit(h[8]))) {
+            if (helix::is_extruder_name(h)) {
                 extruder_names.push_back(h);
             }
         }
@@ -174,8 +174,7 @@ void ToolState::init_tools(const helix::PrinterDiscovery& hardware) {
         // No tool changer: enumerate extruder heaters to support multi-extruder setups
         std::vector<std::string> extruder_names;
         for (const auto& h : hardware.heaters()) {
-            if (h == "extruder" ||
-                (h.size() > 8 && h.rfind("extruder", 0) == 0 && std::isdigit(h[8]))) {
+            if (helix::is_extruder_name(h)) {
                 // Deduplicate (mock can produce duplicates from dual parse_objects calls)
                 if (std::find(extruder_names.begin(), extruder_names.end(), h) ==
                     extruder_names.end()) {

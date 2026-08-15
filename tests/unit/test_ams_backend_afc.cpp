@@ -360,7 +360,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
             std::count(captured_gcodes.begin(), captured_gcodes.end(), expected));
     }
 
-    static constexpr int kMessageDrainMaxClears = AmsBackendAfc::kMessageDrainMaxClears;
+    static constexpr int MESSAGE_DRAIN_MAX_CLEARS = AmsBackendAfc::MESSAGE_DRAIN_MAX_CLEARS;
 
     void test_maybe_drain_message_queue() {
         maybe_drain_message_queue();
@@ -541,6 +541,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         const std::unordered_map<std::string, std::string>& section_to_klipper) {
         std::lock_guard<std::mutex> lock(mutex_);
         extruder_klipper_names_ = section_to_klipper;
+        configfile_answered_ = true; // stands in for the query having landed
         extruder_tool_index_warned_.clear();
     }
 
@@ -1712,10 +1713,201 @@ TEST_CASE("AFC tool mapping valid string still maps", "[ams][afc][tool_mapping]"
     REQUIRE(helper.get_slot_mapped_tool(0) == 3);
 }
 
-TEST_CASE("AFC tool mapping array-shaped map resets and does not crash",
+TEST_CASE("AFC tool mapping single-element list maps like a string", "[ams][afc][tool_mapping]") {
+    // AFC virtual tools (#605) change `map` to a list UNCONDITIONALLY — a plain
+    // 4-lane BoxTurtle with virtual tools disabled sends ["T0"], not "T0". Treating
+    // the list as unsupported would unmap every lane on every AFC install the day
+    // that version ships, so the one-tool list must behave exactly like the string.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array({"T0"})}});
+    helper.feed_afc_stepper("lane2", {{"map", nlohmann::json::array({"T3"})}});
+
+    REQUIRE(helper.get_slot_mapped_tool(0) == 0);
+    REQUIRE(helper.get_slot_mapped_tool(1) == 3);
+    // Forward map too — this is what change_tool() resolves through
+    REQUIRE(helper.get_tool_mapping()[0] == 0);
+    REQUIRE(helper.get_tool_mapping()[3] == 1);
+}
+
+TEST_CASE("AFC tool mapping multi-tool list without current_map keeps the lowest tool",
           "[ams][afc][tool_mapping]") {
-    // Speculative future AFC shape (enhancement #605): map as an array. We do NOT
-    // support multi-tool maps — treat as unmapped, warn once (tripwire), no crash.
+    // FALLBACK ONLY. When AFC does not tell us which tool is active — pre-#605
+    // firmware, or a delta that omits current_map before we have ever seen one —
+    // SlotRegistry still holds exactly one tool per lane and we must pick something.
+    // The lowest is an arbitrary but stable choice, NOT a claim about AFC's
+    // semantics: its order is not sorted, so feed it unsorted to prove we do not
+    // just take the first element.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    REQUIRE_NOTHROW(
+        helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array({"T14", "T13", "T1"})}}));
+    REQUIRE(helper.get_slot_mapped_tool(0) == 1);
+    REQUIRE(helper.get_tool_mapping()[1] == 0);
+
+    // Removing the virtual tools leaves the lane on the same tool it already had.
+    helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array({"T1"})}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 1);
+}
+
+TEST_CASE("AFC current_map picks the active tool over the lowest", "[ams][afc][tool_mapping]") {
+    // CORE REGRESSION for the lowest-wins heuristic. AFC #605 added current_map,
+    // which names the tool a multi-tool lane is ACTUALLY on. This is the shape
+    // upstream published: map is unsorted and current_map is not its minimum, so
+    // picking the lowest would put the lane on T10 while AFC drives T11.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper(
+        "lane1", {{"map", nlohmann::json::array({"T11", "T10"})}, {"current_map", "T11"}});
+
+    REQUIRE(helper.get_slot_mapped_tool(0) == 11);
+    // Forward map too — this is what change_tool() resolves through
+    REQUIRE(helper.get_tool_mapping()[11] == 0);
+    REQUIRE(helper.get_tool_mapping()[10] == -1);
+}
+
+TEST_CASE("AFC current_map alone retargets the lane", "[ams][afc][tool_mapping]") {
+    // current_map is the field that moves while map stays put — that is its whole
+    // purpose. Moonraker sends DELTAS, so a tool change inside a multi-tool lane
+    // arrives as current_map with NO map key. Handling the pick only under
+    // `if (data.contains("map"))` would drop it silently.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper(
+        "lane1", {{"map", nlohmann::json::array({"T11", "T10"})}, {"current_map", "T11"}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 11);
+
+    helper.feed_afc_stepper("lane1", {{"current_map", "T10"}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 10);
+    REQUIRE(helper.get_tool_mapping()[10] == 0);
+    REQUIRE(helper.get_tool_mapping()[11] == -1);
+}
+
+TEST_CASE("AFC current_map survives a later map-only delta", "[ams][afc][tool_mapping]") {
+    // The mirror of the case above: once AFC has told us the lane is on T11, a
+    // subsequent delta carrying only map must NOT fall back to the lowest and yank
+    // the lane onto a tool AFC is not driving. Growing the lane's tool list is
+    // exactly when this happens — AFC_ADD_MAPPING sends map without current_map.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper(
+        "lane1", {{"map", nlohmann::json::array({"T11", "T10"})}, {"current_map", "T11"}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 11);
+
+    helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array({"T11", "T10", "T5"})}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 11); // not T5
+}
+
+TEST_CASE("AFC current_map dropped from map falls back to the lowest", "[ams][afc][tool_mapping]") {
+    // Self-healing: AFC_REMOVE_MAPPING can strip the very tool current_map named.
+    // The remembered pick must not outlive its membership in map, or the lane stays
+    // pinned to a tool the firmware no longer routes to it.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper(
+        "lane1", {{"map", nlohmann::json::array({"T11", "T10"})}, {"current_map", "T11"}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 11);
+
+    helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array({"T10"})}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 10);
+    REQUIRE(helper.get_tool_mapping()[11] == -1);
+}
+
+TEST_CASE("AFC current_map outside map is ignored", "[ams][afc][tool_mapping]") {
+    // map is the authority on which tools a lane owns; current_map only SELECTS
+    // among them. A current_map naming a tool absent from a present map is drift we
+    // do not understand, so fall back rather than route a tool AFC never listed.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper(
+        "lane1", {{"map", nlohmann::json::array({"T11", "T10"})}, {"current_map", "T7"}});
+
+    REQUIRE(helper.get_slot_mapped_tool(0) == 10); // lowest of map, not T7
+    REQUIRE(helper.get_tool_mapping()[7] == -1);
+}
+
+TEST_CASE("AFC empty current_map does not unmap a mapped lane", "[ams][afc][tool_mapping]") {
+    // Upstream describes current_map as holding the active tool "when more than one
+    // T(n) is mapped to that lane", so a single-tool lane may well send it null or
+    // empty. Treating a present-but-empty current_map as authoritative would unmap
+    // every ordinary lane — the same tripwire that made the array shape unsafe.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1",
+                            {{"map", nlohmann::json::array({"T2"})}, {"current_map", nullptr}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 2);
+
+    helper.feed_afc_stepper("lane2", {{"map", nlohmann::json::array({"T3"})}, {"current_map", ""}});
+    REQUIRE(helper.get_slot_mapped_tool(1) == 3);
+
+    // And alone in a delta it means "no news", not "unmap"
+    helper.feed_afc_stepper("lane1", {{"current_map", nullptr}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 2);
+}
+
+TEST_CASE("AFC unmapping a lane forgets its current_map", "[ams][afc][tool_mapping]") {
+    // The remembered pick is per-lane state. An authoritative unmap must clear it,
+    // or a lane later remapped to an unrelated tool list could resurrect a stale
+    // tool that happens to reappear in it.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper(
+        "lane1", {{"map", nlohmann::json::array({"T11", "T10"})}, {"current_map", "T11"}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 11);
+
+    helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array()}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == -1);
+
+    // Remapped with T11 present again, but AFC never re-stated current_map →
+    // lowest, not the stale T11.
+    helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array({"T11", "T4"})}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 4);
+}
+
+TEST_CASE("AFC tool mapping empty list unmaps the lane", "[ams][afc][tool_mapping]") {
+    // AFC_REMOVE_MAPPING can strip a lane back to no tools. An empty PRESENT list is
+    // authoritative and must unmap, exactly like a present null.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array({"T2"})}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 2);
+
+    helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array()}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == -1);
+    REQUIRE(helper.get_tool_mapping()[2] == -1);
+}
+
+TEST_CASE("AFC tool mapping list skips junk entries without losing good ones",
+          "[ams][afc][tool_mapping]") {
+    // One unparseable element must not discard the lane's real tools. In particular
+    // "T14,T13" must NOT parse as 14 — std::stoi stops at the comma and returns a
+    // confident wrong answer, which is exactly the silent failure to avoid.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    REQUIRE_NOTHROW(helper.feed_afc_stepper(
+        "lane1", {{"map", nlohmann::json::array({"T14,T13", "garbage", "T7", 5, nullptr})}}));
+    REQUIRE(helper.get_slot_mapped_tool(0) == 7);
+
+    // A list with nothing salvageable unmaps rather than guessing.
+    helper.feed_afc_stepper("lane2", {{"map", nlohmann::json::array({"T1"})}});
+    REQUIRE(helper.get_slot_mapped_tool(1) == 1);
+    helper.feed_afc_stepper("lane2", {{"map", nlohmann::json::array({"T14,T13", "nope"})}});
+    REQUIRE(helper.get_slot_mapped_tool(1) == -1);
+}
+
+TEST_CASE("AFC tool mapping object-shaped map does not crash", "[ams][afc][tool_mapping]") {
+    // Not a shape AFC is known to send; assert it degrades to unmapped, not a crash.
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -1723,7 +1915,7 @@ TEST_CASE("AFC tool mapping array-shaped map resets and does not crash",
     REQUIRE(helper.get_slot_mapped_tool(0) == 2);
 
     REQUIRE_NOTHROW(
-        helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array({"T0", "T4"})}}));
+        helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::object({{"T0", "lane1"}})}}));
     REQUIRE(helper.get_slot_mapped_tool(0) == -1);
 }
 
@@ -2777,7 +2969,7 @@ TEST_CASE("AFC drains a session's worth of accumulated messages", "[ams][afc][re
 
 TEST_CASE("AFC message drain is bounded", "[ams][afc][recovery]") {
     // A fault that re-enqueues as fast as we pop must not spin forever.
-    // kMessageDrainMaxClears is the runaway guard, not the expected exit — the
+    // MESSAGE_DRAIN_MAX_CLEARS is the runaway guard, not the expected exit — the
     // preceding test covers the normal drain-until-empty path.
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
@@ -2791,7 +2983,7 @@ TEST_CASE("AFC message drain is bounded", "[ams][afc][recovery]") {
     }
 
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") ==
-            AmsBackendAfcTestHelper::kMessageDrainMaxClears);
+            AmsBackendAfcTestHelper::MESSAGE_DRAIN_MAX_CLEARS);
 }
 
 TEST_CASE("AFC clear_fault discards queued lane ejects", "[ams][afc][recovery]") {
@@ -5538,7 +5730,7 @@ TEST_CASE("AFC tool changer reconciliation derives current_slot from active tool
 }
 
 // ---- L1: classify_error ----
-static const char* kJamLine =
+static const char* JAM_LINE =
     "!! Toolhead runout detected by tool_end sensor, but upstream sensors still "
     "detect filament. Possible filament break or jam at the toolhead. Please clear "
     "the jam and reload filament manually, then resume the print.";
@@ -5550,7 +5742,7 @@ TEST_CASE("AFC jam with toolhead loaded offers Unload not Eject", "[ams][afc][cl
 
     helix::ClassifyContext ctx;
     ctx.is_paused = true;
-    auto e = helper.classify_error(kJamLine, ctx);
+    auto e = helper.classify_error(JAM_LINE, ctx);
 
     REQUIRE(e.has_value());
     REQUIRE(e->severity == helix::ErrorSeverity::CRITICAL);
@@ -5574,7 +5766,7 @@ TEST_CASE("AFC jam with empty toolhead offers Eject not Unload", "[ams][afc][cla
 
     helix::ClassifyContext ctx;
     ctx.is_paused = true;
-    auto e = helper.classify_error(kJamLine, ctx);
+    auto e = helper.classify_error(JAM_LINE, ctx);
 
     REQUIRE(e.has_value());
     auto has = [&](const std::string& label) {
@@ -5609,7 +5801,7 @@ TEST_CASE("AFC recovery actions flag only the ones that move filament through th
                                  {{"tool_start_status", true}, {"lane_loaded", "lane2"}});
         helix::ClassifyContext ctx;
         ctx.is_paused = true;
-        auto e = helper.classify_error(kJamLine, ctx);
+        auto e = helper.classify_error(JAM_LINE, ctx);
         REQUIRE(e.has_value());
 
         CHECK(flag_of(e, "Resume") == 1);  // resuming the print extrudes
@@ -5624,7 +5816,7 @@ TEST_CASE("AFC recovery actions flag only the ones that move filament through th
                                  {{"tool_start_status", false}, {"lane_loaded", "lane2"}});
         helix::ClassifyContext ctx;
         ctx.is_paused = true;
-        auto e = helper.classify_error(kJamLine, ctx);
+        auto e = helper.classify_error(JAM_LINE, ctx);
         REQUIRE(e.has_value());
 
         CHECK(flag_of(e, "Eject") == 0);

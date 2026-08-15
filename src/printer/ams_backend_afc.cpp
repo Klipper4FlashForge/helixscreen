@@ -143,7 +143,7 @@ std::string afc_state_detail(std::string_view raw) {
         const char* token;
         const char* label;
     };
-    static constexpr StateLabel kLabels[] = {
+    static constexpr StateLabel LABELS[] = {
         {"idle", "Idle"},
         {"initialized", "Initialized"},
         {"loading", "Loading"},
@@ -157,16 +157,16 @@ std::string afc_state_detail(std::string_view raw) {
         {"toolpickup", "Picking up tool"},
     };
     const std::string token = ams_normalize_state_token(raw);
-    for (const auto& e : kLabels) {
+    for (const auto& e : LABELS) {
         if (token == e.token)
             return lv_tr(e.label);
     }
     return humanize_state(raw);
 }
 
-// [L067] kLabels feeds lv_tr() through a variable, which the translation
+// [L067] LABELS feeds lv_tr() through a variable, which the translation
 // extractor cannot see. Name each label literally here so it lands in the
-// catalogs. Keep in sync with kLabels above.
+// catalogs. Keep in sync with LABELS above.
 // clang-format off
 void afc_state_translation_hints_() {
     (void)lv_tr("Idle"); (void)lv_tr("Initialized"); (void)lv_tr("Loading");
@@ -264,7 +264,7 @@ void AmsBackendAfc::on_started() {
     // ingest AFC's as if the user had authored them.
     if (api_) {
         override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
-            api_, "afc", helix::ams::lane_key_style_for(get_type()), kOverrideNamespace);
+            api_, "afc", helix::ams::lane_key_style_for(get_type()), OVERRIDE_NAMESPACE);
         auto loaded = override_store_->load_blocking();
         const auto loaded_count = loaded.size();
         {
@@ -472,8 +472,8 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
         // Arm the drain. printer.AFC.message is a FIFO head — one clear pops one
         // entry, so a second queued error would otherwise stay on screen and look
         // exactly like the Reset having done nothing. The drain runs until the
-        // queue reports empty; kMessageDrainMaxClears is only the runaway guard.
-        message_drain_budget_ = kMessageDrainMaxClears;
+        // queue reports empty; MESSAGE_DRAIN_MAX_CLEARS is only the runaway guard.
+        message_drain_budget_ = MESSAGE_DRAIN_MAX_CLEARS;
         message_drain_pending_ = false;
         // Bound the arm in wall-clock time. If the queue was already empty, no
         // later delta will carry `message` at all, so the empty-message disarm
@@ -498,7 +498,7 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
     // keeps printer.AFC.message populated long after current_state returns to
     // Idle, and AFC_RESET does not touch it.
     spdlog::info("[AMS AFC] Clearing fault (draining message queue, max {} clears)",
-                 kMessageDrainMaxClears);
+                 MESSAGE_DRAIN_MAX_CLEARS);
     // execute_gcode_notify, matching cancel(): the user pressed a button, so a
     // failed RESET_FAILURE must surface rather than being logged silently.
     AmsError failure_reset = execute_gcode_notify(
@@ -540,7 +540,7 @@ void AmsBackendAfc::maybe_drain_message_queue() {
             // the budget is spent, so nothing downstream records it.
             spdlog::warn("[AMS AFC] Message drain reached its {}-clear cap; sending the "
                          "last clear and stopping",
-                         kMessageDrainMaxClears);
+                         MESSAGE_DRAIN_MAX_CLEARS);
         }
     }
 
@@ -909,6 +909,54 @@ std::string to_lower_copy(const std::string& s) {
     return out;
 }
 
+/// Highest tool number a lane may claim. Anything above this is treated as
+/// garbage rather than grown into, so a malformed field cannot size a vector.
+constexpr int AFC_MAX_TOOL_NUMBER = 64;
+
+/// Parse AFC's per-lane `map` field into tool numbers, in the order AFC sent them.
+/// Also used for the scalar `current_map`, which shares the `T<n>` token grammar and
+/// simply yields zero or one entry.
+///
+/// Two wire shapes are live at once and both must keep working. Before virtual
+/// tools (AFC #605) a lane's map is a single `"T0"` string; from #605 on it is
+/// ALWAYS a list — even a lane with exactly one tool, and even when virtual tools
+/// are left disabled — so the list shape is what every AFC install sends once that
+/// version is out, not just the ones that opted in.
+///
+/// The tool number must be ALL digits: `std::stoi("14,13")` returns 14 without
+/// throwing, so a laxer parse would turn a hypothetical comma-joined string into a
+/// confident, wrong, silent single mapping. Unparseable entries are skipped
+/// individually — one junk element does not discard a lane's good ones.
+std::vector<int> parse_afc_lane_map(const nlohmann::json& map_value) {
+    auto parse_one = [](const nlohmann::json& value, std::vector<int>& out) {
+        if (!value.is_string())
+            return;
+        const std::string token = value.get<std::string>();
+        if (token.size() < 2 || token[0] != 'T')
+            return;
+        const std::string digits = token.substr(1);
+        if (!std::all_of(digits.begin(), digits.end(),
+                         [](unsigned char c) { return std::isdigit(c) != 0; }))
+            return;
+        try {
+            const int tool = std::stoi(digits);
+            if (tool >= 0 && tool <= AFC_MAX_TOOL_NUMBER)
+                out.push_back(tool);
+        } catch (...) {
+            // Out of int range — skip
+        }
+    };
+
+    std::vector<int> tools;
+    if (map_value.is_array()) {
+        for (const auto& entry : map_value)
+            parse_one(entry, tools);
+    } else {
+        parse_one(map_value, tools);
+    }
+    return tools;
+}
+
 } // namespace
 
 std::optional<std::string>
@@ -968,14 +1016,14 @@ bool AmsBackendAfc::is_narration_drift_candidate(const std::string& line) const 
 
     // ...minus the lines AFC emits every toolchange that have no phase by design.
     // Without this the log would report them as drift forever.
-    static constexpr const char* kKnownPhaseless[] = {
+    static constexpr const char* KNOWN_PHASELESS[] = {
         "tool change",
         "toolchange",
         "already loaded",
         "total change time",
         "rotation distance reset",
     };
-    for (const char* known : kKnownPhaseless) {
+    for (const char* known : KNOWN_PHASELESS) {
         if (s.find(known) != std::string::npos)
             return false;
     }
@@ -2495,69 +2543,118 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
                   slot_index, sensors.prep, sensors.load, sensors.loaded_to_hub,
                   slot_status_to_string(slot.status));
 
-    // Parse tool mapping from "map" field. This function receives Moonraker
-    // notify_status_update DELTAS (only changed fields), so an ABSENT "map" means
-    // "unchanged" and must NOT clear the mapping — same partial-delta rule the
+    // Parse tool mapping from the "map" / "current_map" pair. This function receives
+    // Moonraker notify_status_update DELTAS (only changed fields), so an ABSENT field
+    // means "unchanged" and must NOT clear the mapping — same partial-delta rule the
     // status block above applies. Only a PRESENT value is authoritative:
-    //   string "T0"    → map to that tool
-    //   null           → unmapped, clear
-    //   array/object   → speculative multi-tool shape (AFC #605), unsupported;
-    //                    clear + warn once per lane so it surfaces in logs.
-    if (data.contains("map")) {
-        bool mapped = false;
-        if (data["map"].is_string()) {
-            std::string map_str = data["map"].get<std::string>();
-            // Parse "T{N}" format
-            if (map_str.size() >= 2 && map_str[0] == 'T') {
-                try {
-                    int tool_num = std::stoi(map_str.substr(1));
-                    if (tool_num >= 0 && tool_num <= 64) {
-                        // Update registry tool mapping (also sets slot.mapped_tool).
-                        // Firmware-sourced: this is AFC's own `map` field coming
-                        // back over the subscription, which is the only write here
-                        // that proves the printer applied a mapping (#1270).
-                        // set_slot_info()'s write is NOT this — that one is our
-                        // own intent, sent as SET_MAP a few lines later.
-                        slots_.set_tool_mapping(
-                            slot_index, tool_num,
-                            helix::printer::SlotRegistry::MappingSource::Firmware);
-                        spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, tool_num);
-                        mapped = true;
+    //   map: string "T0"        → AFC before virtual tools; one tool per lane
+    //   map: array ["T0", ...]  → AFC with virtual tools (#605), where map is ALWAYS
+    //                             a list, single-tool lanes included
+    //   map: null/empty/junk    → unmapped, clear
+    //   current_map: "T11"      → which of map's tools the lane is ACTUALLY on
+    //
+    // The two fields move independently — AFC_ADD_MAPPING sends map alone, a tool
+    // change within a lane sends current_map alone — so each is handled on its own
+    // and the chosen tool is recomputed from whatever we know after both.
+    if (data.contains("current_map")) {
+        // A lane with one tool may report current_map as null or "": upstream
+        // describes it as holding the active tool "when more than one T(n) is mapped
+        // to that lane". Empty therefore means "no news", never "unmap" — map is the
+        // only field that may unmap a lane.
+        const std::vector<int> current = parse_afc_lane_map(data["current_map"]);
+        if (!current.empty())
+            lane_current_tool_[lane_name] = current.front();
+    }
 
-                        // Cross-check against the T-commands AFC actually registered
-                        // with Klipper (AFC.maps, v1.2.0+). A lane claiming a tool
-                        // that has no registered command means change_tool() would
-                        // send gcode the firmware does not know. Diagnostic only —
-                        // the lane's own map field stays authoritative, since maps
-                        // is absent entirely before v1.2.0.
-                        if (!afc_tool_cmds_.empty() &&
-                            std::find(afc_tool_cmds_.begin(), afc_tool_cmds_.end(), map_str) ==
-                                afc_tool_cmds_.end() &&
-                            tool_cmd_missing_warned_.insert(tool_num).second) {
-                            spdlog::warn("[AMS AFC] Lane {} maps to {} but AFC registered no such "
-                                         "command ({} registered) — a tool change to T{} would "
-                                         "fail",
-                                         lane_name, map_str, afc_tool_cmds_.size(), tool_num);
-                        }
-                    }
-                } catch (...) {
-                    // Invalid tool number format — fall through to reset
+    if (data.contains("map") || data.contains("current_map")) {
+        // A current_map-only delta carries no tool list. That is not a problem: the
+        // lane's tools did not change, only which of them is active, and the
+        // remembered pick below is enough to retarget on its own.
+        const bool has_map = data.contains("map");
+        const std::vector<int> tools =
+            has_map ? parse_afc_lane_map(data["map"]) : std::vector<int>{};
+
+        if (has_map && tools.empty()) {
+            // Present-but-null, empty list, or malformed → authoritative unmap.
+            // Forget the remembered pick too, so a later remap that happens to list
+            // the same tool cannot resurrect it without AFC restating current_map.
+            lane_current_tool_.erase(lane_name);
+            slots_.clear_tool_mapping(slot_index);
+        } else {
+            // One tool per lane is all SlotRegistry can express: set_tool_mapping()
+            // drops the slot's previous tool from the forward map, so writing N tools
+            // for one lane would leave only the last one reachable. Prefer the tool
+            // AFC named in current_map; it is the only authority on which one a
+            // multi-tool lane is driving. Fall back to the LOWEST when AFC has not
+            // told us — pre-#605 firmware, or before the first current_map arrives.
+            // That fallback is arbitrary-but-stable, not a claim about AFC's
+            // ordering: its list is not sorted. The extras are not tracked, so a tool
+            // change to one of them will not resolve to this lane until the registry
+            // models many-to-one.
+            const auto remembered = lane_current_tool_.find(lane_name);
+            std::optional<int> tool_num;
+
+            if (remembered != lane_current_tool_.end() &&
+                (!has_map ||
+                 std::find(tools.begin(), tools.end(), remembered->second) != tools.end())) {
+                // map stays the authority on which tools a lane owns; current_map
+                // only SELECTS among them. A remembered tool that a present map no
+                // longer lists is stale (AFC_REMOVE_MAPPING) or drift we do not
+                // understand — either way, drop it and fall back.
+                tool_num = remembered->second;
+            } else {
+                if (remembered != lane_current_tool_.end())
+                    lane_current_tool_.erase(remembered);
+                if (!tools.empty())
+                    tool_num = *std::min_element(tools.begin(), tools.end());
+            }
+
+            // No value means a current_map-only delta we could not corroborate and
+            // no list to fall back on. Treat it as a partial delta and keep the
+            // existing mapping — falling through here must NOT skip the rest of the
+            // lane parse below, so this is a guard rather than an early return.
+            if (tool_num.has_value()) {
+                const int chosen = *tool_num;
+
+                // Firmware-sourced: this is AFC's own `map` field coming back over
+                // the subscription, which is the only write here that proves the
+                // printer applied a mapping (#1270). set_slot_info()'s write is NOT
+                // this — that one is our own intent, sent as SET_MAP a few lines
+                // later.
+                slots_.set_tool_mapping(slot_index, chosen,
+                                        helix::printer::SlotRegistry::MappingSource::Firmware);
+                spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, chosen);
+
+                if (tools.size() > 1 && multi_tool_warned_lanes_.insert(lane_name).second) {
+                    // Logged in AFC's own order, which is not sorted.
+                    std::string tool_list;
+                    for (int t : tools)
+                        tool_list += (tool_list.empty() ? "T" : ", T") + std::to_string(t);
+                    spdlog::warn("[AMS AFC] Lane {} maps to {} tools ({}) — virtual tools (AFC "
+                                 "#605); using T{}, the rest are not tracked",
+                                 lane_name, tools.size(), tool_list, chosen);
+                }
+
+                // Cross-check against the T-commands AFC actually registered with
+                // Klipper (AFC.maps, v1.2.0+). A lane claiming a tool that has no
+                // registered command means change_tool() would send gcode the
+                // firmware does not know. Diagnostic only — the lane's own map field
+                // stays authoritative, since maps is absent entirely before v1.2.0.
+                // Checks only the tool we actually mapped, for the same reason the
+                // extras are dropped above.
+                const std::string map_cmd = "T" + std::to_string(chosen);
+                if (!afc_tool_cmds_.empty() &&
+                    std::find(afc_tool_cmds_.begin(), afc_tool_cmds_.end(), map_cmd) ==
+                        afc_tool_cmds_.end() &&
+                    tool_cmd_missing_warned_.insert(chosen).second) {
+                    spdlog::warn("[AMS AFC] Lane {} maps to {} but AFC registered no such command "
+                                 "({} registered) — a tool change to T{} would fail",
+                                 lane_name, map_cmd, afc_tool_cmds_.size(), chosen);
                 }
             }
-        } else if (!data["map"].is_null()) {
-            // Present but not a string: array/object multi-tool shape (unsupported)
-            if (map_non_string_warned_lanes_.insert(lane_name).second) {
-                spdlog::warn("[AMS AFC] Lane {} 'map' field is not a string (got array/object); "
-                             "multi-tool map is not supported — see AFC #605",
-                             lane_name);
-            }
-        }
-        if (!mapped) {
-            // Present-but-null, present-non-string, or malformed → authoritative unmap
-            slots_.clear_tool_mapping(slot_index);
         }
     }
-    // "map" absent → partial delta, keep existing mapping
+    // both fields absent → partial delta, keep existing mapping
 
     // Parse hub routing for this lane ("direct" or hub name like "HTLF_1")
     if (data.contains("hub") && data["hub"].is_string()) {
@@ -2566,9 +2663,14 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         spdlog::trace("[AMS AFC] Lane {} hub routing: {}", lane_name, hub);
     }
 
-    // Parse extruder name for shared-extruder deduplication
+    // Extruder name, for shared-extruder dedup and for toolhead identity.
+    // AFC names the SECTION here; SlotInfo::extruder_name is documented as the
+    // Klipper name and its consumers parse it as one, so resolve at this
+    // boundary rather than leaving every reader to guess which it holds.
+    // Dedup works either way (it compares strings), so an unanswered configfile
+    // costs identity, never the grouping.
     if (data.contains("extruder") && data["extruder"].is_string()) {
-        slot.extruder_name = data["extruder"].get<std::string>();
+        slot.extruder_name = klipper_extruder_name_unlocked(data["extruder"].get<std::string>());
     }
 
     // Parse endless spool backup from "runout_lane" field
@@ -3049,9 +3151,14 @@ void AmsBackendAfc::rebuild_unit_map_from_klipper() {
                         // For HUB units, derive physical tool label from extruder
                         // name. An unrecognisable name leaves hub_tool_label at its
                         // -1 "absent" default rather than inventing a number.
+                        // ui.extruders holds AFC SECTION names, so this must go
+                        // through the resolver — parsing them directly left every
+                        // unit at -1 on a renamed config and defeated the
+                        // cross-unit nozzle merge entirely.
                         if (ui.topology == PathTopology::HUB && ui.extruders.size() == 1) {
-                            if (const auto n = helix::tool_number_for_extruder(ui.extruders[0])) {
-                                sys_unit.hub_tool_label = *n;
+                            const int n = tool_index_for_extruder_unlocked(ui.extruders[0]);
+                            if (n >= 0) {
+                                sys_unit.hub_tool_label = n;
                             }
                         }
                         break;
@@ -3178,21 +3285,21 @@ void AmsBackendAfc::check_afc_feature_level(const nlohmann::json& lane_status) {
     if (!config) {
         return;
     }
-    constexpr const char* kNoticeShownKey = "/ams/afc_upgrade_notice_shown";
+    constexpr const char* NOTICE_SHOWN_KEY = "/ams/afc_upgrade_notice_shown";
 
     if (modern) {
         // Re-arm, so a downgrade is reported again rather than silently accepted.
-        if (config->get<bool>(kNoticeShownKey, false)) {
-            config->set<bool>(kNoticeShownKey, false);
+        if (config->get<bool>(NOTICE_SHOWN_KEY, false)) {
+            config->set<bool>(NOTICE_SHOWN_KEY, false);
             config->save();
         }
         return;
     }
 
-    if (config->get<bool>(kNoticeShownKey, false)) {
+    if (config->get<bool>(NOTICE_SHOWN_KEY, false)) {
         return; // Already told them once; do not nag on every boot.
     }
-    config->set<bool>(kNoticeShownKey, true);
+    config->set<bool>(NOTICE_SHOWN_KEY, true);
     config->save();
 
     // Advisory, not an error — nothing is broken, some detail is just missing.
@@ -3427,17 +3534,17 @@ void AmsBackendAfc::query_afc_configfile_topology() {
                 // configfile.settings, so `[AFC_extruder T1]` arrives as
                 // "afc_extruder t1". The section suffix is matched
                 // case-insensitively against the names AFC.extruders publishes.
-                static constexpr const char* kExtruderPrefix = "afc_extruder ";
-                static constexpr const char* kToolchangerPrefix = "afc_toolchanger ";
+                static constexpr const char* EXTRUDER_PREFIX = "afc_extruder ";
+                static constexpr const char* TOOLCHANGER_PREFIX = "afc_toolchanger ";
                 std::unordered_map<std::string, std::string> found;
                 bool saw_toolchanger = false;
                 for (auto it = settings.begin(); it != settings.end(); ++it) {
                     const std::string key = to_lower_copy(it.key());
-                    if (key.rfind(kToolchangerPrefix, 0) == 0) {
+                    if (key.rfind(TOOLCHANGER_PREFIX, 0) == 0) {
                         saw_toolchanger = true;
                         continue;
                     }
-                    if (key.rfind(kExtruderPrefix, 0) != 0 || !it.value().is_object()) {
+                    if (key.rfind(EXTRUDER_PREFIX, 0) != 0 || !it.value().is_object()) {
                         continue;
                     }
                     const auto& section = it.value();
@@ -3445,12 +3552,15 @@ void AmsBackendAfc::query_afc_configfile_topology() {
                         !section["extruder_name"].is_string()) {
                         continue;
                     }
-                    found[key.substr(std::strlen(kExtruderPrefix))] =
+                    found[key.substr(std::strlen(EXTRUDER_PREFIX))] =
                         section["extruder_name"].get<std::string>();
                 }
 
                 std::lock_guard<std::mutex> lock(mutex_);
                 extruder_klipper_names_ = std::move(found);
+                // Settings were read. Only now does an absent extruder_name
+                // mean the config lacks one rather than that we have not asked.
+                configfile_answered_ = true;
                 // A newly-arrived mapping can resolve a name that already
                 // warned; let it warn again if it still cannot be resolved.
                 extruder_tool_index_warned_.clear();
@@ -3464,6 +3574,15 @@ void AmsBackendAfc::query_afc_configfile_topology() {
                               "toolchanger section {}",
                               extruder_klipper_names_.size(),
                               saw_toolchanger ? "present" : "absent");
+
+                // This query races the first status frames — on the reporter's
+                // machine it landed 17ms after the units were first mapped, so
+                // every toolhead label was derived from names it could not yet
+                // resolve. Redo that derivation now rather than carrying wrong
+                // labels until AFC happens to push another unit frame.
+                if (!extruder_klipper_names_.empty() && !unit_infos_.empty()) {
+                    rebuild_unit_map_from_klipper();
+                }
             });
         },
         [](const MoonrakerError& err) {
@@ -3473,55 +3592,79 @@ void AmsBackendAfc::query_afc_configfile_topology() {
         });
 }
 
+std::string AmsBackendAfc::klipper_extruder_name_unlocked(const std::string& section_name) const {
+    // configfile-sourced th_extruder_name is authoritative — it is what AFC
+    // itself indexes on, and the section name is free to be anything. Taken
+    // only when it actually names an extruder: AFC accepts any value
+    // containing "extruder" (AFC_extruder.py:384), so a config can carry one
+    // that no numbering can read, and the section name is the better guess
+    // then. Checking here rather than at each caller keeps one fallback chain.
+    const auto it = extruder_klipper_names_.find(to_lower_copy(section_name));
+    if (it != extruder_klipper_names_.end() && helix::tool_number_for_extruder(it->second)) {
+        return it->second;
+    }
+    // Fall back to the section name. `[AFC_extruder extruder1]` is what AFC's
+    // own docs show and what every published config uses, and on v1.1.0 (no
+    // extruder_name option at all) it is the ONLY thing that exists.
+    return section_name;
+}
+
+std::string AmsBackendAfc::afc_extruder_section_for_tool_unlocked(int tool_index) const {
+    if (tool_index < 0) {
+        return "";
+    }
+    for (const auto& section : extruder_names_) {
+        const auto n = helix::tool_number_for_extruder(klipper_extruder_name_unlocked(section));
+        if (n && *n == tool_index) {
+            return section;
+        }
+    }
+    return "";
+}
+
 int AmsBackendAfc::tool_index_for_extruder_unlocked(const std::string& ext_name) const {
     // Mirrors AFC_Toolchanger.py:231-232 (v1.2.0):
     //     name = lane.extruder_obj.th_extruder_name
     //     tool_index = 0 if name == "extruder" else int(name.replace("extruder", ""))
-    auto index_of = [](const std::string& klipper_name) -> int {
-        if (klipper_name == "extruder") {
-            return 0;
-        }
-        const auto pos = klipper_name.find("extruder");
-        if (pos == std::string::npos) {
-            return -1;
-        }
-        std::string rest = klipper_name;
-        rest.erase(pos, std::strlen("extruder"));
-        if (rest.empty() || rest.find_first_not_of("0123456789") != std::string::npos) {
-            return -1;
-        }
-        try {
-            return std::stoi(rest);
-        } catch (const std::exception&) {
-            return -1;
-        }
-    };
-
-    // configfile-sourced th_extruder_name is authoritative — it is what AFC
-    // itself indexes on, and the section name is free to be anything.
-    auto it = extruder_klipper_names_.find(to_lower_copy(ext_name));
-    if (it != extruder_klipper_names_.end()) {
-        const int idx = index_of(it->second);
-        if (idx >= 0) {
-            return idx;
-        }
+    // helix::tool_number_for_extruder() is that grammar, hardened and shared —
+    // it is the only copy, so a toolhead cannot be numbered one way here and
+    // another way in the badge or lane-attribution path.
+    if (const auto n = helix::tool_number_for_extruder(klipper_extruder_name_unlocked(ext_name))) {
+        return *n;
     }
 
-    // Fall back to the section name. `[AFC_extruder extruder1]` is what AFC's
-    // own docs show and what every published config uses, and on v1.1.0 (no
-    // extruder_name option at all) it is the ONLY thing that exists.
-    const int derived = index_of(ext_name);
-    if (derived >= 0) {
-        return derived;
+    // Before configfile answers, "unresolvable" is not established. A section
+    // whose name is not `extruder<N>` MUST carry extruder_name or AFC refuses
+    // to start (AFC_extruder.py:384 rejects any th_extruder_name without
+    // "extruder" in it), so on every machine that boots at all the answer
+    // exists and has merely not arrived — the query races the first status
+    // frames by milliseconds. Warning here told users to add an option they
+    // were already required to have. query_afc_configfile_topology() clears
+    // the warned set when it lands, so a config that genuinely lacks one still
+    // gets told, once, with the evidence in hand.
+    if (!configfile_answered_) {
+        spdlog::debug("[AMS AFC] Tool number for AFC_extruder '{}' unresolved for now — "
+                      "configfile.settings has not answered yet",
+                      ext_name);
+        return -1;
     }
 
     if (extruder_tool_index_warned_.insert(ext_name).second) {
-        spdlog::warn("[AMS AFC] Cannot determine a tool number for AFC_extruder '{}': the "
-                     "section name carries no extruder index and configfile.settings has no "
-                     "extruder_name for it. Lane attribution for this toolhead is disabled "
-                     "(it is NOT being assumed to be T0). Set `extruder_name: extruder<N>` in "
-                     "the [AFC_extruder {}] section.",
-                     ext_name, ext_name);
+        const auto it = extruder_klipper_names_.find(to_lower_copy(ext_name));
+        if (it != extruder_klipper_names_.end()) {
+            spdlog::warn("[AMS AFC] Cannot determine a tool number for AFC_extruder '{}': its "
+                         "extruder_name is '{}', which is not a Klipper extruder object name "
+                         "(expected `extruder` or `extruder<N>`). Lane attribution for this "
+                         "toolhead is disabled (it is NOT being assumed to be T0).",
+                         ext_name, it->second);
+        } else {
+            spdlog::warn("[AMS AFC] Cannot determine a tool number for AFC_extruder '{}': the "
+                         "section name carries no extruder index and configfile.settings has no "
+                         "extruder_name for it. Lane attribution for this toolhead is disabled "
+                         "(it is NOT being assumed to be T0). Set `extruder_name: extruder<N>` in "
+                         "the [AFC_extruder {}] section.",
+                         ext_name, ext_name);
+        }
     }
     return -1;
 }
@@ -3770,8 +3913,10 @@ void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot, bool afc_st
 
             system_info_.mount_state = MountState::MOUNTED;
             // mounted_tool is an int for consumers that predate extruder-name
-            // identity; an unparseable name keeps the historical 0 fallback.
-            system_info_.mounted_tool = helix::tool_number_for_extruder(mounted_name).value_or(0);
+            // identity. -1 is its "unknown" value, already used by the NONE
+            // branch above; the old .value_or(0) here meant a renamed config
+            // had every extruder in turn claim to be T0 as it was parsed.
+            system_info_.mounted_tool = tool_index_for_extruder_unlocked(mounted_name);
 
             // The mounted extruder names its own seated lane. Precise even where
             // several lanes feed one extruder, which a lane→tool map cannot be.
@@ -3871,10 +4016,13 @@ void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot, bool afc_st
         // filament" note), so that is true on essentially every real multi-tool
         // machine. The suppression would never fire in production and only look
         // fixed in a fixture with no per-extruder data.
+        // extruder_sensors_ is keyed by AFC SECTION name, so this needs the
+        // resolver too; parsing the key directly matched nothing on a renamed
+        // config and silently took the "no evidence" branch below every frame.
         const AfcExtruderSensors* mounted_sensors = nullptr;
         for (const auto& entry : extruder_sensors_) {
-            const auto tool_num = helix::tool_number_for_extruder(entry.first);
-            if (tool_num && *tool_num == system_info_.mounted_tool) {
+            const int tool_num = tool_index_for_extruder_unlocked(entry.first);
+            if (tool_num >= 0 && tool_num == system_info_.mounted_tool) {
                 mounted_sensors = &entry.second;
                 break;
             }
@@ -5801,9 +5949,19 @@ AmsError AmsBackendAfc::execute_device_action(const std::string& action_id, cons
         try {
             float val = std::any_cast<float>(value);
 
-            std::string ext_name = "extruder";
-            if (th_tool > 0) {
-                ext_name = "extruder" + std::to_string(th_tool);
+            // UPDATE_TOOLHEAD_SENSORS / SAVE_EXTRUDER_VALUES are mux commands
+            // keyed on the AFC_extruder SECTION name (AFC_extruder.py:364-369,
+            // muxed on self.name = the section suffix), not on the Klipper
+            // extruder name. Rebuilding "extruder<N>" here addressed a mux key
+            // that does not exist on a renamed config, so both commands failed.
+            // Same key the sibling AFC_SET_EXTRUDER_LED action already uses.
+            std::string ext_name;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                ext_name = afc_extruder_section_for_tool_unlocked(th_tool);
+            }
+            if (ext_name.empty()) {
+                ext_name = (th_tool > 0) ? "extruder" + std::to_string(th_tool) : "extruder";
             }
 
             std::string param;

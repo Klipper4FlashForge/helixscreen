@@ -14,6 +14,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <zlib.h>
@@ -184,8 +185,141 @@ TEST_CASE("DebugBundleCollector: BundleResult defaults are reasonable", "[debug-
 
 TEST_CASE("DebugBundleCollector: collect_printer_info() returns valid JSON", "[debug-bundle]") {
     // Printer may not be connected, but should not crash
-    json printer = helix::DebugBundleCollector::collect_printer_info();
+    json printer = helix::DebugBundleCollector::collect_printer_info(
+        helix::DebugBundleCollector::snapshot_printer_state());
     REQUIRE(printer.is_object());
+}
+
+TEST_CASE("DebugBundleCollector: collect_printer_info() renders a snapshot without PrinterState",
+          "[debug-bundle]") {
+    // The section is pure assembly now, so the whole state table is reachable
+    // without a live printer — and without the LVGL subject reads that used to
+    // happen on the upload worker.
+    helix::PrinterSnapshot snap;
+    snap.captured = true;
+    snap.model = "Adventurer 5X";
+    snap.klipper_version = "v0.13.0-746-ZMOD";
+    snap.connection_state = 2; // connected
+    snap.klippy_state = 2;     // shutdown
+
+    const json printer = helix::DebugBundleCollector::collect_printer_info(snap);
+    CHECK(printer["model"] == "Adventurer 5X");
+    CHECK(printer["klipper_version"] == "v0.13.0-746-ZMOD");
+    CHECK(printer["connection_state"] == "connected");
+    CHECK(printer["klippy_state"] == "shutdown");
+
+    SECTION("out-of-range enums are dropped rather than indexing off the table") {
+        helix::PrinterSnapshot bad;
+        bad.captured = true;
+        bad.connection_state = 99;
+        bad.klippy_state = -1;
+        const json out = helix::DebugBundleCollector::collect_printer_info(bad);
+        CHECK_FALSE(out.contains("connection_state"));
+        CHECK_FALSE(out.contains("klippy_state"));
+    }
+
+    SECTION("an uncaptured snapshot still yields a well-formed object") {
+        const json out = helix::DebugBundleCollector::collect_printer_info({});
+        REQUIRE(out.is_object());
+        CHECK_FALSE(out.contains("klipper_version"));
+    }
+}
+
+// ============================================================================
+// walk_include_tree() — the traversal that shipped a UAF in v0.99.112
+// ============================================================================
+
+namespace {
+/// Fetcher backed by a table; anything not in the table is a 404.
+helix::ConfigFetcher table_fetcher(const std::map<std::string, std::string>& files) {
+    return [files](const std::string& path) {
+        auto it = files.find(path);
+        if (it == files.end())
+            return helix::ConfigFetchResult{404, ""};
+        return helix::ConfigFetchResult{200, it->second};
+    };
+}
+} // namespace
+
+TEST_CASE("DebugBundleCollector: walk_include_tree follows a multi-include root",
+          "[debug-bundle]") {
+    // THE REGRESSION CASE. The walk binds a name to queue[i] and pushes onto
+    // `queue` while still iterating the remaining [include] patterns of the same
+    // file. With `const std::string&` the first push reallocated (an
+    // initializer-list vector has capacity exactly 1) and every later pattern
+    // read freed memory — SIGBUS on the AD5X's mips build. Two includes in the
+    // root is the minimum that reproduces it, so this must stay >= 2.
+    const std::vector<std::string> available = {"printer.cfg", "a.cfg", "b.cfg", "c.cfg"};
+    auto fetch = table_fetcher({
+        {"printer.cfg", "[include a.cfg]\n[include b.cfg]\n[include c.cfg]\n"},
+        {"a.cfg", "[stepper_x]\nstep_pin: PA1\n"},
+        {"b.cfg", "[stepper_y]\nstep_pin: PA2\n"},
+        {"c.cfg", "[stepper_z]\nstep_pin: PA3\n"},
+    });
+
+    std::string truncated = "sentinel";
+    size_t bytes = 0;
+    const json files = helix::DebugBundleCollector::walk_include_tree("printer.cfg", available,
+                                                                      fetch, &truncated, &bytes);
+
+    REQUIRE(files.is_object());
+    CHECK(files.size() == 4);
+    CHECK(files.contains("printer.cfg"));
+    CHECK(files.contains("a.cfg"));
+    CHECK(files.contains("b.cfg"));
+    CHECK(files.contains("c.cfg"));
+    CHECK(truncated.empty());
+    CHECK(bytes > 0);
+}
+
+TEST_CASE("DebugBundleCollector: walk_include_tree terminates on an include cycle",
+          "[debug-bundle]") {
+    const std::vector<std::string> available = {"printer.cfg", "loop.cfg"};
+    auto fetch = table_fetcher({
+        {"printer.cfg", "[include loop.cfg]\n"},
+        {"loop.cfg", "[include printer.cfg]\n[include loop.cfg]\n"},
+    });
+
+    const json files =
+        helix::DebugBundleCollector::walk_include_tree("printer.cfg", available, fetch);
+    CHECK(files.size() == 2); // seen-set stops the cycle
+}
+
+TEST_CASE("DebugBundleCollector: walk_include_tree resolves nested relative includes",
+          "[debug-bundle]") {
+    // An include inside mod/base.cfg is relative to mod/, and a glob must not
+    // cross a '/'.
+    const std::vector<std::string> available = {"printer.cfg", "mod/base.cfg", "mod/ifs.cfg",
+                                                "mod/sub/deep.cfg"};
+    auto fetch = table_fetcher({
+        {"printer.cfg", "[include mod/base.cfg]\n"},
+        {"mod/base.cfg", "[include ifs.cfg]\n[include *.cfg]\n"},
+        {"mod/ifs.cfg", "[ifs]\n"},
+        {"mod/sub/deep.cfg", "[deep]\n"},
+    });
+
+    const json files =
+        helix::DebugBundleCollector::walk_include_tree("printer.cfg", available, fetch);
+    CHECK(files.contains("mod/ifs.cfg"));
+    CHECK_FALSE(files.contains("mod/sub/deep.cfg")); // '*' does not cross '/'
+}
+
+TEST_CASE("DebugBundleCollector: walk_include_tree reports HTTP errors but skips 404s",
+          "[debug-bundle]") {
+    const std::vector<std::string> available = {"printer.cfg", "gone.cfg", "broken.cfg"};
+    auto fetch = [](const std::string& path) {
+        if (path == "printer.cfg")
+            return helix::ConfigFetchResult{200, "[include gone.cfg]\n[include broken.cfg]\n"};
+        if (path == "broken.cfg")
+            return helix::ConfigFetchResult{500, ""};
+        return helix::ConfigFetchResult{404, ""};
+    };
+
+    const json files =
+        helix::DebugBundleCollector::walk_include_tree("printer.cfg", available, fetch);
+    CHECK_FALSE(files.contains("gone.cfg")); // a stale include is Klipper's problem, not ours
+    REQUIRE(files.contains("broken.cfg"));
+    CHECK(files["broken.cfg"]["error"] == "HTTP 500");
 }
 
 // ============================================================================
@@ -408,12 +542,12 @@ TEST_CASE("DebugBundleCollector: extract_gcode_macro_names captures bare macro n
 TEST_CASE("DebugBundleCollector: extract_gcode_macro_names caps runaway configs",
           "[debug-bundle][filament][macro-names]") {
     json objects = json::array();
-    for (size_t i = 0; i < helix::DebugBundleCollector::kMaxGcodeMacroNames + 50; ++i) {
+    for (size_t i = 0; i < helix::DebugBundleCollector::MAX_GCODE_MACRO_NAMES + 50; ++i) {
         objects.push_back("gcode_macro M" + std::to_string(i));
     }
 
     auto macros = helix::DebugBundleCollector::extract_gcode_macro_names(objects);
-    REQUIRE(macros.size() == helix::DebugBundleCollector::kMaxGcodeMacroNames);
+    REQUIRE(macros.size() == helix::DebugBundleCollector::MAX_GCODE_MACRO_NAMES);
     CHECK(macros[0].get<std::string>() == "M0");
 }
 
@@ -849,7 +983,7 @@ TEST_CASE_METHOD(DebugBundleTestFixture,
 // Bundle 3Q2GB74K ("cannot update HelixScreen", pi32) was undiagnosable because
 // nothing in the bundle said whether the update rows were even rendered. The
 // About overlay binds both "Check for Updates" and "Install Update" to
-// show_update_settings = !in_app_updates_suppressed(); when that is true the
+// show_update_settings = !update_install_suppressed(); when that is true the
 // rows are absent and the user has no in-app path to an update at all.
 // ============================================================================
 
@@ -861,6 +995,7 @@ helix::UpdateDiagnostics healthy_diag() {
     helix::UpdateDiagnostics d;
     d.install_root = "/opt/helixscreen";
     d.install_parent_writable = true;
+    d.install_root_writable = true;
     d.self_update_supported = true;
     d.externally_managed = false;
     d.channel = "stable";
@@ -878,6 +1013,7 @@ TEST_CASE("DebugBundleCollector: build_update_info reports a healthy install as 
 
     REQUIRE(upd["install_root"].get<std::string>() == "/opt/helixscreen");
     REQUIRE(upd["install_parent_writable"].get<bool>() == true);
+    REQUIRE(upd["install_root_writable"].get<bool>() == true);
     REQUIRE(upd["self_update_supported"].get<bool>() == true);
     REQUIRE(upd["externally_managed"].get<bool>() == false);
     REQUIRE(upd["suppressed"].get<bool>() == false);
@@ -897,6 +1033,7 @@ TEST_CASE("DebugBundleCollector: build_update_info marks a read-only install tre
     auto d = healthy_diag();
     // Neither writable nor escalatable — a genuinely read-only rootfs.
     d.install_parent_writable = false;
+    d.install_root_writable = false;
     d.self_update_supported = false;
 
     json upd = helix::DebugBundleCollector::build_update_info(d);
@@ -908,20 +1045,43 @@ TEST_CASE("DebugBundleCollector: build_update_info marks a read-only install tre
     REQUIRE(upd["externally_managed"].get<bool>() == false);
 }
 
-TEST_CASE("DebugBundleCollector: build_update_info leaves a sudo-updatable install unsuppressed",
+TEST_CASE("DebugBundleCollector: build_update_info leaves an in-place-updatable install "
+          "unsuppressed",
           "[debug-bundle][update]") {
-    // The standard Pi shape: /opt is root-owned so the parent isn't writable by
-    // the service user, but install.sh escalates and the swap works. Reporting
-    // this as suppressed is what sent the last "updates are disabled" diagnosis
-    // down the wrong branch, so the two fields must not be conflated.
+    // The standalone-display shape: /opt is root-owned so no rename can happen
+    // there, but the root itself is owned by the service user, and install.sh
+    // replaces its contents in place. Reporting this as suppressed is the bug
+    // that locked a user out for good, so the three fields must stay distinct:
+    // WHICH route is open is the entire diagnostic value.
     auto d = healthy_diag();
     d.install_parent_writable = false;
+    d.install_root_writable = true;
     d.self_update_supported = true;
 
     json upd = helix::DebugBundleCollector::build_update_info(d);
 
     REQUIRE(upd["suppressed"].get<bool>() == false);
     REQUIRE(upd["install_parent_writable"].get<bool>() == false);
+    REQUIRE(upd["install_root_writable"].get<bool>() == true);
+    REQUIRE(upd["self_update_supported"].get<bool>() == true);
+}
+
+TEST_CASE("DebugBundleCollector: build_update_info keeps the sudo-only install distinguishable",
+          "[debug-bundle][update]") {
+    // Neither writability term open, yet self_update_supported() said yes: the
+    // answer came from root escalation alone. Worth telling apart from the two
+    // cases above, because it is the one that stops working the moment the app
+    // runs under the shipped systemd unit (NoNewPrivileges=true blocks sudo).
+    auto d = healthy_diag();
+    d.install_parent_writable = false;
+    d.install_root_writable = false;
+    d.self_update_supported = true;
+
+    json upd = helix::DebugBundleCollector::build_update_info(d);
+
+    REQUIRE(upd["suppressed"].get<bool>() == false);
+    REQUIRE(upd["install_parent_writable"].get<bool>() == false);
+    REQUIRE(upd["install_root_writable"].get<bool>() == false);
     REQUIRE(upd["self_update_supported"].get<bool>() == true);
 }
 
@@ -950,7 +1110,7 @@ TEST_CASE("DebugBundleCollector: build_update_info suppressed matches the UI gat
             json upd = helix::DebugBundleCollector::build_update_info(d);
             INFO("managed=" << managed << " self_update_supported=" << supported);
             REQUIRE(upd["suppressed"].get<bool>() ==
-                    compute_in_app_updates_suppressed(managed, supported));
+                    compute_update_install_suppressed(managed, supported));
         }
     }
 }
@@ -1018,7 +1178,7 @@ TEST_CASE_METHOD(HelixTestFixture,
         REQUIRE(upd["self_update_supported"].get<bool>());
     }
     REQUIRE(upd["externally_managed"].get<bool>() == updates_externally_managed());
-    REQUIRE(upd["suppressed"].get<bool>() == in_app_updates_suppressed());
+    REQUIRE(upd["suppressed"].get<bool>() == update_install_suppressed());
 
     // The exact artifact this device asks for — #993 was a drifted copy of it.
     REQUIRE(upd["platform_asset_name"].get<std::string>() == UpdateChecker::platform_asset_name());
@@ -1072,11 +1232,11 @@ TEST_CASE("UpdateChecker: channel_name covers every channel", "[debug-bundle][up
     REQUIRE(std::string(UpdateChecker::channel_name(UpdateChecker::UpdateChannel::Dev)) == "dev");
 }
 
-TEST_CASE("app_globals: compute_in_app_updates_suppressed truth table", "[debug-bundle][update]") {
-    REQUIRE(compute_in_app_updates_suppressed(false, true) == false); // normal, updatable
-    REQUIRE(compute_in_app_updates_suppressed(true, true) == true);   // firmware-managed
-    REQUIRE(compute_in_app_updates_suppressed(false, false) == true); // read-only install tree
-    REQUIRE(compute_in_app_updates_suppressed(true, false) == true);  // both
+TEST_CASE("app_globals: compute_update_install_suppressed truth table", "[debug-bundle][update]") {
+    REQUIRE(compute_update_install_suppressed(false, true) == false); // normal, updatable
+    REQUIRE(compute_update_install_suppressed(true, true) == true);   // firmware-managed
+    REQUIRE(compute_update_install_suppressed(false, false) == true); // read-only install tree
+    REQUIRE(compute_update_install_suppressed(true, false) == true);  // both
 }
 
 // ----------------------------------------------------------------------------
@@ -1126,6 +1286,12 @@ TEST_CASE_METHOD(HelixTestFixture, "UpdateChecker: config snapshot tracks a chan
     REQUIRE(config != nullptr);
     auto& checker = UpdateChecker::instance();
 
+    // Beta and Dev are only effective while /beta_features is unlocked —
+    // get_channel() clamps to stable otherwise, so without this the snapshot
+    // would read "stable" no matter what the channel key says.
+    const bool prev_beta = config->get<bool>("/beta_features", false);
+    config->set<bool>("/beta_features", true);
+
     config->set<int>("/update/channel", 1); // Beta
     checker.refresh_config_snapshot();
     REQUIRE(checker.config_snapshot().channel == "beta");
@@ -1139,6 +1305,7 @@ TEST_CASE_METHOD(HelixTestFixture, "UpdateChecker: config snapshot tracks a chan
     // The snapshot lives on the process-wide singleton, which the fixture does
     // not reset. Put it back so a later test in this shard sees a clean value.
     config->set<int>("/update/channel", 0);
+    config->set<bool>("/beta_features", prev_beta);
     checker.refresh_config_snapshot();
 }
 
@@ -1363,8 +1530,8 @@ std::vector<LFE> ad5m_logs_root() {
     };
 }
 
-const std::vector<std::string> kKlippyStems = {"klippy.log", "printer.log"};
-const std::vector<std::string> kMoonrakerStems = {"moonraker.log"};
+const std::vector<std::string> KLIPPY_STEMS = {"klippy.log", "printer.log"};
+const std::vector<std::string> MOONRAKER_STEMS = {"moonraker.log"};
 
 } // namespace
 
@@ -1374,48 +1541,48 @@ TEST_CASE("DebugBundleCollector: pick_rotated_sibling finds the crash's real log
         // The trap. crowsnest.log.2026-08-11 is 940 KB and ~5 days newer than the
         // newest klippy rotation, so any "newest rotated file" rule ships a
         // webcam log in place of the crash.
-        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(pi_logs_root(), kKlippyStems) ==
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(pi_logs_root(), KLIPPY_STEMS) ==
                 "klippy.log.2026-06-08");
     }
 
     SECTION("Pi layout: moonraker rotation") {
         REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(
-                    pi_logs_root(), kMoonrakerStems) == "moonraker.log.2026-08-09");
+                    pi_logs_root(), MOONRAKER_STEMS) == "moonraker.log.2026-08-09");
     }
 
     SECTION("AD5M/AD5X layout: klippy's log is printer.log, with an hour suffix") {
-        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(ad5m_logs_root(), kKlippyStems) ==
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(ad5m_logs_root(), KLIPPY_STEMS) ==
                 "printer.log.2026-06-13_15");
     }
 
     SECTION("AD5M layout: the moonraker rotation that held the LYGVE39Y incident") {
         REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(
-                    ad5m_logs_root(), kMoonrakerStems) == "moonraker.log.2026-08-11");
+                    ad5m_logs_root(), MOONRAKER_STEMS) == "moonraker.log.2026-08-11");
     }
 
     SECTION("never the active file, however it sorts") {
         std::vector<LFE> only_active = {{"moonraker.log", 999999, 9999999999.0}};
-        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(only_active, kMoonrakerStems)
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(only_active, MOONRAKER_STEMS)
                     .empty());
     }
 
     SECTION("never a nested path — mod/init.log.1 is not klippy's") {
         std::vector<LFE> nested = {{"mod/printer.log.1", 9999, 9999999999.0}};
-        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(nested, kKlippyStems).empty());
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(nested, KLIPPY_STEMS).empty());
     }
 
     SECTION("never a different daemon that merely shares the suffix shape") {
         std::vector<LFE> other = {{"crowsnest.log.2026-08-11", 940700, 9999999999.0},
                                   {"mainsail-error.log.1", 10, 9999999999.0}};
-        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(other, kKlippyStems).empty());
-        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(other, kMoonrakerStems).empty());
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(other, KLIPPY_STEMS).empty());
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(other, MOONRAKER_STEMS).empty());
     }
 
     SECTION("numeric rotation suffixes count too") {
         std::vector<LFE> numeric = {{"moonraker.log", 100, 500.0},
                                     {"moonraker.log.1", 100, 400.0},
                                     {"moonraker.log.2", 100, 300.0}};
-        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(numeric, kMoonrakerStems) ==
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(numeric, MOONRAKER_STEMS) ==
                 "moonraker.log.1"); // newest of the rotations
     }
 
@@ -1424,12 +1591,12 @@ TEST_CASE("DebugBundleCollector: pick_rotated_sibling finds the crash's real log
         std::vector<LFE> tricky = {{"printer.log_backup.1", 500, 9999999999.0},
                                    {"printer.logger.2", 500, 9999999999.0},
                                    {"printer.log.2026-01-01", 500, 100.0}};
-        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(tricky, kKlippyStems) ==
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling(tricky, KLIPPY_STEMS) ==
                 "printer.log.2026-01-01");
     }
 
     SECTION("empty listing is not a crash") {
-        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling({}, kKlippyStems).empty());
+        REQUIRE(helix::DebugBundleCollector::pick_rotated_sibling({}, KLIPPY_STEMS).empty());
     }
 }
 
@@ -1468,16 +1635,16 @@ TEST_CASE("DebugBundleCollector: condense threshold preserves EVERY proc_stats s
         // Not a defect in the Klipper path — klippy.log has no equivalent block,
         // and this is exactly why moonraker.log cannot inherit the same number.
         auto out = helix::DebugBundleCollector::condense_klipper_log(
-            raw, helix::DebugBundleCollector::kKlipperCondenseMaxRepeats, /*tail_lines=*/0);
+            raw, helix::DebugBundleCollector::KLIPPER_CONDENSE_MAX_REPEATS, /*tail_lines=*/0);
         REQUIRE(count_block(out, "17864624") < 30); // incident sacrificed
         REQUIRE(count_block(out, "17864626") == 30);
     }
 
     SECTION("the moonraker threshold keeps both blocks whole") {
         // Reads the shipping constant, not a copy of it: dropping
-        // kMoonrakerCondenseMaxRepeats back toward Klipper's value fails here.
+        // MOONRAKER_CONDENSE_MAX_REPEATS back toward Klipper's value fails here.
         auto out = helix::DebugBundleCollector::condense_klipper_log(
-            raw, helix::DebugBundleCollector::kMoonrakerCondenseMaxRepeats, /*tail_lines=*/0);
+            raw, helix::DebugBundleCollector::MOONRAKER_CONDENSE_MAX_REPEATS, /*tail_lines=*/0);
         REQUIRE(count_block(out, "17864624") == 30);
         REQUIRE(count_block(out, "17864626") == 30);
     }

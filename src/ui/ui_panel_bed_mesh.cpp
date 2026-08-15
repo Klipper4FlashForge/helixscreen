@@ -42,6 +42,7 @@
 #include "theme_manager.h"
 #include "toolhead_homing.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 using namespace helix;
@@ -574,7 +575,7 @@ void BedMeshPanel::apply_portrait_canvas_height() {
     // height, and the two are deliberately kept distinct:
     // bed_mesh_portrait_canvas_height's floor is a share of column_h, and
     // passing avail_h for both silently zeroes that floor out (see the
-    // kBedMeshPortraitCanvasMinPct comment in bed_mesh_portrait_layout.h).
+    // BED_MESH_PORTRAIT_CANVAS_MIN_PCT comment in bed_mesh_portrait_layout.h).
     //
     // Only current_mesh_card is subtracted, not a separate profiles_card
     // minimum: profiles_card shares this ROW's height (height="100%" at the
@@ -1766,13 +1767,14 @@ void BedMeshPanel::on_probe_progress(int current, int total) {
         int progress = std::min(current * 100 / total, 99);
         lv_subject_set_int(&bed_mesh_probe_progress_, progress);
 
-        std::snprintf(probe_text_buf_, sizeof(probe_text_buf_), "Probing point %d of %d", current,
-                      total);
+        const std::string text = fmt::format(lv_tr("Probing point {} of {}"), current, total);
+        std::snprintf(probe_text_buf_, sizeof(probe_text_buf_), "%s", text.c_str());
         spdlog::debug("[BedMeshPanel] Probe progress: {}/{} ({}%)", current, total, progress);
     } else {
         // Fallback: firmware didn't report total — show spinner instead of bar
         lv_subject_set_int(&bed_mesh_probe_indeterminate_, 1);
-        std::snprintf(probe_text_buf_, sizeof(probe_text_buf_), "Probing... (%d points)", current);
+        const std::string text = fmt::format(lv_tr("Probing... ({} points)"), current);
+        std::snprintf(probe_text_buf_, sizeof(probe_text_buf_), "%s", text.c_str());
         spdlog::debug("[BedMeshPanel] Probe progress: {} points (total unknown)", current);
     }
     lv_subject_copy_string(&bed_mesh_probe_text_, probe_text_buf_);

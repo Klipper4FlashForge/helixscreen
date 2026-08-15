@@ -12,7 +12,9 @@ Formats LVGL XML component files with:
 - Preservation of blank lines between logical sections
 
 Generator-owned XML (see GENERATED_DIRS) is skipped - those files are rewritten by
-`make`, so formatting them only makes the tree go dirty on the next build.
+`make`, so formatting them only makes the tree go dirty on the next build. XML that
+belongs to another toolchain (see FOREIGN_DIRS) is skipped too - it is not LVGL
+component XML and does not follow this style.
 
 Usage:
     ./scripts/format-xml.py ui_xml/*.xml           # Format files in-place
@@ -48,14 +50,33 @@ INDENT = "  "  # 2 spaces
 # of the three call sites (mk/format.mk format + format-staged, quality-checks.sh).
 GENERATED_DIRS = ("ui_xml/translations",)
 
+# XML that is not an LVGL component file and does not answer to this formatter's
+# house style. android/ holds AndroidManifest.xml and res/values/*.xml, which the
+# Android toolchain (AAPT, Android Studio, AGP's manifest merger) owns and formats
+# by its own conventions; reflowing them to 2-space/120-col LVGL style produces
+# churn in files nobody reads through an LVGL lens. `make format` and the
+# non-staged check only walk ui_xml/, so these are reachable only through the
+# staged-file paths (mk/format.mk format-staged, quality-checks.sh --staged-only),
+# which feed in every staged *.xml in the repo. format-staged FORMATS and re-stages
+# what it is given, so without this the pre-commit hook would silently rewrite a
+# manifest as a side effect of an unrelated commit.
+FOREIGN_DIRS = ("android",)
 
-def is_generated(filepath: Path) -> bool:
-    """True if filepath lives under a generator-owned directory."""
+
+def _under(filepath: Path, dirs: tuple) -> bool:
     posix = filepath.as_posix()
     return any(
-        posix == d or posix.startswith(d + "/") or f"/{d}/" in posix
-        for d in GENERATED_DIRS
+        posix == d or posix.startswith(d + "/") or f"/{d}/" in posix for d in dirs
     )
+
+
+def is_skipped(filepath: Path) -> Optional[str]:
+    """Reason this file is not ours to format, or None if it is."""
+    if _under(filepath, GENERATED_DIRS):
+        return "generated"
+    if _under(filepath, FOREIGN_DIRS):
+        return "not LVGL XML"
+    return None
 
 # Attributes that should come first (in order)
 PRIORITY_ATTRS = ["name", "extends", "width", "height"]
@@ -384,9 +405,10 @@ def main():
             print(f"Skipping non-XML file: {filepath}", file=sys.stderr)
             continue
 
-        if is_generated(filepath):
+        skip_reason = is_skipped(filepath)
+        if skip_reason:
             if not args.quiet:
-                print(f"Skipping generated file: {filepath}", file=sys.stderr)
+                print(f"Skipping {skip_reason} file: {filepath}", file=sys.stderr)
             continue
 
         needs_format, diff_output = process_file(

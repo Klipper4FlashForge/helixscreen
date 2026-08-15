@@ -5,7 +5,6 @@
 
 #include "ui_ams_current_tool.h"
 #include "ui_callback_helpers.h"
-#include "ui_component_header_bar.h"
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
 #include "ui_exclude_object_map_view.h"
@@ -788,9 +787,6 @@ lv_obj_t* PrintStatusPanel::create(lv_obj_t* parent) {
     ui_overlay_panel_setup_standard(overlay_root_, parent_screen_, "overlay_header",
                                     "overlay_content");
 
-    // Store header reference for e-stop visibility control
-    overlay_header_ = lv_obj_find_by_name(overlay_root_, "overlay_header");
-
     lv_obj_t* overlay_content = lv_obj_find_by_name(overlay_root_, "overlay_content");
     if (!overlay_content) {
         spdlog::error("[{}] overlay_content not found!", get_name());
@@ -1230,7 +1226,6 @@ void PrintStatusPanel::on_ui_destroyed() {
     success_badge_ = nullptr;
     cancel_badge_ = nullptr;
     error_badge_ = nullptr;
-    overlay_header_ = nullptr;
 
     // Heater icon animators — at this point the widget tree is only hidden
     // and reparented to the top layer (destroy_overlay_ui() defers the actual
@@ -2263,11 +2258,11 @@ void PrintStatusPanel::recompute_fans_density() {
     // value ("100%") — the visible label changes when the mock's auto heater
     // fan trips, so the cached natural width can be measured against either
     // "0%" or "100%" and we need both to fit.
-    constexpr int kDensitySlack = 8;
+    constexpr int DENSITY_SLACK = 8;
     int next_density = 2;
-    if (controls_w >= fan_row_natural_width_[0] + kDensitySlack)
+    if (controls_w >= fan_row_natural_width_[0] + DENSITY_SLACK)
         next_density = 0;
-    else if (controls_w >= fan_row_natural_width_[1] + kDensitySlack)
+    else if (controls_w >= fan_row_natural_width_[1] + DENSITY_SLACK)
         next_density = 1;
 
     int current = lv_subject_get_int(&fan_row_density_subject_);
@@ -2386,7 +2381,8 @@ void PrintStatusPanel::recompute_graph_fits() {
 
     if (static_cast<int>(next) != current) {
         spdlog::debug("[{}] graph_fits {} -> {} (slack={}, needed={})", get_name(), current,
-                      static_cast<int>(next), preview_slack_h_, helix::ui::kMinTempGraphHeightPx);
+                      static_cast<int>(next), preview_slack_h_,
+                      helix::ui::MIN_TEMP_GRAPH_HEIGHT_PX);
         lv_subject_set_int(&graph_fits_subject_, next ? 1 : 0);
     }
 }
@@ -2892,19 +2888,10 @@ void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
         spdlog::debug("[{}] Print cancelled at progress: {}%", get_name(), lifecycle_.progress());
     }
 
-    // Update e-stop button visibility: show only during active print
-    if (overlay_header_) {
-        bool show_estop =
-            (result.new_state == PrintState::Preparing ||
-             result.new_state == PrintState::Printing || result.new_state == PrintState::Paused);
-        if (show_estop) {
-            ui_header_bar_show_action_button(overlay_header_);
-        } else {
-            ui_header_bar_hide_action_button(overlay_header_);
-        }
-        spdlog::debug("[{}] E-stop button {} (state={})", get_name(),
-                      show_estop ? "shown" : "hidden", static_cast<int>(result.new_state));
-    }
+    // The e-stop is the estop_fab at the panel root, bound to the estop_visible
+    // subject in XML; the header owns only the estop_slot gutter now. Nothing
+    // here touches the header's action_button: this panel never configures one,
+    // so un-hiding it renders an empty primary-colored pill.
 }
 
 void PrintStatusPanel::on_print_filename_changed(const char* filename) {

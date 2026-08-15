@@ -880,7 +880,14 @@ bool updates_externally_managed() {
 }
 
 // Mirror of src/app_globals.cpp compute_self_update_supported / self_update_supported /
-// in_app_updates_suppressed (app_globals.o is excluded from the test link).
+// update_install_suppressed / update_checks_suppressed (app_globals.o is
+// excluded from the test link).
+//
+// Keep the branch structure identical to the original, comments aside. A mirror that
+// drifts turns the tests below into a test of this file: the parent-only version of
+// this predicate was a false negative that hid the updater on every /opt install, and
+// nothing here would have noticed, because the assertions would have been passing
+// against the same wrong logic.
 #include "system/helix_paths.h"
 
 #include <unistd.h> // geteuid
@@ -889,11 +896,14 @@ bool compute_self_update_supported(const std::string& install_root, bool can_esc
         return true;
     }
     const std::string parent = std::filesystem::path(install_root).parent_path().string();
+    if (!parent.empty() && helix::paths::is_writable_dir(parent)) {
+        return true; // atomic swap
+    }
     if (parent.empty()) {
         return true;
     }
-    if (helix::paths::is_writable_dir(parent)) {
-        return true;
+    if (helix::paths::is_writable_dir(install_root)) {
+        return true; // in-place replacement
     }
     return can_escalate;
 }
@@ -917,12 +927,16 @@ bool self_update_supported() {
     return cached;
 }
 
-bool compute_in_app_updates_suppressed(bool externally_managed, bool self_update_ok) {
+bool compute_update_install_suppressed(bool externally_managed, bool self_update_ok) {
     return externally_managed || !self_update_ok;
 }
 
-bool in_app_updates_suppressed() {
-    return compute_in_app_updates_suppressed(updates_externally_managed(), self_update_supported());
+bool update_install_suppressed() {
+    return compute_update_install_suppressed(updates_externally_managed(), self_update_supported());
+}
+
+bool update_checks_suppressed() {
+    return updates_externally_managed();
 }
 
 // Stubs for the manager accessors in app_globals.h. Each getter reads a file-static

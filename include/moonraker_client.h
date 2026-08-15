@@ -663,8 +663,10 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * Public to allow MoonrakerDiscoverySequence access.
      *
      * @param status Raw printer status object
+     * @param from_cached_snapshot true when replaying a snapshot captured earlier
+     *        (see IMoonrakerClient::dispatch_status_update)
      */
-    void dispatch_status_update(const json& status) override;
+    void dispatch_status_update(const json& status, bool from_cached_snapshot = false) override;
 
     /**
      * @brief Invoke an on_connected-style callback with exception safety.
@@ -791,6 +793,8 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
     // Callback synchronization mutex
     // Callbacks take a shared (read) lock; the destructor takes an exclusive (write) lock.
     // This ensures all in-flight callbacks complete before destruction proceeds.
+    // disconnect() drains this from the UI thread via drain_shared_holders(), which is
+    // bounded — an unbounded acquire there freezes the main loop permanently.
     mutable std::shared_mutex callback_lifecycle_mutex_;
 
     bool ws_callbacks_installed_ =

@@ -5,6 +5,7 @@
 
 #include "ui_update_queue.h"
 
+#include "accel_sensor_manager.h"
 #include "app_globals.h"
 #include "config.h"
 #include "helix_version.h"
@@ -70,8 +71,8 @@ bool probe_snapshot_reachable(const std::string& snapshot_url) {
     auto req = std::make_shared<HttpRequest>();
     req->method = HTTP_GET;
     req->url = snapshot_url;
-    req->connect_timeout = kSnapshotProbeConnectTimeoutSec;
-    req->timeout = kSnapshotProbeTotalTimeoutSec;
+    req->connect_timeout = SNAPSHOT_PROBE_CONNECT_TIMEOUT_SEC;
+    req->timeout = SNAPSHOT_PROBE_TOTAL_TIMEOUT_SEC;
     auto resp = requests::request(req);
     if (resp && resp->status_code == 200) {
         return true;
@@ -85,7 +86,8 @@ bool probe_snapshot_reachable(const std::string& snapshot_url) {
     } else {
         spdlog::debug("[Discovery] Snapshot probe of {} got no response within {}s "
                       "(connect budget {}s)",
-                      snapshot_url, kSnapshotProbeTotalTimeoutSec, kSnapshotProbeConnectTimeoutSec);
+                      snapshot_url, SNAPSHOT_PROBE_TOTAL_TIMEOUT_SEC,
+                      SNAPSHOT_PROBE_CONNECT_TIMEOUT_SEC);
     }
     return false;
 }
@@ -676,20 +678,28 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                             spdlog::info("[Moonraker Client] Printer state: {}", state_message);
                         }
 
-                        // Set klippy state based on printer.info response
-                        // This ensures we recognize shutdown/error states at startup
+                        // Seed klippy state from the printer.info response so
+                        // shutdown/error at startup is recognised before any
+                        // webhooks frame arrives.
+                        //
+                        // SEED only, never override: this RPC's response describes
+                        // the printer as of when Moonraker answered, and discovery
+                        // runs concurrently with live WebSocket traffic. Klipper can
+                        // shut down between the request and the response, and the
+                        // stale answer would then re-enable everything against a
+                        // dead printer.
                         if (state == "shutdown" || state == "disconnected") {
                             spdlog::warn("[Moonraker Client] Printer is in {} state at startup",
                                          state);
-                            get_printer_state().set_klippy_state(KlippyState::SHUTDOWN);
+                            get_printer_state().set_klippy_state_if_unseeded(KlippyState::SHUTDOWN);
                         } else if (state == "error") {
                             spdlog::warn("[Moonraker Client] Printer is in ERROR state at startup");
-                            get_printer_state().set_klippy_state(KlippyState::ERROR);
+                            get_printer_state().set_klippy_state_if_unseeded(KlippyState::ERROR);
                         } else if (state == "startup") {
                             spdlog::info("[Moonraker Client] Printer is starting up");
-                            get_printer_state().set_klippy_state(KlippyState::STARTUP);
+                            get_printer_state().set_klippy_state_if_unseeded(KlippyState::STARTUP);
                         } else if (state == "ready") {
-                            get_printer_state().set_klippy_state(KlippyState::READY);
+                            get_printer_state().set_klippy_state_if_unseeded(KlippyState::READY);
                         }
                     }
 
@@ -722,11 +732,19 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
 
                                 // Seed probe sensor z_offset from configfile (some probe
                                 // modules like flashforge_loadcell return null in status).
-                                // Must run on main thread — update_subjects() sets LVGL subjects.
-                                nlohmann::json cfg_for_probe = cfg;
-                                helix::ui::queue_update([cfg_for_probe]() {
+                                // Accelerometers have no get_status(), so configfile.config
+                                // is the ONLY place they appear — this is the sole caller
+                                // that fills AccelSensorManager, which Settings > Sensors,
+                                // telemetry and detect_belt_hardware() all read.
+                                // Both must run on main thread — update_subjects() sets
+                                // LVGL subjects. discover_from_config() rebuilds its list
+                                // from scratch, so a reconnect re-run cannot duplicate.
+                                nlohmann::json cfg_for_sensors = cfg;
+                                helix::ui::queue_update([cfg_for_sensors]() {
                                     helix::sensors::ProbeSensorManager::instance()
-                                        .discover_from_config(cfg_for_probe);
+                                        .discover_from_config(cfg_for_sensors);
+                                    helix::sensors::AccelSensorManager::instance()
+                                        .discover_from_config(cfg_for_sensors);
                                 });
 
                                 // Update LED controller with configfile data (effect targets +
@@ -1278,10 +1296,15 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
                                                       "hubs",
                                                       "extruders",
                                                       "buffers"});
+    // "current_map" (AFC virtual tools, #605) names which of a multi-tool lane's
+    // T-commands is active. The subscription is a strict allowlist, so a field
+    // missing here never reaches parse_afc_stepper at all. Older AFC simply does not
+    // publish it and Moonraker omits what an object does not have, so asking for it
+    // is safe against every version.
     static const json afc_stepper_fields =
-        json::array({"buffer_status", "color", "dist_hub", "extruder", "filament_status", "hub",
-                     "load", "loaded_to_hub", "map", "material", "prep", "runout_lane", "spool_id",
-                     "status", "tool_loaded", "weight"});
+        json::array({"buffer_status", "color", "current_map", "dist_hub", "extruder",
+                     "filament_status", "hub", "load", "loaded_to_hub", "map", "material", "prep",
+                     "runout_lane", "spool_id", "status", "tool_loaded", "weight"});
     static const json afc_hub_fields = json::array({"state", "afc_bowden_length"});
     static const json afc_buffer_fields = json::array(
         {"state", "distance_to_fault", "error_sensitivity", "fault_detection_enabled", "lanes"});

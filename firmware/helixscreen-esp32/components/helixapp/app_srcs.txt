@@ -89,6 +89,8 @@ src/abort/abort_manager.cpp
 src/application/asset_manager.cpp
 src/application/data_root_resolver.cpp
 src/application/display_metrics.cpp
+# clean_error_text only (e-stop recovery dialog) — the full router stays excluded
+src/application/gcode_error_text.cpp
 src/application/moonraker_event_routing.cpp
 src/application/panel_factory.cpp
 src/application/printer_cache_registry.cpp

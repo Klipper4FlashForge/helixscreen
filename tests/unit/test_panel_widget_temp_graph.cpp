@@ -570,7 +570,7 @@ TEST_CASE("TempGraphWidget::features_for_size edge cases", "[temp_graph][panel_w
 
 TEST_CASE("TempGraphWidget::attach() seed extents yield everything but readouts",
           "[temp_graph][panel_widget][features]") {
-    // Mirrors the constexpr kSeedWidthPx/kSeedHeightPx in
+    // Mirrors the constexpr SEED_WIDTH_PX/SEED_HEIGHT_PX in
     // TempGraphWidget::attach() (temp_graph_widget.cpp) — the measured
     // 800x480 two-span (colspan=2/rowspan=2) extents used to seed
     // initial_features, so the tier is Medium by construction.
@@ -580,11 +580,11 @@ TEST_CASE("TempGraphWidget::attach() seed extents yield everything but readouts"
     // both axes, and withholds the readouts that need the widest band. A
     // change to features_for_size() or to these seed values should fail this
     // test rather than silently changing the widget's pre-resize state.
-    constexpr int kSeedWidthPx = 233;
-    constexpr int kSeedHeightPx = 230;
+    constexpr int SEED_WIDTH_PX = 233;
+    constexpr int SEED_HEIGHT_PX = 230;
 
     uint32_t f =
-        TempGraphWidget::features_for_size(kSeedWidthPx, kSeedHeightPx, UiBreakpoint::Medium);
+        TempGraphWidget::features_for_size(SEED_WIDTH_PX, SEED_HEIGHT_PX, UiBreakpoint::Medium);
 
     uint32_t expected = TEMP_GRAPH_FEATURE_LINES | TEMP_GRAPH_FEATURE_TARGET_LINES |
                         TEMP_GRAPH_FEATURE_LEGEND | TEMP_GRAPH_FEATURE_Y_AXIS |

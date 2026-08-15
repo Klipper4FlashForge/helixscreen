@@ -6,12 +6,14 @@
 #include "ui_update_queue.h"
 
 #include "../tests/mocks/mock_printer_state.h"
+#include "accel_sensor_manager.h"
 #include "app_globals.h"
 #include "gcode_parser.h"
 #include "macro_param_cache.h"
 #include "moonraker_client_mock_internal.h"
 #include "power_device_state.h"
 #include "printer_state.h"
+#include "probe_sensor_manager.h"
 #include "runtime_config.h"
 #include "sensor_state.h"
 
@@ -35,21 +37,21 @@ using namespace helix;
 // Spreads objects in a grid inset from the edges of the mock bed, matching the
 // `center` + `polygon` shape Moonraker reports for EXCLUDE_OBJECT_DEFINE.
 static json mock_object_entry(const std::string& name, int index, int total) {
-    constexpr float kInset = 20.0f; // keep the plate margin visible in the map
+    constexpr float INSET = 20.0f; // keep the plate margin visible in the map
     const float bed_w =
         static_cast<float>(mock_internal::MOCK_BED_X_MAX - mock_internal::MOCK_BED_X_MIN) -
-        2.0f * kInset;
+        2.0f * INSET;
     const float bed_h =
         static_cast<float>(mock_internal::MOCK_BED_Y_MAX - mock_internal::MOCK_BED_Y_MIN) -
-        2.0f * kInset;
+        2.0f * INSET;
     int cols = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(std::max(1, total)))));
     int rows = std::max(1, (total + cols - 1) / cols);
     int row = index / cols, col = index % cols;
     float cell_w = bed_w / static_cast<float>(cols);
     float cell_h = bed_h / static_cast<float>(rows);
-    float cx = static_cast<float>(mock_internal::MOCK_BED_X_MIN) + kInset +
+    float cx = static_cast<float>(mock_internal::MOCK_BED_X_MIN) + INSET +
                (static_cast<float>(col) + 0.5f) * cell_w;
-    float cy = static_cast<float>(mock_internal::MOCK_BED_Y_MIN) + kInset +
+    float cy = static_cast<float>(mock_internal::MOCK_BED_Y_MIN) + INSET +
                (static_cast<float>(row) + 0.5f) * cell_h;
     float hw = cell_w * 0.35f, hh = cell_h * 0.35f;
     return {{"name", name},
@@ -63,18 +65,18 @@ namespace {
 /// Slicer-style plate names for HELIX_MOCK_EXCLUDE_OBJECTS. Real slicers emit
 /// `<model>_id_<n>_copy_<n>`, so these are long enough to exercise label
 /// truncation/wrapping in the side list rather than flattering it.
-constexpr const char* kMockExcludeObjectNames[] = {
+constexpr const char* MOCK_EXCLUDE_OBJECT_NAMES[] = {
     "Benchy_id_0_copy_0",        "Calibration_Cube_id_1_copy_0", "Bracket_Left_id_2_copy_0",
     "Bracket_Right_id_3_copy_0", "Gear_Housing_id_4_copy_0",     "Vase_id_5_copy_0",
     "Spool_Holder_id_6_copy_0",  "Cable_Clip_id_7_copy_0",       "Hinge_Pin_id_8_copy_0",
     "Knob_id_9_copy_0",          "Fan_Duct_id_10_copy_0",        "Strain_Relief_id_11_copy_0"};
 
-constexpr int kMaxMockExcludeObjectCount =
-    static_cast<int>(sizeof(kMockExcludeObjectNames) / sizeof(kMockExcludeObjectNames[0]));
+constexpr int MAX_MOCK_EXCLUDE_OBJECT_COUNT =
+    static_cast<int>(sizeof(MOCK_EXCLUDE_OBJECT_NAMES) / sizeof(MOCK_EXCLUDE_OBJECT_NAMES[0]));
 
 /// Objects published for a bare `HELIX_MOCK_EXCLUDE_OBJECTS=1`. Enough to fill a
 /// side list past one screen on the short landscape panel without being absurd.
-constexpr int kDefaultMockExcludeObjectCount = 5;
+constexpr int DEFAULT_MOCK_EXCLUDE_OBJECT_COUNT = 5;
 
 } // namespace
 
@@ -134,9 +136,9 @@ MoonrakerClientMock::MoonrakerClientMock(PrinterType type, double speedup_factor
         // object" — one object would leave the button hidden, which is the very
         // thing the flag exists to defeat.
         if (requested <= 1) {
-            requested = kDefaultMockExcludeObjectCount;
+            requested = DEFAULT_MOCK_EXCLUDE_OBJECT_COUNT;
         }
-        mock_exclude_object_count_ = std::clamp(requested, 2, kMaxMockExcludeObjectCount);
+        mock_exclude_object_count_ = std::clamp(requested, 2, MAX_MOCK_EXCLUDE_OBJECT_COUNT);
         spdlog::info("[MoonrakerClientMock] HELIX_MOCK_EXCLUDE_OBJECTS={} — will publish {} "
                      "synthetic exclude_object entries at print start",
                      exclude_env, mock_exclude_object_count_);
@@ -612,9 +614,7 @@ void MoonrakerClientMock::populate_capabilities() {
     // Mock accelerometer configuration for input shaper wizard testing
     // Real Klipper doesn't expose accelerometers in objects list (no get_status()),
     // so we simulate what parse_config_keys() would find from configfile.config
-    json mock_config;
-    mock_config["adxl345"] = json::object();
-    mock_config["resonance_tester"] = json::object();
+    json mock_config = mock_internal::get_mock_accel_config();
     // Bed screws — same story as the accelerometers: screws_tilt_adjust has no
     // get_status(), so Klipper never lists it and the capability is detected
     // from configfile.config. Without this the whole mock screws-tilt state
@@ -642,6 +642,9 @@ void MoonrakerClientMock::populate_capabilities() {
     mock_config["printer"] = {{"kinematics", mock_kinematics}};
     // Add gcode_macro entries for param detection (shared with configfile.config response)
     mock_config.merge_patch(mock_internal::get_mock_gcode_macro_config());
+    // Probe section — shared with the configfile.config query/subscribe responses
+    // so all three payloads describe the same probe.
+    mock_config.merge_patch(mock_internal::get_mock_probe_config());
 
     std::unordered_set<std::string> macros_snapshot;
     discovery_.modify_hardware([&](PrinterDiscovery& hw) {
@@ -753,6 +756,16 @@ void MoonrakerClientMock::discover_printer(
     // Populate hardware based on printer type (may have already been done in constructor)
     populate_hardware();
 
+    // This shortcut never queries configfile, so the accelerometer seeding the
+    // real sequence does in moonraker_discovery_sequence.cpp is missing here.
+    // Without it AccelSensorManager stays empty under --test and Settings >
+    // Sensors shows no accelerometer on a mock printer that reports one.
+    // Main thread only — discover_from_config() sets LVGL subjects.
+    json accel_config = mock_internal::get_mock_accel_config();
+    helix::ui::queue_update([accel_config]() {
+        helix::sensors::AccelSensorManager::instance().discover_from_config(accel_config);
+    });
+
     // Generate synthetic bed mesh data (may have already been done in constructor)
     generate_mock_bed_mesh();
 
@@ -860,6 +873,21 @@ void MoonrakerClientMock::discover_printer(
             // Must be called BEFORE discovery_complete to match real implementation timing
             spdlog::debug("[MoonrakerClientMock] Invoking early hardware discovery callback");
             discovery_.invoke_hardware_discovered();
+
+            // Seed probe z_offset from the mock configfile, mirroring Step 4 of
+            // MoonrakerDiscoverySequence. This shortcut of a discover_printer()
+            // never queries configfile, so without it the whole configfile→probe
+            // path — the one that rescues probes whose runtime status reports a
+            // null z_offset — is unreachable under --test.
+            //
+            // Queued, not called inline, for ordering: ProbeSensorManager's
+            // sensor list is populated by the hardware-discovered callback just
+            // above, which Application also queues. Seeding runs on a sensor list
+            // that does not exist yet if it jumps the queue. FIFO puts it second.
+            helix::ui::queue_update("MoonrakerClientMock::probe_config_seed", []() {
+                helix::sensors::ProbeSensorManager::instance().discover_from_config(
+                    mock_internal::get_mock_probe_config());
+            });
 
             // Invoke discovery complete callback with hardware (for PrinterState binding)
             discovery_.invoke_discovery_complete();
@@ -2907,7 +2935,7 @@ bool MoonrakerClientMock::start_print_internal(const std::string& filename) {
         names.reserve(static_cast<size_t>(total));
         json objects_array = json::array();
         for (int i = 0; i < total; ++i) {
-            names.emplace_back(kMockExcludeObjectNames[i]);
+            names.emplace_back(MOCK_EXCLUDE_OBJECT_NAMES[i]);
             objects_array.push_back(mock_object_entry(names.back(), i, total));
         }
 

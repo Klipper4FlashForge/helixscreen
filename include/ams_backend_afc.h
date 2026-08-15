@@ -512,6 +512,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcToolchangerStatusHelper;
     friend class AfcStatusDispatchHelper;
     friend class AfcEjectPrintGateHelper;
+    friend class AfcSharedExtruderHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -544,7 +545,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // This is also what restores retention across an eject now that
     // parse_afc_stepper honours AFC's clears: firmware truth clears, and the
     // override re-supplies the identity the user attached.
-    static constexpr const char* kOverrideNamespace = "helix-screen-afc-overrides";
+    static constexpr const char* OVERRIDE_NAMESPACE = "helix-screen-afc-overrides";
     std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
     std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
     /// Layer the user override over firmware values. Callers hold mutex_.
@@ -764,13 +765,44 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     void query_afc_configfile_topology();
 
     /**
+     * @brief Klipper extruder object name for an AFC_extruder section name.
+     *
+     * The two coincide on the common `[AFC_extruder extruder1]` shape and
+     * diverge on anything else — `[AFC_extruder e0]\nextruder_name: extruder`.
+     * AFC keys its own tool indices on the latter (AFC_extruder.py:223,
+     * consumed at AFC_Toolchanger.py:231-232), so this is the only correct
+     * bridge from what AFC's status frames name to what Klipper names.
+     *
+     * Returns @p section_name unchanged when configfile has not answered, which
+     * is right for every standard install and the best available guess for the
+     * rest. This is the single point where that substitution happens; nothing
+     * outside it should be parsing an AFC-sourced extruder string.
+     *
+     * Caller must hold mutex_.
+     */
+    [[nodiscard]] std::string klipper_extruder_name_unlocked(const std::string& section_name) const;
+
+    /**
+     * @brief AFC_extruder SECTION name for a tool index, or "" if unknown.
+     *
+     * The inverse of tool_index_for_extruder_unlocked(). AFC registers its
+     * per-extruder mux commands (UPDATE_TOOLHEAD_SENSORS, SAVE_EXTRUDER_VALUES,
+     * AFC_SET_EXTRUDER_LED) on the SECTION name — `register_mux_command(...,
+     * "EXTRUDER", self.name, ...)` where `self.name` is the section suffix
+     * (AFC_extruder.py:221, :364-369) — so any G-code we address to an extruder
+     * needs this direction, never the Klipper name.
+     *
+     * Caller must hold mutex_.
+     */
+    [[nodiscard]] std::string afc_extruder_section_for_tool_unlocked(int tool_index) const;
+
+    /**
      * @brief Tool index for an AFC_extruder section name, or -1 if unknown.
      *
-     * Prefers the configfile-sourced `extruder_name`; falls back to the section
-     * name itself, which is the same string on the overwhelmingly common
-     * `[AFC_extruder extruder1]` shape. Returns -1 rather than guessing 0 when
-     * neither resolves — every toolhead silently claiming T0 is worse than a
-     * toolhead with no attribution.
+     * Resolves through klipper_extruder_name_unlocked() and then the single
+     * `extruder<N>` grammar in helix::tool_number_for_extruder(). Returns -1
+     * rather than guessing 0 when neither resolves — every toolhead silently
+     * claiming T0 is worse than a toolhead with no attribution.
      *
      * Caller must hold mutex_.
      */
@@ -1016,9 +1048,19 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Per-lane hub routing: lane_name → hub name ("direct" for direct lanes)
     std::unordered_map<std::string, std::string> lane_hub_routing_;
 
-    // Lanes whose "map" field arrived as a non-string (array/object) — dedupes the
-    // multi-tool tripwire warning so it fires once per lane, not per update.
-    std::set<std::string> map_non_string_warned_lanes_;
+    // Lanes whose "map" field listed more than one tool (AFC virtual tools, #605)
+    // — dedupes the "extras are not tracked" warning so it fires once per lane,
+    // not once per status update.
+    std::set<std::string> multi_tool_warned_lanes_;
+
+    // lane_name → tool number AFC last reported in "current_map" (virtual tools,
+    // #605). Remembered across updates because Moonraker sends deltas and the two
+    // fields move independently: AFC_ADD_MAPPING sends "map" alone, a tool change
+    // within a lane sends "current_map" alone. Without this, a map-only delta would
+    // fall back to the lowest tool and yank the lane off the one AFC is driving.
+    // Cleared when the lane is unmapped, and ignored whenever the tool is no longer
+    // a member of a present "map".
+    std::unordered_map<std::string, int> lane_current_tool_;
 
     // AFC state strings outside our known vocabulary — dedupes the schema-drift
     // warning so it fires once per distinct string, not once per status update.
@@ -1056,7 +1098,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// printer.AFC.message is a FIFO head and each clear pops one entry, so a
     /// single send leaves the next queued error on screen. Armed by clear_fault(),
     /// spent one per status delta that still carries a message. Hitting zero is
-    /// the abnormal exit — see kMessageDrainMaxClears.
+    /// the abnormal exit — see MESSAGE_DRAIN_MAX_CLEARS.
     int message_drain_budget_ = 0;
 
     /// Set by parse_afc_state() while holding mutex_; consumed by
@@ -1094,7 +1136,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// _get_message(clear=False) — so an error raised by the caller's own
     /// follow-up action (the sidebar sends AFC_RESET right after clear_fault())
     /// can be swallowed unseen anywhere inside the 5 s window.
-    static constexpr int kMessageDrainMaxClears = 10;
+    static constexpr int MESSAGE_DRAIN_MAX_CLEARS = 10;
 
     /// Sends one queued AFC_CLEAR_MESSAGE if the drain is armed and a message is
     /// still present. Must be called WITHOUT mutex_ held.
@@ -1145,14 +1187,24 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Unit-level info from flat string units and unit Klipper objects
     std::vector<AfcUnitInfo> unit_infos_; ///< Parsed from flat string "Type Name" units
 
-    // Extruder names from top-level AFC.extruders array (for multi-extruder iteration)
-    std::vector<std::string> extruder_names_; ///< e.g., {"extruder", "extruder1", ...}
+    /// AFC_extruder SECTION names from the top-level AFC.extruders array, e.g.
+    /// {"extruder", "extruder1", …} on a stock config and {"e0", "e1", …} on a
+    /// renamed one. These are Klipper object keys ("AFC_extruder " + name) and
+    /// G-code mux keys, NOT Klipper extruder names — go through
+    /// klipper_extruder_name_unlocked() before deriving a tool number.
+    std::vector<std::string> extruder_names_;
 
     /// AFC_extruder SECTION name -> Klipper extruder name, read from
     /// configfile.settings["afc_extruder <section>"]["extruder_name"]. Empty
     /// until query_afc_configfile_topology() answers, and stays empty on a
     /// printer whose config Moonraker will not serve.
     std::unordered_map<std::string, std::string> extruder_klipper_names_;
+
+    /// True once configfile.settings has actually been read, whatever it held.
+    /// Distinguishes "this section has no extruder_name" from "we have not
+    /// looked yet" — an empty extruder_klipper_names_ means both, and only the
+    /// first justifies telling the user their config is missing something.
+    bool configfile_answered_{false};
 
     /// True once an `[AFC_Toolchanger …]` section has been seen in
     /// configfile.settings. Never cleared by a config that lacks one — absence

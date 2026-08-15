@@ -25,6 +25,7 @@
 #include "filament_op_router.h"
 #include "filament_sensor_manager.h"
 #include "format_utils.h"
+#include "klipper_extruder_naming.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
@@ -44,6 +45,7 @@
 #include "thumbnail_processor.h"
 #include "tool_state.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <chrono>
@@ -1663,12 +1665,12 @@ void PrintStatusWidget::print_card_clicked_cb(lv_event_t* e) {
     // originated inside the named nozzle click target; the chevron cb
     // handles it. Name must match the lv_obj name in
     // ui_xml/components/print_status_detailed_active.xml.
-    constexpr std::string_view kNozzleClickTargetName = "detailed_nozzle_click_target";
+    constexpr std::string_view NOZZLE_CLICK_TARGET_NAME = "detailed_nozzle_click_target";
     bool from_nozzle_group = false;
     if (auto* target = lv_event_get_target_obj(e)) {
         for (lv_obj_t* o = target; o; o = lv_obj_get_parent(o)) {
             const char* name = lv_obj_get_name(o);
-            if (name && std::string_view(name) == kNozzleClickTargetName) {
+            if (name && std::string_view(name) == NOZZLE_CLICK_TARGET_NAME) {
                 from_nozzle_group = true;
                 break;
             }
@@ -1905,18 +1907,11 @@ void PrintStatusWidget::DetailedFormatter::update_tool_label() {
         // is set, otherwise the currently active tool. Anything else looks
         // broken right after a pin ("I picked Nozzle 2 but it still says T0").
         int idx = -1;
-        if (current_nozzle_override_ == "extruder") {
-            idx = 0;
-        } else if (current_nozzle_override_.rfind("extruder", 0) == 0 &&
-                   current_nozzle_override_.size() > 8) {
-            // Defend against hand-edited config — atoi parses leading digits
-            // only; check the parsed index is in range before trusting it.
-            const char* suffix = current_nozzle_override_.c_str() + 8;
-            if (suffix[0] >= '0' && suffix[0] <= '9') {
-                int parsed = std::atoi(suffix);
-                if (parsed >= 0 && parsed < count) {
-                    idx = parsed;
-                }
+        // Defend against hand-edited config — the name has to parse as a
+        // Klipper extruder AND land in range before it is trusted.
+        if (const auto parsed = helix::tool_number_for_extruder(current_nozzle_override_)) {
+            if (*parsed < count) {
+                idx = *parsed;
             }
         }
         if (idx < 0) {
@@ -1944,20 +1939,26 @@ void PrintStatusWidget::DetailedFormatter::update_idle_fields() {
     double now_s =
         std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
     long delta_s = static_cast<long>(now_s - job.end_time);
+    // Each branch is a whole sentence with the number as a placeholder. The unit
+    // stays inside the key rather than being appended, because a locale may put
+    // it before the number or attach a particle to it.
+    std::string when;
     if (delta_s < 60) {
-        snprintf(idle_when_buf_, sizeof(idle_when_buf_), "Completed just now");
+        when = lv_tr("Completed just now");
     } else if (delta_s < 3600) {
-        snprintf(idle_when_buf_, sizeof(idle_when_buf_), "Completed %ldm ago", delta_s / 60);
+        when = fmt::format(lv_tr("Completed {}m ago"), delta_s / 60);
     } else if (delta_s < 86400) {
-        snprintf(idle_when_buf_, sizeof(idle_when_buf_), "Completed %ldh ago", delta_s / 3600);
+        when = fmt::format(lv_tr("Completed {}h ago"), delta_s / 3600);
     } else {
-        snprintf(idle_when_buf_, sizeof(idle_when_buf_), "Completed %ldd ago", delta_s / 86400);
+        when = fmt::format(lv_tr("Completed {}d ago"), delta_s / 86400);
     }
+    snprintf(idle_when_buf_, sizeof(idle_when_buf_), "%s", when.c_str());
     lv_subject_copy_string(&idle_when_subject_, idle_when_buf_);
 
     if (!job.filament_str.empty() && !job.duration_str.empty()) {
-        snprintf(idle_meta_buf_, sizeof(idle_meta_buf_), "%s filament • %s",
-                 job.filament_str.c_str(), job.duration_str.c_str());
+        const std::string meta =
+            fmt::format(lv_tr("{} filament • {}"), job.filament_str, job.duration_str);
+        snprintf(idle_meta_buf_, sizeof(idle_meta_buf_), "%s", meta.c_str());
     } else if (!job.duration_str.empty()) {
         snprintf(idle_meta_buf_, sizeof(idle_meta_buf_), "%s", job.duration_str.c_str());
     } else if (job.total_duration > 0) {

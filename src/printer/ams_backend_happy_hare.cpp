@@ -27,8 +27,8 @@ namespace {
 /// The two printer.mmu filament_pos values Happy Hare's own check_if_loaded()
 /// treats as "not loaded" (mmu.py FILAMENT_POS_UNKNOWN / FILAMENT_POS_UNLOADED).
 /// Every other position, including the intermediate ones, is refused.
-constexpr int kHappyHarePosUnknown = -1;
-constexpr int kHappyHarePosUnloaded = 0;
+constexpr int HAPPY_HARE_POS_UNKNOWN = -1;
+constexpr int HAPPY_HARE_POS_UNLOADED = 0;
 
 } // namespace
 
@@ -2683,7 +2683,7 @@ AmsError AmsBackendHappyHare::enable_bypass() {
         // that flag is set solely from filament == "Loaded" — Happy Hare refuses
         // at every position except UNLOADED and UNKNOWN, so an intermediate
         // position (mid-bowden, mid-unload) has to refuse here too.
-        if (filament_pos_ != kHappyHarePosUnloaded && filament_pos_ != kHappyHarePosUnknown) {
+        if (filament_pos_ != HAPPY_HARE_POS_UNLOADED && filament_pos_ != HAPPY_HARE_POS_UNKNOWN) {
             return AmsError(AmsResult::WRONG_STATE, "Unload filament first",
                             "Filament is still loaded. Unload it before enabling bypass.", "");
         }

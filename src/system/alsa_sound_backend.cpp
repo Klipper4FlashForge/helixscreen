@@ -171,6 +171,9 @@ void ALSASoundBackend::shutdown() {
         return;
 
     running_.store(false, std::memory_order_relaxed);
+    // Wake a parked render thread, or the join below never returns.
+    suspended_.store(false, std::memory_order_relaxed);
+    suspend_cv_.notify_all();
 
     // Join render thread before closing device
     if (render_thread_.joinable()) {
@@ -259,6 +262,21 @@ void ALSASoundBackend::set_filter(const std::string& type, float cutoff) {
     filter_type_.store(ft, std::memory_order_release);
 }
 
+void ALSASoundBackend::suspend() {
+    if (suspended_.exchange(true))
+        return;
+    // Deliberately no snd_pcm_* here — see the header. The render thread drops
+    // the device itself when it observes the flag.
+    spdlog::debug("[ALSA] Suspending render thread (idle)");
+}
+
+void ALSASoundBackend::resume() {
+    if (!suspended_.exchange(false))
+        return;
+    suspend_cv_.notify_all();
+    spdlog::debug("[ALSA] Resuming render thread");
+}
+
 void ALSASoundBackend::render_loop() {
     const size_t frames = period_size_;
 
@@ -274,6 +292,25 @@ void ALSASoundBackend::render_loop() {
     }
 
     while (running_.load(std::memory_order_relaxed)) {
+        // Idle park. Drop the device and block rather than writing silence
+        // forever; resume() or shutdown() wakes us. snd_pcm_drop/prepare run
+        // here, on the render thread, never on the caller's.
+        if (suspended_.load(std::memory_order_relaxed)) {
+            if (pcm_)
+                snd_pcm_drop(pcm_);
+            {
+                std::unique_lock<std::mutex> lock(suspend_mutex_);
+                suspend_cv_.wait(lock, [this] {
+                    return !suspended_.load(std::memory_order_relaxed) ||
+                           !running_.load(std::memory_order_relaxed);
+                });
+            }
+            if (!running_.load(std::memory_order_relaxed))
+                break;
+            if (pcm_)
+                snd_pcm_prepare(pcm_);
+        }
+
         std::memset(mix_buf_.data(), 0, frames * sizeof(float));
         bool has_audio = false;
 

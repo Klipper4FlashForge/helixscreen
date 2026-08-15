@@ -289,11 +289,44 @@ sudo rm -rf ~/helixscreen.old
 |---------|-------|
 | **Detection** | `/etc/os-release` contains Debian/Raspbian, or `/home/pi`, `/home/biqu`, `/home/mks` exists |
 | **32/64-bit** | `getconf LONG_BIT` determines userspace bitness (64-bit kernel with 32-bit userspace is common) |
-| **Install dir** | Auto-detected based on Klipper ecosystem: `~/helixscreen` if klipper/moonraker/printer_data found, else `/opt/helixscreen` |
+| **Install dir** | Auto-detected — see the cascade below. `~/helixscreen` in every case with a non-root service user; `/opt/helixscreen` only for root installs |
 | **Klipper user** | Detected via systemd service owner, process table, printer_data scan, or well-known users (biqu, pi, mks) |
 | **Init system** | systemd (service template with `@@HELIX_USER@@` substitution) |
 | **Runtime deps** | `libdrm2`, `libinput10` installed via apt |
 | **Config symlink** | `~/printer_data/config/helixscreen` -> `$INSTALL_DIR/config` for web UI access |
+
+#### Pi install-directory cascade
+
+`detect_pi_install_dir()` in `scripts/lib/installer/platform.sh`, first match wins:
+
+| # | Condition | Result |
+|---|-----------|--------|
+| 1 | `INSTALL_DIR` set by the user | that path, after `validate_install_dir` |
+| 2 | An install already on disk (`<dir>/bin/helix-screen` exists) | that path |
+| 3 | `~/klipper` or `~/moonraker` exists | `$KLIPPER_HOME/helixscreen` |
+| 4 | `~/printer_data` exists | `$KLIPPER_HOME/helixscreen` |
+| 5 | `moonraker.service` is active | `$KLIPPER_HOME/helixscreen` |
+| 6 | Non-root service user whose home they own | `$KLIPPER_HOME/helixscreen` |
+| 7 | Otherwise (root installs) | `/opt/helixscreen` |
+
+Rule 2 exists because the cascade's answer is not stable across releases: a box that
+matched one branch on first install can match a different one later, and moving the
+install would orphan the old tree and the config inside it. An install on disk always
+wins over a fresh decision.
+
+Rule 6 exists because of how an update applies. `install.sh` prefers renaming the
+install root (`mv <root> <root>.old; mv <new> <root>`), and rename mutates the
+**parent's** directory entries — so it is the parent that has to be writable by the
+service user. `/opt` is root-owned and the service runs unprivileged, which leaves only
+the in-place fallback: delete the root's contents, then move the new ones in. That path
+works and is kept, but it deletes before it moves, so an interruption leaves a partial
+tree (#970). Escalation does not rescue it either: `helixscreen.service` sets
+`NoNewPrivileges=true`, so `sudo` fails from the app and from the `install.sh` it forks.
+
+Rule 6's shape is the standalone display: a Pi driving a panel with Klipper and
+Moonraker on another host, so rules 3-5 all miss. Before rule 6 existed those boxes
+landed on `/opt/helixscreen` and were the only layout depending on the in-place path.
+See `UPDATE_SYSTEM.md` for how `self_update_supported()` reads the resulting tree.
 
 ### FlashForge Adventurer 5M -- Forge-X Firmware (`ad5m`, `forge_x`)
 

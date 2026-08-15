@@ -1720,7 +1720,7 @@ the next session's stale error. (Verified against the add-on source on a live Bo
 2026-07-29.)
 
 *A single clear is not enough.* `AmsBackendAfc::clear_fault()` drains **until the queue reports
-empty**, bounded by a wall-clock deadline and by `kMessageDrainMaxClears` as a runaway guard
+empty**, bounded by a wall-clock deadline and by `MESSAGE_DRAIN_MAX_CLEARS` as a runaway guard
 (not as the expected stopping point); see `message_drain_budget_` / `message_drain_deadline_`.
 
 **`AFC.error_state` is not the *detection* signal.** It stayed `false` for a whole session while
@@ -2595,7 +2595,7 @@ On a raise: `runout_active_ = true`, `system_info_.filament_runout = true`, and 
 
 > **There is deliberately NO "Load slot N" recovery button**, even though a runout is exactly when the user wants one. Every AD5X load path runs `INSERT_PRUTOK_IFS`, whose macro homes itself and then moves the toolhead on its own authority (`_GOTO_TRASH`, `_SBROS_TRASH`, `_CLEAR_REZINA` nozzle wipe) — this is what `filament_ops_self_home()` is about. On the loadcell-Z AD5X that motion reaches **down into the part**; with a job owning the toolhead it trips ZMOD's `ZCONTROL_AUTO` and shuts Klipper down, recoverable only by a firmware restart (bundle `XWPBR2DX`, commit `329e731e9`). A runout state is PAUSED by construction, so the button would fire straight into that. Note the leading `_G28` is *conditional* on `homed_axes` (see `FLASHFORGE_AD5X_IFS_ANALYSIS.md` §12) and usually no-ops mid-print — that is not a reason to relax this: `homed_axes` is cleared by a Klipper error, an `M84`, or a cold resume, and the trash/wipe moves happen either way. `refuse_if_printing()` protects `load_filament()`; it does **not** protect a recovery button, which hands its gcode directly to `MoonrakerAPI::execute_gcode`, and the `_G28` is buried inside the macro where `reject_homing_during_active_print()` never sees it. The purge is a bare extruder move for the same reason — no homing, so it cannot reach the `_G28`. If a verified non-homing load-to-toolhead command ever turns up, that is the time to add the button.
 
-> **Unverified, flagged rather than assumed:** whether a firmware tool change can make the job read PAUSED with the head still empty. The reasoning above (Klipper queues `PAUSE` behind the running macro) is first-principles, not a device observation, and there is no AD5X in the fleet and no `ad5x` mock profile to test it on. If a false runout ever shows up mid-swap, the fix is to lengthen `kRunoutConfirmDelay` past a full swap (~2 min measured in bundle `NJB2U558`), not to loosen the PAUSED gate.
+> **Unverified, flagged rather than assumed:** whether a firmware tool change can make the job read PAUSED with the head still empty. The reasoning above (Klipper queues `PAUSE` behind the running macro) is first-principles, not a device observation, and there is no AD5X in the fleet and no `ad5x` mock profile to test it on. If a false runout ever shows up mid-swap, the fix is to lengthen `RUNOUT_CONFIRM_DELAY` past a full swap (~2 min measured in bundle `NJB2U558`), not to loosen the PAUSED gate.
 
 #### Auto-switchover plugin visibility
 
@@ -2873,7 +2873,7 @@ A `Flat` box whose module we cannot identify still has its control paths refused
 | Operation | K2 emission | K1 emission |
 |-----------|-------------|-------------|
 | Envelope open | `SAVE_GCODE_STATE` → `BOX_SAVE_FAN` → `BOX_GO_TO_EXTRUDE_POS` → `BOX_MODE_WAIT` | `SAVE_GCODE_STATE` → `BOX_GO_TO_EXTRUDE_POS` |
-| Load slot N | `CR_BOX_PRE_OPT` → `CR_BOX_EXTRUDE TNN=…` → `CR_BOX_WASTE` → `CR_BOX_FLUSH TNN=…` → `CR_BOX_END_OPT` | `BOX_EXTRUDE_MATERIAL TNN=…` → `BOX_MATERIAL_FLUSH TNN=…` |
+| Load slot N | `CR_BOX_PRE_OPT` → `CR_BOX_EXTRUDE TNN=…` → `CR_BOX_WASTE` → `CR_BOX_FLUSH TNN=…` → `CR_BOX_END_OPT` | `BOX_EXTRUDE_MATERIAL TNN=…` → `BOX_EXTRUDER_EXTRUDE TNN=…` → `BOX_MATERIAL_FLUSH` |
 | Unload current | `CR_BOX_PRE_OPT` → `CR_BOX_CUT` → `BOX_MODE_WAIT` → `CR_BOX_RETRUDE` → `CR_BOX_END_OPT` | `BOX_CUT_MATERIAL` → `BOX_RETRUDE_MATERIAL` |
 | Envelope close (with wipe) | `BOX_NOZZLE_CLEAN` → `BOX_RESTORE_FAN` → `BOX_MOVE_TO_SAFE_POS` → `RESTORE_GCODE_STATE` | `BOX_NOZZLE_CLEAN` → `BOX_MOVE_TO_SAFE_POS` → `RESTORE_GCODE_STATE` |
 | Tool remap | `BOX_MODIFY_TN T<src>=T<dst>` | (same — assumed; needs field confirmation) |

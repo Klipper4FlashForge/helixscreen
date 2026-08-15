@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "toolhead_homing.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -115,20 +116,23 @@ void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
                     on_saved();
                 },
                 [on_error](const MoonrakerError& err) {
-                    std::string msg = fmt::format(
-                        "SAVE_CONFIG failed: {}. Z-offset was applied but not saved. "
-                        "Run SAVE_CONFIG manually or the offset will be lost on restart.",
-                        err.user_message());
-                    spdlog::error("[ZOffsetUtils] {}", msg);
+                    // Log in English (developer-facing), hand the user a
+                    // translated copy. The message used to be one bare
+                    // fmt::format serving both, so the whole sentence was
+                    // untranslatable.
+                    spdlog::error("[ZOffsetUtils] SAVE_CONFIG failed: {}", err.user_message());
                     if (on_error)
-                        on_error(msg);
+                        on_error(fmt::format(
+                            lv_tr(
+                                "SAVE_CONFIG failed: {}. Z-offset was applied but not saved. "
+                                "Run SAVE_CONFIG manually or the offset will be lost on restart."),
+                            err.user_message()));
                 });
         },
         [apply_cmd, on_error](const MoonrakerError& err) {
-            std::string msg = fmt::format("{} failed: {}", apply_cmd, err.user_message());
-            spdlog::error("[ZOffsetUtils] {}", msg);
+            spdlog::error("[ZOffsetUtils] {} failed: {}", apply_cmd, err.user_message());
             if (on_error)
-                on_error(msg);
+                on_error(fmt::format(lv_tr("{} failed: {}"), apply_cmd, err.user_message()));
         });
 }
 

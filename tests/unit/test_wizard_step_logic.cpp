@@ -19,7 +19,7 @@ using helix::wizard::StepId;
 // ----------------------------------------------------------------------------
 static std::vector<helix::StepSkip> full_vec() {
     std::vector<helix::StepSkip> v;
-    for (int i = 0; i < helix::wizard::kStepCount; ++i)
+    for (int i = 0; i < helix::wizard::STEP_COUNT; ++i)
         v.push_back({static_cast<StepId>(i), false});
     return v;
 }
@@ -237,7 +237,7 @@ TEST_CASE("Preset plan: secondary-printer flags navigate connection -> summary -
 
 static std::vector<helix::StepSkip> all_visible() {
     std::vector<helix::StepSkip> v;
-    for (int i = 0; i < helix::wizard::kStepCount; ++i)
+    for (int i = 0; i < helix::wizard::STEP_COUNT; ++i)
         v.push_back({static_cast<StepId>(i), false});
     return v;
 }

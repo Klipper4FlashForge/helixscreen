@@ -52,10 +52,10 @@ namespace helix {
 // names ("home", "print-select") — strip a trailing "_panel" and map '_' -> '-'.
 static std::string panel_short_name(int idx) {
     std::string n = PanelFactory::PANEL_NAMES[idx];
-    static const std::string kSuffix = "_panel";
-    if (n.size() > kSuffix.size() &&
-        n.compare(n.size() - kSuffix.size(), kSuffix.size(), kSuffix) == 0) {
-        n.erase(n.size() - kSuffix.size());
+    static const std::string SUFFIX = "_panel";
+    if (n.size() > SUFFIX.size() &&
+        n.compare(n.size() - SUFFIX.size(), SUFFIX.size(), SUFFIX) == 0) {
+        n.erase(n.size() - SUFFIX.size());
     }
     std::replace(n.begin(), n.end(), '_', '-');
     return n;
@@ -338,6 +338,7 @@ void RemoteControlServer::register_builtin_handlers() {
     };
     handlers_["geom"] = [this](const nlohmann::json& p) { return handle_geom(p); };
     handlers_["text"] = [this](const nlohmann::json& p) { return handle_text(p); };
+    handlers_["set_text"] = [this](const nlohmann::json& p) { return handle_set_text(p); };
     handlers_["get_const"] = [this](const nlohmann::json& p) { return handle_get_const(p); };
     handlers_["wake"] = [this](const nlohmann::json& p) { return handle_wake(p); };
 
@@ -358,13 +359,44 @@ nlohmann::json RemoteControlServer::handle_navigate(const nlohmann::json& params
 
     std::string target = params["panel"];
 
-    // 1. Base panel -> switch to it.
+    // 1. Base panel -> take the same path a navbar tap takes.
+    //
+    // NOT set_active(), which deliberately preserves the overlay stack so the
+    // base panel can be swapped underneath an open overlay. Driving it that way
+    // left the overlay (and its opaque snapshot backdrop) covering the screen
+    // while reporting a successful navigation — every screenshot after it came
+    // back identical, which reads as broken rendering rather than "you are
+    // still inside an overlay". A finger on the navbar clears the stack; so
+    // does this now.
     auto panel_id = name_to_panel_id(target);
     if (panel_id) {
         return execute_on_ui_thread([panel_id]() -> nlohmann::json {
             wake_display();
-            NavigationManager::instance().set_active(*panel_id);
-            return {{"navigated_to", panel_id_to_name(*panel_id)}, {"kind", "panel"}};
+            using PanelRequest = NavigationManager::PanelRequest;
+            // Inline: this lambda already runs inside an UpdateQueue callback,
+            // which is the context switch_to_panel_impl() is written for. That
+            // keeps navigate synchronous — `current` right after it reports the
+            // new panel instead of racing a queued switch.
+            auto result = NavigationManager::instance().request_panel(
+                *panel_id, NavigationManager::SwitchDispatch::Inline);
+
+            // A declined request must not answer like a successful one. The
+            // gating is silent for a finger (the button simply does nothing),
+            // but a script that gets {"navigated_to": ...} back and then
+            // screenshots the panel it never reached has no way to tell.
+            if (result == PanelRequest::BlockedDisconnected) {
+                throw std::runtime_error("Navigation to '" + panel_id_to_name(*panel_id) +
+                                         "' blocked: printer not connected");
+            }
+            if (result == PanelRequest::BlockedKlippyNotReady) {
+                throw std::runtime_error("Navigation to '" + panel_id_to_name(*panel_id) +
+                                         "' blocked: Klipper not ready");
+            }
+
+            return {{"navigated_to", panel_id_to_name(*panel_id)},
+                    {"kind", "panel"},
+                    {"switched", result == PanelRequest::Switched},
+                    {"home_retapped", result == PanelRequest::HomeRetapped}};
         });
     }
 
@@ -420,8 +452,8 @@ nlohmann::json RemoteControlServer::handle_reset(const nlohmann::json& /*params*
         // non-exiting entries, so it flips to true as soon as every modal has
         // been marked -- no need to wait out the exit animation here.
         int modals_cleared = 0;
-        constexpr int kMaxModalDepth = 16; // matching kMaxDepth's reasoning below
-        while (!ModalStack::instance().empty() && modals_cleared < kMaxModalDepth) {
+        constexpr int MAX_MODAL_DEPTH = 16; // matching MAX_DEPTH's reasoning below
+        while (!ModalStack::instance().empty() && modals_cleared < MAX_MODAL_DEPTH) {
             lv_obj_t* top = Modal::get_top();
             if (!top) {
                 break;
@@ -429,10 +461,10 @@ nlohmann::json RemoteControlServer::handle_reset(const nlohmann::json& /*params*
             Modal::hide(top);
             modals_cleared++;
         }
-        if (modals_cleared == kMaxModalDepth && !ModalStack::instance().empty()) {
+        if (modals_cleared == MAX_MODAL_DEPTH && !ModalStack::instance().empty()) {
             spdlog::warn("[RemoteControlServer] reset: modal stack still non-empty after "
                          "{} dismissals -- hit the safety cap, something isn't draining",
-                         kMaxModalDepth);
+                         MAX_MODAL_DEPTH);
         }
 
         // Toasts: ToastManager::hide() dismisses every visible toast (also via
@@ -450,18 +482,18 @@ nlohmann::json RemoteControlServer::handle_reset(const nlohmann::json& /*params*
         // UpdateQueue::process_pending() tick. So overlay_stack_names() must be
         // read exactly once, before any go_back() call, to get the true depth --
         // rereading it in a loop condition would never observe a decrease within
-        // this same callback and would just spin to kMaxDepth every time.
+        // this same callback and would just spin to MAX_DEPTH every time.
         // Bounded rather than unbounded: a nav stack that will not drain is a
         // bug, and spinning forever here would hang the UI thread.
         auto& nav = NavigationManager::instance();
-        constexpr int kMaxDepth = 32;
+        constexpr int MAX_DEPTH = 32;
         int actual_depth = static_cast<int>(nav.overlay_stack_names().size());
-        int overlays_popped = std::min(actual_depth, kMaxDepth);
-        if (actual_depth > kMaxDepth) {
+        int overlays_popped = std::min(actual_depth, MAX_DEPTH);
+        if (actual_depth > MAX_DEPTH) {
             spdlog::warn("[RemoteControlServer] reset: overlay stack depth {} exceeds the "
                          "safety cap of {} -- popping {} and leaving the rest, something "
                          "isn't draining",
-                         actual_depth, kMaxDepth, kMaxDepth);
+                         actual_depth, MAX_DEPTH, MAX_DEPTH);
         }
         for (int i = 0; i < overlays_popped; ++i) {
             nav.go_back();
@@ -639,11 +671,11 @@ nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& para
     // UI thread would block the very redraws it is waiting to observe.
     int stable_frames = 0;
     if (stable) {
-        constexpr int kRequired = 3;
-        constexpr int kMaxSamples = 180; // ~3s at 16ms
+        constexpr int REQUIRED = 3;
+        constexpr int MAX_SAMPLES = 180; // ~3s at 16ms
         uint64_t last = 0;
         int run = 0;
-        for (int i = 0; i < kMaxSamples; i++) {
+        for (int i = 0; i < MAX_SAMPLES; i++) {
             uint64_t h = execute_on_ui_thread([resolve_crop]() -> nlohmann::json {
                              lv_obj_t* crop = resolve_crop();
                              helix::CapturedFrame f;
@@ -655,15 +687,15 @@ nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& para
 
             run = (i > 0 && h == last) ? run + 1 : 1;
             last = h;
-            if (run >= kRequired) {
+            if (run >= REQUIRED) {
                 stable_frames = run;
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
-        if (stable_frames < kRequired) {
+        if (stable_frames < REQUIRED) {
             throw std::runtime_error(
-                "Screen never stabilized: no " + std::to_string(kRequired) +
+                "Screen never stabilized: no " + std::to_string(REQUIRED) +
                 " identical consecutive frames within 3s. Try `freeze` first.");
         }
     }
@@ -1048,7 +1080,18 @@ static bool glob_match(const char* pat, const char* str) {
     return *pat == '\0';
 }
 
-// Every visible, named widget in a subtree whose name matches the pattern.
+// Every visible widget in a subtree whose name matches the pattern.
+//
+// A widget the author never named is not nameless: lv_obj_get_name_resolved()
+// crafts "<class>_<index>" for it ("lv_label_0"), and lv_obj_find_by_name()
+// already matches that form, so it was addressable all along and only this
+// walker hid it. Reporting it costs nothing — the crafted name is built on
+// demand, never stored, which matters on the ESP32 target where naming every
+// widget for real would be paid in heap.
+//
+// Explicit names are still the better answer for anything a test drives: a
+// crafted index counts siblings, so inserting a widget renumbers the ones
+// after it.
 static void collect_glob_matches(lv_obj_t* parent, const std::string& pattern,
                                  std::vector<lv_obj_t*>& out) {
     if (!parent) {
@@ -1060,14 +1103,12 @@ static void collect_glob_matches(lv_obj_t* parent, const std::string& pattern,
         if (!child || lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
             continue; // hidden subtree — not on screen, same rule as describe_walk
         }
+        char resolved[128];
+        lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
         const char* raw = lv_obj_get_name(child);
-        if (raw && raw[0] != '\0') {
-            char resolved[128];
-            lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
-            const char* name = resolved[0] != '\0' ? resolved : raw;
-            if (glob_match(pattern.c_str(), name)) {
-                out.push_back(child);
-            }
+        const char* name = resolved[0] != '\0' ? resolved : raw;
+        if (name && name[0] != '\0' && glob_match(pattern.c_str(), name)) {
+            out.push_back(child);
         }
         collect_glob_matches(child, pattern, out);
     }
@@ -1182,13 +1223,14 @@ static void collect_by_name(lv_obj_t* parent, const std::string& name,
         if (!child || lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
             continue;
         }
+        // Unnamed widgets match on LVGL's crafted "<class>_<index>" — see the
+        // note on collect_glob_matches.
+        char resolved[128];
+        lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
         const char* raw = lv_obj_get_name(child);
-        if (raw && raw[0] != '\0') {
-            char resolved[128];
-            lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
-            if (name == (resolved[0] != '\0' ? resolved : raw)) {
-                out.push_back(child);
-            }
+        const char* candidate = resolved[0] != '\0' ? resolved : raw;
+        if (candidate && name == candidate) {
+            out.push_back(child);
         }
         collect_by_name(child, name, out);
     }
@@ -1929,6 +1971,43 @@ nlohmann::json RemoteControlServer::handle_text(const nlohmann::json& params) {
             }
         }
         return {{"text", value}, {"path", path_of(holder)}, {"source", source}};
+    });
+}
+
+nlohmann::json RemoteControlServer::handle_set_text(const nlohmann::json& params) {
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
+    }
+    if (!params.contains("text") || !params["text"].is_string()) {
+        throw std::invalid_argument("Missing required parameter: text");
+    }
+    const std::string text = params["text"].get<std::string>();
+
+    return execute_on_ui_thread([params, text]() -> nlohmann::json {
+        lv_obj_t* widget = resolve_widget(params);
+        if (!widget) {
+            throw std::invalid_argument("Widget not found: " + target_label(params));
+        }
+        // Resolve the same way `text` reads it: the named widget is often a
+        // wrapper whose label is a descendant.
+        lv_obj_t* holder = widget;
+        std::string existing, source;
+        if (!read_widget_text(holder, existing, source)) {
+            holder = find_text_descendant(widget);
+            if (!holder || !read_widget_text(holder, existing, source)) {
+                throw std::invalid_argument("Widget has no text: " + target_label(params));
+            }
+        }
+        if (!lv_obj_check_type(holder, &lv_label_class)) {
+            throw std::invalid_argument("Not a label, cannot set text: " + target_label(params));
+        }
+        // Writes straight to the label. A label driven by bind_text is restored
+        // the next time its subject changes — set the subject instead when one
+        // exists. This exists for text the app sets imperatively, which is
+        // otherwise unreachable from a test (e.g. the AMS loading-error message,
+        // which comes from a backend field rather than a subject).
+        lv_label_set_text(holder, text.c_str());
+        return {{"set", text}, {"path", path_of(holder)}};
     });
 }
 

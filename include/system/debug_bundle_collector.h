@@ -10,10 +10,33 @@
 
 namespace helix {
 
+/**
+ * @brief PrinterState/LVGL-derived inputs to the bundle's `printer` section.
+ *
+ * Captured on the main thread by snapshot_printer_state(), then carried into
+ * the collect worker as plain data. The section used to read the subjects
+ * itself, which meant lv_subject_get_string() / lv_subject_get_int() and a
+ * reference into PrinterState's unguarded printer_type_ all ran on the
+ * HttpExecutor slow lane — a torn read at best, a use-after-free if
+ * set_printer_type() landed mid-copy. Same shape as UpdateDiagnostics below,
+ * and it makes the section assemblable in a test without a live PrinterState.
+ */
+struct PrinterSnapshot {
+    bool captured = false;       ///< false = default-constructed, never filled
+    std::string model;           ///< PrinterState::get_printer_type(), copied
+    std::string klipper_version; ///< klipper_version subject, "" if unset
+    int connection_state = -1;   ///< printer_connection_state subject; -1 = unavailable
+    int klippy_state = -1;       ///< klippy_state subject; -1 = unavailable
+};
+
 struct BundleOptions {
     bool include_klipper_logs = false;
     bool include_moonraker_logs = false;
     std::string user_note;
+    /// Filled by upload_async() on the main thread. Left uncaptured by direct
+    /// collect() callers, which are main-thread themselves and get a snapshot
+    /// taken inline instead.
+    PrinterSnapshot printer;
 };
 
 struct BundleResult {
@@ -21,6 +44,17 @@ struct BundleResult {
     std::string share_code;
     std::string error_message;
 };
+
+/// One config file as the include walker sees it. `status` is the HTTP status
+/// (404 = a stale [include] of a deleted file, skipped silently).
+struct ConfigFetchResult {
+    int status = 0;
+    std::string body;
+};
+
+/// Injection point for walk_include_tree(): maps a config path to its contents.
+/// Production passes a Moonraker GET; tests pass a table.
+using ConfigFetcher = std::function<ConfigFetchResult(const std::string& path)>;
 
 /**
  * @brief Inputs to the bundle's `update` section.
@@ -31,8 +65,9 @@ struct BundleResult {
  */
 struct UpdateDiagnostics {
     std::string install_root;            ///< app_get_install_root() ("" if unresolvable)
-    bool install_parent_writable = true; ///< dirname(install_root) writable WITHOUT escalation
-    bool self_update_supported = true;   ///< self_update_supported(): writable OR root reachable
+    bool install_parent_writable = true; ///< dirname(install_root) writable → atomic swap
+    bool install_root_writable = true;   ///< install_root itself writable → in-place update
+    bool self_update_supported = true;   ///< self_update_supported(): either of those OR root
     bool externally_managed = false;     ///< updates_externally_managed()
     std::string channel;                 ///< "stable"|"beta"|"dev"; "" → "unknown"
     std::string r2_base_url;             ///< effective manifest base URL; "" → "unknown"
@@ -52,9 +87,19 @@ class DebugBundleCollector {
     using ResultCallback = std::function<void(const BundleResult&)>;
     static void upload_async(const BundleOptions& options, ResultCallback callback);
 
+    /// Read PrinterState and its LVGL subjects into plain data.
+    ///
+    /// MAIN THREAD ONLY. lv_subject_get_string() hands back the subject's live
+    /// buffer, and PrinterState::get_printer_type() returns a reference to a
+    /// member with no mutex, so both must be copied where the writer cannot be
+    /// running concurrently.
+    static PrinterSnapshot snapshot_printer_state();
+
     /// Individual collectors (public for testing)
     static nlohmann::json collect_system_info();
-    static nlohmann::json collect_printer_info();
+    /// Pure assembly from a snapshot — touches no LVGL and no PrinterState, so
+    /// it is safe on the collect worker and testable without either.
+    static nlohmann::json collect_printer_info(const PrinterSnapshot& snap);
     /// `num_lines <= 0` (the default) ships the whole ring — see
     /// resolve_log_tail_lines().
     static std::string collect_log_tail(int num_lines = 0);
@@ -81,11 +126,12 @@ class DebugBundleCollector {
     /**
      * @brief In-app update diagnostics: why the update UI is (or is not) usable.
      *
-     * The About screen gates both "Check for Updates" and "Install Update" on
-     * !in_app_updates_suppressed(); when suppressed the rows are absent and the
-     * user cannot update at all. Without this section a "cannot update" report
-     * carries no evidence of whether that happened or which of the two
-     * predicates caused it.
+     * The About screen gates the two rows separately: "Check for Updates" on
+     * !update_checks_suppressed() (firmware opt-out only), "Install Update"
+     * additionally on !update_install_suppressed() (that, or an install tree this
+     * user cannot write). Without this section a "cannot update" report carries no
+     * evidence of which predicate fired, or of which of the two writability terms
+     * behind the second one was missing.
      *
      * No LVGL access — every value comes from a plain C++ getter, so this is
      * safe from the HttpExecutor thread that upload_async() collects on.
@@ -107,7 +153,7 @@ class DebugBundleCollector {
     static std::string collect_local_log_tail(const std::string& log_name, int num_lines,
                                               int condense_max_repeats = 0);
     /// Line cap for moonraker.log. Deliberately far above what the byte budget
-    /// yields (a 2 MiB condensed window measured 4319 lines) so kMoonrakerTailBytes
+    /// yields (a 2 MiB condensed window measured 4319 lines) so MOONRAKER_TAIL_BYTES
     /// is what binds, not an arbitrary line count.
     static std::string collect_moonraker_log_tail(int num_lines = 8000);
 
@@ -192,14 +238,14 @@ class DebugBundleCollector {
     /// exists is answerable from neither ZMOD's source nor the stock AD5X
     /// printer.cfg, and none of the seven AD5X bundles on hand could settle it.
     ///
-    /// Truncates at kMaxGcodeMacroNames, reporting the drop rather than
+    /// Truncates at MAX_GCODE_MACRO_NAMES, reporting the drop rather than
     /// silently shortening the list.
     static nlohmann::json extract_gcode_macro_names(const nlohmann::json& object_list);
 
     /// Cap on captured macro names. A stock AD5X config defines 5 macros and a
     /// ZMOD one a few hundred; this only bounds a pathological config, and the
     /// bundle records `gcode_macros_truncated` when it bites.
-    static constexpr size_t kMaxGcodeMacroNames = 600;
+    static constexpr size_t MAX_GCODE_MACRO_NAMES = 600;
 
     /// Collect printer.cfg and every config it `[include]`s, sanitized.
     ///
@@ -213,8 +259,25 @@ class DebugBundleCollector {
     /// the log copy arrives head-truncated when the fetch slices through it.
     ///
     /// Every file body goes through sanitize_text_block() (per-LINE
-    /// sanitize_value; see kMaxConfigBytes for why not whole-file).
+    /// sanitize_value; see MAX_CONFIG_BYTES for why not whole-file).
     static nlohmann::json collect_printer_config();
+
+    /// Breadth-first walk of `root`'s `[include]` tree (public for testing).
+    ///
+    /// Split out from collect_printer_config() so the traversal is reachable
+    /// without Moonraker: the loop grows its own work queue while iterating it,
+    /// which is exactly the shape that shipped a use-after-free in v0.99.112,
+    /// and it had no coverage because the only caller needed a live printer.
+    ///
+    /// Returns a JSON object of path -> sanitized body (or `{"error": ...}` for
+    /// a non-2xx that is not 404). `truncated_out` receives "" or the reason the
+    /// walk stopped early; `bytes_out` receives the raw byte total. Both
+    /// optional.
+    static nlohmann::json walk_include_tree(const std::string& root,
+                                            const std::vector<std::string>& available,
+                                            const ConfigFetcher& fetch,
+                                            std::string* truncated_out = nullptr,
+                                            size_t* bytes_out = nullptr);
 
     /// Klipper `[include <pattern>]` targets, in file order (public for testing).
     /// Returns the raw patterns; resolution against the config root is
@@ -239,16 +302,16 @@ class DebugBundleCollector {
     /// bodies are sanitized per line rather than whole - the cap here is about
     /// bundle size, not that guard. A ZMOD AD5X config is ~6668 lines / ~250 KB
     /// across its includes, so this holds a full one.
-    static constexpr size_t kMaxConfigBytes = 512 * 1024;
+    static constexpr size_t MAX_CONFIG_BYTES = 512 * 1024;
 
     /// Cap on how many config files are fetched, including printer.cfg itself.
     /// Guards a pathological include tree; the bundle records
     /// `truncated` when either cap bites.
-    static constexpr size_t kMaxConfigFiles = 40;
+    static constexpr size_t MAX_CONFIG_FILES = 40;
 
     /// Shape-collapse threshold for klippy.log. Tuned against Klipper's
     /// per-second Stats line and ZMOD's 4-line toolhead dump.
-    static constexpr int kKlipperCondenseMaxRepeats = 40;
+    static constexpr int KLIPPER_CONDENSE_MAX_REPEATS = 40;
 
     /// Shape-collapse threshold for moonraker.log. Higher than Klipper's because
     /// moonraker's most valuable repeated block is proc_stats._handle_shutdown()'s
@@ -257,7 +320,7 @@ class DebugBundleCollector {
     /// Vger1700's moonraker.log.2026-08-11, which had two 102 lines apart). 100
     /// keeps every block whole while still collapsing the log_request() padding
     /// that dominates a busy file.
-    static constexpr int kMoonrakerCondenseMaxRepeats = 100;
+    static constexpr int MOONRAKER_CONDENSE_MAX_REPEATS = 100;
 
     /// Byte window fetched for moonraker.log. Raised from the 512 KiB default
     /// because condensing shrinks the payload afterwards, so a bigger fetch buys
@@ -266,7 +329,7 @@ class DebugBundleCollector {
     /// shipped 240 KB. moonraker.log is also the log that SURVIVES the events
     /// klippy.log does not — it lives outside the Klipper tree, so a rollback or
     /// reinstall leaves it intact (bundle LYGVE39Y).
-    static constexpr int kMoonrakerTailBytes = 2 * 1024 * 1024;
+    static constexpr int MOONRAKER_TAIL_BYTES = 2 * 1024 * 1024;
 
     /// Collapse repeating noise in a raw klippy.log tail (public for testing).
     ///
@@ -334,17 +397,25 @@ class DebugBundleCollector {
     /// `condense_max_repeats` of 0 ships the window verbatim; anything positive
     /// runs it through condense_klipper_log() at that threshold. The condenser is
     /// shape-based, not Klipper-specific, so moonraker.log uses it too — with its
-    /// own threshold, see kMoonrakerCondenseMaxRepeats.
+    /// own threshold, see MOONRAKER_CONDENSE_MAX_REPEATS.
+    ///
+    /// `raw_bytes_out`, when non-null, receives how many bytes the fetch actually
+    /// pulled off the wire, before condensing and the line cap. That is the only
+    /// honest measure of how much of `tail_bytes` the file was able to fill —
+    /// the returned string is post-condense and is smaller by an order of
+    /// magnitude. prepend_rotated_predecessor() needs the raw figure.
     static std::string fetch_log_tail(const std::string& base_url, const std::string& endpoint,
                                       int num_lines, int tail_bytes = 524288,
-                                      int condense_max_repeats = 0);
+                                      int condense_max_repeats = 0, int* raw_bytes_out = nullptr);
 
     /// Prepend the newest rotated predecessor when the active log is too short to
     /// have used its byte budget. See the definition for why that predicate is
-    /// the right trigger.
+    /// the right trigger. `active_raw_bytes` is the pre-condense fetch size from
+    /// fetch_log_tail()'s `raw_bytes_out`, NOT active_body.size().
     static std::string prepend_rotated_predecessor(const std::string& base_url,
                                                    const std::vector<std::string>& stems,
-                                                   const std::string& active_body, int tail_bytes,
+                                                   const std::string& active_body,
+                                                   int active_raw_bytes, int tail_bytes,
                                                    int num_lines, int condense_max_repeats);
 
     /// Check if a key name matches a sensitive pattern
