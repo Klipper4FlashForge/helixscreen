@@ -33,6 +33,20 @@ using SubscriptionId = uint64_t;
 inline constexpr SubscriptionId INVALID_SUBSCRIPTION_ID = 0;
 
 /**
+ * @brief Marker key stamped onto a synthetic notify_status_update built from a
+ *        status snapshot that was captured earlier and is being replayed.
+ *
+ * Present (and true) ONLY when dispatch_status_update() was told the payload is a
+ * cached snapshot — today just the discovery subscription response, which is
+ * captured on a background thread and re-dispatched at the end of discovery, long
+ * after live WebSocket traffic may have moved the printer on. Consumers that care
+ * about liveness (PrinterState's klippy-state freshness guard) read it; everything
+ * else ignores it. Absent on live frames and on the mock's own synthetic
+ * dispatches, which ARE the current truth for their session.
+ */
+inline constexpr const char* CACHED_SNAPSHOT_MARKER = "_helix_cached_snapshot";
+
+/**
  * @brief Abstract interface for the Moonraker WebSocket + JSON-RPC transport layer.
  *
  * Production and test consumers that only need polymorphic access to the Moonraker
@@ -157,7 +171,15 @@ class IMoonrakerClient {
     /// Wraps raw status data (e.g., from a subscription response) into a
     /// notify_status_update notification format and dispatches to callbacks.
     /// Used for both initial subscription state and incremental updates.
-    virtual void dispatch_status_update(const json& status) = 0;
+    ///
+    /// @param status Raw status object to fan out
+    /// @param from_cached_snapshot true when `status` was captured earlier and is
+    ///        being replayed (the discovery subscription response). Stamps
+    ///        CACHED_SNAPSHOT_MARKER on the synthetic notification so liveness-
+    ///        sensitive consumers can refuse to regress on it. Defaults to false:
+    ///        a dispatch that reflects the caller's current view — including every
+    ///        mock-driven state change — is live.
+    virtual void dispatch_status_update(const json& status, bool from_cached_snapshot = false) = 0;
 
     // ========================================================================
     // Connection State & Observers

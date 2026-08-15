@@ -678,20 +678,28 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                             spdlog::info("[Moonraker Client] Printer state: {}", state_message);
                         }
 
-                        // Set klippy state based on printer.info response
-                        // This ensures we recognize shutdown/error states at startup
+                        // Seed klippy state from the printer.info response so
+                        // shutdown/error at startup is recognised before any
+                        // webhooks frame arrives.
+                        //
+                        // SEED only, never override: this RPC's response describes
+                        // the printer as of when Moonraker answered, and discovery
+                        // runs concurrently with live WebSocket traffic. Klipper can
+                        // shut down between the request and the response, and the
+                        // stale answer would then re-enable everything against a
+                        // dead printer.
                         if (state == "shutdown" || state == "disconnected") {
                             spdlog::warn("[Moonraker Client] Printer is in {} state at startup",
                                          state);
-                            get_printer_state().set_klippy_state(KlippyState::SHUTDOWN);
+                            get_printer_state().set_klippy_state_if_unseeded(KlippyState::SHUTDOWN);
                         } else if (state == "error") {
                             spdlog::warn("[Moonraker Client] Printer is in ERROR state at startup");
-                            get_printer_state().set_klippy_state(KlippyState::ERROR);
+                            get_printer_state().set_klippy_state_if_unseeded(KlippyState::ERROR);
                         } else if (state == "startup") {
                             spdlog::info("[Moonraker Client] Printer is starting up");
-                            get_printer_state().set_klippy_state(KlippyState::STARTUP);
+                            get_printer_state().set_klippy_state_if_unseeded(KlippyState::STARTUP);
                         } else if (state == "ready") {
-                            get_printer_state().set_klippy_state(KlippyState::READY);
+                            get_printer_state().set_klippy_state_if_unseeded(KlippyState::READY);
                         }
                     }
 

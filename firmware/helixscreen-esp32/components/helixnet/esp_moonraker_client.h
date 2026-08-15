@@ -85,7 +85,7 @@ class EspMoonrakerClient final : public IMoonrakerClient {
                                   std::function<void(const json&)> cb) override;
     bool unregister_method_callback(const std::string& method,
                                     const std::string& handler_name) override;
-    void dispatch_status_update(const json& status) override;
+    void dispatch_status_update(const json& status, bool from_cached_snapshot = false) override;
 
     // --- Connection state & observers ---
     ConnectionState get_connection_state() const override;

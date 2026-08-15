@@ -1565,12 +1565,15 @@ bool EspMoonrakerClient::unregister_method_callback(const std::string& method,
     return removed;
 }
 
-void EspMoonrakerClient::dispatch_status_update(const json& status) {
+void EspMoonrakerClient::dispatch_status_update(const json& status, bool from_cached_snapshot) {
     // Wrap raw status into the notify_status_update envelope and route it through
     // the same fan-out an incoming WS notification would take. [status, eventtime].
     json wrapped;
     wrapped["method"] = "notify_status_update";
     wrapped["params"] = json::array({status, 0.0});
+    if (from_cached_snapshot) {
+        wrapped[CACHED_SNAPSHOT_MARKER] = true;
+    }
     // Notify-only fan-out (no method_callbacks_), matching desktop
     // dispatch_status_update semantics.
     dispatch_notification(wrapped, /*include_method_callbacks=*/false);
