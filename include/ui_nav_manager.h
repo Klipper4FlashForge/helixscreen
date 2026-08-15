@@ -163,6 +163,37 @@ class NavigationManager {
      */
     void set_active(helix::PanelId panel_id);
 
+    /// How the caller wants the panel switch itself run. An LVGL event callback
+    /// must queue it — mutating widgets mid-render corrupts the draw. A caller
+    /// already inside an UpdateQueue callback (RemoteControlServer's
+    /// execute_on_ui_thread) is in exactly the context switch_to_panel_impl()
+    /// is written for and runs it inline, so the state it changes is readable
+    /// the moment the call returns.
+    enum class SwitchDispatch { Queued, Inline };
+
+    /// What request_panel() did, so a programmatic caller can tell a real
+    /// switch from a request that was silently declined.
+    enum class PanelRequest {
+        Switched,              ///< The panel switch ran (or was queued)
+        AlreadyActive,         ///< Already there with nothing stacked over it
+        HomeRetapped,          ///< Already on Home — the carousel reset instead
+        BlockedDisconnected,   ///< Panel needs a printer connection
+        BlockedKlippyNotReady, ///< Panel needs Klipper ready
+    };
+
+    /**
+     * @brief Do what tapping this panel's navbar button does
+     *
+     * The whole navbar-tap decision: the already-there special cases (a second
+     * tap on Home resets the carousel), the connection/Klipper gating, and the
+     * switch — which clears any open overlay stack, unlike set_active(), whose
+     * job is to swap the base panel *underneath* whatever is stacked on it.
+     *
+     * Shared so `helix-screen ctl navigate` and a finger produce the same
+     * result; they differ only in @p dispatch.
+     */
+    PanelRequest request_panel(helix::PanelId panel_id, SwitchDispatch dispatch);
+
     /**
      * @brief Register C++ panel instance for lifecycle callbacks
      *

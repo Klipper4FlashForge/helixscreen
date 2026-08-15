@@ -963,41 +963,52 @@ void NavigationManager::nav_button_clicked_cb(lv_event_t* event) {
                   static_cast<int>(code), panel_id, static_cast<int>(mgr.active_panel_));
 
     if (code == LV_EVENT_CLICKED) {
-        // Already on this panel with no overlays: special handling per panel
-        if (panel_id == static_cast<int>(mgr.active_panel_) && !mgr.has_open_overlays()) {
-            if (panel_id == static_cast<int>(PanelId::Home)) {
-                // Tapping home while on home scrolls carousel to page 0
-                spdlog::debug("[NavigationManager] Already on Home - navigating to main page");
-                get_global_home_panel().go_to_main_page();
-            } else {
-                spdlog::debug("[NavigationManager] Skipping - already on panel {} with no overlays",
-                              panel_id);
-            }
-            return;
-        }
-
-        // Block navigation to connection-required panels when disconnected or klippy not ready
-        if (panel_requires_connection(static_cast<PanelId>(panel_id))) {
-            if (!mgr.is_printer_connected()) {
-                spdlog::info("[NavigationManager] Navigation to panel {} blocked - not connected",
-                             panel_id);
-                return;
-            }
-            if (!mgr.is_klippy_ready()) {
-                spdlog::info(
-                    "[NavigationManager] Navigation to panel {} blocked - klippy not ready",
-                    panel_id);
-                return;
-            }
-        }
-
-        // Queue for REFR_START - guarantees we never modify widgets during render phase
-        spdlog::trace("[NavigationManager] Queuing switch to panel {}", panel_id);
-        helix::ui::queue_update(
-            [panel_id]() { NavigationManager::instance().switch_to_panel_impl(panel_id); });
+        // Queued, not inline: this runs from an LVGL event during the render
+        // phase, where mutating the widget tree corrupts the draw.
+        mgr.request_panel(static_cast<PanelId>(panel_id), SwitchDispatch::Queued);
     }
 
     LVGL_SAFE_EVENT_CB_END();
+}
+
+NavigationManager::PanelRequest NavigationManager::request_panel(PanelId panel_id,
+                                                                 SwitchDispatch dispatch) {
+    const int id = static_cast<int>(panel_id);
+
+    // Already on this panel with no overlays: special handling per panel
+    if (panel_id == active_panel_ && !has_open_overlays()) {
+        if (panel_id == PanelId::Home) {
+            // Tapping home while on home scrolls carousel to page 0
+            spdlog::debug("[NavigationManager] Already on Home - navigating to main page");
+            get_global_home_panel().go_to_main_page();
+            return PanelRequest::HomeRetapped;
+        }
+        spdlog::debug("[NavigationManager] Skipping - already on panel {} with no overlays", id);
+        return PanelRequest::AlreadyActive;
+    }
+
+    // Block navigation to connection-required panels when disconnected or klippy not ready
+    if (panel_requires_connection(panel_id)) {
+        if (!is_printer_connected()) {
+            spdlog::info("[NavigationManager] Navigation to panel {} blocked - not connected", id);
+            return PanelRequest::BlockedDisconnected;
+        }
+        if (!is_klippy_ready()) {
+            spdlog::info("[NavigationManager] Navigation to panel {} blocked - klippy not ready",
+                         id);
+            return PanelRequest::BlockedKlippyNotReady;
+        }
+    }
+
+    if (dispatch == SwitchDispatch::Queued) {
+        // Queue for REFR_START - guarantees we never modify widgets during render phase
+        spdlog::trace("[NavigationManager] Queuing switch to panel {}", id);
+        helix::ui::queue_update([id]() { NavigationManager::instance().switch_to_panel_impl(id); });
+    } else {
+        spdlog::trace("[NavigationManager] Switching to panel {} inline", id);
+        switch_to_panel_impl(id);
+    }
+    return PanelRequest::Switched;
 }
 
 void NavigationManager::switch_to_panel_impl(int panel_id) {

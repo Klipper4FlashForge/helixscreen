@@ -243,7 +243,7 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 |---------|---------|
 | `ping` | Health check — answers `pong` once the control server is accepting |
 | `status` | Panel, connection state, and printer status in one response |
-| `navigate <panel>` | Go to a base panel |
+| `navigate <panel>` | Go to a base panel, exactly as tapping its navbar button does — **pops any open overlay stack**, honours the connection/Klipper gating (a blocked panel is an error, not a silent no-op), and a second `navigate home` while already on Home resets the carousel |
 | `cd <container>` | Move the working directory — see below. **No UI side effect** |
 | `go_back`, `back` | Pop the current overlay |
 | `help`, `?` | Print the command list (same as `-h`/`--help`) |
