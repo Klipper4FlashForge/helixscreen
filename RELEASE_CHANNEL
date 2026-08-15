@@ -1,4 +1,4 @@
-stable
+dev
 
 # Which update channel a tagged release from THIS branch publishes to.
 # Read by scripts/release-channel.sh, which drives .github/workflows/release.yml.
@@ -20,3 +20,15 @@ stable
 # in the SAME change that creates release/1.0 (which keeps `stable`). Flipping
 # it before that branch exists would leave the stable fleet with no further
 # updates.
+#
+# THIS BRANCH says `dev`, set 2026-08-15. It previously said `stable`, inherited
+# from main, which meant tagging devel/1.1 would have published the whole 1.1
+# line — grid rewrite included — to every stable install. The pre-upload
+# downgrade guard in release.yml would not have caught it: 1.1.0 > 1.0.0 is a
+# forward move.
+#
+# `dev` rather than `beta` because the beta channel belongs to the 1.0 devel
+# track that opens when main flips, and 1.1 is upstream of that. This is safe
+# ahead of the atomic cut since it only removes a destination — devel/1.1 was
+# never meant to reach stable — and it does NOT substitute for flipping main.
+# See docs/devel/RELEASE_1_0_CHECKLIST.md § "The atomic branch cut".
