@@ -1813,9 +1813,10 @@ bool Application::init_translations() {
     std::string lang = m_config->get_language();
     helix::ui::ensure_translation_loaded(lang);
 
-    // Set initial language. When no pack is loaded for a language (e.g. English
-    // with no en.xml), lv_translation_get() returns the tag itself — and since
-    // our tags ARE English, English UI works without any registered pack.
+    // Set initial language. When no pack is loaded for a language — which is
+    // the normal case for English, whose pack is skipped entirely —
+    // lv_translation_get() returns the tag itself, and since our tags ARE
+    // English the UI is already correct without any registered pack.
     lv_translation_set_language(lang.c_str());
 
     // Load CJK runtime fonts if persisted language is CJK

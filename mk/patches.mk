@@ -66,6 +66,7 @@ LVGL_PATCHED_FILES := \
 	src/widgets/label/lv_label.h \
 	src/widgets/label/lv_label_private.h \
 	src/libs/lodepng/lodepng.c \
+	src/others/translation/lv_translation.c \
 	lv_conf_template.h
 # NOTE: src/misc/lv_check_arg.h is deliberately absent — the backport patch
 # CREATES it, so it is untracked upstream and `git checkout` cannot restore it.
@@ -615,6 +616,13 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 		echo "$(GREEN)✓ async-delete breadcrumb patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL async-delete breadcrumb patch already applied$(RESET)"; \
+	fi
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_translation_warn_once.patch 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying LVGL translation warn-once patch (missing-language warning once per language)...$(RESET)"; \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_translation_warn_once.patch && \
+		echo "$(GREEN)✓ translation warn-once patch applied$(RESET)"; \
+	else \
+		echo "$(GREEN)✓ LVGL translation warn-once patch already applied$(RESET)"; \
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/widgets/label/lv_label.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL label text transform patch...$(RESET)"; \
