@@ -2,6 +2,25 @@
 
 How the CI pipeline ships `helix-screen` to Google Play, and the one-time manual setup required before the automated upload can work.
 
+## Where to pick up — 2026-08-15
+
+**Waiting on Google.** The `org.helixscreen.app` package-name registration is **In review** (submitted 2026-08-15; Google quoted up to 48h). Nothing to do until it clears.
+
+- Check Play Console → **Android developer verification** → **Package names**. Success looks like status `Registered` and `Keys: 1`.
+- The stub APK that was uploaded for the ownership challenge is kept at `~/.android-keystore/adi-registration/` with a README. **If review is rejected, re-upload that same APK** — no rebuild needed. Delete that directory once the package shows Registered.
+- The registered fingerprint is the upload key's: `41:B4:26:42:44:FF:90:FA:11:BD:37:56:21:10:C2:E2:66:F4:AB:42:FB:49:87:62:75:49:BF:AF:DE:65:A8:AC`.
+
+**Then, in order:**
+
+1. **Create the app record** in Play Console: name "HelixScreen", default language English (US), free, type = App. Complete the declarations (target audience, data safety, content rating, ads, the government/COVID/financial questionnaires) and paste the privacy policy URL.
+2. **Upload the listing assets by hand** from `android/fastlane/metadata/android/en-US/` — the workflow does not sync them.
+3. **First manual AAB upload** to the internal track. Take `helixscreen-android-v<VERSION>.aab` from any GitHub release at v0.99.44 or later; those are correctly signed (v0.99.113's was verified against the fingerprint above on 2026-08-15). Google requires this one upload by hand before the Publishing API will accept anything.
+4. **Accept the Google-generated app signing key** at the Play App Signing prompt. This is a decided question — see the first-manual-upload prerequisite below for the reasoning and for the two-signature consequence it carries.
+5. **Register Google's app signing key** as a second key on the same package (fingerprint from Play Console → Test and release → App integrity → App signing). Check whether Google auto-registered it first. Do not try to complete an ownership challenge for it by hand — we do not hold that private key.
+6. **Service account** in Google Cloud: enable the Google Play Android Developer API, grant "Release manager" scoped to this app only, download the JSON key, paste it verbatim as the `PLAY_SERVICE_ACCOUNT_JSON` GitHub secret. The next release tag then publishes to the internal track automatically.
+
+**Not blocking any of this:** regular releases keep working. Every tag produces signed APKs and an AAB on the GitHub release, and `publish-android` skips cleanly while `PLAY_SERVICE_ACCOUNT_JSON` is unset.
+
 ## Status snapshot — 2026-04-23
 
 **Done:**
