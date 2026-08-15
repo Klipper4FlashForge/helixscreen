@@ -38,6 +38,7 @@
 
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/panel_widget_size_harness.h"
+#include "../test_helpers/tips_manager_test_access.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "display_metrics.h"
 #include "grid_layout.h"
@@ -227,7 +228,18 @@ const std::vector<KnownClip> kKnownClipping = {
     {"power_device",     "480x272"},  {"power_device",     "480x320"},
     {"power_device",     "480x400"},  {"power_device",     "480x800"},
 
-    {"tips",             "272x480"},  {"tips",             "480x400"},
+    // Measured against the LONGEST title in the database, which is what the
+    // sweep now pins — the two entries this used to hold were whatever the
+    // random rotation happened to draw. tip_container ends up taller than the
+    // tile on seven of the nine geometries, overflowing top and bottom
+    // equally (2px at 480x800, 34px at 1080x2400): the title wraps to more
+    // lines than the authored minimum height has room for. Only 480x320 and
+    // 800x480 hold it. The fix is a line clamp on the title label rather than
+    // a bigger minimum, which is why these are recorded rather than resized.
+    {"tips",             "272x480"},  {"tips",             "480x272"},
+    {"tips",             "480x400"},  {"tips",             "480x800"},
+    {"tips",             "1024x600"}, {"tips",             "1280x720"},
+    {"tips",             "1080x2400"},
 };
 // clang-format on
 
@@ -497,6 +509,15 @@ TEST_CASE_METHOD(ContentFitsFixture,
     PanelWidgetManager::instance().init_widget_subjects();
     require_font_tokens_distinct();
     seed_printer_topology(state());
+
+    // The tips tile shows a randomly chosen title, so without this the sweep
+    // measures a different string every run and reports whichever geometries
+    // that one happened to overflow. Pinned to the longest title in the
+    // database: a tile that holds the worst case holds the rest.
+    const std::string pinned_tip =
+        TipsManagerTestAccess::pin_longest_title(*TipsManager::get_instance());
+    REQUIRE_FALSE(pinned_tip.empty());
+    INFO("tips pinned to the longest title: \"" << pinned_tip << "\"");
 
     const auto& defs = get_all_widget_defs();
     REQUIRE(defs.size() > 10);
