@@ -124,6 +124,25 @@ assets/fonts/NotoSansCJK*.otf
 config/helixconfig.json.voronv2
 
 # ============================================================================
+# Signing Material — NEVER commit any of this
+# ============================================================================
+# The Android upload keystore lives at ~/.android-keystore/ and reaches CI as
+# the ANDROID_KEYSTORE_BASE64 secret; nothing signing-related belongs in the
+# tree. Committing one means rotating the key, and for the upload key that
+# means asking Google to reset it. The Play service-account JSON is worse: it
+# can push arbitrary code to production.
+*.jks
+*.keystore
+*.p12
+*.pfx
+# Google Play service account (PLAY_SERVICE_ACCOUNT_JSON), under the names the
+# Cloud Console and the docs hand out.
+service-account*.json
+play-service-account*.json
+play-store-credentials*.json
+google-play-*.json
+
+# ============================================================================
 # Telemetry Analytics (local data pulled from R2)
 # ============================================================================
 .telemetry-data/
