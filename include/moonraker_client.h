@@ -663,8 +663,10 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * Public to allow MoonrakerDiscoverySequence access.
      *
      * @param status Raw printer status object
+     * @param from_cached_snapshot true when replaying a snapshot captured earlier
+     *        (see IMoonrakerClient::dispatch_status_update)
      */
-    void dispatch_status_update(const json& status) override;
+    void dispatch_status_update(const json& status, bool from_cached_snapshot = false) override;
 
     /**
      * @brief Invoke an on_connected-style callback with exception safety.

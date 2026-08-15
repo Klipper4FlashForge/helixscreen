@@ -2782,8 +2782,14 @@ void Application::setup_discovery_callbacks() {
             // Dispatch initial subscription status AFTER init_fans so fan/sensor subjects
             // exist when the status data is processed. The initial status is passed from the
             // discovery sequence rather than dispatched separately to guarantee ordering.
+            // Flagged as a cached snapshot: it was captured on the background
+            // thread when the subscribe response landed and has been carried
+            // through the rest of discovery, so it can be seconds stale by the
+            // time it lands here. Live WebSocket frames have been updating the
+            // same state the whole time — this replay must not walk a liveness
+            // signal (klippy state) backwards.
             if (!(*status_snapshot).empty()) {
-                client->dispatch_status_update((*status_snapshot));
+                client->dispatch_status_update((*status_snapshot), /*from_cached_snapshot=*/true);
             }
             crash_handler::breadcrumb::note("disc", "post_status_dispatch", n);
 
