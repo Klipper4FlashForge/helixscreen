@@ -126,6 +126,29 @@ file_sudo() {
     fi
 }
 
+# Get sudo prefix needed to RENAME or REMOVE a path (mv/rm/rmdir of the path
+# itself, not of something inside it).
+#
+# Always checks the PARENT, existing target or not. rename(2) and unlink(2)
+# mutate the parent directory's entries; the target's own mode has nothing to do
+# with it. So a user-owned directory inside a root-owned parent is writable and
+# still cannot be moved or deleted.
+#
+# That is not hypothetical, it is the /opt/helixscreen layout: helixscreen.service
+# chowns the install dir to the service user via ExecStartPre while /opt stays
+# root:root. file_sudo() answers "can I write INTO this", returns "" there, and the
+# swap runs bare:
+#
+#   mv: cannot move '/opt/helixscreen' to '/opt/helixscreen.old': Permission denied
+#
+# Use file_sudo() when writing a file into a directory; use this when the path is
+# the thing being moved or deleted.
+path_sudo() {
+    local dir
+    dir="$(dirname "$1")"
+    [ -w "$dir" ] && echo "" || echo "$SUDO"
+}
+
 # Resolve the directory holding the user's Klipper/Moonraker config files.
 #
 # Almost every Klipper install puts them in <klipper home>/printer_data/config,
@@ -1618,7 +1641,7 @@ setup_config_symlink() {
         log_info "Migrating from old config symlink layout..."
         local old_target
         old_target=$(readlink "$pd_helix" 2>/dev/null || echo "")
-        $(file_sudo "$pd_helix") rm -f "$pd_helix"
+        $(path_sudo "$pd_helix") rm -f "$pd_helix"
         log_info "Removed old directory symlink (was: $old_target)"
     fi
 
@@ -5410,7 +5433,7 @@ extract_release() {
                 log_info "Install partition tight (${install_free_mb}MB free, need ~${new_install_mb}MB); staging rollback backup off-partition at ${HELIX_OFFSITE_ROLLBACK_DIR}"
 
                 # Cross-fs move (copy to roomy + delete) frees the install fs.
-                if ! $(file_sudo "${INSTALL_DIR}") mv "${INSTALL_DIR}" "$INSTALL_BACKUP"; then
+                if ! $(path_sudo "${INSTALL_DIR}") mv "${INSTALL_DIR}" "$INSTALL_BACKUP"; then
                     log_error "Failed to relocate existing installation off-partition."
                     rm -rf "$extract_dir"
                     exit 1
@@ -5437,7 +5460,7 @@ extract_release() {
             fi
 
             # Atomic swap: move old install to backup
-            if ! $(file_sudo "${INSTALL_DIR}") mv "${INSTALL_DIR}" "$INSTALL_BACKUP"; then
+            if ! $(path_sudo "${INSTALL_DIR}") mv "${INSTALL_DIR}" "$INSTALL_BACKUP"; then
                 log_error "Failed to backup existing installation."
                 rm -rf "$extract_dir"
                 exit 1
@@ -5452,9 +5475,19 @@ extract_release() {
         # ROLLBACK: restore old installation
         if [ -d "${INSTALL_BACKUP:-}" ]; then
             log_warn "Rolling back to previous installation..."
-            # Remove partial new install that may block the rollback mv
-            [ -d "${INSTALL_DIR}" ] && $SUDO rm -rf "${INSTALL_DIR}"
-            if $SUDO mv "$INSTALL_BACKUP" "${INSTALL_DIR}"; then
+            # Remove partial new install that may block the rollback mv.
+            # Unescalated first, then escalate — the same two-attempt idiom the
+            # stale-backup removals above use. A forced $SUDO is not the safe
+            # choice here: under NoNewPrivileges (self-update) sudo cannot run at
+            # all, so escalating first turns a rollback that would have worked on
+            # a user-owned parent into a failed one, and a failed rollback leaves
+            # the box with no install.
+            if [ -d "${INSTALL_DIR}" ]; then
+                $(path_sudo "${INSTALL_DIR}") rm -rf "${INSTALL_DIR}" 2>/dev/null || \
+                    $SUDO rm -rf "${INSTALL_DIR}" 2>/dev/null || true
+            fi
+            if $(path_sudo "$INSTALL_BACKUP") mv "$INSTALL_BACKUP" "${INSTALL_DIR}" 2>/dev/null || \
+               $SUDO mv "$INSTALL_BACKUP" "${INSTALL_DIR}"; then
                 log_warn "Rollback complete. Previous installation restored."
                 # Off-partition rollback: the cross-fs mv leaves an empty
                 # helixscreen-rollback/ dir behind. Remove it, but ONLY when its
@@ -7884,8 +7917,8 @@ PYEOF
         else
             log_warn "Webcam backup missing or python unavailable — only removed our entry"
         fi
-        $(file_sudo "$backup") rm -f "$backup" 2>/dev/null || true
-        $(file_sudo "$marker") rm -f "$marker" 2>/dev/null || true
+        $(path_sudo "$backup") rm -f "$backup" 2>/dev/null || true
+        $(path_sudo "$marker") rm -f "$marker" 2>/dev/null || true
     fi
 
     # (c) Re-enable the K2-Camera-main [webcam Default] entry we commented out, if
@@ -7908,7 +7941,7 @@ PYEOF
             rm -f "$tmp"
         done < "$k2cam_marker"
         [ "$restored" = true ] && _restart_moonraker
-        $(file_sudo "$k2cam_marker") rm -f "$k2cam_marker" 2>/dev/null || true
+        $(path_sudo "$k2cam_marker") rm -f "$k2cam_marker" 2>/dev/null || true
     fi
 
     log_success "K2 ustreamer camera removed (stock WebRTC re-enabled on reboot)"
@@ -8333,7 +8366,7 @@ undo_klipper_includes() {
             cfg)
                 if [ -f "$rest" ]; then
                     log_info "Removing Klipper snippet: $rest"
-                    $(file_sudo "$rest") rm -f "$rest" 2>/dev/null || true
+                    $(path_sudo "$rest") rm -f "$rest" 2>/dev/null || true
                 fi
                 ;;
             include)
@@ -8389,7 +8422,7 @@ undo_seeded_settings() {
     done < "$state_file"
 
     # Remove only the marker; settings.json is left untouched on purpose.
-    $(file_sudo "$state_file") rm -f "$state_file" 2>/dev/null || true
+    $(path_sudo "$state_file") rm -f "$state_file" 2>/dev/null || true
 }
 
 # Uninstall HelixScreen
@@ -8694,7 +8727,7 @@ uninstall() {
 
     # Clean up macOS resource fork files (created by scp from Mac)
     for pattern in /opt/._helixscreen /root/._helixscreen; do
-        $(file_sudo "$pattern") rm -f "$pattern" 2>/dev/null || true
+        $(path_sudo "$pattern") rm -f "$pattern" 2>/dev/null || true
     done
 
     # Remove config symlinks (preserves user files in printer_data)

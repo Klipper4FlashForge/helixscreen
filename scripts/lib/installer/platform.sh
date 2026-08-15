@@ -1099,7 +1099,7 @@ setup_config_symlink() {
         log_info "Migrating from old config symlink layout..."
         local old_target
         old_target=$(readlink "$pd_helix" 2>/dev/null || echo "")
-        $(file_sudo "$pd_helix") rm -f "$pd_helix"
+        $(path_sudo "$pd_helix") rm -f "$pd_helix"
         log_info "Removed old directory symlink (was: $old_target)"
     fi
 
