@@ -2827,6 +2827,32 @@ void UpdateChecker::start_auto_check() {
         return;
     }
 
+    // A machine that can check but cannot install. Report it: this state shipped
+    // in v0.99.96 and was found in v0.99.113 only because one user kept pushing on
+    // Discord — in aggregate it would have shown as a cohort of installs that
+    // never once fetched a manifest. Emitted here rather than from init() because
+    // TelemetryManager::init() runs after UpdateChecker::init() (application.cpp),
+    // and after the auto_check_timer_ guard so a Moonraker reconnect does not
+    // re-send it. Firmware-managed installs returned above and are not reported:
+    // that is a deliberate configuration, not a fault.
+    //
+    // The context is a SHAPE, not a path. install_root embeds a username and
+    // record_error()'s contract is pre-defined strings only; which of the two
+    // writability terms was missing is the whole diagnostic value anyway.
+    if (update_install_suppressed()) {
+        const std::string root = app_get_install_root();
+        const std::string parent = root.empty() ? std::string() : helix::paths::dirname(root);
+        TelemetryManager::instance().record_error(
+            "updates", "install_suppressed",
+            fmt::format("parent_writable={},root_writable={},escalate={}",
+                        !parent.empty() && helix::paths::probe_writable(parent) ? 1 : 0,
+                        !root.empty() && helix::paths::probe_writable(root) ? 1 : 0,
+                        root_escalation_available() ? 1 : 0));
+        spdlog::warn("[UpdateChecker] Install is not self-updatable ({}); checking anyway so the "
+                     "user can be told to re-run the installer",
+                     suppression_reason());
+    }
+
     spdlog::info("[UpdateChecker] Starting auto-check (15s initial delay, 24h periodic)");
 
     // One-shot 15s timer for initial check after startup

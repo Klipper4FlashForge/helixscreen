@@ -1142,7 +1142,6 @@
   <translation tag="Install Plugin" it="Installa plugin"/>
   <translation tag="Install Root" it="Root di installazione"/>
   <translation tag="Install Update" it="Installa Aggiornamento"/>
-  <translation tag="Install from a terminal: re-run the HelixScreen installer"/>
   <translation tag="Install plugin" it="Installa plugin"/>
   <translation tag="Install script not found. Use the remote install command instead." it="Script di installazione non trovato. Usa invece il comando di installazione remota."/>
   <translation tag="Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history." it="Installa il plugin HelixPrint nelle impostazioni Avanzate per rimappare il filamento senza influenzare la cronologia di stampa."/>
@@ -1512,6 +1511,7 @@
   <translation tag="Normal"/>
   <translation tag="Not Enough Filament" it="Filamento insufficiente"/>
   <translation tag="Not Now" it="Non ora"/>
+  <translation tag="Not available here. Update from a terminal."/>
   <translation tag="Not calibrated" it="Non calibrato"/>
   <translation tag="Not configured" it="Non configurato"/>
   <translation tag="Not connected" it="Non connesso"/>
@@ -1981,6 +1981,7 @@
   <translation tag="Run brush cleaning sequence" it="Esegui la sequenza di pulizia con spazzola"/>
   <translation tag="Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves)" it="Esegui caricamento/scaricamento filamento anche quando l&apos;ugello è freddo (per macro che riscaldano l&apos;ugello autonomamente)"/>
   <translation tag="Run test sequence on all lanes" it="Esegui la sequenza di test su tutte le corsie"/>
+  <translation tag="Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform."/>
   <translation tag="Run without parameter prompt" it="Esegui senza richiesta parametri"/>
   <translation tag="Run {}?" it="Eseguire {}?"/>
   <translation tag="Running {}..." it="Esecuzione {}..."/>
@@ -2502,9 +2503,9 @@
   <translation tag="Update Channel" it="Canale Aggiornamenti"/>
   <translation tag="Update Failed" it="Aggiornamento Fallito"/>
   <translation tag="Update Success" it="Aggiornamento riuscito"/>
+  <translation tag="Update from a Terminal"/>
   <translation tag="Update installed!" it="Aggiornamento installato!"/>
-  <translation tag="Update your security PIN" it="Aggiorna il tuo PIN di sicurezza"/>
-  <translation tag="Updates aren&apos;t available on this installation." it="Gli aggiornamenti non sono disponibili in questa installazione."/>
+  <translation tag="Update your security PIN" it="Aggiorna il tuo PIN di sicurezza in questa installazione."/>
   <translation tag="Updating Configuration..." it="Aggiornamento configurazione..."/>
   <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." it="Aggiorna ad AFC 1.2.0 o versioni successive per nomi filamento e bobine multicolore."/>
   <translation tag="Upload" it="Carica"/>

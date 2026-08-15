@@ -1142,7 +1142,6 @@
   <translation tag="Install Plugin" ja="プラグインをインストール"/>
   <translation tag="Install Root" ja="インストールルート"/>
   <translation tag="Install Update" ja="更新をインストール"/>
-  <translation tag="Install from a terminal: re-run the HelixScreen installer"/>
   <translation tag="Install plugin" ja="プラグインをインストール"/>
   <translation tag="Install script not found. Use the remote install command instead." ja="インストールスクリプトが見つかりません。代わりにリモートインストールコマンドを使用してください。"/>
   <translation tag="Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history." ja="印刷履歴に影響を与えずにフィラメントをリマップするには、詳細設定でHelixPrintプラグインをインストールしてください。"/>
@@ -1512,6 +1511,7 @@
   <translation tag="Normal"/>
   <translation tag="Not Enough Filament" ja="フィラメントが不足しています"/>
   <translation tag="Not Now" ja="今はしない"/>
+  <translation tag="Not available here. Update from a terminal."/>
   <translation tag="Not calibrated" ja="キャリブレーション未実施"/>
   <translation tag="Not configured" ja="未設定"/>
   <translation tag="Not connected" ja="未接続"/>
@@ -1981,6 +1981,7 @@
   <translation tag="Run brush cleaning sequence" ja="ブラシ清掃シーケンスを実行"/>
   <translation tag="Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves)" ja="ノズルがコールドの状態でもフィラメントの装填/取り出しを実行（ノズルを自身で加熱するマクロ向け）"/>
   <translation tag="Run test sequence on all lanes" ja="全レーンでテストシーケンスを実行"/>
+  <translation tag="Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform."/>
   <translation tag="Run without parameter prompt" ja="パラメータ入力なしで実行"/>
   <translation tag="Run {}?" ja="{} を実行しますか？"/>
   <translation tag="Running {}..." ja="{} を実行中..."/>
@@ -2502,9 +2503,9 @@
   <translation tag="Update Channel" ja="更新チャンネル"/>
   <translation tag="Update Failed" ja="更新失敗"/>
   <translation tag="Update Success" ja="更新成功"/>
+  <translation tag="Update from a Terminal"/>
   <translation tag="Update installed!" ja="アップデートをインストールしました！"/>
   <translation tag="Update your security PIN" ja="セキュリティ PIN を更新"/>
-  <translation tag="Updates aren&apos;t available on this installation." ja="このインストールでは更新は利用できません。"/>
   <translation tag="Updating Configuration..." ja="設定を更新中..."/>
   <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." ja="フィラメント名とマルチカラースプールに対応するには、AFC 1.2.0以降にアップグレードしてください。"/>
   <translation tag="Upload" ja="アップロード"/>

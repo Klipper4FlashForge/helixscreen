@@ -1176,7 +1176,6 @@ translations:
   Install Plugin: プラグインをインストール
   Install Root: インストールルート
   Install Update: 更新をインストール
-  'Install from a terminal: re-run the HelixScreen installer': ''
   Install plugin: プラグインをインストール
   Install script not found. Use the remote install command instead.: インストールスクリプトが見つかりません。代わりにリモートインストールコマンドを使用してください。
   Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history.: 印刷履歴に影響を与えずにフィラメントをリマップするには、詳細設定でHelixPrintプラグインをインストールしてください。
@@ -1564,6 +1563,7 @@ translations:
   Normal: ''
   Not Enough Filament: フィラメントが不足しています
   Not Now: 今はしない
+  Not available here. Update from a terminal.: ''
   Not calibrated: キャリブレーション未実施
   Not configured: 未設定
   Not connected: 未接続
@@ -2046,6 +2046,7 @@ translations:
   Run brush cleaning sequence: 'ブラシ清掃シーケンスを実行'
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): ノズルがコールドの状態でもフィラメントの装填/取り出しを実行（ノズルを自身で加熱するマクロ向け）
   Run test sequence on all lanes: '全レーンでテストシーケンスを実行'
+  Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: ''
   Run without parameter prompt: パラメータ入力なしで実行
   Run {}?: '{} を実行しますか？'
   Running {}...: '{} を実行中...'
@@ -2605,9 +2606,9 @@ translations:
   Update Channel: 更新チャンネル
   Update Failed: 更新失敗
   Update Success: 更新成功
+  Update from a Terminal: ''
   Update installed!: アップデートをインストールしました！
   Update your security PIN: セキュリティ PIN を更新
-  Updates aren't available on this installation.: このインストールでは更新は利用できません。
   Updating Configuration...: 設定を更新中...
   Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: フィラメント名とマルチカラースプールに対応するには、AFC 1.2.0以降にアップグレードしてください。
   Upload: アップロード

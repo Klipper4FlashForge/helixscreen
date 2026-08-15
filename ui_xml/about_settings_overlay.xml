@@ -106,12 +106,17 @@
            are NOT firmware-managed. -->
       <lv_obj name="container_updates_unavailable" width="100%" style_pad_all="0" scrollable="false">
         <bind_flag_if_eq subject="updates_unavailable" flag="hidden" ref_value="0"/>
-        <setting_info_row name="row_updates_unavailable"
-                          label="Software Updates" label_tag="Software Updates" icon="info_outline">
-          <text_muted name="value"
-                      text="Install from a terminal: re-run the HelixScreen installer"
-                      translation_tag="Install from a terminal: re-run the HelixScreen installer"/>
-        </setting_info_row>
+        <!-- An action row, not an info row: the whole point is that the user can
+             still act, and the modal behind it carries the command and a QR to
+             the docs. A row that only states the problem is the dead end this
+             replaces. description_min_bp="0" keeps the line on 480x272, where it
+             is the only thing telling them what to do. -->
+        <setting_action_row name="row_updates_unavailable"
+                            label="Software Updates" label_tag="Software Updates" icon="console"
+                            description="Not available here. Update from a terminal."
+                            description_tag="Not available here. Update from a terminal."
+                            description_min_bp="0"
+                            callback="on_about_updates_unavailable_clicked"/>
       </lv_obj>
       <!-- Klipper Version -->
       <setting_info_row name="row_klipper" label="Klipper" label_tag="Klipper" icon="toy_brick_outline">

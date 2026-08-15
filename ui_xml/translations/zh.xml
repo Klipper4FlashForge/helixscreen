@@ -1142,7 +1142,6 @@
   <translation tag="Install Plugin" zh="安装插件"/>
   <translation tag="Install Root" zh="安装根目录"/>
   <translation tag="Install Update" zh="安装更新"/>
-  <translation tag="Install from a terminal: re-run the HelixScreen installer"/>
   <translation tag="Install plugin" zh="安装插件"/>
   <translation tag="Install script not found. Use the remote install command instead." zh="未找到安装脚本。请改用远程安装命令。"/>
   <translation tag="Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history." zh="在高级设置中安装 HelixPrint 插件，即可在不影响打印历史的情况下重新映射耗材。"/>
@@ -1512,6 +1511,7 @@
   <translation tag="Normal"/>
   <translation tag="Not Enough Filament" zh="耗材不足"/>
   <translation tag="Not Now" zh="暂不"/>
+  <translation tag="Not available here. Update from a terminal."/>
   <translation tag="Not calibrated" zh="未校准"/>
   <translation tag="Not configured" zh="未配置"/>
   <translation tag="Not connected" zh="未连接"/>
@@ -1981,6 +1981,7 @@
   <translation tag="Run brush cleaning sequence" zh="运行刷子清洁流程"/>
   <translation tag="Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves)" zh="即使喷嘴处于冷态也执行耗材加载/卸载（适用于自行加热喷嘴的宏）"/>
   <translation tag="Run test sequence on all lanes" zh="在所有料仓运行测试流程"/>
+  <translation tag="Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform."/>
   <translation tag="Run without parameter prompt" zh="运行时不提示参数"/>
   <translation tag="Run {}?" zh="运行 {}？"/>
   <translation tag="Running {}..." zh="正在运行 {}..."/>
@@ -2502,9 +2503,9 @@
   <translation tag="Update Channel" zh="更新通道"/>
   <translation tag="Update Failed" zh="更新失败"/>
   <translation tag="Update Success" zh="更新成功"/>
+  <translation tag="Update from a Terminal"/>
   <translation tag="Update installed!" zh="更新已安装！"/>
   <translation tag="Update your security PIN" zh="更新您的安全 PIN"/>
-  <translation tag="Updates aren&apos;t available on this installation." zh="此安装版本无法使用更新。"/>
   <translation tag="Updating Configuration..." zh="正在更新配置..."/>
   <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." zh="升级至 AFC 1.2.0 或更高版本，以使用耗材名称和多色料盘功能。"/>
   <translation tag="Upload" zh="上传"/>

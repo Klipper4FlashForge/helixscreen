@@ -1169,7 +1169,6 @@ translations:
   Install Plugin: 安装插件
   Install Root: 安装根目录
   Install Update: 安装更新
-  'Install from a terminal: re-run the HelixScreen installer': ''
   Install plugin: 安装插件
   Install script not found. Use the remote install command instead.: 未找到安装脚本。请改用远程安装命令。
   Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history.: 在高级设置中安装
@@ -1556,6 +1555,7 @@ translations:
   Normal: ''
   Not Enough Filament: 耗材不足
   Not Now: 暂不
+  Not available here. Update from a terminal.: ''
   Not calibrated: 未校准
   Not configured: 未配置
   Not connected: 未连接
@@ -2037,6 +2037,7 @@ translations:
   Run brush cleaning sequence: '运行刷子清洁流程'
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): 即使喷嘴处于冷态也执行耗材加载/卸载（适用于自行加热喷嘴的宏）
   Run test sequence on all lanes: '在所有料仓运行测试流程'
+  Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: ''
   Run without parameter prompt: 运行时不提示参数
   Run {}?: 运行 {}？
   Running {}...: 正在运行 {}...
@@ -2595,9 +2596,9 @@ translations:
   Update Channel: 更新通道
   Update Failed: 更新失败
   Update Success: 更新成功
+  Update from a Terminal: ''
   Update installed!: 更新已安装！
   Update your security PIN: 更新您的安全 PIN
-  Updates aren't available on this installation.: 此安装版本无法使用更新。
   Updating Configuration...: 正在更新配置...
   Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: 升级至 AFC 1.2.0 或更高版本，以使用耗材名称和多色料盘功能。
   Upload: 上传

@@ -1142,7 +1142,6 @@
   <translation tag="Install Plugin" ru="Установить плагин"/>
   <translation tag="Install Root" ru="Корень установки"/>
   <translation tag="Install Update" ru="Установить обновление"/>
-  <translation tag="Install from a terminal: re-run the HelixScreen installer"/>
   <translation tag="Install plugin" ru="Установить плагин"/>
   <translation tag="Install script not found. Use the remote install command instead." ru="Скрипт установки не найден. Используйте вместо этого команду удалённой установки."/>
   <translation tag="Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history." ru="Установите плагин HelixPrint в расширенных настройках, чтобы переназначать филамент без влияния на историю печати."/>
@@ -1512,6 +1511,7 @@
   <translation tag="Normal"/>
   <translation tag="Not Enough Filament" ru="Недостаточно филамента"/>
   <translation tag="Not Now" ru="Не сейчас"/>
+  <translation tag="Not available here. Update from a terminal."/>
   <translation tag="Not calibrated" ru="Не откалиброван"/>
   <translation tag="Not configured" ru="Не настроено"/>
   <translation tag="Not connected" ru="Не подключен"/>
@@ -1981,6 +1981,7 @@
   <translation tag="Run brush cleaning sequence" ru="Запустить последовательность очистки щёткой"/>
   <translation tag="Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves)" ru="Выполнять загрузку/выгрузку филамента даже при холодном сопле (для макросов, которые сами нагревают сопло)"/>
   <translation tag="Run test sequence on all lanes" ru="Запустить тестовую последовательность на всех слотах"/>
+  <translation tag="Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform."/>
   <translation tag="Run without parameter prompt" ru="Запускать без запроса параметров"/>
   <translation tag="Run {}?" ru="Запустить {}?"/>
   <translation tag="Running {}..." ru="Выполнение {}..."/>
@@ -2502,9 +2503,9 @@
   <translation tag="Update Channel" ru="Канал обновлений"/>
   <translation tag="Update Failed" ru="Ошибка обновления"/>
   <translation tag="Update Success" ru="Обновление успешно"/>
+  <translation tag="Update from a Terminal"/>
   <translation tag="Update installed!" ru="Обновление установлено!"/>
   <translation tag="Update your security PIN" ru="Обновите ваш PIN-код"/>
-  <translation tag="Updates aren&apos;t available on this installation." ru="Обновления недоступны в этой установке."/>
   <translation tag="Updating Configuration..." ru="Обновление конфигурации..."/>
   <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." ru="Обновите AFC до версии 1.2.0 или новее, чтобы получить имена филамента и многоцветные катушки."/>
   <translation tag="Upload" ru="Отправить"/>

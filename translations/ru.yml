@@ -1273,7 +1273,6 @@ translations:
   Install Plugin: Установить плагин
   Install Root: Корень установки
   Install Update: Установить обновление
-  'Install from a terminal: re-run the HelixScreen installer': ''
   Install plugin: Установить плагин
   Install script not found. Use the remote install command instead.: Скрипт установки
     не найден. Используйте вместо этого команду удалённой установки.
@@ -1694,6 +1693,7 @@ translations:
   Normal: ''
   Not Enough Filament: Недостаточно филамента
   Not Now: Не сейчас
+  Not available here. Update from a terminal.: ''
   Not calibrated: Не откалиброван
   Not configured: Не настроено
   Not connected: Не подключен
@@ -2206,6 +2206,7 @@ translations:
     загрузку/выгрузку филамента даже при холодном сопле (для макросов, которые сами
     нагревают сопло)
   Run test sequence on all lanes: 'Запустить тестовую последовательность на всех слотах'
+  Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: ''
   Run without parameter prompt: Запускать без запроса параметров
   Run {}?: Запустить {}?
   Running {}...: Выполнение {}...
@@ -2833,9 +2834,9 @@ translations:
   Update Channel: Канал обновлений
   Update Failed: Ошибка обновления
   Update Success: Обновление успешно
+  Update from a Terminal: ''
   Update installed!: Обновление установлено!
   Update your security PIN: Обновите ваш PIN-код
-  Updates aren't available on this installation.: Обновления недоступны в этой установке.
   Updating Configuration...: Обновление конфигурации...
   Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Обновите AFC до версии 1.2.0 или новее, чтобы получить имена филамента и многоцветные катушки.
   Upload: Отправить

@@ -1292,7 +1292,6 @@ translations:
   Install Plugin: Instalar Plugin
   Install Root: Raíz de Instalación
   Install Update: Instalar actualización
-  'Install from a terminal: re-run the HelixScreen installer': ''
   Install plugin: Instalar plugin
   Install script not found. Use the remote install command instead.: Script de instalación
     no encontrado. Use el comando de instalación remota en su lugar.
@@ -1716,6 +1715,7 @@ translations:
   Normal: ''
   Not Enough Filament: Filamento Insuficiente
   Not Now: Ahora No
+  Not available here. Update from a terminal.: ''
   Not calibrated: No calibrado
   Not configured: No configurado
   Not connected: No conectado
@@ -2234,6 +2234,7 @@ translations:
     la carga/descarga de filamento incluso con la boquilla fría (para macros que calientan
     la boquilla por sí mismas)
   Run test sequence on all lanes: 'Ejecutar la secuencia de prueba en todos los carriles'
+  Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: ''
   Run without parameter prompt: Ejecutar sin solicitud de parámetros
   Run {}?: ¿Ejecutar {}?
   Running {}...: Ejecutando {}...
@@ -2874,9 +2875,9 @@ translations:
   Update Channel: Canal de actualización
   Update Failed: Actualización fallida
   Update Success: Actualización correcta
+  Update from a Terminal: ''
   Update installed!: ¡Actualización instalada!
   Update your security PIN: Actualice su PIN de seguridad
-  Updates aren't available on this installation.: Las actualizaciones no están disponibles
     en esta instalación.
   Updating Configuration...: Actualizando configuración...
   Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Actualice
