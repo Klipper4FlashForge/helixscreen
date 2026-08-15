@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.99.114] - 2026-08-14
 
+<!-- whatsnew
+The 1.0 release candidate. Fixes:
+
+- Lifetime Print Stats reports true totals, not just your last 500 jobs
+- Accelerometers are detected again, so Settings > Sensors works
+- Elegoo Centauri Carbon and Artillery M1 Pro pick up their presets
+- Creality CFS purges at your configured length on K1 printers
+- Screen rotation is a normal setting, not a config-file edit
+- Dialogs no longer run off the bottom of small displays
+- 32-bit Pi: large g-code files and display startup both fixed
+-->
+
 **This is the 1.0 release candidate.** It is the code intended to ship as 1.0.0, published as
 an ordinary 0.99.x update so that everyone gets it rather than only people who opted into a
 beta channel. If it holds up in the field, 1.0.0 follows with no further changes. If it does
