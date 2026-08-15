@@ -1598,8 +1598,10 @@ TEST_CASE("AD5X IFS phase: unload sequence (temp + head sensor)", "[ams][ad5x_if
     REQUIRE(Ad5xIfsTestAccess::phase_active(backend));
     REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::HEATING);
 
-    // Before any temp seen — detail names only the target (no live temp yet).
-    REQUIRE(Ad5xIfsTestAccess::operation_detail(backend) == "Heating nozzle to 230°C");
+    // Before any temp or target seen — detail names neither. The backend has no
+    // signal to name a target with, and asserting one it never observed would be
+    // a fabrication.
+    REQUIRE(Ad5xIfsTestAccess::operation_detail(backend) == "Heating nozzle");
 
     // First temp frame: still heating, detail gains the live current temp.
     Ad5xIfsTestAccess::handle_status(backend, make_extruder(185.0, 230.0));
@@ -7449,7 +7451,7 @@ TEST_CASE("AD5X IFS declining the pre-load home confirmation unwinds the phase t
     });
 
     REQUIRE(backend.load_filament(0).success());
-    // load_filament() arms operation_detail (e.g. "Heating nozzle to 230°C")
+    // load_filament() arms operation_detail (e.g. "Heating nozzle")
     // via apply_phase_action_locked() in the same locked block that begins
     // phase tracking -- assert it actually got set so the post-decline check
     // below proves something was cleared, not that it was already empty.
@@ -9123,6 +9125,158 @@ TEST_CASE("AD5X IFS write_adventurer_json_local writes real colour/type for a no
     auto doc = json::parse(ss.str());
     CHECK(doc["FFMInfo"]["ffmColor3"] == "#AABBCC");
     CHECK(doc["FFMInfo"]["ffmType3"] == "TPU");
+}
+
+// ==========================================================================
+// A filament-present slot must never persist an EMPTY ffmColor.
+//
+// zmod's cmd_RUN_ZCOLOR builds the "Change type" prompt button as
+// `CHANGE_ZCOLOR SLOT=n HEX={zhex}` with no TYPE= param. When ffmColor is "",
+// zhex is "" and the literal gcode becomes `CHANGE_ZCOLOR SLOT=n HEX=`, which
+// cmd_CHANGE_ZCOLOR rejects (both HEX and TYPE empty) AFTER it has already
+// emitted `action:prompt_end`. The dialog closes and nothing reopens.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS write_adventurer_json_local writes zmod's default colour when the material is "
+          "set but the colour is empty",
+          "[ams][ad5x_ifs][local_write]") {
+    Ad5xIfsTmpJsonFile tmp("typed_empty_color", R"({"FFMInfo":{}})");
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_local_adventurer_json_path(backend, tmp.path.string());
+
+    // Real material, no colour: the poisoned combination.
+    Ad5xIfsTestAccess::set_color(backend, 0, "");
+    Ad5xIfsTestAccess::set_material(backend, 0, "PLA");
+
+    auto err = Ad5xIfsTestAccess::write_adventurer_json_local(backend, 0);
+    REQUIRE(err.success());
+
+    std::ifstream f(tmp.path);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    auto doc = json::parse(ss.str());
+    CHECK(doc["FFMInfo"]["ffmColor1"] == "#161616");
+    CHECK(doc["FFMInfo"]["ffmType1"] == "PLA");
+}
+
+TEST_CASE("AD5X IFS write_adventurer_json_local writes zmod's default colour when the material is "
+          "set but the colour is the 808080 placeholder",
+          "[ams][ad5x_ifs][local_write]") {
+    Ad5xIfsTmpJsonFile tmp("typed_placeholder_color", R"({"FFMInfo":{}})");
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_local_adventurer_json_path(backend, tmp.path.string());
+
+    // 808080 is our in-memory "no colour" placeholder; it must not reach the
+    // file as an empty ffmColor either.
+    Ad5xIfsTestAccess::set_color(backend, 1, "808080");
+    Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
+
+    auto err = Ad5xIfsTestAccess::write_adventurer_json_local(backend, 1);
+    REQUIRE(err.success());
+
+    std::ifstream f(tmp.path);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    auto doc = json::parse(ss.str());
+    CHECK(doc["FFMInfo"]["ffmColor2"] == "#161616");
+    CHECK(doc["FFMInfo"]["ffmType2"] == "PETG");
+}
+
+TEST_CASE("AD5X IFS write_adventurer_json_local keeps the empty-slot sentinels when no material is "
+          "set",
+          "[ams][ad5x_ifs][local_write]") {
+    Ad5xIfsTmpJsonFile tmp("empty_slot_sentinel", R"({"FFMInfo":{}})");
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_local_adventurer_json_path(backend, tmp.path.string());
+
+    // No material at all: the firmware-native "no filament" pair must survive.
+    // A genuinely empty slot never reaches the RUN_ZCOLOR submenu, so the empty
+    // ffmColor is harmless there and is what stock ZMOD itself writes.
+    SECTION("empty hex") {
+        Ad5xIfsTestAccess::set_color(backend, 2, "");
+        Ad5xIfsTestAccess::set_material(backend, 2, "");
+    }
+    SECTION("808080 placeholder hex") {
+        Ad5xIfsTestAccess::set_color(backend, 2, "808080");
+        Ad5xIfsTestAccess::set_material(backend, 2, "");
+    }
+
+    auto err = Ad5xIfsTestAccess::write_adventurer_json_local(backend, 2);
+    REQUIRE(err.success());
+
+    std::ifstream f(tmp.path);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    auto doc = json::parse(ss.str());
+    CHECK(doc["FFMInfo"]["ffmColor3"] == "");
+    CHECK(doc["FFMInfo"]["ffmType3"] == "?");
+}
+
+TEST_CASE("AD5X IFS write_adventurer_json_local leaves a fully-specified slot alone",
+          "[ams][ad5x_ifs][local_write]") {
+    Ad5xIfsTmpJsonFile tmp("full_slot_unchanged", R"({"FFMInfo":{}})");
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_local_adventurer_json_path(backend, tmp.path.string());
+
+    Ad5xIfsTestAccess::set_color(backend, 3, "FF7700");
+    Ad5xIfsTestAccess::set_material(backend, 3, "ABS");
+
+    auto err = Ad5xIfsTestAccess::write_adventurer_json_local(backend, 3);
+    REQUIRE(err.success());
+
+    std::ifstream f(tmp.path);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    auto doc = json::parse(ss.str());
+    CHECK(doc["FFMInfo"]["ffmColor4"] == "#FF7700");
+    CHECK(doc["FFMInfo"]["ffmType4"] == "ABS");
+}
+
+// ==========================================================================
+// HEATING detail must not assert a target the printer never reported.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS phase: HEATING detail omits the target when none is known",
+          "[ams][ad5x_ifs][phase]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, true);
+
+    // No extruder frame and no RESPOND line have been seen, so there is no
+    // target and no current temperature.
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/true);
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::HEATING);
+
+    const std::string detail = Ad5xIfsTestAccess::operation_detail(backend);
+    CHECK(detail == "Heating nozzle");
+    CHECK(detail.find("230") == std::string::npos);
+}
+
+TEST_CASE("AD5X IFS phase: HEATING detail names the live temp but no target when only the temp is "
+          "known",
+          "[ams][ad5x_ifs][phase]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, true);
+
+    // Heater off (target 0) but the nozzle still reads a real temperature.
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(62.0, 0.0));
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/true);
+
+    const std::string detail = Ad5xIfsTestAccess::operation_detail(backend);
+    CHECK(detail == "Heating nozzle (62°C)");
+    CHECK(detail.find("230") == std::string::npos);
+}
+
+TEST_CASE("AD5X IFS phase: HEATING detail still names a real target when one is known",
+          "[ams][ad5x_ifs][phase]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, true);
+
+    // A pre-op extruder frame reports a live 220°C target at 62°C. begin_phase
+    // seeds from it, so the very first detail carries the REAL target.
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(62.0, 220.0));
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/true);
+
+    CHECK(Ad5xIfsTestAccess::operation_detail(backend) == "Heating nozzle to 220°C (62°C)");
 }
 
 TEST_CASE("AD5X IFS parse_adventurer_json maps firmware '?' ffmType to empty material (FIX 4b)",

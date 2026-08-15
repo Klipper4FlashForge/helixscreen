@@ -64,6 +64,45 @@ namespace {
 constexpr int RUNOUT_PURGE_MM = 50;
 constexpr int RUNOUT_PURGE_FEEDRATE_MM_MIN = 10 * 60;
 
+/// The ffmColor / ffmType pair to persist into Adventurer5M.json for one slot.
+struct FfmSlotFields {
+    std::string color; ///< ffmColorN value ("" or "#RRGGBB")
+    std::string type;  ///< ffmTypeN value ("?" or a material name)
+};
+
+/// zmod's own fallback colour, from `gcmd.get('HEX', '161616')` in
+/// zmod_color.py's cmd_RUN_ZCOLOR.
+constexpr const char* ZMOD_DEFAULT_HEX = "161616";
+
+/// Map an in-memory slot (hex colour, material) onto the ffmColor/ffmType pair
+/// stock ZMOD expects in Adventurer5M.json.
+///
+/// An unset entry keeps the firmware-native sentinels: live stock ZMOD FFMInfo
+/// uses ffmColor='' and ffmType='?' for "no filament". Our in-memory "no colour"
+/// placeholder is 808080 (parse_adventurer_json maps an empty ffmColor to it),
+/// so both an empty hex and the placeholder mean "no colour".
+///
+/// A slot that HAS a material never gets an empty ffmColor, because zmod's
+/// cmd_RUN_ZCOLOR (zmod_color.py) builds its "Change type" prompt button as
+/// `CHANGE_ZCOLOR SLOT=n HEX={ffmColor}` with no TYPE= param. An empty ffmColor
+/// makes that literal gcode `CHANGE_ZCOLOR SLOT=n HEX=`, and cmd_CHANGE_ZCOLOR
+/// emits `action:prompt_end` BEFORE it validates, then raises because HEX and
+/// TYPE are both empty - so the dialog closes and nothing reopens. Writing
+/// zmod's own default colour instead of "" sidesteps it. Drop this branch if
+/// zmod ever validates before closing the prompt.
+[[nodiscard]] FfmSlotFields ffm_fields_for_slot(const std::string& hex,
+                                                const std::string& material) {
+    const bool no_color = hex.empty() || hex == "808080";
+    const bool no_material = material.empty();
+    std::string color;
+    if (!no_color) {
+        color = "#" + hex;
+    } else if (!no_material) {
+        color = std::string{"#"} + ZMOD_DEFAULT_HEX;
+    }
+    return {std::move(color), no_material ? std::string{"?"} : material};
+}
+
 } // namespace
 
 AmsBackendAd5xIfs::AmsBackendAd5xIfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client)
@@ -2656,12 +2695,9 @@ AmsError AmsBackendAd5xIfs::write_adventurer_json(int slot_index) {
         material = materials_[idx];
     }
 
-    // Persist firmware-native sentinels for an unset entry: live stock ZMOD
-    // FFMInfo uses ffmColor='' and ffmType='?' for "no filament". Our in-memory
-    // "no colour" placeholder is 808080 (parse_adventurer_json maps empty
-    // ffmColor -> 808080), so collapse both empty and the placeholder to "".
-    const std::string color_field = (hex.empty() || hex == "808080") ? std::string{} : ("#" + hex);
-    const std::string type_field = material.empty() ? std::string{"?"} : material;
+    auto fields = ffm_fields_for_slot(hex, material);
+    const std::string color_field = std::move(fields.color);
+    const std::string type_field = std::move(fields.type);
 
     spdlog::info("{} Writing slot {} to Adventurer5M.json (native ZMOD)", backend_log_tag(), port);
 
@@ -2754,11 +2790,9 @@ AmsError AmsBackendAd5xIfs::write_adventurer_json_local(int slot_index) {
         hex = colors_[idx];
         material = materials_[idx];
     }
-    // Persist firmware-native sentinels for an unset entry (see
-    // write_adventurer_json): ffmColor='' and ffmType='?'. The 808080 placeholder
-    // is our in-memory "no colour" sentinel and must also collapse to "".
-    const std::string color_field = (hex.empty() || hex == "808080") ? std::string{} : ("#" + hex);
-    const std::string type_field = material.empty() ? std::string{"?"} : material;
+    auto fields = ffm_fields_for_slot(hex, material);
+    const std::string color_field = std::move(fields.color);
+    const std::string type_field = std::move(fields.type);
 
     // Read-modify-write. An empty / unparseable existing file is treated as
     // "fresh start with empty FFMInfo" so we auto-repair the bricked-printer
@@ -4971,13 +5005,12 @@ void AmsBackendAd5xIfs::begin_phase_tracking_locked(bool is_unload) {
     last_progress_temp_deci_ = 0;
     note_phase_progress_locked();
     // Seed the heat target from the last-known extruder target if we have one;
-    // a RESPOND "Heating the nozzle to N degrees" line or an extruder frame can
-    // refine it. Fall back to the IFS firmware default (230°C) so the very
-    // first detail string has a sensible number before any signal arrives.
+    // a RESPOND "Heating the nozzle to N degrees" line or an extruder frame
+    // refines it later. With no signal the target stays 0 ("unknown") and the
+    // detail string simply omits it - guessing a number here would have the UI
+    // assert a target the printer never had.
     if (last_extruder_target_deci_ > 0) {
         phase_tracker_.target_deci = last_extruder_target_deci_;
-    } else {
-        phase_tracker_.target_deci = 2300; // 230.0°C in deci-degrees
     }
 }
 
@@ -5118,15 +5151,25 @@ bool AmsBackendAd5xIfs::apply_phase_action_locked() {
     char buf[64];
     switch (synth) {
     case AmsAction::HEATING:
-        if (last_extruder_temp_deci_ > 0) {
+        // Both the target and the current temp are independently optional: the
+        // target is 0 until an extruder frame or a RESPOND line reports one, and
+        // the current temp is 0 until the first extruder frame. Name only what
+        // is actually known rather than printing a placeholder number.
+        if (tgt > 0 && last_extruder_temp_deci_ > 0) {
             std::snprintf(buf, sizeof(buf), "Heating nozzle to %d°C (%d°C)",
                           helix::ui::temperature::deci_to_degrees(tgt),
                           helix::ui::temperature::deci_to_degrees(last_extruder_temp_deci_));
             detail = buf;
-        } else {
+        } else if (tgt > 0) {
             std::snprintf(buf, sizeof(buf), "Heating nozzle to %d°C",
                           helix::ui::temperature::deci_to_degrees(tgt));
             detail = buf;
+        } else if (last_extruder_temp_deci_ > 0) {
+            std::snprintf(buf, sizeof(buf), "Heating nozzle (%d°C)",
+                          helix::ui::temperature::deci_to_degrees(last_extruder_temp_deci_));
+            detail = buf;
+        } else {
+            detail = "Heating nozzle";
         }
         break;
     case AmsAction::CUTTING:
