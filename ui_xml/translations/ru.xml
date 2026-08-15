@@ -1142,6 +1142,7 @@
   <translation tag="Install Plugin" ru="Установить плагин"/>
   <translation tag="Install Root" ru="Корень установки"/>
   <translation tag="Install Update" ru="Установить обновление"/>
+  <translation tag="Install from a terminal: re-run the HelixScreen installer"/>
   <translation tag="Install plugin" ru="Установить плагин"/>
   <translation tag="Install script not found. Use the remote install command instead." ru="Скрипт установки не найден. Используйте вместо этого команду удалённой установки."/>
   <translation tag="Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history." ru="Установите плагин HelixPrint в расширенных настройках, чтобы переназначать филамент без влияния на историю печати."/>

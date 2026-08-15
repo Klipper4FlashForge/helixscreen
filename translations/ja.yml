@@ -1176,6 +1176,7 @@ translations:
   Install Plugin: プラグインをインストール
   Install Root: インストールルート
   Install Update: 更新をインストール
+  'Install from a terminal: re-run the HelixScreen installer': ''
   Install plugin: プラグインをインストール
   Install script not found. Use the remote install command instead.: インストールスクリプトが見つかりません。代わりにリモートインストールコマンドを使用してください。
   Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history.: 印刷履歴に影響を与えずにフィラメントをリマップするには、詳細設定でHelixPrintプラグインをインストールしてください。

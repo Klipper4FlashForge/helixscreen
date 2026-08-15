@@ -303,7 +303,7 @@ json DebugBundleCollector::build_update_info(const UpdateDiagnostics& diag) {
 
     // The predicates the update UI actually gates on. `suppressed` is the one
     // that decides whether the "Check for Updates" / "Install Update" rows
-    // exist at all (show_update_settings = !in_app_updates_suppressed()); the
+    // exist at all (show_update_settings = !update_checks_suppressed()); the
     // rest say which cause fired.
     //
     // The two writability terms are reported separately from self_update_supported
@@ -319,7 +319,7 @@ json DebugBundleCollector::build_update_info(const UpdateDiagnostics& diag) {
     upd["self_update_supported"] = diag.self_update_supported;
     upd["externally_managed"] = diag.externally_managed;
     upd["suppressed"] =
-        compute_in_app_updates_suppressed(diag.externally_managed, diag.self_update_supported);
+        compute_update_install_suppressed(diag.externally_managed, diag.self_update_supported);
 
     // These two come from UpdateChecker's main-thread config snapshot, which is
     // empty until init() runs. Report that as "unknown" rather than "" so a

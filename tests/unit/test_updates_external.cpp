@@ -12,9 +12,10 @@
  * testable unit; the cache is a thin static wrapper around it.
  *
  * Also covers compute_self_update_supported() — the pure predicate behind the
- * "can a self-update PHYSICALLY be applied?" check (writable install-root parent,
- * OR root obtainable so install.sh can sudo the swap) — using real temp dirs, and
- * the combined in_app_updates_suppressed() gate.
+ * "can a self-update PHYSICALLY be applied?" check — using real temp dirs. It has
+ * three terms, one per route install.sh can take: a writable PARENT (atomic swap),
+ * a writable install ROOT (in-place replacement), or root obtainable (sudo). Also
+ * the combined update_install_suppressed() gate.
  */
 
 #include "app_globals.h"
@@ -225,13 +226,36 @@ TEST_CASE("compute_self_update_supported is FALSE when neither the root nor its 
     std::filesystem::remove_all(base, ec);
 }
 
-TEST_CASE("self_update_supported / in_app_updates_suppressed are cached and consistent",
+TEST_CASE("self_update_supported / update_install_suppressed are cached and consistent",
           "[update][external]") {
     // self_update_supported() is cached process-wide off the real install root.
     // Assert stability and that the combined gate is the OR of the two reasons.
     CHECK(self_update_supported() == self_update_supported());
-    CHECK(in_app_updates_suppressed() ==
+    CHECK(update_install_suppressed() ==
           (updates_externally_managed() || !self_update_supported()));
+}
+
+TEST_CASE("checking is gated more weakly than installing", "[update][external]") {
+    // The whole point of the split. Checking is a manifest fetch that touches no
+    // files, so an install tree we cannot write must never silence it: a user on a
+    // non-updatable install still needs to be told a new version exists, and that
+    // notice is the only route back out — the fix for whatever made the install
+    // non-updatable can only reach them through an update they cannot apply.
+    //
+    // Concretely: update_checks_suppressed() must not depend on
+    // self_update_supported() at all.
+    CHECK(update_checks_suppressed() == updates_externally_managed());
+
+    // Checking is therefore implied by installing, never the reverse. If the two
+    // ever become equal for a reason OTHER than the firmware flag, the trap is
+    // back.
+    if (update_checks_suppressed()) {
+        CHECK(update_install_suppressed());
+    }
+    if (!self_update_supported() && !updates_externally_managed()) {
+        CHECK(update_install_suppressed());
+        CHECK_FALSE(update_checks_suppressed());
+    }
 }
 
 TEST_CASE("root_escalation_available is cached and true under root", "[update][external]") {

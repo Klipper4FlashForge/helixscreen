@@ -444,15 +444,33 @@ bool compute_self_update_supported(const std::string& install_root, bool can_esc
 // probe at all. Read once and cached (like app_get_install_root()).
 bool self_update_supported();
 
-// Pure predicate behind in_app_updates_suppressed(), split out for testing so
+// Pure predicate behind update_install_suppressed(), split out for testing so
 // both branches can be exercised without mutating the process-wide caches that
 // updates_externally_managed() and self_update_supported() sit behind.
-bool compute_in_app_updates_suppressed(bool externally_managed, bool self_update_ok);
+bool compute_update_install_suppressed(bool externally_managed, bool self_update_ok);
 
-// Combined in-app-updater gate: true when the updater must NOT run, for EITHER
-// reason — updates are firmware-managed via the explicit HELIX_DISABLE_AUTO_UPDATES
-// flag (updates_externally_managed()), OR a self-update is physically impossible
-// because the install tree isn't writable (!self_update_supported()). Functional
-// update entry points (check/auto-check/download) gate on THIS; the "Managed by
-// your firmware" notice keeps keying off updates_externally_managed() alone.
-bool in_app_updates_suppressed();
+// Gate on APPLYING an update: true when a download/install must NOT run, for
+// EITHER reason — updates are firmware-managed via the explicit
+// HELIX_DISABLE_AUTO_UPDATES flag (updates_externally_managed()), OR a self-update
+// is physically impossible because the install tree isn't writable
+// (!self_update_supported()). start_download() gates on THIS, and the About screen
+// hides the "Install Update" row on it.
+bool update_install_suppressed();
+
+// Gate on LOOKING for an update: true only when updates are firmware-managed.
+//
+// Deliberately a different, weaker predicate than update_install_suppressed().
+// Checking is a manifest fetch over the network and needs nothing from the
+// filesystem, so an install tree we cannot write is no reason to refuse to look:
+// knowing a newer version exists is useful even when the button to apply it is
+// not available, and it is the only thing that makes a suppressed install
+// recoverable — the user can still be told to re-run the installer.
+//
+// The two questions shared one predicate until now, and that is what made a false
+// negative in self_update_supported() a PERMANENT lockout: the rows vanished
+// wholesale, so nothing could tell the user an update existed, and the fix could
+// only ship inside the update they were being kept from (v0.99.96 through
+// v0.99.113 on /opt installs). check_for_updates() and start_auto_check() gate on
+// THIS; the "Managed by your firmware" notice keeps keying off
+// updates_externally_managed() alone.
+bool update_checks_suppressed();

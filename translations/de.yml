@@ -1301,6 +1301,7 @@ translations:
   Install Plugin: Plugin installieren
   Install Root: Installations-Verzeichnis
   Install Update: Update installieren
+  'Install from a terminal: re-run the HelixScreen installer': ''
   Install plugin: Plugin installieren
   Install script not found. Use the remote install command instead.: Installationsskript
     nicht gefunden. Verwenden Sie stattdessen den Remote-Installationsbefehl.

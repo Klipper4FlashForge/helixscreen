@@ -1169,6 +1169,7 @@ translations:
   Install Plugin: 安装插件
   Install Root: 安装根目录
   Install Update: 安装更新
+  'Install from a terminal: re-run the HelixScreen installer': ''
   Install plugin: 安装插件
   Install script not found. Use the remote install command instead.: 未找到安装脚本。请改用远程安装命令。
   Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history.: 在高级设置中安装

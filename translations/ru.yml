@@ -1273,6 +1273,7 @@ translations:
   Install Plugin: Установить плагин
   Install Root: Корень установки
   Install Update: Установить обновление
+  'Install from a terminal: re-run the HelixScreen installer': ''
   Install plugin: Установить плагин
   Install script not found. Use the remote install command instead.: Скрипт установки
     не найден. Используйте вместо этого команду удалённой установки.

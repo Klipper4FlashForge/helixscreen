@@ -880,7 +880,8 @@ bool updates_externally_managed() {
 }
 
 // Mirror of src/app_globals.cpp compute_self_update_supported / self_update_supported /
-// in_app_updates_suppressed (app_globals.o is excluded from the test link).
+// update_install_suppressed / update_checks_suppressed (app_globals.o is
+// excluded from the test link).
 //
 // Keep the branch structure identical to the original, comments aside. A mirror that
 // drifts turns the tests below into a test of this file: the parent-only version of
@@ -926,12 +927,16 @@ bool self_update_supported() {
     return cached;
 }
 
-bool compute_in_app_updates_suppressed(bool externally_managed, bool self_update_ok) {
+bool compute_update_install_suppressed(bool externally_managed, bool self_update_ok) {
     return externally_managed || !self_update_ok;
 }
 
-bool in_app_updates_suppressed() {
-    return compute_in_app_updates_suppressed(updates_externally_managed(), self_update_supported());
+bool update_install_suppressed() {
+    return compute_update_install_suppressed(updates_externally_managed(), self_update_supported());
+}
+
+bool update_checks_suppressed() {
+    return updates_externally_managed();
 }
 
 // Stubs for the manager accessors in app_globals.h. Each getter reads a file-static

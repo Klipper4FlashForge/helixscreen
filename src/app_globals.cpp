@@ -682,14 +682,23 @@ bool compute_self_update_supported(const std::string& install_root, bool can_esc
         // HELIX_DISABLE_AUTO_UPDATES flag remain the deciding factors.
         return true;
     }
+    // probe_writable(), not is_writable_dir(): the latter is access(W_OK), which
+    // answers from the permission bits alone and so cannot see a read-only mount,
+    // a restrictive ACL, an immutable bit, or an LSM denial. This predicate exists
+    // to PREDICT what install.sh will manage, and install.sh settles the same
+    // question by writing a probe file ("touch ${INSTALL_DIR}/.update_test"), so
+    // answering it a different way is how the two drift apart. probe_writable
+    // creates a uniquely-named file, writes a byte, and removes it; the result is
+    // cached process-wide by self_update_supported(), so this costs one create per
+    // directory per boot.
     const std::string parent = std::filesystem::path(install_root).parent_path().string();
-    if (!parent.empty() && helix::paths::is_writable_dir(parent)) {
+    if (!parent.empty() && helix::paths::probe_writable(parent)) {
         return true; // atomic swap
     }
     if (parent.empty()) {
         return true; // no parent to test (e.g. a bare relative name) — don't block.
     }
-    if (helix::paths::is_writable_dir(install_root)) {
+    if (helix::paths::probe_writable(install_root)) {
         return true; // in-place replacement
     }
     // Neither path is open to this user. That is still NOT the same as impossible:
@@ -719,10 +728,21 @@ bool self_update_supported() {
     return cached;
 }
 
-bool compute_in_app_updates_suppressed(bool externally_managed, bool self_update_ok) {
+bool compute_update_install_suppressed(bool externally_managed, bool self_update_ok) {
     return externally_managed || !self_update_ok;
 }
 
-bool in_app_updates_suppressed() {
-    return compute_in_app_updates_suppressed(updates_externally_managed(), self_update_supported());
+bool update_install_suppressed() {
+    return compute_update_install_suppressed(updates_externally_managed(), self_update_supported());
+}
+
+bool update_checks_suppressed() {
+    // Deliberately NOT the install gate. Checking is a manifest fetch over the
+    // network — it needs nothing from the filesystem, so a tree we cannot write
+    // is no reason to refuse to LOOK. The two questions shared one predicate
+    // until now, which made every false negative in self_update_supported() a
+    // permanent lockout: the rows vanished, so the user could not see that an
+    // update existed, and the fix could only ship inside the update they were
+    // being kept from. Only a firmware opt-out silences the check.
+    return updates_externally_managed();
 }

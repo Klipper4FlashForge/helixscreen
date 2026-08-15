@@ -982,7 +982,7 @@ TEST_CASE_METHOD(DebugBundleTestFixture,
 // Bundle 3Q2GB74K ("cannot update HelixScreen", pi32) was undiagnosable because
 // nothing in the bundle said whether the update rows were even rendered. The
 // About overlay binds both "Check for Updates" and "Install Update" to
-// show_update_settings = !in_app_updates_suppressed(); when that is true the
+// show_update_settings = !update_install_suppressed(); when that is true the
 // rows are absent and the user has no in-app path to an update at all.
 // ============================================================================
 
@@ -1109,7 +1109,7 @@ TEST_CASE("DebugBundleCollector: build_update_info suppressed matches the UI gat
             json upd = helix::DebugBundleCollector::build_update_info(d);
             INFO("managed=" << managed << " self_update_supported=" << supported);
             REQUIRE(upd["suppressed"].get<bool>() ==
-                    compute_in_app_updates_suppressed(managed, supported));
+                    compute_update_install_suppressed(managed, supported));
         }
     }
 }
@@ -1177,7 +1177,7 @@ TEST_CASE_METHOD(HelixTestFixture,
         REQUIRE(upd["self_update_supported"].get<bool>());
     }
     REQUIRE(upd["externally_managed"].get<bool>() == updates_externally_managed());
-    REQUIRE(upd["suppressed"].get<bool>() == in_app_updates_suppressed());
+    REQUIRE(upd["suppressed"].get<bool>() == update_install_suppressed());
 
     // The exact artifact this device asks for — #993 was a drifted copy of it.
     REQUIRE(upd["platform_asset_name"].get<std::string>() == UpdateChecker::platform_asset_name());
@@ -1231,11 +1231,11 @@ TEST_CASE("UpdateChecker: channel_name covers every channel", "[debug-bundle][up
     REQUIRE(std::string(UpdateChecker::channel_name(UpdateChecker::UpdateChannel::Dev)) == "dev");
 }
 
-TEST_CASE("app_globals: compute_in_app_updates_suppressed truth table", "[debug-bundle][update]") {
-    REQUIRE(compute_in_app_updates_suppressed(false, true) == false); // normal, updatable
-    REQUIRE(compute_in_app_updates_suppressed(true, true) == true);   // firmware-managed
-    REQUIRE(compute_in_app_updates_suppressed(false, false) == true); // read-only install tree
-    REQUIRE(compute_in_app_updates_suppressed(true, false) == true);  // both
+TEST_CASE("app_globals: compute_update_install_suppressed truth table", "[debug-bundle][update]") {
+    REQUIRE(compute_update_install_suppressed(false, true) == false); // normal, updatable
+    REQUIRE(compute_update_install_suppressed(true, true) == true);   // firmware-managed
+    REQUIRE(compute_update_install_suppressed(false, false) == true); // read-only install tree
+    REQUIRE(compute_update_install_suppressed(true, false) == true);  // both
 }
 
 // ----------------------------------------------------------------------------

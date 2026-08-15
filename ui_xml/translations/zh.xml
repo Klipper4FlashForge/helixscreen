@@ -1142,6 +1142,7 @@
   <translation tag="Install Plugin" zh="安装插件"/>
   <translation tag="Install Root" zh="安装根目录"/>
   <translation tag="Install Update" zh="安装更新"/>
+  <translation tag="Install from a terminal: re-run the HelixScreen installer"/>
   <translation tag="Install plugin" zh="安装插件"/>
   <translation tag="Install script not found. Use the remote install command instead." zh="未找到安装脚本。请改用远程安装命令。"/>
   <translation tag="Install the HelixPrint plugin in Advanced settings to remap filament without affecting print history." zh="在高级设置中安装 HelixPrint 插件，即可在不影响打印历史的情况下重新映射耗材。"/>
