@@ -1302,7 +1302,60 @@ static void migrate_v21_to_v22(json& config) {
         }
     };
 
+    // Replaying this migration must not change a document it has already run
+    // on. That is not hypothetical: a rollback to a v21 build stamps the
+    // version back down, and the next upgrade runs the chain again over a
+    // layout that is already in track units. Re-tagging it makes the port read
+    // tracks as cells and convert a second time. Three states have to be left
+    // alone, each for its own reason.
+
+    // Ported: `grid` and `parked_grids` are written by per-grid storage, which
+    // is newer than this migration, so they cannot appear on a genuine v21
+    // layout — PanelWidgetConfig::load() documents `grid` as absent on
+    // everything written before it. Their presence means the coordinates
+    // already count against a measured grid.
+    auto already_ported = [](const json& panel) {
+        return (panel.contains("grid") && panel["grid"].is_string() &&
+                !panel["grid"].get<std::string>().empty()) ||
+               (panel.contains("parked_grids") && panel["parked_grids"].is_object() &&
+                !panel["parked_grids"].empty());
+    };
+
+    // Tagged but not yet ported: re-tagging would overwrite legacy_rows with 0,
+    // because the /ui/cached_grid node it comes from was erased by the first
+    // run. The tag that is already there carries the real value.
+    auto already_tagged = [](const json& panel) {
+        return panel.contains("layout_units") && panel["layout_units"].is_string() &&
+               panel["layout_units"].get<std::string>() == "cells_v21";
+    };
+
+    // Nothing to port: the tag exists so port_legacy_layout() knows which
+    // numbers are cells. A layout whose entries carry no coordinates has no
+    // such numbers, so the tag would be cleared again having converted nothing.
+    auto has_coordinates = [](const json& panel) {
+        auto p = panel.find("pages");
+        if (p == panel.end() || !p->is_array()) {
+            return false;
+        }
+        for (const auto& page : *p) {
+            auto w = page.is_object() ? page.find("widgets") : page.end();
+            if (w == page.end() || !w->is_array()) {
+                continue;
+            }
+            for (const auto& entry : *w) {
+                if (entry.is_object() && entry.contains("col") &&
+                    entry["col"].is_number_integer()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
     auto tag_panel = [&](const std::string& panel_id, json& panel) {
+        if (already_ported(panel) || already_tagged(panel) || !has_coordinates(panel)) {
+            return;
+        }
         panel["layout_units"] = "cells_v21";
         auto it = cached_rows.find(panel_id);
         panel["legacy_rows"] = (it != cached_rows.end()) ? it->second : 0;
