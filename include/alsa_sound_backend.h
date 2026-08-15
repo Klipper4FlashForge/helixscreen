@@ -10,6 +10,7 @@
 #include <alsa/asoundlib.h>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -79,6 +80,21 @@ class ALSASoundBackend : public SoundBackend {
     void set_render_source(std::function<void(float*, size_t, int)> fn) override;
     void clear_render_source() override;
 
+    /// Park the render thread instead of writing silence to the card.
+    ///
+    /// SoundSequencer already calls these when its queue goes idle, but the
+    /// base-class versions are no-ops, so on ALSA the render thread kept
+    /// feeding the device forever: at period_size frames per write that is a
+    /// wakeup every few milliseconds, permanently, with nothing playing. On a
+    /// printer host that shares a CPU with Klipper, idle wakeups are not free —
+    /// they are the same class of problem as idle memory.
+    ///
+    /// Only the flag is set here. Every snd_pcm_* call stays on the render
+    /// thread, which is what makes this safe to call from the sequencer while
+    /// the render thread may be inside snd_pcm_writei.
+    void suspend() override;
+    void resume() override;
+
   private:
     void render_loop();
     snd_pcm_sframes_t recover_xrun(snd_pcm_sframes_t err);
@@ -86,6 +102,9 @@ class ALSASoundBackend : public SoundBackend {
     snd_pcm_t* pcm_ = nullptr;
     std::thread render_thread_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> suspended_{false};
+    std::mutex suspend_mutex_;
+    std::condition_variable suspend_cv_;
 
     static constexpr int MAX_VOICES = 4;
 
