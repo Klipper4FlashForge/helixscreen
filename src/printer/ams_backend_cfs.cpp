@@ -598,8 +598,14 @@ AmsSystemInfo AmsBackendCfs::parse_stock_box_status(const nlohmann::json& box_js
         }
     }
 
-    // Transient: materialize ONLY the cfs-coded slice for this parse pass.
-    const auto cfs_catalog = FilamentCatalog::load_codes("cfs");
+    // Shared snapshot of ONLY the cfs-coded slice. This runs on every full box
+    // update — any `filament`/`map`/`T1..T4` key, so once per spool move, not
+    // once per session — and load_codes() re-parses the whole 100 KB catalog
+    // (~872 kB of transient heap) to keep 73 products. Cached and invalidated by
+    // user-overlay writes; the snapshot stays alive for this scope even if
+    // another thread retires it mid-parse.
+    const auto cfs_catalog_snapshot = FilamentCatalog::load_codes_cached("cfs");
+    const FilamentCatalog& cfs_catalog = *cfs_catalog_snapshot;
 
     // Loop over T1-T4 units
     for (int n = 1; n <= 4; ++n) {
