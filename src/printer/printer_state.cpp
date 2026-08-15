@@ -540,7 +540,8 @@ void PrinterState::update_from_status(const json& state, double eventtime,
 
             if (webhooks.contains("state") && webhooks["state"].is_string()) {
                 std::string klippy_state_str = webhooks["state"].get<std::string>();
-                KlippyState new_state = KlippyState::READY; // default
+                KlippyState new_state = KlippyState::READY;
+                bool recognized = true;
 
                 if (klippy_state_str == "ready") {
                     new_state = KlippyState::READY;
@@ -550,10 +551,27 @@ void PrinterState::update_from_status(const json& state, double eventtime,
                     new_state = KlippyState::SHUTDOWN;
                 } else if (klippy_state_str == "error") {
                     new_state = KlippyState::ERROR;
+                } else {
+                    // Klipper documents exactly ready/startup/shutdown/error. An
+                    // unrecognised value used to resolve to READY, which is
+                    // fail-OPEN on a liveness signal: an unknown string re-enabled
+                    // nav and re-opened the gcode guards. Leave the current state
+                    // alone instead — a stale-but-known state is safer than an
+                    // invented READY. Deduped on the string so a value Klipper
+                    // repeats every frame warns once, not per frame.
+                    recognized = false;
+                    if (last_unknown_klippy_state_ != klippy_state_str) {
+                        last_unknown_klippy_state_ = klippy_state_str;
+                        spdlog::warn("[PrinterState] Unrecognised webhooks.state '{}' — leaving "
+                                     "klippy state unchanged",
+                                     klippy_state_str);
+                    }
                 }
 
-                set_klippy_state_internal(new_state);
-                applied_state = true;
+                if (recognized) {
+                    set_klippy_state_internal(new_state);
+                    applied_state = true;
+                }
             }
 
             // Capture state_message (error/shutdown reason text)

@@ -2362,6 +2362,9 @@ class PrinterState {
     /// to SEED the state when nothing live has arrived yet — which is the normal
     /// cold-start ordering.
     bool klippy_state_from_live_ = false;
+    /// Last unrecognised webhooks.state string, so the warning fires once per
+    /// distinct value rather than once per status frame.
+    std::string last_unknown_klippy_state_;
 
     /// Last unrecognised webhooks.state string, so the warning fires on change
     /// rather than on every status frame. Main-thread only (webhooks parse).

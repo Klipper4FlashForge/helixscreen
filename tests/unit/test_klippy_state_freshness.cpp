@@ -270,6 +270,27 @@ TEST_CASE_METHOD(KlippyFreshnessFixture, "Klippy freshness: printer.info seeds b
 }
 
 // ============================================================================
+
+TEST_CASE_METHOD(KlippyFreshnessFixture, "Klippy freshness: unknown webhooks state changes nothing",
+                 "[core][klippy][freshness]") {
+    live("shutdown", 100.0);
+    REQUIRE(klippy() == KlippyState::SHUTDOWN);
+
+    live("wedged", 110.0);
+    CHECK(klippy() == KlippyState::SHUTDOWN);
+
+    // ...and it must not poison the watermark: a real state at a newer eventtime
+    // still applies.
+    live("ready", 120.0);
+    CHECK(klippy() == KlippyState::READY);
+}
+
+// ============================================================================
+// T8 — the regression the provenance flag exists to prevent. An UNFLAGGED
+// dispatch_status_update (the mock's simulated shutdown / recovery, and every
+// other synthetic dispatch) is current truth and must still apply after a live
+// state has landed, even though it carries no eventtime.
+// ============================================================================
 // Null-safety: Moonraker may send webhooks.state as JSON null
 // ============================================================================
 //
