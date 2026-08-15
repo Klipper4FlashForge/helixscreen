@@ -40,10 +40,12 @@
 #include "ams_types.h"
 #include "ui/ams_drawing_utils.h"
 
+#include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <fstream>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -92,6 +94,44 @@ std::set<std::string> distinct_lane_extruders(const nlohmann::json& status) {
     }
     return names;
 }
+
+/// RAII spdlog capture, so a warning aimed at the user can be asserted on.
+class LogCapture {
+  public:
+    LogCapture() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256)) {
+        logger_ = spdlog::default_logger();
+        prev_level_ = logger_->level();
+        sink_->set_level(spdlog::level::trace);
+        logger_->sinks().push_back(sink_);
+        logger_->set_level(spdlog::level::trace);
+    }
+
+    ~LogCapture() {
+        auto& sinks = logger_->sinks();
+        for (auto it = sinks.begin(); it != sinks.end(); ++it) {
+            if (*it == sink_) {
+                sinks.erase(it);
+                break;
+            }
+        }
+        logger_->set_level(prev_level_);
+    }
+
+    [[nodiscard]] int count_containing(const std::string& needle) const {
+        int n = 0;
+        for (const auto& l : sink_->last_formatted(256)) {
+            if (l.find(needle) != std::string::npos) {
+                ++n;
+            }
+        }
+        return n;
+    }
+
+  private:
+    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
+    std::shared_ptr<spdlog::logger> logger_;
+    spdlog::level::level_enum prev_level_;
+};
 
 /// The reporter's `[AFC_extruder eN] extruder_name:` lines, keyed lowercase the
 /// way Klipper publishes configfile section suffixes.
@@ -146,6 +186,7 @@ class AfcSharedExtruderHelper : public AmsBackendAfc {
     void seed_extruder_klipper_names(std::unordered_map<std::string, std::string> names) {
         std::lock_guard<std::mutex> lock(mutex_);
         extruder_klipper_names_ = std::move(names);
+        configfile_answered_ = true; // stands in for the query having landed
         extruder_tool_index_warned_.clear();
     }
 };
@@ -231,4 +272,61 @@ TEST_CASE("AFC shared extruders: configfile extruder_name gives toolheads E<n> i
     std::vector<int> numbers = labels.numbers;
     std::sort(numbers.begin(), numbers.end());
     CHECK(numbers == std::vector<int>{0, 1, 2, 3});
+}
+
+// ============================================================================
+// The unresolvable-extruder warning must not fire before configfile answers
+// ============================================================================
+//
+// A section named `e0` is REQUIRED to carry `extruder_name` — AFC refuses to
+// start otherwise (AFC_extruder.py:384) — so any machine that boots already
+// has the option the warning told the reporter to add. It fired only because
+// the configfile query lands milliseconds after the first status frames.
+
+TEST_CASE("AFC extruder warning: silent until configfile has actually answered",
+          "[ams][afc][extruder_tool_index][shared_extruder]") {
+    auto fixture = load_fixture("afc_u1_shared_extruders.json");
+    const auto& status = fixture["status"];
+
+    LogCapture log;
+    AfcSharedExtruderHelper afc; // configfile has NOT answered
+    afc.discover_from(status);
+    afc.feed_until_settled(status);
+
+    INFO("a pending configfile query is not evidence that the config is wrong");
+    CHECK(log.count_containing("Cannot determine a tool number") == 0);
+}
+
+TEST_CASE("AFC extruder warning: fires once configfile answers and still has nothing",
+          "[ams][afc][extruder_tool_index][shared_extruder]") {
+    auto fixture = load_fixture("afc_u1_shared_extruders.json");
+    const auto& status = fixture["status"];
+
+    LogCapture log;
+    AfcSharedExtruderHelper afc;
+    // Query landed and carried no extruder_name for any section — now the
+    // config really is missing it, and saying so is correct.
+    afc.seed_extruder_klipper_names({});
+    afc.discover_from(status);
+    afc.feed_until_settled(status);
+
+    INFO("gate must not silence a config that genuinely lacks extruder_name");
+    CHECK(log.count_containing("Cannot determine a tool number") > 0);
+}
+
+TEST_CASE("AFC extruder warning: an unparseable extruder_name names the value it read",
+          "[ams][afc][extruder_tool_index][shared_extruder]") {
+    auto fixture = load_fixture("afc_u1_shared_extruders.json");
+    const auto& status = fixture["status"];
+
+    LogCapture log;
+    AfcSharedExtruderHelper afc;
+    // AFC accepts any value containing "extruder", so this is a config it will
+    // happily start with and we still cannot number. Telling the user to set
+    // the option they already set would be useless; quote it back instead.
+    afc.seed_extruder_klipper_names({{"e0", "my_extruder_left"}});
+    afc.discover_from(status);
+    afc.feed_until_settled(status);
+
+    CHECK(log.count_containing("its extruder_name is 'my_extruder_left'") > 0);
 }

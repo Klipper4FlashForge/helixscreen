@@ -3530,6 +3530,9 @@ void AmsBackendAfc::query_afc_configfile_topology() {
 
                 std::lock_guard<std::mutex> lock(mutex_);
                 extruder_klipper_names_ = std::move(found);
+                // Settings were read. Only now does an absent extruder_name
+                // mean the config lacks one rather than that we have not asked.
+                configfile_answered_ = true;
                 // A newly-arrived mapping can resolve a name that already
                 // warned; let it warn again if it still cannot be resolved.
                 extruder_tool_index_warned_.clear();
@@ -3602,13 +3605,38 @@ int AmsBackendAfc::tool_index_for_extruder_unlocked(const std::string& ext_name)
         return *n;
     }
 
+    // Before configfile answers, "unresolvable" is not established. A section
+    // whose name is not `extruder<N>` MUST carry extruder_name or AFC refuses
+    // to start (AFC_extruder.py:384 rejects any th_extruder_name without
+    // "extruder" in it), so on every machine that boots at all the answer
+    // exists and has merely not arrived — the query races the first status
+    // frames by milliseconds. Warning here told users to add an option they
+    // were already required to have. query_afc_configfile_topology() clears
+    // the warned set when it lands, so a config that genuinely lacks one still
+    // gets told, once, with the evidence in hand.
+    if (!configfile_answered_) {
+        spdlog::debug("[AMS AFC] Tool number for AFC_extruder '{}' unresolved for now — "
+                      "configfile.settings has not answered yet",
+                      ext_name);
+        return -1;
+    }
+
     if (extruder_tool_index_warned_.insert(ext_name).second) {
-        spdlog::warn("[AMS AFC] Cannot determine a tool number for AFC_extruder '{}': the "
-                     "section name carries no extruder index and configfile.settings has no "
-                     "extruder_name for it. Lane attribution for this toolhead is disabled "
-                     "(it is NOT being assumed to be T0). Set `extruder_name: extruder<N>` in "
-                     "the [AFC_extruder {}] section.",
-                     ext_name, ext_name);
+        const auto it = extruder_klipper_names_.find(to_lower_copy(ext_name));
+        if (it != extruder_klipper_names_.end()) {
+            spdlog::warn("[AMS AFC] Cannot determine a tool number for AFC_extruder '{}': its "
+                         "extruder_name is '{}', which is not a Klipper extruder object name "
+                         "(expected `extruder` or `extruder<N>`). Lane attribution for this "
+                         "toolhead is disabled (it is NOT being assumed to be T0).",
+                         ext_name, it->second);
+        } else {
+            spdlog::warn("[AMS AFC] Cannot determine a tool number for AFC_extruder '{}': the "
+                         "section name carries no extruder index and configfile.settings has no "
+                         "extruder_name for it. Lane attribution for this toolhead is disabled "
+                         "(it is NOT being assumed to be T0). Set `extruder_name: extruder<N>` in "
+                         "the [AFC_extruder {}] section.",
+                         ext_name, ext_name);
+        }
     }
     return -1;
 }

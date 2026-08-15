@@ -541,6 +541,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         const std::unordered_map<std::string, std::string>& section_to_klipper) {
         std::lock_guard<std::mutex> lock(mutex_);
         extruder_klipper_names_ = section_to_klipper;
+        configfile_answered_ = true; // stands in for the query having landed
         extruder_tool_index_warned_.clear();
     }
 

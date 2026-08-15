@@ -1190,6 +1190,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// printer whose config Moonraker will not serve.
     std::unordered_map<std::string, std::string> extruder_klipper_names_;
 
+    /// True once configfile.settings has actually been read, whatever it held.
+    /// Distinguishes "this section has no extruder_name" from "we have not
+    /// looked yet" — an empty extruder_klipper_names_ means both, and only the
+    /// first justifies telling the user their config is missing something.
+    bool configfile_answered_{false};
+
     /// True once an `[AFC_Toolchanger …]` section has been seen in
     /// configfile.settings. Never cleared by a config that lacks one — absence
     /// in an unanswered/unavailable configfile is not evidence, and the units
