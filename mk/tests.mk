@@ -318,6 +318,13 @@ TEST_APP_OBJS := $(filter-out \
     $(OBJ_DIR)/remote/remote_client.o \
     ,$(APP_OBJS) $(APP_C_OBJS))
 
+# The PWM buzzer backend is platform-gated out of APP_SRCS (only ad5m/ad5x ship
+# it), but tests/unit/test_pwm_sound_backend.cpp exercises its pure helpers on
+# the host. The gate decides what SHIPS, not what is testable, so add the object
+# back for the test link. $(sort) keeps this idempotent on the platforms where
+# APP_OBJS already contains it.
+TEST_APP_OBJS := $(sort $(TEST_APP_OBJS) $(OBJ_DIR)/system/pwm_sound_backend.o)
+
 # ============================================================================
 # Test Targets
 # ============================================================================
