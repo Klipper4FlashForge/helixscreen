@@ -439,8 +439,6 @@ void PrintStatusPanel::init_subjects() {
     UI_MANAGED_SUBJECT_STRING(remaining_subject_, remaining_buf_, "0h 00m", "print_remaining",
                               subjects_);
     UI_MANAGED_SUBJECT_STRING(eta_subject_, eta_buf_, "", "print_eta", subjects_);
-    UI_MANAGED_SUBJECT_STRING(nozzle_temp_subject_, nozzle_temp_buf_, "0 / 0°C", "nozzle_temp_text",
-                              subjects_);
     UI_MANAGED_SUBJECT_STRING(bed_temp_subject_, bed_temp_buf_, "0 / 0°C", "bed_temp_text",
                               subjects_);
     UI_MANAGED_SUBJECT_STRING(nozzle_status_subject_, nozzle_status_buf_, "Off",
@@ -1699,11 +1697,6 @@ void PrintStatusPanel::update_all_displays() {
     }
 
     // Use centralized temperature formatting with em dash for heater-off state
-    format_temperature_pair(deci_to_degrees(lifecycle_.nozzle_current()),
-                            deci_to_degrees(lifecycle_.nozzle_target()), nozzle_temp_buf_,
-                            sizeof(nozzle_temp_buf_));
-    lv_subject_copy_string(&nozzle_temp_subject_, nozzle_temp_buf_);
-
     format_temperature_pair(deci_to_degrees(lifecycle_.bed_current()),
                             deci_to_degrees(lifecycle_.bed_target()), bed_temp_buf_,
                             sizeof(bed_temp_buf_));
@@ -2032,21 +2025,6 @@ void PrintStatusPanel::on_temperature_changed() {
     // Update only temperature-related subjects (not the full display refresh).
     // Temperature observers fire frequently during heating (4 subjects x ~1Hz each),
     // and update_all_displays() re-renders ALL subjects causing visible flickering.
-    auto& ts = helix::ToolState::instance();
-    if (ts.is_multi_tool() && ts.active_tool()) {
-        size_t prefix_len = std::snprintf(nozzle_temp_buf_, sizeof(nozzle_temp_buf_),
-                                          "%s: ", ts.active_tool()->name.c_str());
-        format_temperature_pair(deci_to_degrees(lifecycle_.nozzle_current()),
-                                deci_to_degrees(lifecycle_.nozzle_target()),
-                                nozzle_temp_buf_ + prefix_len,
-                                sizeof(nozzle_temp_buf_) - prefix_len);
-    } else {
-        format_temperature_pair(deci_to_degrees(lifecycle_.nozzle_current()),
-                                deci_to_degrees(lifecycle_.nozzle_target()), nozzle_temp_buf_,
-                                sizeof(nozzle_temp_buf_));
-    }
-    lv_subject_copy_string(&nozzle_temp_subject_, nozzle_temp_buf_);
-
     format_temperature_pair(deci_to_degrees(lifecycle_.bed_current()),
                             deci_to_degrees(lifecycle_.bed_target()), bed_temp_buf_,
                             sizeof(bed_temp_buf_));
