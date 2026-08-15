@@ -337,15 +337,33 @@ jobs:
         check_certs() {
           local label="$1" certs="$2"
           printf '%s\n' "$certs"
+
+          # Positive evidence first. Absence of the debug DN is NOT proof of a
+          # good signature: `keytool -printcert -jarfile` prints "Not a signed
+          # jar file" and still EXITS 0, so a bundle that lost its v1 signature
+          # would sail through a check that only looks for CN=Android Debug.
+          # Requiring a fingerprint turns "no debug key seen" into "a real
+          # certificate was read, and it is not the debug one".
+          local fp
+          # Require hex after the label. A bare 'SHA-?256' also matches
+          # keytool's "Signature algorithm name: SHA256withRSA" line, which
+          # would satisfy the presence check without any fingerprint present.
+          fp="$(printf '%s\n' "$certs" | grep -iE 'SHA-?256[^:]*:[[:space:]]*[0-9A-Fa-f]{2}' || true)"
+          if [ -z "$fp" ]; then
+            echo "::error::$label — no SHA-256 certificate fingerprint found. The artifact is unsigned, or the tool could not read its signature."
+            fail=1
+            return
+          fi
+
           if printf '%s\n' "$certs" | grep -q 'CN=Android Debug'; then
             echo "::error::$label is signed with the Android debug keystore"
             fail=1
           fi
+
           # The SHA-256 fingerprint is what Play Console and Android developer
           # verification register against the package name, so keep it easy to
           # read off a release run.
-          printf '%s\n' "$certs" | grep -iE 'SHA-?256' \
-            | sed "s|^|  ${label} SHA-256: |" || true
+          printf '%s\n' "$fp" | sed "s|^|  ${label} SHA-256: |"
         }
 
         for apk in android/app/build/outputs/apk/release/*.apk; do
