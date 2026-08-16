@@ -178,3 +178,56 @@ TEST_CASE("PreheatWidget: cycle_tool_target cycles through all/specific/back to 
     target = (target == -1) ? 0 : (target + 1 >= tool_count ? -1 : target + 1);
     REQUIRE(target == -1);
 }
+
+// ============================================================================
+// collect_preheat_heaters: AMS lanes share a hotend
+//
+// set_ams_topology() expands ToolState's list to one entry per filament lane,
+// and every lane on a single-hotend printer resolves to the same heater. The
+// "all tools" preheat must send one target per heater, not one per lane. The
+// count it returns is also what the confirmation toast reports.
+// ============================================================================
+
+TEST_CASE("PreheatWidget: collect_preheat_heaters collapses lanes sharing one heater",
+          "[preheat][panel_widget]") {
+    // What set_ams_topology() leaves behind on a 4-lane AMS + one extruder:
+    // four tools, every one of them mapped to "extruder".
+    std::vector<ToolInfo> tools;
+    for (int i = 0; i < 4; ++i) {
+        ToolInfo t;
+        t.index = i;
+        t.name = "T" + std::to_string(i);
+        t.extruder_name = "extruder";
+        tools.push_back(t);
+    }
+
+    auto heaters = PreheatWidget::collect_preheat_heaters(tools, -1);
+
+    REQUIRE(heaters.size() == 1);
+    REQUIRE(heaters[0] == "extruder");
+}
+
+TEST_CASE("PreheatWidget: collect_preheat_heaters keeps every distinct heater in tool order",
+          "[preheat][panel_widget]") {
+    // Paired with the case above: a collapse that kept only the first heater
+    // would pass that one and silently stop heating a toolchanger's other
+    // hotends. Two extra lanes are hung off T0's heater to prove the dedup
+    // removes duplicates rather than truncating the list.
+    auto tools = make_test_tools(3);
+    ToolInfo lane;
+    lane.index = 3;
+    lane.name = "T3";
+    lane.extruder_name = "extruder";
+    tools.push_back(lane);
+    lane.index = 4;
+    lane.name = "T4";
+    lane.extruder_name = "extruder2";
+    tools.push_back(lane);
+
+    auto heaters = PreheatWidget::collect_preheat_heaters(tools, -1);
+
+    REQUIRE(heaters.size() == 3);
+    REQUIRE(heaters[0] == "extruder");
+    REQUIRE(heaters[1] == "extruder1");
+    REQUIRE(heaters[2] == "extruder2");
+}
