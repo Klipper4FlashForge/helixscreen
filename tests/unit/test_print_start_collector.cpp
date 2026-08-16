@@ -2913,16 +2913,20 @@ TEST_CASE_METHOD(K2PrintStartReplayFixture,
     settle();
     REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
 
-    // 12:21:15 — the clean softens filament with M109. This must not consume
-    // the one-shot HEATING_NOZZLE detection.
+    // 12:21:15 — the clean softens filament with M109. This DOES latch
+    // HEATING_NOZZLE, and must: it is the only route into a heating phase on
+    // this firmware (no M190, no M109 at print temp), and proactive temperature
+    // detection is gated off once real signals are seen. The heater correction
+    // then re-derives the shown phase from live temps during the bed soak.
     send_gcode_response("// [GCODE]M109 S170");
     settle();
-    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_NOZZLE);
 
-    // 12:22:21 — Z re-verify. Matches "G28" as a bare substring.
+    // 12:22:21 — Z re-verify. Matches "G28" as a bare substring, and must not
+    // re-trigger HOMING now that we have moved past it.
     send_gcode_response("// [G28_RE_CHECK]");
     settle();
-    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_NOZZLE);
 
     // 12:22:28 — the real mesh begins.
     send_gcode_response("// exist_points[81], config_points[81]");

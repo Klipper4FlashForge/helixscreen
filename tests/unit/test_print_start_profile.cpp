@@ -1183,8 +1183,8 @@ TEST_CASE("PrintStartProfile: creality_k2 does not claim homing on the post-clea
     REQUIRE_FALSE(profile->try_match_pattern("// [G28_RE_CHECK]", result));
 }
 
-TEST_CASE("PrintStartProfile: creality_k2 does not claim nozzle heating during the clean",
-          "[profile][print][k2][negative]") {
+TEST_CASE("PrintStartProfile: creality_k2 keeps the M109 latch that the heater correction needs",
+          "[profile][print][k2][heating]") {
     auto profile = get_creality_k2_profile();
     REQUIRE(profile != nullptr);
     if (profile->name().find("K2") == std::string::npos) {
@@ -1192,12 +1192,21 @@ TEST_CASE("PrintStartProfile: creality_k2 does not claim nozzle heating during t
     }
 
     // BOX_NOZZLE_CLEAN issues M109 S170 then M109 S140 to soften filament for
-    // the wipe. Matching those burns the one-shot HEATING_NOZZLE detection on
-    // the clean, so the real heat to print temp (which echoes no M109 at all)
-    // can never be shown. Heater-target status drives this phase instead.
+    // the wipe, so this fires during CLEANING rather than at the real heat.
+    // It must stay anyway: it is the ONLY route into a heating phase on this
+    // firmware, which emits no M190 and no M109 at print temp. Proactive
+    // temperature detection cannot cover the gap — it is gated off the moment
+    // any real firmware signal is seen (real_signal_seen_), and the HOMING
+    // pattern trips that within a second of the collector starting. Once
+    // latched here, the heater correction in check_fallback_completion()
+    // re-derives the shown phase from live temps, bed-first, which is what
+    // actually puts "Heating Bed" on screen during the soak.
+    //
+    // Removing this pattern showed "Cleaning Nozzle" for the whole 4-minute
+    // ASA bed soak on hardware, then timed out before the mesh (2026-08-16).
     PrintStartProfile::MatchResult result;
-    REQUIRE_FALSE(profile->try_match_pattern("// [GCODE]M109 S170", result));
-    REQUIRE_FALSE(profile->try_match_pattern("// [GCODE]M109 S140", result));
+    REQUIRE(profile->try_match_pattern("// [GCODE]M109 S170", result));
+    REQUIRE(result.phase == PrintStartPhase::HEATING_NOZZLE);
 }
 
 TEST_CASE("PrintStartProfile: creality_k2 uses adaptive meshing", "[profile][print][k2][mesh]") {
