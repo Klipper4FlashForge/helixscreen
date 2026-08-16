@@ -20,6 +20,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
 #include "platform_capabilities.h"
+#include "shaper_selection.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 
@@ -27,6 +28,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <random>
@@ -283,6 +285,10 @@ void InputShaperPanel::init_subjects() {
     // Number of shapers per axis (controls table row visibility via bind_flag_if_le)
     UI_MANAGED_SUBJECT_INT(is_x_num_shapers_, 0, "is_x_num_shapers", subjects_);
     UI_MANAGED_SUBJECT_INT(is_y_num_shapers_, 0, "is_y_num_shapers", subjects_);
+
+    // Number of chart chips per axis (controls chip visibility via bind_flag_if_le)
+    UI_MANAGED_SUBJECT_INT(is_x_num_chips_, 0, "is_x_num_chips", subjects_);
+    UI_MANAGED_SUBJECT_INT(is_y_num_chips_, 0, "is_y_num_chips", subjects_);
 
     UI_MANAGED_SUBJECT_STRING(is_result_x_shaper_, is_result_x_shaper_buf_, "",
                               "is_result_x_shaper", subjects_);
@@ -679,7 +685,8 @@ void InputShaperPanel::on_preflight_error(const std::string& message) {
 
 void InputShaperPanel::calibrate_all() {
     calibrate_all_mode_ = true;
-    x_result_ = InputShaperResult{}; // Clear stored X result
+    x_result_ = InputShaperResult{}; // Clear stored per-axis results
+    y_result_ = InputShaperResult{};
     start_with_preflight('X');
 }
 
@@ -850,26 +857,41 @@ void InputShaperPanel::apply_recommendation() {
 
     auto tok = lifetime_.token();
 
-    // If we have stored X result from Calibrate All, apply X first then chain Y
-    if (x_result_.is_valid()) {
-        spdlog::info("[InputShaper] Applying X axis shaper: {} @ {:.1f} Hz", x_result_.shaper_type,
-                     x_result_.shaper_freq);
+    // If both axes have results, apply X first then chain Y
+    if (x_result_.is_valid() && y_result_.is_valid()) {
+        std::string x_type = x_result_.shaper_type;
+        float x_freq = x_result_.shaper_freq;
+        if (!resolve_shaper_for_apply('X', x_type, x_freq)) {
+            x_type = x_result_.shaper_type;
+            x_freq = x_result_.shaper_freq;
+        }
+
+        // Resolve Y now, not in the X-success callback: Save closes the panel and
+        // clears the results before that callback runs.
+        std::string y_type = recommended_type_;
+        float y_freq = recommended_freq_;
+        if (!resolve_shaper_for_apply('Y', y_type, y_freq)) {
+            y_type = recommended_type_;
+            y_freq = recommended_freq_;
+        }
+
+        spdlog::info("[InputShaper] Applying X axis shaper: {} @ {:.1f} Hz", x_type, x_freq);
 
         helix::calibration::ApplyConfig x_config;
         x_config.axis = 'X';
-        x_config.shaper_type = x_result_.shaper_type;
-        x_config.frequency = x_result_.shaper_freq;
+        x_config.shaper_type = x_type;
+        x_config.frequency = x_freq;
 
         calibrator_->apply_settings(
             x_config,
-            [this, tok]() {
-                // L081 Mechanism C: reads recommended_*_ and calls apply_y_after_x()
-                // (which touches api_/lifetime_). Marshal to main.
-                tok.defer("InputShaperPanel::apply_x_success", [this]() {
+            [this, tok, y_type, y_freq]() {
+                // L081 Mechanism C: calls apply_y_after_x() (which touches
+                // api_/lifetime_). Marshal to main.
+                tok.defer("InputShaperPanel::apply_x_success", [this, y_type, y_freq]() {
                     spdlog::info("[InputShaper] X axis settings applied");
                     // Chain Y apply if we have a recommendation
-                    if (!recommended_type_.empty() && recommended_freq_ > 0) {
-                        apply_y_after_x();
+                    if (!y_type.empty() && y_freq > 0) {
+                        apply_y_after_x(y_type, y_freq);
                     } else {
                         ToastManager::instance().show(
                             ToastSeverity::SUCCESS, lv_tr("Input shaper settings applied!"), 2500);
@@ -885,13 +907,20 @@ void InputShaperPanel::apply_recommendation() {
             });
     } else if (!recommended_type_.empty() && recommended_freq_ > 0) {
         // Single axis apply
+        std::string type = recommended_type_;
+        float freq = recommended_freq_;
+        if (!resolve_shaper_for_apply(last_calibrated_axis_, type, freq)) {
+            type = recommended_type_;
+            freq = recommended_freq_;
+        }
+
         spdlog::info("[InputShaper] Applying {} axis shaper: {} @ {:.1f} Hz", last_calibrated_axis_,
-                     recommended_type_, recommended_freq_);
+                     type, freq);
 
         helix::calibration::ApplyConfig config;
         config.axis = last_calibrated_axis_;
-        config.shaper_type = recommended_type_;
-        config.frequency = recommended_freq_;
+        config.shaper_type = type;
+        config.frequency = freq;
 
         calibrator_->apply_settings(
             config,
@@ -914,14 +943,13 @@ void InputShaperPanel::apply_recommendation() {
     }
 }
 
-void InputShaperPanel::apply_y_after_x() {
-    spdlog::info("[InputShaper] Applying Y axis shaper: {} @ {:.1f} Hz", recommended_type_,
-                 recommended_freq_);
+void InputShaperPanel::apply_y_after_x(const std::string& shaper_type, float freq) {
+    spdlog::info("[InputShaper] Applying Y axis shaper: {} @ {:.1f} Hz", shaper_type, freq);
 
     helix::calibration::ApplyConfig y_config;
     y_config.axis = 'Y';
-    y_config.shaper_type = recommended_type_;
-    y_config.frequency = recommended_freq_;
+    y_config.shaper_type = shaper_type;
+    y_config.frequency = freq;
 
     auto tok = lifetime_.token();
     calibrator_->apply_settings(
@@ -1050,6 +1078,14 @@ void InputShaperPanel::on_calibration_result(const InputShaperResult& result) {
     lv_subject_set_int(&is_results_has_x_, 0);
     lv_subject_set_int(&is_results_has_y_, 0);
 
+    // Keep the per-axis result: the chart chips resolve their selection against
+    // all_shapers, which only lives on the result object.
+    if (result.axis == 'X') {
+        x_result_ = result;
+    } else {
+        y_result_ = result;
+    }
+
     // Populate per-axis result cards
     if (was_calibrate_all && x_result_.is_valid()) {
         populate_axis_result('X', x_result_);
@@ -1132,6 +1168,10 @@ void InputShaperPanel::clear_results() {
     clear_chart('X');
     clear_chart('Y');
 
+    // Drop the stored per-axis results the chip selection resolves against
+    x_result_ = InputShaperResult{};
+    y_result_ = InputShaperResult{};
+
     // Clear per-axis result cards
     lv_subject_set_int(&is_results_has_x_, 0);
     lv_subject_set_int(&is_results_has_y_, 0);
@@ -1207,15 +1247,16 @@ const char* InputShaperPanel::get_quality_description(float vibrations) {
     return "Poor — check for mechanical issues";
 }
 
-void InputShaperPanel::populate_axis_result(char axis, const InputShaperResult& result) {
+void InputShaperPanel::update_axis_display(char axis, const std::string& shaper_type, float freq,
+                                           float vibrations, float max_accel) {
     // Uppercase the shaper type for display
-    std::string type_upper = result.shaper_type;
+    std::string type_upper = shaper_type;
     for (auto& c : type_upper)
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
     // Format frequency
     char freq_buf[16];
-    helix::format::format_frequency_hz(result.shaper_freq, freq_buf, sizeof(freq_buf));
+    helix::format::format_frequency_hz(freq, freq_buf, sizeof(freq_buf));
 
     if (axis == 'X') {
         lv_subject_set_int(&is_results_has_x_, 1);
@@ -1225,18 +1266,18 @@ void InputShaperPanel::populate_axis_result(char axis, const InputShaperResult& 
         lv_subject_copy_string(&is_result_x_shaper_, is_result_x_shaper_buf_);
 
         snprintf(is_result_x_explanation_buf_, sizeof(is_result_x_explanation_buf_), "* %s",
-                 get_shaper_explanation(result.shaper_type));
+                 get_shaper_explanation(shaper_type));
         lv_subject_copy_string(&is_result_x_explanation_, is_result_x_explanation_buf_);
 
         snprintf(is_result_x_vibration_buf_, sizeof(is_result_x_vibration_buf_), "%.1f%%",
-                 result.vibrations);
+                 vibrations);
         lv_subject_copy_string(&is_result_x_vibration_, is_result_x_vibration_buf_);
 
         snprintf(is_result_x_max_accel_buf_, sizeof(is_result_x_max_accel_buf_),
-                 "%.0f mm/s\xC2\xB2", result.max_accel);
+                 "%.0f mm/s\xC2\xB2", max_accel);
         lv_subject_copy_string(&is_result_x_max_accel_, is_result_x_max_accel_buf_);
 
-        lv_subject_set_int(&is_result_x_quality_, get_vibration_quality(result.vibrations));
+        lv_subject_set_int(&is_result_x_quality_, get_vibration_quality(vibrations));
     } else {
         lv_subject_set_int(&is_results_has_y_, 1);
 
@@ -1245,19 +1286,66 @@ void InputShaperPanel::populate_axis_result(char axis, const InputShaperResult& 
         lv_subject_copy_string(&is_result_y_shaper_, is_result_y_shaper_buf_);
 
         snprintf(is_result_y_explanation_buf_, sizeof(is_result_y_explanation_buf_), "* %s",
-                 get_shaper_explanation(result.shaper_type));
+                 get_shaper_explanation(shaper_type));
         lv_subject_copy_string(&is_result_y_explanation_, is_result_y_explanation_buf_);
 
         snprintf(is_result_y_vibration_buf_, sizeof(is_result_y_vibration_buf_), "%.1f%%",
-                 result.vibrations);
+                 vibrations);
         lv_subject_copy_string(&is_result_y_vibration_, is_result_y_vibration_buf_);
 
         snprintf(is_result_y_max_accel_buf_, sizeof(is_result_y_max_accel_buf_),
-                 "%.0f mm/s\xC2\xB2", result.max_accel);
+                 "%.0f mm/s\xC2\xB2", max_accel);
         lv_subject_copy_string(&is_result_y_max_accel_, is_result_y_max_accel_buf_);
 
-        lv_subject_set_int(&is_result_y_quality_, get_vibration_quality(result.vibrations));
+        lv_subject_set_int(&is_result_y_quality_, get_vibration_quality(vibrations));
     }
+}
+
+void InputShaperPanel::refresh_axis_display(char axis) {
+    const InputShaperResult& res = (axis == 'X') ? x_result_ : y_result_;
+    const auto& chart_data = (axis == 'X') ? x_chart_ : y_chart_;
+
+    if (!res.is_valid()) {
+        spdlog::debug("[InputShaper] {} axis: no stored result, leaving result card as-is", axis);
+        return;
+    }
+
+    const helix::calibration::SelectedShaper sel = helix::calibration::resolve_selected_shaper(
+        res, chart_data.shaper_curves, chart_data.selected_shaper);
+
+    if (!sel.metrics_known) {
+        // CSV curve with no console counterpart: show what the curve knows and
+        // leave the metrics the console owns blank rather than inventing them.
+        spdlog::warn("[InputShaper] {} axis: chart curve '{}' has no matching entry in the "
+                     "console shaper list ({} entries) - vibration/accel unavailable",
+                     axis, sel.type, res.all_shapers.size());
+    }
+
+    update_axis_display(axis, sel.type, sel.frequency, sel.vibrations, sel.max_accel);
+}
+
+bool InputShaperPanel::resolve_shaper_for_apply(char axis, std::string& out_type,
+                                                float& out_freq) const {
+    const InputShaperResult& res = (axis == 'X') ? x_result_ : y_result_;
+    const auto& chart_data = (axis == 'X') ? x_chart_ : y_chart_;
+
+    const helix::calibration::SelectedShaper sel = helix::calibration::resolve_selected_shaper(
+        res, chart_data.shaper_curves, chart_data.selected_shaper);
+
+    if (!sel.is_valid()) {
+        spdlog::debug("[InputShaper] {} axis: no selectable shaper to apply (type='{}', freq={})",
+                      axis, sel.type, sel.frequency);
+        return false;
+    }
+
+    out_type = sel.type;
+    out_freq = sel.frequency;
+    return true;
+}
+
+void InputShaperPanel::populate_axis_result(char axis, const InputShaperResult& result) {
+    update_axis_display(axis, result.shaper_type, result.shaper_freq, result.vibrations,
+                        result.max_accel);
 
     // Populate comparison table subjects
     auto& cmp = (axis == 'X') ? x_cmp_ : y_cmp_;
@@ -1355,10 +1443,12 @@ void InputShaperPanel::populate_chart(char axis, const InputShaperResult& result
     auto& chart_data = (axis == 'X') ? x_chart_ : y_chart_;
     auto& chips = (axis == 'X') ? x_chips_ : y_chips_;
     auto& has_freq_data = (axis == 'X') ? is_x_has_freq_data_ : is_y_has_freq_data_;
+    auto& num_chips = (axis == 'X') ? is_x_num_chips_ : is_y_num_chips_;
 
     // Check if freq data available
     if (result.freq_response.empty() || !chart_data.chart) {
         lv_subject_set_int(&has_freq_data, 0);
+        lv_subject_set_int(&num_chips, 0);
         return;
     }
 
@@ -1367,6 +1457,7 @@ void InputShaperPanel::populate_chart(char axis, const InputShaperResult& result
     // Store the data
     chart_data.freq_response = result.freq_response;
     chart_data.shaper_curves = result.shaper_curves;
+    chart_data.selected_shaper = -1;
 
     // Extract frequencies and amplitudes
     std::vector<float> freqs;
@@ -1383,6 +1474,7 @@ void InputShaperPanel::populate_chart(char axis, const InputShaperResult& result
         spdlog::warn(
             "[InputShaper] {} axis: freq_response non-empty but produced no amplitude data", axis);
         lv_subject_set_int(&has_freq_data, 0);
+        lv_subject_set_int(&num_chips, 0);
         return;
     }
 
@@ -1427,9 +1519,12 @@ void InputShaperPanel::populate_chart(char axis, const InputShaperResult& result
                                                  std::min(freqs.size(), curve.values.size()));
         }
 
-        // Pre-select the recommended shaper, hide others
+        // Pre-select the recommended shaper, hide others. Exactly one series is
+        // visible at a time; the chips are radio buttons, not toggles.
         bool is_recommended = (curve.name == result.shaper_type);
-        chart_data.shaper_visible[i] = is_recommended;
+        if (is_recommended) {
+            chart_data.selected_shaper = static_cast<int>(i);
+        }
         ui_frequency_response_chart_show_series(chart_data.chart, chart_data.shaper_series_ids[i],
                                                 is_recommended);
         lv_subject_set_int(&chips[i].active, is_recommended ? 1 : 0);
@@ -1442,19 +1537,33 @@ void InputShaperPanel::populate_chart(char axis, const InputShaperResult& result
         lv_subject_set_int(&chips[i].active, 0);
     }
 
+    // Hide the chips with no curve behind them (the XML has a fixed MAX_SHAPERS
+    // of them, and empty outlines read as broken)
+    lv_subject_set_int(&num_chips,
+                       static_cast<int>(std::min(chart_data.shaper_curves.size(), MAX_SHAPERS)));
+
     // Update legend to reflect initially selected shaper
     update_legend(axis);
 
-    spdlog::debug("[InputShaper] Chart populated for {} axis: {} freq bins, {} shaper curves", axis,
-                  freqs.size(), chart_data.shaper_curves.size());
+    if (chart_data.selected_shaper < 0) {
+        spdlog::warn("[InputShaper] {} axis: no chart curve matches the recommended shaper '{}' - "
+                     "no chip pre-selected",
+                     axis, result.shaper_type);
+    }
+
+    spdlog::debug("[InputShaper] Chart populated for {} axis: {} freq bins, {} shaper curves, "
+                  "selected index {}",
+                  axis, freqs.size(), chart_data.shaper_curves.size(), chart_data.selected_shaper);
 }
 
 void InputShaperPanel::clear_chart(char axis) {
     auto& chart_data = (axis == 'X') ? x_chart_ : y_chart_;
     auto& chips = (axis == 'X') ? x_chips_ : y_chips_;
     auto& has_freq_data = (axis == 'X') ? is_x_has_freq_data_ : is_y_has_freq_data_;
+    auto& num_chips = (axis == 'X') ? is_x_num_chips_ : is_y_num_chips_;
 
     lv_subject_set_int(&has_freq_data, 0);
+    lv_subject_set_int(&num_chips, 0);
 
     if (chart_data.chart) {
         ui_frequency_response_chart_clear(chart_data.chart);
@@ -1469,10 +1578,10 @@ void InputShaperPanel::clear_chart(char axis) {
                                                           chart_data.shaper_series_ids[i]);
                 chart_data.shaper_series_ids[i] = -1;
             }
-            chart_data.shaper_visible[i] = false;
         }
     }
 
+    chart_data.selected_shaper = -1;
     chart_data.freq_response.clear();
     chart_data.shaper_curves.clear();
 
@@ -1484,26 +1593,40 @@ void InputShaperPanel::clear_chart(char axis) {
     }
 }
 
-void InputShaperPanel::toggle_shaper_overlay(char axis, int index) {
+void InputShaperPanel::select_shaper_overlay(char axis, int index) {
     if (index < 0 || index >= static_cast<int>(MAX_SHAPERS))
         return;
 
     auto& chart_data = (axis == 'X') ? x_chart_ : y_chart_;
     auto& chips = (axis == 'X') ? x_chips_ : y_chips_;
 
+    // Chip with no curve behind it - nothing to select
     if (chart_data.shaper_series_ids[index] < 0)
         return;
 
-    chart_data.shaper_visible[index] = !chart_data.shaper_visible[index];
+    // Radio semantics: re-clicking the selection keeps it, never clears it
+    if (chart_data.selected_shaper == index)
+        return;
+
+    const int previous = chart_data.selected_shaper;
+    if (previous >= 0 && previous < static_cast<int>(MAX_SHAPERS) &&
+        chart_data.shaper_series_ids[previous] >= 0) {
+        ui_frequency_response_chart_show_series(chart_data.chart,
+                                                chart_data.shaper_series_ids[previous], false);
+        lv_subject_set_int(&chips[previous].active, 0);
+    }
+
+    chart_data.selected_shaper = index;
     ui_frequency_response_chart_show_series(chart_data.chart, chart_data.shaper_series_ids[index],
-                                            chart_data.shaper_visible[index]);
-    lv_subject_set_int(&chips[index].active, chart_data.shaper_visible[index] ? 1 : 0);
+                                            true);
+    lv_subject_set_int(&chips[index].active, 1);
 
-    // Update legend to reflect new active shaper
+    // Update legend and result card to reflect the new selection
     update_legend(axis);
+    refresh_axis_display(axis);
 
-    spdlog::debug("[InputShaper] Toggled {} axis shaper overlay {}: {}", axis, index,
-                  chart_data.shaper_visible[index]);
+    spdlog::debug("[InputShaper] Selected {} axis shaper overlay {} (was {})", axis, index,
+                  previous);
 }
 
 void InputShaperPanel::update_legend(char axis) {
@@ -1514,15 +1637,8 @@ void InputShaperPanel::update_legend(char axis) {
         (axis == 'X') ? is_x_legend_shaper_label_buf_ : is_y_legend_shaper_label_buf_;
     lv_obj_t* legend_dot = (axis == 'X') ? legend_x_shaper_dot_ : legend_y_shaper_dot_;
 
-    // Find the last visible shaper to display in the legend
-    // Prefer the highest-index visible shaper (most recently toggled on)
-    int active_idx = -1;
-    for (int i = static_cast<int>(MAX_SHAPERS) - 1; i >= 0; i--) {
-        if (chart_data.shaper_visible[i] && chart_data.shaper_series_ids[i] >= 0) {
-            active_idx = i;
-            break;
-        }
-    }
+    // Exactly one shaper is selected at a time - the legend shows that one
+    const int active_idx = chart_data.selected_shaper;
 
     if (active_idx >= 0) {
         // Copy chip label text (already uppercase) to legend label
@@ -1542,11 +1658,11 @@ void InputShaperPanel::update_legend(char axis) {
 }
 
 void InputShaperPanel::handle_chip_x_clicked(int index) {
-    toggle_shaper_overlay('X', index);
+    select_shaper_overlay('X', index);
 }
 
 void InputShaperPanel::handle_chip_y_clicked(int index) {
-    toggle_shaper_overlay('Y', index);
+    select_shaper_overlay('Y', index);
 }
 
 // ============================================================================
@@ -1665,6 +1781,7 @@ void InputShaperPanel::inject_demo_results() {
     recommended_type_ = rec.type;
     recommended_freq_ = rec.frequency;
     x_result_ = x_result;
+    y_result_ = y_result;
 
     // Populate both axes (uses existing private methods)
     lv_subject_set_int(&is_results_has_x_, 0);

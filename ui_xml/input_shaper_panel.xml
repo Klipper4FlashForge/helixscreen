@@ -199,6 +199,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="0"/>
                 <bind_state_if_eq subject="is_x_chip_0_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_0_cb"/>
                 <text_small bind_text="is_x_chip_0_label"/>
@@ -210,6 +211,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="1"/>
                 <bind_state_if_eq subject="is_x_chip_1_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_1_cb"/>
                 <text_small bind_text="is_x_chip_1_label"/>
@@ -221,6 +223,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="2"/>
                 <bind_state_if_eq subject="is_x_chip_2_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_2_cb"/>
                 <text_small bind_text="is_x_chip_2_label"/>
@@ -232,6 +235,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="3"/>
                 <bind_state_if_eq subject="is_x_chip_3_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_3_cb"/>
                 <text_small bind_text="is_x_chip_3_label"/>
@@ -243,6 +247,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="4"/>
                 <bind_state_if_eq subject="is_x_chip_4_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_4_cb"/>
                 <text_small bind_text="is_x_chip_4_label"/>
@@ -254,6 +259,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="5"/>
                 <bind_state_if_eq subject="is_x_chip_5_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_5_cb"/>
                 <text_small bind_text="is_x_chip_5_label"/>
@@ -265,6 +271,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="6"/>
                 <bind_state_if_eq subject="is_x_chip_6_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_6_cb"/>
                 <text_small bind_text="is_x_chip_6_label"/>
@@ -276,6 +283,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="7"/>
                 <bind_state_if_eq subject="is_x_chip_7_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_7_cb"/>
                 <text_small bind_text="is_x_chip_7_label"/>
@@ -287,6 +295,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="8"/>
                 <bind_state_if_eq subject="is_x_chip_8_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_8_cb"/>
                 <text_small bind_text="is_x_chip_8_label"/>
@@ -298,6 +307,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="9"/>
                 <bind_state_if_eq subject="is_x_chip_9_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_9_cb"/>
                 <text_small bind_text="is_x_chip_9_label"/>
@@ -309,6 +319,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_x_num_chips" flag="hidden" ref_value="10"/>
                 <bind_state_if_eq subject="is_x_chip_10_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_x_10_cb"/>
                 <text_small bind_text="is_x_chip_10_label"/>
@@ -530,6 +541,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="0"/>
                 <bind_state_if_eq subject="is_y_chip_0_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_0_cb"/>
                 <text_small bind_text="is_y_chip_0_label"/>
@@ -541,6 +553,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="1"/>
                 <bind_state_if_eq subject="is_y_chip_1_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_1_cb"/>
                 <text_small bind_text="is_y_chip_1_label"/>
@@ -552,6 +565,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="2"/>
                 <bind_state_if_eq subject="is_y_chip_2_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_2_cb"/>
                 <text_small bind_text="is_y_chip_2_label"/>
@@ -563,6 +577,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="3"/>
                 <bind_state_if_eq subject="is_y_chip_3_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_3_cb"/>
                 <text_small bind_text="is_y_chip_3_label"/>
@@ -574,6 +589,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="4"/>
                 <bind_state_if_eq subject="is_y_chip_4_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_4_cb"/>
                 <text_small bind_text="is_y_chip_4_label"/>
@@ -585,6 +601,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="5"/>
                 <bind_state_if_eq subject="is_y_chip_5_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_5_cb"/>
                 <text_small bind_text="is_y_chip_5_label"/>
@@ -596,6 +613,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="6"/>
                 <bind_state_if_eq subject="is_y_chip_6_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_6_cb"/>
                 <text_small bind_text="is_y_chip_6_label"/>
@@ -607,6 +625,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="7"/>
                 <bind_state_if_eq subject="is_y_chip_7_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_7_cb"/>
                 <text_small bind_text="is_y_chip_7_label"/>
@@ -618,6 +637,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="8"/>
                 <bind_state_if_eq subject="is_y_chip_8_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_8_cb"/>
                 <text_small bind_text="is_y_chip_8_label"/>
@@ -629,6 +649,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="9"/>
                 <bind_state_if_eq subject="is_y_chip_9_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_9_cb"/>
                 <text_small bind_text="is_y_chip_9_label"/>
@@ -640,6 +661,7 @@
                          style_border_color="#border" style_bg_opa="0" style_bg_opa:checked="200"
                          style_bg_color:checked="#primary"
                          style_border_color:checked="#primary" scrollable="false">
+                <bind_flag_if_le subject="is_y_num_chips" flag="hidden" ref_value="10"/>
                 <bind_state_if_eq subject="is_y_chip_10_active" state="checked" ref_value="1"/>
                 <event_cb trigger="clicked" callback="input_shaper_chip_y_10_cb"/>
                 <text_small bind_text="is_y_chip_10_label"/>
