@@ -287,7 +287,7 @@ class IAdvancedAPI {
 
     virtual void run_z_tilt_adjust(SuccessCallback on_success, ErrorCallback on_error) = 0;
 
-    virtual void start_resonance_test(char axis, helix::AdvancedProgressCallback on_progress,
+    virtual void start_resonance_test(char axis, helix::ShaperProgressCallback on_progress,
                                       helix::InputShaperCallback on_complete,
                                       ErrorCallback on_error) = 0;
 

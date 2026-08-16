@@ -733,23 +733,31 @@ void InputShaperPanel::start_calibration(char axis) {
         axis,
         lifetime_.bg_cb(
             "InputShaperPanel::calibration_progress",
-            [this, cal_tok](int percent) {
+            [this, cal_tok](int percent, ShaperCalibrationPhase phase) {
                 if (cal_tok.expired()) {
                     spdlog::debug("[InputShaper] Discarding stale progress callback");
                     return;
                 }
                 lv_subject_set_int(&is_measuring_progress_, percent);
                 lv_subject_set_int(&is_measuring_has_progress_, 1);
-                if (percent < 55) {
+                // The phase comes from the collector — the percentage cannot be
+                // used to infer it, because a sweep whose range we guessed short
+                // would sit at its ceiling and look like analysis had started.
+                switch (phase) {
+                case ShaperCalibrationPhase::Sweeping: {
                     const std::string step =
                         fmt::format(lv_tr("Measuring vibrations... {}%"), percent);
                     snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_),
                              "%s", step.c_str());
-                } else if (percent < 100) {
+                    break;
+                }
+                case ShaperCalibrationPhase::Analyzing: {
                     const std::string step = fmt::format(lv_tr("Analyzing data... {}%"), percent);
                     snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_),
                              "%s", step.c_str());
-                } else {
+                    break;
+                }
+                case ShaperCalibrationPhase::Complete:
                     if (calibrate_all_mode_ && current_axis_ == 'X') {
                         snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_),
                                  "%s", lv_tr("X axis done, starting Y..."));
@@ -757,6 +765,7 @@ void InputShaperPanel::start_calibration(char axis) {
                         snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_),
                                  "%s", lv_tr("Complete"));
                     }
+                    break;
                 }
                 lv_subject_copy_string(&is_measuring_step_label_, is_measuring_step_label_buf_);
             }),
