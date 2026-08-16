@@ -636,6 +636,22 @@ TEST_CASE_METHOD(CrashTestFixture,
         // call outright, so the child sails past and _exit(99)s — verified,
         // that is exactly how this test first failed. volatile forces both
         // calls to reach glibc.
+        // Announce the corruption before causing it. glibc's message lands on
+        // stderr in the middle of an otherwise-passing suite log, where it reads
+        // as genuine heap corruption in the test binary — it has already sent one
+        // reader off investigating a non-bug. This marker is the only thing that
+        // distinguishes "the test worked" from "something is badly wrong".
+        //
+        // write(2), not fprintf: this is a forked child of a multithreaded
+        // process, so stdio locks may be held by threads that do not exist here,
+        // and glibc writes its own message straight to fd 2 — sharing the raw fd
+        // is what keeps the two lines in order.
+        static const char kMarker[] =
+            "[test] DELIBERATE double free follows (test_crash_handler.cpp) - "
+            "glibc's abort message below is the expected result, not a defect\n";
+        ssize_t marker_rc = write(STDERR_FILENO, kMarker, sizeof(kMarker) - 1);
+        (void)marker_rc;
+
         void* volatile p = malloc(64);
         free(const_cast<void*>(p));
         free(const_cast<void*>(p)); // NOLINT — deliberate corruption, this is the test
