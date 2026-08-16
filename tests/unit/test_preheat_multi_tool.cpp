@@ -149,17 +149,57 @@ TEST_CASE("PreheatWidget: collect_preheat_heaters handles empty tools vector",
 // collect_preheat_heaters: 6-tool printer (Voron Stealth Changer)
 // ============================================================================
 
-TEST_CASE("PreheatWidget: collect_preheat_heaters with 6 tools returns all 6 heaters",
+// Builds a tool whose heater names are written out rather than generated. An
+// expectation produced by the same rule as the fixture passes even when the code
+// under test fabricates names instead of reading the ones it was given, so the
+// names here are deliberately non-sequential and the assertions are literals.
+static void add_tool(std::vector<ToolInfo>& tools, const char* extruder, const char* heater) {
+    ToolInfo t;
+    t.index = static_cast<int>(tools.size());
+    t.name = "T" + std::to_string(tools.size());
+    if (extruder) {
+        t.extruder_name = extruder;
+    }
+    if (heater) {
+        t.heater_name = heater;
+    }
+    tools.push_back(std::move(t));
+}
+
+TEST_CASE("PreheatWidget: collect_preheat_heaters reads each tool's own heater, in tool order",
           "[preheat][panel_widget]") {
-    auto tools = make_test_tools(6);
+    std::vector<ToolInfo> tools;
+    add_tool(tools, "extruder", nullptr);      // plain first hotend
+    add_tool(tools, "extruder3", nullptr);     // gap in the numbering, on purpose
+    add_tool(tools, "extruder1", "extruder7"); // heater_name outranks extruder_name
+    add_tool(tools, nullptr, "extruder9");     // heater only, no extruder
+    add_tool(tools, "extruder2", nullptr);
 
     auto heaters = PreheatWidget::collect_preheat_heaters(tools, -1);
 
-    REQUIRE(heaters.size() == 6);
-    REQUIRE(heaters[0] == "extruder");
-    for (int i = 1; i < 6; ++i) {
-        REQUIRE(heaters[i] == "extruder" + std::to_string(i));
-    }
+    REQUIRE(heaters.size() == 5);
+    CHECK(heaters[0] == "extruder");
+    CHECK(heaters[1] == "extruder3");
+    CHECK(heaters[2] == "extruder7");
+    CHECK(heaters[3] == "extruder9");
+    CHECK(heaters[4] == "extruder2");
+}
+
+TEST_CASE("PreheatWidget: collect_preheat_heaters skips a tool with no heater at all",
+          "[preheat][panel_widget]") {
+    // effective_heater() falls back to "extruder" when both names are unset, so
+    // a tool that is skipped and a tool that is kept are distinguishable only by
+    // the result size and the absence of that fallback.
+    std::vector<ToolInfo> tools;
+    add_tool(tools, "extruder", nullptr);
+    add_tool(tools, nullptr, nullptr); // no extruder, no heater
+    add_tool(tools, "extruder4", nullptr);
+
+    auto heaters = PreheatWidget::collect_preheat_heaters(tools, -1);
+
+    REQUIRE(heaters.size() == 2);
+    CHECK(heaters[0] == "extruder");
+    CHECK(heaters[1] == "extruder4");
 }
 
 // ============================================================================
