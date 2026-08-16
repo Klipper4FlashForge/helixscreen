@@ -444,7 +444,7 @@ additional configuration. **Verified against OrcaSlicer upstream/main
 | Snapmaker U1 | HelixScreen (`FilamentSlotOverrideStore`) | `T<n>` (0-based) — tool changer | `lane_data` namespace |
 | ACE (Anycubic ACE Pro) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
 | CFS (Creality K2) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
-| AFC / Box Turtle | AFC's own Klipper plugin | `laneN` (1-based) | `lane_data` namespace (AFC is the originator) |
+| AFC / Box Turtle | AFC's own Klipper plugin | `laneN` (1-based) — moving to `T<n>`, see below | `lane_data` namespace (AFC is the originator) |
 | Happy Hare | Happy Hare's own Klipper plugin (`components/mmu_server.py` `push_lane_data`) | `laneN` (1-based) | `lane_data` namespace — Orca prefers it over the live `mmu` object |
 | Tool Changer | (not applicable — no per-slot metadata) | — | N/A |
 
@@ -468,22 +468,43 @@ atomic for AFC. User overrides go to a private namespace instead (#1158).
 That is outdated: HH's `push_lane_data` now writes the namespace directly and
 Orca prefers it; the `mmu` object is the fallback.)
 
+**AFC is moving its outer key from `laneN` to `T<n>`** (announced 2026-08-15,
+not yet shipped — upstream `DEV` still keys by lane name). One lane can answer
+to several `T` commands under AFC's virtual-tools work, which a lane-name key
+cannot express, so each mapping gets its own record. No HelixScreen code change
+is needed: our reader is key-agnostic, and the tool-changer `laneN` → `T<n>`
+migration only touches keys we authored. Full analysis, including the new
+key-space overlap with Mainsail, is in
+[`../specs/filament_slots.md` § "Announced: AFC is moving from `laneN` to
+`T<n>`"](../specs/filament_slots.md#announced-afc-is-moving-from-lanen-to-tn).
+
 #### Schema lineage and what Orca actually matches on
 
 - **AFC pioneered the base schema** — keys `color` / `material` / `bed_temp` /
   `nozzle_temp` / `scan_time` / `td` / `lane` / `spool_id`, DB key 1-based
-  (`lane1`…), inner `lane` field 0-based. AFC emits **no** vendor field.
+  (`lane1`…), inner `lane` field 0-based. Older AFC emits **no** vendor field.
 - **Happy Hare extended it** with `vendor_name`, `name`, and `filament_id`
-  (`push_lane_data`). HH's `filament_id` is a **Spoolman** DB id, not an
-  OrcaSlicer preset id.
+  (`push_lane_data`, authored by `ammmze`). HH's `filament_id` is a **Spoolman**
+  DB id, not an OrcaSlicer preset id.
+- **AFC then adopted HH's two keys verbatim**, plus `initial_weight`
+  ([AFCProject/AFC-Klipper-Add-On#833](https://github.com/AFCProject/AFC-Klipper-Add-On/pull/833),
+  closing #808). `lane_data` is a shared namespace, so the deliberate call was
+  one spelling per value across backends rather than each writer using its own
+  attribute names. **`lane_data` and AFC's `get_status` therefore disagree on
+  purpose**: status reports the same brand as `spool_vendor` (and the name as
+  `filament_name`), because that dict mirrors `AFCLane`'s attributes and is
+  AFC's own surface, not a shared one.
 - **OrcaSlicer reads only `lane` / `material` / `color` / `bed_temp` /
   `nozzle_temp`**, and matches a lane to a filament preset **by the `material`
   type string alone** (`filament_id_by_type`, falling back to generic
-  OrcaFilamentLibrary ids like `OGFL99`). It ignores `vendor`, `vendor_name`,
-  and `filament_id` today, and never writes `lane_data` back. So brand has no
+  OrcaFilamentLibrary ids like `OGFL99`). It ignores `vendor_name` and
+  `filament_id` today, and never writes `lane_data` back. So brand has no
   effect on the slicer's preset pick — "Generic PLA" and "Elegoo PLA+" both
   resolve to a generic PLA preset. Emit canonical material strings (`PLA`,
-  `PETG`, `ABS`…); marketing names won't match.
+  `PETG`, `ABS`…); marketing names won't match. (Vendor-aware matching for the
+  generic Moonraker sync is proposed upstream on
+  `feat/moonraker-vendor-aware-filament-match`; until it lands, assume the
+  type-only behaviour above.)
 
 #### Two-string identity: `material` (Orca wire) vs `helix_material` (HelixScreen)
 
@@ -526,14 +547,30 @@ thread at startup (`filament::warm_orca_tables()`, called from
 `SubjectInitializer`) so the first match never parses the asset on a WebSocket
 background thread.
 
-#### Forward-compat aliases (`vendor_name` / `name`)
+#### Vendor / product-name aliases (`vendor_name` / `name`)
+
+Brand and product name have **one agreed spelling in `lane_data`** — HH's
+`vendor_name` / `name`, which AFC adopted in #833 — plus the legacy keys we
+emitted before that settled:
+
+| Value | `lane_data` (AFC + HH) | HelixScreen legacy | AFC `get_status` only |
+|-------|------------------------|--------------------|-----------------------|
+| Brand | `vendor_name` | `vendor` | `spool_vendor` |
+| Product name | `name` | `spool_name` | `filament_name` |
+
+The third column is **not** a `lane_data` spelling — it is what AFC's status
+dict calls the same values, and `AmsBackendAfc` meets it only on the status
+path.
 
 HelixScreen's writer (`to_lane_data_record()` in
-`filament_slot_override_store.cpp`) emits **both** key spellings: `vendor`
-(AFC-style base) **and** `vendor_name` (HH extension), plus `spool_name` **and**
-`name`. It's unsettled which spelling Orca will consume when it eventually adds
-vendor-aware matching, so emitting both is a zero-cost hedge — Orca ignores
-unknown keys. The reader tolerantly falls back to the HH aliases. **Do not add
+`filament_slot_override_store.cpp`) emits **both** the shared key and our legacy
+one per value, so a reader of this namespace finds our overrides under the key
+it already looks for: a zero-cost hedge, since every consumer ignores unknown
+keys. Its reader (`from_lane_data_record()`) prefers our key and falls back to
+the shared one, so round-trips of our own records stay exact while foreign
+records still read. `AmsBackendAfc::read_vendor()` runs a wider ladder because
+it serves both surfaces: `vendor_name` (lane_data), `spool_vendor` (status),
+then `vendor` / `brand` defensively. **Do not add
 a HelixScreen-side `filament_id` resolver:** Orca reads the field from nowhere,
 there is no deterministic (vendor, material) → Orca `setting_id` catalog (the
 ids number in the hundreds and churn across releases), and we do not ship a
@@ -549,7 +586,7 @@ Read that section before touching key formatting, the load filter, or the
 migration. The summary:
 
 - **Writers and their key style**: HelixScreen (`T<n>` on tool changers,
-  `laneN` otherwise), AFC (`laneN`), Happy Hare (`laneN`), Mainsail #2510
+  `laneN` otherwise), AFC (`laneN`, moving to `T<n>`), Happy Hare (`laneN`), Mainsail #2510
   (`T<n>` on Spoolman + tool changer).
 - **Readers**: OrcaSlicer is **key-opaque** (reads the inner `lane` field, never
   the outer key — `MoonrakerPrinterAgent.cpp:780`), requires the inner `lane`
@@ -2783,7 +2820,7 @@ The `box` Klipper object is shared by several firmwares that agree on almost not
 | Printer family | Stock firmware path | Macro dialect | Detection signal |
 |----------------|--------------------|---------------|-----------------|
 | K2, K2 Pro, K2 Plus (built-in CFS) | Creality K2 firmware | `CR_BOX_*` primitives + `BOX_SAVE_FAN`/`BOX_MODE_WAIT` envelope | `PrinterDetector::is_creality_k1() == false` |
-| K1, K1C, K1 Max (official CFS upgrade ≥ v2.3.5.33) | Creality K1 CFS upgrade firmware | Plain `BOX_*` primitives, no fan-save/mode-wait | `PrinterDetector::is_creality_k1() == true` |
+| K1, K1C, K1 Max (official CFS upgrade ≥ v2.3.5.33) | Creality K1 CFS upgrade firmware | Plain `BOX_*` primitives, no mode-wait (fan-save **does** exist — see below) | `PrinterDetector::is_creality_k1() == true` |
 | K2 Plus on a community Kalico port | [`Jacob10383/kalico`](https://github.com/Jacob10383/kalico) + a reimplemented `box.py` | High-level bare `T<n>` / `BOX_UNLOAD` | `api_version == 1` in the box payload |
 
 **Axis 2 — box schema** (`CfsSchema`), detected per-payload by `AmsBackendCfs::detect_schema()`:
@@ -2803,8 +2840,50 @@ A `Flat` box whose module we cannot identify still has its control paths refused
 
 ### Firmware requirements
 
-- **K2 series:** Stock firmware. Detection is automatic when the CFS unit is paired (RS-485, exposes `box` Klipper object).
-- **K1 series:** Requires the **official Creality K1/K1C/K1 Max CFS upgrade firmware** (the reporter for #968 had `v2.3.5.33`). Stock K1/K1C/K1Max firmware without the CFS upgrade does not expose the `box` object and the backend stays disabled. Community open-source K1 firmwares (Guilouz, etc.) do not currently bundle the CFS macros — install Creality's signed CFS-aware image to use the upgrade.
+**Minimum versions**
+
+| Family | Minimum firmware | Confidence |
+|--------|------------------|------------|
+| K1, K1C, K1 Max | **v2.3.5.33** (official CFS upgrade image) | Lower bound only — see below |
+| K2, K2 Pro, K2 Plus | **Not established** | No data point |
+
+- **K1 series:** Requires the **official Creality K1/K1C/K1 Max CFS upgrade firmware**. `v2.3.5.33` is the
+  oldest version anyone has reported CFS working on (the reporter for #968), and `v2.3.5.34` has been
+  read directly from Creality's CDN image and verified to carry the full `BOX_*` command set. Neither
+  establishes that `.33` is the *floor* — no earlier `2.3.5.x` has been tested, so treat it as a known-good
+  lower bound rather than a proven minimum.
+
+  The version line matters more than the number: **`2.3.5.x` is the CFS line, `1.3.3.x` is not.** A K1C on
+  `1.3.3.46` is stock non-CFS firmware, does not expose the `box` object, and the backend stays disabled —
+  that is expected, not a bug. Community open-source K1 firmwares (Guilouz, etc.) do not currently bundle
+  the CFS macros; install Creality's signed CFS-aware image to use the upgrade.
+
+- **K2 series:** Stock firmware; detection is automatic when the CFS unit is paired (RS-485, exposes the
+  `box` Klipper object). **We have no minimum version for the K2 line.** No K2 firmware image has been
+  unpacked, no reporter version has been recorded against a working or failing CFS setup, and there is no
+  version gating anywhere in the code. The `version` field in the `box` payload (e.g. `"1.1.3"`) is the
+  **CFS module's** firmware, not the printer's, so it cannot stand in for one.
+
+  To establish it, capture `printer.info` / the OTA version from a K2 with working CFS and record it here.
+  Do not infer a K2 minimum from the K1 numbers — the two families do not share a version line, an
+  architecture (K1 is MIPS, K2 is ARM Cortex-A7), or a macro dialect.
+
+> **"K2 SE" is a K1-family board.** It is served by the K1 MIPS OTA image and speaks the plain `BOX_*`
+> dialect, not `CR_BOX_*`. Do not classify it from the "K2" in its name — see the dialect note below.
+
+> **Correction — `BOX_SAVE_FAN`/`BOX_RESTORE_FAN` DO exist on K1.** This doc previously recorded them as
+> "verified absent in the public K1-Max `box.cfg` dump." That evidence was invalid: they are C-extension
+> commands registered from `box_wrapper.cpython-38-mipsel-linux-gnu.so` (handlers `cmd_save_fan` /
+> `cmd_restore_fan`), never `[gcode_macro]`s, so a config dump could never have listed them. Verified by
+> symbol grep of the extension in `CR4CU220812S11_ota_img_V2.3.5.34`. `BOX_MODE_WAIT` genuinely is absent.
+>
+> Two evidence traps to avoid repeating: **neither `box.cfg` nor `printer.gcode.help` can prove a `BOX_*`
+> command absent.** `gcode.py` records a description only when one is supplied, and the extension carries
+> 5 help strings against 69 handlers — roughly 64 commands are executable and invisible to help. Only a
+> symbol grep of the `.so` settles presence.
+>
+> Consequence: the K1 envelope below omits fan-save on a false premise, so K1 CFS operations do not
+> suppress part-cooling even though the firmware supports it. Tracked in prestonbrown/helixscreen#1278.
 
 ### Macro dialect comparison
 

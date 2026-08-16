@@ -675,7 +675,20 @@ TEST_CASE("CFS GCode helpers", "[ams][cfs]") {
     }
 
     SECTION("recover gcode") {
-        REQUIRE(AmsBackendCfs::recover_gcode() == "BOX_ERROR_RESUME_PROCESS");
+        using V = helix::printer::CfsMacroVariant;
+        // K2 keeps the box-specific resume.
+        REQUIRE(AmsBackendCfs::recover_gcode(V::K2) == "BOX_ERROR_RESUME_PROCESS");
+
+        // K1 must NOT emit it: the K1 box extension registers no
+        // cmd_error_resume_process (symbol-grepped from box_wrapper .so in
+        // CR4CU220812S11 v2.3.5.34), so it returns "Unknown command" and the
+        // box is never resumed. #1278.
+        REQUIRE(AmsBackendCfs::recover_gcode(V::K1) != "BOX_ERROR_RESUME_PROCESS");
+        REQUIRE(AmsBackendCfs::recover_gcode(V::K1) == "RESUME");
+
+        // BOX_TNN_RETRY_PROCESS exists on K1 but is NOT a substitute — it
+        // retries a specific tool change and needs TNN/LAST_TNN context.
+        REQUIRE(AmsBackendCfs::recover_gcode(V::K1) != "BOX_TNN_RETRY_PROCESS");
     }
 }
 

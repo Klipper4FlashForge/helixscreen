@@ -404,12 +404,14 @@ TEST_CASE("FilamentSlotOverrideStore save_async writes AFC-shaped record to lane
     CHECK(reparsed->second.product_name == "PLA+ 2.0");
 }
 
-TEST_CASE("FilamentSlotOverrideStore save_async emits Happy Hare key aliases",
+TEST_CASE("FilamentSlotOverrideStore save_async emits the shared lane_data key aliases",
           "[filament_slot_override]") {
-    // Forward-compat: the writer emits vendor_name (alias of vendor) and name
-    // (alias of spool_name) using Happy Hare's key convention, in addition to
-    // our own keys. Orca is most likely to consume vendor_name for vendor-aware
-    // preset matching as it evolves; unknown keys are ignored today.
+    // The writer emits vendor_name (alias of vendor) and name (alias of
+    // spool_name) alongside our own keys. Those two are the agreed spelling for
+    // this shared namespace: Happy Hare established them and AFC adopted them in
+    // AFCProject/AFC-Klipper-Add-On#833, so a reader of lane_data finds our
+    // overrides under the key it already looks for. Unknown keys are ignored, so
+    // carrying both spellings costs nothing.
     TmpCacheDir tmp("save_hh_aliases");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -569,11 +571,12 @@ TEST_CASE("FilamentSlotOverride persists product_name independently of catalog_i
     CHECK(round.product_name == "PLA+ 2.0");
 }
 
-TEST_CASE("FilamentSlotOverrideStore load_blocking reads Happy Hare alias-only record",
+TEST_CASE("FilamentSlotOverrideStore load_blocking reads an alias-only record",
           "[filament_slot_override]") {
-    // A record written by Happy Hare's mmu_server.push_lane_data carries
-    // vendor_name / name but NOT vendor / spool_name. The reader must fall back
-    // to the alias keys so these records parse correctly.
+    // A record written by anything but us carries vendor_name / name but NOT
+    // vendor / spool_name — Happy Hare's mmu_server.push_lane_data and AFC's
+    // send_lane_data (#833) both do. The reader must fall back to the alias keys
+    // so these records parse correctly.
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);

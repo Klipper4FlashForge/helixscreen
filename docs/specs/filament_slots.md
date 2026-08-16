@@ -213,11 +213,12 @@ key's base depends on the writer's key style.
 
 | Key style | Outer DB key | Outer base | Inner `lane` field | Example for slot 0 | Written by |
 |-----------|--------------|------------|--------------------|--------------------|------------|
-| `laneN` | `"lane" + (i+1)` | 1-based | `std::to_string(i)` (0-based string) | key `"lane1"`, field `"0"` | HelixScreen (filament systems), AFC, Happy Hare |
+| `laneN` | `"lane" + (i+1)` | 1-based | `std::to_string(i)` (0-based string) | key `"lane1"`, field `"0"` | HelixScreen (filament systems), AFC (moving to `T<n>`, see §8), Happy Hare |
 | `T<n>` | `"T" + i` | 0-based | `std::to_string(i)` (0-based string) | key `"T0"`, field `"0"` | HelixScreen (tool changers), Mainsail #2510 |
 
 The `laneN` style matches AFC's on-disk layout (AFC labels its lanes `lane1`,
-`lane2`, … in its own config). The `T<n>` style matches the tool-index naming
+`lane2`, … in its own config — that config naming is unaffected by AFC's move
+to `T<n>` *keys*, which is a `lane_data` change only). The `T<n>` style matches the tool-index naming
 Mainsail and OrcaSlicer use (`T0`, `T1`, …). **Both styles carry the identical
 0-based stringified inner `lane` field** — the only difference is the outer key
 and its base, which readers treat as opaque.
@@ -395,9 +396,46 @@ re-verify against the cited source lines rather than this table.
 | Writer | Key style | Notes |
 |--------|-----------|-------|
 | **HelixScreen** | `T<n>` on tool changers, `laneN` otherwise | `format_lane_key(i, style)` in `filament_slot_override_store.cpp`. Style is derived from the AMS type (`lane_key_style_for`), not hardcoded per backend. |
-| **AFC** (Armored Turtle) | `laneN` | Its Klipper plugin's `send_lane_data` writes 1-based lane keys. |
+| **AFC** (Armored Turtle) | `laneN` | Its Klipper plugin's `send_lane_data` writes 1-based lane keys. **Moving to `T<n>`, see below.** |
 | **Happy Hare** | `laneN` | `components/mmu_server.py` `push_lane_data`; also emits `vendor_name` / `name` / `filament_id` inner fields. |
 | **Mainsail #2510** | `T<n>` | Writes `lane_data` records for plain Spoolman + tool changer setups, keyed by tool (`T0`, `T1`, …). This is why HelixScreen tool changers converge on `T<n>`. |
+
+#### Announced: AFC is moving from `laneN` to `T<n>`
+
+**Status: not shipped as of 2026-08-15.** Upstream `DEV` still keys by lane
+name (`AFC_lane.py` `send_lane_data`, `"key": self.name`). This subsection
+records an announced change from the AFC maintainer so the transition is not a
+surprise; the table above continues to describe *verified shipped* behavior and
+should only be edited once the change lands and is re-verified on the wire.
+
+What changes, and why: AFC's virtual-tools work lets one lane answer to several
+`T` commands, which a lane-name key cannot express. Each `T` mapping therefore
+gets its own record, keyed `T<n>`. Observed shape from the maintainer:
+`value` contains `T0`, `T1`, `T10`, … each holding the existing inner fields
+unchanged (`color`, `material`, `lane`, `spool_id`, `weight`, …).
+
+Consequences for us, in order of importance:
+
+1. **No HelixScreen code change is required.** Our reader is key-agnostic and
+   keys off the inner `lane` field, and the tool-changer `laneN` → `T<n>`
+   migration only ever touches keys HelixScreen authored. AFC records are not
+   ours and are left alone.
+2. **OrcaSlicer is unaffected.** It is key-opaque (see Readers, below).
+3. **The upgrade window is self-clearing.** AFC's `delete_lane_data()`
+   (`AFC_utils.py`) enumerates and removes *every* key in the namespace on each
+   boot before republishing, so stale `laneN` records cannot linger alongside
+   new `T<n>` ones and produce the duplicate-tray collision described in §8.
+4. **New overlap to watch.** `laneN` and `T<n>` previously kept AFC and the
+   tool-changer writers (Mainsail, HelixScreen) in disjoint key spaces. Once AFC
+   writes `T<n>`, an AFC lane and a tool-changer slot with the same index become
+   the *same key*, and AFC's indiscriminate boot-time delete will remove a
+   foreign `T<n>` record. Unlikely to bite in practice (an AFC user is not also
+   running a tool-changer writer on the same printer) but it is a new failure
+   mode that did not exist before.
+
+Related: AFC issue #808 adds `vendor_name`, `name`, and `initial_weight` to the
+same records, using Happy Hare's spelling for the first two. That closes the gap
+where Spoolman knows a lane's brand but `lane_data` only carries its material.
 
 ### Readers
 

@@ -114,8 +114,7 @@
         <setting_action_row name="row_updates_unavailable"
                             label="Software Updates" label_tag="Software Updates" icon="console"
                             description="Not available here. Update from a terminal."
-                            description_tag="Not available here. Update from a terminal."
-                            description_min_bp="0"
+                            description_tag="Not available here. Update from a terminal." description_min_bp="0"
                             callback="on_about_updates_unavailable_clicked"/>
       </lv_obj>
       <!-- Klipper Version -->

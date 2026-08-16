@@ -412,6 +412,15 @@ AmsBackendCfs::AmsBackendCfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client
     // family — NOT the K2 CR_BOX_* primitives. Route it to the K1 variant so
     // load/unload/swap dispatch resolves to macros the firmware actually
     // defines.
+    // TRAP for whoever adds a "Creality K2 SE" to printer_database.json: it is a
+    // K1-family board despite the name, and belongs on the K1 dialect. Its rootfs
+    // is the K1 MIPS OTA image (CR4CU220812S11 v2.3.5.34 serves CR-K1, K1 SE, K1C,
+    // CR-K1 Max, K1 Max SE, K2 SE, GS-01, GS-02 from one S55klipper_service
+    // copy_config switch), CR_BOX_* appears nowhere in it, and K2_SE's macro
+    // section is byte-identical to K1's. is_creality_k1() matches on the literal
+    // "k1", so a "k2 se" type would silently land on CR_BOX_* and every command
+    // would come back "Unknown command" — exactly the Creality Hi bug above.
+    // Latent today only because no creality_k2_se entry exists yet. #1278.
     macro_variant_ = (PrinterDetector::is_creality_k1() || PrinterDetector::is_creality_hi())
                          ? CfsMacroVariant::K1
                          : CfsMacroVariant::K2;
@@ -1638,7 +1647,7 @@ AmsError AmsBackendCfs::recover() {
     auto err = check_preconditions();
     if (err.result != AmsResult::SUCCESS)
         return err;
-    return execute_gcode(recover_gcode());
+    return execute_gcode(recover_gcode(macro_variant_));
 }
 
 AmsError AmsBackendCfs::cancel() {
@@ -2436,8 +2445,23 @@ std::string AmsBackendCfs::reset_gcode() {
     return "BOX_ERROR_CLEAR";
 }
 
-std::string AmsBackendCfs::recover_gcode() {
-    return "BOX_ERROR_RESUME_PROCESS";
+std::string AmsBackendCfs::recover_gcode(CfsMacroVariant variant) {
+    // K1 does not have BOX_ERROR_RESUME_PROCESS. Verified by symbol grep of
+    // box_wrapper.cpython-38-mipsel-linux-gnu.so in the CR4CU220812S11
+    // v2.3.5.34 OTA image: neither the command string nor a
+    // cmd_error_resume_process handler is present, so emitting it on a K1
+    // returns "Unknown command" and the box is never resumed.
+    //
+    // BOX_TNN_RETRY_PROCESS is NOT the substitute despite being present. It
+    // maps to cmd_Tnn_retry_process and retries a specific tool change — the
+    // blob carries "TNN[%s] or LAST_TNN[%s] not in Tnn gcode", so it needs
+    // tool-change context a generic recover() has no business inventing.
+    //
+    // Plain RESUME is the right lever, for the same reason build_recovery_actions()
+    // already prefers it on K2: the firmware reaches the box half of recovery FROM
+    // RESUME, and it is the only command that also restarts the job. A latched box
+    // error still needs reset_gcode() (BOX_ERROR_CLEAR), which K1 does have.
+    return variant == CfsMacroVariant::K1 ? "RESUME" : "BOX_ERROR_RESUME_PROCESS";
 }
 
 // --- Error-center bridge ---

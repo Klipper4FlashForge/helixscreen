@@ -310,7 +310,11 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     static std::string swap_gcode(int global_slot_index,
                                   CfsMacroVariant variant = CfsMacroVariant::K2);
     static std::string reset_gcode();
-    static std::string recover_gcode();
+
+    /// Resume the box after an error. Dialect-dependent: K1's box extension
+    /// registers no `cmd_error_resume_process`, so `BOX_ERROR_RESUME_PROCESS`
+    /// is an unknown command there. See the implementation for the evidence.
+    static std::string recover_gcode(CfsMacroVariant variant = CfsMacroVariant::K2);
 
     /// Recognize the CFS runout handler's give-up messages and turn them into a
     /// CRITICAL runout fault with recovery buttons.
