@@ -289,7 +289,7 @@
          bottom. Each value reserves that block's height on top of the standard
          chrome. Prefer moving the block inside the scroll container and using
          dialog_content_max — this ladder is the escape hatch for cases where the
-         block must stay visible while the text scrolls. -->
+         block must stay visible while the text scrolls.
          Values are MEASURED, not derived: the modal was rendered at each
          breakpoint and the card's clamp plus its button-row overhang gave the
          true chrome height, so the cap is (85% cap - chrome) with ~8px spare.
