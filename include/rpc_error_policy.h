@@ -29,7 +29,7 @@ namespace helix::rpc_error_policy {
  * @brief What the CALLER told us about who surfaces the error.
  *
  * Must be built from the caller's own callbacks, BEFORE any internal wrapping.
- * `MoonrakerAPI::execute_gcode` and `MoonrakerMotionAPI::execute_gcode` both
+ * `IMoonrakerAPI::execute_gcode` and `MoonrakerMotionAPI::execute_gcode` both
  * wrap `on_error` to settle their in-flight activity counters, which makes the
  * callback non-null even when the caller passed `nullptr`. Deriving intent
  * after that point reads our own bookkeeping as a promise the caller never
