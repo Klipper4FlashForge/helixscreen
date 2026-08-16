@@ -484,25 +484,27 @@ key-space overlap with Mainsail, is in
   `nozzle_temp` / `scan_time` / `td` / `lane` / `spool_id`, DB key 1-based
   (`lane1`…), inner `lane` field 0-based. Older AFC emits **no** vendor field.
 - **Happy Hare extended it** with `vendor_name`, `name`, and `filament_id`
-  (`push_lane_data`). HH's `filament_id` is a **Spoolman** DB id, not an
-  OrcaSlicer preset id.
-- **AFC then added the same two values under its own spelling**: `spool_vendor`
-  and `filament_name`, plus `initial_weight`
+  (`push_lane_data`, authored by `ammmze`). HH's `filament_id` is a **Spoolman**
+  DB id, not an OrcaSlicer preset id.
+- **AFC then adopted HH's two keys verbatim**, plus `initial_weight`
   ([AFCProject/AFC-Klipper-Add-On#833](https://github.com/AFCProject/AFC-Klipper-Add-On/pull/833),
-  closing #808). These are `AFCLane`'s own attribute names, so `lane_data` and
-  `get_status` agree. **Two spellings for one value is now the steady state**: a
-  reader of this namespace must accept AFC's *and* HH's.
+  closing #808). `lane_data` is a shared namespace, so the deliberate call was
+  one spelling per value across backends rather than each writer using its own
+  attribute names. **`lane_data` and AFC's `get_status` therefore disagree on
+  purpose**: status reports the same brand as `spool_vendor` (and the name as
+  `filament_name`), because that dict mirrors `AFCLane`'s attributes and is
+  AFC's own surface, not a shared one.
 - **OrcaSlicer reads only `lane` / `material` / `color` / `bed_temp` /
   `nozzle_temp`**, and matches a lane to a filament preset **by the `material`
   type string alone** (`filament_id_by_type`, falling back to generic
-  OrcaFilamentLibrary ids like `OGFL99`). It ignores every vendor spelling and
+  OrcaFilamentLibrary ids like `OGFL99`). It ignores `vendor_name` and
   `filament_id` today, and never writes `lane_data` back. So brand has no
   effect on the slicer's preset pick — "Generic PLA" and "Elegoo PLA+" both
   resolve to a generic PLA preset. Emit canonical material strings (`PLA`,
   `PETG`, `ABS`…); marketing names won't match. (Vendor-aware matching for the
-  generic Moonraker sync, reading AFC's and HH's spellings both, is proposed
-  upstream on `feat/moonraker-vendor-aware-filament-match`; until it lands,
-  assume the type-only behaviour above.)
+  generic Moonraker sync is proposed upstream on
+  `feat/moonraker-vendor-aware-filament-match`; until it lands, assume the
+  type-only behaviour above.)
 
 #### Two-string identity: `material` (Orca wire) vs `helix_material` (HelixScreen)
 
@@ -545,24 +547,30 @@ thread at startup (`filament::warm_orca_tables()`, called from
 `SubjectInitializer`) so the first match never parses the asset on a WebSocket
 background thread.
 
-#### Vendor / product-name aliases (three spellings, one value)
+#### Vendor / product-name aliases (`vendor_name` / `name`)
 
-Brand and product name each arrive under three keys in this namespace, because
-three writers named them independently:
+Brand and product name have **one agreed spelling in `lane_data`** — HH's
+`vendor_name` / `name`, which AFC adopted in #833 — plus the legacy keys we
+emitted before that settled:
 
-| Value | HelixScreen | AFC (#833) | Happy Hare |
-|-------|-------------|------------|------------|
-| Brand | `vendor` | `spool_vendor` | `vendor_name` |
-| Product name | `spool_name` | `filament_name` | `name` |
+| Value | `lane_data` (AFC + HH) | HelixScreen legacy | AFC `get_status` only |
+|-------|------------------------|--------------------|-----------------------|
+| Brand | `vendor_name` | `vendor` | `spool_vendor` |
+| Product name | `name` | `spool_name` | `filament_name` |
+
+The third column is **not** a `lane_data` spelling — it is what AFC's status
+dict calls the same values, and `AmsBackendAfc` meets it only on the status
+path.
 
 HelixScreen's writer (`to_lane_data_record()` in
-`filament_slot_override_store.cpp`) emits **all three** spellings per value, so a
-reader written against any one backend still finds our overrides: a zero-cost
-hedge, since every consumer ignores unknown keys. Its reader
-(`from_lane_data_record()`) takes the first present key in ladder order -
-ours, then AFC's, then HH's - so round-trips of our own records stay exact
-while foreign records still read. `AmsBackendAfc::read_vendor()` runs the same
-ladder AFC-first. **Do not add
+`filament_slot_override_store.cpp`) emits **both** the shared key and our legacy
+one per value, so a reader of this namespace finds our overrides under the key
+it already looks for: a zero-cost hedge, since every consumer ignores unknown
+keys. Its reader (`from_lane_data_record()`) prefers our key and falls back to
+the shared one, so round-trips of our own records stay exact while foreign
+records still read. `AmsBackendAfc::read_vendor()` runs a wider ladder because
+it serves both surfaces: `vendor_name` (lane_data), `spool_vendor` (status),
+then `vendor` / `brand` defensively. **Do not add
 a HelixScreen-side `filament_id` resolver:** Orca reads the field from nowhere,
 there is no deterministic (vendor, material) → Orca `setting_id` catalog (the
 ids number in the hundreds and churn across releases), and we do not ship a

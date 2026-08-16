@@ -72,17 +72,6 @@ std::string string_with_alias(const nlohmann::json& j, const char* primary, cons
     return helix::json_util::safe_string(j, alias);
 }
 
-// Same first-present-wins rule over an ordered ladder, for the fields that carry
-// more than one alias. A key present but null (or non-string) falls through to
-// the next, exactly as the two-key form does.
-std::string string_with_alias(const nlohmann::json& j, std::initializer_list<const char*> keys) {
-    for (const char* key : keys) {
-        if (j.contains(key) && !j[key].is_null())
-            return helix::json_util::safe_string(j, key);
-    }
-    return {};
-}
-
 std::chrono::system_clock::time_point parse_iso8601(const std::string& s) {
     std::tm tm{};
     std::istringstream is(s);
@@ -156,13 +145,12 @@ nlohmann::json to_lane_data_record(int slot_index, const FilamentSlotOverride& o
     j["helix_locked_color"] = o.user_locked_color;
     j["helix_locked_material"] = o.user_locked_material;
     if (!o.brand.empty()) {
-        j["vendor"] = o.brand;       // legacy key, ours
-        j["spool_vendor"] = o.brand; // AFC's lane attribute name, the spelling AFC
-                                     // itself publishes (#833) and therefore the one
-                                     // an AFC-shaped reader looks for first
-        j["vendor_name"] = o.brand;  // Happy Hare key. Kept: a reader written against
-                                     // HH alone still finds our overrides. Zero-cost
-                                     // alias (consumers ignore unknown keys).
+        j["vendor"] = o.brand;      // legacy key, ours
+        j["vendor_name"] = o.brand; // the shared lane_data spelling, established by
+                                    // Happy Hare and adopted by AFC in #833, so a
+                                    // reader of this namespace finds our overrides
+                                    // under the one key it already looks for.
+                                    // Zero-cost alias (consumers ignore unknown keys).
     }
     if (o.spoolman_id > 0)
         j["spool_id"] = o.spoolman_id;
@@ -178,9 +166,9 @@ nlohmann::json to_lane_data_record(int slot_index, const FilamentSlotOverride& o
     if (temps.nozzle_temp > 0)
         j["nozzle_temp"] = temps.nozzle_temp;
     if (!o.spool_name.empty()) {
-        j["spool_name"] = o.spool_name;    // legacy key, ours
-        j["filament_name"] = o.spool_name; // AFC's lane attribute name (#833)
-        j["name"] = o.spool_name;          // Happy Hare key
+        j["spool_name"] = o.spool_name; // legacy key, ours
+        j["name"] = o.spool_name;       // the shared lane_data spelling — same rationale
+                                        // as `vendor_name` above
     }
     if (o.spoolman_vendor_id > 0)
         j["spoolman_vendor_id"] = o.spoolman_vendor_id;
@@ -476,20 +464,21 @@ std::optional<std::pair<int, FilamentSlotOverride>> from_lane_data_record(const 
     o.user_locked_color = helix::json_util::safe_bool(j, "helix_locked_color", o.color_set);
     o.user_locked_material =
         helix::json_util::safe_bool(j, "helix_locked_material", !o.material.empty());
-    // Three writers, three spellings for the same value in this shared
-    // namespace: our own `vendor`, AFC's `spool_vendor` (its lane attribute
-    // name, AFCProject/AFC-Klipper-Add-On#833) and Happy Hare's `vendor_name`
-    // (mmu_server push_lane_data). Ours first, so round-trips of our own
-    // records stay exact; the other two so a foreign record still reads.
-    o.brand = string_with_alias(j, {"vendor", "spool_vendor", "vendor_name"});
+    // Prefer our own `vendor` key; fall back to `vendor_name`, the shared
+    // lane_data spelling that Happy Hare established (mmu_server
+    // push_lane_data) and AFC adopted in AFCProject/AFC-Klipper-Add-On#833, so
+    // alias-only foreign records read correctly. Round-trips of our own records
+    // stay exact.
+    o.brand = string_with_alias(j, "vendor", "vendor_name");
     o.spoolman_id = helix::json_util::safe_int(j, "spool_id", 0);
     o.bed_temp = helix::json_util::safe_int(j, "bed_temp", 0);
     o.nozzle_temp = helix::json_util::safe_int(j, "nozzle_temp", 0);
     if (j.contains("scan_time") && j["scan_time"].is_string()) {
         o.updated_at = parse_iso8601(j["scan_time"].get<std::string>());
     }
-    // Same three-writer ladder as `brand` above: ours, then AFC's, then HH's.
-    o.spool_name = string_with_alias(j, {"spool_name", "filament_name", "name"});
+    // Same rule as `brand` above: prefer `spool_name`, fall back to the shared
+    // `name` alias.
+    o.spool_name = string_with_alias(j, "spool_name", "name");
     o.spoolman_vendor_id = helix::json_util::safe_int(j, "spoolman_vendor_id", 0);
     o.remaining_weight_g = helix::json_util::safe_float(j, "remaining_weight_g", -1.0f);
     o.total_weight_g = helix::json_util::safe_float(j, "total_weight_g", -1.0f);
