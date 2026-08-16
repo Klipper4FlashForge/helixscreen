@@ -64,6 +64,7 @@ HelixScreen uses a backend abstraction layer to support multiple multi-filament 
 | `include/printer_discovery.h` | Hardware detection from Klipper object list |
 | `include/tool_state.h` | Tool abstraction: `ToolInfo`, `ToolState` singleton, tool-backend mapping |
 | `include/printer_temperature_state.h` | `ExtruderInfo` struct, multi-extruder dynamic subjects |
+| `include/preflight_validator.h` | Pre-print tool-vs-slot validation; takes bypass as a required input ([§ Bypass suppresses the pre-print filament gates](#bypass-suppresses-the-pre-print-filament-gates)) |
 | `include/ui_ams_context_menu.h` | Slot context menu (load, unload, edit, spoolman) |
 | `include/ui_ams_device_operations_overlay.h` | Device operations overlay (home, recover, bypass, etc.) |
 
@@ -1083,6 +1084,9 @@ macro — that is how a bypass spool loads at all.
 `plan_unload()` gates tier 1 on `caps.present` alone. AFC runs the user's unload macro
 itself as part of its own unload, so routing a bypass unload to tier 2 would run that macro
 twice.
+
+Load/unload dispatch is not the only thing bypass reaches — it also suppresses both pre-print
+filament gates. See [§ Bypass suppresses the pre-print filament gates](#bypass-suppresses-the-pre-print-filament-gates).
 
 **2. Load-vs-swap and already-mounted exist only on the load side.**
 
@@ -3419,6 +3423,45 @@ UI: `cmd_MMU_SELECT_BYPASS` never checks `has_bypass`, it deselects the gear ste
 reports gate -2 either way, while `has_bypass` defaults to `0` for `mmu_vendor: Other` (a QIDI
 Box driven through Happy Hare reports exactly that) and is ANDed with the calibrated bypass
 offset on type-A selectors.
+
+### Bypass suppresses the pre-print filament gates
+
+An engaged bypass feeds the extruder without passing through any slot, and
+`AmsState::collect_available_slots()` deliberately does not emit one for it. Anything reasoning
+over that vector therefore concludes that every tool in the file is unfed. Two gates sit on the
+same Print tap and both did exactly that, so a bypass print was blocked by
+`"T<n> has no filament loaded — this print will run out."` and then, once past it, by the
+`"Color Mismatch"` dialog:
+
+| Gate | Where | Input |
+|------|-------|-------|
+| Pre-flight empty-slot block | `PreflightValidator::validate()`, 4th parameter | `PrintSelectDetailView::recompute_preflight()` |
+| Unresolved-tool / color-mismatch dialog | `PrintStartController::unresolved_tools_for()`, 3rd parameter | `PrintStartController::find_unresolved_tools()` |
+
+Both take the flag as a **required** parameter rather than reading `AmsState` themselves, so
+they stay pure and unit-testable and a new caller cannot silently omit it.
+
+The input is `AmsState::any_bypass_active()`, which polls every backend's `is_bypass_active()`.
+Two things it is deliberately **not**:
+
+- **Not `AmsSystemInfo::current_slot == -2`.** The AFC backend sets that at
+  `ams_backend_afc.cpp:2219` while parsing `bypass_state`, but nine later writes in the same
+  file can overwrite it — including the mount-state derivation from #1229, which is
+  intentionally unguarded so it cannot re-latch. `is_bypass_active()` returns the firmware's own
+  report and is stable.
+- **Not the `ams_bypass_active` subject**, which is derived from that same `current_slot == -2`
+  and inherits the problem.
+
+Engaging bypass moves no slot, so the per-slot delta scan never bumps `slots_version` — and
+`slots_version` is the only thing that re-runs the detail view's cached pre-flight result.
+`sync_from_backend()` therefore bumps it on the `any_bypass_active()` edge (both directions), or
+engaging bypass with a file already open would leave the stale block in place. Verified on a
+Voron/BoxTurtle with AFC's `virtual_bypass`: the log shows
+`Bypass -> true, bumping slots_version` followed immediately by a recompute from `block=true` to
+`block=false`.
+
+Only the backends whose `is_bypass_active()` can return `true` reach any of this — the five
+display-and-tracking rows below never suppress anything.
 
 On the bottom five rows the override is display-and-tracking only. Their `is_bypass_active()`
 returns a literal `false`, so `bypass_node_visible()` reaches the `!is_afc` branch and renders
