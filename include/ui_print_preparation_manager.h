@@ -661,7 +661,8 @@ class PrintPreparationManager {
      *
      * @return Vector of rendered gcode lines, e.g. {"LOAD_AI_RUN SWITCH=1"}.
      */
-    [[nodiscard]] std::vector<std::string> collect_pre_start_gcode_lines() const;
+    [[nodiscard]] std::vector<std::string>
+    collect_pre_start_gcode_lines(const std::string& filename = {}) const;
 
     /**
      * @brief Build the combined pre-start gcode block executed before START_PRINT.

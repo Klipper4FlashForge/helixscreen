@@ -715,7 +715,7 @@ void PrintPreparationManager::start_print(const std::string& filename,
     // Lines are concatenated with newlines; Moonraker forwards the whole
     // block to Klipper as a single gcode_script.
     const auto& db_options = get_cached_options();
-    std::vector<std::string> pre_start_lines = collect_pre_start_gcode_lines();
+    std::vector<std::string> pre_start_lines = collect_pre_start_gcode_lines(filename_to_print);
     const bool emit_printer_setup = !macro_skip_params.empty() && !db_options.setup_gcode.empty();
     std::string combined =
         build_pre_start_gcode_block(db_options.setup_gcode, pre_start_lines, emit_printer_setup);
@@ -1124,7 +1124,8 @@ PrintPreparationManager::collect_macro_skip_params() const {
     return skip_params;
 }
 
-std::vector<std::string> PrintPreparationManager::collect_pre_start_gcode_lines() const {
+std::vector<std::string>
+PrintPreparationManager::collect_pre_start_gcode_lines(const std::string& filename) const {
     std::vector<std::string> lines;
 
     const auto& db_options = get_cached_options();
@@ -1156,7 +1157,19 @@ std::vector<std::string> PrintPreparationManager::collect_pre_start_gcode_lines(
         }
 
         const bool enabled = (state == PrePrintOptionState::ENABLED);
-        std::string line = render_pre_start_gcode(opt, enabled);
+
+        // Macros with no "off" form opt out of the disabled emission entirely:
+        // sending Creality's BED_MESH_CALIBRATE_START_PRINT with a 0 would
+        // still mesh, so "disabled" has to mean sending nothing at all.
+        const auto* pre = std::get_if<PrePrintStrategyPreStartGcode>(&opt.strategy);
+        if (!enabled && pre && !pre->emit_when_disabled) {
+            spdlog::debug("[PrintPreparationManager] Option '{}' disabled and has no off form "
+                          "— emitting nothing",
+                          opt.id);
+            continue;
+        }
+
+        std::string line = render_pre_start_gcode(opt, enabled, filename);
         if (line.empty()) {
             // render_pre_start_gcode logs its own warning on type mismatch.
             continue;

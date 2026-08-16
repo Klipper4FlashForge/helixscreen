@@ -1283,11 +1283,9 @@
             "category": "mechanical",
             "order": 10,
             "default_enabled": true,
-            "strategy": "macro_param",
-            "param_name": "PREPARE",
-            "enable_value": "0",
-            "skip_value": "1",
-            "default_value": "0"
+            "strategy": "pre_start_gcode",
+            "gcode_template": "BED_MESH_CALIBRATE_START_PRINT GCODE_FILE='{file}'",
+            "emit_when_disabled": false
           },
           {
             "id": "ai_detect",
@@ -1428,11 +1426,9 @@
             "category": "mechanical",
             "order": 10,
             "default_enabled": true,
-            "strategy": "macro_param",
-            "param_name": "PREPARE",
-            "enable_value": "0",
-            "skip_value": "1",
-            "default_value": "0"
+            "strategy": "pre_start_gcode",
+            "gcode_template": "BED_MESH_CALIBRATE_START_PRINT GCODE_FILE='{file}'",
+            "emit_when_disabled": false
           },
           {
             "id": "ai_detect",
