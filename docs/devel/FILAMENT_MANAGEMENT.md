@@ -2802,7 +2802,7 @@ The `box` Klipper object is shared by several firmwares that agree on almost not
 | Printer family | Stock firmware path | Macro dialect | Detection signal |
 |----------------|--------------------|---------------|-----------------|
 | K2, K2 Pro, K2 Plus (built-in CFS) | Creality K2 firmware | `CR_BOX_*` primitives + `BOX_SAVE_FAN`/`BOX_MODE_WAIT` envelope | `PrinterDetector::is_creality_k1() == false` |
-| K1, K1C, K1 Max (official CFS upgrade ≥ v2.3.5.33) | Creality K1 CFS upgrade firmware | Plain `BOX_*` primitives, no fan-save/mode-wait | `PrinterDetector::is_creality_k1() == true` |
+| K1, K1C, K1 Max (official CFS upgrade ≥ v2.3.5.33) | Creality K1 CFS upgrade firmware | Plain `BOX_*` primitives, no mode-wait (fan-save **does** exist — see below) | `PrinterDetector::is_creality_k1() == true` |
 | K2 Plus on a community Kalico port | [`Jacob10383/kalico`](https://github.com/Jacob10383/kalico) + a reimplemented `box.py` | High-level bare `T<n>` / `BOX_UNLOAD` | `api_version == 1` in the box payload |
 
 **Axis 2 — box schema** (`CfsSchema`), detected per-payload by `AmsBackendCfs::detect_schema()`:
@@ -2822,8 +2822,50 @@ A `Flat` box whose module we cannot identify still has its control paths refused
 
 ### Firmware requirements
 
-- **K2 series:** Stock firmware. Detection is automatic when the CFS unit is paired (RS-485, exposes `box` Klipper object).
-- **K1 series:** Requires the **official Creality K1/K1C/K1 Max CFS upgrade firmware** (the reporter for #968 had `v2.3.5.33`). Stock K1/K1C/K1Max firmware without the CFS upgrade does not expose the `box` object and the backend stays disabled. Community open-source K1 firmwares (Guilouz, etc.) do not currently bundle the CFS macros — install Creality's signed CFS-aware image to use the upgrade.
+**Minimum versions**
+
+| Family | Minimum firmware | Confidence |
+|--------|------------------|------------|
+| K1, K1C, K1 Max | **v2.3.5.33** (official CFS upgrade image) | Lower bound only — see below |
+| K2, K2 Pro, K2 Plus | **Not established** | No data point |
+
+- **K1 series:** Requires the **official Creality K1/K1C/K1 Max CFS upgrade firmware**. `v2.3.5.33` is the
+  oldest version anyone has reported CFS working on (the reporter for #968), and `v2.3.5.34` has been
+  read directly from Creality's CDN image and verified to carry the full `BOX_*` command set. Neither
+  establishes that `.33` is the *floor* — no earlier `2.3.5.x` has been tested, so treat it as a known-good
+  lower bound rather than a proven minimum.
+
+  The version line matters more than the number: **`2.3.5.x` is the CFS line, `1.3.3.x` is not.** A K1C on
+  `1.3.3.46` is stock non-CFS firmware, does not expose the `box` object, and the backend stays disabled —
+  that is expected, not a bug. Community open-source K1 firmwares (Guilouz, etc.) do not currently bundle
+  the CFS macros; install Creality's signed CFS-aware image to use the upgrade.
+
+- **K2 series:** Stock firmware; detection is automatic when the CFS unit is paired (RS-485, exposes the
+  `box` Klipper object). **We have no minimum version for the K2 line.** No K2 firmware image has been
+  unpacked, no reporter version has been recorded against a working or failing CFS setup, and there is no
+  version gating anywhere in the code. The `version` field in the `box` payload (e.g. `"1.1.3"`) is the
+  **CFS module's** firmware, not the printer's, so it cannot stand in for one.
+
+  To establish it, capture `printer.info` / the OTA version from a K2 with working CFS and record it here.
+  Do not infer a K2 minimum from the K1 numbers — the two families do not share a version line, an
+  architecture (K1 is MIPS, K2 is ARM Cortex-A7), or a macro dialect.
+
+> **"K2 SE" is a K1-family board.** It is served by the K1 MIPS OTA image and speaks the plain `BOX_*`
+> dialect, not `CR_BOX_*`. Do not classify it from the "K2" in its name — see the dialect note below.
+
+> **Correction — `BOX_SAVE_FAN`/`BOX_RESTORE_FAN` DO exist on K1.** This doc previously recorded them as
+> "verified absent in the public K1-Max `box.cfg` dump." That evidence was invalid: they are C-extension
+> commands registered from `box_wrapper.cpython-38-mipsel-linux-gnu.so` (handlers `cmd_save_fan` /
+> `cmd_restore_fan`), never `[gcode_macro]`s, so a config dump could never have listed them. Verified by
+> symbol grep of the extension in `CR4CU220812S11_ota_img_V2.3.5.34`. `BOX_MODE_WAIT` genuinely is absent.
+>
+> Two evidence traps to avoid repeating: **neither `box.cfg` nor `printer.gcode.help` can prove a `BOX_*`
+> command absent.** `gcode.py` records a description only when one is supplied, and the extension carries
+> 5 help strings against 69 handlers — roughly 64 commands are executable and invisible to help. Only a
+> symbol grep of the `.so` settles presence.
+>
+> Consequence: the K1 envelope below omits fan-save on a false premise, so K1 CFS operations do not
+> suppress part-cooling even though the firmware supports it. Tracked in prestonbrown/helixscreen#1278.
 
 ### Macro dialect comparison
 

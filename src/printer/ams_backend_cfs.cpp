@@ -1638,7 +1638,7 @@ AmsError AmsBackendCfs::recover() {
     auto err = check_preconditions();
     if (err.result != AmsResult::SUCCESS)
         return err;
-    return execute_gcode(recover_gcode());
+    return execute_gcode(recover_gcode(macro_variant_));
 }
 
 AmsError AmsBackendCfs::cancel() {
@@ -2422,8 +2422,23 @@ std::string AmsBackendCfs::reset_gcode() {
     return "BOX_ERROR_CLEAR";
 }
 
-std::string AmsBackendCfs::recover_gcode() {
-    return "BOX_ERROR_RESUME_PROCESS";
+std::string AmsBackendCfs::recover_gcode(CfsMacroVariant variant) {
+    // K1 does not have BOX_ERROR_RESUME_PROCESS. Verified by symbol grep of
+    // box_wrapper.cpython-38-mipsel-linux-gnu.so in the CR4CU220812S11
+    // v2.3.5.34 OTA image: neither the command string nor a
+    // cmd_error_resume_process handler is present, so emitting it on a K1
+    // returns "Unknown command" and the box is never resumed.
+    //
+    // BOX_TNN_RETRY_PROCESS is NOT the substitute despite being present. It
+    // maps to cmd_Tnn_retry_process and retries a specific tool change — the
+    // blob carries "TNN[%s] or LAST_TNN[%s] not in Tnn gcode", so it needs
+    // tool-change context a generic recover() has no business inventing.
+    //
+    // Plain RESUME is the right lever, for the same reason build_recovery_actions()
+    // already prefers it on K2: the firmware reaches the box half of recovery FROM
+    // RESUME, and it is the only command that also restarts the job. A latched box
+    // error still needs reset_gcode() (BOX_ERROR_CLEAR), which K1 does have.
+    return variant == CfsMacroVariant::K1 ? "RESUME" : "BOX_ERROR_RESUME_PROCESS";
 }
 
 // --- Error-center bridge ---
