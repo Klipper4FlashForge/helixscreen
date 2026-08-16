@@ -66,6 +66,13 @@ The Moonraker integration is split into three distinct layers with clean separat
 - Hardware "guessing" logic
 - **Store hardware discovery data** (moved to MoonrakerAPI)
 
+**Broadcast notifications must be filtered by the consumer, at the edge.** The client fans a method callback out to every registered handler; it does not know which of them cares. `notify_filelist_changed` is the one that bites: Moonraker fires it for *every* registered root, and printers write to `config` constantly — an AFC unit rewrites `AFC/AFC.var.unit` on every `SET_*` command, a `SAVE_VARIABLE` `delayed_gcode` rewrites `saved_variables.cfg`. On bundle L53W5PKG that was one notification per ~10 s for a whole print. Two consumers, two different filters, both required:
+
+- `PrintSelectPanel` lists the `gcodes` root only (`PrintSelectFileProvider` hardcodes it), so it filters on `item.root` — `filelist_change_affects_gcodes()` in `ui_panel_print_select.h`. Without it every config write cost a full `server.files.get_directory` round trip plus a list rebuild, 113 of them in that one session, while the user was on the print-status panel.
+- `PrintHistoryManager` cares about files disappearing, so it filters on *action* instead — `filelist_action_affects_history()`, which admits only `delete_file`/`delete_dir`/`move_file`/`move_dir`.
+
+A new consumer of this notification needs to state which axis it filters on before it registers. Filtering the log line alone is not the fix; the work behind it is the cost.
+
 ### MoonrakerAPI (Domain Logic Layer)
 
 **Location:** `include/moonraker_api.h`, `src/api/moonraker_api.cpp`
