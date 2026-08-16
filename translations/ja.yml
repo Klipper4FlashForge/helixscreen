@@ -973,6 +973,7 @@ translations:
   : 'フィラメントが切れましたが、CFSは切り替え可能な一致するスプールを見つけられませんでした。同じ材料と色のスプールを装填してから再開してください。'
   Filament ran out at the toolhead: 'ツールヘッドでフィラメントが切れました'
   Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: 'フィラメントが切れました。自動補充がオフのため、CFSは自動でスプールを切り替えません。フィラメントを装填してから再開してください。'
+  Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume.: ''
   Filament runout: フィラメント切れ
   Filament runout and motion detection sensors: フィラメント切れとモーション検出センサー
   Filament runout detection status: 'フィラメント切れ検出の状態'
@@ -2611,6 +2612,7 @@ translations:
   Update your security PIN: セキュリティ PIN を更新
   Updating Configuration...: 設定を更新中...
   Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: フィラメント名とマルチカラースプールに対応するには、AFC 1.2.0以降にアップグレードしてください。
+  Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.: ''
   Upload: アップロード
   Upload Debug Bundle: デバッグバンドルをアップロード
   Upload Failed: アップロード失敗

@@ -948,6 +948,7 @@
   <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume." pt="O filamento acabou e o CFS não encontrou um carretel compatível para trocar. Carregue um carretel do mesmo material e cor e retome."/>
   <translation tag="Filament ran out at the toolhead" pt="O filamento acabou no cabeçote"/>
   <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume." pt="O filamento acabou. O reabastecimento automático está desligado, então o CFS não trocará de carretel sozinho. Carregue filamento e retome."/>
+  <translation tag="Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume."/>
   <translation tag="Filament runout" pt="Fim de filamento"/>
   <translation tag="Filament runout and motion detection sensors" pt="Sensores de detecção de fim de filamento e movimento"/>
   <translation tag="Filament runout detection status" pt="Status da detecção de fim de filamento"/>
@@ -2508,6 +2509,7 @@
   <translation tag="Update your security PIN" pt="Atualize seu PIN de segurança nesta instalação."/>
   <translation tag="Updating Configuration..." pt="Atualizando Configuração..."/>
   <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." pt="Atualize para o AFC 1.2.0 ou mais recente para nomes de filamento e carretéis multicoloridos."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman."/>
   <translation tag="Upload" pt="Enviar"/>
   <translation tag="Upload Debug Bundle" pt="Enviar Bundle de Debug"/>
   <translation tag="Upload Failed" pt="Falha no Envio"/>

@@ -948,6 +948,7 @@
   <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume." it="Filamento esaurito e il CFS non ha trovato una bobina compatibile su cui passare. Carica una bobina dello stesso materiale e colore, poi riprendi."/>
   <translation tag="Filament ran out at the toolhead" it="Filamento esaurito alla testina"/>
   <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume." it="Filamento esaurito. Il rifornimento automatico è disattivato, quindi il CFS non cambierà bobina da solo. Carica il filamento e poi riprendi."/>
+  <translation tag="Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume."/>
   <translation tag="Filament runout" it="Esaurimento filamento"/>
   <translation tag="Filament runout and motion detection sensors" it="Sensori esaurimento filamento e rilevamento movimento"/>
   <translation tag="Filament runout detection status" it="Stato del rilevamento di esaurimento filamento"/>
@@ -2508,6 +2509,7 @@
   <translation tag="Update your security PIN" it="Aggiorna il tuo PIN di sicurezza in questa installazione."/>
   <translation tag="Updating Configuration..." it="Aggiornamento configurazione..."/>
   <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." it="Aggiorna ad AFC 1.2.0 o versioni successive per nomi filamento e bobine multicolore."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman."/>
   <translation tag="Upload" it="Carica"/>
   <translation tag="Upload Debug Bundle" it="Carica bundle di debug"/>
   <translation tag="Upload Failed" it="Caricamento fallito"/>

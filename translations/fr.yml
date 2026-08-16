@@ -1085,6 +1085,7 @@ translations:
   : 'Filament épuisé et le CFS n''a trouvé aucune bobine compatible vers laquelle basculer. Chargez une bobine de même matériau et de même couleur, puis reprenez.'
   Filament ran out at the toolhead: 'Filament épuisé à la tête d''outil'
   Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: 'Filament épuisé. Le réapprovisionnement automatique est désactivé, le CFS ne changera donc pas de bobine tout seul. Chargez du filament, puis reprenez.'
+  Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume.: ''
   Filament runout: Fin de filament
   Filament runout and motion detection sensors: Capteurs de fin de filament et de
     détection de mouvement
@@ -2913,6 +2914,7 @@ translations:
     sur cette installation.
   Updating Configuration...: Mise à jour de la configuration...
   Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Passez à AFC 1.2.0 ou supérieur pour les noms de filament et les bobines multicolores.
+  Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.: ''
   Upload: Téléverser
   Upload Debug Bundle: Téléverser le bundle de débogage
   Upload Failed: Téléversement échoué

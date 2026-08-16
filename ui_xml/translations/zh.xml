@@ -948,6 +948,7 @@
   <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume." zh="耗材已用尽，且 CFS 未找到可切换的匹配料盘。请装入相同材料和颜色的料盘后恢复打印。"/>
   <translation tag="Filament ran out at the toolhead" zh="工具头处耗材已用尽"/>
   <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume." zh="耗材已用尽。自动续料已关闭，CFS 不会自行更换料盘。请装入耗材后恢复打印。"/>
+  <translation tag="Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume."/>
   <translation tag="Filament runout" zh="耗材用尽"/>
   <translation tag="Filament runout and motion detection sensors" zh="耗材用尽和运动检测传感器"/>
   <translation tag="Filament runout detection status" zh="耗材耗尽检测状态"/>
@@ -2508,6 +2509,7 @@
   <translation tag="Update your security PIN" zh="更新您的安全 PIN"/>
   <translation tag="Updating Configuration..." zh="正在更新配置..."/>
   <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." zh="升级至 AFC 1.2.0 或更高版本，以使用耗材名称和多色料盘功能。"/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman."/>
   <translation tag="Upload" zh="上传"/>
   <translation tag="Upload Debug Bundle" zh="上传调试捆绑包"/>
   <translation tag="Upload Failed" zh="上传失败"/>

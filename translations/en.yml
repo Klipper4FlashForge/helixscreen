@@ -1033,6 +1033,7 @@ translations:
   : Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
   Filament ran out at the toolhead: Filament ran out at the toolhead
   Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.
+  Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume.: Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume.
   Filament runout: Filament runout
   Filament runout and motion detection sensors: Filament runout and motion detection
     sensors
@@ -2802,6 +2803,7 @@ translations:
   Update your security PIN: Update your security PIN
   Updating Configuration...: Updating Configuration...
   Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.
+  Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.: Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.
   Upload: Upload
   Upload Debug Bundle: Upload Debug Bundle
   Upload Failed: Upload Failed

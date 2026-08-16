@@ -948,6 +948,7 @@
   <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume." ru="Филамент закончился, и CFS не нашла подходящей катушки для замены. Загрузите катушку того же материала и цвета и продолжите печать."/>
   <translation tag="Filament ran out at the toolhead" ru="Филамент закончился у печатающей головки"/>
   <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume." ru="Филамент закончился. Автопополнение выключено, поэтому CFS не сменит катушку сам. Загрузите филамент и продолжите печать."/>
+  <translation tag="Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume."/>
   <translation tag="Filament runout" ru="Окончание филамента"/>
   <translation tag="Filament runout and motion detection sensors" ru="Датчики окончания и движения филамента"/>
   <translation tag="Filament runout detection status" ru="Состояние датчика окончания филамента"/>
@@ -2508,6 +2509,7 @@
   <translation tag="Update your security PIN" ru="Обновите ваш PIN-код"/>
   <translation tag="Updating Configuration..." ru="Обновление конфигурации..."/>
   <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." ru="Обновите AFC до версии 1.2.0 или новее, чтобы получить имена филамента и многоцветные катушки."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman."/>
   <translation tag="Upload" ru="Отправить"/>
   <translation tag="Upload Debug Bundle" ru="Отправить пакет диагностики"/>
   <translation tag="Upload Failed" ru="Ошибка отправки"/>

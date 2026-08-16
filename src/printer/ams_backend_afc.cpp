@@ -3283,9 +3283,26 @@ void AmsBackendAfc::check_afc_feature_level(const nlohmann::json& lane_status) {
     // Advisory, not an error — nothing is broken, some detail is just missing.
     // Names the version for the user's benefit even though the trigger is
     // capability: "1.2.0" is actionable, "your payload lacks filament_name" is not.
+    //
+    // Leads with multi-color because that is the part the upgrade uniquely buys.
+    // Filament names do NOT require it when Spoolman is configured: the identity
+    // cache resolves vendor/name from the lane's spool_id and
+    // resolve_filament_label() already uses it, which is why bundle L53W5PKG
+    // showed "LDO Industry Blue" on a pre-1.2.0 lane while being told to upgrade
+    // "for filament names". Multi-color is different — the automatic lane sync
+    // only ever gets multi_color_hexes from lane_data, since apply_spool_to_slot()
+    // (the one path that copies Spoolman's) serves manual external-spool
+    // assignment, not the AFC lane refresh.
+    //
+    // Deliberately not branched on is_spoolman_available(): the feature probe and
+    // Spoolman discovery both land during startup with no ordering guarantee, and
+    // this notice is latched to fire once ever — a mis-timed read would pin the
+    // wrong variant permanently. One sentence that is true either way costs
+    // nothing and cannot go stale.
     ui_notification_info_with_action(
         lv_tr("AFC Update Available"),
-        lv_tr("Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools."),
+        lv_tr("Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament "
+              "names, which otherwise need Spoolman."),
         "afc_message");
 }
 
