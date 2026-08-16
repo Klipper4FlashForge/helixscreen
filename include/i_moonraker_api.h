@@ -62,6 +62,14 @@ class IMoonrakerAPI {
         120000; // 2 min — filament purge/load at slow feedrate
     static constexpr uint32_t MACRO_TIMEOUT_MS =
         300000; // 5 min — user macros can do anything (homing, leveling, filament ops)
+    /// 20 min — a pre-print macro chain that the print start must WAIT for.
+    /// Creality's BED_MESH_CALIBRATE_START_PRINT homes, wipes, heats the bed to
+    /// print temp and then runs a full adaptive mesh; measured at ~10 min on a
+    /// warm K2 Plus, and a cold ASA soak to 105C pushes it past MACRO_TIMEOUT_MS.
+    /// Timing out here aborts the print with "Pre-print command failed", so the
+    /// ceiling has to clear the slowest legitimate chain rather than the typical
+    /// one.
+    static constexpr uint32_t PRE_START_MACRO_TIMEOUT_MS = 1200000;
 
     /// Moonraker's default API port. When the HTTP base points here we assume a
     /// "direct to Moonraker" connection, where the webcam is served by a separate
