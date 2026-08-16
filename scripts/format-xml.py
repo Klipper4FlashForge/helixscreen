@@ -41,6 +41,35 @@ except ImportError:
 LINE_WIDTH = 120
 INDENT = "  "  # 2 spaces
 
+# LVGL state selectors are written `style_bg_opa:checked="0"`. Every XML parser reads
+# that colon as a namespace prefix and rejects the file ("Namespace prefix style_bg_opa
+# for checked is not defined"), so filament_panel, input_shaper_panel and
+# theme_editor_overlay were unformattable and silently drifted. Swap the colon for a
+# sentinel before parsing and swap it back on the way out.
+#
+# The sentinel MUST be made of XML NameChars. A pretty separator like U+2999 is not one,
+# and the parser then trips over the sentinel instead of the colon, reporting the far more
+# confusing "Specification mandates value for attribute style_bg_opa".
+#
+# The pattern only fires in attribute-name position (whitespace, name, colon, name, `=`,
+# quote), so colons inside values and text are untouched: `href="http://x"`, `t="9:30"`
+# and `<p>see: this</p>` all survive a round trip.
+STATE_COLON_SENTINEL = "__LVGL_STATE_COLON__"
+STATE_COLON_RE = re.compile(r'(\s)([A-Za-z_][\w.-]*):([A-Za-z_][\w.-]*)(\s*=\s*["\'])')
+
+
+def _escape_state_colons(content: str) -> str:
+    """Hide LVGL state-selector colons from the XML parser."""
+    return STATE_COLON_RE.sub(
+        lambda m: f"{m.group(1)}{m.group(2)}{STATE_COLON_SENTINEL}{m.group(3)}{m.group(4)}",
+        content,
+    )
+
+
+def _unescape_state_colons(content: str) -> str:
+    """Restore LVGL state-selector colons after formatting."""
+    return content.replace(STATE_COLON_SENTINEL, ":")
+
 # Directories whose XML is written by a generator, not by hand. Formatting these
 # starts a fight nobody wins: `make` regenerates them on every build (mk/translations.mk
 # -> generate_translations.py), which strips the wrapping this script adds, so a
@@ -282,6 +311,16 @@ def format_xml_file(content: str) -> str:
     # Preprocess to fix common issues
     content = preprocess_xml(content)
 
+    # Hide LVGL state-selector colons; restored just before returning. The sentinel is
+    # rejected up front rather than silently mangled, since a file that already contains
+    # it would round-trip into a colon it never had.
+    if STATE_COLON_SENTINEL in content:
+        raise ValueError(
+            f"file contains the reserved sentinel {STATE_COLON_SENTINEL!r}; "
+            "rename that attribute or change STATE_COLON_SENTINEL"
+        )
+    content = _escape_state_colons(content)
+
     # Parse the XML while preserving comments and whitespace (for blank line detection)
     parser = etree.XMLParser(remove_blank_text=False, remove_comments=False)
     try:
@@ -324,34 +363,40 @@ def format_xml_file(content: str) -> str:
     lines.extend(root_lines)
 
     # Ensure trailing newline
-    return "\n".join(lines) + "\n"
+    return _unescape_state_colons("\n".join(lines) + "\n")
 
 
 def process_file(
     filepath: Path, check_only: bool = False, show_diff: bool = False
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, Optional[str], bool]:
     """
     Process a single XML file.
 
     Returns:
-        (needs_formatting, diff_output)
+        (needs_formatting, diff_output, failed)
         - needs_formatting: True if file needs formatting
         - diff_output: Diff string if show_diff=True, else None
+        - failed: True if the file could not be read or parsed
+
+    `failed` exists because a file this script cannot parse is not a formatted file.
+    Both outcomes used to return (False, None), so main() counted an unreadable file as
+    clean and --check printed "All files properly formatted" and exited 0 for a file it
+    never looked at. That is how the three LVGL state-selector layouts drifted unnoticed.
     """
     try:
         original = filepath.read_text(encoding="utf-8")
     except Exception as e:
         print(f"Error reading {filepath}: {e}", file=sys.stderr)
-        return False, None
+        return False, None, True
 
     try:
         formatted = format_xml_file(original)
     except ValueError as e:
         print(f"Error formatting {filepath}: {e}", file=sys.stderr)
-        return False, None
+        return False, None, True
 
     if original == formatted:
-        return False, None
+        return False, None, False
 
     # File needs formatting
     if show_diff:
@@ -370,7 +415,7 @@ def process_file(
     if not check_only:
         filepath.write_text(formatted, encoding="utf-8")
 
-    return True, diff_output
+    return True, diff_output, False
 
 
 def main():
@@ -411,9 +456,13 @@ def main():
                 print(f"Skipping {skip_reason} file: {filepath}", file=sys.stderr)
             continue
 
-        needs_format, diff_output = process_file(
+        needs_format, diff_output, failed = process_file(
             filepath, check_only=args.check, show_diff=args.diff
         )
+
+        if failed:
+            errors += 1
+            continue
 
         if needs_format:
             files_needing_format.append(filepath)
@@ -427,13 +476,16 @@ def main():
 
     # Summary
     if not args.quiet:
+        if errors:
+            print(f"\n{errors} file(s) could not be processed", file=sys.stderr)
         if args.check:
             if files_needing_format:
                 print(
                     f"\n{len(files_needing_format)} file(s) need formatting",
                     file=sys.stderr,
                 )
-            else:
+            elif not errors:
+                # Only claim a clean bill of health for files actually parsed.
                 print("All files properly formatted")
 
     # Exit code: 1 if any files needed formatting (for --check mode)

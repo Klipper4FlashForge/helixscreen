@@ -940,14 +940,20 @@ VENV_PYTHON=".venv/bin/python"
 if [ -n "$XML_FILES" ]; then
   # Prefer Python formatter with attribute wrapping, fallback to xmllint
   if [ -x "$VENV_PYTHON" ] && $VENV_PYTHON -c "import lxml" 2>/dev/null; then
-    # Use our custom formatter with --check mode
-    if $VENV_PYTHON scripts/format-xml.py --check $XML_FILES 2>/dev/null; then
+    # Use our custom formatter with --check mode.
+    # stderr is NOT swallowed: the formatter reports an unparseable file there, and
+    # `2>/dev/null` meant a file it could never read produced no visible output at all.
+    # That, plus process_file() returning the same value for "parse failed" and "already
+    # clean", is how three LVGL state-selector layouts drifted unnoticed.
+    if $VENV_PYTHON scripts/format-xml.py --check $XML_FILES; then
       echo "✅ All XML files properly formatted"
     else
-      echo "⚠️  XML files need formatting"
+      echo "⚠️  XML files need formatting (or could not be parsed — see above)"
       echo "ℹ️  Fix with: .venv/bin/python scripts/format-xml.py <files>"
       echo "ℹ️  Or run: make format"
-      # Don't fail CI for XML formatting - it's a style preference
+      # Don't fail CI for XML formatting - it's a style preference.
+      # Genuine malformed XML is still a hard failure via the xmllint validation pass
+      # earlier in this script, so staying advisory here does not let broken XML through.
       # EXIT_CODE=1
     fi
   elif command -v xmllint >/dev/null 2>&1; then
