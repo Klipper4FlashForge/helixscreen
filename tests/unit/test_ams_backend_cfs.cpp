@@ -707,6 +707,7 @@ TEST_CASE("CFS K1 macro variant (#968)", "[ams][cfs]") {
         // bare: it takes LEN/VELOCITY/TEMP only, never TNN. Homing is handled
         // upstream by dispatch_action_script.
         const std::string expected_a = "SAVE_GCODE_STATE NAME=helix_cfs_load\n"
+                                       "BOX_SAVE_FAN\n"
                                        "BOX_ERROR_CLEAR\n"
                                        "BOX_CHECK_MATERIAL\n"
                                        "BOX_GO_TO_EXTRUDE_POS\n"
@@ -714,6 +715,7 @@ TEST_CASE("CFS K1 macro variant (#968)", "[ams][cfs]") {
                                        "BOX_EXTRUDER_EXTRUDE TNN=T1A\n"
                                        "BOX_MATERIAL_FLUSH\n"
                                        "BOX_NOZZLE_CLEAN\n"
+                                       "BOX_RESTORE_FAN\n"
                                        "BOX_MOVE_TO_SAFE_POS\n"
                                        "RESTORE_GCODE_STATE NAME=helix_cfs_load";
         REQUIRE(AmsBackendCfs::load_gcode(0, V::K1) == expected_a);
@@ -733,9 +735,10 @@ TEST_CASE("CFS K1 macro variant (#968)", "[ams][cfs]") {
         REQUIRE(pos_extrude < pos_extruder);
         REQUIRE(pos_extruder < pos_flush);
 
-        // K1 firmware lacks fan-save and mode-wait — must not be emitted.
-        REQUIRE(g.find("BOX_SAVE_FAN") == std::string::npos);
-        REQUIRE(g.find("BOX_RESTORE_FAN") == std::string::npos);
+        // K1 firmware lacks mode-wait — must not be emitted. Fan-save DOES
+        // exist here and is required; see the envelope guard section (#1278).
+        REQUIRE(g.find("BOX_SAVE_FAN") != std::string::npos);
+        REQUIRE(g.find("BOX_RESTORE_FAN") != std::string::npos);
         REQUIRE(g.find("BOX_MODE_WAIT") == std::string::npos);
 
         // Fresh load mirror must NOT cut (nozzle is empty).
@@ -772,10 +775,12 @@ TEST_CASE("CFS K1 macro variant (#968)", "[ams][cfs]") {
         // Mirrors the firmware BOX_QUIT_MATERIAL step list:
         // ERROR_CLEAR → CHECK_MATERIAL → CUT → RETRUDE → safe park.
         const std::string expected = "SAVE_GCODE_STATE NAME=helix_cfs_load\n"
+                                     "BOX_SAVE_FAN\n"
                                      "BOX_ERROR_CLEAR\n"
                                      "BOX_CHECK_MATERIAL\n"
                                      "BOX_CUT_MATERIAL\n"
                                      "BOX_RETRUDE_MATERIAL\n"
+                                     "BOX_RESTORE_FAN\n"
                                      "BOX_MOVE_TO_SAFE_POS\n"
                                      "RESTORE_GCODE_STATE NAME=helix_cfs_load";
         REQUIRE(AmsBackendCfs::unload_gcode(V::K1) == expected);
@@ -783,7 +788,9 @@ TEST_CASE("CFS K1 macro variant (#968)", "[ams][cfs]") {
         const std::string g = AmsBackendCfs::unload_gcode(V::K1);
         REQUIRE(g.find("CR_BOX_") == std::string::npos);
         REQUIRE(g.find("BOX_MODE_WAIT") == std::string::npos);
-        REQUIRE(g.find("BOX_SAVE_FAN") == std::string::npos);
+        // BOX_SAVE_FAN is NOT K2-only — it exists on K1 too (symbol-verified in
+        // CR4CU220812S11_ota_img_V2.3.5.34) and the envelope now emits it.
+        REQUIRE(g.find("BOX_SAVE_FAN") != std::string::npos);
         // Cut + retrude present.
         REQUIRE(g.find("BOX_CUT_MATERIAL") != std::string::npos);
         REQUIRE(g.find("BOX_RETRUDE_MATERIAL") != std::string::npos);
@@ -796,6 +803,7 @@ TEST_CASE("CFS K1 macro variant (#968)", "[ams][cfs]") {
         // with the missing BOX_EXTRUDER_EXTRUDE between EXTRUDE and FLUSH.
         // BOX_MATERIAL_FLUSH is bare — it has no TNN parameter.
         const std::string expected = "SAVE_GCODE_STATE NAME=helix_cfs_load\n"
+                                     "BOX_SAVE_FAN\n"
                                      "BOX_ERROR_CLEAR\n"
                                      "BOX_CHECK_MATERIAL\n"
                                      "BOX_CUT_MATERIAL\n"
@@ -805,6 +813,7 @@ TEST_CASE("CFS K1 macro variant (#968)", "[ams][cfs]") {
                                      "BOX_EXTRUDE_MATERIAL TNN=T2B\n"
                                      "BOX_EXTRUDER_EXTRUDE TNN=T2B\n"
                                      "BOX_MATERIAL_FLUSH\n"
+                                     "BOX_RESTORE_FAN\n"
                                      "BOX_MOVE_TO_SAFE_POS\n"
                                      "RESTORE_GCODE_STATE NAME=helix_cfs_load";
         REQUIRE(AmsBackendCfs::swap_gcode(5, V::K1) == expected);
@@ -832,14 +841,28 @@ TEST_CASE("CFS K1 macro variant (#968)", "[ams][cfs]") {
     }
 
     SECTION("K1 envelope omits all K2-only helpers across all three operations") {
-        // Regression guard: any future refactor that accidentally re-introduces
-        // BOX_SAVE_FAN/RESTORE_FAN/BOX_MODE_WAIT for the K1 path would send
-        // the printer back into key61 territory (#968).
+        // Regression guard. BOX_MODE_WAIT and the CR_BOX_* primitives are
+        // genuinely absent from K1 and re-introducing them means key61 (#968).
+        //
+        // BOX_SAVE_FAN / BOX_RESTORE_FAN are NOT in that set, though this guard
+        // once asserted they were. They are C-extension commands registered from
+        // box_wrapper.cpython-38-mipsel-linux-gnu.so, never [gcode_macro]s, so
+        // the box.cfg dump they were "verified absent" in could not have listed
+        // them either way. Symbol grep of the extension in
+        // CR4CU220812S11_ota_img_V2.3.5.34 shows cmd_save_fan / cmd_restore_fan
+        // present. Omitting them left part-cooling blowing across the nozzle
+        // through every K1 load, cut and flush (#1278).
         for (const std::string& g :
              {AmsBackendCfs::load_gcode(0, V::K1), AmsBackendCfs::unload_gcode(V::K1),
               AmsBackendCfs::swap_gcode(0, V::K1)}) {
-            REQUIRE(g.find("BOX_SAVE_FAN") == std::string::npos);
-            REQUIRE(g.find("BOX_RESTORE_FAN") == std::string::npos);
+            REQUIRE(g.find("BOX_SAVE_FAN") != std::string::npos);
+            REQUIRE(g.find("BOX_RESTORE_FAN") != std::string::npos);
+            // Suppress before the body runs, restore after it — never the
+            // reverse, or the op runs with the fan on and ends with it off.
+            REQUIRE(g.find("BOX_SAVE_FAN") < g.find("BOX_RESTORE_FAN"));
+            // The restore must precede the park so a raise mid-park still
+            // leaves the fan correct.
+            REQUIRE(g.find("BOX_RESTORE_FAN") < g.find("BOX_MOVE_TO_SAFE_POS"));
             REQUIRE(g.find("BOX_MODE_WAIT") == std::string::npos);
             REQUIRE(g.find("CR_BOX_") == std::string::npos);
             // Save/restore + park are common to all three K1 operations.
@@ -2528,6 +2551,60 @@ TEST_CASE("CFS runout: 'disable material automatic refill' raises one runout fau
     REQUIRE(ev->recovery_actions.size() == 2);
     CHECK(ev->recovery_actions[0].gcode == "RESUME");
     CHECK(ev->recovery_actions[1].gcode == "BOX_ERROR_CLEAR");
+}
+
+TEST_CASE("CFS runout: terse 'no auto refill' wording is recognized", "[ams][cfs][968]") {
+    CfsRemapHelper backend;
+
+    // Fourth give-up literal, read out of the 2.3.5.34 box_wrapper extension.
+    // It shares nothing with the long-form "disable material automatic refill":
+    // "auto refill" != "automatic refill", and there is no "disab". Before this
+    // it could only ever reach the weak tier, and only with the box latch set.
+    auto ev = backend.classify_error("// no auto refill", paused_ctx());
+    REQUIRE(ev.has_value());
+    CHECK(ev->title == std::string("Filament runout"));
+    CHECK(ev->detail.find("Auto-refill is off") != std::string::npos);
+    CHECK(ev->raw_detail == "no auto refill");
+    REQUIRE(ev->recovery_actions.size() == 2);
+}
+
+TEST_CASE("CFS runout: 'no tray with ingredients found' raises one runout fault",
+          "[ams][cfs][968]") {
+    CfsRemapHelper backend;
+
+    // The third give-up path, documented in the K1 wrapper RE notes
+    // (docs/devel/CREALITY_CFS_INTERNALS.md): a same_material group DOES exist
+    // for the exhausted slot, but none of its members currently has material
+    // sensor presence. Distinct cause from "no identical supplies", which means
+    // no compatible group exists at all.
+    auto ev = backend.classify_error("// no tray with ingredients found", paused_ctx());
+    REQUIRE(ev.has_value());
+    CHECK(ev->source == helix::ErrorSource::CFS);
+    CHECK(ev->severity == helix::ErrorSeverity::CRITICAL);
+    CHECK(ev->sticky);
+    CHECK(ev->title == std::string("Filament runout"));
+    // Must name the actual situation: the matching slots are empty, so the fix
+    // is loading one of them — not "buy matching filament".
+    CHECK(ev->detail.find("empty") != std::string::npos);
+    // Must NOT be misreported as the no-compatible-material branch.
+    CHECK(ev->detail.find("no matching spool") == std::string::npos);
+    CHECK(ev->raw_detail == "no tray with ingredients found");
+
+    REQUIRE(ev->recovery_actions.size() == 2);
+    CHECK(ev->recovery_actions[0].gcode == "RESUME");
+    CHECK(ev->recovery_actions[1].gcode == AmsBackendCfs::reset_gcode());
+}
+
+TEST_CASE("CFS runout: 'no tray' branch does not need the box latch", "[ams][cfs][968]") {
+    CfsRemapHelper backend;
+
+    // Distinguishes this from the weak-hint tier: that one requires
+    // system_info_.filament_runout to be set. This wording is specific enough
+    // to stand on its own, exactly like the other two strong matches, so a
+    // fresh backend with no box frame parsed yet must still classify it.
+    auto ev = backend.classify_error("// No tray with ingredients found!", paused_ctx());
+    REQUIRE(ev.has_value());
+    CHECK(ev->detail.find("empty") != std::string::npos);
 }
 
 TEST_CASE("CFS runout: matcher survives the sentence being reworded", "[ams][cfs][1250]") {

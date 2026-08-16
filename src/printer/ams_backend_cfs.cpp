@@ -1937,7 +1937,8 @@ AmsError AmsBackendCfs::set_tool_mapping(int tool_number, int slot_index) {
     // lane badge reads mapped_tool while the filament panel's op buttons read
     // tool_to_slot_map. Writing the forward entry alone left the badge on the
     // lane the tool was moved AWAY from until the next box frame — and on K1,
-    // where BOX_MODIFY_TN is known to no-op, no such frame ever arrives.
+    // whose box status carries no `map` field at all, no such frame ever
+    // arrives (see reports_firmware_tool_mapping).
     //
     // Only lanes the current parse actually knows about can be recorded: a
     // forward entry naming a lane with no SlotInfo has no reverse counterpart
@@ -1965,16 +1966,24 @@ AmsError AmsBackendCfs::set_tool_mapping(int tool_number, int slot_index) {
     std::string cmd = "BOX_MODIFY_TN " + tool_tnn + "=" + slot_tnn;
     spdlog::info("[AMS CFS] Remapping tool {} -> slot {} ({})", tool_tnn, slot_tnn, cmd);
     if (macro_variant_ == CfsMacroVariant::K1) {
-        // #968 Phase 5 — the reporter confirmed BOX_MODIFY_TN no-ops on the K1
-        // official CFS upgrade firmware (the box's "current TN" state it sets is
-        // ignored), and we have no confirmed working alternative. We still emit
-        // it because it is harmless (no key61 "Unknown command"), but in-print
-        // tool->slot remap may simply not take effect on K1. The optimistic
-        // local update above keeps the UI consistent regardless.
-        // TODO(#968): confirm a working K1 remap path on hardware (console test)
-        // before advertising remap capability on K1 in get_tool_mapping_capabilities.
-        spdlog::info("[AMS CFS] K1 firmware: in-print tool remap (BOX_MODIFY_TN) may be "
-                     "unsupported; emitting anyway (harmless). Verify on hardware (#968).");
+        // #968 — this is NOT a no-op on K1, despite the reporter observing that
+        // "nothing happened". The command updates the wrapper's remap table and
+        // persists all 16 keys to creality/userdata/box/tn_data.json; it simply
+        // prints nothing to the console, so a bare invocation looks inert.
+        //
+        // It also lands where we want it. The remap exists for the SLICER's
+        // in-print tool changes, and those arrive as T0..T15, which is exactly
+        // the firmware entrypoint that resolves Tnn_map. (Our own manual
+        // load/swap addresses BOX_EXTRUDE_MATERIAL TNN=<physical> directly and
+        // bypasses the table — correct, since we already know the slot.)
+        //
+        // What is genuinely K1-specific is the lack of an echo: no box frame
+        // carrying the updated map ever arrives, which is why
+        // reports_firmware_tool_mapping() stays false here. The optimistic local
+        // update above is therefore the only confirmation the UI will get.
+        // See docs/devel/CREALITY_CFS_INTERNALS.md § Tool remap.
+        spdlog::debug("[AMS CFS] K1 firmware: BOX_MODIFY_TN persists silently and applies to "
+                      "the slicer's T0-T15 changes; no confirming box frame will follow.");
     }
     return execute_gcode(cmd);
 }
@@ -2040,29 +2049,48 @@ std::string wrap_with_park_k2(const std::string& body, bool wipe_after) {
 
 /// Wrap a BOX_* step body with the K1 official CFS macro envelope (#968).
 ///
-/// The K1 firmware does not expose BOX_SAVE_FAN / BOX_RESTORE_FAN /
-/// BOX_MODE_WAIT (verified absent in the public K1-Max box.cfg dump at
-/// DieDutchman/K1-Max-KAMP-CFS-Fix, and from the #968 reporter's gcode/help
-/// output). Every K1 load/swap/unload sequence shares the same envelope:
+/// Every K1 load/swap/unload sequence shares the same envelope:
 ///
 ///   SAVE_GCODE_STATE NAME=helix_cfs_load
+///   BOX_SAVE_FAN                 — suppress part-cooling for the whole op
 ///   BOX_ERROR_CLEAR
 ///   BOX_CHECK_MATERIAL
 ///   <body>                       — the variant-specific BOX_* step list
+///   BOX_RESTORE_FAN              — restore part-cooling before parking
 ///   BOX_MOVE_TO_SAFE_POS         — park
 ///   RESTORE_GCODE_STATE NAME=helix_cfs_load
 ///
-/// `body` carries everything between CHECK_MATERIAL and the safe-park tail,
+/// BOX_MODE_WAIT is genuinely absent on K1 and stays out. BOX_SAVE_FAN /
+/// BOX_RESTORE_FAN are NOT — they were omitted here on a premise that turned
+/// out to be unsound, namely "verified absent in the public K1-Max box.cfg
+/// dump". They are C-extension commands registered from
+/// box_wrapper.cpython-38-mipsel-linux-gnu.so (handlers cmd_save_fan /
+/// cmd_restore_fan), never [gcode_macro]s, so no config dump could have listed
+/// them and their absence there proved nothing. Symbol grep of the extension in
+/// CR4CU220812S11_ota_img_V2.3.5.34 shows both present. Until this, every K1
+/// load, cut and flush ran with the part-cooling fan blowing across the nozzle,
+/// which is exactly what the K2 envelope has always suppressed (#1278).
+///
+/// Ordering mirrors the K2 envelope: save before the body so the cut is covered
+/// too, restore before the park so a raise during BOX_MOVE_TO_SAFE_POS still
+/// leaves the fan in the caller's state.
+///
+/// `body` carries everything between CHECK_MATERIAL and the restore/park tail,
 /// including each builder's own positioning (BOX_GO_TO_EXTRUDE_POS) and wipe
 /// (BOX_NOZZLE_CLEAN) — load wipes after the feed, swap wipes before it, and
-/// unload has neither, so those steps live in the body rather than the
-/// envelope. The emitted string is byte-identical to the prior inline literals.
+/// unload has neither, so those steps live in the body rather than the envelope.
+///
+/// Klipper macros have no try/finally: if the body raises, the restore lines are
+/// skipped. The best-effort unwind in `dispatch_action_script`'s on_error path
+/// covers that, and now runs BOX_RESTORE_FAN on K1 as well as K2.
 std::string wrap_with_envelope_k1(const std::string& body) {
     return "SAVE_GCODE_STATE NAME=helix_cfs_load\n"
+           "BOX_SAVE_FAN\n"
            "BOX_ERROR_CLEAR\n"
            "BOX_CHECK_MATERIAL\n" +
            body +
-           "\nBOX_MOVE_TO_SAFE_POS\n"
+           "\nBOX_RESTORE_FAN\n"
+           "BOX_MOVE_TO_SAFE_POS\n"
            "RESTORE_GCODE_STATE NAME=helix_cfs_load";
 }
 
@@ -2127,8 +2155,9 @@ std::string AmsBackendCfs::load_gcode(int idx, CfsMacroVariant variant) {
         // steps follow the firmware's BOX_LOAD_MATERIAL_WITHOUT_MATERIAL chain
         //   (M104 → CHECK_MATERIAL → EXTRUDE → EXTRUDER_EXTRUDE → FLUSH),
         // but this is not a literal mirror of it: we carry explicit TNN= on the
-        // two commands that take it (the box's bare-macro "current TN" set via
-        // BOX_MODIFY_TN no-ops on K1, per the reporter), and BOX_GO_TO_EXTRUDE_POS
+        // two commands that take it, rather than relying on the box's implicit
+        // "current TN" — addressing the slot explicitly is what keeps this
+        // independent of Tnn_map state), and BOX_GO_TO_EXTRUDE_POS
         // plus the trailing BOX_NOZZLE_CLEAN are ours — the WITHOUT_MATERIAL
         // macro has neither. Both commands are defined in box.cfg and used by
         // the WITH_MATERIAL chain.
@@ -2280,17 +2309,20 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
             // when no save exists because SAVE never ran) doesn't block
             // the other. Worst case: cleanup is a no-op.
             if (api_) {
-                // BOX_RESTORE_FAN only exists on K2 firmware (and only the K2
-                // envelope ran BOX_SAVE_FAN). The K1 official CFS upgrade
-                // firmware lacks the macro and never saved fan state, so emitting
-                // it there just returns key61 — skip it on K1. (#968)
+                // BOX_RESTORE_FAN exists on BOTH K1 and K2, and both envelopes
+                // now run BOX_SAVE_FAN, so both need the unwind. This was gated
+                // to K2 only while we believed K1 lacked the command; symbol
+                // grep of box_wrapper.cpython-38-mipsel-linux-gnu.so in
+                // CR4CU220812S11_ota_img_V2.3.5.34 disproved that (#1278).
+                // The Fork dialect is the real exception — it reimplements the
+                // box in Python and defines no fan macros at all.
                 //
                 // Both unwind sends declare caller_surfaces_errors=false: the
                 // empty error callbacks report nothing, and failure here is
                 // EXPECTED (a RESTORE_GCODE_STATE with no prior SAVE is an
                 // error by design), so GcodeErrorRouter must stay free to
                 // decide rather than dedup against a report nobody made.
-                if (macro_variant_ == CfsMacroVariant::K2) {
+                if (macro_variant_ != CfsMacroVariant::Fork) {
                     api_->execute_gcode(
                         "BOX_RESTORE_FAN", []() {}, [](const MoonrakerError&) {},
                         IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS, /*silent=*/false,
@@ -2530,9 +2562,27 @@ AmsBackendCfs::classify_error(const std::string& raw_line,
     // this: matching a fragment survives the surrounding sentence being reworded
     // ("no identical supplies" / "there are no identical supplies", "disable
     // material automatic refill" / "material automatic refill is disabled").
+    // All four literals below were read directly out of
+    // box_wrapper.cpython-38-mipsel-linux-gnu.so in CR4CU220812S11_ota_img_
+    // V2.3.5.34, so these are the firmware's exact words, not guesses.
     const bool no_matching_spool = helix::contains_ci(detail, "identical suppl");
+    // Two spellings for "auto-refill did not run": the long-form
+    // "disable material automatic refill" and the terse "no auto refill".
+    // The latter shares no fragment with the former — it says "auto refill",
+    // not "automatic refill", and never says "disab" — so it needs its own arm.
     const bool refill_disabled =
-        helix::contains_ci(detail, "automatic refill") && helix::contains_ci(detail, "disab");
+        (helix::contains_ci(detail, "automatic refill") && helix::contains_ci(detail, "disab")) ||
+        helix::contains_ci(detail, "no auto refill");
+    // Third give-up path. The wrapper HAS a same_material group for the
+    // exhausted slot, but no member of it currently reports material at its
+    // sensor — so there is nothing to switch to even though the printer is
+    // configured correctly. Different cause and different user fix from
+    // no_matching_spool, which means no compatible group exists at all.
+    //
+    // Note this string contains none of the fragments above and not even
+    // "refill", so before this branch existed it fell through every tier
+    // including the weak one: the print paused with no modal at all.
+    const bool no_tray_available = helix::contains_ci(detail, "tray with ingredient");
 
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -2542,11 +2592,11 @@ AmsBackendCfs::classify_error(const std::string& raw_line,
     // says there is no filament at the gate (filament_useup / the flat schema's
     // `runout`) and the job is paused. Weaker evidence, so it surfaces the
     // firmware's own words rather than a claim about which give-up path ran.
-    const bool weak_refill_hint = !no_matching_spool && !refill_disabled &&
+    const bool weak_refill_hint = !no_matching_spool && !refill_disabled && !no_tray_available &&
                                   helix::contains_ci(detail, "refill") &&
                                   system_info_.filament_runout;
 
-    if (!no_matching_spool && !refill_disabled && !weak_refill_hint) {
+    if (!no_matching_spool && !refill_disabled && !no_tray_available && !weak_refill_hint) {
         return std::nullopt;
     }
 
@@ -2557,13 +2607,18 @@ AmsBackendCfs::classify_error(const std::string& raw_line,
     } else if (refill_disabled) {
         message = lv_tr("Filament ran out. Auto-refill is off, so the CFS will not switch "
                         "spools on its own. Load filament, then resume.");
+    } else if (no_tray_available) {
+        message = lv_tr("Filament ran out. The CFS knows which spools match, but those slots "
+                        "are empty. Load one of them, then resume.");
     } else {
         message = detail;
     }
 
-    spdlog::warn("{} Runout: CFS declined to auto-refill ({}): {}", backend_log_tag(),
-                 no_matching_spool ? "no matching spool"
-                                   : (refill_disabled ? "auto-refill off" : "unrecognized wording"),
+    const char* reason = no_matching_spool   ? "no matching spool"
+                         : refill_disabled   ? "auto-refill off"
+                         : no_tray_available ? "matching slots empty"
+                                             : "unrecognized wording";
+    spdlog::warn("{} Runout: CFS declined to auto-refill ({}): {}", backend_log_tag(), reason,
                  detail);
 
     helix::ErrorEvent e = helix::make_ams_fault_event(
@@ -2599,11 +2654,15 @@ std::vector<int> AmsBackendCfs::get_tool_mapping() const {
 }
 
 bool AmsBackendCfs::reports_firmware_tool_mapping() const {
-    // Everywhere except the K1 official CFS upgrade firmware, where
-    // BOX_MODIFY_TN is a confirmed no-op (#968 Phase 5): the command is
-    // accepted and nothing changes, so no box frame with a new map ever
-    // arrives. Claiming confirmation support there would leave a restore
-    // waiting forever and strand pending_remap.json (#1270).
+    // Everywhere except the K1 official CFS upgrade firmware, which publishes no
+    // `map` field in its box status — so no frame confirming a remap ever
+    // arrives. Claiming confirmation support there would leave a restore waiting
+    // forever and strand pending_remap.json (#1270).
+    //
+    // This is about the STATUS surface, not the command: BOX_MODIFY_TN itself
+    // works on K1 (it persists tnn_map and the firmware's T0-T15 path reads it).
+    // The two were conflated while we believed the command was a no-op; the
+    // behaviour here is unchanged and still correct, only the reason is.
     return macro_variant_ != CfsMacroVariant::K1;
 }
 

@@ -2882,21 +2882,33 @@ A `Flat` box whose module we cannot identify still has its control paths refused
 > 5 help strings against 69 handlers — roughly 64 commands are executable and invisible to help. Only a
 > symbol grep of the `.so` settles presence.
 >
-> Consequence: the K1 envelope below omits fan-save on a false premise, so K1 CFS operations do not
-> suppress part-cooling even though the firmware supports it. Tracked in prestonbrown/helixscreen#1278.
+> This has been **fixed**: the K1 envelope now emits `BOX_SAVE_FAN`/`BOX_RESTORE_FAN`, and the
+> `dispatch_action_script` error unwind (gated to K2 for the same wrong reason) runs on K1 too.
+> Re-confirmed against the extension a second time on 2026-08-16.
 
 ### Macro dialect comparison
 
 | Operation | K2 emission | K1 emission |
 |-----------|-------------|-------------|
-| Envelope open | `SAVE_GCODE_STATE` → `BOX_SAVE_FAN` → `BOX_GO_TO_EXTRUDE_POS` → `BOX_MODE_WAIT` | `SAVE_GCODE_STATE` → `BOX_GO_TO_EXTRUDE_POS` |
+| Envelope open | `SAVE_GCODE_STATE` → `BOX_SAVE_FAN` → `BOX_GO_TO_EXTRUDE_POS` → `BOX_MODE_WAIT` | `SAVE_GCODE_STATE` → `BOX_SAVE_FAN` → `BOX_ERROR_CLEAR` → `BOX_CHECK_MATERIAL` |
 | Load slot N | `CR_BOX_PRE_OPT` → `CR_BOX_EXTRUDE TNN=…` → `CR_BOX_WASTE` → `CR_BOX_FLUSH TNN=…` → `CR_BOX_END_OPT` | `BOX_EXTRUDE_MATERIAL TNN=…` → `BOX_EXTRUDER_EXTRUDE TNN=…` → `BOX_MATERIAL_FLUSH` |
 | Unload current | `CR_BOX_PRE_OPT` → `CR_BOX_CUT` → `BOX_MODE_WAIT` → `CR_BOX_RETRUDE` → `CR_BOX_END_OPT` | `BOX_CUT_MATERIAL` → `BOX_RETRUDE_MATERIAL` |
-| Envelope close (with wipe) | `BOX_NOZZLE_CLEAN` → `BOX_RESTORE_FAN` → `BOX_MOVE_TO_SAFE_POS` → `RESTORE_GCODE_STATE` | `BOX_NOZZLE_CLEAN` → `BOX_MOVE_TO_SAFE_POS` → `RESTORE_GCODE_STATE` |
-| Tool remap | `BOX_MODIFY_TN T<src>=T<dst>` | (same — assumed; needs field confirmation) |
-| Color sync | `BOX_MODIFY_TN_DATA ADDR=… NUM=… PART=color_value DATA=0RRGGBB` | (same — assumed; needs field confirmation) |
+| Envelope close (with wipe) | `BOX_NOZZLE_CLEAN` → `BOX_RESTORE_FAN` → `BOX_MOVE_TO_SAFE_POS` → `RESTORE_GCODE_STATE` | `BOX_NOZZLE_CLEAN` → `BOX_RESTORE_FAN` → `BOX_MOVE_TO_SAFE_POS` → `RESTORE_GCODE_STATE` |
+| Tool remap | `BOX_MODIFY_TN T<src>=T<dst>` | (same syntax — but **inert as we use it**, see below) |
+| Color sync | `BOX_MODIFY_TN_DATA ADDR=… NUM=… PART=color_value DATA=0RRGGBB` | (same — `PART` names match the `tn_data.json` fields) |
 
-The K1 envelope is intentionally shorter — `BOX_SAVE_FAN` / `BOX_RESTORE_FAN` / `BOX_MODE_WAIT` are not exposed by the K1 CFS firmware (verified absent in the public K1-Max box.cfg dump at [DieDutchman/K1-Max-KAMP-CFS-Fix](https://github.com/DieDutchman/K1-Max-KAMP-CFS-Fix/blob/main/Config_Files/box.cfg) and from the #968 reporter's gcode/help output). Emitting them on K1 would surface as `key61 Unknown command`.
+The K1 envelope is shorter only because `BOX_MODE_WAIT` does not exist on K1 — verified by
+symbol grep, which finds it nowhere in the extension. `BOX_SAVE_FAN`/`BOX_RESTORE_FAN` are
+present on both families and are now emitted on both.
+
+> **`BOX_MODIFY_TN` is not broken on K1 — our use of it is.** The command writes the remap
+> table and persists all 16 keys to `tn_data.json` exactly as documented; it just prints
+> nothing, which is why the #968 reporter read it as a no-op. The real problem is that
+> **only the firmware's own `T0`–`T15` / `T1A`–`T4D` entrypoints read `Tnn_map`.** We emit
+> `BOX_EXTRUDE_MATERIAL TNN=<physical>` directly, bypassing the mapping layer, so a remap we
+> write can never take effect. Whether K2's module behaves the same way is unverified — our
+> K2 remap may be inert for the same reason. Mechanism and options:
+> [CREALITY_CFS_INTERNALS.md § Tool remap](CREALITY_CFS_INTERNALS.md#tool-remap-box_modify_tn).
 
 ### Implementation
 
@@ -2945,7 +2957,43 @@ cannot work.
 
 ### Known limitations on K1
 
-- `BOX_MODIFY_TN` (tool remap) and `BOX_MODIFY_TN_DATA` (color sync) are emitted with the same syntax on K1 — neither has been field-validated.
+Full mechanism for each of these, with sources and evidence tiers:
+**[CREALITY_CFS_INTERNALS.md](CREALITY_CFS_INTERNALS.md)**.
+
+The full `BOX_*` command surface has since been read directly out of the shipped extension in
+`CR4CU220812S11_ota_img_V2.3.5.34`, so the items below rest on the artifact rather than on
+inference.
+
+**Fixed:**
+
+- ~~Part-cooling ran through every K1 operation.~~ `BOX_SAVE_FAN`/`BOX_RESTORE_FAN` do exist on
+  K1 and are now in the K1 envelope, along with the matching error-unwind (#1278).
+- ~~Two runout give-up wordings were unmatched.~~ There are **four** literals, not two;
+  `no tray with ingredients found` and `no auto refill` both fell through every tier, so those
+  paths paused the print with no modal at all. Both now matched.
+- ~~`BOX_MODIFY_TN` no-ops on K1.~~ It does not. It persists silently and applies to the
+  slicer's `T0`-`T15`, which is the entrypoint that resolves `Tnn_map`. Comments corrected in
+  three places; behaviour was already right.
+
+**Still open:**
+
+- **No phase verification.** Every K1 primitive records/queues errors rather than failing at
+  the failing command, so a whole sequence can return success while the load did not happen.
+  The firmware documentation is explicit that a wrapper composing primitives must verify
+  visible state (filament sensor, loaded slot, box mode) after each critical phase. We do not.
+- **`BOX_ERROR_CLEAR` opening every sequence discards queued retry work.** The paired
+  recovery command we never emit is `BOX_TNN_RETRY_PROCESS`.
+- **Resume silently swallows the entire K1 body.** Seven commands — including
+  `BOX_EXTRUDE_MATERIAL`, `BOX_CUT_MATERIAL`, `BOX_MATERIAL_FLUSH` — log a warning and do
+  nothing during resume handling. `BOX_RESUME_EXTRUDE` is the dedicated path.
+- **Swap flush is a deliberate choice, not a bug.** `swap_gcode()` emits a bare
+  `BOX_MATERIAL_FLUSH`, matching the firmware's own `BOX_LOAD_MATERIAL_WITH_MATERIAL` macro.
+  The colour-aware `BOX_MATERIAL_CHANGE_FLUSH LAST_TNN=<old> TNN=<new>` exists and is what the
+  internal `T*` path uses, but adopting it changes purge length on unowned hardware and adds a
+  blockage failure mode — gated on #1278.
+- `BOX_MODIFY_TN_DATA` (color sync) syntax is confirmed correct — `PART` values are the
+  `tn_data.json` field names. Material-type writeback is unblocked *except* for the
+  `material_type` value domain, which is still unknown.
 - `BOX_LOAD_MATERIAL_WITH_MATERIAL` and `BOX_QUIT_MATERIAL` (K1 high-level orchestrators) are not used; HelixScreen drives the primitives directly to keep behavior parallel between the two backends.
 - Bed-area shrink for the rear-mounted K1 CFS upgrade (~5 mm Y) is not yet applied via the printer database.
 - Hardware validation for K1/K1C is pending — track via [#968](https://github.com/prestonbrown/helixscreen/issues/968).

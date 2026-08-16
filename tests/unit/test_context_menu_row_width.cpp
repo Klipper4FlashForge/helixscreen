@@ -24,11 +24,11 @@
  *    backdrop. The x path always clamped in the safe order; y did not.
  */
 
-#include "ui_ams_context_menu.h"
 #include "ui_context_menu.h"
 
 #include "../test_fixtures.h"
 #include "ams_state.h"
+#include "ui_ams_context_menu.h"
 #include "theme_manager.h"
 
 #include <algorithm>

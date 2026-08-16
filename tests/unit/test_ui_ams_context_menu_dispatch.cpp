@@ -17,12 +17,12 @@
  * panel-specific ones are declined so each panel's own switch still sees them.
  */
 
-#include "ui_ams_context_menu.h"
 #include "ui_ams_detail.h"
 
 #include "../lvgl_ui_test_fixture.h"
 #include "ams_backend_mock.h"
 #include "ams_state.h"
+#include "ui_ams_context_menu.h"
 
 #include <cstddef>
 #include <memory>
