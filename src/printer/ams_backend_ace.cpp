@@ -334,6 +334,8 @@ AmsError AmsBackendAce::do_load_filament(int slot_index) {
             });
         },
         [this, token, gcode](const MoonrakerError& err) {
+            // Log + reset to IDLE only — nothing here reaches the user, so the
+            // execute_gcode() call below declares caller_surfaces_errors=false.
             token.defer("AmsBackendAce::load_err", [this, err, gcode]() {
                 if (err.type == MoonrakerErrorType::TIMEOUT) {
                     spdlog::warn("[ACE] Load gcode timed out (may still be running): {}", gcode);
@@ -347,7 +349,11 @@ AmsError AmsBackendAce::do_load_filament(int slot_index) {
                 emit_event(EVENT_STATE_CHANGED);
             });
         },
-        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS, /*silent=*/false, /*on_queued=*/nullptr,
+        // See include/rpc_error_policy.h: a log-only error callback that claims
+        // the report silences GcodeErrorRouter's `!!` copy, which is the only
+        // surface that would have told the user the load failed.
+        /*caller_surfaces_errors=*/false);
 
     return AmsErrorHelper::success();
 }
@@ -389,6 +395,8 @@ AmsError AmsBackendAce::do_unload_filament(int /*slot_index*/) {
             });
         },
         [this, token, gcode](const MoonrakerError& err) {
+            // Log + reset to IDLE only — nothing here reaches the user, so the
+            // execute_gcode() call below declares caller_surfaces_errors=false.
             token.defer("AmsBackendAce::unload_err", [this, err, gcode]() {
                 if (err.type == MoonrakerErrorType::TIMEOUT) {
                     spdlog::warn("[ACE] Unload gcode timed out (may still be running): {}", gcode);
@@ -402,7 +410,9 @@ AmsError AmsBackendAce::do_unload_filament(int /*slot_index*/) {
                 emit_event(EVENT_STATE_CHANGED);
             });
         },
-        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS, /*silent=*/false, /*on_queued=*/nullptr,
+        // Same reasoning as the load path above — see include/rpc_error_policy.h.
+        /*caller_surfaces_errors=*/false);
 
     return AmsErrorHelper::success();
 }

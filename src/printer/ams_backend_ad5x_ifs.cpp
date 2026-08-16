@@ -4025,7 +4025,11 @@ void AmsBackendAd5xIfs::query_zcolor_silent() {
                 zcolor_query_active_.store(false);
             });
         },
-        /*timeout_ms=*/0, /*silent=*/true);
+        /*timeout_ms=*/0, /*silent=*/true, /*on_queued=*/nullptr,
+        // The error callback logs and re-arms the poll; it shows the user
+        // nothing. Recording it for dedup would mute GcodeErrorRouter's `!!`
+        // copy of a real GET_ZCOLOR rejection. See include/rpc_error_policy.h.
+        /*caller_surfaces_errors=*/false);
 }
 
 void AmsBackendAd5xIfs::finalize_zcolor_response() {

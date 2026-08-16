@@ -173,8 +173,12 @@ class IMoonrakerAPI {
     // ========================================================================
 
     /// @brief Set target temperature for a heater
+    /// @param caller_surfaces_errors Whether @p on_error actually shows the user
+    ///        something. Forwarded to execute_gcode() — see its contract and
+    ///        include/rpc_error_policy.h. Pass false when the callback only logs.
     virtual void set_temperature(const std::string& heater, double temperature,
-                                 SuccessCallback on_success, ErrorCallback on_error) = 0;
+                                 SuccessCallback on_success, ErrorCallback on_error,
+                                 bool caller_surfaces_errors = true) = 0;
 
     /// @brief Set fan speed (0-100)
     virtual void set_fan_speed(const std::string& fan, double speed, SuccessCallback on_success,
@@ -183,9 +187,13 @@ class IMoonrakerAPI {
     /// @brief Set LED color/brightness
     /// @param on_queued Optional "queued behind a blocking op" disposition — see
     ///        execute_gcode() on MoonrakerAPI for the full contract.
+    /// @param caller_surfaces_errors Whether @p on_error actually shows the user
+    ///        something. Forwarded to execute_gcode() — see its contract and
+    ///        include/rpc_error_policy.h. Pass false when the callback only logs.
     virtual void set_led(const std::string& led, double red, double green, double blue,
                          double white, SuccessCallback on_success, ErrorCallback on_error,
-                         SuccessCallback on_queued = nullptr) = 0;
+                         SuccessCallback on_queued = nullptr,
+                         bool caller_surfaces_errors = true) = 0;
 
     // ========================================================================
     // System Control
@@ -195,9 +203,14 @@ class IMoonrakerAPI {
     /// @param on_queued Optional third disposition, fired when a discretionary
     ///        command was accepted to run behind a blocking op and its RPC
     ///        response was dropped. Runs SYNCHRONOUSLY on the calling thread.
+    /// @param caller_surfaces_errors Whether @p on_error actually shows the user
+    ///        something. Pass false when it only logs — a spdlog line is not a
+    ///        report, and claiming otherwise silences Klipper's `!!` broadcast,
+    ///        the surface that would have explained the failure.
     virtual void execute_gcode(const std::string& gcode, SuccessCallback on_success,
                                ErrorCallback on_error, uint32_t timeout_ms = 0, bool silent = false,
-                               SuccessCallback on_queued = nullptr) = 0;
+                               SuccessCallback on_queued = nullptr,
+                               bool caller_surfaces_errors = true) = 0;
 
     /// @brief Check if a string is safe to use as a G-code parameter
     static bool is_safe_gcode_param(const std::string& str);

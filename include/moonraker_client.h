@@ -261,12 +261,17 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * @param error_cb Callback for errors (timeout, JSON-RPC error, etc.)
      * @param timeout_ms Optional timeout override (0 = use default)
      * @param silent If true, don't emit RPC_ERROR events (for internal probes)
+     * @param intent Explicit error-reporting intent (include/rpc_error_policy.h),
+     *        captured from the CALLER's own callbacks before any internal
+     *        wrapping. Omit it to have the tracker infer intent from @p silent
+     *        and the presence of @p error_cb.
      * @return Request ID for cancellation, or INVALID_REQUEST_ID on error
      */
-    RequestId send_jsonrpc(const std::string& method, const json& params,
-                           std::function<void(const json&)> success_cb,
-                           std::function<void(const MoonrakerError&)> error_cb,
-                           uint32_t timeout_ms = 0, bool silent = false) override;
+    RequestId send_jsonrpc(
+        const std::string& method, const json& params, std::function<void(const json&)> success_cb,
+        std::function<void(const MoonrakerError&)> error_cb, uint32_t timeout_ms = 0,
+        bool silent = false,
+        std::optional<helix::rpc_error_policy::CallerIntent> intent = std::nullopt) override;
 
     /**
      * @brief Cancel a pending JSON-RPC request

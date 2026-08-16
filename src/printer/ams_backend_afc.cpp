@@ -4860,7 +4860,11 @@ void AmsBackendAfc::dispatch_lane_unload(const std::string& lane_name) {
                 on_lane_unload_done();
             });
         },
-        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS, /*silent=*/false, /*on_queued=*/nullptr,
+        // The error callback logs and pumps the eject queue; it shows the user
+        // nothing, so GcodeErrorRouter keeps the report for a rejected
+        // LANE_UNLOAD. See include/rpc_error_policy.h.
+        /*caller_surfaces_errors=*/false);
 }
 
 void AmsBackendAfc::on_lane_unload_done() {

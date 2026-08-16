@@ -9970,9 +9970,14 @@ TEST_CASE("AD5X IFS: an empty first material observation is a baseline, not a sp
 // The macro completes fine, but the RPC times out at 300s and — unless silent —
 // surfaces a false "printer.gcode.script timed out after 300000ms" toast. The
 // backend owns completion via its phase tracker + IFS_STATUS, so the RPC timeout
-// is advisory here. execute_gcode() must dispatch silent=true (suppress ONLY the
-// timeout toast; genuine RPC-error toasts stay suppressed via the error_cb
-// caller_handles_ui path) while leaving the 300s ceiling unchanged.
+// is advisory here. execute_gcode() must dispatch silent=true (suppress the
+// timeout toast and the tracker's generic fallback) while leaving the 300s
+// ceiling unchanged.
+//
+// It must ALSO declare caller_surfaces_errors=false: the backend's error_cb only
+// writes to the log, which the user never sees. Claiming otherwise would record
+// the message for dedup and silence GcodeErrorRouter, leaving a real IFS macro
+// rejection with no surface at all. See include/rpc_error_policy.h.
 // ==========================================================================
 
 TEST_CASE("AD5X IFS execute_gcode dispatches silent with the AMS timeout ceiling",
@@ -9999,6 +10004,10 @@ TEST_CASE("AD5X IFS execute_gcode dispatches silent with the AMS timeout ceiling
         REQUIRE(client.last_send_silent() == true);
         // Ceiling unchanged — proves we did NOT alter AMS_OPERATION_TIMEOUT_MS.
         REQUIRE(client.last_send_timeout_ms() == 300000u);
+        // The log-only error_cb must NOT claim the report, or the `!!` router
+        // goes quiet for every AFC / Happy Hare / CFS / IFS macro rejection.
+        REQUIRE(client.current_send_intent().silent == true);
+        REQUIRE(client.current_send_intent().surfaces_errors == false);
     }
 
     SECTION("on_complete execute_gcode overload") {
@@ -10010,6 +10019,8 @@ TEST_CASE("AD5X IFS execute_gcode dispatches silent with the AMS timeout ceiling
         REQUIRE(client.last_send_method() == "printer.gcode.script");
         REQUIRE(client.last_send_silent() == true);
         REQUIRE(client.last_send_timeout_ms() == 300000u);
+        REQUIRE(client.current_send_intent().silent == true);
+        REQUIRE(client.current_send_intent().surfaces_errors == false);
     }
 }
 

@@ -425,6 +425,8 @@ class MoonrakerAdvancedAPI : public IAdvancedAPI {
      * @param params Parameter map (e.g., {"TEMP": "210"})
      * @param on_success Called when macro execution starts
      * @param on_error Called on failure
+     * @param suppress_auto_toast Maps to helix::rpc_error_policy::CallerIntent::silent
+     *        — opts out of the tracker's generic fallback toast, nothing more.
      */
     void execute_macro(const std::string& name, const std::map<std::string, std::string>& params,
                        SuccessCallback on_success, ErrorCallback on_error, uint32_t timeout_ms = 0,
@@ -504,9 +506,15 @@ class MoonrakerAdvancedAPI : public IAdvancedAPI {
      * @param freq_hz Strobe frequency in Hz, 0 to turn off
      * @param on_success Called on success
      * @param on_error Called on failure
+     * @param caller_surfaces_errors Whether @p on_error actually shows the user
+     *        something. Forwarded to execute_gcode() — see its contract and
+     *        include/rpc_error_policy.h. Pass false when the callback only logs.
+     *        Default must stay in sync with IAdvancedAPI's declaration: default
+     *        arguments on virtuals resolve from the static type.
      */
     void set_strobe_frequency(const std::string& pin_name, float freq_hz,
-                              SuccessCallback on_success, ErrorCallback on_error) override;
+                              SuccessCallback on_success, ErrorCallback on_error,
+                              bool caller_surfaces_errors = true) override;
 
     /**
      * @brief Download raw accelerometer CSV from Klipper data store

@@ -1306,6 +1306,39 @@ fi
 echo ""
 
 SECTION_START=$(date +%s)
+echo -n "⏱️  Checking gcode error ownership..."
+
+if [ -f "scripts/check_gcode_error_ownership.py" ]; then
+  # Hard gate at zero. execute_gcode's caller_surfaces_errors means "my on_error
+  # actually SHOWS a human something". Claiming it falsely makes the request
+  # tracker record the rejection for cross-channel dedup, and GcodeErrorRouter
+  # then suppresses its own report of Klipper's `!!` broadcast — so a failed
+  # macro is reported by NOBODY. It is invisible in review because the call site
+  # looks handled: there IS an error callback, it just writes to a log. Pass
+  # caller_surfaces_errors=false on a log-only callback, or annotate a genuine
+  # exception with // ERROR_OWNERSHIP_OK: <reason>. See include/rpc_error_policy.h.
+  if python3 scripts/check_gcode_error_ownership.py --max-allowed 0 --summary \
+      >/tmp/gcode_err_own.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/gcode_err_own.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/gcode_err_own.out
+    echo "   Run: python3 scripts/check_gcode_error_ownership.py --list"
+    echo "   A log-only error callback must pass caller_surfaces_errors=false."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_gcode_error_ownership.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
 echo -n "⏱️  Checking timer destructor cancels..."
 
 if [ -f "scripts/check_timer_destructor_cancel.py" ]; then

@@ -2275,15 +2275,24 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
                 // envelope ran BOX_SAVE_FAN). The K1 official CFS upgrade
                 // firmware lacks the macro and never saved fan state, so emitting
                 // it there just returns key61 — skip it on K1. (#968)
+                //
+                // Both unwind sends declare caller_surfaces_errors=false: the
+                // empty error callbacks report nothing, and failure here is
+                // EXPECTED (a RESTORE_GCODE_STATE with no prior SAVE is an
+                // error by design), so GcodeErrorRouter must stay free to
+                // decide rather than dedup against a report nobody made.
                 if (macro_variant_ == CfsMacroVariant::K2) {
                     api_->execute_gcode(
                         "BOX_RESTORE_FAN", []() {}, [](const MoonrakerError&) {},
-                        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS, /*silent=*/false,
+                        /*on_queued=*/nullptr, /*caller_surfaces_errors=*/false);
                 }
                 if (macro_variant_ != CfsMacroVariant::Fork) {
                     api_->execute_gcode(
                         "RESTORE_GCODE_STATE NAME=helix_cfs_load", []() {},
-                        [](const MoonrakerError&) {}, IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                        [](const MoonrakerError&) {}, IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+                        /*silent=*/false, /*on_queued=*/nullptr,
+                        /*caller_surfaces_errors=*/false);
                 }
             }
         });
@@ -2292,10 +2301,15 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
     // Homing, timeout, error plumbing and the Fork bypass all live in the base
     // helper now. What stays here is CFS's own unwind: phase tracking, the K2
     // fan restore, and RESTORE_GCODE_STATE.
+    // caller_surfaces_errors=false: on_error above only logs, unwinds phase
+    // tracking and fires cleanup gcode — nothing the user ever sees. Claiming
+    // the report would record the rejection for dedup and silence
+    // GcodeErrorRouter's `!!` copy, which is the only surface left. See
+    // include/rpc_error_policy.h.
     return ensure_homed_then(std::move(gcode), std::move(on_complete), std::move(on_error),
                              IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
                              /*skip_homing=*/macro_variant_ == CfsMacroVariant::Fork,
-                             /*silent=*/false);
+                             /*silent=*/false, /*caller_surfaces_errors=*/false);
 }
 
 // ============================================================================

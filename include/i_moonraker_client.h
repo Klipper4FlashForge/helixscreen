@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -101,10 +102,16 @@ class IMoonrakerClient {
                                    std::function<void(const json&)> cb) = 0;
 
     /// @brief Send JSON-RPC request with success and error callbacks
-    virtual RequestId send_jsonrpc(const std::string& method, const json& params,
-                                   std::function<void(const json&)> success_cb,
-                                   std::function<void(const MoonrakerError&)> error_cb,
-                                   uint32_t timeout_ms = 0, bool silent = false) = 0;
+    /// @param intent Explicit error-reporting intent (include/rpc_error_policy.h),
+    ///        captured from the CALLER's own callbacks before any internal
+    ///        wrapping. Omit it to have the tracker infer intent from @p silent
+    ///        and the presence of @p error_cb.
+    virtual RequestId
+    send_jsonrpc(const std::string& method, const json& params,
+                 std::function<void(const json&)> success_cb,
+                 std::function<void(const MoonrakerError&)> error_cb, uint32_t timeout_ms = 0,
+                 bool silent = false,
+                 std::optional<helix::rpc_error_policy::CallerIntent> intent = std::nullopt) = 0;
 
     /// @brief Send G-code script command
     virtual int gcode_script(const std::string& gcode) = 0;

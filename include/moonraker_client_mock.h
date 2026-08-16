@@ -328,12 +328,16 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      * @param error_cb Error callback (not invoked in mock)
      * @param timeout_ms Timeout (ignored in mock)
      * @param silent Silent mode (ignored in mock)
+     * @param intent Explicit error-reporting intent (include/rpc_error_policy.h).
+     *        Omitted, it is inferred from @p silent and the presence of
+     *        @p error_cb, exactly as MoonrakerRequestTracker::send() does.
      * @return Always returns 0 (success)
      */
-    helix::RequestId send_jsonrpc(const std::string& method, const json& params,
-                                  std::function<void(const json&)> success_cb,
-                                  std::function<void(const MoonrakerError&)> error_cb,
-                                  uint32_t timeout_ms = 0, bool silent = false) override;
+    helix::RequestId send_jsonrpc(
+        const std::string& method, const json& params, std::function<void(const json&)> success_cb,
+        std::function<void(const MoonrakerError&)> error_cb, uint32_t timeout_ms = 0,
+        bool silent = false,
+        std::optional<helix::rpc_error_policy::CallerIntent> intent = std::nullopt) override;
 
     /**
      * @brief Simulate G-code script command
@@ -1004,6 +1008,17 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         return last_send_silent_;
     }
 
+    /// Error-reporting intent of the send currently being dispatched into the
+    /// method-handler registry. Those handlers run inline inside send_jsonrpc()
+    /// and never reach MoonrakerRequestTracker, so they read this to make the
+    /// same helix::rpc_error_policy::decide() call the tracker makes on real
+    /// hardware — otherwise mock and hardware drift on who reports an error.
+    /// It keeps the last dispatched value, so tests can also read it after the
+    /// call to assert what intent a caller declared.
+    const helix::rpc_error_policy::CallerIntent& current_send_intent() const {
+        return current_send_intent_;
+    }
+
     /// Test inspection: the most recent RPC method name passed to the 5-arg send_jsonrpc().
     const std::string& last_send_method() const {
         return last_send_method_;
@@ -1111,6 +1126,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     std::string last_send_script_; // `script` param when method == printer.gcode.script
     uint32_t last_send_timeout_ms_{0};
     bool last_send_silent_{false};
+
+    // Intent of the in-flight send_jsonrpc() dispatch, read by the method
+    // handlers via current_send_intent().
+    helix::rpc_error_policy::CallerIntent current_send_intent_{};
 
     // One-shot forced error injection for printer.gcode.script (test helper).
     struct ForcedGcodeError {

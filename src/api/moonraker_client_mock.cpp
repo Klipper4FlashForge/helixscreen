@@ -1355,9 +1355,15 @@ RequestId MoonrakerClientMock::send_jsonrpc(const std::string& method, const jso
 RequestId MoonrakerClientMock::send_jsonrpc(const std::string& method, const json& params,
                                             std::function<void(const json&)> success_cb,
                                             std::function<void(const MoonrakerError&)> error_cb,
-                                            uint32_t timeout_ms, bool silent) {
+                                            uint32_t timeout_ms, bool silent,
+                                            std::optional<rpc_error_policy::CallerIntent> intent) {
     spdlog::trace("[MoonrakerClientMock] Mock send_jsonrpc: {} (with success/error callbacks)",
                   method);
+
+    // Same fallback inference MoonrakerRequestTracker::send() applies, so a
+    // handler asking rpc_error_policy::decide() gets the hardware answer.
+    current_send_intent_ =
+        intent.value_or(rpc_error_policy::CallerIntent{silent, error_cb != nullptr});
 
     // Capture for test inspection — used by tests verifying that specific callers pass
     // non-default timeout/silent values (e.g. exclude_object which must be silent+long).

@@ -1998,8 +1998,13 @@ void MoonrakerAdvancedAPI::execute_macro(const std::string& name,
 
     // Default to MACRO_TIMEOUT_MS (5 min) — user macros can do anything
     uint32_t effective_timeout = timeout_ms > 0 ? timeout_ms : MoonrakerAPI::MACRO_TIMEOUT_MS;
+    // suppress_auto_toast is CallerIntent::silent: it opts out of the tracker's
+    // generic fallback toast and nothing else. Whether the `!!` broadcast dedups
+    // follows from on_error being a real user-facing report, which is the
+    // default for macro callers (see rpc_error_policy.h).
     api_.execute_gcode(gcode_str, std::move(on_success), std::move(on_error), effective_timeout,
-                       /*silent=*/suppress_auto_toast);
+                       /*silent=*/suppress_auto_toast, /*on_queued=*/nullptr,
+                       /*caller_surfaces_errors=*/true);
 }
 
 std::vector<MacroInfo> MoonrakerAdvancedAPI::get_user_macros(bool /*include_system*/) const {
@@ -2327,6 +2332,11 @@ void MoonrakerAdvancedAPI::test_belt_resonance(const std::string& axis_param,
     std::string gcode =
         fmt::format("TEST_RESONANCES AXIS={} OUTPUT=raw_data NAME={}", axis_param, output_name);
 
+    // Captured before the forwarding wrapper below, which is non-null on every
+    // call. Reading it after would report our own logging as a caller promise
+    // and silence GcodeErrorRouter's `!!` copy of the same rejection.
+    const bool caller_surfaces = (on_error != nullptr);
+
     api_.execute_gcode(
         gcode,
         [output_name, on_complete]() {
@@ -2340,7 +2350,8 @@ void MoonrakerAdvancedAPI::test_belt_resonance(const std::string& axis_param,
             if (on_error)
                 on_error(err);
         },
-        BELT_TENSION_TIMEOUT_MS);
+        BELT_TENSION_TIMEOUT_MS, /*silent=*/false, /*on_queued=*/nullptr,
+        /*caller_surfaces_errors=*/caller_surfaces);
 }
 
 void MoonrakerAdvancedAPI::excite_belt_at_frequency(const std::string& axis_param, float freq_hz,
@@ -2354,6 +2365,9 @@ void MoonrakerAdvancedAPI::excite_belt_at_frequency(const std::string& axis_para
         "TEST_RESONANCES AXIS={} FREQ_START={:.1f} FREQ_END={:.1f} HZ_PER_SEC=0.1 OUTPUT=raw_data",
         axis_param, freq_hz, freq_hz + 0.5f);
 
+    // Captured before the forwarding wrapper below — see start_belt_resonance_test().
+    const bool caller_surfaces = (on_error != nullptr);
+
     api_.execute_gcode(
         gcode,
         [on_complete]() {
@@ -2366,20 +2380,24 @@ void MoonrakerAdvancedAPI::excite_belt_at_frequency(const std::string& axis_para
             if (on_error)
                 on_error(err);
         },
-        30000); // 30 second timeout for fixed-freq excitation
+        30000, // 30 second timeout for fixed-freq excitation
+        /*silent=*/false, /*on_queued=*/nullptr, /*caller_surfaces_errors=*/caller_surfaces);
 }
 
 void MoonrakerAdvancedAPI::set_strobe_frequency(const std::string& pin_name, float freq_hz,
-                                                SuccessCallback on_success,
-                                                ErrorCallback on_error) {
+                                                SuccessCallback on_success, ErrorCallback on_error,
+                                                bool caller_surfaces_errors) {
     if (freq_hz <= 0.0f) {
         // Turn off strobe
         spdlog::info("[MoonrakerAPI] Turning off strobe LED on pin {}", pin_name);
         std::string gcode = fmt::format("SET_PIN PIN={} VALUE=0", pin_name);
-        api_.execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
-            if (on_error)
-                on_error(err);
-        });
+        api_.execute_gcode(
+            gcode, on_success,
+            [on_error](const MoonrakerError& err) {
+                if (on_error)
+                    on_error(err);
+            },
+            /*timeout_ms=*/0, /*silent=*/false, /*on_queued=*/nullptr, caller_surfaces_errors);
         return;
     }
 
@@ -2390,10 +2408,13 @@ void MoonrakerAdvancedAPI::set_strobe_frequency(const std::string& pin_name, flo
     std::string gcode =
         fmt::format("SET_PIN PIN={} VALUE=0.5 CYCLE_TIME={:.6f}", pin_name, cycle_time);
 
-    api_.execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
-        if (on_error)
-            on_error(err);
-    });
+    api_.execute_gcode(
+        gcode, on_success,
+        [on_error](const MoonrakerError& err) {
+            if (on_error)
+                on_error(err);
+        },
+        /*timeout_ms=*/0, /*silent=*/false, /*on_queued=*/nullptr, caller_surfaces_errors);
 }
 
 void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,

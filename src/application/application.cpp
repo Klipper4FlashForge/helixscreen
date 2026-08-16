@@ -1907,10 +1907,14 @@ bool Application::init_panel_subjects() {
             });
             modal->set_on_abort([] { helix::AbortManager::instance().start_abort(); });
             modal->set_on_tune([] {
+                // Null callbacks, not empty lambdas: a non-null error_cb reads
+                // as "this caller reports the failure itself", which would
+                // suppress Klipper's `!!` broadcast for a rejected
+                // DEFECT_DETECTION_CONFIG and leave the user with nothing.
                 get_moonraker_client()->send_jsonrpc(
                     "printer.gcode.script",
                     nlohmann::json{{"script", "DEFECT_DETECTION_CONFIG NOODLE_SENSITIVITY=low"}},
-                    [](const nlohmann::json&) {}, [](const MoonrakerError&) {});
+                    nullptr, nullptr);
             });
             modal->show(lv_screen_active());
         });
@@ -2751,7 +2755,8 @@ void Application::setup_discovery_callbacks() {
                             spdlog::warn("[ZOffset] Failed to enable z-offset persistence: {}",
                                          err.message);
                         },
-                        0, /*silent=*/true);
+                        0, /*silent=*/true, /*on_queued=*/nullptr,
+                        /*caller_surfaces_errors=*/false);
                 }
             }
 
