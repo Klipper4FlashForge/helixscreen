@@ -179,6 +179,16 @@ struct MoonrakerEvent {
 };
 ```
 
+**Emitting an event is not deciding how to show it.** `helix::decide_moonraker_event()` (`moonraker_event_routing.cpp`) owns that, as a pure function so the caller can apply `lv_tr()` on the main thread (#1219). `CONNECTION_FAILED` is the one with real routing rules, because it is latched and fires ~60 s after startup — reliably landing on whatever the user is doing about it:
+
+| Context | Route | Why |
+|---|---|---|
+| Setup wizard on screen | `Ignore` | The wizard's Connection step *is* the host-entry UI and reports its own result inline. On a fresh install the address that "failed" is only the `127.0.0.1` default the wizard exists to replace, and on a standalone display the message even claims Klipper runs on this machine. Bundle L53W5PKG: pushed over the Language step, left sitting there 16.5 minutes. |
+| A modal already open | `ErrorToast` | Bundle 865DXBQ7: pushed at stack depth 2 over the WiFi password keyboard, password retyped from scratch. Degrade, never drop — the user is doing something else and still needs to know. |
+| Otherwise | `ConnectionFailedModal` | The change-address prompt, which is the actionable response. |
+
+Recovery events (`KLIPPY_DISCONNECTED`, `KLIPPY_SHUTDOWN`) return before all of this and are suppressible by nothing — a shut-down Klippy needs its dialog whatever is on screen.
+
 **`RPC_ERROR` is a fallback, not a report of every failure.** `MoonrakerRequestTracker::route_response()` emits it only when `helix::rpc_error_policy::decide()` finds that nothing else will speak — and for `printer.gcode.script` that is never, because Klipper mirrors the rejection as a `!!` line that `GcodeErrorRouter` reports instead. See `RPC_ERROR_OWNERSHIP.md`.
 
 **Usage:**
