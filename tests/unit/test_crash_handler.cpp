@@ -601,8 +601,15 @@ TEST_CASE_METHOD(CrashTestFixture,
 // Skipped under ASan/TSan/Valgrind: those intercept the double free and
 // terminate the child themselves, so glibc never runs and our handler never
 // sees the signal.
+//
+// Both spellings of each guard are required. __SANITIZE_ADDRESS__ and
+// __SANITIZE_THREAD__ are GCC's; clang defines neither and answers only
+// __has_feature. The sanitizer CI jobs build with clang, so the thread half
+// went unguarded and this test ran under TSan, where the child exits 99 instead
+// of aborting — a red nightly for a test that was supposed to be compiled out.
 #if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__) &&                             \
-    !(defined(__has_feature) && __has_feature(address_sanitizer))
+    !(defined(__has_feature) && __has_feature(address_sanitizer)) &&                               \
+    !(defined(__has_feature) && __has_feature(thread_sanitizer))
 TEST_CASE_METHOD(CrashTestFixture,
                  "Crash: real glibc heap-corruption abort reason reaches the crash file",
                  "[telemetry][crash][subprocess][960]") {

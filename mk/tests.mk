@@ -1247,15 +1247,21 @@ endef
 # up running without the suppressions file.
 #
 # allocator_may_return_null=1 makes an oversized request return NULL, which is
-# what a real allocator does under exhaustion; ASan's default is to report
-# allocation-size-too-big and ABORT. The [ui_utils][l069] tests deliberately ask
-# lv_malloc for SIZE_MAX-1 to prove set_owned_user_string() reports the failure
-# instead of memcpy'ing into a null result, so the default aborted the whole run
-# ~1000 lines in and hid everything after it. The cost is that a genuine
-# overflow-driven huge allocation now returns NULL rather than raising here;
-# every other error class is unaffected, and our own callers log the null.
+# what a real allocator does under exhaustion; the sanitizers' default is to
+# report allocation-size-too-big and ABORT. The [ui_utils][l069] tests
+# deliberately ask lv_malloc for SIZE_MAX-1 to prove set_owned_user_string()
+# reports the failure instead of memcpy'ing into a null result, so the default
+# aborted the whole run ~1000 lines in and hid everything after it. The cost is
+# that a genuine overflow-driven huge allocation now returns NULL rather than
+# raising here; every other error class is unaffected, and our own callers log
+# the null.
+#
+# BOTH sanitizers need it — the option is shared runtime, not an ASan feature.
+# TSan was left without it and died on that same test in the 2026-08-16 nightly,
+# taking every test ordered after it down with it.
 ASAN_RUN_OPTIONS := detect_leaks=1:halt_on_error=0:allocator_may_return_null=1
-TSAN_RUN_OPTIONS := halt_on_error=0 suppressions=$(CURDIR)/tests/tsan_suppressions.txt
+TSAN_RUN_OPTIONS := halt_on_error=0 allocator_may_return_null=1 \
+	suppressions=$(CURDIR)/tests/tsan_suppressions.txt
 
 # Leaks still get DETECTED and printed (detect_leaks=1 above); exitcode=0 only stops
 # them from setting the process exit status. That keeps the two verdicts separate:
