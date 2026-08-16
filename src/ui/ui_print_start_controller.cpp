@@ -730,19 +730,24 @@ void PrintStartController::on_insufficient_filament_cancel_static(lv_event_t* e)
 // Filament Mismatch Detection
 // ============================================================================
 
-std::vector<int> PrintStartController::find_unresolved_tools() {
-    // Skip check for single-color prints (no mapping needed)
-    if (filament_colors_.size() <= 1) {
+std::vector<int>
+PrintStartController::unresolved_tools_for(const std::vector<helix::ToolMapping>& mappings,
+                                           bool multi_color, bool bypass_active) {
+    // Single-color prints need no mapping.
+    if (!multi_color) {
         return {};
     }
 
-    // Use the already-computed FilamentMapper results from the mapping card
-    if (!detail_view_) {
-        spdlog::debug("[PrintStartController] No detail view, skipping mismatch check");
+    // Bypass / external spool: filament reaches the nozzle without passing through
+    // any slot, so every tool is "unresolved" by construction and the warning is
+    // guaranteed noise. Same reasoning as PreflightValidator's bypass early-out —
+    // this is the second gate on the same Print tap, and skipping only the first
+    // one just moves the nag rather than removing it.
+    if (bypass_active) {
+        spdlog::debug("[PrintStartController] Bypass active - skipping unresolved-tool check");
         return {};
     }
 
-    auto mappings = detail_view_->get_filament_mappings();
     if (mappings.empty()) {
         // No mappings = AMS not available or card not shown
         spdlog::debug("[PrintStartController] No filament mappings available");
@@ -755,6 +760,17 @@ std::vector<int> PrintStartController::find_unresolved_tools() {
                      unresolved.size());
     }
     return unresolved;
+}
+
+std::vector<int> PrintStartController::find_unresolved_tools() {
+    // Use the already-computed FilamentMapper results from the mapping card
+    if (!detail_view_) {
+        spdlog::debug("[PrintStartController] No detail view, skipping mismatch check");
+        return {};
+    }
+
+    return unresolved_tools_for(detail_view_->get_filament_mappings(), filament_colors_.size() > 1,
+                                AmsState::instance().any_bypass_active());
 }
 
 void PrintStartController::show_color_mismatch_warning(
