@@ -2563,6 +2563,11 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
     // weight updates would trigger MMU_GATE_MAP → firmware status_update WebSocket
     // event → sync_from_backend → refresh_spoolman_weights → set_slot_info again,
     // creating an infinite feedback loop.
+    // Set when the material could not be expressed as a G-code parameter. Reported
+    // after every other write has gone out, so a name the gate map cannot store costs
+    // the user only the material rather than the whole save — but is never silent.
+    std::string rejected_material;
+
     if (persist) {
         bool has_changes = false;
         std::string cmd = fmt::format("MMU_GATE_MAP GATE={}", slot_index);
@@ -2573,13 +2578,17 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
             has_changes = true;
         }
 
-        // Material (validate to prevent command injection)
-        if (!info.material.empty() && IMoonrakerAPI::is_safe_gcode_param(info.material)) {
-            cmd += fmt::format(" MATERIAL={}", info.material);
+        // Material (validate to prevent command injection). The material charset is
+        // deliberately wider than an identifier's: `PLA+`, `PA6-CF` and `Silk PLA` are
+        // all in our own filament database, and gating this on is_safe_gcode_param()
+        // dropped every one of them.
+        if (!info.material.empty() && IMoonrakerAPI::is_safe_material_param(info.material)) {
+            cmd += fmt::format(" MATERIAL={}", IMoonrakerAPI::gcode_param_value(info.material));
             has_changes = true;
         } else if (!info.material.empty()) {
             spdlog::warn("[AMS HappyHare] Skipping MATERIAL - unsafe characters in: {}",
                          info.material);
+            rejected_material = info.material;
         }
 
         // Spoolman ID (-1 to clear)
@@ -2607,6 +2616,16 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
 
     // Emit OUTSIDE the lock to avoid deadlock with callbacks
     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+
+    if (!rejected_material.empty()) {
+        return AmsError(AmsResult::COMMAND_FAILED,
+                        "Material '" + rejected_material +
+                            "' contains characters that cannot be "
+                            "sent as a G-code parameter",
+                        "Couldn't save the material name",
+                        "Everything else was saved. Rename the material using letters, digits, "
+                        "spaces, and + - _ . ( ) /");
+    }
 
     return AmsErrorHelper::success();
 }
