@@ -1887,6 +1887,8 @@ The threshold has to clear the longest *legitimate* main-thread block, and those
 
 Size the in-memory log ring, in messages. The ring sink is what a debug bundle harvests — it holds recent lines that the WARN-level file/syslog sinks never persisted, which is the whole point of attaching a bundle to a bug report. Shrink it on a device where even a few hundred KB matters.
 
+Read by `init_early()`, not by `init()`: the ring is allocated before the config system comes up so the startup diagnostics land in it, and `init()` adopts that same buffer. So this variable has to be in the process environment (`helixscreen.env`, a systemd `Environment=`, or the invoking shell) - there is no settings key equivalent, and nothing read from `settings.json` can influence the capacity.
+
 | Property | Value |
 |----------|-------|
 | **Values** | Positive integer (message count). Zero, negative, and unparseable values are ignored. |
@@ -1933,6 +1935,8 @@ HELIX_BUNDLE_LOG_DEBUG=0 ./build/bin/helix-screen
 ```
 
 This only affects the ring sink. The file/syslog/journal sinks keep running at the configured level either way.
+
+The variable is read twice, because the ring is installed by `init_early()` and adopted by `init()` (see `LOGGING.md` § "Ring-Buffer Sink Lifecycle"). Before `init()` there is no configured level to fall back to, so during startup `=0` leaves the ring at WARN alongside the early console sink; from Phase 3 onward it means the configured level as documented above.
 
 ### `HELIX_LOG_ROTATE_BYTES` / `HELIX_LOG_ROTATE_FILES`
 

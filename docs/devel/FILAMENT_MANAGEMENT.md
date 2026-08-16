@@ -370,6 +370,67 @@ panel — not a slicer-to-printer write.
 - **Wire-format spec (public):** [`../specs/filament_slots.md`](../specs/filament_slots.md)
 - **Implementation notes (internal):** [`FILAMENT_SLOT_METADATA.md`](FILAMENT_SLOT_METADATA.md)
 
+### Material names as G-code parameter values
+
+Some backends persist the material by putting the name on a G-code line rather
+than writing a database record, so it has to survive Klipper's argument parser.
+Two validators exist and they are **not** interchangeable:
+
+| Helper | Charset | Use for |
+|--------|---------|---------|
+| `IMoonrakerAPI::is_safe_gcode_param()` (`is_safe_identifier()`) | `[A-Za-z0-9_ ]` | Lane names, macro names, object names - identifiers Klipper itself constrains |
+| `IMoonrakerAPI::is_safe_material_param()` | alphanumeric plus `+ - _ . ( ) /` and space | Material names |
+
+`is_safe_material_param()` is deliberately the wider of the two. `PLA+`, `PA6-CF`,
+`PETG-CF`, `PC-ABS` and `Silk PLA` all ship in `include/filament_database.h`, so
+gating a material send on the identifier charset made the app offer materials its
+own persistence layer refused to send: the write was dropped, a warning nobody
+reads was logged, and the save reported success.
+
+What it still rejects, and why each one matters: CR/LF (Moonraker runs a
+`printer.gcode.script` body line by line, so a newline is the one real
+multi-command vector), `;` and `#` (Klipper's comment characters - they truncate
+the rest of the command silently), `*` (checksum separator), `"` and `\` (both
+meaningful to the quoting pass below, so letting them through would let a value
+escape its own quotes), `=`, control characters, and non-ASCII bytes.
+
+**Quoting is mandatory, not cosmetic.** Klipper parses an extended command's
+arguments - anything that is not a bare `G`/`M` code, which `SET_MATERIAL` and
+`MMU_GATE_MAP` both are - with `shlex.shlex(posix=True, whitespace_split=True,
+commenters="#;")`, then splits each token on its first `=` (verified in Kalico
+`klippy/gcode.py`, the extended-command parameter parser). An unquoted `MATERIAL=Silk PLA`
+therefore arrives as two tokens, the second with no `=` anywhere in it, and
+Klipper answers "Malformed command" - the value never reaches firmware at all, so
+a space in a material name was never merely dropped, it broke the whole command.
+`IMoonrakerAPI::gcode_param_value()` quotes a value only when it contains
+whitespace, so every value that worked before goes out byte-for-byte unchanged.
+Its precondition is a validator that rejects `"` and `\`; pair it with
+`is_safe_material_param()`, never use it on unvalidated input.
+
+Per backend:
+
+| Backend | Command | Protection |
+|---------|---------|------------|
+| AFC | `SET_MATERIAL LANE={lane} MATERIAL={material}` | `is_safe_material_param()` + `gcode_param_value()` |
+| Happy Hare | `MMU_GATE_MAP GATE={n} … MATERIAL={material}` | same pair |
+| CFS | `_BOX_SLOT_SET SLOT={n} MATERIAL=… BRAND=… NAME=…` | local `quote_gcode_param()` (`ams_backend_cfs.cpp`) - always quotes, escapes `\` and `"`, folds CR/LF to a space. It escapes rather than rejects because `BRAND`/`NAME` are free-form strings arriving from RFID, not values the user picked from a list |
+| AD5X IFS | `_IFS_VARS types="['PLA', …]"` | `build_type_list_value()` emits an already-quoted Python list literal. This is a mirror to the lessWaste/bambufy plugin, not the primary persistence path |
+
+Backends that persist through `FilamentSlotOverrideStore` (IFS, Snapmaker, ACE)
+or through a numeric id (QIDI Box's `SAVE_VARIABLE VARIABLE=filament_slot{n}`)
+never put the string on a G-code line and need neither helper.
+
+The same shlex mechanism bites `SDCARD_PRINT_FILE FILENAME=` on the power-loss
+resume path, which needs a *blocklist* rather than an allowlist because a slicer
+filename legitimately carries characters no material name would - see
+[`POWER_LOSS_RECOVERY.md`](POWER_LOSS_RECOVERY.md). Do not merge the two.
+
+**A rejected material is an error, not a silent skip.** `AmsBackendAfc::set_slot_info()`
+and `AmsBackendHappyHare::set_slot_info()` issue every *other* write first, then
+return `AmsResult::COMMAND_FAILED` naming the material. The user keeps the color,
+weight and Spoolman link and is told which part did not land; returning success
+for a write that never happened is what made this invisible for so long.
+
 ### AD5X IFS material/color reconcile (locks, insert, #1065/#1071)
 
 Native ZMOD has **no per-port RFID or spool identity** — the only per-lane
@@ -852,28 +913,53 @@ Key files:
 
 **Future: multi-backend aggregation**: When multiple backends are active simultaneously (e.g., an AFC system on one toolhead + a Happy Hare on another), the overview panel should iterate all backends via `AmsState::get_backend(i)` for `i` in `0..backend_count` and aggregate their units into the card grid. The per-backend slot subject storage (`secondary_slot_subjects_`) and event routing already support this — the UI aggregation is the remaining integration point.
 
+#### Per-unit environment subjects and the `MAX_UNITS` cap
+
+Every unit card binds its temperature/humidity badge to a set of seven per-unit
+subjects named `ams_env_ind_<unit>_{temp_text, humidity_text, humidity_status,
+humidity_visible, visible, drying_active, drying_text}`. `AmsState` allocates
+those statically, one set per unit, up to `AmsState::MAX_UNITS` - **8**, matching
+the widest rig the AMS system-path canvas draws, so every unit the path shows also
+has a badge to bind.
+
+Cards are created for **every** unit the backend reports, cap or no cap.
+`AmsState::env_indicator_subject_names(unit_index)` is the single place that
+decides which names a card gets: the unit's own set below the cap, and the
+always-off placeholders `ams_env_ind_off_flag` / `ams_env_ind_off_text` at or
+above it. Past the cap the badge is simply hidden - slots, hub dot and error badge
+all still render - and `create_unit_cards()` logs one line naming the cap.
+
+**Do not expand the `ams_env_ind_%d_*` names at the call site.** That is what the
+panel used to do, and a rig with more units than the cap then bound seven names
+nothing had registered per excess card: seven `No subject was found` parser
+warnings each, plus a permanently dark badge with nothing in the log explaining
+it. `AmsState` owns the cap and the registrations, so it owns the naming as well;
+raising `MAX_UNITS` stays a one-constant change.
+
 ### Error State Visualization
 
-Per-slot error indicators and per-unit error badges, driven by `SlotInfo.error` and `SlotInfo.buffer_health` from the backend layer. See `docs/devel/plans/2026-02-15-error-state-visualization-design.md` for full design.
+Per-slot error indicators and per-unit error badges, driven by `SlotInfo.error` and `AmsUnit::buffer_health` from the backend layer. See `docs/devel/plans/2026-02-15-error-state-visualization-design.md` for full design.
 
 **Data model** (`ams_types.h`):
 - `SlotError` — message + severity (INFO/WARNING/ERROR), `std::optional` on `SlotInfo`
-- `BufferHealth` — AFC buffer fault proximity data, `std::optional` on `SlotInfo`
+- `BufferHealth` - AFC buffer fault proximity data, `std::optional` on **`AmsUnit`**, not `SlotInfo`. A TurtleNeck sits between the hub and the toolhead, so it belongs to the unit; there is one per unit and it cannot say which lane it is regulating except through its own `active_lane` field
 - `AmsUnit::has_any_error()` — rolls up per-slot errors for overview badge
 
 **Detail view** (`ui_ams_slot.cpp`):
-- 14px error badge at top-right of spool (red for ERROR, yellow for WARNING)
-- 8px buffer health dot at bottom-center (green/yellow/red based on fault proximity)
-- Both pulled from `SlotInfo` during refresh (same pattern as material/tool badge)
+- 14px error badge at top-right of spool (red for ERROR, yellow for WARNING), pulled from `SlotInfo` during refresh (same pattern as material/tool badge)
+
+**Path canvas** (`ui_ams_detail.cpp`):
+- Buffer fault tint on the hub, from the *displayed unit's* `buffer_health` (green / yellow / red by `distance_to_fault`), with Happy Hare's `sync_feedback_bias` feeding the same three states when there is no AFC buffer
+- Buffer presence and compressed/tension state, from that same `buffer_health.state`
 
 **Overview view** (`ui_panel_ams_overview.cpp`):
 - 12px error badge at top-right of unit card (worst severity across slots)
 - Mini-bar status lines colored by error severity
 
 **Backend integration**:
-- AFC: per-lane error from `status` field + buffer health from `AFC_buffer` objects
+- AFC: per-lane error from `status` field + buffer health from `AFC_buffer` objects, attributed to units by `apply_buffer_health_to_units()` (see the AFC section)
 - Happy Hare: system-level error mapped to `current_slot` via `reason_for_pause`
-- Mock: `set_slot_error()` / `set_slot_buffer_health()` + pre-populated errors in AFC mode
+- Mock: `set_slot_error()` / `set_unit_buffer_health()` + pre-populated errors in AFC mode
 
 ### Two error channels
 
@@ -2120,7 +2206,36 @@ Each `AFC_stepper` object provides sensor states (`prep`, `load`, `loaded_to_hub
 
 #### Buffer Objects
 
-AFC tracks buffer state per lane. The `buffer_status` field indicates the current buffer operation (e.g., "Advancing"). Buffer names are discovered from the Klipper object list.
+Each lane's `AFC_stepper`/`AFC_lane` object carries a `buffer_status` string naming the
+current buffer operation (e.g. "Advancing"). The buffer's own health lives on separate
+`AFC_buffer {name}` objects, discovered from the Klipper object list.
+
+**Buffer health is per buffer, attributed to a unit.** `parse_afc_buffer()` accumulates
+each frame into `buffer_health_[buffer_name]` - Moonraker forwards only changed keys, so
+absent fields must leave the previous reading alone - and `apply_buffer_health_to_units()`
+then derives `AmsUnit::buffer_health` from `buffer_health_` plus `buffer_lane_names_`,
+resolving the first lane that maps to a unit. Two invariants make that work:
+
+- **Unit objects must be parsed before anything that resolves a lane to a unit.**
+  `handle_status_update()` runs `AFC_BoxTurtle`/`AFC_OpenAMS`/`AFC_vivid` first, then
+  `AFC_buffer`. Those unit objects are what build the multi-unit layout
+  (`parse_afc_unit_object` → `rebuild_unit_map_from_klipper` → `reorganize_slots`). With
+  buffers parsed first, every buffer in the first frame resolved against the synthetic
+  single unit `initialize_slots()` creates, and a five-unit rig put all five buffers on
+  unit 0, each read-modify-writing the previous one's fields (bundle XGVDYEB5).
+- **`reorganize_slots()` preserves nothing.** It clears `system_info_.units` and rebuilds
+  every `AmsUnit` from scratch, so any field not re-derived in or after that function is
+  gone. Sensors and topology are re-derived inside the loop; buffer health is re-derived
+  after it by calling `apply_buffer_health_to_units()` again. A field whose only writer is
+  a status-delta parser can never be "preserved" across a rebuild, because that parser may
+  not run again for minutes - which is exactly why the reading used to go blank and stay
+  blank until AFC happened to push a changed buffer field.
+
+Attribution is logged only when it **changes** (`buffer_unit_attribution_`).
+`apply_buffer_health_to_units()` runs on every frame carrying a buffer or a unit object, so
+an unconditional line there is per-buffer-per-unit spam that pushes the incident window out
+of the debug-bundle ring - and this is precisely the line that has to survive in a bundle,
+since a buffer landing on the wrong unit is what it exists to show.
 
 #### Global State
 
@@ -3080,6 +3195,16 @@ AmsEnvironmentOverlay              control UI (ui_ams_environment_overlay.cpp
 | `max_temp` | float | Hardware maximum for the target slider |
 
 > **Humidity is not on `DryerInfo`.** It lives on `EnvironmentData` (per-unit, `AmsUnit::environment`) alongside the box temperature, because humidity is a per-enclosure reading from an environment sensor, not a property of the global dryer session. The dryer overlay and the AMS panel environment indicator both read `AmsUnit::environment`.
+
+`AmsEnvironmentOverlay` is opened for one specific unit (`unit_index_`), so it owns its
+own `ams_env_overlay_humidity_visible` subject rather than binding the unit cards'
+`ams_env_ind_<i>_humidity_visible`. Both the humidity readout and the Material Comfort
+strip gate on it, and both need a real reading to say anything true. Binding a
+per-unit-indicator subject here means picking an index at XML-authoring time, which
+answers for whichever unit that index names and not the one on screen - the overlay was
+hard-wired to unit 0's flag, so opening unit 1's environment showed unit 0's humidity
+availability. The overlay's copy is set from the same rule the badge uses: the unit
+reports an environment **and** that environment has a humidity sensor.
 
 ### Backend Virtual Interface
 
