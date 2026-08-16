@@ -26,6 +26,55 @@ mistake (it refuses to move a channel manifest backward), but not the first. It
 also cannot help if 1.1.0 > 1.0.0, which is exactly the dangerous case: publishing
 1.1.0 to `stable` is a *forward* move and sails straight through.
 
+### Measured state, 2026-08-15
+
+Checked because "tell XXLarge users to run the bleeding-edge channel" was proposed
+as the answer to a layout gap (see below) and turned out not to work yet.
+
+| Branch | `RELEASE_CHANNEL` | Position |
+|--------|-------------------|----------|
+| `main` | `stable` | the only live release line |
+| `release/1.0` | `stable` | exists, but **99 commits behind `main`, 0 ahead** |
+| `devel/1.1` | ~~`stable`~~ → `dev` | fixed 2026-08-15, see below |
+
+Three things follow.
+
+**Nothing feeds `beta` or `dev` yet.** `dl.helixscreen.org/dev/manifest.json` serves
+v0.99.111 — an ordinary `main` build. Until step 2 above happens, telling a user to
+switch to Dev gets them newer `main`, not the devel track. Any plan that routes
+users to bleeding edge to pick up 1.1 work is blocked on the flip, not on the work.
+
+**`release/1.0` is a placeholder, not a maintenance line.** Being 99 behind and 0
+ahead means the cut in step 1 has not really happened; the branch name exists but
+carries none of the 1.0 content. Do not read its presence as step 1 being done.
+
+**`devel/1.1` declared `stable`, which was live-fire.** Tagging that branch would
+have published the whole 1.1 line — including the grid rewrite — to every stable
+install, and the downgrade guard would not have blocked it because 1.1.0 > 1.0.0 is
+a forward move. Set to `dev` on 2026-08-15, ahead of the atomic cut, because it is
+safe in isolation: it only removes a destination, and `devel/1.1` was never meant
+to reach `stable`. It does **not** substitute for step 2 — `main` still says
+`stable`, so the ordering constraint above is untouched.
+
+### Deferred to 1.1: the XXLarge layout gap
+
+Not a 1.0 blocker, recorded here so the deferral is a decision rather than an
+oversight. `GRID_DIMS` on `main` stops at XLarge (`NUM_BREAKPOINTS = 6`) and
+`clamp_bp()` folds tier 6 back to 5, while every anchor in `default_layout.json`
+stops at `xlarge` — so a 1920x1080 display renders the XLarge 8x5 grid and XLarge
+anchor positions at 2.25x the pixels. `devel/1.1` already fixes it end to end
+(`NUM_BREAKPOINTS = 7`, a per-tier `GRID_CELL` ladder, content-derived
+`get_dimensions()`, and `xxlarge` placements on all 10 anchors), so fixing it on
+`main` would rewrite exactly the files 1.1 rewrote and be discarded at merge.
+
+Scale, from telemetry over 1,779 distinct devices: XXLarge is 15 devices (0.8%),
+and **every one is a Pi or x86 box** — 2.3% of Pi installs, 0% on every integrated
+printer panel, which are all 800x480 or smaller. Pi XXLarge resolutions are
+2560x1440 (8) and 1920x1080 (4), i.e. HDMI monitors. Note this population will
+invert on Android: `min_dim > 1000` catches essentially every modern phone and
+tablet, so XXLarge goes from rare to typical the moment the Play Store listing goes
+live. See `ANDROID_PLAY_STORE.md`.
+
 ---
 
 ## 2. Before tagging `v1.0.0`
