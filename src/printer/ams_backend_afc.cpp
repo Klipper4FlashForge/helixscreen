@@ -57,13 +57,15 @@ bool natural_less(const std::string& a, const std::string& b) {
 // Read AFC's spool-vendor field into `out`, accepting every spelling the
 // ecosystem uses. Returns true when a value was found.
 //
-// Upstream settled on `vendor_name` (AFCProject/AFC-Klipper-Add-On #808) to match
-// Happy Hare's mmu_server.py, so a single spelling covers both backends. `vendor`
-// is the name we originally proposed, and the key our own to_lane_data_record()
-// still emits alongside vendor_name — that record lands in a PRIVATE namespace for
-// AFC today (#1158), so this reader does not meet it yet, but it will the moment
-// #1158 migrates AFC's overrides into lane_data proper. `brand` is a defensive
-// third spelling.
+// Upstream settled on `spool_vendor` (AFCProject/AFC-Klipper-Add-On #808, shipped
+// by #833) - AFCLane's own attribute name, so lane_data and get_status agree and
+// neither has to borrow Happy Hare's vocabulary. HH publishes the same value into
+// the shared lane_data namespace as `vendor_name`, which is why that spelling
+// stays in the ladder. `vendor` is the name we originally proposed and the key our
+// own to_lane_data_record() still emits - that record lands in a PRIVATE namespace
+// for AFC today (#1158), so this reader does not meet it yet, but it will the
+// moment #1158 migrates AFC's overrides into lane_data proper. `brand` is a
+// defensive fourth spelling.
 //
 // Empty values are IGNORED rather than treated as a clear. That is deliberate and
 // differs from the color/material handling above: #808 is unimplemented, so we do
@@ -73,7 +75,7 @@ bool natural_less(const std::string& a, const std::string& b) {
 // reader (#1195 closed that gap on the lane_data path) — so the exposure is lanes
 // with no override at all. Revisit once #808 ships and the payload is observable.
 bool read_vendor(const nlohmann::json& src, std::string& out) {
-    for (const char* key : {"vendor_name", "vendor", "brand"}) {
+    for (const char* key : {"spool_vendor", "vendor_name", "vendor", "brand"}) {
         auto it = src.find(key);
         if (it != src.end() && it->is_string()) {
             std::string v = it->get<std::string>();
@@ -2454,10 +2456,10 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
 
     // Vendor/brand — see read_vendor().
     //
-    // Upstream #808 asked for the vendor on BOTH surfaces; jimmyjon711 accepted it
-    // as `vendor_name`. The status half is the one that matters to us: it is live
-    // and version-independent, where lane_data is a DB snapshot that only refreshes
-    // when AFC decides to push. Inert until #808 ships; harmless before then.
+    // Upstream #808 asked for the vendor on BOTH surfaces; it ships as
+    // `spool_vendor` on each (#833). The status half is the one that matters to us:
+    // it is live and version-independent, where lane_data is a DB snapshot that only
+    // refreshes when AFC decides to push. Inert on older firmware; harmless there.
     //
     // apply_overrides() runs directly below, so a user's brand override still wins
     // over whatever firmware reports. The lane_data path does the same since #1195.
@@ -3786,7 +3788,7 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             }
         }
 
-        // Vendor/brand — see read_vendor(). Inert until #808 ships.
+        // Vendor/brand - see read_vendor(). Inert on firmware predating #833.
         read_vendor(lane, slot.brand);
 
         // Re-supply the user's attached identity on top of firmware truth, the
