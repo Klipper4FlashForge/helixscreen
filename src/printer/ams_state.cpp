@@ -537,6 +537,21 @@ void AmsState::init_subjects(bool register_xml) {
         }
     }
 
+    // Always-off placeholders for units past MAX_UNITS. A rig with more units
+    // than we allocate subjects for still gets a card per unit; its environment
+    // indicator binds these, so the badge stays hidden instead of the parser
+    // warning once per binding about names nothing registered.
+    lv_subject_init_int(&env_ind_off_flag_, 0);
+    subjects_.register_subject(&env_ind_off_flag_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, ENV_IND_OFF_FLAG_SUBJECT, &env_ind_off_flag_);
+
+    lv_subject_init_string(&env_ind_off_text_, env_ind_off_text_buf_, nullptr,
+                           ENV_IND_TEXT_BUF_SIZE, "");
+    subjects_.register_subject(&env_ind_off_text_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, ENV_IND_OFF_TEXT_SUBJECT, &env_ind_off_text_);
+
     // Detail-view env indicator mirror subjects.
     lv_subject_init_string(&env_ind_detail_temp_text_, env_ind_detail_temp_text_buf_, nullptr,
                            ENV_IND_TEXT_BUF_SIZE, "---");
@@ -1076,6 +1091,35 @@ lv_subject_t* AmsState::get_env_ind_drying_text_subject(int unit_index) {
         return nullptr;
     }
     return &env_ind_drying_text_[unit_index];
+}
+
+AmsState::EnvIndicatorSubjectNames AmsState::env_indicator_subject_names(int unit_index) {
+    EnvIndicatorSubjectNames names;
+
+    if (unit_index < 0 || unit_index >= MAX_UNITS) {
+        names.temp_text = ENV_IND_OFF_TEXT_SUBJECT;
+        names.humidity_text = ENV_IND_OFF_TEXT_SUBJECT;
+        names.drying_text = ENV_IND_OFF_TEXT_SUBJECT;
+        names.humidity_status = ENV_IND_OFF_FLAG_SUBJECT;
+        names.humidity_visible = ENV_IND_OFF_FLAG_SUBJECT;
+        names.visible = ENV_IND_OFF_FLAG_SUBJECT;
+        names.drying_active = ENV_IND_OFF_FLAG_SUBJECT;
+        return names;
+    }
+
+    auto expand = [unit_index](const char* suffix) {
+        char buf[48];
+        snprintf(buf, sizeof(buf), "ams_env_ind_%d_%s", unit_index, suffix);
+        return std::string(buf);
+    };
+    names.temp_text = expand("temp_text");
+    names.humidity_text = expand("humidity_text");
+    names.humidity_status = expand("humidity_status");
+    names.humidity_visible = expand("humidity_visible");
+    names.visible = expand("visible");
+    names.drying_active = expand("drying_active");
+    names.drying_text = expand("drying_text");
+    return names;
 }
 
 lv_subject_t* AmsState::get_slot_color_subject(int backend_index, int slot_index) {
