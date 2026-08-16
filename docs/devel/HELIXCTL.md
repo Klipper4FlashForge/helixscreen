@@ -597,8 +597,8 @@ reads the resolved value, so it shows which one is really in effect.
 
 `demo` covers screens that only appear on a real printer event or configured
 state, constructed with representative sample data and the real lifecycle:
-`preflight-check`, `runout-modal`, `lock-screen`, `print-status`, `print-tune`,
-`ams`, `camera`, `ams-error-toast`.
+`preflight-check`, `color-mismatch`, `runout-modal`, `lock-screen`,
+`print-status`, `print-tune`, `ams`, `camera`, `ams-error-toast`.
 
 `ams-error-toast` raises the two-line AMS error toast (message plus
 `AmsError::suggestion`) using the longest suggestion any backend produces. The

@@ -242,8 +242,29 @@ class PrintStartController {
      */
     bool check_required_filament_present();
 
-    /// Check FilamentMapper results for unresolved tools (replaces raw color comparison)
+    /// Check FilamentMapper results for unresolved tools (replaces raw color comparison).
+    /// Gathers the live inputs and delegates the decision to unresolved_tools_for().
     std::vector<int> find_unresolved_tools();
+
+    /**
+     * @brief The unresolved-tool rule, with no live state fetched.
+     *
+     * Split out so the gate — including the bypass suppression, which is the
+     * whole reason it can decide "nothing to warn about" while holding mappings
+     * that are all unresolved — is testable without a detail view or LVGL.
+     *
+     * @param mappings      Effective tool->slot mappings for the print.
+     * @param multi_color   The print uses more than one filament. Single-color
+     *                      prints need no mapping, so they never warn.
+     * @param bypass_active Filament is fed from the bypass / external spool, so
+     *                      it passes through no slot and EVERY tool reads as
+     *                      unresolved. Warning here is guaranteed noise; the
+     *                      same reasoning gates PreflightValidator.
+     * @return Tool indices to warn about; empty means proceed silently.
+     */
+    [[nodiscard]] static std::vector<int>
+    unresolved_tools_for(const std::vector<helix::ToolMapping>& mappings, bool multi_color,
+                         bool bypass_active);
 
     /// Show improved mismatch warning with color names and slot context
     void show_color_mismatch_warning(const std::vector<int>& unresolved_tools,

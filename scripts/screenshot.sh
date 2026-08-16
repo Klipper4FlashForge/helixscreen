@@ -25,8 +25,8 @@ Arguments:
   TOKEN     Screen to capture (optional; default: home). May be a base panel
             (home, controls, filament, settings, advanced, print-select), an
             overlay (motion, bed-mesh, network, zoffset, ...), or a sample-data
-            screen (preflight-check, runout-modal, lock-screen, print-status,
-            print-tune). See scripts/screenshot-recipes.sh for the full list.
+            screen (preflight-check, color-mismatch, runout-modal, lock-screen,
+            print-status, print-tune). See scripts/screenshot-recipes.sh for the full list.
             An unknown token is tried as a bare `navigate <token>`.
   FLAGS     Additional flags passed to the binary (e.g., --light,
             -s 800x480, --layout ultrawide). Pass --wizard to capture the

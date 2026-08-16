@@ -145,6 +145,7 @@
 #include "ui_wizard_touch_calibration.h"
 #include "ui_wizard_wifi.h"
 
+#include "color_utils.h"
 #include "preflight_validator.h"
 
 // Developer-only showcase panels (ENABLE_DEV_PANELS, excluded from release
@@ -2426,6 +2427,28 @@ bool show_demo_overlay(const std::string& name) {
         auto* modal = new helix::ui::PreflightCheckModal();
         modal->set_checks(pf);
         modal->show(screen);
+        return true;
+    }
+
+    if (name == "color-mismatch") {
+        // The SECOND gate on a Print tap, after the pre-flight empty-slot block:
+        // PrintStartController warns when a tool resolves to no slot at all. Only
+        // reachable from a real multi-tool file whose tools do not map, so mock
+        // navigation cannot get here. Text mirrors show_color_mismatch_warning()
+        // exactly — two unresolved tools, color name plus material per row.
+        std::string message = lv_tr("These tools have no matching filament loaded:");
+        message += "\n\n";
+        message += std::string("  ") + LV_SYMBOL_BULLET +
+                   " T2: " + helix::describe_color(0xF5A623) + " (PETG)\n";
+        message += std::string("  ") + LV_SYMBOL_BULLET +
+                   " T3: " + helix::describe_color(0x2E8B57) + " (PLA)\n";
+        message += "\n";
+        message += lv_tr("Load the required filaments or start anyway?");
+        static char demo_message[1024];
+        snprintf(demo_message, sizeof(demo_message), "%s", message.c_str());
+        helix::ui::modal_show_confirmation(lv_tr("Color Mismatch"), demo_message,
+                                           ModalSeverity::Warning, lv_tr("Start Anyway"), nullptr,
+                                           nullptr, nullptr);
         return true;
     }
 

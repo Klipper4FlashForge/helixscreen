@@ -20,6 +20,7 @@
 #include "../helix_test_fixture.h"
 #include "ams_backend_ad5x_ifs.h"
 #include "ams_state.h"
+#include "filament_mapper.h"
 #include "filament_sensor_manager.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
@@ -151,4 +152,92 @@ TEST_CASE("remap warning: editable backend never warns (generic remap path is li
     auto& A = PrintStartControllerTestAccess::should_warn_remap_unsupported;
     CHECK_FALSE(A(caps(/*supported=*/true, /*editable=*/true), /*applies_via_preprint=*/false));
     CHECK_FALSE(A(caps(/*supported=*/true, /*editable=*/true), /*applies_via_preprint=*/true));
+}
+
+// ============================================================================
+// Unresolved-tool gate: bypass suppression
+// ============================================================================
+//
+// Second gate on the same Print tap as PreflightValidator. Reported in Discord:
+// printing from the AFC hardware bypass, the user is told T0 will run out of
+// filament and asked whether to print anyway. Fixing only the pre-flight block
+// moved the nag here instead of removing it — verified on a Voron/BoxTurtle with
+// AFC's virtual bypass engaged, where clearing the first block surfaced this
+// "Color Mismatch — These tools have no matching filament loaded" dialog.
+//
+// Under bypass the filament reaches the nozzle without passing through any slot,
+// so FilamentMapper::find_unresolved_tools() reports EVERY tool unresolved no
+// matter how the lanes are configured. The mappings below are deliberately all
+// unresolved so the bypass flag is the only thing that can change the verdict —
+// without the suppression these cases return the full tool list.
+namespace {
+
+/// An AUTO/is_auto mapping — what FilamentMapper::find_unresolved_tools() counts.
+helix::ToolMapping unresolved_mapping(int tool_index) {
+    helix::ToolMapping m;
+    m.tool_index = tool_index;
+    m.mapped_slot = -1;
+    m.is_auto = true;
+    m.reason = helix::ToolMapping::MatchReason::AUTO;
+    return m;
+}
+
+/// A firmware-resolved mapping — never counted as unresolved.
+helix::ToolMapping resolved_mapping(int tool_index, int slot) {
+    helix::ToolMapping m;
+    m.tool_index = tool_index;
+    m.mapped_slot = slot;
+    m.is_auto = false;
+    m.reason = helix::ToolMapping::MatchReason::FIRMWARE_MAPPING;
+    return m;
+}
+
+} // namespace
+
+TEST_CASE("unresolved-tool gate: bypass suppresses the color-mismatch warning",
+          "[print-start][filament-gate][bypass]") {
+    const std::vector<helix::ToolMapping> all_unresolved = {unresolved_mapping(0),
+                                                            unresolved_mapping(5)};
+
+    SECTION("multi-color, bypass OFF -> warns about every unresolved tool") {
+        auto r = PrintStartControllerTestAccess::unresolved_tools_for(all_unresolved, true, false);
+        REQUIRE(r.size() == 2);
+        CHECK(r[0] == 0);
+        CHECK(r[1] == 5);
+    }
+
+    SECTION("multi-color, bypass ON -> silent") {
+        auto r = PrintStartControllerTestAccess::unresolved_tools_for(all_unresolved, true, true);
+        CHECK(r.empty());
+    }
+
+    SECTION("bypass must not latch: disengaging restores the warning") {
+        REQUIRE(PrintStartControllerTestAccess::unresolved_tools_for(all_unresolved, true, true)
+                    .empty());
+        CHECK(PrintStartControllerTestAccess::unresolved_tools_for(all_unresolved, true, false)
+                  .size() == 2);
+    }
+
+    SECTION("single-color never warns, bypass or not") {
+        CHECK(PrintStartControllerTestAccess::unresolved_tools_for(all_unresolved, false, false)
+                  .empty());
+        CHECK(PrintStartControllerTestAccess::unresolved_tools_for(all_unresolved, false, true)
+                  .empty());
+    }
+
+    SECTION("bypass OFF with everything resolved is still silent") {
+        // Guards against a fix that suppresses by always returning empty.
+        const std::vector<helix::ToolMapping> resolved = {resolved_mapping(0, 0),
+                                                          resolved_mapping(1, 1)};
+        CHECK(PrintStartControllerTestAccess::unresolved_tools_for(resolved, true, false).empty());
+    }
+
+    SECTION("a partially-unresolved print names only the unresolved tool") {
+        const std::vector<helix::ToolMapping> mixed = {resolved_mapping(0, 0),
+                                                       unresolved_mapping(5)};
+        auto r = PrintStartControllerTestAccess::unresolved_tools_for(mixed, true, false);
+        REQUIRE(r.size() == 1);
+        CHECK(r[0] == 5);
+        CHECK(PrintStartControllerTestAccess::unresolved_tools_for(mixed, true, true).empty());
+    }
 }

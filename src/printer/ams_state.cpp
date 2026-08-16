@@ -910,6 +910,16 @@ std::vector<helix::AvailableSlot> AmsState::collect_available_slots() const {
     return slots;
 }
 
+bool AmsState::any_bypass_active() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    for (const auto& backend : backends_) {
+        if (backend && backend->is_bypass_active()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 AmsBackend* AmsState::get_backend() const {
     return get_backend(0);
 }
@@ -1458,6 +1468,24 @@ void AmsState::sync_from_backend() {
     int new_bypass = info.current_slot == -2 ? 1 : 0;
     if (lv_subject_get_int(&bypass_active_) != new_bypass) {
         lv_subject_set_int(&bypass_active_, new_bypass);
+    }
+
+    // Engaging bypass changes nothing about any slot, so the per-slot delta scan
+    // in sync_slots_from_backend() never bumps slots_version. The pre-print
+    // filament check keys on bypass (PreflightValidator) and slots_version is its
+    // ONLY refresh trigger, so without this the cached result goes stale: engage
+    // bypass while a file's detail view is already open and the false
+    // "T0 has no filament loaded" block still fires on Print.
+    //
+    // Tracked off any_bypass_active() rather than the bypass_active_ subject
+    // above — that one is derived from current_slot == -2, which later writes in
+    // the same status frame can clobber.
+    const bool bypass_now = any_bypass_active();
+    if (bypass_now != last_bypass_active_) {
+        last_bypass_active_ = bypass_now;
+        spdlog::debug("[AmsState] Bypass -> {}, bumping slots_version for the pre-print check",
+                      bypass_now);
+        bump_slots_version();
     }
     int new_supports_bypass = helix::bypass_available_for(info.supports_bypass) ? 1 : 0;
     if (lv_subject_get_int(&supports_bypass_) != new_supports_bypass) {

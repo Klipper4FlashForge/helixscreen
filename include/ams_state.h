@@ -248,6 +248,23 @@ class AmsState {
     [[nodiscard]] std::vector<helix::AvailableSlot> collect_available_slots() const;
 
     /**
+     * @brief Whether ANY backend is currently feeding from its bypass / external
+     *        spool instead of a slot.
+     *
+     * The companion to collect_available_slots(): bypass is deliberately not a
+     * slot, so a tool fed from it can never be satisfied by that vector. Callers
+     * that reason over slots must ask this before concluding a tool is unfed.
+     *
+     * Reads each backend's is_bypass_active() rather than testing
+     * AmsSystemInfo::current_slot == -2. Those agree in principle, but
+     * current_slot is written from many places during a status frame (the AFC
+     * backend alone has nine writes after the one that sets -2, including the
+     * deliberately unguarded mount-state derivation), whereas is_bypass_active()
+     * returns the firmware's own bypass report. Only the latter is stable.
+     */
+    [[nodiscard]] bool any_bypass_active() const;
+
+    /**
      * @brief Check if AMS is available
      * @return true if backend is set and AMS type is not NONE
      */
@@ -1468,6 +1485,11 @@ class AmsState {
     /// usually made while PRINTING, one frame before the firmware's pause lands
     /// — "not paused" therefore cannot mean "disarm" on its own.
     bool runout_prev_paused_{false};
+    /// Previous any_bypass_active(), so sync_from_backend() can bump
+    /// slots_version on the edge. Bypass moves no slot, so nothing else in the
+    /// slot-delta scan notices it, and the pre-print filament check would keep
+    /// serving a stale result.
+    bool last_bypass_active_{false};
     /// prev_backend_runout_ has no meaning yet, so the first sample seeds it
     /// instead of counting as an edge — a flag that was already true when we
     /// connected (or when a backend was swapped in) describes no transition we

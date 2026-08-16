@@ -30,6 +30,14 @@ class PrintStartControllerTestAccess {
                                                                               applies_via_preprint);
     }
 
+    // --- unresolved-tool / bypass gate (test_print_start_filament_gate.cpp) ---
+
+    static std::vector<int> unresolved_tools_for(const std::vector<helix::ToolMapping>& mappings,
+                                                 bool multi_color, bool bypass_active) {
+        return helix::ui::PrintStartController::unresolved_tools_for(mappings, multi_color,
+                                                                     bypass_active);
+    }
+
     // --- remap restore (test_remap_restore_confirmation.cpp) ---
 
     /// Seed the snapshot apply_filament_remaps() would have taken, without
