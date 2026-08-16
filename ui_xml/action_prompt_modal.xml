@@ -24,9 +24,9 @@
     <!-- Scrollable text content area -->
     <lv_obj name="content_container"
             width="100%" height="content" style_min_height="40" style_max_height="#dialog_content_max"
-            style_pad_left="#space_lg"
-            style_pad_right="#space_lg" style_pad_top="#space_md" style_pad_bottom="#space_md" flex_flow="column"
-            style_pad_gap="#space_xs" scrollable="true" scroll_snap_y="none">
+            style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="#space_md"
+            style_pad_bottom="#space_md" flex_flow="column" style_pad_gap="#space_xs" scrollable="true"
+            scroll_snap_y="none">
       <!-- Text lines will be added dynamically -->
     </lv_obj>
     <!-- AFC filament position diagram — self-hides unless RecoveryModalPresenter
