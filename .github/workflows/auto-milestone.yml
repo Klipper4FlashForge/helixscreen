@@ -11,8 +11,8 @@ jobs:
     name: Assign Backlog milestone
     runs-on: ubuntu-22.04
     timeout-minutes: 5
-    # The repo default for GITHUB_TOKEN is read-only; elevate just this job,
-    # the same way lvgl-tracker.yml does.
+    # The repo default for GITHUB_TOKEN is read-only; elevate just this job
+    # rather than widening the workflow-level default.
     permissions:
       issues: write
     # An issue opened with a milestone already set (API, or a maintainer picking one

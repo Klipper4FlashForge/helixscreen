@@ -216,12 +216,3 @@ written from that would have rendered 210°C as 2°C.
 
 A shared widget beats a formula on every axis that matters here: it needs no conditional
 operator, keeps one implementation of the heater-off case, and translates.
-
----
-
-## Loose ends
-
-- `.github/workflows/lvgl-tracker.yml` still runs weekly, watching LVGL releases for v9.5 so it
-  can file an issue about evaluating slots and formulas. v9.5 shipped, XML was removed from
-  core, and we forked. The workflow is watching for something that already happened and cannot
-  produce a useful result. Retiring it has not been done.
