@@ -444,7 +444,7 @@ additional configuration. **Verified against OrcaSlicer upstream/main
 | Snapmaker U1 | HelixScreen (`FilamentSlotOverrideStore`) | `T<n>` (0-based) — tool changer | `lane_data` namespace |
 | ACE (Anycubic ACE Pro) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
 | CFS (Creality K2) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
-| AFC / Box Turtle | AFC's own Klipper plugin | `laneN` (1-based) | `lane_data` namespace (AFC is the originator) |
+| AFC / Box Turtle | AFC's own Klipper plugin | `laneN` (1-based) — moving to `T<n>`, see below | `lane_data` namespace (AFC is the originator) |
 | Happy Hare | Happy Hare's own Klipper plugin (`components/mmu_server.py` `push_lane_data`) | `laneN` (1-based) | `lane_data` namespace — Orca prefers it over the live `mmu` object |
 | Tool Changer | (not applicable — no per-slot metadata) | — | N/A |
 
@@ -467,6 +467,16 @@ atomic for AFC. User overrides go to a private namespace instead (#1158).
 (Earlier docs said HH reached Orca solely via the live `mmu` Klipper object.
 That is outdated: HH's `push_lane_data` now writes the namespace directly and
 Orca prefers it; the `mmu` object is the fallback.)
+
+**AFC is moving its outer key from `laneN` to `T<n>`** (announced 2026-08-15,
+not yet shipped — upstream `DEV` still keys by lane name). One lane can answer
+to several `T` commands under AFC's virtual-tools work, which a lane-name key
+cannot express, so each mapping gets its own record. No HelixScreen code change
+is needed: our reader is key-agnostic, and the tool-changer `laneN` → `T<n>`
+migration only touches keys we authored. Full analysis, including the new
+key-space overlap with Mainsail, is in
+[`../specs/filament_slots.md` § "Announced: AFC is moving from `laneN` to
+`T<n>`"](../specs/filament_slots.md#announced-afc-is-moving-from-lanen-to-tn).
 
 #### Schema lineage and what Orca actually matches on
 
@@ -549,7 +559,7 @@ Read that section before touching key formatting, the load filter, or the
 migration. The summary:
 
 - **Writers and their key style**: HelixScreen (`T<n>` on tool changers,
-  `laneN` otherwise), AFC (`laneN`), Happy Hare (`laneN`), Mainsail #2510
+  `laneN` otherwise), AFC (`laneN`, moving to `T<n>`), Happy Hare (`laneN`), Mainsail #2510
   (`T<n>` on Spoolman + tool changer).
 - **Readers**: OrcaSlicer is **key-opaque** (reads the inner `lane` field, never
   the outer key — `MoonrakerPrinterAgent.cpp:780`), requires the inner `lane`
