@@ -412,6 +412,15 @@ AmsBackendCfs::AmsBackendCfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client
     // family — NOT the K2 CR_BOX_* primitives. Route it to the K1 variant so
     // load/unload/swap dispatch resolves to macros the firmware actually
     // defines.
+    // TRAP for whoever adds a "Creality K2 SE" to printer_database.json: it is a
+    // K1-family board despite the name, and belongs on the K1 dialect. Its rootfs
+    // is the K1 MIPS OTA image (CR4CU220812S11 v2.3.5.34 serves CR-K1, K1 SE, K1C,
+    // CR-K1 Max, K1 Max SE, K2 SE, GS-01, GS-02 from one S55klipper_service
+    // copy_config switch), CR_BOX_* appears nowhere in it, and K2_SE's macro
+    // section is byte-identical to K1's. is_creality_k1() matches on the literal
+    // "k1", so a "k2 se" type would silently land on CR_BOX_* and every command
+    // would come back "Unknown command" — exactly the Creality Hi bug above.
+    // Latent today only because no creality_k2_se entry exists yet. #1278.
     macro_variant_ = (PrinterDetector::is_creality_k1() || PrinterDetector::is_creality_hi())
                          ? CfsMacroVariant::K1
                          : CfsMacroVariant::K2;
