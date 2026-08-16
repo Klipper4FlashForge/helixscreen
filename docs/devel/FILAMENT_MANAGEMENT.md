@@ -3089,18 +3089,21 @@ inference.
 - ~~`BOX_MODIFY_TN` no-ops on K1.~~ It does not. It persists silently and applies to the
   slicer's `T0`-`T15`, which is the entrypoint that resolves `Tnn_map`. Comments corrected in
   three places; behaviour was already right.
+- ~~No phase verification.~~ The primitives record and queue failures instead of raising, so a
+  whole sequence could return success while nothing moved. `finish_action()` now checks the
+  toolhead filament switch against the operation's latched intent and raises a fault through
+  `current_error()` when they disagree. Applies to every dialect — it reads physical state, not
+  macros. See [CREALITY_CFS_INTERNALS.md](CREALITY_CFS_INTERNALS.md#failures-are-deferred-not-raised--fixed-host-side-verification).
 
 **Still open:**
 
-- **No phase verification.** Every K1 primitive records/queues errors rather than failing at
-  the failing command, so a whole sequence can return success while the load did not happen.
-  The firmware documentation is explicit that a wrapper composing primitives must verify
-  visible state (filament sensor, loaded slot, box mode) after each critical phase. We do not.
-- **`BOX_ERROR_CLEAR` opening every sequence discards queued retry work.** The paired
-  recovery command we never emit is `BOX_TNN_RETRY_PROCESS`.
-- **Resume silently swallows the entire K1 body.** Seven commands — including
-  `BOX_EXTRUDE_MATERIAL`, `BOX_CUT_MATERIAL`, `BOX_MATERIAL_FLUSH` — log a warning and do
-  nothing during resume handling. `BOX_RESUME_EXTRUDE` is the dedicated path.
+- **`BOX_ERROR_CLEAR` opening every sequence discards queued retry work** — reviewed and
+  kept: a user-initiated load wants a clean slate, and `BOX_TNN_RETRY_PROCESS` is deliberately
+  not wired to a button because it can resume a paused print as a side effect.
+- **Resume swallows the entire K1 body** — seven commands no-op during resume handling. No
+  longer silent (phase verification reports it), but it cannot be blocked up front: neither
+  Klipper nor the box publishes a "resuming" state, and gating on "paused" would break
+  loading filament during a runout pause.
 - **Swap flush is a deliberate choice, not a bug.** `swap_gcode()` emits a bare
   `BOX_MATERIAL_FLUSH`, matching the firmware's own `BOX_LOAD_MATERIAL_WITH_MATERIAL` macro.
   The colour-aware `BOX_MATERIAL_CHANGE_FLUSH LAST_TNN=<old> TNN=<new>` exists and is what the

@@ -96,4 +96,29 @@ class CfsTestAccess {
                                                 std::string gcode) {
         return b.dispatch_action_script(std::move(gcode));
     }
+
+    /// Put the backend in the state dispatch leaves it in: action set, phase
+    /// tracker armed with the latched intent. Mirrors do_load_filament /
+    /// do_unload_filament without needing a live Moonraker.
+    static void force_phase_intent(helix::printer::AmsBackendCfs& b, AmsAction op) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.system_info_.action = op;
+        b.begin_phase_tracking();
+    }
+
+    /// Seed the toolhead filament switch. `seen` distinguishes "the sensor has
+    /// published a real boolean" from "we have only the default", which is the
+    /// difference between a verdict and Unverifiable.
+    static void set_filament_sensor(helix::printer::AmsBackendCfs& b, bool seen, bool detected) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.filament_sensor_seen_ = seen;
+        b.last_filament_detected_ = detected;
+        b.system_info_.filament_loaded = detected;
+    }
+
+    /// Run the real completion path (the gcode-script success callback body),
+    /// including phase verification.
+    static void complete_action(helix::printer::AmsBackendCfs& b) {
+        b.finish_action();
+    }
 };

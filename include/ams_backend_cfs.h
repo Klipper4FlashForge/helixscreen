@@ -316,6 +316,47 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// is an unknown command there. See the implementation for the evidence.
     static std::string recover_gcode(CfsMacroVariant variant = CfsMacroVariant::K2);
 
+    /// Result of checking a finished operation against what it was supposed to
+    /// achieve. See `verify_phase_outcome()`.
+    enum class PhaseVerdict {
+        Ok,                    ///< End state matches the operation's intent
+        Unverifiable,          ///< No toolhead filament-sensor reading has ever arrived
+        LoadDidNotReachNozzle, ///< Load/swap finished with no filament at the nozzle
+        UnloadLeftFilament,    ///< Unload finished with filament still at the nozzle
+    };
+
+    /// Decide whether a completed CFS operation actually did what it was asked.
+    ///
+    /// The `BOX_*` primitives are workflow internals, not an API with clean
+    /// success semantics: on failure they *record and queue* an error rather
+    /// than raising at the failing command, so the gcode script drains
+    /// normally and every RPC reports success while nothing moved. Gcode
+    /// acceptance therefore proves only that Klipper parsed our text. The
+    /// toolhead filament switch is the one independent physical witness, and
+    /// this is the rule that reads it. See
+    /// docs/devel/CREALITY_CFS_INTERNALS.md § "Failures are deferred".
+    ///
+    /// Pure: no locking, no member access, so the policy is testable on its
+    /// own. `op` is the latched intent (`PhaseTracker::intent`), never
+    /// `system_info_.action`, which by completion holds a synthesized
+    /// sub-phase instead.
+    ///
+    /// Deliberately conservative — it reports a failure only on unambiguous
+    /// evidence. Without a sensor reading it answers `Unverifiable`, because a
+    /// false "load failed" modal on a printer that loaded fine is worse than
+    /// staying quiet.
+    [[nodiscard]] static PhaseVerdict verify_phase_outcome(AmsAction op, bool sensor_ever_read,
+                                                           bool filament_at_end);
+
+    /// Human-facing sentence for a non-Ok verdict, or empty for `Ok` /
+    /// `Unverifiable`. Separate from the rule so the wording can move without
+    /// touching the policy or its tests.
+    [[nodiscard]] static std::string phase_verdict_message(PhaseVerdict verdict);
+
+    /// Surface a verification failure to `AmsErrorBridge`, which polls this on
+    /// the rising edge into `AmsAction::ERROR`.
+    [[nodiscard]] std::optional<helix::ErrorEvent> current_error() const override;
+
     /// Recognize the CFS runout handler's give-up messages and turn them into a
     /// CRITICAL runout fault with recovery buttons.
     ///
@@ -537,7 +578,13 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // and overwrite system_info_.action so the UI's existing step mapping
     // shows the correct phase. All access under mutex_.
     struct PhaseTracker {
-        bool active = false;                // true between dispatch and on_complete/on_error
+        bool active = false; // true between dispatch and on_complete/on_error
+        // The operation the user actually asked for, latched at dispatch.
+        // system_info_.action cannot stand in for this at completion time:
+        // apply_synthesized_action_locked() overwrites it with the synthesized
+        // sub-phase (CUTTING / PURGING / ...) as physical signals arrive, so by
+        // on_complete it no longer says LOADING or UNLOADING.
+        AmsAction intent = AmsAction::IDLE;
         bool started_with_filament = false; // filament_detected at op start
         bool seen_filament_drop = false;    // true→false transition (cut completed)
         bool seen_filament_rise = false;  // false→true transition after a drop (new filament fed)
@@ -550,6 +597,12 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     int last_extruder_target_deci_ = 0;
     int last_extruder_temp_deci_ = 0;
     bool last_filament_detected_ = false;
+    // False until the toolhead filament switch has published a real boolean.
+    // Klipper reports `filament_detected` as null until the sensor takes its
+    // first reading, and a printer without the sensor never publishes one at
+    // all — in both cases last_filament_detected_ is a default, not an
+    // observation, and phase verification must not draw conclusions from it.
+    bool filament_sensor_seen_ = false;
 
     // Track box.filament_useup transitions. Read-only firmware flag (no BOX_*
     // setter). Decoded from a live runout->reload cycle on the K2 Plus
@@ -565,6 +618,12 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
 
     // Reset phase tracker on op completion. Caller must hold mutex_.
     void end_phase_tracking();
+
+    // Body of dispatch_action_script's success callback: verify the operation
+    // achieved what it was asked to, then settle to IDLE (or ERROR when it did
+    // not). Takes mutex_ itself. Named rather than inline so tests drive the
+    // real completion path instead of a copy of it.
+    void finish_action();
 
     // Drive phase machine on signal changes. Caller must hold mutex_.
     void on_filament_transition_locked(bool new_detected);

@@ -2553,6 +2553,158 @@ TEST_CASE("CFS runout: 'disable material automatic refill' raises one runout fau
     CHECK(ev->recovery_actions[1].gcode == "BOX_ERROR_CLEAR");
 }
 
+// ---------------------------------------------------------------------------
+// Post-operation phase verification (#968)
+//
+// The BOX_* primitives record and queue failures instead of raising at the
+// failing command, so a load that never fed filament still drains the script
+// and reports success at every RPC layer. These pin the rule that reads the
+// one independent physical witness we have: the toolhead filament switch.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("CFS phase verify: load that never reached the nozzle is caught", "[ams][cfs][968]") {
+    using V = AmsBackendCfs::PhaseVerdict;
+
+    // The #968 failure: script drained clean, nozzle still empty.
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::LOADING, /*sensor_ever_read=*/true,
+                                              /*filament_at_end=*/false) ==
+          V::LoadDidNotReachNozzle);
+    // Filament present at the end is the success case.
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::LOADING, true, true) == V::Ok);
+}
+
+TEST_CASE("CFS phase verify: unload that left filament behind is caught", "[ams][cfs][968]") {
+    using V = AmsBackendCfs::PhaseVerdict;
+
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::UNLOADING, true, /*filament_at_end=*/
+                                              true) == V::UnloadLeftFilament);
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::UNLOADING, true, false) == V::Ok);
+}
+
+TEST_CASE("CFS phase verify: stays silent without a sensor reading", "[ams][cfs][968]") {
+    using V = AmsBackendCfs::PhaseVerdict;
+
+    // Klipper publishes filament_detected as null until the switch takes its
+    // first reading, and a printer without the switch never publishes at all.
+    // last_filament_detected_ is then a DEFAULT, not an observation. Concluding
+    // "load failed" from it would put a modal on every successful load on such
+    // a machine — strictly worse than saying nothing.
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::LOADING, /*sensor_ever_read=*/false,
+                                              false) == V::Unverifiable);
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::UNLOADING, false, true) ==
+          V::Unverifiable);
+    // Even when the default happens to look like success, refuse to claim it.
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::LOADING, false, true) == V::Unverifiable);
+}
+
+TEST_CASE("CFS phase verify: only load and unload are judged", "[ams][cfs][968]") {
+    using V = AmsBackendCfs::PhaseVerdict;
+
+    // The synthesized sub-phases (CUTTING/PURGING) and every non-material
+    // action must never produce a verdict — they are not operations with a
+    // filament end-state contract, and judging them would fire on the
+    // synthesized action rather than the user's actual intent.
+    for (AmsAction op : {AmsAction::IDLE, AmsAction::CUTTING, AmsAction::PURGING,
+                         AmsAction::SELECTING, AmsAction::RESETTING, AmsAction::HEATING}) {
+        CHECK(AmsBackendCfs::verify_phase_outcome(op, true, false) == V::Ok);
+        CHECK(AmsBackendCfs::verify_phase_outcome(op, true, true) == V::Ok);
+    }
+}
+
+TEST_CASE("CFS phase verify: failure verdicts carry actionable wording", "[ams][cfs][968]") {
+    using V = AmsBackendCfs::PhaseVerdict;
+
+    const std::string load_msg = AmsBackendCfs::phase_verdict_message(V::LoadDidNotReachNozzle);
+    const std::string unload_msg = AmsBackendCfs::phase_verdict_message(V::UnloadLeftFilament);
+
+    REQUIRE_FALSE(load_msg.empty());
+    REQUIRE_FALSE(unload_msg.empty());
+    // The two must not read the same — they need opposite user responses.
+    CHECK(load_msg != unload_msg);
+    // Non-failures say nothing, so a caller can treat empty as "no fault".
+    CHECK(AmsBackendCfs::phase_verdict_message(V::Ok).empty());
+    CHECK(AmsBackendCfs::phase_verdict_message(V::Unverifiable).empty());
+}
+
+TEST_CASE("CFS phase verify: a failed load raises a fault through current_error",
+          "[ams][cfs][968]") {
+    CfsRemapHelper backend;
+
+    // No error while nothing has gone wrong.
+    CHECK_FALSE(backend.current_error().has_value());
+
+    // Drive the real completion path: intent latched at dispatch, sensor says
+    // the nozzle is still empty when the script drains.
+    CfsTestAccess::force_phase_intent(backend, AmsAction::LOADING);
+    CfsTestAccess::set_filament_sensor(backend, /*seen=*/true, /*detected=*/false);
+    CfsTestAccess::complete_action(backend);
+
+    auto ev = backend.current_error();
+    REQUIRE(ev.has_value());
+    CHECK(ev->source == helix::ErrorSource::CFS);
+    CHECK(ev->severity == helix::ErrorSeverity::CRITICAL);
+    // Must name the real problem rather than a generic failure.
+    CHECK(ev->detail.find("did not reach") != std::string::npos);
+    // NOT the runout action set. "Resume" is meaningless here — a manual load
+    // that failed has no paused job to restart, and offering it would send
+    // RESUME to an idle printer.
+    for (const auto& a : ev->recovery_actions) {
+        CHECK(a.gcode != "RESUME");
+    }
+    // Clearing the latched box error is the one safe lever, and it must stay
+    // tappable on a cold nozzle since it moves no filament.
+    REQUIRE(ev->recovery_actions.size() == 1);
+    CHECK(ev->recovery_actions[0].gcode == AmsBackendCfs::reset_gcode());
+    CHECK_FALSE(ev->recovery_actions[0].needs_hot_nozzle);
+}
+
+TEST_CASE("CFS phase verify: a raised fault survives later status frames", "[ams][cfs][968]") {
+    CfsRemapHelper backend;
+
+    CfsTestAccess::force_phase_intent(backend, AmsAction::LOADING);
+    CfsTestAccess::set_filament_sensor(backend, true, false);
+    CfsTestAccess::complete_action(backend);
+    REQUIRE(backend.current_error().has_value());
+
+    // The box keeps streaming after the failure. Phase synthesis runs off those
+    // frames and used to be free to overwrite `action` with LOADING/CUTTING —
+    // which would erase the fault and dismiss the modal the user is reading.
+    nlohmann::json n = {
+        {"params", nlohmann::json::array(
+                       {{{"filament_switch_sensor filament_sensor", {{"filament_detected", false}}},
+                         {"extruder", {{"temperature", 210.0}, {"target", 220.0}}}}})}};
+    CfsTestAccess::handle_status(backend, n["params"][0]);
+
+    CHECK(backend.get_system_info().action == AmsAction::ERROR);
+    CHECK(backend.current_error().has_value());
+}
+
+TEST_CASE("CFS phase verify: starting a new operation clears the fault", "[ams][cfs][968]") {
+    CfsRemapHelper backend;
+
+    CfsTestAccess::force_phase_intent(backend, AmsAction::LOADING);
+    CfsTestAccess::set_filament_sensor(backend, true, false);
+    CfsTestAccess::complete_action(backend);
+    REQUIRE(backend.current_error().has_value());
+
+    // A retry must not inherit the previous failure — otherwise the modal can
+    // never be dismissed by doing the obvious thing.
+    CfsTestAccess::force_phase_intent(backend, AmsAction::LOADING);
+    CHECK_FALSE(backend.current_error().has_value());
+    CHECK(backend.get_system_info().action == AmsAction::LOADING);
+}
+
+TEST_CASE("CFS phase verify: a good load completes to IDLE with no fault", "[ams][cfs][968]") {
+    CfsRemapHelper backend;
+
+    CfsTestAccess::force_phase_intent(backend, AmsAction::LOADING);
+    CfsTestAccess::set_filament_sensor(backend, /*seen=*/true, /*detected=*/true);
+    CfsTestAccess::complete_action(backend);
+
+    CHECK_FALSE(backend.current_error().has_value());
+    CHECK(backend.get_system_info().action == AmsAction::IDLE);
+}
+
 TEST_CASE("CFS runout: terse 'no auto refill' wording is recognized", "[ams][cfs][968]") {
     CfsRemapHelper backend;
 
