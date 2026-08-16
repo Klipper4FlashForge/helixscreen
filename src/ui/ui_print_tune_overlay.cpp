@@ -280,6 +280,8 @@ void PrintTuneOverlay::sync_to_state() {
     // would baby-step away from a phantom zero.
     int z_offset_microns = helix::zoffset::displayed_z_offset_microns(*printer_state_);
     update_z_offset_display(z_offset_microns);
+    // Opening the overlay starts a new tuning session; travel is bounded from here.
+    session_base_z_offset_ = current_z_offset_;
 
     // Sync the visual indicator
     lv_obj_t* indicator = lv_obj_find_by_name(tune_panel_, "z_offset_indicator");
@@ -346,7 +348,10 @@ void PrintTuneOverlay::update_speed_flow_display(int speed_percent, int flow_per
 }
 
 void PrintTuneOverlay::update_z_offset_display(int microns) {
-    // Update display from PrinterState (microns -> mm)
+    // Update display from PrinterState (microns -> mm). Deliberately does NOT
+    // re-baseline the travel guard: PrintStatusPanel calls this from a
+    // gcode_z_offset observer, which our own adjust fires, so re-baselining
+    // here would reset the guard after every single step.
     current_z_offset_ = microns / 1000.0;
 
     if (subjects_initialized_) {
@@ -458,12 +463,21 @@ void PrintTuneOverlay::handle_reset() {
 }
 
 void PrintTuneOverlay::handle_z_offset_changed(double delta) {
-    // Clamp to safe range to prevent accidental bed crashes or huge offsets
+    // Bound how far one session may travel from the offset it opened on, so a
+    // stuck button cannot walk the nozzle into the bed. Clamping the absolute
+    // offset instead snapped a legitimately large one down to the limit on the
+    // first tap -- a nose dive rather than a guard rail. The window is widened
+    // to always contain the current offset, so should the base ever go stale
+    // the worst outcome is a refused step rather than a jump.
+    const double min_offset =
+        std::min(session_base_z_offset_ - Z_OFFSET_MAX_SESSION_TRAVEL, current_z_offset_);
+    const double max_offset =
+        std::max(session_base_z_offset_ + Z_OFFSET_MAX_SESSION_TRAVEL, current_z_offset_);
     double new_offset = current_z_offset_ + delta;
-    if (new_offset < Z_OFFSET_MIN || new_offset > Z_OFFSET_MAX) {
-        spdlog::warn("[PrintTuneOverlay] Z-offset {:.3f}mm clamped to [{}, {}]", new_offset,
-                     Z_OFFSET_MIN, Z_OFFSET_MAX);
-        new_offset = std::clamp(new_offset, Z_OFFSET_MIN, Z_OFFSET_MAX);
+    if (new_offset < min_offset || new_offset > max_offset) {
+        spdlog::warn("[PrintTuneOverlay] Z-offset {:.3f}mm clamped to [{:.3f}, {:.3f}]", new_offset,
+                     min_offset, max_offset);
+        new_offset = std::clamp(new_offset, min_offset, max_offset);
         delta = new_offset - current_z_offset_;
         if (std::abs(delta) < 0.0005)
             return; // Already at limit

@@ -197,6 +197,62 @@ TEST_CASE_METHOD(PrintTuneZOffsetFixture, "PrintTune: MOVE=1 is omitted when the
 }
 
 TEST_CASE_METHOD(PrintTuneZOffsetFixture,
+                 "PrintTune: an offset already past the travel guard still steps normally",
+                 "[ui_integration][zoffset][1280][regression]") {
+    // #1280: the guard used to clamp the ABSOLUTE offset to +/-2mm. A toolhead
+    // running +2.5mm was yanked to 2.000 on the first tap -- a 0.5mm nose dive
+    // into the print. The guard bounds session travel now, so a step is a step.
+    set_live_offset(2.5);
+    set_printing(true);
+    set_homed(true);
+
+    auto& overlay = show_overlay();
+    overlay.handle_z_step_select(2); // 0.010mm
+    overlay.handle_z_adjust(1);      // farther from the bed
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(last_gcode() == "SET_GCODE_OFFSET Z_ADJUST=0.010 MOVE=1");
+    CHECK(lv_subject_get_int(state().get_gcode_z_offset_subject()) == 2510);
+}
+
+TEST_CASE_METHOD(PrintTuneZOffsetFixture,
+                 "PrintTune: stepping toward the bed from a large offset moves one step",
+                 "[ui_integration][zoffset][1280][regression]") {
+    // The dangerous direction. Under the absolute clamp this produced a
+    // -0.500mm jump; it must be -0.010mm.
+    set_live_offset(2.5);
+    set_printing(true);
+    set_homed(true);
+
+    auto& overlay = show_overlay();
+    overlay.handle_z_step_select(2);
+    overlay.handle_z_adjust(-1);
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(last_gcode() == "SET_GCODE_OFFSET Z_ADJUST=-0.010 MOVE=1");
+    CHECK(lv_subject_get_int(state().get_gcode_z_offset_subject()) == 2490);
+}
+
+TEST_CASE_METHOD(PrintTuneZOffsetFixture, "PrintTune: session travel is still bounded at 2mm",
+                 "[ui_integration][zoffset][1280]") {
+    // The guard has to survive the fix: 60 x 0.05mm would reach 3mm of travel,
+    // and must stop at 2mm past the offset the overlay opened on.
+    set_live_offset(2.5);
+    set_printing(true);
+    set_homed(true);
+
+    auto& overlay = show_overlay();
+    overlay.handle_z_step_select(0); // 0.050mm
+    for (int i = 0; i < 60; ++i) {
+        overlay.handle_z_adjust(-1);
+    }
+    helix::ui::UpdateQueue::instance().drain();
+
+    // 2.5 - 2.0 = 0.5mm, not 2.5 - 3.0 = -0.5mm.
+    CHECK(lv_subject_get_int(state().get_gcode_z_offset_subject()) == 500);
+}
+
+TEST_CASE_METHOD(PrintTuneZOffsetFixture,
                  "PrintTune: the displayed offset seeds from the stored value while idle",
                  "[ui_integration][zoffset][zmod][regression]") {
     // Negan's report: opening the tune screen while idle showed 0.000.
