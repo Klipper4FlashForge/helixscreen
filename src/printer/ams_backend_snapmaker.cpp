@@ -23,6 +23,7 @@
 #include <lvgl.h>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -1062,6 +1063,11 @@ void AmsBackendSnapmaker::handle_status_update(const nlohmann::json& notificatio
     // Set when the active-tool port-present flag changed this parse (#991), so
     // we publish to AmsState exactly once after releasing the mutex.
     bool port_present_changed = false;
+    // Lanes that reached "unload_finish" this parse. Same deferral rule as
+    // port_present_changed: collected under mutex_, published to AmsState after
+    // it is released, because reaching into AmsState while holding ours inverts
+    // the order add_backend() acquires them in.
+    std::vector<int> unloaded_lanes;
 
     // Per-slot UID observed THIS parse. Empty string means no RFID info in
     // this notification (incremental update, or slot not included). Only
@@ -1396,11 +1402,14 @@ void AmsBackendSnapmaker::handle_status_update(const nlohmann::json& notificatio
                                     }
                                 }
                                 if (state == "unload_finish") {
-                                    // Record the just-unloaded lane so
-                                    // FilamentSensorManager suppresses the runout
-                                    // modal during the grace window when the user is
-                                    // EXPECTED to pull filament out of this lane.
-                                    AmsState::instance().mark_slot_unloaded(i);
+                                    // Deferred to after the lock for the same
+                                    // reason emit_event is: this reaches into
+                                    // AmsState, which takes its own mutex, while
+                                    // AmsState::add_backend() takes that mutex
+                                    // first and then ours via set_event_callback().
+                                    // Calling it here closed the cycle and TSan
+                                    // reported the deadlock (nightly, 2026-08-16).
+                                    unloaded_lanes.push_back(i);
                                 }
                                 // preload_finish is terminal-for-latch but does NOT
                                 // end the op: a lane already at preload_finish that
@@ -1679,6 +1688,13 @@ void AmsBackendSnapmaker::handle_status_update(const nlohmann::json& notificatio
 
     if (port_present_changed) {
         AmsState::instance().set_active_tool_port_present(last_published_port_present_ != 0);
+    }
+
+    // Record the just-unloaded lanes so FilamentSensorManager suppresses the
+    // runout modal during the grace window when the user is EXPECTED to pull
+    // filament out of the lane.
+    for (int lane : unloaded_lanes) {
+        AmsState::instance().mark_slot_unloaded(lane);
     }
 
     if (changed) {
