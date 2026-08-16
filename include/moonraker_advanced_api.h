@@ -249,15 +249,19 @@ class MoonrakerAdvancedAPI : public IAdvancedAPI {
     /**
      * @brief Start resonance test for input shaper calibration
      *
-     * Executes TEST_RESONANCES command for the specified axis.
+     * Executes SHAPER_CALIBRATE for the specified axis.
      * Requires accelerometer configuration in printer.cfg.
      *
+     * The sweep range is read from `configfile.settings.resonance_tester`
+     * before the command is sent, so progress tracks the frequencies this
+     * printer will actually test rather than an assumed range.
+     *
      * @param axis Axis to test ('X' or 'Y')
-     * @param on_progress Called with progress percentage (0-100)
+     * @param on_progress Called with progress percentage (0-100) and phase
      * @param on_complete Called with test results
      * @param on_error Called on failure
      */
-    void start_resonance_test(char axis, helix::AdvancedProgressCallback on_progress,
+    void start_resonance_test(char axis, helix::ShaperProgressCallback on_progress,
                               helix::InputShaperCallback on_complete,
                               ErrorCallback on_error) override;
 

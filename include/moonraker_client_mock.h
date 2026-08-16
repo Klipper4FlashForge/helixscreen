@@ -565,6 +565,27 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     }
 
     /**
+     * @brief Set the [resonance_tester] sweep range the mock reports and replays
+     *
+     * Drives both `configfile.settings.resonance_tester` and the frequencies
+     * the scripted SHAPER_CALIBRATE response actually sweeps, so a test can
+     * reproduce a printer whose ceiling is not the value HelixScreen assumes.
+     * Defaults mirror Kalico's out-of-the-box 5-135 Hz.
+     */
+    void set_resonance_sweep_range(double min_freq, double max_freq) {
+        resonance_min_freq_ = min_freq;
+        resonance_max_freq_ = max_freq;
+    }
+
+    [[nodiscard]] double get_resonance_min_freq() const {
+        return resonance_min_freq_;
+    }
+
+    [[nodiscard]] double get_resonance_max_freq() const {
+        return resonance_max_freq_;
+    }
+
+    /**
      * @brief Report stepper_z position_endstop as JSON null
      *
      * Klipper emits `position_endstop: null` for any printer configured with
@@ -1370,6 +1391,8 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     bool shaper_csv_writable_{true};     ///< When false, SHAPER_CALIBRATE skips writing the CSV
     bool stepper_z_endstop_null_{false}; ///< When true, position_endstop is reported as JSON null
     double extruder_max_temp_{300.0};    ///< Extruder max_temp reported in configfile.settings
+    double resonance_min_freq_{5.0};     ///< [resonance_tester] min_freq the mock reports/sweeps
+    double resonance_max_freq_{135.0};   ///< [resonance_tester] max_freq the mock reports/sweeps
     bool mmu_enabled_{true};             ///< MMU available (default true for existing tests)
 
     // Additional objects for testing (e.g., "mmu", "AFC", "toolchanger")
