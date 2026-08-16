@@ -20,6 +20,7 @@
 #include "../include/moonraker_client_mock.h"
 #include "../include/printer_state.h"
 #include "lvgl_test_fixture.h"
+#include "test_helpers/printer_state_test_access.h"
 
 #include <chrono>
 #include <memory>
@@ -59,9 +60,16 @@ class BusyGuardFixture : public LVGLTestFixture {
         lv_subject_set_int(state.get_print_state_enum_subject(), static_cast<int>(s));
     }
 
-    /// Report Klipper's idle_timeout "Printing" flag, the guard's busy input.
+    /**
+     * @brief Report a SUSTAINED idle_timeout "Printing", i.e. a blocking op already under way.
+     *
+     * Writing the subject alone no longer reaches the guard — it reads
+     * `IdleTimeoutBusy`, which requires the flag to hold for `SETTLE` first. The
+     * settle behaviour itself is covered by test_idle_timeout_busy.cpp; every
+     * case in these files means an op that has already outlasted it.
+     */
     void set_idle_printing(bool on) {
-        lv_subject_set_int(state.get_idle_timeout_printing_subject(), on ? 1 : 0);
+        PrinterStateTestAccess::set_sustained_idle_timeout_printing(state, on);
     }
 
     void set_manual_probe(bool on) {

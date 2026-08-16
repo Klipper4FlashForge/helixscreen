@@ -1929,10 +1929,21 @@ class PrinterState {
      *
      * Returns 1 when Klipper's idle_timeout.state == "Printing" (its canonical
      * busy flag — true for the whole duration of any blocking op or file print),
-     * 0 otherwise. Feeds is_blocking_operation_active().
+     * 0 otherwise. This is the literal Klipper state; is_blocking_operation_active()
+     * reads the debounced view below instead.
      */
     lv_subject_t* get_idle_timeout_printing_subject() {
         return calibration_state_.get_idle_timeout_printing_subject();
+    }
+
+    /**
+     * @brief Debounced idle_timeout busy flag backing is_blocking_operation_active()
+     *
+     * Exposed so tests can drive the guard the way the parse path does. See
+     * IdleTimeoutBusy for why the raw subject cannot be used as a gate.
+     */
+    helix::IdleTimeoutBusy& idle_timeout_busy() {
+        return calibration_state_.idle_timeout_busy();
     }
 
     /**
