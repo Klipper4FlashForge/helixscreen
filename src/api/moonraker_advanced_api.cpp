@@ -1523,8 +1523,13 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
             return; // Already completed
         }
 
-        spdlog::info("[BedMeshProgressCollector] Complete ({}/{} probes)", current_probe_,
-                     total_probes_);
+        // current_probe_/total_probes_ are only populated by the "Probing point
+        // X/Y" branch. Firmware that emits bare "probe at X,Y" lines instead
+        // (Creality K2, Qidi Q2) drives point_counter_ and leaves both at zero,
+        // which logged a completed 81-point mesh as "Complete (0/0 probes)".
+        const int done = current_probe_ > 0 ? current_probe_ : point_counter_.points();
+        const int total = total_probes_ > 0 ? total_probes_ : expected_probes_;
+        spdlog::info("[BedMeshProgressCollector] Complete ({}/{} probes)", done, total);
         unregister();
 
         if (on_complete_) {

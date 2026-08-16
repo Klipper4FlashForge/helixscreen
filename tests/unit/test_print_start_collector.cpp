@@ -2008,7 +2008,10 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
     reset_collector_to_idle();
     collector().enable_fallbacks();
 
-    // Set predicted total to 400s (absolute timeout = max(400*2.5, 900) = 1000s)
+    // Set predicted total to 400s. The absolute ceiling is
+    // max(400*2.5, ABSOLUTE_MAX_TIMEOUT) and ABSOLUTE_MAX_TIMEOUT is now 1800s,
+    // raised because the old 900s cut off legitimate long pre-prints (the K2
+    // Plus runs ~1140s: heat, ~390s mesh, purge).
     PrintStartCollectorTestAccess::set_predicted_total(collector(), 400.0f);
 
     // Nozzle target still 0 — temps_near will be false
@@ -2023,7 +2026,8 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
     }
 
     SECTION("Fires at absolute timeout regardless of temps") {
-        PrintStartCollectorTestAccess::set_elapsed_seconds(collector(), 1010);
+        // Still fires with temps_near false — the ceiling ignores temperature.
+        PrintStartCollectorTestAccess::set_elapsed_seconds(collector(), 1850);
         collector().check_fallback_completion();
         drain_async_updates();
         drain_async_updates();
@@ -2053,7 +2057,10 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture, "Absolute max timeout fires w
     }
 
     SECTION("ABSOLUTE_MAX_TIMEOUT fires as hard ceiling") {
-        PrintStartCollectorTestAccess::set_elapsed_seconds(collector(), 910);
+        // Ungated backstop: fires on elapsed time alone, without needing the
+        // printer to have gone quiet, so a firmware that chatters forever still
+        // leaves Preparing.
+        PrintStartCollectorTestAccess::set_elapsed_seconds(collector(), 1850);
         collector().check_fallback_completion();
         drain_async_updates();
         drain_async_updates();
@@ -2962,4 +2969,108 @@ TEST_CASE_METHOD(K2PrintStartReplayFixture,
     send_gcode_response("// flush_temp: 220");
     settle();
     REQUIRE(get_current_phase() == PrintStartPhase::PURGING);
+}
+
+// ============================================================================
+// Timeout must key on quiet, not on elapsed time
+// ============================================================================
+
+/**
+ * The adaptive timeout used to fire on (elapsed > threshold && temps_near).
+ * On any printer that meshes AFTER heating, temps_near goes true minutes before
+ * the pre-print is actually over, so the timeout fired mid-sequence. That set
+ * fallback_completion_, which makes save_prediction_entry() skip, so the
+ * prediction never grew and the next run timed out at the same point — a
+ * deadlock the collector could not learn its way out of.
+ *
+ * Observed on a K2 Plus 2026-08-16: predicted 185s, timeout at 278s, real
+ * pre-print ~1140s. Every run in a 38-hour log ended on this timeout.
+ *
+ * A printer still narrating its pre-print is not stuck, however long it takes.
+ */
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "Timeout does not fire while pre-print activity is recent",
+                 "[print][collector][timeout]") {
+    collector().start();
+    drain_async_updates();
+    reset_collector_to_idle();
+    collector().enable_fallbacks();
+
+    PrintStartCollectorTestAccess::set_predicted_total(collector(), 0.0f);
+    set_all_temps(1050, 1050, 2610, 2650); // temps_near = true
+    PrintStartCollectorTestAccess::set_elapsed_seconds(collector(), 400);
+    // ...but the printer spoke 10 seconds ago.
+    PrintStartCollectorTestAccess::set_last_activity_seconds_ago(collector(), 10);
+
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() != PrintStartPhase::COMPLETE);
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture, "Timeout fires once the printer goes quiet",
+                 "[print][collector][timeout]") {
+    collector().start();
+    drain_async_updates();
+    reset_collector_to_idle();
+    collector().enable_fallbacks();
+
+    PrintStartCollectorTestAccess::set_predicted_total(collector(), 0.0f);
+    set_all_temps(1050, 1050, 2610, 2650);
+    PrintStartCollectorTestAccess::set_elapsed_seconds(collector(), 400);
+    // Nothing heard for well over the quiet window — this one really is stuck.
+    PrintStartCollectorTestAccess::set_last_activity_seconds_ago(collector(), 300);
+
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() == PrintStartPhase::COMPLETE);
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "A long but active pre-print survives past the old ceilings",
+                 "[print][collector][timeout][k2]") {
+    // The K2 Plus pre-print runs ~1140s: heat, then a ~390s mesh, then purge.
+    // Both the old adaptive ceiling (predicted * 2.5) and ABSOLUTE_MAX_TIMEOUT
+    // (900s) cut it off while the printer was still working.
+    collector().start();
+    drain_async_updates();
+    reset_collector_to_idle();
+    collector().enable_fallbacks();
+
+    PrintStartCollectorTestAccess::set_predicted_total(collector(), 185.0f);
+    set_all_temps(1050, 1050, 2610, 2650);
+    PrintStartCollectorTestAccess::set_elapsed_seconds(collector(), 1100);
+    PrintStartCollectorTestAccess::set_last_activity_seconds_ago(collector(), 3);
+
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() != PrintStartPhase::COMPLETE);
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture, "A probe line counts as pre-print activity",
+                 "[print][collector][timeout]") {
+    // Mesh probing is the longest silent-to-the-profile stretch on many
+    // firmwares: no phase pattern matches for minutes, only probe lines.
+    collector().start();
+    drain_async_updates();
+    reset_collector_to_idle();
+    collector().enable_fallbacks();
+
+    PrintStartCollectorTestAccess::set_predicted_total(collector(), 0.0f);
+    set_all_temps(1050, 1050, 2610, 2650);
+    PrintStartCollectorTestAccess::set_elapsed_seconds(collector(), 400);
+
+    send_gcode_response("// probe at 100.000,100.000 is z=-0.031000");
+    drain_async_updates();
+
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() != PrintStartPhase::COMPLETE);
 }

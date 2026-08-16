@@ -226,6 +226,11 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
      */
     void check_phase_patterns(const std::string& line);
 
+    /// Record that the printer said something about its pre-print. Feeds the
+    /// quiet gate on every timeout branch. Takes state_mutex_ itself, so do not
+    /// call it while already holding the lock.
+    void note_activity();
+
     /**
      * @brief Check for HELIX:PHASE:* signals from plugin/macros
      *
@@ -339,6 +344,16 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     int max_sequential_progress_ = 0; // Monotonic progress guard for sequential mode
     std::chrono::steady_clock::time_point printing_state_start_;
 
+    /// When the printer last said anything about its pre-print: a profile
+    /// pattern matched, a probe line arrived, or the phase advanced.
+    ///
+    /// The timeouts key off THIS, not off elapsed-since-start. A pre-print that
+    /// is still narrating itself is not stuck however long it runs, and keying
+    /// off elapsed time made the collector give up mid-sequence on any printer
+    /// that meshes after heating — which then skipped the prediction save and
+    /// froze the estimate that set the deadline in the first place.
+    std::chrono::steady_clock::time_point last_activity_time_;
+
     // Profile for signal/pattern matching (set via set_profile() or loaded by start())
     std::shared_ptr<PrintStartProfile> profile_;
 
@@ -350,8 +365,18 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     // Fallback detection constants
     static constexpr auto FALLBACK_TIMEOUT =
         std::chrono::seconds(300); ///< Last resort when no predictions
+    /// Ungated final backstop. Every other timeout also requires the printer to
+    /// have gone quiet; this one fires regardless, so a firmware that chatters
+    /// forever still leaves Preparing. Must therefore sit above the longest
+    /// legitimate pre-print: the K2 Plus runs ~1140s (heat, ~390s mesh, purge),
+    /// and a cold-start ASA soak pushes that further.
     static constexpr auto ABSOLUTE_MAX_TIMEOUT =
-        std::chrono::seconds(900); ///< Hard ceiling (stuck detection)
+        std::chrono::seconds(1800); ///< Hard ceiling (stuck detection)
+    /// How long the printer must say nothing before a timeout may complete the
+    /// pre-print. Longer than the gap between mesh probe points on a slow bed
+    /// (the K2 spends ~5s per point, ~3s on a manual sweep) with margin for a
+    /// heat-soak step that emits nothing at all.
+    static constexpr auto PREPRINT_QUIET_TIMEOUT = std::chrono::seconds(90);
     static constexpr float ADAPTIVE_TIMEOUT_MARGIN =
         1.5f; ///< Multiply predicted total for adaptive timeout
     static constexpr float ABSOLUTE_TIMEOUT_MARGIN =

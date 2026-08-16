@@ -103,6 +103,7 @@ void PrintStartCollector::start() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         // Record start time for timeout fallback
         printing_state_start_ = std::chrono::steady_clock::now();
+        last_activity_time_ = printing_state_start_;
         detected_phases_.clear();
         current_phase_ = PrintStartPhase::INITIALIZING;
         print_start_detected_ = false;
@@ -307,6 +308,7 @@ void PrintStartCollector::reset() {
         print_start_detected_ = false;
         max_sequential_progress_ = 0;
         printing_state_start_ = std::chrono::steady_clock::now();
+        last_activity_time_ = printing_state_start_;
         phase_enter_times_.clear();
         mesh_probe_current_ = 0;
         mesh_probe_total_ = 0;
@@ -603,8 +605,24 @@ void PrintStartCollector::check_fallback_completion() {
     // target (ext_target=0) means we can't confirm temps are ready
     bool temps_near = nozzle_near && bed_near;
 
-    auto elapsed = std::chrono::steady_clock::now() - start_time;
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = now - start_time;
     auto elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+
+    // A pre-print that is still narrating itself is not stuck, however long it
+    // runs. Every timeout below therefore requires the printer to have gone
+    // quiet as well as the clock to have run out; only ABSOLUTE_MAX_TIMEOUT
+    // fires unconditionally. Keying purely on elapsed time made the collector
+    // give up mid-sequence on any printer that meshes after heating, and
+    // because a timeout completion skips the prediction save, the too-small
+    // estimate that set the deadline could never grow.
+    std::chrono::steady_clock::duration quiet_for;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        quiet_for = now - last_activity_time_;
+    }
+    const bool quiet = quiet_for >= PREPRINT_QUIET_TIMEOUT;
+    const auto quiet_sec = std::chrono::duration_cast<std::chrono::seconds>(quiet_for).count();
 
     // Determine effective timeout: use prediction data when available,
     // FALLBACK_TIMEOUT only when we have no information at all
@@ -613,10 +631,10 @@ void PrintStartCollector::check_fallback_completion() {
         auto adaptive_timeout =
             std::chrono::seconds(static_cast<int>(predicted_total * ADAPTIVE_TIMEOUT_MARGIN));
 
-        if (elapsed > adaptive_timeout && temps_near) {
+        if (elapsed > adaptive_timeout && temps_near && quiet) {
             spdlog::info("[PrintStartCollector] Fallback: adaptive timeout ({} sec, "
-                         "predicted={:.0f}s)",
-                         elapsed_sec, predicted_total);
+                         "predicted={:.0f}s, quiet={}s)",
+                         elapsed_sec, predicted_total, quiet_sec);
             fallback_completion_ = true;
             update_phase(PrintStartPhase::COMPLETE, lv_tr("Starting Print..."));
             return;
@@ -626,7 +644,7 @@ void PrintStartCollector::check_fallback_completion() {
         auto absolute_timeout =
             std::chrono::seconds(static_cast<int>(predicted_total * ABSOLUTE_TIMEOUT_MARGIN));
         absolute_timeout = std::max(absolute_timeout, ABSOLUTE_MAX_TIMEOUT);
-        if (elapsed > absolute_timeout) {
+        if (elapsed > absolute_timeout && quiet) {
             spdlog::warn("[PrintStartCollector] Fallback: absolute timeout ({} sec, "
                          "predicted={:.0f}s)",
                          elapsed_sec, predicted_total);
@@ -636,7 +654,7 @@ void PrintStartCollector::check_fallback_completion() {
         }
     } else {
         // No prediction data — FALLBACK_TIMEOUT is the last resort
-        if (elapsed > FALLBACK_TIMEOUT && temps_near) {
+        if (elapsed > FALLBACK_TIMEOUT && temps_near && quiet) {
             spdlog::info("[PrintStartCollector] Fallback: timeout ({} sec, no predictions)",
                          elapsed_sec);
             fallback_completion_ = true;
@@ -745,6 +763,14 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         mesh_probe_total_ = *adapt_total;
         spdlog::info("[PrintStartCollector] Adapted probe count from gcode: {}", *adapt_total);
+    }
+
+    // Any probe line proves the pre-print is still working, whether or not we
+    // have entered BED_MESH yet. Mesh probing is the longest stretch that
+    // matches no profile pattern, so without this the quiet gate would expire
+    // mid-sweep on exactly the printers that need it most.
+    if (helix::is_probe_result_line(line) || helix::parse_probe_progress(line)) {
+        note_activity();
     }
 
     // Check for bed mesh probe progress (sub-phase tracking within BED_MESH).
@@ -972,6 +998,11 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
     check_phase_patterns(line);
 }
 
+void PrintStartCollector::note_activity() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    last_activity_time_ = std::chrono::steady_clock::now();
+}
+
 void PrintStartCollector::check_phase_patterns(const std::string& line) {
     if (!profile_) {
         return;
@@ -980,6 +1011,7 @@ void PrintStartCollector::check_phase_patterns(const std::string& line) {
     PrintStartProfile::MatchResult match;
     if (profile_->try_match_pattern(line, match)) {
         real_signal_seen_.store(true, std::memory_order_relaxed);
+        note_activity();
         // Update when this is a NEW phase, OR when it's a BED_MESH sub-phase
         // *message* change while already in BED_MESH. The latter is what lets a
         // mesh-start signal (Snapmaker U1 "// z offset:") relabel the display
