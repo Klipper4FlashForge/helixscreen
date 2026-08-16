@@ -215,6 +215,18 @@ class IMoonrakerAPI {
     /// @brief Check if a string is safe to use as a G-code parameter
     static bool is_safe_gcode_param(const std::string& str);
 
+    /// @brief Check if a filament material name is safe as a G-code parameter value.
+    ///
+    /// Deliberately wider than is_safe_gcode_param(): material names legitimately carry
+    /// `+`, `-`, `.` and spaces (`PLA+`, `PA6-CF`, `Silk PLA`), and rejecting those made
+    /// spool saves silently drop the material. Pair with gcode_param_value().
+    static bool is_safe_material_param(const std::string& str);
+
+    /// @brief Render a validated value for interpolation into a G-code command,
+    ///        quoting it when it contains whitespace so Klipper's argument tokenizer
+    ///        keeps it as one parameter. Values without whitespace pass through unchanged.
+    static std::string gcode_param_value(const std::string& value);
+
     /// @brief Exclude an object from the current print
     virtual void exclude_object(const std::string& object_name, SuccessCallback on_success,
                                 ErrorCallback on_error) = 0;

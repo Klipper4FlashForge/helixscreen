@@ -652,15 +652,20 @@ Contributions are very welcome here and only need XML, not C++ — see the [UI C
 
 ---
 
-### A widget disappeared from the home screen (portrait screens)
+### A widget disappeared from the home screen
 
 **Symptoms:**
 
 - A widget vanished from the home screen and did not come back after a restart or an update
 - **Tips** in particular is missing on a portrait-mounted screen
 - You saw a message like *"'Tips' removed — grid full"* even though the grid looked far from full
+- You get a *"'Fan Speeds' removed — grid full"* message on **every single launch**, on a dashboard where the grid really is full
 
-**Cause:** on older versions, a widget that was wider than a portrait screen's grid could not be placed anywhere, so HelixScreen switched it off — and *saved* that off state to your settings. Fixing the placement logic does not undo the saved setting, so the widget stays off until you put it back yourself. It is not lost: it is sitting in the Widget Catalog as an available widget.
+**Cause 1 - the widget was too wide for the grid (portrait screens).** On older versions, a widget that was wider than a portrait screen's grid could not be placed anywhere, so HelixScreen switched it off - and *saved* that off state to your settings. Fixing the placement logic does not undo the saved setting, so the widget stays off until you put it back yourself. It is not lost: it is sitting in the Widget Catalog as an available widget.
+
+**Cause 2 - the grid was genuinely full.** On older versions, a widget that fit fine but found every cell taken was also switched off, and the message came back on every launch because the switch-off usually never made it to disk. That is fixed: a widget that only lacks a free cell now keeps its **enabled** setting and simply has no position, so it places itself again as soon as a cell frees up, and the message appears only when the widget was actually on your screen and lost its spot. If you are still seeing it repeat, you are on an older version - [update HelixScreen](UPGRADING.md).
+
+If your dashboard is full and you want a specific widget back, make room for it: remove a widget you care less about, or move it to a second page (see [Multiple Pages](guide/home-panel.md#multiple-pages)).
 
 Note that **Tips is now deliberately off by default on portrait screens** — it is a wide widget and takes a third to a half of a row on a narrow grid. If Tips is the only thing missing, that may simply be the new default rather than the old bug.
 

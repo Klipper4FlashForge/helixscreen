@@ -228,7 +228,14 @@ rejected: `"` closes the value early, `\` is shlex's POSIX escape, and the rest
 are comment/terminator characters that older regex-path Klipper forks strip
 before shlex ever runs. `plr_is_safe_recovery_filename()` enforces that;
 `MoonrakerAPI::is_safe_gcode_param()` is the wrong helper here because it
-rejects whitespace.
+rejects whitespace. `IMoonrakerAPI::is_safe_material_param()` allows whitespace
+but is the wrong helper too, and in the other direction: it is an **allowlist**
+(alphanumerics plus `+ - _ . ( ) /`), while a slicer filename legitimately
+carries commas, brackets, percent signs and non-ASCII. `GCODE_PARAM_BREAKERS`
+is the **blocklist** form of the same idea - `\n\r;#*="\` - which is what a
+free-form filename needs. Same shlex mechanism, three call-site-specific
+charsets; the material one is in `FILAMENT_MANAGEMENT.md` § "Material names as
+G-code parameter values".
 
 > A trailing ` ; from helixscreen` comment would ALSO break this command, and
 > for a non-obvious reason: Creality special-cases `SDCARD_PRINT_FILE` to use a

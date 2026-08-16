@@ -334,26 +334,43 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
     helix::ui::safe_clean_children(cards_row_);
     unit_cards_.clear();
 
-    for (int i = 0; i < static_cast<int>(info.units.size()); ++i) {
+    const int unit_count = static_cast<int>(info.units.size());
+    if (unit_count > AmsState::MAX_UNITS) {
+        // One line naming the cap, instead of seven XML parser warnings per
+        // excess card. Those cards still render their slots; only the
+        // temperature/humidity badge is unavailable.
+        spdlog::warn("[{}] Backend reports {} units but only {} have environment subjects - "
+                     "unit {} onward render without the temp/humidity badge",
+                     get_name(), unit_count, AmsState::MAX_UNITS, AmsState::MAX_UNITS + 1);
+    }
+
+    for (int i = 0; i < unit_count; ++i) {
         const AmsUnit& unit = info.units[i];
         UnitCard uc;
         uc.unit_index = i;
 
         // Create card from XML component — all static styling is declarative.
         // Fully-expanded per-unit subject names (kept alive across lv_xml_create) so
-        // each card binds to its own unit's environment-indicator subjects.
-        char s_temp[40], s_hum[40], s_humstat[40], s_humvis[40], s_vis[40], s_dry[40], s_drytxt[40];
-        snprintf(s_temp, sizeof(s_temp), "ams_env_ind_%d_temp_text", i);
-        snprintf(s_hum, sizeof(s_hum), "ams_env_ind_%d_humidity_text", i);
-        snprintf(s_humstat, sizeof(s_humstat), "ams_env_ind_%d_humidity_status", i);
-        snprintf(s_humvis, sizeof(s_humvis), "ams_env_ind_%d_humidity_visible", i);
-        snprintf(s_vis, sizeof(s_vis), "ams_env_ind_%d_visible", i);
-        snprintf(s_dry, sizeof(s_dry), "ams_env_ind_%d_drying_active", i);
-        snprintf(s_drytxt, sizeof(s_drytxt), "ams_env_ind_%d_drying_text", i);
-        const char* attrs[] = {
-            "temp_text",        s_temp,   "humidity_text", s_hum,  "humidity_status", s_humstat,
-            "humidity_visible", s_humvis, "visible",       s_vis,  "drying_active",   s_dry,
-            "drying_text",      s_drytxt, nullptr,         nullptr};
+        // each card binds to its own unit's environment-indicator subjects. Units
+        // past MAX_UNITS get the always-off placeholders — AmsState owns which is
+        // which, since it owns the cap and the registrations.
+        const AmsState::EnvIndicatorSubjectNames s = AmsState::env_indicator_subject_names(i);
+        const char* attrs[] = {"temp_text",
+                               s.temp_text.c_str(),
+                               "humidity_text",
+                               s.humidity_text.c_str(),
+                               "humidity_status",
+                               s.humidity_status.c_str(),
+                               "humidity_visible",
+                               s.humidity_visible.c_str(),
+                               "visible",
+                               s.visible.c_str(),
+                               "drying_active",
+                               s.drying_active.c_str(),
+                               "drying_text",
+                               s.drying_text.c_str(),
+                               nullptr,
+                               nullptr};
         uc.card = static_cast<lv_obj_t*>(lv_xml_create(cards_row_, "ams_unit_card", attrs));
         if (!uc.card) {
             spdlog::error("[{}] Failed to create ams_unit_card XML for unit {}", get_name(), i);
