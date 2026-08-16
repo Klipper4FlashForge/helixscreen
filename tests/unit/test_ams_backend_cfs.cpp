@@ -2645,9 +2645,17 @@ TEST_CASE("CFS phase verify: a failed load raises a fault through current_error"
     CHECK(ev->severity == helix::ErrorSeverity::CRITICAL);
     // Must name the real problem rather than a generic failure.
     CHECK(ev->detail.find("did not reach") != std::string::npos);
-    // Same vetted recovery pair the runout path offers.
-    REQUIRE(ev->recovery_actions.size() == 2);
-    CHECK(ev->recovery_actions[1].gcode == AmsBackendCfs::reset_gcode());
+    // NOT the runout action set. "Resume" is meaningless here — a manual load
+    // that failed has no paused job to restart, and offering it would send
+    // RESUME to an idle printer.
+    for (const auto& a : ev->recovery_actions) {
+        CHECK(a.gcode != "RESUME");
+    }
+    // Clearing the latched box error is the one safe lever, and it must stay
+    // tappable on a cold nozzle since it moves no filament.
+    REQUIRE(ev->recovery_actions.size() == 1);
+    CHECK(ev->recovery_actions[0].gcode == AmsBackendCfs::reset_gcode());
+    CHECK_FALSE(ev->recovery_actions[0].needs_hot_nozzle);
 }
 
 TEST_CASE("CFS phase verify: a raised fault survives later status frames", "[ams][cfs][968]") {

@@ -2568,11 +2568,27 @@ std::optional<helix::ErrorEvent> AmsBackendCfs::current_error() const {
     if (system_info_.action != AmsAction::ERROR || system_info_.operation_detail.empty()) {
         return std::nullopt;
     }
-    // AmsErrorBridge polls this on the rising edge into ERROR. Same recovery
-    // pair the runout give-up path offers, so the buttons read identically
-    // wherever a CFS fault surfaces.
+    // AmsErrorBridge polls this on the rising edge into ERROR.
+    //
+    // Deliberately NOT build_recovery_actions(): that set is built for the
+    // runout give-up path, where the job is paused and "Resume" is the whole
+    // point. A phase-verification failure is usually a manual load from the
+    // filament panel with no print running at all, so RESUME would either do
+    // nothing or restart an unrelated job.
+    //
+    // Reset CFS alone. It clears the latched box error, moves no filament, and
+    // stays tappable on a cold nozzle. The natural retry is the user tapping
+    // Load again, which re-runs the whole envelope from a clean state.
+    //
+    // The firmware's own retry lever, BOX_TNN_RETRY_PROCESS, is deliberately
+    // not wired: it can move axes, heat, flush, AND resume a paused print on
+    // success. That last side effect makes it a poor fit for a button on a
+    // "load failed" modal, and nobody on the project has a CFS to prove it out.
+    // Tracked with the rest of the K1 hardware work in #968.
+    std::vector<helix::RecoveryAction> actions;
+    actions.push_back({lv_tr("Reset CFS"), reset_gcode(), "cfs::error_clear", "danger"});
     return helix::make_ams_fault_event(helix::ErrorSource::CFS, lv_tr("Filament operation failed"),
-                                       system_info_.operation_detail, build_recovery_actions());
+                                       system_info_.operation_detail, std::move(actions));
 }
 
 std::string AmsBackendCfs::reset_gcode() {

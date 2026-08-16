@@ -244,19 +244,33 @@ Still not verified: the *slot* actually loaded. The box's own reported slot is n
 evidence on K1 — it names a cassette-staged slot even with an empty nozzle, which is the
 original #968 phantom-cut bug — so the toolhead switch is the only witness worth trusting.
 
-### `BOX_ERROR_CLEAR` is not free — *Open, judgement call*
+### `BOX_ERROR_CLEAR` is not free — *Judgement call, settled*
 
 We open **every** K1 load, unload and swap with `BOX_ERROR_CLEAR`. Source B: it clears the
 active recovery condition, may set the affected box `IDLE`, and **discards queued macro retry
 work** — the deferred phases described above.
 
-The firmware's paired command is `BOX_TNN_RETRY_PROCESS`, which actually retries the failed
-phase and can resume a paused print. B's guidance is that clear is for *"hardware has been
-inspected and you do not want automatic retry"*, which is not the situation at the start of a
-user-initiated load. Worth revisiting whether the unconditional clear is right, and whether
-our "Reset CFS" recovery button should offer retry alongside clear.
+The firmware's paired command is `BOX_TNN_RETRY_PROCESS` ([A]-verified present), which
+retries the failed phase and can resume a paused print on success.
 
-### Resume is a silent trap — *Open*
+**Keeping the unconditional clear.** A user tapping Load has decided to start over, and
+starting a fresh operation on top of a latched box error is how you get the error re-raised
+immediately or the box refusing the command outright. Clearing first is the right opening move
+for a user-initiated operation. B's "do not clear if you want the retry to run" guidance is
+aimed at a *recovery* flow, which this is not.
+
+**Not wiring `BOX_TNN_RETRY_PROCESS` as a button.** It can move axes, heat, flush, and
+**resume a paused print** on success. A "Retry" button on a load-failed modal that might also
+restart the user's job is a surprising amount of behaviour to hang on one tap, on hardware
+nobody here can test. The natural retry — tapping Load again — already re-runs the whole
+envelope from a clean state.
+
+What this did change: the phase-verification fault raises its own single **Reset CFS** action
+rather than reusing `build_recovery_actions()`. That set leads with **Resume**, which exists
+for the runout give-up path where a paused job is waiting. A failed manual load usually has no
+job to resume, so offering it would have sent `RESUME` to an idle printer.
+
+### Resume is a silent trap — *No longer silent; a pre-flight block is not possible*
 
 Seven commands **log a warning and do nothing** while the printer is in resume handling: [B]
 
@@ -264,11 +278,33 @@ Seven commands **log a warning and do nothing** while the printer is in resume h
 `BOX_MATERIAL_FLUSH` · `BOX_GO_TO_EXTRUDE_POS` · `RESTORE_POSITION` · `BOX_CUT_MATERIAL`
 
 That is essentially our entire K1 body. A load issued during resume executes zero useful work
-and reports success at every layer. The firmware's dedicated path is `BOX_RESUME_EXTRUDE`,
-which only runs when the resume target and the active material resolve to the same slot.
+and used to report success at every layer. The firmware's dedicated path is
+`BOX_RESUME_EXTRUDE`, which only runs when the resume target and the active material resolve
+to the same slot.
+
+**The dangerous half — the silence — is gone.** Phase verification now checks the toolhead
+switch after the script drains, so a resume-swallowed load surfaces as "the filament did not
+reach the nozzle" instead of a false success. The user is told something went wrong and can
+retry once the resume finishes.
+
+**Refusing the operation up front is not implementable on the signals we have**, and this is a
+deliberate non-fix rather than an oversight:
+
+- The guard keys on the wrapper's internal `in_resume` flag, which is never published — it
+  appears in no Klipper object and no `box` status field.
+- Klipper's `print_stats.state` has no `resuming` value. It is
+  `standby` / `printing` / `paused` / `complete` / `cancelled` / `error`
+  (`parse_print_job_state()`), and a resume moves `paused` → `printing` with nothing in
+  between.
+- The one available proxy — "the print is paused" — is wrong, and blocking on it would break
+  the single most important reason to load filament mid-job: recovering from a runout while
+  paused.
+
+So there is no predicate to gate on. Detecting the *outcome* is the correct layer, and that is
+what we now do.
 
 Note the exception, which is a hazard in the other direction: `BOX_RETRUDE_MATERIAL_WITH_TNN`
-is **not** resume-guarded and *will* move material during resume. [B]
+is **not** resume-guarded and *will* move material during resume. We do not emit it. [B]
 
 ### Runout give-up wordings — *Fixed*
 
