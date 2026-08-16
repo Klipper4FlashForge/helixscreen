@@ -1387,6 +1387,10 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
                 on_filament_transition_locked(detected);
             }
             last_filament_detected_ = detected;
+            // A real boolean landed, so last_filament_detected_ is now an
+            // observation rather than its default. Phase verification refuses
+            // to judge anything until this flips.
+            filament_sensor_seen_ = true;
         }
         changed = true;
     }
@@ -2274,16 +2278,9 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
         return AmsErrorHelper::not_connected("IMoonrakerAPI not available");
     }
 
-    auto on_complete = [this]() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (system_info_.action != AmsAction::IDLE) {
-            spdlog::info("[AMS CFS] Action script complete — action {} -> IDLE",
-                         static_cast<int>(system_info_.action));
-            system_info_.action = AmsAction::IDLE;
-            end_phase_tracking();
-            PostOpCooldownManager::instance().schedule();
-        }
-    };
+    // finish_action() takes mutex_ itself and owns the verify-then-settle
+    // decision. Both the success path and the tests go through it.
+    auto on_complete = [this]() { finish_action(); };
 
     auto token = lifetime_.token();
     auto on_error = [this, token](const MoonrakerError& err) {
@@ -2372,6 +2369,11 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
 void AmsBackendCfs::begin_phase_tracking() {
     phase_tracker_ = PhaseTracker{};
     phase_tracker_.active = true;
+    // Latch the intent NOW. Every caller sets system_info_.action immediately
+    // before calling us, and apply_synthesized_action_locked() will overwrite
+    // that field with CUTTING/PURGING/... as the operation progresses, so this
+    // is the only moment the user's actual request is still readable.
+    phase_tracker_.intent = system_info_.action;
     phase_tracker_.started_with_filament = system_info_.filament_loaded;
     // Don't latch baseline_target until heating completes — the macro raises
     // target as its first act, and that rise is not a purge signal.
@@ -2451,6 +2453,12 @@ void AmsBackendCfs::on_extruder_temp_change_locked(int new_temp_deci, int new_ta
 void AmsBackendCfs::apply_synthesized_action_locked() {
     if (!phase_tracker_.active)
         return;
+    // Never synthesize over a verification fault. finish_action() ends phase
+    // tracking before raising ERROR, so today the guard above already covers
+    // this; stating it explicitly keeps a future reordering from silently
+    // erasing the fault on the next status frame.
+    if (system_info_.action == AmsAction::ERROR)
+        return;
 
     AmsAction synth;
     if (phase_tracker_.seen_purge_signal) {
@@ -2471,6 +2479,100 @@ void AmsBackendCfs::apply_synthesized_action_locked() {
                      ams_action_to_string(synth));
         system_info_.action = synth;
     }
+}
+
+AmsBackendCfs::PhaseVerdict AmsBackendCfs::verify_phase_outcome(AmsAction op, bool sensor_ever_read,
+                                                                bool filament_at_end) {
+    // Only the two operations that carry a filament end-state contract are
+    // judged. The synthesized sub-phases (CUTTING/PURGING) reach system_info_
+    // but never PhaseTracker::intent, and everything else (SELECTING,
+    // RESETTING, ...) makes no promise about the nozzle.
+    if (op != AmsAction::LOADING && op != AmsAction::UNLOADING) {
+        return PhaseVerdict::Ok;
+    }
+
+    // Without a real reading, filament_at_end is a default rather than an
+    // observation. Claiming a failure from it would put a modal on every
+    // successful operation on a printer whose toolhead switch is absent or has
+    // not reported yet — strictly worse than staying quiet.
+    if (!sensor_ever_read) {
+        return PhaseVerdict::Unverifiable;
+    }
+
+    if (op == AmsAction::LOADING && !filament_at_end) {
+        return PhaseVerdict::LoadDidNotReachNozzle;
+    }
+    if (op == AmsAction::UNLOADING && filament_at_end) {
+        return PhaseVerdict::UnloadLeftFilament;
+    }
+    return PhaseVerdict::Ok;
+}
+
+std::string AmsBackendCfs::phase_verdict_message(PhaseVerdict verdict) {
+    switch (verdict) {
+    case PhaseVerdict::LoadDidNotReachNozzle:
+        // Name the observation (nothing at the nozzle) and the likely causes,
+        // because the box reports nothing useful when it gives up this way.
+        return lv_tr("The filament did not reach the nozzle. The CFS reported no error, but "
+                     "the toolhead sensor still sees no filament. Check that the spool is "
+                     "seated and the path is clear, then try again.");
+    case PhaseVerdict::UnloadLeftFilament:
+        return lv_tr("Filament is still at the nozzle after unloading. The cut or retract may "
+                     "not have completed. Clear the toolhead before loading another spool.");
+    case PhaseVerdict::Ok:
+    case PhaseVerdict::Unverifiable:
+        break;
+    }
+    return {};
+}
+
+void AmsBackendCfs::finish_action() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (system_info_.action == AmsAction::IDLE) {
+        return;
+    }
+
+    // Gcode acceptance is not evidence the operation worked: the BOX_*
+    // primitives record and queue failures instead of raising, so the script
+    // drains and every RPC succeeds while nothing moved (#968). Check the
+    // toolhead switch, which is the one witness the box cannot fake.
+    const AmsAction intent = phase_tracker_.intent;
+    const PhaseVerdict verdict =
+        verify_phase_outcome(intent, filament_sensor_seen_, last_filament_detected_);
+    const std::string failure = phase_verdict_message(verdict);
+
+    end_phase_tracking();
+
+    if (!failure.empty()) {
+        spdlog::error("{} Phase verification FAILED after {}: {}", backend_log_tag(),
+                      ams_action_to_string(intent), failure);
+        system_info_.action = AmsAction::ERROR;
+        system_info_.operation_detail = failure;
+        // No PostOpCooldownManager::schedule() here: the nozzle stays hot so
+        // the user can retry or clear without a reheat wait.
+        return;
+    }
+
+    if (verdict == PhaseVerdict::Unverifiable) {
+        spdlog::debug("{} Action complete — no toolhead filament reading, outcome unverified",
+                      backend_log_tag());
+    }
+    spdlog::info("{} Action script complete — action {} -> IDLE", backend_log_tag(),
+                 static_cast<int>(system_info_.action));
+    system_info_.action = AmsAction::IDLE;
+    PostOpCooldownManager::instance().schedule();
+}
+
+std::optional<helix::ErrorEvent> AmsBackendCfs::current_error() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (system_info_.action != AmsAction::ERROR || system_info_.operation_detail.empty()) {
+        return std::nullopt;
+    }
+    // AmsErrorBridge polls this on the rising edge into ERROR. Same recovery
+    // pair the runout give-up path offers, so the buttons read identically
+    // wherever a CFS fault surfaces.
+    return helix::make_ams_fault_event(helix::ErrorSource::CFS, lv_tr("Filament operation failed"),
+                                       system_info_.operation_detail, build_recovery_actions());
 }
 
 std::string AmsBackendCfs::reset_gcode() {

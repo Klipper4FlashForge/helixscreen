@@ -194,7 +194,7 @@ rather than a guess.
 `swap_gcode()` would also need the *outgoing* slot, which it is not currently passed;
 `do_change_tool` has it in `system_info_.current_slot` before overwriting it.
 
-### Failures are deferred, not raised — *Open*
+### Failures are deferred, not raised — *Fixed (host-side verification)*
 
 Every K1 primitive we emit **records an error and queues the command line for later replay**
 rather than failing at the point of failure. [B] A HelixScreen sequence can therefore run to
@@ -208,9 +208,41 @@ externally visible result before continuing."* The checks it names:
 - target slot still loaded after flush;
 - target box not in `PRELOADING` or error mode before the next material command.
 
-We currently do none of these. This is the most likely explanation for the #968 reporter's
-"screen showed the wrong process and was stuck at step 2" — our progress model advances on
+We used to do none of these, which is the most likely explanation for the #968 reporter's
+"screen showed the wrong process and was stuck at step 2": our progress model advanced on
 gcode acceptance, and gcode acceptance means nothing here.
+
+**Now implemented**, in the one place we have independent evidence. On completion,
+`AmsBackendCfs::finish_action()` checks the toolhead filament switch against the operation's
+latched intent (`AmsBackendCfs::verify_phase_outcome()`, a pure function):
+
+| Intent | Expected end state | Verdict on mismatch |
+|---|---|---|
+| `LOADING` (load or swap) | filament at the nozzle | `LoadDidNotReachNozzle` |
+| `UNLOADING` | no filament at the nozzle | `UnloadLeftFilament` |
+| anything else | — | always `Ok` |
+
+On a mismatch the backend enters `AmsAction::ERROR` with an explanatory
+`operation_detail`, and `AmsErrorBridge` presents it via the new
+`AmsBackendCfs::current_error()` with the same Resume / Reset CFS pair the runout path uses.
+
+Three design points worth keeping:
+
+- **The intent is latched at dispatch**, not read at completion.
+  `apply_synthesized_action_locked()` overwrites `system_info_.action` with the synthesized
+  sub-phase (CUTTING/PURGING) as signals arrive, so by completion it no longer says what the
+  user asked for. `PhaseTracker::intent` is the durable copy.
+- **No sensor reading means no verdict.** Klipper publishes `filament_detected` as null until
+  the switch first reports, and a machine without the switch never publishes at all — the
+  default would otherwise read as "load failed" on every successful load. `Unverifiable` is a
+  deliberate outcome, not an oversight.
+- **No timer is involved.** The status subscription and the RPC reply share one ordered
+  WebSocket, and the switch trips seconds before the script drains (flush, wipe and park all
+  follow), so the sensor state is already settled when the completion callback runs.
+
+Still not verified: the *slot* actually loaded. The box's own reported slot is not independent
+evidence on K1 — it names a cassette-staged slot even with an empty nozzle, which is the
+original #968 phantom-cut bug — so the toolhead switch is the only witness worth trusting.
 
 ### `BOX_ERROR_CLEAR` is not free — *Open, judgement call*
 
