@@ -10,8 +10,10 @@
  * These tests don't require LVGL or Moonraker - they test pure regex logic.
  */
 
+#include <cstdio>
 #include <regex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../catch_amalgamated.hpp"
@@ -2757,4 +2759,203 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture, "PrintStartCollector - layer 
         collector().note_current_layer(0);
         CHECK(collector().has_seen_layer_zero());
     }
+}
+
+// ============================================================================
+// Pre-mesh probe buffering (BED_MESH auto-entry from probe lines)
+// ============================================================================
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "PrintStartCollector: nozzle-clean probe touches do not enter BED_MESH",
+                 "[print][collector][mesh][k2]") {
+    // K2 Plus BOX_NOZZLE_CLEAN touches three points on the wipe strip at Y=355,
+    // outside the 350mm bed, and Klipper emits TWO lines per touch (one with
+    // z_compensation, one without). The entry threshold counted raw lines, so
+    // six lines tripped a threshold of three and the collector announced
+    // "Bed Mesh" 79 seconds before BED_MESH_CALIBRATE actually ran.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates();
+    collector().enable_fallbacks();
+
+    for (double x : {147.588, 150.588, 153.588}) {
+        char with_comp[128];
+        char without[128];
+        std::snprintf(with_comp, sizeof(with_comp),
+                      "// probe at %.3f,355.000 is z=-0.647500 z_compensation=0.050000", x);
+        std::snprintf(without, sizeof(without), "// probe at %.3f,355.000 is z=-0.597500", x);
+        send_gcode_response(with_comp);
+        send_gcode_response(without);
+    }
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() != PrintStartPhase::BED_MESH);
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "PrintStartCollector: a real mesh sweep still auto-enters BED_MESH",
+                 "[print][collector][mesh]") {
+    // The threshold exists for firmware that emits no mesh-start line at all.
+    // Raising it must not break that: a genuine sweep crosses it and enters.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates();
+    collector().enable_fallbacks();
+
+    for (int i = 0; i < 8; ++i) {
+        char line[128];
+        std::snprintf(line, sizeof(line), "// probe at %.3f,50.000 is z=-0.031000",
+                      20.0 + i * 30.0);
+        send_gcode_response(line);
+    }
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() == PrintStartPhase::BED_MESH);
+}
+
+// ============================================================================
+// K2 Plus pre-print replay (end-to-end regression)
+// ============================================================================
+
+/**
+ * @brief Replay a real K2 Plus PRINT_START through the collector
+ *
+ * Every gcode line below is verbatim from klippy.log of the 2026-08-16 print
+ * quattrobox_bottom_cover_ASA-GF, in the order Moonraker forwarded it. The
+ * shipped profile was written against macro names in gcode_macro.cfg rather
+ * than against what the firmware echoes, and the probe counter deduped only
+ * against the previous point, so this sequence produced:
+ *
+ *   - "Bed Mesh" announced during BOX_NOZZLE_CLEAN, 79s early, off the bed
+ *   - HOMING announced at [G28_RE_CHECK], 3.5 minutes after the real G28
+ *   - HEATING_NOZZLE consumed by the clean's M109, so the real heat never showed
+ *   - a 67-point mesh displayed as (147/81)
+ *
+ * A profile edit that stops matching this stream, or a dedupe regression, puts
+ * one of those back.
+ */
+class K2PrintStartReplayFixture : public PrintStartCollectorHeaterFixture {
+  public:
+    K2PrintStartReplayFixture() {
+        auto profile = PrintStartProfile::load("creality_k2");
+        REQUIRE(profile != nullptr);
+        have_profile_ = profile->name().find("K2") != std::string::npos;
+        collector().set_profile(std::move(profile));
+    }
+
+    bool have_profile_ = false;
+
+    void settle() {
+        drain_async_updates();
+        drain_async_updates();
+    }
+
+    /// Both lines Klipper emits for one K2 probe touch.
+    void touch(double x, double y) {
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+                      "// probe at %.3f,%.3f is z=-0.647500 z_compensation=0.050000", x, y);
+        send_gcode_response(buf);
+        std::snprintf(buf, sizeof(buf), "// probe at %.3f,%.3f is z=-0.597500", x, y);
+        send_gcode_response(buf);
+    }
+
+    /// The 67 points the adaptive sweep actually visited on the captured run.
+    static std::vector<std::pair<double, double>> grid() {
+        const double xs[] = {5.0, 47.5, 90.0, 132.5, 175.0, 217.5, 260.0, 302.5, 345.0};
+        const double ys[] = {5.0, 47.5, 90.0, 132.5, 175.0, 217.5, 260.0, 302.5};
+        std::vector<std::pair<double, double>> g;
+        for (double x : xs) {
+            for (double y : ys) {
+                if (y == 5.0 && x > 132.5) {
+                    continue; // outside the print area, never probed
+                }
+                g.push_back({x, y});
+            }
+        }
+        return g;
+    }
+};
+
+TEST_CASE_METHOD(K2PrintStartReplayFixture,
+                 "PrintStartCollector: real K2 Plus pre-print reaches every phase in order",
+                 "[print][collector][k2][integration]") {
+    if (!have_profile_) {
+        SKIP("creality_k2.json not available");
+    }
+    collector().start();
+    settle();
+    collector().enable_fallbacks();
+
+    // 12:18:50 — G28. The old profile matched nothing here.
+    send_gcode_response("// [DEBUG]_handle_home_rails_begin");
+    settle();
+    REQUIRE(get_current_phase() == PrintStartPhase::HOMING);
+
+    // 12:19:15 — z_align.
+    send_gcode_response("// send query_z_align cur_retries:0 oid=4 enable=1");
+    settle();
+    REQUIRE(get_current_phase() == PrintStartPhase::Z_TILT);
+
+    // 12:20:50 — nozzle clean starts.
+    send_gcode_response("// [NOZZLE_CLEAR] START NOZZLE_CLEAR COUNT:0");
+    send_gcode_response("// [GCODE]BOX_NOZZLE_CLEAN");
+    settle();
+    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
+
+    // 12:21:05-12:21:13 — three touches on the wipe strip at Y=355, which is
+    // off the 350mm bed. Six probe lines: enough to trip a 3-LINE threshold.
+    touch(147.588, 355.0);
+    touch(150.588, 355.0);
+    touch(153.588, 355.0);
+    settle();
+    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
+
+    // 12:21:15 — the clean softens filament with M109. This must not consume
+    // the one-shot HEATING_NOZZLE detection.
+    send_gcode_response("// [GCODE]M109 S170");
+    settle();
+    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
+
+    // 12:22:21 — Z re-verify. Matches "G28" as a bare substring.
+    send_gcode_response("// [G28_RE_CHECK]");
+    settle();
+    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
+
+    // 12:22:28 — the real mesh begins.
+    send_gcode_response("// exist_points[81], config_points[81]");
+    settle();
+    REQUIRE(get_current_phase() == PrintStartPhase::BED_MESH);
+
+    // 12:22:30-12:25:48 — the adaptive sweep.
+    const auto g = grid();
+    for (const auto& [x, y] : g) {
+        touch(x, y);
+    }
+    // 12:26:25-12:28:56 — eight G29_RE_CHECK rounds over two corners already
+    // swept, each sampling four +/-0.25mm quadrant offsets.
+    for (int round = 0; round < 8; ++round) {
+        for (double dx : {-0.25, 0.25}) {
+            for (double dy : {-0.25, 0.25}) {
+                touch(345.0 + dx, 47.5 + dy);
+                touch(345.0 + dx, 302.5 + dy);
+            }
+        }
+    }
+    settle();
+    REQUIRE(get_current_phase() == PrintStartPhase::BED_MESH);
+
+    // The count is the grid the sweep visited, not the 262 lines that carried
+    // it. (The denominator is absent here only because the mock never answers
+    // the probe-count RPC, so this does not also pin adaptive_meshing — the
+    // profile test does that.)
+    const std::string expected = "Bed Mesh (" + std::to_string(g.size()) + ")";
+    REQUIRE(get_current_message() == expected);
+
+    // 12:34:39 — CFS purge. The old BOX_MATERIAL_FLUSH pattern never matched.
+    send_gcode_response("// flush_temp: 220");
+    settle();
+    REQUIRE(get_current_phase() == PrintStartPhase::PURGING);
 }

@@ -390,18 +390,14 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     // progress and per-probe time extrapolation for ETA.
     int mesh_probe_current_ = 0;
     int mesh_probe_total_ = 0;
-    int mesh_probe_fallback_count_ = 0; ///< Unique probe POINTS (not samples) counted from fallback
     std::chrono::steady_clock::time_point mesh_first_probe_time_;
     std::chrono::steady_clock::time_point mesh_last_probe_time_;
     float mesh_seconds_per_probe_ = 0.0f; ///< Running average from observed probe intervals
 
-    // Dedupe state: Klipper's `samples: N` config emits N consecutive "probe at X,Y"
-    // lines at the same position. We count unique (x,y) positions as "points", which
-    // matches what the user expects (# points that will be probed, not raw sample
-    // count). Reset on gap-detection and in reset().
-    double mesh_last_probe_x_ = 0.0;
-    double mesh_last_probe_y_ = 0.0;
-    bool mesh_has_last_probe_pos_ = false;
+    /// Unique probe POINTS (not sample lines) counted from the "probe at X,Y"
+    /// fallback, for firmware that emits no "Probing point N/M". Reset on
+    /// gap-detection, on mesh sub-phase change, and in reset().
+    helix::ProbePointCounter mesh_points_;
 
     // Sub-phase tracking within BED_MESH. Some firmwares (Snapmaker U1) route
     // multiple distinct probe operations through one phase enum but vary the
@@ -419,11 +415,20 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     static constexpr auto MESH_PROBE_GAP_RESET = std::chrono::seconds(30);
 
     // Pre-mesh probe buffering: don't auto-enter BED_MESH from probe lines
-    // until we've seen enough consecutive probes to distinguish mesh calibration
-    // from isolated PROBE commands (e.g. nozzle wipe on AD5M Klipper mod).
-    int pre_mesh_probe_count_ = 0;
+    // until we've seen enough distinct probe POINTS to distinguish mesh
+    // calibration from isolated PROBE commands (e.g. nozzle wipe on AD5M
+    // Klipper mod). Counting points rather than lines matters because Klipper
+    // emits two lines per touch on firmware that reports z_compensation
+    // separately, which halved the effective threshold.
+    helix::ProbePointCounter pre_mesh_points_;
     std::chrono::steady_clock::time_point pre_mesh_last_probe_time_;
-    static constexpr int MESH_PROBE_ENTRY_THRESHOLD = 3;
+
+    /// Distinct pre-mesh probe points required before auto-entering BED_MESH.
+    /// Must clear the largest non-mesh probe burst any firmware emits: K2 Plus
+    /// BOX_NOZZLE_CLEAN touches 3 points on the wipe strip, Voron 2.4 QGL
+    /// touches 4 corner pads, AD5M nozzle wipe touches 1-2. Every real mesh is
+    /// far larger, so 5 costs nothing on the firmwares that need this path.
+    static constexpr int MESH_PROBE_ENTRY_THRESHOLD = 5;
 
     // Targets used in last compute_predicted_weights() call — used to detect
     // when heater targets change (e.g. macro issues M109 after bed-first heating)
