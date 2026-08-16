@@ -23,48 +23,53 @@ namespace helix::ui {
 
 // Static member initialization
 bool AmsContextMenu::callbacks_registered_ = false;
+bool AmsContextMenu::subjects_initialized_ = false;
+lv_subject_t AmsContextMenu::slot_is_loaded_subject_;
+lv_subject_t AmsContextMenu::slot_can_load_subject_;
 
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
 
-AmsContextMenu::AmsContextMenu() {
-    // Initialize subjects for button enabled states
-    lv_subject_init_int(&slot_is_loaded_subject_, 0);
-    lv_xml_register_subject(nullptr, "ams_slot_is_loaded", &slot_is_loaded_subject_);
+void AmsContextMenu::init_subjects() {
+    if (subjects_initialized_)
+        return;
 
+    lv_subject_init_int(&slot_is_loaded_subject_, 0);
     lv_subject_init_int(&slot_can_load_subject_, 1);
+
+    lv_xml_register_subject(nullptr, "ams_slot_is_loaded", &slot_is_loaded_subject_);
     lv_xml_register_subject(nullptr, "ams_slot_can_load", &slot_can_load_subject_);
 
-    subject_initialized_ = true;
+    subjects_initialized_ = true;
+}
+
+AmsContextMenu::AmsContextMenu() {
+    init_subjects();
     spdlog::debug("[AmsContextMenu] Constructed");
 }
 
 AmsContextMenu::~AmsContextMenu() {
-    // Clean up subjects
-    if (subject_initialized_ && lv_is_initialized()) {
-        lv_subject_deinit(&slot_is_loaded_subject_);
-        lv_subject_deinit(&slot_can_load_subject_);
-        subject_initialized_ = false;
-    }
+    // Subjects are static and stay registered for the process lifetime — see the
+    // header. Deiniting them here is what left the XML registry resolving
+    // "ams_slot_can_load" to dead storage once any one of the three owners went
+    // away, whether or not another was still using the name.
     spdlog::trace("[AmsContextMenu] Destroyed");
 }
 
 AmsContextMenu::AmsContextMenu(AmsContextMenu&& other) noexcept
     : ContextMenu(std::move(other)), action_callback_(std::move(other.action_callback_)),
-      subject_initialized_(other.subject_initialized_), backend_(other.backend_),
-      total_slots_(other.total_slots_), tool_dropdown_(other.tool_dropdown_),
-      backup_dropdown_(other.backup_dropdown_), pending_is_loaded_(other.pending_is_loaded_) {
-    // Transfer subject ownership
-    if (other.subject_initialized_) {
-        slot_is_loaded_subject_ = other.slot_is_loaded_subject_;
-        slot_can_load_subject_ = other.slot_can_load_subject_;
-    }
+      backend_(other.backend_), total_slots_(other.total_slots_),
+      tool_dropdown_(other.tool_dropdown_), backup_dropdown_(other.backup_dropdown_),
+      pending_is_loaded_(other.pending_is_loaded_) {
+    // Nothing to transfer for the subjects: they are static and shared. Copying
+    // the lv_subject_t values here was never sound anyway — observers hold the
+    // address they were registered against, so a by-value move left every one of
+    // them pointing at the moved-from object.
     other.backend_ = nullptr;
     other.total_slots_ = 0;
     other.tool_dropdown_ = nullptr;
     other.backup_dropdown_ = nullptr;
-    other.subject_initialized_ = false;
 }
 
 AmsContextMenu& AmsContextMenu::operator=(AmsContextMenu&& other) noexcept {
@@ -79,18 +84,12 @@ AmsContextMenu& AmsContextMenu::operator=(AmsContextMenu&& other) noexcept {
         backup_dropdown_ = other.backup_dropdown_;
         pending_is_loaded_ = other.pending_is_loaded_;
 
-        // Transfer subject ownership
-        if (other.subject_initialized_) {
-            slot_is_loaded_subject_ = other.slot_is_loaded_subject_;
-            slot_can_load_subject_ = other.slot_can_load_subject_;
-        }
-        subject_initialized_ = other.subject_initialized_;
+        // Subjects are static and shared — nothing to transfer. See the move ctor.
 
         other.backend_ = nullptr;
         other.total_slots_ = 0;
         other.tool_dropdown_ = nullptr;
         other.backup_dropdown_ = nullptr;
-        other.subject_initialized_ = false;
     }
     return *this;
 }
