@@ -1072,6 +1072,8 @@ translations:
     Flusskompensation
   Filament is loose: Filament ist locker
   Filament is pulling tight: Filament zieht straff
+  ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
+  : ''
   'Filament load failed: {}': 'Filament laden fehlgeschlagen: {}'
   Filament loaded: Filament geladen
   Filament operation failed: Filament-Vorgang fehlgeschlagen
@@ -2653,6 +2655,8 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : Der animierte Bildschirmschoner wurde auf diesem Gerät ausgeschaltet, um zu verhindern,
     dass er Drucke stört. Sie können ihn unter Einstellungen > Anzeige wieder aktivieren.
+  ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
+  : ''
   The filament system reported an error: Das Filamentsystem meldete einen Fehler
   The heater will cycle on and off several times.: Die Heizung wird mehrmals ein-
     und ausschalten.
