@@ -1405,6 +1405,8 @@ API calls route through `server.spoolman.proxy` JSON-RPC via Moonraker. The wiza
 
 Spoolman is now decoupled from AMS backends — spool assignments are tracked per-tool via `ToolState` with persistence to `config/tool_spools.json`. This allows Spoolman to work independently of any filament changer hardware.
 
+**Persistence is driven by identity, not weight.** `ToolState::assign_spool()` treats which spool is on which tool as the durable record and the weights as a cache that the next connect re-fetches from AFC/Spoolman. Firmware reports weight as a continuous float — an AFC lane sends e.g. `627.685056380799` g and moves by hundredths on every status update — so an exact compare made sensor noise look like a change: `AmsState` calls `assign_spool()` from the status path and then `save_spool_assignments_if_dirty()`, which on bundle L53W5PKG rewrote `tool_spools.json`, POSTed the Moonraker DB, logged at info and rebuilt the filament panel 590 times in one session. Weight changes now bump `tools_version_` only when the value moves by a whole gram (the resolution the UI renders) and never mark the record dirty; an id or name change does both. Comparison is against the last *stored* value, so a slow slide still fires once per gram rather than never.
+
 ### Config Migration System
 
 Versioned schema migration for `settings.json` that automatically upgrades configuration between releases. The `Config` class tracks a `config_version` integer (currently `CURRENT_CONFIG_VERSION = 21`) and applies migrations sequentially on load:
