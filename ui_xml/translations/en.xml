@@ -948,6 +948,7 @@
   <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume." en="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume."/>
   <translation tag="Filament ran out at the toolhead" en="Filament ran out at the toolhead"/>
   <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume." en="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume."/>
+  <translation tag="Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume." en="Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume."/>
   <translation tag="Filament runout" en="Filament runout"/>
   <translation tag="Filament runout and motion detection sensors" en="Filament runout and motion detection sensors"/>
   <translation tag="Filament runout detection status" en="Filament runout detection status"/>
@@ -2508,6 +2509,7 @@
   <translation tag="Update your security PIN" en="Update your security PIN"/>
   <translation tag="Updating Configuration..." en="Updating Configuration..."/>
   <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." en="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman." en="Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman."/>
   <translation tag="Upload" en="Upload"/>
   <translation tag="Upload Debug Bundle" en="Upload Debug Bundle"/>
   <translation tag="Upload Failed" en="Upload Failed"/>

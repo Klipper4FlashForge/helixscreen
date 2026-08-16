@@ -2354,6 +2354,20 @@ Capabilities therefore come from **feature detection**, not comparison:
 | `AmsBackendAfc::status_has_modern_fields()` | `filament_name` / `multi_color_hexes` / `initial_weight` on a lane status. All three ship from one `if not save_to_file:` block in `AFC_lane.get_status()`, so any one proves the whole block. Only meaningful on a **complete** status object, the subscription's first baseline frame; every later frame is a delta where an absent key means "unchanged". |
 | `AmsBackendAfc::probe_feature_level()` | Queries one lane object directly (never a status frame) to obtain that baseline. |
 
+**What a pre-v1.2.0 install actually loses depends on Spoolman, and the advisory says so.**
+Only one of the three missing capabilities is unavailable by any other route:
+
+| | pre-1.2.0 **with** Spoolman | pre-1.2.0 **without** |
+|---|---|---|
+| Filament name / vendor | **Available** — `SpoolmanManager::find_identity()` resolves them from the lane's `spool_id`, and `resolve_filament_label()` (`ams_state.cpp`) already consumes it. Bundle L53W5PKG rendered "LDO Industry Blue" on a pre-1.2.0 lane. | Needs the upgrade |
+| Weights | Available — the Spoolman poll updates slot weights directly | Needs the upgrade |
+| Multi-colour swatch | **Needs the upgrade.** The automatic lane sync only ever takes `multi_color_hexes` from `lane_data`; `apply_spool_to_slot()`, the one path that copies Spoolman's copy of it, serves manual external-spool assignment rather than the AFC lane refresh. | Needs the upgrade |
+
+So the toast leads with multi-colour and qualifies names as needing Spoolman otherwise. It is
+deliberately **not** branched on `is_spoolman_available()`: the feature probe and Spoolman
+discovery both land during startup with no ordering guarantee, and the notice is latched to
+fire once ever, so a mis-timed read would pin the wrong variant permanently.
+
 The `AFC` / `lane_data` database query follows the same rule: `on_started()` calls
 `query_lane_data()` **unconditionally**, because there is no reliable flag to gate on.
 AFC's `lane_data_enabled` reports whether Moonraker has the (now unused) `[lane_data]`
