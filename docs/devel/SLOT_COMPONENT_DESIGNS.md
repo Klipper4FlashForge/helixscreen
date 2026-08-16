@@ -443,32 +443,41 @@ void PrintStatusPanel::format_time(int seconds, char* buf, size_t buf_size) {
 
 **Blockers**: Need `pad()` or `zeropad()` function for "02" formatting.
 
-### Medium-Value Candidates (Temp with Target)
+### Temp with Target - already migrated, no formula needed
 
-| Subject Name | Current Format | Formula Requirement | Feasibility |
-|--------------|----------------|---------------------|-------------|
-| `nozzle_temp_text` | `"%d / %d°C"` or `"%d / --"` | Conditional + decidegree division | ⚠️ MEDIUM |
-| `bed_temp_text` | `"%d / %d°C"` or `"%d / --"` | Conditional + decidegree division | ⚠️ MEDIUM |
+The two string subjects this section proposed migrating, `nozzle_temp_text` and `bed_temp_text`,
+no longer exist. Neither was ever bound by any XML, so both were removed rather than migrated.
 
-**C++ Code** (`ui_panel_print_status.cpp:729-742`):
+The pattern they formatted is now a widget, not a formula: `temp_display` takes the raw
+decidegree subjects and renders the pair itself.
+
+```xml
+<temp_display size="sm" show_target="true" hide_target_when_off="true"
+              bind_current="bed_temp" bind_target="bed_target"/>
+```
+
+The formatting rule it applies lives in one place, `format_temperature_pair()`
+(`src/ui/ui_temperature_utils.cpp`), and the heater-off form is an em dash, not `--`:
+
 ```cpp
-// Note: Temps stored as decidegrees, divided by 100 for display
-if (target > 0) {
-    std::snprintf(nozzle_temp_buf_, sizeof(nozzle_temp_buf_), "%d / %d°C",
-                  current / 100, target / 100);
-} else {
-    std::snprintf(nozzle_temp_buf_, sizeof(nozzle_temp_buf_), "%d / --",
-                  current / 100);
+char* format_temperature_pair(int current, int target, char* buffer, size_t buffer_size) {
+    if (target == 0) {
+        snprintf(buffer, buffer_size, "%d / —°C", current);
+    } else {
+        snprintf(buffer, buffer_size, "%d / %d°C", current, target);
+    }
+    return buffer;
 }
 ```
 
-**Formula Equivalent** (requires conditional):
-```xml
-<!-- Would need if() or ternary operator support -->
-<text_body bind_text="=(extruder_temp / 100) + ' / ' + if(extruder_target > 0, (extruder_target / 100) + '°C', '--')"/>
-```
+Note the unit conversion: PrinterState stores temperatures as **decidegrees** (x10), so display
+divides by **10** via `helix::ui::temperature::deci_to_degrees()` (`include/ui_temperature_utils.h`).
+An earlier draft of this section said `/100`; that was wrong, and a formula written from it would
+have rendered 210°C as 2°C.
 
-**Blockers**: Need conditional/ternary operator in formulas.
+**Takeaway for the remaining candidates**: a shared XML widget that owns the formatting rule beats
+a per-binding formula. It needs no conditional operator, keeps one implementation of the
+heater-off case, and translates.
 
 ### Low-Value Candidates (String Literals / Icons)
 
