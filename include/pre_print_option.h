@@ -71,19 +71,7 @@ struct PrePrintStrategyMacroParam {
 /// `PreStartGcode`: a gcode line emitted before the start macro. The literal
 /// substring `{value}` is interpolated to `1` when enabled, `0` when disabled.
 struct PrePrintStrategyPreStartGcode {
-    /// `{value}` becomes 1/0 for the toggle state; `{file}` becomes the file
-    /// being printed (empty when the caller has none).
     std::string gcode_template;
-
-    /// Whether to emit the line when the user has the option switched OFF.
-    ///
-    /// True (default) suits a macro that takes the state as an argument —
-    /// `LOAD_AI_RUN SWITCH={value}` must fire either way to turn AI detection
-    /// off. False suits a macro with no off form, where "disabled" can only be
-    /// expressed by sending nothing: Creality's BED_MESH_CALIBRATE_START_PRINT
-    /// meshes unconditionally when called, so emitting it with a 0 would still
-    /// mesh.
-    bool emit_when_disabled = true;
 };
 
 /// `QueueAheadJob`: queue another job (a calibration print) ahead of this one.
@@ -213,8 +201,7 @@ std::string render_macro_param(const PrePrintOption& opt, bool enabled);
  *
  * Returns the empty string if the option is not a `PreStartGcode` strategy.
  */
-std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled,
-                                   const std::string& filename = {});
+std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled);
 
 /**
  * @brief True iff `opt` declares a `requires_macro` AND that macro is not

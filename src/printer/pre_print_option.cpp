@@ -148,7 +148,6 @@ std::optional<PrePrintOption> parse_pre_print_option(const nlohmann::json& j) {
     case PrePrintStrategyKind::PreStartGcode: {
         PrePrintStrategyPreStartGcode p;
         p.gcode_template = helix::json_util::safe_string(j, "gcode_template");
-        p.emit_when_disabled = helix::json_util::safe_bool(j, "emit_when_disabled", true);
         if (p.gcode_template.empty()) {
             spdlog::warn("[PrePrintOption] Skipping option '{}': PreStartGcode strategy requires "
                          "non-empty 'gcode_template'",
@@ -236,8 +235,7 @@ std::string render_macro_param(const PrePrintOption& opt, bool enabled) {
     return p->param_name + "=" + value;
 }
 
-std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled,
-                                   const std::string& filename) {
+std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled) {
     const auto* p = std::get_if<PrePrintStrategyPreStartGcode>(&opt.strategy);
     if (!p) {
         spdlog::warn("[PrePrintOption] render_pre_start_gcode called on option '{}' with non-"
@@ -245,8 +243,7 @@ std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled,
                      opt.id);
         return {};
     }
-    std::string out = replace_all(p->gcode_template, "{value}", enabled ? "1" : "0");
-    return replace_all(std::move(out), "{file}", filename);
+    return replace_all(p->gcode_template, "{value}", enabled ? "1" : "0");
 }
 
 bool is_macro_gate_closed(const PrePrintOption& opt) {
