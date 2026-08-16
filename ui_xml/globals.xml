@@ -282,6 +282,22 @@
          Bound below the (header + divider + button row + 85% dialog cap)
          budget on each breakpoint, so the dialog never exceeds 85% screen
          and the OK/Cancel row stays on-screen even with long messages. -->
+    <!-- dialog_content_pinned_max: for modals that keep ONE extra block pinned
+         BELOW the scroll area (a diagram, a status row) instead of letting it
+         scroll. dialog_content_max budgets header + divider + button row only, so
+         such a modal overruns the 85% card cap and its button row falls off the
+         bottom. Each value reserves that block's height on top of the standard
+         chrome. Prefer moving the block inside the scroll container and using
+         dialog_content_max — this ladder is the escape hatch for cases where the
+         block must stay visible while the text scrolls. -->
+    <px name="dialog_content_pinned_max_micro" value="94"/>
+    <px name="dialog_content_pinned_max_tiny" value="148"/>
+    <px name="dialog_content_pinned_max_small" value="196"/>
+    <px name="dialog_content_pinned_max_medium" value="248"/>
+    <px name="dialog_content_pinned_max_large" value="352"/>
+    <px name="dialog_content_pinned_max_xlarge" value="496"/>
+    <px name="dialog_content_pinned_max_xxlarge" value="672"/>
+
     <px name="dialog_content_max_micro" value="140"/>
     <px name="dialog_content_max_tiny" value="200"/>
     <px name="dialog_content_max_small" value="260"/>

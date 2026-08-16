@@ -23,7 +23,7 @@
     <divider_horizontal/>
     <!-- Scrollable text content area -->
     <lv_obj name="content_container"
-            width="100%" height="content" style_min_height="40" style_max_height="#dialog_content_max"
+            width="100%" height="content" style_min_height="40" style_max_height="#dialog_content_pinned_max"
             style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="#space_md"
             style_pad_bottom="#space_md" flex_flow="column" style_pad_gap="#space_xs" scrollable="true"
             scroll_snap_y="none">

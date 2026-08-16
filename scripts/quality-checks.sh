@@ -715,6 +715,29 @@ fi
 
 echo ""
 
+echo "📐 Checking modal chrome budget..."
+
+# #dialog_content_max is sized for ONE chrome shape: header + content + divider
+# + button row. A modal that pins an extra block below the scroll area overruns
+# the 85% card cap, and because the root is height="content" + scrollable=false
+# the overflow falls off the BOTTOM — the button row, leaving a modal the user
+# cannot dismiss (prestonbrown/helixscreen#1277). LVGL cannot rescue this in
+# layout: lv_flex.c has grow but no shrink. Whole-tree: the rule is about a
+# file's own element order, so a staged-only view would miss a modal whose
+# budget was broken by an edit to a component it embeds.
+if [ -f "scripts/check_modal_chrome_budget.py" ]; then
+  if python3 scripts/check_modal_chrome_budget.py >/tmp/modal_chrome_budget.out 2>&1; then
+    echo "✅ Modal chrome budget: every pinned block is accounted for"
+  else
+    cat /tmp/modal_chrome_budget.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_modal_chrome_budget.py not found — skipping"
+fi
+
+echo ""
+
 echo "📜 Checking panel-widget scroll declarations..."
 
 # <lv_obj> keeps LVGL's LV_OBJ_FLAG_SCROLLABLE default, which is ON. Our theme

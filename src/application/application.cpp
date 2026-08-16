@@ -74,6 +74,7 @@
 
 // UI headers
 #include "ui_ams_environment_overlay.h"
+#include "ui_ams_loading_error_modal.h"
 #include "ui_ams_mini_status.h"
 #include "ui_ams_tool_text.h"
 #include "ui_bed_mesh.h"
@@ -2429,6 +2430,39 @@ bool show_demo_overlay(const std::string& name) {
         modal->set_autofeed_capable(false);
         modal->set_resume_blocked(false);
         modal->show(screen);
+        return true;
+    }
+
+    if (name == "ams-loading-error") {
+        // Worst case for the modal chrome budget (prestonbrown/helixscreen#1277):
+        // a fault string long enough to drive content_container to its
+        // #dialog_content_max cap, with the AFC diagram pinned BELOW it and
+        // outside the scroll area. That combination overruns the 85% card cap on
+        // a 480x272 panel and the button row falls off the bottom. Unreachable in
+        // mock mode — AmsBackendMock never produces a recognised AFC fault — so
+        // this is the only way to check the real layout instead of arithmetic on
+        // a token table.
+        // ams_loading_error_modal.xml is registered lazily by AmsPanel, which has
+        // not necessarily run — register it here so the demo works from a cold start.
+        // Idempotent: re-registering a component replaces the identical entry.
+        lv_xml_register_component_from_file(
+            helix::asset_component_uri("ui_xml/ams_loading_error_modal.xml").c_str());
+
+        lv_subject_t* seg = lv_xml_get_subject(nullptr, "afc_fault_segment");
+        if (seg != nullptr) {
+            lv_subject_set_int(seg, static_cast<int>(PathSegment::HUB));
+        }
+        auto* modal = new helix::ui::AmsLoadingErrorModal();
+        modal->show(screen,
+                    "Filament did not reach the toolhead sensor after the "
+                    "configured load length. The lane may be jammed at the hub, "
+                    "the spool may have run out mid-load, or the bowden length "
+                    "configured for this lane may not match the physical tube "
+                    "run between the hub and the toolhead.",
+                    "Check the filament path and try again. If the lane is clear, "
+                    "verify the configured bowden length for this lane and confirm "
+                    "the hub sensor triggers when filament passes it.",
+                    []() {});
         return true;
     }
 
