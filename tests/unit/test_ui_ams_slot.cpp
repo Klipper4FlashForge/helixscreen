@@ -858,8 +858,8 @@ TEST_CASE("SlotInfo::display_fill_level renders ghost lanes empty, present lanes
           "[ams][slot][1071]") {
     // Ghost lane: EMPTY status, but a Spoolman link + material were RETAINED
     // across an eject (#1071), so has_filament_info() is true. The fill bar must
-    // read empty (0), NOT the 50% metadata fallback — otherwise an ejected lane
-    // renders half full (#1071 BUG-1).
+    // read empty (0), NOT the metadata fallback — otherwise an ejected lane
+    // renders as a full spool (#1071 BUG-1).
     SlotInfo ghost;
     ghost.status = SlotStatus::EMPTY;
     ghost.material = "PLA";
@@ -879,14 +879,14 @@ TEST_CASE("SlotInfo::display_fill_level renders ghost lanes empty, present lanes
     REQUIRE(wfill.has_value());
     CHECK(*wfill == Catch::Approx(0.25f));
 
-    // Present lane, metadata but no remaining weight (e.g. Snapmaker RFID): 50%
-    // (indeterminate half-bar, not misleadingly-full).
+    // Present lane, metadata but no remaining weight (e.g. Snapmaker RFID, or a
+    // lane nobody tracks in Spoolman): full, matching every other printer UI.
     SlotInfo meta;
     meta.status = SlotStatus::AVAILABLE;
     meta.material = "PETG";
     auto mfill = meta.display_fill_level();
     REQUIRE(mfill.has_value());
-    CHECK(*mfill == Catch::Approx(0.50f));
+    CHECK(*mfill == Catch::Approx(1.0f));
 
     // Present lane, no info at all: leave the bar unchanged (nullopt).
     SlotInfo bare;
