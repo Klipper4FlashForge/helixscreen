@@ -43,6 +43,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <numeric>
+#include <vector>
 
 using namespace helix;
 
@@ -210,6 +212,8 @@ void AmsOverviewPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
         spdlog::error("[{}] Could not find 'unit_cards_row' in XML", get_name());
         return;
     }
+    lv_obj_add_event_cb(cards_row_, &AmsOverviewPanel::on_cards_row_scrolled, LV_EVENT_SCROLL,
+                        this);
 
     // Find system path area and create path canvas widget
     system_path_area_ = lv_obj_find_by_name(panel_, "system_path_area");
@@ -310,9 +314,11 @@ void AmsOverviewPanel::refresh_units() {
                       old_unit_count, new_unit_count);
         create_unit_cards(info);
     } else {
-        // Same number of units - update existing cards in place
-        for (int i = 0; i < new_unit_count; ++i) {
-            update_unit_card(unit_cards_[i], info.units[i]);
+        // Same number of units - update existing cards in place. unit_cards_ is in
+        // DISPLAY order (see create_unit_cards), so each card names its own unit.
+        for (auto& uc : unit_cards_) {
+            if (uc.unit_index >= 0 && uc.unit_index < new_unit_count)
+                update_unit_card(uc, info.units[uc.unit_index]);
         }
     }
 
@@ -344,7 +350,34 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
                      get_name(), unit_count, AmsState::MAX_UNITS, AmsState::MAX_UNITS + 1);
     }
 
-    for (int i = 0; i < unit_count; ++i) {
+    // Lay the cards out in nozzle order, not backend order.
+    //
+    // Which unit a backend lists first has nothing to do with which toolhead it
+    // feeds: a Claymore wired to e0 can be last in the list while e0's nozzle is
+    // the leftmost of four. Left in backend order, its connector ran diagonally
+    // across every other unit's. Sorting by the unit's first physical nozzle
+    // makes the card row monotonic with the toolhead row, so the lanes below only
+    // cross where the plumbing genuinely does - and it parks units that share a
+    // nozzle (a Box Turtle and a Claymore both on e0) side by side.
+    //
+    // stable_sort, so a system whose order is already monotonic (every one-unit
+    // rig, and most multi-unit ones) is left exactly as it was.
+    std::vector<int> order(unit_count);
+    std::iota(order.begin(), order.end(), 0);
+    {
+        auto layout =
+            ams_draw::compute_system_tool_layout(info, AmsState::instance().get_backend());
+        auto first_nozzle = [&layout](int unit) {
+            return (unit < static_cast<int>(layout.units.size()))
+                       ? layout.units[unit].first_physical_tool
+                       : unit;
+        };
+        std::stable_sort(order.begin(), order.end(),
+                         [&](int a, int b) { return first_nozzle(a) < first_nozzle(b); });
+    }
+
+    for (int slot = 0; slot < unit_count; ++slot) {
+        const int i = order[slot];
         const AmsUnit& unit = info.units[i];
         UnitCard uc;
         uc.unit_index = i;
@@ -402,8 +435,9 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
         ams_draw::apply_logo(uc.logo_image, unit, info);
 
         // Set dynamic content only — unit name and slot count vary per unit
+        uc.display_name = ams_draw::get_unit_display_name(unit, i);
         if (uc.name_label) {
-            lv_label_set_text(uc.name_label, ams_draw::get_unit_display_name(unit, i).c_str());
+            lv_label_set_text(uc.name_label, uc.display_name.c_str());
         }
 
         set_slot_count_label(uc.slot_count_label, unit.slot_count);
@@ -435,10 +469,11 @@ void AmsOverviewPanel::update_unit_card(UnitCard& card, const AmsUnit& unit) {
         return;
     }
 
-    // Update name label
+    // Update name label. Keep display_name in step - it is the only untruncated
+    // copy, and publish_cards_compact() measures it.
+    card.display_name = ams_draw::get_unit_display_name(unit, card.unit_index);
     if (card.name_label) {
-        lv_label_set_text(card.name_label,
-                          ams_draw::get_unit_display_name(unit, card.unit_index).c_str());
+        lv_label_set_text(card.name_label, card.display_name.c_str());
     }
 
     // Rebuild mini bars (slot colors/status may have changed).
@@ -517,6 +552,102 @@ void AmsOverviewPanel::create_mini_bars(UnitCard& card, const AmsUnit& unit) {
 // System Path
 // ============================================================================
 
+void AmsOverviewPanel::push_unit_anchors(bool relayout) {
+    if (!system_path_ || !cards_row_)
+        return;
+
+    // Only the refresh path needs a layout flush (the cards were just created).
+    // During LV_EVENT_SCROLL the coordinates already carry the new scroll offset,
+    // and forcing a relayout mid-scroll would re-enter LVGL's layout pass on every
+    // scroll step.
+    if (relayout)
+        lv_obj_update_layout(cards_row_);
+
+    lv_area_t path_coords;
+    lv_obj_get_coords(system_path_, &path_coords);
+
+    int32_t narrowest = LV_COORD_MAX;
+    for (const auto& uc : unit_cards_) {
+        if (!uc.card || uc.unit_index < 0)
+            continue;
+        lv_area_t card_coords;
+        lv_obj_get_coords(uc.card, &card_coords);
+        int32_t center_x = (card_coords.x1 + card_coords.x2) / 2 - path_coords.x1;
+        ui_system_path_canvas_set_unit_x(system_path_, uc.unit_index, center_x);
+        narrowest = LV_MIN(narrowest, lv_area_get_width(&card_coords));
+    }
+
+    if (narrowest != LV_COORD_MAX) {
+        publish_cards_compact(narrowest);
+    }
+}
+
+// Decide whether the unit cards have to shed decoration to stay readable, and
+// publish it for ams_unit_card.xml to bind against.
+//
+// This is measured rather than derived from a token or a breakpoint on purpose:
+// card width is (row width / unit count), so a 5-unit rig on a large screen is
+// tighter than a 2-unit rig on a small one, and neither input alone predicts it.
+// DECLARATIVE_OK: computing the DATA in C++ is the rule - the appearance change
+// itself stays in XML, bound to this subject.
+void AmsOverviewPanel::publish_cards_compact(int32_t narrowest_card_w) {
+    // Content width the card has left after its own padding.
+    const int32_t content_w = narrowest_card_w - 2 * theme_manager_get_spacing("space_sm");
+
+    // Widest unit name that has to fit, and the logo's declared size.
+    //
+    // NONE of these inputs depend on whether the logo is currently shown - that
+    // is deliberate. Measuring the logo widget would make the rule feed back on
+    // its own output (hide it, the row gets roomier, unhide it, repeat), so the
+    // logo contributes its STYLE width, which LVGL keeps while hidden, and the
+    // card width comes from row-width/unit-count, which the logo does not affect.
+    int32_t widest_name = 0;
+    int32_t logo_w = 0;
+    for (const auto& uc : unit_cards_) {
+        if (uc.name_label && !uc.display_name.empty()) {
+            const lv_font_t* font = lv_obj_get_style_text_font(uc.name_label, LV_PART_MAIN);
+            if (font) {
+                lv_point_t size;
+                // Measure the STORED name, never lv_label_get_text(): long_mode=dots
+                // rewrites the label's buffer with the ellipsized string, so reading
+                // it back measures the truncation and always reports a fit.
+                lv_text_get_size(&size, uc.display_name.c_str(), font, 0, 0, LV_COORD_MAX,
+                                 LV_TEXT_FLAG_NONE);
+                widest_name = LV_MAX(widest_name, size.x);
+            }
+        }
+        if (uc.logo_image && logo_w == 0) {
+            logo_w = lv_obj_get_style_width(uc.logo_image, LV_PART_MAIN);
+        }
+    }
+
+    // Hide the logo exactly when the name cannot be read beside it. If the name
+    // does not fit even without the logo, hiding still buys the title its widest
+    // possible ellipsis.
+    const int32_t needed = logo_w + theme_manager_get_spacing("space_xs") + widest_name;
+    const bool compact = (widest_name > 0) && (content_w < needed);
+
+    lv_subject_t* subj = AmsState::instance().get_cards_compact_subject();
+    if (subj && lv_subject_get_int(subj) != (compact ? 1 : 0)) {
+        lv_subject_set_int(subj, compact ? 1 : 0);
+        spdlog::debug("[{}] Unit cards {}: content {}px, logo {} + name {} = {}px needed",
+                      get_name(), compact ? "COMPACT (logo hidden)" : "full", content_w, logo_w,
+                      widest_name, needed);
+    }
+}
+
+// The card row scrolls independently of the path canvas below it, so the stem
+// anchors have to be re-sampled on every scroll - without this they keep
+// pointing at where each card used to be (visible as connector lines that stay
+// put while the cards slide under them).
+void AmsOverviewPanel::on_cards_row_scrolled(lv_event_t* e) {
+    // DECLARATIVE_OK: LV_EVENT_SCROLL has no declarative equivalent, and the
+    // value being recomputed is measured pixel geometry.
+    auto* self = static_cast<AmsOverviewPanel*>(lv_event_get_user_data(e));
+    if (self)
+        self->push_unit_anchors(/*relayout=*/false);
+}
+
 void AmsOverviewPanel::refresh_system_path(const AmsSystemInfo& info, int current_slot) {
     if (!system_path_)
         return;
@@ -524,25 +655,7 @@ void AmsOverviewPanel::refresh_system_path(const AmsSystemInfo& info, int curren
     int unit_count = static_cast<int>(info.units.size());
     ui_system_path_canvas_set_unit_count(system_path_, unit_count);
 
-    // Calculate and set X positions based on unit card positions
-    // Force layout so we can get accurate card positions
-    if (cards_row_) {
-        lv_obj_update_layout(cards_row_);
-    }
-
-    for (int i = 0; i < unit_count && i < static_cast<int>(unit_cards_.size()); ++i) {
-        if (unit_cards_[i].card) {
-            // Get card center X relative to the system path widget
-            lv_obj_update_layout(unit_cards_[i].card);
-            lv_area_t card_coords;
-            lv_obj_get_coords(unit_cards_[i].card, &card_coords);
-
-            lv_area_t path_coords;
-            lv_obj_get_coords(system_path_, &path_coords);
-            int32_t card_center_x = (card_coords.x1 + card_coords.x2) / 2 - path_coords.x1;
-            ui_system_path_canvas_set_unit_x(system_path_, i, card_center_x);
-        }
-    }
+    push_unit_anchors(/*relayout=*/true);
 
     // Set active unit based on current slot
     int active_unit = info.get_active_unit_index();
@@ -751,10 +864,17 @@ void AmsOverviewPanel::show_unit_detail(int unit_index) {
         return;
 
     // Capture clicked card's screen center BEFORE hiding overview elements
+    // unit_cards_ is in display order, which is not unit order (create_unit_cards
+    // sorts by nozzle), so find the card that names this unit rather than
+    // indexing - indexing zoomed the wrong card open.
     lv_area_t card_coords = {};
-    if (unit_index < static_cast<int>(unit_cards_.size()) && unit_cards_[unit_index].card) {
-        lv_obj_update_layout(unit_cards_[unit_index].card);
-        lv_obj_get_coords(unit_cards_[unit_index].card, &card_coords);
+    auto card_it =
+        std::find_if(unit_cards_.begin(), unit_cards_.end(), [unit_index](const UnitCard& c) {
+            return c.unit_index == unit_index && c.card != nullptr;
+        });
+    if (card_it != unit_cards_.end()) {
+        lv_obj_update_layout(card_it->card);
+        lv_obj_get_coords(card_it->card, &card_coords);
     }
 
     detail_unit_index_ = unit_index;

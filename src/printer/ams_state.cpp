@@ -282,6 +282,7 @@ void AmsState::init_subjects(bool register_xml) {
     if (register_xml)
         lv_xml_register_subject(nullptr, "ams_supports_bypass", &supports_bypass_);
     INIT_SUBJECT_INT(ams_slot_count, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(ams_cards_compact, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(slots_version, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(tool_map_version, 0, subjects_, register_xml);
     // Default 1 (present) so non-auto-feed / unknown backends never gate Resume (#991).

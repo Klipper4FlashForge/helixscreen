@@ -311,6 +311,9 @@ create_mock_with_features(int gate_count, IMoonrakerClient* mock_client = nullpt
         } else if (ams_type == "multi") {
             mock->set_multi_unit_mode(true);
             spdlog::info("[AMS Backend] Mock multi-unit mode enabled");
+        } else if (ams_type == "torture") {
+            mock->set_torture_mode(true);
+            spdlog::info("[AMS Backend] Mock torture profile enabled (5 units / 16 lanes)");
         } else if (ams_type == "vivid") {
             mock->set_vivid_mixed_mode(true);
             spdlog::info("[AMS Backend] Mock ViViD mixed mode enabled");

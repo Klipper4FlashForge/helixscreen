@@ -556,6 +556,19 @@ class AmsState {
     }
 
     /**
+     * @brief Get the "unit cards are width-starved" subject
+     *
+     * 1 when the overview's unit cards are too narrow to carry their full chrome,
+     * so the cards drop decoration to protect their content. Written by
+     * AmsOverviewPanel from the MEASURED card width (it depends on both the
+     * breakpoint and the unit count, so no token or breakpoint alone can express
+     * it); read declaratively by ams_unit_card.xml.
+     */
+    lv_subject_t* get_cards_compact_subject() {
+        return &ams_cards_compact_;
+    }
+
+    /**
      * @brief Get slots version subject
      *
      * Incremented whenever slot data changes. UI can observe this
@@ -1499,6 +1512,7 @@ class AmsState {
     lv_subject_t external_spool_color_;
     lv_subject_t supports_bypass_;
     lv_subject_t ams_slot_count_;
+    lv_subject_t ams_cards_compact_;
     lv_subject_t slots_version_;
     lv_subject_t tool_map_version_;
     /// First-gate (port) filament-present flag for the ACTIVE tool (#991).

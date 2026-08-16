@@ -412,6 +412,22 @@ class AmsBackendMock : public AmsBackend {
     void set_multi_unit_mode(bool enabled);
 
     /**
+     * @brief Enable the multi-unit torture profile (HELIX_MOCK_AMS=torture).
+     *
+     * Five units / 16 lanes / 4 Klipper extruders, modelled on a user rig
+     * captured 2026-08-16: Box Turtle + Claymore both feed e0, ViViD + EMU both
+     * feed e3, and a 2-tool Toolchanger sits between them. Two lanes are
+     * deliberately unmapped and the AFC tool aliases are neither dense nor
+     * unit-ordered.
+     *
+     * This is the only profile whose unit-card row overflows its container, so
+     * it is the only way to exercise the overview's card-row scrolling, its
+     * off-canvas connector clamping, and shared-nozzle hub placement. Every
+     * other profile tops out at 3 units, which always fit.
+     */
+    void set_torture_mode(bool enabled);
+
+    /**
      * @brief Check if multi-unit mode is active
      */
     [[nodiscard]] bool is_multi_unit_mode() const;
@@ -738,6 +754,7 @@ class AmsBackendMock : public AmsBackend {
     bool vivid_mixed_mode_ = false;      ///< Simulate 2x BoxTurtle + 1x ViViD
     bool ifs_mode_ = false;              ///< Simulate AD5X IFS (4 slots, LINEAR)
     bool htlf_toolchanger_mode_ = false; ///< Simulate HTLF + Toolchanger mixed topology
+    bool torture_mode_ = false;          ///< Simulate 5 units / 16 lanes / 4 shared extruders
     bool snapmaker_mode_ = false; ///< Simulate Snapmaker U1 (4 slots, PARALLEL, non-editable)
     std::vector<PathTopology> unit_topologies_; ///< Per-unit topology storage
 

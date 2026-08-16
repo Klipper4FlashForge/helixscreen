@@ -960,18 +960,23 @@ Select the mock AMS topology/type.
 
 | Property | Value |
 |----------|-------|
-| **Values** | `afc`, `toolchanger` / `tc`, `mixed`, `multi` |
+| **Values** | `none`, `afc`, `toolchanger` / `tc`, `mixed`, `multi`, `torture`, `vivid`, `ifs`, `htlf`, `snapmaker` |
 | **Default** | Happy Hare, LINEAR, 4 slots |
 | **File** | `src/printer/ams_backend.cpp` |
 
-| Value | What it simulates |
-|-------|-------------------|
-| *(unset)* | Happy Hare, LINEAR, 4 slots (default constructor) |
-| `afc` | AFC Box Turtle, HUB, 4 slots |
-| `toolchanger` / `tc` | Tool Changer, PARALLEL topology |
-| `mixed` | Box Turtle + 2x OpenAMS, 6 tools |
-| `multi` | Box Turtle (4 slots) + Night Owl (2 slots), single toolhead |
-| `htlf_toolchanger` | AFC HTLF + Toolchanger: 4 HTLF lanes (2 direct, 2 hub→shared extruder) + 3 standalone toolheads. Tests MIXED topology. Aliases: `htlf_tc`, `htlf` |
+| Value | Units | What it simulates |
+|-------|-------|-------------------|
+| *(unset)* | 1 | Happy Hare, LINEAR, 4 slots (default constructor) |
+| `none` | - | No mock AMS at all |
+| `afc` | 1 | AFC Box Turtle, HUB, 4 slots. Aliases: `box_turtle`, `boxturtle` |
+| `toolchanger` / `tc` | 1 | Tool Changer, PARALLEL topology. Alias: `tool_changer` |
+| `mixed` | 3 | Box Turtle + 2x OpenAMS, 6 tools |
+| `multi` | 2 | Box Turtle (4 slots) + Night Owl (2 slots), single toolhead |
+| `torture` | **5** | **The only profile whose unit-card row overflows.** See below |
+| `vivid` | 3 | 2x Box Turtle + ViViD, 12 slots |
+| `ifs` | 1 | AD5X IFS, 4 slots, LINEAR. Aliases: `ad5x`, `ad5x_ifs` |
+| `htlf_toolchanger` | 2 | AFC HTLF + Toolchanger: 4 HTLF lanes (2 direct, 2 hub→shared extruder) + 3 standalone toolheads. Tests MIXED topology. Aliases: `htlf_tc`, `htlf` |
+| `snapmaker` | 1 | Snapmaker U1, 4 slots, PARALLEL, non-editable mapping. Aliases: `snapswap`, `u1` |
 
 ```bash
 # Simulate AFC Box Turtle
@@ -985,6 +990,30 @@ HELIX_MOCK_AMS=mixed ./build/bin/helix-screen --test
 
 # Simulate multi-unit (Box Turtle + Night Owl, 6 slots, single toolhead)
 HELIX_MOCK_AMS=multi ./build/bin/helix-screen --test
+```
+
+#### `torture` - the multi-unit stress profile
+
+Modelled on a real user rig captured 2026-08-16. **Five** units / 16 lanes / **4**
+Klipper extruders:
+
+| Unit | Lanes | Topology | Extruder |
+|------|-------|----------|----------|
+| Box_Turtle Turtle_1 | lane1-4 | HUB | **e0** |
+| Toolchanger Tools | e1, e2 | PARALLEL | e1, e2 |
+| ViViD Vivid_1 | lane5-8 | HUB | **e3** |
+| EMU EMU_1 | lane9-10 | HUB | **e3** |
+| Claymore HTLF_claymore_1 | lane11-14 | HUB | **e0** |
+
+Two pairs of HUB units share a nozzle, two lanes are unmapped, and the AFC tool
+aliases are neither dense nor unit-ordered (T0 and T10 are absent). Every other
+profile tops out at 3 units, and unit cards shrink to `#ams_card_min_width`, so
+in every other profile `unit_cards_row` measures `scroll.right == 0` even at
+`-s tiny`. Anything that only misbehaves once that row can scroll is
+unreproducible without this profile.
+
+```bash
+HELIX_MOCK_AMS=torture ./build/bin/helix-screen --test -vv
 ```
 
 **Multi-extruder and tool testing:** Setting `HELIX_MOCK_AMS=toolchanger` also creates multiple tool definitions and extruders in the mock environment. Multiple extruders (extruder, extruder1, etc.) and tools are auto-discovered from Klipper objects at runtime, so no separate env var is needed to control extruder count. The toolchanger mock provides a complete multi-tool, multi-extruder test environment.
