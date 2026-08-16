@@ -435,7 +435,13 @@ const ToolInfo* ToolState::active_tool() const {
 }
 
 std::string ToolState::nozzle_label() const {
-    if (!is_multi_tool()) {
+    // Gated on physical extruders, not tool count: the label sits beside a
+    // nozzle temperature readout in the controls and filament panels, so it
+    // answers "which nozzle is this". set_ams_topology() expands tools_ to one
+    // entry per filament lane, and every lane on a single-hotend printer feeds
+    // the same nozzle - naming it after the loaded lane says nothing. Matches
+    // the nozzle_icon badge gate in ui_ams_tool_text.
+    if (!has_multiple_extruders()) {
         return lv_tr("Nozzle");
     }
     const auto* tool = active_tool();
