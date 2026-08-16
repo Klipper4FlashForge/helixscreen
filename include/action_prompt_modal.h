@@ -150,11 +150,12 @@ class ActionPromptModal : public Modal {
  *
  * The modal closes on every button press by design and waits for the firmware
  * to push a replacement prompt, so a macro that aborts leaves the screen empty.
- * The RPC layer will not fill that gap: supplying an error callback at all
- * marks the call caller-handled in MoonrakerRequestTracker::route_response(),
- * which records the message in rpc_error_correlation and suppresses the
- * independent `!!` GcodeError toast for the same failure. This is the toast
- * that replaces it.
+ * This toast fills that gap. It is also what makes the send's
+ * `caller_surfaces_errors=true` claim honest: a caller that declares it reports
+ * the failure records the message in rpc_error_correlation, which suppresses
+ * the independent `!!` GcodeError toast for the same rejection — so dropping
+ * this toast would leave the failure with no surface at all. See
+ * include/rpc_error_policy.h.
  *
  * Safe to call from the WebSocket background thread - the notification layer
  * marshals to the main thread itself.

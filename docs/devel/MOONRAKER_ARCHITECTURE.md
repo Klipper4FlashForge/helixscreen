@@ -81,6 +81,8 @@ The Moonraker integration is split into three distinct layers with clean separat
 
 **`execute_gcode()`'s three dispositions:** `on_success`, `on_error`, and `on_queued` (see `include/moonraker_api.h`). `on_queued` is not decoration — when a script is discretionary (see `include/gcode_classify.h`) and an external blocking op (`G28`, `BED_MESH_CALIBRATE`, a manual probe) holds Klipper's gcode lock, `execute_gcode()` queues the command fire-and-forget and DROPS its RPC response: neither `on_success` nor `on_error` will ever fire. `on_queued` means "accepted for later execution", never "the printer did it" — a caller that needs to know the command actually ran must not treat it as completion, only as a signal to release a caller-side in-flight counter.
 
+**`on_error` is not a claim to report.** Supplying an error callback says the caller wants to *know*; it does not say the user will be *told*. The trailing `caller_surfaces_errors` parameter (default `true`) is the claim, and it must be captured from the caller's own `on_error` **before** any internal wrapper — `execute_gcode()` wraps unconditionally to settle its activity counter, so intent derived afterwards reads our own bookkeeping as a caller promise. Pass `false` when the callback only logs or only resets state: a false claim makes the request tracker record the rejection for cross-channel dedup, `GcodeErrorRouter` then suppresses its report of Klipper's `!!` broadcast, and the failure reaches nobody. The `silent` parameter is a separate axis — it means "no automatic toast from us", never "the user has been told", so it neither records for dedup nor stops the `!!` router. `scripts/check_gcode_error_ownership.py` gates the log-only case at zero. Full contract and the decision matrix: `RPC_ERROR_OWNERSHIP.md`.
+
 Before adding a command to `detail::categorize_gcode_token()` in `gcode_classify.h`, verify every caller that emits it either holds no in-flight counter or passes `on_queued`. Skipping this check is exactly how #1129 happened — a cached `idle_timeout_printing` made the app treat an idle printer as busy, routed a `SET_LED` down the fire-and-forget path, and left the LED in-flight counter pinned for the session. `SET_GCODE_OFFSET` is deliberately excluded from the discretionary set: it CONTROLS a blocking op (z-offset calibration sends it mid-probe), so queuing it behind that op would break calibration.
 
 ### PrinterDiscovery (Hardware Data)
@@ -155,7 +157,7 @@ enum class MoonrakerEventType {
     RECONNECTING,         // Attempting to reconnect
     RECONNECTED,          // Successfully reconnected
     MESSAGE_OVERSIZED,    // Received message exceeds size limit
-    RPC_ERROR,            // JSON-RPC request failed
+    RPC_ERROR,            // JSON-RPC request failed and no other surface will report it
     KLIPPY_DISCONNECTED,  // Klipper firmware disconnected
     KLIPPY_READY,         // Klipper firmware ready
     DISCOVERY_FAILED,     // Printer discovery failed
@@ -169,6 +171,8 @@ struct MoonrakerEvent {
     bool is_error;
 };
 ```
+
+**`RPC_ERROR` is a fallback, not a report of every failure.** `MoonrakerRequestTracker::route_response()` emits it only when `helix::rpc_error_policy::decide()` finds that nothing else will speak — and for `printer.gcode.script` that is never, because Klipper mirrors the rejection as a `!!` line that `GcodeErrorRouter` reports instead. See `RPC_ERROR_OWNERSHIP.md`.
 
 **Usage:**
 ```cpp
