@@ -55,16 +55,31 @@ Key safety rules:
 
 ## When the Updater Hides Itself
 
-`in_app_updates_suppressed()` (`app_globals.h`) gates `check_for_updates()`,
-`start_auto_check()` and `start_download()`, and drives `show_update_settings` — when it is
-true the About screen has no "Check for Updates" or "Install Update" row at all. It is the OR
-of two independent reasons, and telling them apart is the first thing to establish on any
-"my updates are disabled" report:
+**Looking and applying are gated separately**, by two predicates in `app_globals.h`. Which
+one fired is the first thing to establish on any "my updates are disabled" report:
+
+| Predicate | Definition | Gates |
+|-----------|------------|-------|
+| `update_checks_suppressed()` | `updates_externally_managed()` alone | `check_for_updates()`, `start_auto_check()`, and `show_update_settings` — false hides the whole update section |
+| `update_install_suppressed()` | `updates_externally_managed() \|\| !self_update_supported()` | `start_download()` and the "Install Update" row |
+
+The weaker check gate is deliberate. Checking is a manifest fetch that touches no files, so an
+install tree we cannot write is no reason to refuse to look, and knowing a newer version exists
+is the only thing that makes a suppressed install recoverable — the user can still be told to
+re-run the installer. The two shared one predicate through v0.99.96–v0.99.113, and that made a
+false negative in `self_update_supported()` a permanent lockout: the rows vanished wholesale, so
+nothing could tell the user an update existed, and the fix could only ship inside the update
+they were being kept from.
+
+The two underlying reasons, and the notice each raises:
 
 | Reason | Predicate | UI notice |
 |--------|-----------|-----------|
 | Firmware owns updates | `updates_externally_managed()` — the `HELIX_DISABLE_AUTO_UPDATES` env flag, nothing else | "Managed by your firmware" |
 | Self-update can't physically apply | `!self_update_supported()` | "Updates aren't available on this installation" |
+
+ESP32 stubs both predicates constant-true (`helixapp_platform_stubs.cpp`): OTA is the only
+update route there, so the settings UI hides its update affordances entirely.
 
 `self_update_supported()` must recognise **every** route `install.sh` can take to apply an
 update, because suppression is a one-way door: the fix for a false negative can only ship
