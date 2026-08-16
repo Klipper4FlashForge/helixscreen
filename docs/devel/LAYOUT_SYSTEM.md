@@ -511,6 +511,30 @@ An eviction is its own reason to `save()`. It changes nothing about the widgets 
 placed, so the manager's `any_written` flag stays false and the cleared position would
 otherwise never reach disk.
 
+**The catalog must ask `is_placed()`, not `is_enabled()`.** An enabled widget at `(-1,-1)` is
+on no dashboard, and the Widget Catalog is the only surface that can hand it a cell back.
+Asking `PanelWidgetConfig::is_enabled()` dimmed it as *"Placed"* and stripped its click
+handler, leaving it invisible on the grid, unselectable in edit mode (`remove_selected_widget`
+needs an on-screen object) and unreachable in the catalog - no UI surface at all. That state
+is not hypothetical: `include/panel_widget_config.h` carries a one-shot migration
+(`migrate_stuck_ams_filament_swap`) written to rescue installs already stuck in it.
+`is_placed()` is `enabled && has_grid_position()`; `is_enabled()` keeps meaning "configured
+on" for everyone else. The multi-instance `(N Placed)` count needs the same guard.
+
+Note the asymmetry that made this easy to miss: `is_enabled()` was the *only* occupancy-blind
+consumer of `enabled` in the widget system. Every other site already pairs it with
+`has_grid_position()`, and all of those are occupancy-map builders where skipping a `(-1,-1)`
+entry is correct.
+
+A clickable row routes into `GridEditMode::place_widget_from_catalog()`, which tries the
+origin cell, then `find_available`, then shrinks toward `effective_min_colspan/rowspan`, and
+only then refuses with *"Not enough room for this widget."* Because the catalog offers a
+widget that holds no cell on **any** page, that function has to **move** an entry it finds on
+another page rather than push a second one with the same ID - two entries would render the
+widget on two pages, and `delete_entry()` only ever removes the first. Per-widget `config`
+travels with the entry, since those settings belong to the widget and not to the page it sat
+on.
+
 A third case is neither: when placement failed only because the temporary `firmware_restart`
 widget was injected, the widget is skipped and logged, with nothing written at all.
 

@@ -569,7 +569,10 @@ When you update HelixScreen and new widgets are added:
 - **Your existing layout is preserved** — nothing moves
 - New widgets are appended with their default enabled/disabled state
 - If a new widget is enabled by default, it auto-places into available grid space
-- If the grid is full, a new widget stays enabled but unplaced until you make room
+- If the grid is full, a new widget stays enabled but unplaced until you make room. It still
+  appears in the Widget Catalog as available, so you can try to place it and get a
+  *"Not enough room for this widget"* message rather than silence, and it drops into place by
+  itself as soon as a cell frees up
 
 If you downgrade and a widget type no longer exists, it's silently removed from your layout. Upgrading again restores it.
 
