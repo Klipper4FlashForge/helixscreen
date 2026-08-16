@@ -62,10 +62,49 @@ class AmsState {
     /**
      * @brief Maximum number of AMS units supported for per-unit subjects
      *
-     * Per-unit subjects (temperature, humidity) are allocated statically.
-     * Systems with more units will only have subjects for the first MAX_UNITS.
+     * Per-unit subjects (temperature, humidity, environment indicator) are
+     * allocated statically, one set per unit, and registered under
+     * ams_unit_<i>_* / ams_env_ind_<i>_* names. Eight matches the widest rig the
+     * AMS system-path canvas draws, so every unit the path shows also has a
+     * badge to bind.
+     *
+     * A unit past the cap still gets a card; its environment indicator binds the
+     * always-off placeholders below instead of names nothing registered — see
+     * env_indicator_subject_names().
      */
-    static constexpr int MAX_UNITS = 4;
+    static constexpr int MAX_UNITS = 8;
+
+    /// Always-0 int subject bound by unit cards past MAX_UNITS. Keeps the
+    /// environment badge hidden rather than naming a subject that does not exist
+    /// (which the XML parser reports once per binding, seven times per card).
+    static constexpr const char* ENV_IND_OFF_FLAG_SUBJECT = "ams_env_ind_off_flag";
+
+    /// Always-empty string subject, same purpose as ENV_IND_OFF_FLAG_SUBJECT.
+    static constexpr const char* ENV_IND_OFF_TEXT_SUBJECT = "ams_env_ind_off_text";
+
+    /// Fully-expanded XML subject names for one unit card's environment indicator
+    /// (the seven type="subject" props of ams_unit_card / ams_environment_indicator).
+    struct EnvIndicatorSubjectNames {
+        std::string temp_text;
+        std::string humidity_text;
+        std::string humidity_status;
+        std::string humidity_visible;
+        std::string visible;
+        std::string drying_active;
+        std::string drying_text;
+    };
+
+    /**
+     * @brief Subject names a unit card binds its environment indicator to
+     * @param unit_index 0-based unit index; may exceed MAX_UNITS
+     * @return Names guaranteed to be registered once init_subjects() has run
+     *
+     * Units below the cap get their own ams_env_ind_<i>_* set. Anything at or
+     * past it has no per-unit subjects, so it gets the always-off placeholders:
+     * the card renders with its badge hidden, which beats both binding names
+     * that do not exist and showing unit 0's readings under another unit's name.
+     */
+    [[nodiscard]] static EnvIndicatorSubjectNames env_indicator_subject_names(int unit_index);
 
     /// @name Dryer Constants
     /// @{
@@ -1610,6 +1649,12 @@ class AmsState {
     lv_subject_t env_ind_drying_active_[MAX_UNITS];
     lv_subject_t env_ind_drying_text_[MAX_UNITS];
     char env_ind_drying_text_buf_[MAX_UNITS][ENV_IND_DRYING_BUF_SIZE]{};
+
+    // Always-off placeholders for units past MAX_UNITS (see
+    // env_indicator_subject_names). Written once at init and never again.
+    lv_subject_t env_ind_off_flag_;
+    lv_subject_t env_ind_off_text_;
+    char env_ind_off_text_buf_[ENV_IND_TEXT_BUF_SIZE]{};
 
     // Detail-view env indicator mirror subjects (reflect detail_env_unit_)
     lv_subject_t env_ind_detail_temp_text_;

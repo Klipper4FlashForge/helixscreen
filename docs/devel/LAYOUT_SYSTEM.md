@@ -459,9 +459,11 @@ Auto-placement (`PanelWidgetManager`, `src/ui/panel_widget_manager.cpp`) runs tw
 **This makes `min_colspan` the field that decides whether your widget survives on a narrow
 grid.** A portrait grid can be 2 columns wide. A widget that leaves `min_colspan` at 0 is
 declaring that its authored span is also its minimum, so a 4-wide widget on a 2-wide grid
-does not fit *at any size* — the manager gives up, disables it, and persists that disable to
-`settings.json`. That was exactly #1216: the widget did not come back on its own, and the
-user had to re-add it from the catalog by hand.
+does not fit *at any size* - the manager classifies that as `TooLargeForGrid`, gives up,
+disables it, and persists that disable to `settings.json`. That was exactly #1216: the
+widget did not come back on its own, and the user had to re-add it from the catalog by
+hand. (A widget that would fit but finds every cell taken is the *other* failure and is
+handled differently - see below.)
 
 So when adding a home widget:
 
@@ -478,8 +480,39 @@ So when adding a home widget:
   inside a tile still absorbs the drags the grid wants, and LVGL's scrollable default is ON
   unless you say otherwise.
 
-`GridLayout::PlacementFailure` distinguishes `GridFull` from `TooLargeForGrid` so the toast
-and the log say which condition actually failed.
+### The two placement failures have different outcomes
+
+`GridLayout::PlacementFailure` distinguishes `GridFull` from `TooLargeForGrid`, and
+`PanelWidgetManager::populate_widgets()` treats them differently on purpose. They are not
+two spellings of "did not fit".
+
+| Failure | What it means | What gets persisted | Toast |
+|---------|---------------|---------------------|-------|
+| `TooLargeForGrid` | The widget exceeds the whole grid even at its declared minimum span. No arrangement of the other widgets could ever seat it | `enabled = false` - back to the catalog as an available widget | Always |
+| `GridFull` | The widget fits fine; this screen's cells are simply all taken | `col = -1`, `row = -1`, `enabled` untouched | Only when the widget actually **was** on screen and lost its cell |
+
+**`GridFull` must never write `enabled = false`.** The layout is stored once per printer
+(`/printers/<id>/panel_widgets/<panel>`) with **no breakpoint key**, so a disable forced by
+one screen's occupancy removes the widget at *every* size - the same mistake the span
+write-back already refuses to make (#1216). It was not even deterministic: the disable only
+reached disk if some unrelated `save()` happened to follow, so whether the user permanently
+lost a widget depended on what they did next.
+
+Clearing the position is the honest record instead. The widget is configured, it just has
+nowhere to go right now, so it re-places itself the moment a cell frees - remove another
+widget, close a hardware gate, or lay the same config out on a taller grid. The cleared
+position doubles as the memo that stops the nagging: a widget with **no** saved position was
+never on the user's screen, so announcing a removal for it would be false. Bundle XGVDYEB5
+is the case - a 6x4 grid with ten widgets filling all 24 cells toasted
+*"'Fan Speeds' removed — grid full"* on every single launch, because the in-memory disable
+never reached disk and the next launch re-ran the same failed placement.
+
+An eviction is its own reason to `save()`. It changes nothing about the widgets that *were*
+placed, so the manager's `any_written` flag stays false and the cleared position would
+otherwise never reach disk.
+
+A third case is neither: when placement failed only because the temporary `firmware_restart`
+widget was injected, the widget is skipped and logged, with nothing written at all.
 
 ---
 

@@ -618,7 +618,9 @@ refusal — this is how the toast's layout gets checked on a 480x272 panel.
 `log` reads the same ring buffer the debug bundle's `log_tail` uses — capacity
 scales with the device's RAM and is overridable via `HELIX_LOG_RING_LINES`. It
 means a scripted run can read the app's own log without redirecting stdout to a
-file first.
+file first. The ring is installed by `init_early()`, so on a short-lived instance
+it still holds the Phase 2 config-load trail that runs before the full logger
+exists (`LOGGING.md` § "Ring-Buffer Sink Lifecycle").
 
 #### `reset` — a cheap alternative to rebooting between tests
 

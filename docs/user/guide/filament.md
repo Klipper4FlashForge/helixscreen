@@ -212,6 +212,16 @@ Tap **Spool Info** in the slot context menu to open the filament editor. This le
 
 Tap **Save** to apply your changes, or **Cancel** to discard them.
 
+> **Material names with punctuation or spaces.** On AFC and Happy Hare the material is stored
+> by the firmware itself, so the name has to be something Klipper accepts. Names like `PLA+`,
+> `PA6-CF`, `PETG-CF` and `Silk PLA` all save correctly. On older versions they were dropped
+> on the way through - the save reported success and the material never reached the firmware,
+> so it read back blank or kept the old value. If you have a Spoolman spool whose material
+> name contains something HelixScreen cannot send (a semicolon, a quote, a backslash, or a
+> non-English character), the save now tells you so: everything else - color, weight, Spoolman
+> link - is still saved, and renaming the material in Spoolman using letters, digits, spaces
+> and `+ - _ . ( ) /` fixes it.
+
 ### Tool Mapping
 
 For multi-tool prints, you can control which AMS slot feeds each tool the slicer expects (T0, T1, T2, …). The mapping controls appear as a **filament mapping card** on the file detail screen — open a file from the print browser and, if your file uses multiple tools and your AMS supports editable tool mapping, the card shows a compact row of color pairs. Tap the card to open the **Filament Mapping** dialog.
@@ -444,6 +454,8 @@ Filament that has been stored open for a long time may need the longer end of th
 ### Multi-Unit Setups
 
 If you have multiple Box units connected, each unit has its own dryer with independent controls. The panel shows which unit you are controlling. You can run dryers on multiple units at the same time — each unit heats independently.
+
+The humidity readout and the **Material Comfort** guidance below it belong to the unit you opened, and appear only when that unit actually has a humidity sensor. On older versions they followed the *first* unit instead, so a unit with no humidity sensor could show the readout (or a unit that had one could hide it) depending on what the first unit reported.
 
 ---
 

@@ -285,6 +285,33 @@ Behaviour is pinned by `tests/unit/test_rpc_error_policy.cpp` (the matrix),
    path does exactly that (`src/api/moonraker_client_mock_print.cpp:91-121`) so its behaviour
    cannot drift from the real tracker's.
 
+## What was measured on hardware
+
+The policy above is enforced by unit tests, and flipping `caller_surfaces_errors` back to
+`true` in any of the fixed sites makes the dedup record appear and `GcodeErrorRouter` go quiet
+— the mechanism is real and mutation-proven at that level.
+
+It has **not** been shown to change what a user sees. On a CB1 / BoxTurtle, `LANE_UNLOAD` and
+`SET_LED` were each shadowed by a macro calling `action_raise_error` (so the failure is raised
+before any hardware acts), and the send was driven from the UI through two of the log-only
+sites this policy governs — `NativeBackend::set_color` and `AmsBackendAfc::dispatch_lane_unload`.
+Both surfaced a toast. **The same test on v0.99.107, which predates the policy, also surfaced a
+toast on both paths.** No difference was observable.
+
+Why v0.99.107 did not suppress is unresolved: it carries the dedup commit (`bdf32d07d`) and its
+AFC dispatch does pass a non-null error callback, so by the model above it should have recorded
+and muted the router. It did not, and that build has no usable logging to say why.
+
+Two things follow, and they are the reason this section exists:
+
+- Do not describe this policy as fixing a user-visible silent failure. What it demonstrably
+  fixes is intent derived *after* an internal wrapper (see above), which is a real defect
+  independent of whether the dedup engages.
+- If you are about to rely on the dedup actually firing — for instance by declaring
+  `caller_surfaces_errors=true` to deliberately suppress the `!!` copy — verify it on hardware
+  rather than from this document. The one time it was measured, it did not behave as the code
+  says it should.
+
 ## Related
 
 - `include/rpc_error_policy.h` — the contract, and the four drifted copies it replaced

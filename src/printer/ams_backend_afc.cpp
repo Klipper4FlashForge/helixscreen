@@ -1276,20 +1276,26 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
             extruder_set_active_slot = true;
         }
 
+        // Parse unit-level Klipper objects (AFC_BoxTurtle, AFC_OpenAMS, AFC_vivid).
+        // These build the multi-unit layout (parse_afc_unit_object →
+        // rebuild_unit_map_from_klipper → reorganize_slots), so they MUST run before
+        // anything that resolves a lane to a unit. Parsing buffers first meant every
+        // buffer in the first frame resolved against the synthetic single unit
+        // initialize_slots() creates, and a five-unit rig put all five buffers on
+        // unit 0 (bundle XGVDYEB5).
+        for (auto& unit_info : unit_infos_) {
+            if (params.contains(unit_info.klipper_key) &&
+                params[unit_info.klipper_key].is_object()) {
+                parse_afc_unit_object(unit_info, params[unit_info.klipper_key]);
+                state_changed = true;
+            }
+        }
+
         // Parse AFC_buffer objects for buffer health and fault data
         for (const auto& buf_name : buffer_names_) {
             std::string key = "AFC_buffer " + buf_name;
             if (params.contains(key) && params[key].is_object()) {
                 parse_afc_buffer(buf_name, params[key]);
-                state_changed = true;
-            }
-        }
-
-        // Parse unit-level Klipper objects (AFC_BoxTurtle, AFC_OpenAMS, AFC_vivid)
-        for (auto& unit_info : unit_infos_) {
-            if (params.contains(unit_info.klipper_key) &&
-                params[unit_info.klipper_key].is_object()) {
-                parse_afc_unit_object(unit_info, params[unit_info.klipper_key]);
                 state_changed = true;
             }
         }
@@ -2776,32 +2782,12 @@ void AmsBackendAfc::parse_afc_buffer(const std::string& buffer_name, const nlohm
         buffer_lane_names_[buffer_name] = std::move(lanes);
     }
 
-    // Locate the owning unit first so the update is a read-modify-write. Building
-    // a fresh BufferHealth and assigning it wholesale would zero every field the
-    // delta happens not to mention.
-    AmsUnit* unit = nullptr;
-    std::string matched_lane;
-    auto lanes_it = buffer_lane_names_.find(buffer_name);
-    if (lanes_it != buffer_lane_names_.end()) {
-        for (const auto& lane_name : lanes_it->second) {
-            int lane_idx = slots_.index_of(lane_name);
-            if (lane_idx < 0) {
-                continue;
-            }
-            // One buffer per unit — first lane that resolves decides.
-            unit = system_info_.get_unit_for_slot(lane_idx);
-            if (unit) {
-                matched_lane = lane_name;
-                break;
-            }
-        }
-    }
-    if (!unit) {
-        spdlog::trace("[AMS AFC] Buffer {}: no unit resolved yet, dropping frame", buffer_name);
-        return;
-    }
-
-    BufferHealth health = unit->buffer_health.value_or(BufferHealth{});
+    // Accumulate into this buffer's own record, so the update is a
+    // read-modify-write of what THIS buffer last reported. Building a fresh
+    // BufferHealth and assigning it wholesale would zero every field the delta
+    // happens not to mention; reading back the owning unit's copy instead would
+    // fold in whatever buffer most recently claimed that unit.
+    BufferHealth& health = buffer_health_[buffer_name];
 
     if (data.contains("fault_detection_enabled") && data["fault_detection_enabled"].is_boolean()) {
         health.fault_detection_enabled = data["fault_detection_enabled"].get<bool>();
@@ -2870,9 +2856,52 @@ void AmsBackendAfc::parse_afc_buffer(const std::string& buffer_name, const nlohm
 
     // Buffer health lives at unit level — the buffer sits between hub and
     // toolhead, not per-lane.
-    unit->buffer_health = health;
-    spdlog::debug("[AMS AFC] Buffer {} health set on unit {} (via lane {})", buffer_name,
-                  unit->unit_index, matched_lane);
+    apply_buffer_health_to_units();
+}
+
+void AmsBackendAfc::apply_buffer_health_to_units() {
+    for (const auto& [buffer_name, health] : buffer_health_) {
+        auto lanes_it = buffer_lane_names_.find(buffer_name);
+        if (lanes_it == buffer_lane_names_.end()) {
+            continue;
+        }
+        AmsUnit* unit = nullptr;
+        std::string matched_lane;
+        for (const auto& lane_name : lanes_it->second) {
+            int lane_idx = slots_.index_of(lane_name);
+            if (lane_idx < 0) {
+                continue;
+            }
+            // One buffer per unit — first lane that resolves decides.
+            unit = system_info_.get_unit_for_slot(lane_idx);
+            if (unit) {
+                matched_lane = lane_name;
+                break;
+            }
+        }
+        // Log the attribution only when it changes. This runs on every frame
+        // carrying a buffer OR a unit object, so an unconditional line here is
+        // per-buffer-per-unit spam — and it is exactly the line that has to stay
+        // readable in a bundle, because a buffer landing on the wrong unit is what
+        // it is there to show.
+        const int resolved = unit ? unit->unit_index : -1;
+        auto attribution = buffer_unit_attribution_.find(buffer_name);
+        const bool changed =
+            attribution == buffer_unit_attribution_.end() || attribution->second != resolved;
+        buffer_unit_attribution_[buffer_name] = resolved;
+
+        if (!unit) {
+            if (changed) {
+                spdlog::trace("[AMS AFC] Buffer {}: no unit resolved yet", buffer_name);
+            }
+            continue;
+        }
+        unit->buffer_health = health;
+        if (changed) {
+            spdlog::debug("[AMS AFC] Buffer {} health set on unit {} (via lane {})", buffer_name,
+                          unit->unit_index, matched_lane);
+        }
+    }
 }
 
 void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohmann::json& data) {
@@ -4147,8 +4176,13 @@ void AmsBackendAfc::reorganize_slots() {
     });
     slots_.reorganize(sorted_units);
 
-    // Rebuild system_info_.units for unit-level metadata (connected, topology,
-    // hub_sensor, buffer_health, hub_tool_label) that the registry doesn't track.
+    // Rebuild system_info_.units for the unit-level metadata the registry doesn't
+    // track. This DESTROYS every AmsUnit: anything not re-derived below is gone.
+    // Sensors and topology are re-derived here from hub_sensors_ / unit_infos_;
+    // buffer health is re-derived after the loop from buffer_health_. Nothing here
+    // is "preserved" — a field whose only writer is a status-delta parser cannot
+    // be, because Moonraker forwards only changed keys and that parser may not run
+    // again for minutes.
     system_info_.units.clear();
     int global_slot_offset = 0;
     int unit_idx = 0;
@@ -4228,6 +4262,11 @@ void AmsBackendAfc::reorganize_slots() {
     }
 
     system_info_.total_slots = global_slot_offset;
+
+    // The units above are freshly default-constructed, so buffer_health is nullopt
+    // on every one of them. Re-derive it from what AFC last reported — the buffer
+    // parser will not run again until a buffer field actually changes.
+    apply_buffer_health_to_units();
 
     spdlog::info("[AMS AFC] Reorganized into {} units, {} total slots", system_info_.units.size(),
                  system_info_.total_slots);
@@ -4936,6 +4975,11 @@ AmsError AmsBackendAfc::cancel() {
 // ============================================================================
 
 AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool persist) {
+    // Set when the material could not be expressed as a G-code parameter. Reported
+    // after every other write has gone out, so a name AFC cannot store costs the user
+    // only the material rather than the whole save — but is never silent.
+    std::string rejected_material;
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
@@ -5036,13 +5080,18 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                     execute_gcode(fmt::format("SET_COLOR LANE={} COLOR={}", lane_name, color_hex));
                 }
 
-                // Material (validate to prevent command injection)
-                if (!info.material.empty() && IMoonrakerAPI::is_safe_gcode_param(info.material)) {
-                    execute_gcode(
-                        fmt::format("SET_MATERIAL LANE={} MATERIAL={}", lane_name, info.material));
+                // Material (validate to prevent command injection). The material
+                // charset is deliberately wider than an identifier's: `PLA+`,
+                // `PA6-CF` and `Silk PLA` are all in our own filament database, and
+                // gating this on is_safe_gcode_param() dropped every one of them.
+                if (!info.material.empty() &&
+                    IMoonrakerAPI::is_safe_material_param(info.material)) {
+                    execute_gcode(fmt::format("SET_MATERIAL LANE={} MATERIAL={}", lane_name,
+                                              IMoonrakerAPI::gcode_param_value(info.material)));
                 } else if (!info.material.empty()) {
                     spdlog::warn("[AMS AFC] Skipping SET_MATERIAL - unsafe characters in: {}",
                                  info.material);
+                    rejected_material = info.material;
                 }
 
                 // Weight (if valid)
@@ -5064,6 +5113,16 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
 
     // Emit OUTSIDE the lock to avoid deadlock with callbacks
     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+
+    if (!rejected_material.empty()) {
+        return AmsError(AmsResult::COMMAND_FAILED,
+                        "Material '" + rejected_material +
+                            "' contains characters that cannot be "
+                            "sent as a G-code parameter",
+                        "Couldn't save the material name",
+                        "Everything else was saved. Rename the material using letters, digits, "
+                        "spaces, and + - _ . ( ) /");
+    }
 
     return AmsErrorHelper::success();
 }

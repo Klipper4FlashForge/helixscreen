@@ -1184,11 +1184,13 @@ Located under the `panel_widgets` key, grouped by panel ID. The Home panel uses 
 Each widget object has:
 
 - `id` — Widget identifier (see table below)
-- `enabled` — Whether the widget is shown (`true`/`false`)
-- `col` — Grid column position (0-based, left to right)
-- `row` — Grid row position (0-based, top to bottom)
+- `enabled` - Whether the widget is shown (`true`/`false`). A widget with `enabled: false` sits in the Widget Catalog waiting for you to add it back
+- `col` - Grid column position (0-based, left to right). `-1` means "no position yet"
+- `row` - Grid row position (0-based, top to bottom). `-1` means "no position yet"
 - `colspan` — Number of columns the widget spans
 - `rowspan` — Number of rows the widget spans
+
+> **What `col: -1` / `row: -1` means.** The widget is switched on but has nowhere to sit right now, usually because the grid was full when HelixScreen last laid out the page. It is *not* disabled: as soon as a cell frees up - you remove another widget, unplug the hardware another widget needed, or view the same layout on a screen with a bigger grid - it places itself again automatically. You do not need to re-add it from the catalog.
 - `config` — (optional) Per-widget settings object. Currently used by `temp_stack` and `fan_stack` for display mode:
   - `display_mode` — `"stack"` (default) or `"carousel"`. Stack shows compact rows; carousel shows swipeable full-size pages. Toggle via long-press on the widget.
 
