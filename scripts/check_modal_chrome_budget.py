@@ -55,13 +55,22 @@
 #
 # KNOWN GAP
 #   Every divider and button row is treated as budgeted, but the ladder is sized
-#   for exactly ONE button row. A modal carrying two (action_prompt_modal's
-#   button_container plus its footer_container, both of which can be visible at
-#   once) is therefore under-counted here and can still overrun. Closing it means
-#   deciding what a second row costs per breakpoint, which wants a measurement on
-#   a 480x272 panel rather than a guess — action_prompt_modal is currently
-#   unmeasured because it needs a live Klipper prompt to reach. Until then this
-#   gate catches pinned NON-button blocks only.
+#   for exactly ONE button row, so a modal carrying two is under-counted here.
+#   The only such modal today is action_prompt_modal (button_container plus
+#   footer_container, both visible at once), and it was measured at five
+#   breakpoints with its full worst case on screen — AFC diagram, three wrapping
+#   buttons AND the footer row — via `ctl demo action-prompt-worst`. It fits at
+#   every one, footer flush with the card bottom:
+#
+#     480x272  card 216  last_bottom 244 == card_bottom
+#     480x320  card 231  last_bottom 276 == card_bottom
+#     640x400  card 282  last_bottom 341 == card_bottom
+#     800x480  card 385  last_bottom 433 == card_bottom
+#    1024x600  card 459  last_bottom 530 == card_bottom
+#
+#   So the gap is real but currently unexercised. A NEW modal with two button
+#   rows would slip past this gate — measure it with a demo hook rather than
+#   trusting the ladder.
 #
 # Opt out with `MODAL_CHROME_OK: <reason>` anywhere in the file.
 

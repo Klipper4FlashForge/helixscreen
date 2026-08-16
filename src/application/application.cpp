@@ -2466,6 +2466,37 @@ bool show_demo_overlay(const std::string& name) {
         return true;
     }
 
+    if (name == "action-prompt-worst") {
+        // Worst case for action_prompt_modal's chrome budget (#1277). This modal
+        // carries MORE pinned chrome than ams_loading_error_modal: the AFC
+        // diagram, a row_wrap button container that can spill to a second row,
+        // and a footer divider + footer row that are hidden by default. All of
+        // it sits below the scroll area, so it is the shape most likely to
+        // overrun the 85% card cap. Unreachable in mock mode — it needs a live
+        // Klipper `action:prompt_begin` — so this is the only way to measure it.
+        lv_subject_t* seg = lv_xml_get_subject(nullptr, "afc_fault_segment");
+        if (seg != nullptr) {
+            lv_subject_set_int(seg, static_cast<int>(PathSegment::HUB));
+        }
+        helix::PromptData data;
+        data.title = "Filament Runout Detected";
+        data.severity = "error";
+        data.text_lines = {
+            "Lane 1 ran out of filament during the print.",
+            "The toolhead has been parked and the print is paused.",
+            "Load a new spool into lane 1, then choose how to continue.",
+        };
+        data.buttons = {
+            {"Resume", "RESUME", "primary", "", false, -1},
+            {"Retry Load", "AFC_LOAD LANE=1", "secondary", "", false, -1},
+            {"Change Lane", "AFC_CHANGE_LANE", "secondary", "", false, -1},
+            {"Cancel Print", "CANCEL_PRINT", "error", "", true, -1},
+        };
+        auto* modal = new helix::ui::ActionPromptModal();
+        modal->show_prompt(screen, data);
+        return true;
+    }
+
     if (name == "lock-screen") {
         helix::ui::LockScreenOverlay::instance().show();
         return true;
