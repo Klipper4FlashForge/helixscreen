@@ -880,14 +880,30 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /**
      * @brief Parse AFC_buffer object for buffer health and fault data
      *
-     * Extracts fault_detection_enabled, distance_to_fault, state, and lane mapping
-     * from the buffer status object. Populates buffer_health on mapped slots and
-     * creates WARNING-level SlotError when faults are detected.
+     * Extracts fault_detection_enabled, distance_to_fault, state, the multiplier trio
+     * and the lane list from the buffer status object, accumulating them into
+     * buffer_health_[buffer_name] — Moonraker sends deltas, so absent fields must
+     * leave the previous reading alone. Then re-derives the unit-level view via
+     * apply_buffer_health_to_units(); a buffer sits between hub and toolhead, so its
+     * health belongs to the unit, not to a slot.
      *
      * @param buffer_name Name of the buffer (e.g., "Turtle_1")
      * @param data JSON object from AFC_buffer
      */
     void parse_afc_buffer(const std::string& buffer_name, const nlohmann::json& data);
+
+    /**
+     * @brief Re-attach every known buffer's health to the unit that owns its lanes.
+     *
+     * Derives AmsUnit::buffer_health from buffer_health_ + buffer_lane_names_ rather
+     * than mutating a unit in place, so the reading survives reorganize_slots()
+     * rebuilding the unit vector and lands on the right unit once the multi-unit
+     * layout exists. Buffers whose lanes resolve to no unit yet are simply skipped —
+     * the next call picks them up.
+     *
+     * @pre mutex_ must be held by caller.
+     */
+    void apply_buffer_health_to_units();
 
     /**
      * @brief Parse AFC_extruder object for toolhead sensor states
@@ -1168,6 +1184,22 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// `lanes` — without this cache the health update could not be routed to a
     /// unit and would be dropped.
     std::unordered_map<std::string, std::vector<std::string>> buffer_lane_names_;
+
+    /// What AFC last reported for each buffer, keyed by buffer name. This is the
+    /// record; AmsUnit::buffer_health is a derived view of it. Accumulating into
+    /// the unit instead was wrong twice over: reorganize_slots() rebuilds every
+    /// AmsUnit from scratch, so the reading survived only until the next frame
+    /// carrying a unit object, and on a multi-unit rig whose layout was not built
+    /// yet every buffer resolved to unit 0 and read-modify-wrote the previous
+    /// buffer's fields.
+    std::unordered_map<std::string, BufferHealth> buffer_health_;
+
+    /// Unit index each buffer was last attached to (-1 = unresolved), so the
+    /// attribution can be logged when it CHANGES rather than on every
+    /// re-derivation. apply_buffer_health_to_units() runs on every status frame
+    /// that carries a buffer or a unit object; logging unconditionally there put
+    /// 75 extra lines into a five-unit rig's log for one three-frame replay.
+    std::unordered_map<std::string, int> buffer_unit_attribution_;
 
     // Multi-extruder (toolchanger) state
     int num_extruders_{1}; ///< Number of extruders (1 = standard, 2+ = toolchanger)
