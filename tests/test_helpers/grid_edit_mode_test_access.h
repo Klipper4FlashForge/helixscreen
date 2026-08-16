@@ -37,6 +37,13 @@ struct GridEditModeTestAccess {
     static void commit_resize(GridEditMode& em, const GridEditMode::ResizeResult& result) {
         em.commit_resize_with_snap(result);
     }
+
+    /// The catalog's selection callback, called directly. Driving it through a
+    /// real row click would also need the overlay, and what a placement test
+    /// asserts on is the config this writes.
+    static void place_from_catalog(GridEditMode& em, const std::string& widget_id) {
+        em.place_widget_from_catalog(widget_id);
+    }
 };
 
 } // namespace helix

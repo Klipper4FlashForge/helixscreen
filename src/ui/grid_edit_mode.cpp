@@ -2447,6 +2447,36 @@ void GridEditMode::place_widget_from_catalog(const std::string& widget_id) {
     // Enable the widget in config with the computed grid position.
     // Find the entry by ID — it should exist as disabled.
     auto& mutable_entries = config_->page_entries_mut(static_cast<size_t>(page_index_));
+
+    // The catalog offers a widget when it holds no cell on ANY page
+    // (PanelWidgetConfig::is_placed), so the entry it refers to may live on a
+    // different page than the one being edited — disabled, or enabled at
+    // (-1,-1) after a GridFull eviction or a wizard enable. Placing it here has
+    // to MOVE that entry: two entries with one ID would render the widget on
+    // two pages, and delete_entry() only ever removes the first of them.
+    // Erasing from another page cannot invalidate mutable_entries — pages_
+    // itself is not resized.
+    nlohmann::json carried_config;
+    for (size_t p = 0; p < config_->page_count(); ++p) {
+        if (p == static_cast<size_t>(page_index_)) {
+            continue;
+        }
+        auto& other_entries = config_->page_entries_mut(p);
+        auto it =
+            std::find_if(other_entries.begin(), other_entries.end(),
+                         [&widget_id](const PanelWidgetEntry& e) { return e.id == widget_id; });
+        if (it == other_entries.end()) {
+            continue;
+        }
+        // Per-widget settings belong to the widget, not to the page it sat on.
+        if (carried_config.empty()) {
+            carried_config = it->config;
+        }
+        spdlog::info("[GridEditMode] Moving '{}' from page {} to page {}", widget_id, p,
+                     page_index_);
+        other_entries.erase(it);
+    }
+
     bool found = false;
     for (auto& entry : mutable_entries) {
         if (entry.id == widget_id) {
@@ -2455,6 +2485,9 @@ void GridEditMode::place_widget_from_catalog(const std::string& widget_id) {
             entry.row = place_row;
             entry.colspan = colspan;
             entry.rowspan = rowspan;
+            if (entry.config.empty() && !carried_config.empty()) {
+                entry.config = carried_config;
+            }
             found = true;
             break;
         }
@@ -2464,7 +2497,8 @@ void GridEditMode::place_widget_from_catalog(const std::string& widget_id) {
         // Widget not in this page's entries — add a new entry.
         // This happens for multi-instance widgets (user-created) and for any widget
         // being placed on a non-default page (pages beyond page 0 start empty).
-        mutable_entries.push_back({widget_id, true, {}, place_col, place_row, colspan, rowspan});
+        mutable_entries.push_back(
+            {widget_id, true, carried_config, place_col, place_row, colspan, rowspan});
         spdlog::info("[GridEditMode] Created new entry '{}' on page {}", widget_id, page_index_);
     }
 
