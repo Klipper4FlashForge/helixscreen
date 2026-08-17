@@ -105,6 +105,7 @@
   <translation tag="AFC reset complete" zh="AFC重置完成"/>
   <translation tag="AFC reset failed" zh="AFC重置失败"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" zh="AFC 在打印结束时将耗材从工具头退出"/>
+  <translation tag="AI detection" zh="AI 检测"/>
   <translation tag="ALL DEVICES" zh="所有设备"/>
   <translation tag="AMS" zh="AMS"/>
   <translation tag="AMS Active: " zh="AMS 已激活: "/>
@@ -147,6 +148,7 @@
   <translation tag="Adjust until belt appears frozen" zh="调整直到皮带看起来静止"/>
   <translation tag="Adjustments stay active until restart. Save after print completes." zh="调整在重启前保持有效。打印完成后保存。"/>
   <translation tag="Adjusts individual characteristics of your heaters for optimal control" zh="调整加热器的各项参数以实现最佳控制"/>
+  <translation tag="Advanced" zh="高级"/>
   <translation tag="After running the commands, tap Check Again below." zh="执行命令后，点击下方的重新检查。"/>
   <translation tag="Alert" zh="警报"/>
   <translation tag="Alerts" zh="警报"/>
@@ -537,6 +539,7 @@
   <translation tag="Control power relays and smart outlets" zh="控制电源继电器和智能插座"/>
   <translation tag="Controlled by hardware sensor" zh="由硬件传感器控制"/>
   <translation tag="Controller" zh="控制器"/>
+  <translation tag="Controls" zh="控制"/>
   <translation tag="Cool Down" zh="冷却"/>
   <translation tag="Cool nozzle after filament ops" zh="耗材操作后冷却喷嘴"/>
   <translation tag="Cooling" zh="冷却中"/>
@@ -596,6 +599,7 @@
   <translation tag="Custom..." zh="自定义..."/>
   <translation tag="Customize Macro Button" zh="自定义宏按钮"/>
   <translation tag="Customize preset temperatures" zh="自定义预设温度"/>
+  <translation tag="Customize your home screen" zh="自定义主屏幕"/>
   <translation tag="Cut Distance" zh="切割距离"/>
   <translation tag="Cut filament" zh="切断耗材"/>
   <translation tag="Cut tip" zh="切断尖端"/>
@@ -1233,6 +1237,7 @@
   <translation tag="Length of filament to purge" zh="要排出的耗材长度"/>
   <translation tag="Length of the cooling tube section" zh="冷却管段的长度"/>
   <translation tag="Length:" zh="长度："/>
+  <translation tag="Let&apos;s take a quick tour so you can find things fast." zh="让我们快速浏览一下，帮助您快速找到所需内容。"/>
   <translation tag="Leveling Gantry..." zh="正在调平龙门..."/>
   <translation tag="Library" zh="库"/>
   <translation tag="Lifetime Print Stats" zh="累计打印统计"/>
@@ -1247,6 +1252,7 @@
   <translation tag="Load filament" zh="装载耗材"/>
   <translation tag="Load may still be running — response timed out" zh="加载可能仍在运行 — 响应超时"/>
   <translation tag="Load the required filaments or start anyway?" zh="加载所需耗材还是直接开始？"/>
+  <translation tag="Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors." zh="加载、卸载和更换料盘。一目了然地查看您的多耗材系统、将颜色映射到槽位，并监控耗材用尽传感器。"/>
   <translation tag="Loaded" zh="已加载"/>
   <translation tag="Loading" zh="加载中"/>
   <translation tag="Loading Bed Mesh..." zh="正在加载热床网格..."/>
@@ -1273,6 +1279,7 @@
   <translation tag="Log Level" zh="日志级别"/>
   <translation tag="Logs" zh="日志"/>
   <translation tag="Long Press Time" zh="长按时间"/>
+  <translation tag="Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout." zh="长按任意磁贴进入编辑模式 — 重新排列、调整大小、移除或添加小组件，并为您喜欢的布局添加额外页面。"/>
   <translation tag="Long-press the home grid to rearrange widgets (turn off if it triggers by accident)" zh="长按主屏幕网格可重新排列小组件（若误触请关闭）"/>
   <translation tag="Longest Disconnect" zh="最长断开时长"/>
   <translation tag="Loosen Path A belt." zh="松开路径A的皮带。"/>
@@ -1318,6 +1325,7 @@
   <translation tag="Macro to resume a paused print" zh="恢复暂停打印的宏"/>
   <translation tag="Macro to unload filament from extruder" zh="从挤出机卸载耗材的宏"/>
   <translation tag="Macros" zh="宏"/>
+  <translation tag="Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities." zh="宏、G-code 控制台、校准工具（PID、输入整形、Z 偏移）、固件更新以及开发者实用工具。"/>
   <translation tag="Main LED Strip" zh="主 LED 灯带"/>
   <translation tag="Maintaining" zh="保持中"/>
   <translation tag="Maintenance" zh="维护"/>
@@ -1375,6 +1383,8 @@
   <translation tag="Monitor and set bed temperature" zh="监控并设置热床温度"/>
   <translation tag="Monitor and set chamber temperature" zh="监控并设置腔体温度"/>
   <translation tag="Monitor and set nozzle temperature" zh="监控并设置喷嘴温度"/>
+  <translation tag="Monitor for print abnormalities (K2 Plus camera-based)" zh="监测打印异常（基于 K2 Plus 摄像头）"/>
+  <translation tag="Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job." zh="监控正在进行的打印 — 剩余时间、当前层和进度。点击可暂停、恢复或取消当前任务。"/>
   <translation tag="Monitor temperature sensors (single or carousel)" zh="监控温度传感器（单个或轮播）"/>
   <translation tag="Monitoring" zh="监控中"/>
   <translation tag="Month" zh="月"/>
@@ -1393,6 +1403,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." zh="调整时前后移动纸张。当纸张有轻微阻力但仍能滑动时停止。"/>
   <translation tag="Move selector" zh="移动选择器"/>
   <translation tag="Move speed multipliers" zh="移动速度倍率"/>
+  <translation tag="Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings." zh="移动打印头、归位轴、调平热床，并微调温度、风扇及其他运动设置。"/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." zh="移动打印头以测量每个轴上的振动频率。需要 2-3 分钟。打印机会发出噪音——这是正常的。"/>
   <translation tag="Moving lane" zh="正在移动料仓"/>
   <translation tag="Multi-Filament" zh="多耗材"/>
@@ -1425,6 +1436,7 @@
   <translation tag="Network Test" zh="网络测试"/>
   <translation tag="Network forgotten" zh="已忘记网络"/>
   <translation tag="Network name cannot be empty" zh="网络名称不能为空"/>
+  <translation tag="Network, display, sound, printer setup, and more. You can replay this tour anytime from Help &amp; About." zh="网络、显示、声音、打印机设置等。您可以随时从“帮助与关于”中重播此漫游。"/>
   <translation tag="Never" zh="从不"/>
   <translation tag="New Spool: Step 1 of 3" zh="新料盘：步骤 1 / 3"/>
   <translation tag="New Spool: Step {} of {}" zh="新线轴: 第 {} 步,共 {} 步"/>
@@ -1740,6 +1752,7 @@
   <translation tag="Print server rejected the job — check printer status" zh="打印服务器拒绝了任务 — 请检查打印机状态"/>
   <translation tag="Print setup failed" zh="打印设置失败"/>
   <translation tag="Print setup failed: internal error" zh="打印设置失败：内部错误"/>
+  <translation tag="Print status" zh="打印状态"/>
   <translation tag="Print timed out waiting for completion" zh="等待打印完成超时"/>
   <translation tag="Printer" zh="打印机"/>
   <translation tag="Printer Error" zh="打印机错误"/>
@@ -1859,6 +1872,7 @@
   <translation tag="Recalibrate or view detailed results anytime in Settings." zh="可随时在设置中重新校准或查看详细结果。"/>
   <translation tag="Recent Prints" zh="最近打印"/>
   <translation tag="Recently Printed" zh="最近打印过的"/>
+  <translation tag="Reconnect"/>
   <translation tag="Record Timelapse" zh="录制延时摄影"/>
   <translation tag="Record timelapses of your prints" zh="录制打印延时摄影"/>
   <translation tag="Recorded timelapses will appear here" zh="录制的延时摄影将显示在此处"/>
@@ -2288,6 +2302,7 @@
   <translation tag="Tap + to add" zh="点击 + 添加"/>
   <translation tag="Tap again to confirm this orientation" zh="再次点击确认此方向"/>
   <translation tag="Tap an object to exclude it | {} objects ({} excluded)" zh="点按对象以排除 | {} 个对象（已排除 {} 个）"/>
+  <translation tag="Tap any tile to open its full controls or toggle its state." zh="点击任意磁贴以打开其完整控制项或切换其状态。"/>
   <translation tag="Tap anywhere if this text is right-side up" zh="如果文字方向正确请点击任意位置"/>
   <translation tag="Tap anywhere to begin" zh="点击任意位置开始"/>
   <translation tag="Tap anywhere to begin calibration" zh="点击任意位置开始校准"/>
@@ -2575,6 +2590,7 @@
   <translation tag="Week" zh="周"/>
   <translation tag="Weekly Print Stats" zh="本周打印统计"/>
   <translation tag="Weight data is synced from Spoolman to display remaining filament. Changes are also synced when prints start, pause, or complete." zh="重量数据从 Spoolman 同步以显示剩余耗材。打印开始、暂停或完成时也会同步更改。"/>
+  <translation tag="Welcome to HelixScreen" zh="欢迎使用 HelixScreen"/>
   <translation tag="What We Collect" zh="我们收集的内容"/>
   <translation tag="When enabled, only the macro runs. When disabled, temperatures are set first, then the macro runs." zh="启用时仅运行宏。禁用时先设置温度，然后运行宏。"/>
   <translation tag="When starting a print, you&apos;ll be able to choose whether to run %s. This saves time when you&apos;ve already done it recently or want more control over your print preparation." zh="开始打印时，您可以选择是否运行 %s。如果您最近已经执行过或希望对打印准备过程有更多控制，这样可以节省时间。"/>
@@ -2625,6 +2641,7 @@
   <translation tag="Your PRINT_START macro will be updated to give you control over:&#10;&#10;" zh="您的 PRINT_START 宏将被更新，以便您控制以下内容：&#10;&#10;"/>
   <translation tag="Your completed prints will appear here" zh="您完成的打印将显示在此处"/>
   <translation tag="Your print start is already fully configured!" zh="您的打印启动已完全配置！"/>
+  <translation tag="Your printer at a glance" zh="一览您的打印机"/>
   <translation tag="Your printer has an automatic filament changer" zh="您的打印机配有自动换色系统"/>
   <translation tag="Your printer was offline during setup, so hardware options were skipped. Set them up now?" zh="设置期间打印机离线，硬件选项已跳过。现在设置吗？"/>
   <translation tag="Z" zh="Z"/>
@@ -2682,9 +2699,6 @@
   <translation tag="nozzle" zh="喷嘴"/>
   <translation tag="of" zh="的"/>
   <translation tag="off" zh="关闭"/>
-  <translation tag="pre_print_option.ai_detect.description" zh="监测打印异常（基于 K2 Plus 摄像头）"/>
-  <translation tag="pre_print_option.ai_detect.label" zh="AI 检测"/>
-  <translation tag="pre_print_option.timelapse.label" zh="延时摄影"/>
   <translation tag="prints" zh="打印次数"/>
   <translation tag="remaining" zh="剩余"/>
   <translation tag="remaining before clog detection triggers" zh="剩余即触发堵料检测"/>
@@ -2694,22 +2708,6 @@
   <translation tag="steppers" zh="步进电机"/>
   <translation tag="tall" zh="高"/>
   <translation tag="tool(s)" zh="工具"/>
-  <translation tag="tour.step.advanced.body" zh="宏、G-code 控制台、校准工具（PID、输入整形、Z 偏移）、固件更新以及开发者实用工具。"/>
-  <translation tag="tour.step.advanced.title" zh="高级"/>
-  <translation tag="tour.step.controls.body" zh="移动打印头、归位轴、调平热床，并微调温度、风扇及其他运动设置。"/>
-  <translation tag="tour.step.controls.title" zh="控制"/>
-  <translation tag="tour.step.customize.body" zh="长按任意磁贴进入编辑模式 — 重新排列、调整大小、移除或添加小组件，并为您喜欢的布局添加额外页面。"/>
-  <translation tag="tour.step.customize.title" zh="自定义主屏幕"/>
-  <translation tag="tour.step.filament.body" zh="加载、卸载和更换料盘。一目了然地查看您的多耗材系统、将颜色映射到槽位，并监控耗材用尽传感器。"/>
-  <translation tag="tour.step.filament.title" zh="耗材"/>
-  <translation tag="tour.step.home_grid.body" zh="点击任意磁贴以打开其完整控制项或切换其状态。"/>
-  <translation tag="tour.step.home_grid.title" zh="一览您的打印机"/>
-  <translation tag="tour.step.print.body" zh="监控正在进行的打印 — 剩余时间、当前层和进度。点击可暂停、恢复或取消当前任务。"/>
-  <translation tag="tour.step.print.title" zh="打印状态"/>
-  <translation tag="tour.step.settings.body" zh="网络、显示、声音、打印机设置等。您可以随时从“帮助与关于”中重播此漫游。"/>
-  <translation tag="tour.step.settings.title" zh="设置"/>
-  <translation tag="tour.step.welcome.body" zh="让我们快速浏览一下，帮助您快速找到所需内容。"/>
-  <translation tag="tour.step.welcome.title" zh="欢迎使用 HelixScreen"/>
   <translation tag="used" zh="已使用"/>
   <translation tag="v%s available" zh="v%s 可用"/>
   <translation tag="v{} installed! Restarting..." zh="已安装 v{}！正在重启..."/>

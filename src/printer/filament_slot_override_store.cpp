@@ -1719,17 +1719,39 @@ FingerprintEvent SlotFingerprintTracker::observe(int slot_index, const std::stri
     if (exp == expected_.end())
         return FingerprintEvent::Changed;
 
-    // Single-shot: any change consumes the expectation, matching or not. A
-    // non-matching change means the slot moved somewhere we did not send it, so
-    // whatever echo was outstanding is no longer meaningful — and swap
-    // detection returns to normal immediately rather than staying suppressed.
-    const bool matched = (exp->second == observed);
+    // Single-shot per value: an exact match consumes only its own entry
+    // (OwnWriteEcho). Any other change means the slot moved somewhere we did
+    // not send it, so whatever echoes were outstanding are no longer
+    // meaningful — consume them all and return to normal swap detection
+    // immediately rather than staying suppressed.
+    for (auto eit = exp->second.begin(); eit != exp->second.end(); ++eit) {
+        if (*eit == observed) {
+            exp->second.erase(eit);
+            if (exp->second.empty())
+                expected_.erase(exp);
+            return FingerprintEvent::OwnWriteEcho;
+        }
+    }
     expected_.erase(exp);
-    return matched ? FingerprintEvent::OwnWriteEcho : FingerprintEvent::Changed;
+    return FingerprintEvent::Changed;
 }
 
 void SlotFingerprintTracker::expect(int slot_index, std::string expected_value) {
-    expected_[slot_index] = std::move(expected_value);
+    expected_[slot_index] = {std::move(expected_value)};
+}
+
+void SlotFingerprintTracker::expect_any_of(int slot_index,
+                                           std::vector<std::string> expected_values) {
+    std::vector<std::string> kept;
+    kept.reserve(expected_values.size());
+    for (auto& v : expected_values) {
+        if (!v.empty())
+            kept.push_back(std::move(v));
+    }
+    if (kept.empty())
+        expected_.erase(slot_index);
+    else
+        expected_[slot_index] = std::move(kept);
 }
 
 void SlotFingerprintTracker::forget_expected(int slot_index) {

@@ -105,6 +105,7 @@
   <translation tag="AFC reset complete" en="AFC reset complete"/>
   <translation tag="AFC reset failed" en="AFC reset failed"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" en="AFC retracts filament from the toolhead at end of print"/>
+  <translation tag="AI detection" en="AI detection"/>
   <translation tag="ALL DEVICES" en="ALL DEVICES"/>
   <translation tag="AMS" en="AMS"/>
   <translation tag="AMS Active: " en="AMS Active: "/>
@@ -147,6 +148,7 @@
   <translation tag="Adjust until belt appears frozen" en="Adjust until belt appears frozen"/>
   <translation tag="Adjustments stay active until restart. Save after print completes." en="Adjustments stay active until restart. Save after print completes."/>
   <translation tag="Adjusts individual characteristics of your heaters for optimal control" en="Adjusts individual characteristics of your heaters for optimal control"/>
+  <translation tag="Advanced" en="Advanced"/>
   <translation tag="After running the commands, tap Check Again below." en="After running the commands, tap Check Again below."/>
   <translation tag="Alert" en="Alert"/>
   <translation tag="Alerts" en="Alerts"/>
@@ -537,6 +539,7 @@
   <translation tag="Control power relays and smart outlets" en="Control power relays and smart outlets"/>
   <translation tag="Controlled by hardware sensor" en="Controlled by hardware sensor"/>
   <translation tag="Controller" en="Controller"/>
+  <translation tag="Controls" en="Controls"/>
   <translation tag="Cool Down" en="Cool Down"/>
   <translation tag="Cool nozzle after filament ops" en="Cool nozzle after filament ops"/>
   <translation tag="Cooling" en="Cooling"/>
@@ -596,6 +599,7 @@
   <translation tag="Custom..." en="Custom..."/>
   <translation tag="Customize Macro Button" en="Customize Macro Button"/>
   <translation tag="Customize preset temperatures" en="Customize preset temperatures"/>
+  <translation tag="Customize your home screen" en="Customize your home screen"/>
   <translation tag="Cut Distance" en="Cut Distance"/>
   <translation tag="Cut filament" en="Cut filament"/>
   <translation tag="Cut tip" en="Cut tip"/>
@@ -1233,6 +1237,7 @@
   <translation tag="Length of filament to purge" en="Length of filament to purge"/>
   <translation tag="Length of the cooling tube section" en="Length of the cooling tube section"/>
   <translation tag="Length:" en="Length:"/>
+  <translation tag="Let&apos;s take a quick tour so you can find things fast." en="Let&apos;s take a quick tour so you can find things fast."/>
   <translation tag="Leveling Gantry..." en="Leveling Gantry..."/>
   <translation tag="Library" en="Library"/>
   <translation tag="Lifetime Print Stats" en="Lifetime Print Stats"/>
@@ -1247,6 +1252,7 @@
   <translation tag="Load filament" en="Load filament"/>
   <translation tag="Load may still be running — response timed out" en="Load may still be running — response timed out"/>
   <translation tag="Load the required filaments or start anyway?" en="Load the required filaments or start anyway?"/>
+  <translation tag="Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors." en="Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors."/>
   <translation tag="Loaded" en="Loaded"/>
   <translation tag="Loading" en="Loading"/>
   <translation tag="Loading Bed Mesh..." en="Loading Bed Mesh..."/>
@@ -1273,6 +1279,7 @@
   <translation tag="Log Level" en="Log Level"/>
   <translation tag="Logs" en="Logs"/>
   <translation tag="Long Press Time" en="Long Press Time"/>
+  <translation tag="Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout." en="Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout."/>
   <translation tag="Long-press the home grid to rearrange widgets (turn off if it triggers by accident)" en="Long-press the home grid to rearrange widgets (turn off if it triggers by accident)"/>
   <translation tag="Longest Disconnect" en="Longest Disconnect"/>
   <translation tag="Loosen Path A belt." en="Loosen Path A belt."/>
@@ -1318,6 +1325,7 @@
   <translation tag="Macro to resume a paused print" en="Macro to resume a paused print"/>
   <translation tag="Macro to unload filament from extruder" en="Macro to unload filament from extruder"/>
   <translation tag="Macros" en="Macros"/>
+  <translation tag="Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities." en="Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities."/>
   <translation tag="Main LED Strip" en="Main LED Strip"/>
   <translation tag="Maintaining" en="Maintaining"/>
   <translation tag="Maintenance" en="Maintenance"/>
@@ -1375,6 +1383,8 @@
   <translation tag="Monitor and set bed temperature" en="Monitor and set bed temperature"/>
   <translation tag="Monitor and set chamber temperature" en="Monitor and set chamber temperature"/>
   <translation tag="Monitor and set nozzle temperature" en="Monitor and set nozzle temperature"/>
+  <translation tag="Monitor for print abnormalities (K2 Plus camera-based)" en="Monitor for print abnormalities (K2 Plus camera-based)"/>
+  <translation tag="Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job." en="Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job."/>
   <translation tag="Monitor temperature sensors (single or carousel)" en="Monitor temperature sensors (single or carousel)"/>
   <translation tag="Monitoring" en="Monitoring"/>
   <translation tag="Month" en="Month"/>
@@ -1393,6 +1403,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." en="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides."/>
   <translation tag="Move selector" en="Move selector"/>
   <translation tag="Move speed multipliers" en="Move speed multipliers"/>
+  <translation tag="Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings." en="Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings."/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." en="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal."/>
   <translation tag="Moving lane" en="Moving lane"/>
   <translation tag="Multi-Filament" en="Multi-Filament"/>
@@ -1425,6 +1436,7 @@
   <translation tag="Network Test" en="Network Test"/>
   <translation tag="Network forgotten" en="Network forgotten"/>
   <translation tag="Network name cannot be empty" en="Network name cannot be empty"/>
+  <translation tag="Network, display, sound, printer setup, and more. You can replay this tour anytime from Help &amp; About." en="Network, display, sound, printer setup, and more. You can replay this tour anytime from Help &amp; About."/>
   <translation tag="Never" en="Never"/>
   <translation tag="New Spool: Step 1 of 3" en="New Spool: Step 1 of 3"/>
   <translation tag="New Spool: Step {} of {}" en="New Spool: Step {} of {}"/>
@@ -1740,6 +1752,7 @@
   <translation tag="Print server rejected the job — check printer status" en="Print server rejected the job — check printer status"/>
   <translation tag="Print setup failed" en="Print setup failed"/>
   <translation tag="Print setup failed: internal error" en="Print setup failed: internal error"/>
+  <translation tag="Print status" en="Print status"/>
   <translation tag="Print timed out waiting for completion" en="Print timed out waiting for completion"/>
   <translation tag="Printer" en="Printer"/>
   <translation tag="Printer Error" en="Printer Error"/>
@@ -1859,6 +1872,7 @@
   <translation tag="Recalibrate or view detailed results anytime in Settings." en="Recalibrate or view detailed results anytime in Settings."/>
   <translation tag="Recent Prints" en="Recent Prints"/>
   <translation tag="Recently Printed" en="Recently Printed"/>
+  <translation tag="Reconnect" en="Reconnect"/>
   <translation tag="Record Timelapse" en="Record Timelapse"/>
   <translation tag="Record timelapses of your prints" en="Record timelapses of your prints"/>
   <translation tag="Recorded timelapses will appear here" en="Recorded timelapses will appear here"/>
@@ -2288,6 +2302,7 @@
   <translation tag="Tap + to add" en="Tap + to add"/>
   <translation tag="Tap again to confirm this orientation" en="Tap again to confirm this orientation"/>
   <translation tag="Tap an object to exclude it | {} objects ({} excluded)" en="Tap an object to exclude it | {} objects ({} excluded)"/>
+  <translation tag="Tap any tile to open its full controls or toggle its state." en="Tap any tile to open its full controls or toggle its state."/>
   <translation tag="Tap anywhere if this text is right-side up" en="Tap anywhere if this text is right-side up"/>
   <translation tag="Tap anywhere to begin" en="Tap anywhere to begin"/>
   <translation tag="Tap anywhere to begin calibration" en="Tap anywhere to begin calibration"/>
@@ -2575,6 +2590,7 @@
   <translation tag="Week" en="Week"/>
   <translation tag="Weekly Print Stats" en="Weekly Print Stats"/>
   <translation tag="Weight data is synced from Spoolman to display remaining filament. Changes are also synced when prints start, pause, or complete." en="Weight data is synced from Spoolman to display remaining filament. Changes are also synced when prints start, pause, or complete."/>
+  <translation tag="Welcome to HelixScreen" en="Welcome to HelixScreen"/>
   <translation tag="What We Collect" en="What We Collect"/>
   <translation tag="When enabled, only the macro runs. When disabled, temperatures are set first, then the macro runs." en="When enabled, only the macro runs. When disabled, temperatures are set first, then the macro runs."/>
   <translation tag="When starting a print, you&apos;ll be able to choose whether to run %s. This saves time when you&apos;ve already done it recently or want more control over your print preparation." en="When starting a print, you&apos;ll be able to choose whether to run %s. This saves time when you&apos;ve already done it recently or want more control over your print preparation."/>
@@ -2625,6 +2641,7 @@
   <translation tag="Your PRINT_START macro will be updated to give you control over:&#10;&#10;" en="Your PRINT_START macro will be updated to give you control over:&#10;&#10;"/>
   <translation tag="Your completed prints will appear here" en="Your completed prints will appear here"/>
   <translation tag="Your print start is already fully configured!" en="Your print start is already fully configured!"/>
+  <translation tag="Your printer at a glance" en="Your printer at a glance"/>
   <translation tag="Your printer has an automatic filament changer" en="Your printer has an automatic filament changer"/>
   <translation tag="Your printer was offline during setup, so hardware options were skipped. Set them up now?" en="Your printer was offline during setup, so hardware options were skipped. Set them up now?"/>
   <translation tag="Z" en="Z"/>
@@ -2682,9 +2699,6 @@
   <translation tag="nozzle" en="nozzle"/>
   <translation tag="of" en="of"/>
   <translation tag="off" en="off"/>
-  <translation tag="pre_print_option.ai_detect.description" en="Monitor for print abnormalities (K2 Plus camera-based)"/>
-  <translation tag="pre_print_option.ai_detect.label" en="AI detection"/>
-  <translation tag="pre_print_option.timelapse.label" en="Timelapse"/>
   <translation tag="prints" en="prints"/>
   <translation tag="remaining" en="remaining"/>
   <translation tag="remaining before clog detection triggers" en="remaining before clog detection triggers"/>
@@ -2694,22 +2708,6 @@
   <translation tag="steppers" en="steppers"/>
   <translation tag="tall" en="tall"/>
   <translation tag="tool(s)" en="tool(s)"/>
-  <translation tag="tour.step.advanced.body" en="Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities."/>
-  <translation tag="tour.step.advanced.title" en="Advanced"/>
-  <translation tag="tour.step.controls.body" en="Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings."/>
-  <translation tag="tour.step.controls.title" en="Controls"/>
-  <translation tag="tour.step.customize.body" en="Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout."/>
-  <translation tag="tour.step.customize.title" en="Customize your home screen"/>
-  <translation tag="tour.step.filament.body" en="Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors."/>
-  <translation tag="tour.step.filament.title" en="Filament"/>
-  <translation tag="tour.step.home_grid.body" en="Tap any tile to open its full controls or toggle its state."/>
-  <translation tag="tour.step.home_grid.title" en="Your printer at a glance"/>
-  <translation tag="tour.step.print.body" en="Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job."/>
-  <translation tag="tour.step.print.title" en="Print status"/>
-  <translation tag="tour.step.settings.body" en="Network, display, sound, printer setup, and more. You can replay this tour anytime from Help &amp; About."/>
-  <translation tag="tour.step.settings.title" en="Settings"/>
-  <translation tag="tour.step.welcome.body" en="Let&apos;s take a quick tour so you can find things fast."/>
-  <translation tag="tour.step.welcome.title" en="Welcome to HelixScreen"/>
   <translation tag="used" en="used"/>
   <translation tag="v%s available" en="v%s available"/>
   <translation tag="v{} installed! Restarting..." en="v{} installed! Restarting..."/>

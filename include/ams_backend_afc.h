@@ -376,8 +376,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /**
      * @brief Reset all tool mappings to defaults
      *
-     * Uses RESET_AFC_MAPPING RUNOUT=no to reset tool-to-lane mappings
-     * while preserving existing endless spool configuration.
+     * Uses AFC_RESET_MAPPING RUNOUT=no (RESET_AFC_MAPPING before the virtual-
+     * tools firmware, Klipper-Add-On #832, which deregistered the old name) to
+     * reset tool-to-lane mappings while preserving existing endless spool
+     * configuration.
      *
      * @return AmsError with result
      */
@@ -503,6 +505,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcStatusDispatchHelper;
     friend class AfcEjectPrintGateHelper;
     friend class AfcSharedExtruderHelper;
+    friend class AfcLaneDataToolKeyHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -1067,6 +1070,28 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Cleared when the lane is unmapped, and ignored whenever the tool is no longer
     // a member of a present "map".
     std::unordered_map<std::string, int> lane_current_tool_;
+
+    // A lane_data payload keyed by T(n) (virtual-tools firmware, #832) that
+    // arrived while no tool mapping could resolve its records. Kept whole and
+    // replayed once parse_afc_stepper() lands a mapping, because
+    // query_lane_data() is one-shot and never retried. Cleared (re-parked) by
+    // the replay itself if records still resolve to nothing.
+    std::optional<nlohmann::json> pending_tool_lane_data_;
+
+    // Slots whose tool mapping the FIRMWARE asserted via a lane "map" field.
+    // initialize_slots() seeds a 1:1 identity placeholder, and a T(n)-keyed
+    // lane_data join that trusted it could paint another lane's spool onto a
+    // slot nothing corrects until a real map arrives. parse_lane_data() only
+    // resolves tool keys through slots in this set; everything else parks.
+    // Reset with the registry in initialize_slots().
+    std::set<int> firmware_mapped_slots_;
+
+    // The virtual-tools firmware renamed RESET_AFC_MAPPING → AFC_RESET_MAPPING
+    // (#832) and deregistered the old name. Detected by key PRESENCE of
+    // multiple_tool_mapping in the AFC status object — the value is the user's
+    // opt-in to virtual tools and defaults false, so only presence is a version
+    // signal.
+    bool afc_reset_mapping_renamed_{false};
 
     // AFC state strings outside our known vocabulary — dedupes the schema-drift
     // warning so it fires once per distinct string, not once per status update.

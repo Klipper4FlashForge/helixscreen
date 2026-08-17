@@ -267,17 +267,26 @@ enum class FingerprintEvent {
 /// lane_data, log) stays in each backend, so their policies can differ.
 ///
 /// Beyond the plain baseline compare it carries an `expect()` slot: backends
-/// that write a value back to firmware (CFS's BOX_MODIFY_TN_DATA color push)
-/// record the value they expect to see echoed. Because the write is
+/// that write a value back to firmware (CFS's BOX_MODIFY_TN_DATA identity
+/// push) record the value they expect to see echoed. Because the write is
 /// asynchronous, firmware keeps reporting the OLD value for an unknown number
 /// of polls before the echo lands — so the expectation must SURVIVE those
 /// polls rather than overwrite the baseline immediately. Those intervening
 /// polls classify as Unchanged; the echo itself classifies as OwnWriteEcho.
 ///
-/// The expectation is single-shot and is consumed by the first change of any
+/// Each expectation is single-shot and is consumed by the first change of any
 /// kind, so a genuine physical swap that lands while a write is in flight is
 /// still reported as Changed and never permanently blinds swap detection for
 /// that slot.
+///
+/// A backend that writes TWO fields with one dispatch (CFS writes
+/// material_type then color_value in one script) can land a poll between the
+/// two echoes, observing an intermediate value neither write alone produces.
+/// `expect_any_of()` registers the full set of values the slot may transiently
+/// or finally report; each observed value consumes only its own entry, so the
+/// intermediate echo and the final echo both classify as OwnWriteEcho. A
+/// change to a value NOT in the set still consumes everything and reports
+/// Changed — the physical-swap guarantee above is unchanged.
 class SlotFingerprintTracker {
   public:
     /// Feed one observation. When the result is OwnWriteEcho or Changed and
@@ -290,6 +299,13 @@ class SlotFingerprintTracker {
     /// Record the value this slot is expected to report once a write we just
     /// issued reaches firmware. Replaces any prior unconsumed expectation.
     void expect(int slot_index, std::string expected_value);
+
+    /// Multi-write variant of expect(): registers every value the slot may
+    /// report between the first and last echo of a multi-field write (the
+    /// intermediate composites and the final one). Each is consumed only by an
+    /// exact match; any other change clears them all. Empty strings are
+    /// dropped; an all-empty input is equivalent to forget_expected().
+    void expect_any_of(int slot_index, std::vector<std::string> expected_values);
 
     /// Drop a pending expectation (e.g. the write failed to dispatch, so no
     /// echo is coming and the next change is genuinely external).
@@ -305,7 +321,9 @@ class SlotFingerprintTracker {
 
   private:
     std::unordered_map<int, std::string> baseline_;
-    std::unordered_map<int, std::string> expected_;
+    /// Pending expected values per slot. Single-element for expect(); the
+    /// intermediate+final composites for expect_any_of().
+    std::unordered_map<int, std::vector<std::string>> expected_;
 };
 
 } // namespace helix::ams

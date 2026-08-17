@@ -1,6 +1,6 @@
 # Filament Slot Metadata — `lane_data` Convention
 
-**Status**: Informational, v1.5 (2026-07). See [Changelog](#changelog).
+**Status**: Informational, v1.6 (2026-08). See [Changelog](#changelog).
 
 This document describes HelixScreen's use of the `lane_data` Moonraker database
 namespace to share per-slot filament metadata with OrcaSlicer and other tools.
@@ -213,8 +213,8 @@ key's base depends on the writer's key style.
 
 | Key style | Outer DB key | Outer base | Inner `lane` field | Example for slot 0 | Written by |
 |-----------|--------------|------------|--------------------|--------------------|------------|
-| `laneN` | `"lane" + (i+1)` | 1-based | `std::to_string(i)` (0-based string) | key `"lane1"`, field `"0"` | HelixScreen (filament systems), AFC (moving to `T<n>`, see §8), Happy Hare |
-| `T<n>` | `"T" + i` | 0-based | `std::to_string(i)` (0-based string) | key `"T0"`, field `"0"` | HelixScreen (tool changers), Mainsail #2510 |
+| `laneN` | `"lane" + (i+1)` | 1-based | `std::to_string(i)` (0-based string) | key `"lane1"`, field `"0"` | HelixScreen (filament systems), Happy Hare, AFC before its virtual-tools firmware |
+| `T<n>` | `"T" + i` | 0-based | `std::to_string(i)` (0-based string) | key `"T0"`, field `"0"` | HelixScreen (tool changers), Mainsail #2510, AFC since its virtual-tools firmware |
 
 The `laneN` style matches AFC's on-disk layout (AFC labels its lanes `lane1`,
 `lane2`, … in its own config — that config naming is unaffected by AFC's move
@@ -396,46 +396,55 @@ re-verify against the cited source lines rather than this table.
 | Writer | Key style | Notes |
 |--------|-----------|-------|
 | **HelixScreen** | `T<n>` on tool changers, `laneN` otherwise | `format_lane_key(i, style)` in `filament_slot_override_store.cpp`. Style is derived from the AMS type (`lane_key_style_for`), not hardcoded per backend. |
-| **AFC** (Armored Turtle) | `laneN` | Its Klipper plugin's `send_lane_data` writes 1-based lane keys. **Moving to `T<n>`, see below.** |
+| **AFC** (AFCProject) | `T<n>` since the virtual-tools firmware (DEV 2026-08, Klipper-Add-On #832); `laneN` before | `AFC_lane.py` `send_lane_data` writes one record **per T(n) mapping**, so a multi-mapped lane appears once per tool. Inner `lane` field is the tool number string. See below. |
 | **Happy Hare** | `laneN` | `components/mmu_server.py` `push_lane_data`; also emits `vendor_name` / `name` / `filament_id` inner fields. |
 | **Mainsail #2510** | `T<n>` | Writes `lane_data` records for plain Spoolman + tool changer setups, keyed by tool (`T0`, `T1`, …). This is why HelixScreen tool changers converge on `T<n>`. |
 
-#### Announced: AFC is moving from `laneN` to `T<n>`
+#### Shipped: AFC moved from `laneN` to `T<n>` (virtual-tools firmware)
 
-**Status: not shipped as of 2026-08-15.** Upstream `DEV` still keys by lane
-name (`AFC_lane.py` `send_lane_data`, `"key": self.name`). This subsection
-records an announced change from the AFC maintainer so the transition is not a
-surprise; the table above continues to describe *verified shipped* behavior and
-should only be edited once the change lands and is re-verified on the wire.
+**Status: on upstream `DEV` as of 2026-08-16** (Klipper-Add-On #832, which
+also became the 1.3 release line). Verified in source: `AFC_lane.py`
+`send_lane_data` now iterates `_mapped_keys()` and POSTs one record per `T(n)`
+currently mapped to the lane, keyed by that `T(n)` — a lane mapped to
+`T16,T17` produces two records with identical contents. A lane-name key cannot
+express that, which is why the key changed. The inner `lane` field changed
+meaning with it: it now carries the **tool number** string
+(`key.replace("T", "")`), not a lane index. Stale `T(n)` keys are removed
+incrementally when no lane claims them anymore (`_sent_lane_data_keys`), in
+addition to the boot-time full-namespace wipe (`AFC.py` `delete_lane_data`).
 
-What changes, and why: AFC's virtual-tools work lets one lane answer to several
-`T` commands, which a lane-name key cannot express. Each `T` mapping therefore
-gets its own record, keyed `T<n>`. Observed shape from the maintainer:
-`value` contains `T0`, `T1`, `T10`, … each holding the existing inner fields
-unchanged (`color`, `material`, `lane`, `spool_id`, `weight`, …).
+Same firmware, same records: #808 adds `vendor_name`, `name`, and
+`initial_weight`, using Happy Hare's spelling for the first two. That closes
+the gap where Spoolman knows a lane's brand but `lane_data` only carried its
+material.
 
-Consequences for us, in order of importance:
+Consequences, in order of importance:
 
-1. **No HelixScreen code change is required.** Our reader is key-agnostic and
-   keys off the inner `lane` field, and the tool-changer `laneN` → `T<n>`
-   migration only ever touches keys HelixScreen authored. AFC records are not
-   ours and are left alone.
-2. **OrcaSlicer is unaffected.** It is key-opaque (see Readers, below).
-3. **The upgrade window is self-clearing.** AFC's `delete_lane_data()`
-   (`AFC_utils.py`) enumerates and removes *every* key in the namespace on each
-   boot before republishing, so stale `laneN` records cannot linger alongside
-   new `T<n>` ones and produce the duplicate-tray collision described in §8.
-4. **New overlap to watch.** `laneN` and `T<n>` previously kept AFC and the
-   tool-changer writers (Mainsail, HelixScreen) in disjoint key spaces. Once AFC
-   writes `T<n>`, an AFC lane and a tool-changer slot with the same index become
-   the *same key*, and AFC's indiscriminate boot-time delete will remove a
-   foreign `T<n>` record. Unlikely to bite in practice (an AFC user is not also
-   running a tool-changer writer on the same printer) but it is a new failure
-   mode that did not exist before.
-
-Related: AFC issue #808 adds `vendor_name`, `name`, and `initial_weight` to the
-same records, using Happy Hare's spelling for the first two. That closes the gap
-where Spoolman knows a lane's brand but `lane_data` only carries its material.
+1. **Readers that join on the inner `lane` field are unaffected on 1:1
+   mappings** — tool *n*'s record says `"lane": "<n>"`, which is where a
+   sequential mapping put it anyway. Upstream verified OrcaSlicer's filament
+   sync still works against this shape. On remapped or virtual-tool setups the
+   tray grid follows the *tool* numbering, which is the correct behavior for a
+   slicer-side view.
+2. **A reader must not treat a `T(n)` outer key as a lane name.** A reader
+   that bootstraps its slot model from the namespace's keys would create
+   "slots" named after tools. HelixScreen's live-data reader resolves `T(n)`
+   keys through the tool mapping the firmware reports in its status objects —
+   and parks (replays later) any payload that arrives before a mapping does,
+   because the namespace query is one-shot. Its override-store reader
+   (`from_lane_data_record`) was already key-agnostic and needed no change;
+   HelixScreen does not author records for AFC printers either way.
+3. **The upgrade window is self-clearing.** The boot-time
+   `delete_lane_data()` removes every key in the namespace before
+   republishing, so stale `laneN` records cannot linger alongside new `T<n>`
+   ones and produce the duplicate-tray collision described in §8.
+4. **Key-space overlap with tool-changer writers.** `laneN` and `T<n>`
+   previously kept AFC and the tool-changer writers (Mainsail, HelixScreen) in
+   disjoint key spaces. With AFC on `T<n>`, an AFC lane and a tool-changer slot
+   with the same index become the *same key*, and AFC's boot-time delete will
+   remove a foreign `T<n>` record. Unlikely to bite in practice (an AFC user is
+   not also running a tool-changer writer on the same printer) but it is a
+   failure mode that did not exist before.
 
 ### Readers
 
@@ -474,6 +483,13 @@ reader can resolve.
 
 ## Changelog
 
+- **v1.6 (2026-08-16)**: AFC's virtual-tools firmware (Klipper-Add-On #832, on
+  `DEV`, 1.3 release line) switched its `lane_data` keys from `laneN` to
+  `T<n>`, one record per mapped tool, with the inner `lane` field now the tool
+  number string. The "announced" subsection became "shipped", re-verified
+  against the upstream source (`AFC_lane.py` `send_lane_data` /
+  `clear_lane_data` / `_mapped_keys`). Also records #808: AFC now publishes
+  `vendor_name`, `name`, and `initial_weight` in the same records.
 - **v1.5 (2026-07-20)**: Split filament material identity into two fields.
   `material` is now the **slicer-matchable** string (OrcaSlicer matches a lane
   to a preset by it alone; an unmatched value resolves to a Generic PLA preset,

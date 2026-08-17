@@ -2524,6 +2524,31 @@ bool show_demo_overlay(const std::string& name) {
         return true;
     }
 
+    if (name == "action-prompt-many") {
+        // A prompt whose buttons cannot share one row: a preheat macro offering
+        // seven material presets. Each label is far wider than a seventh of the
+        // card, so this is the case that must fall back to row_wrap instead of
+        // being squeezed into equal-width cells. Unreachable in mock mode - it
+        // needs a live Klipper `action:prompt_begin` - so this is the only way
+        // to check the wrapped layout against a real 480x272 panel.
+        helix::PromptData data;
+        data.title = "Preheat for Load";
+        data.text_lines = {"Preheat filament and choose a material."};
+        data.buttons = {
+            {"PLA 220/60", "SET_MATERIAL M=PLA", "primary", "", false, -1},
+            {"PETG 240/80", "SET_MATERIAL M=PETG", "primary", "", false, -1},
+            {"ABS 250/100", "SET_MATERIAL M=ABS", "primary", "", false, -1},
+            {"ASA 260/100", "SET_MATERIAL M=ASA", "primary", "", false, -1},
+            {"TPU 230/50", "SET_MATERIAL M=TPU", "primary", "", false, -1},
+            {"PC 280/110", "SET_MATERIAL M=PC", "primary", "", false, -1},
+            {"Nylon 260/80", "SET_MATERIAL M=NYLON", "primary", "", false, -1},
+            {"Cancel", "", "error", "", true, -1},
+        };
+        auto* modal = new helix::ui::ActionPromptModal();
+        modal->show_prompt(screen, data);
+        return true;
+    }
+
     if (name == "lock-screen") {
         helix::ui::LockScreenOverlay::instance().show();
         return true;

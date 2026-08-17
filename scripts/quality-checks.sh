@@ -1678,6 +1678,39 @@ fi
 echo ""
 
 # ====================================================================
+# Base-locale key identity (raw-key rendering in English UI)
+# ====================================================================
+# English loads no translation pack (see src/system/translation_loader.cpp),
+# so lv_tr() returns the key itself — a key that is not its own English text
+# renders the raw key in the UI (v0.99.114: "pre_print_option.timelapse.label"
+# on the timelapse toggle row, raw tour.step.* strings across the first-run
+# tour). Checked against translations/en.yml, not the generated XML, so it
+# fires even when `make translations` fell back to stale artifacts.
+SECTION_START=$(date +%s)
+echo -n "🌐 Checking base-locale key identity..."
+
+if [ -f "scripts/check_translation_identity.py" ]; then
+  if "$TRANS_FMT_PY" scripts/check_translation_identity.py >/tmp/trans_ident.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    echo "✅ All English translation keys are their own text"
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/trans_ident.out
+    echo "   Fix: rename the key to its English text in ALL translations/*.yml"
+    echo "   and at the C++/XML/JSON reference site, then: make translations"
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_translation_identity.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
 # Shell Script Linting (shellcheck)
 # ====================================================================
 SECTION_START=$(date +%s)

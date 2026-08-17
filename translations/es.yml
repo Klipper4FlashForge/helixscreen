@@ -2100,6 +2100,7 @@ translations:
     detallados en cualquier momento en Ajustes.
   Recent Prints: Impresiones recientes
   Recently Printed: Impresas recientemente
+  Reconnect: ''
   Record Timelapse: Grabar Timelapse
   Record timelapses of your prints: Grabe timelapses de sus impresiones
   Recorded timelapses will appear here: Los timelapses grabados aparecerán aquí
@@ -3084,10 +3085,8 @@ translations:
   nozzle: boquilla
   of: de
   'off': apagado
-  pre_print_option.ai_detect.description: Monitorear anomalías de impresión (basado
-    en cámara del K2 Plus)
-  pre_print_option.ai_detect.label: Detección AI
-  pre_print_option.timelapse.label: Timelapse
+  Monitor for print abnormalities (K2 Plus camera-based): Monitorear anomalías de impresión (basado en cámara del K2 Plus)
+  AI detection: Detección AI
   prints: impresiones
   remaining: restante
   remaining before clog detection triggers: restante antes de que se active la detección
@@ -3098,31 +3097,20 @@ translations:
   steppers: motores paso a paso
   tall: de alto
   tool(s): herramienta(s)
-  tour.step.advanced.body: Macros, consola de G-code, herramientas de calibración
-    (PID, input shaper, z-offset), actualizaciones de firmware y utilidades para desarrolladores.
-  tour.step.advanced.title: Avanzado
-  tour.step.controls.body: Mueve el cabezal, haz origen de los ejes, nivela la cama
-    y ajusta temperaturas, ventiladores y otros parámetros de movimiento.
-  tour.step.controls.title: Controles
-  tour.step.customize.body: Mantén pulsada cualquier casilla para entrar en modo edición
-    — reorganiza, redimensiona, elimina o añade widgets, y añade páginas extra para
-    tu distribución preferida.
-  tour.step.customize.title: Personaliza tu pantalla de inicio
-  tour.step.filament.body: Carga, descarga e intercambia bobinas. Ve tu sistema multi-filamento
-    de un vistazo, asigna colores a los slots y monitoriza los sensores de agotamiento.
-  tour.step.filament.title: Filamento
-  tour.step.home_grid.body: Toca cualquier casilla para abrir sus controles completos
-    o alternar su estado.
-  tour.step.home_grid.title: Tu impresora de un vistazo
-  tour.step.print.body: Monitoriza las impresiones en curso — tiempo restante, capa
-    actual y progreso. Toca para pausar, reanudar o cancelar el trabajo activo.
-  tour.step.print.title: Estado de impresión
-  tour.step.settings.body: Red, pantalla, sonido, configuración de impresora y más.
-    Puedes repetir este tour en cualquier momento desde Ayuda y Acerca de.
-  tour.step.settings.title: Ajustes
-  tour.step.welcome.body: Hagamos un recorrido rápido para que encuentres las cosas
-    fácilmente.
-  tour.step.welcome.title: Bienvenido a HelixScreen
+  'Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities.': 'Macros, consola de G-code, herramientas de calibración (PID, input shaper, z-offset), actualizaciones de firmware y utilidades para desarrolladores.'
+  Advanced: Avanzado
+  'Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings.': 'Mueve el cabezal, haz origen de los ejes, nivela la cama y ajusta temperaturas, ventiladores y otros parámetros de movimiento.'
+  Controls: Controles
+  'Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout.': 'Mantén pulsada cualquier casilla para entrar en modo edición — reorganiza, redimensiona, elimina o añade widgets, y añade páginas extra para tu distribución preferida.'
+  Customize your home screen: Personaliza tu pantalla de inicio
+  'Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors.': 'Carga, descarga e intercambia bobinas. Ve tu sistema multi-filamento de un vistazo, asigna colores a los slots y monitoriza los sensores de agotamiento.'
+  Tap any tile to open its full controls or toggle its state.: Toca cualquier casilla para abrir sus controles completos o alternar su estado.
+  Your printer at a glance: Tu impresora de un vistazo
+  'Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job.': 'Monitoriza las impresiones en curso — tiempo restante, capa actual y progreso. Toca para pausar, reanudar o cancelar el trabajo activo.'
+  Print status: Estado de impresión
+  'Network, display, sound, printer setup, and more. You can replay this tour anytime from Help & About.': 'Red, pantalla, sonido, configuración de impresora y más. Puedes repetir este tour en cualquier momento desde Ayuda y Acerca de.'
+  Let's take a quick tour so you can find things fast.: Hagamos un recorrido rápido para que encuentres las cosas fácilmente.
+  Welcome to HelixScreen: Bienvenido a HelixScreen
   used: usado
   v%s available: v%s disponible
   v{} installed! Restarting...: ¡v{} instalado! Reiniciando...

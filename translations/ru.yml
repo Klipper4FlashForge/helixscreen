@@ -2074,6 +2074,7 @@ translations:
     подробные результаты в любое время в Настройках.
   Recent Prints: Недавние печати
   Recently Printed: Недавно напечатано
+  Reconnect: ''
   Record Timelapse: Записать таймлапс
   Record timelapses of your prints: Записывайте таймлапсы ваших печатей
   Recorded timelapses will appear here: Записанные таймлапсы появятся здесь
@@ -3038,10 +3039,8 @@ translations:
   nozzle: сопло
   of: из
   'off': выкл
-  pre_print_option.ai_detect.description: Отслеживание дефектов печати (на основе
-    камеры K2 Plus)
-  pre_print_option.ai_detect.label: AI-детекция
-  pre_print_option.timelapse.label: Таймлапс
+  Monitor for print abnormalities (K2 Plus camera-based): Отслеживание дефектов печати (на основе камеры K2 Plus)
+  AI detection: AI-детекция
   prints: печатей
   remaining: осталось
   remaining before clog detection triggers: осталось до срабатывания обнаружения засора
@@ -3051,33 +3050,20 @@ translations:
   steppers: шаговые двигатели
   tall: высотой
   tool(s): инструмент(ы)
-  tour.step.advanced.body: Макросы, консоль G-code, инструменты калибровки (PID, Input
-    Shaper, Z-смещение), обновления прошивки и утилиты для разработчиков.
-  tour.step.advanced.title: Дополнительно
-  tour.step.controls.body: Перемещайте печатающую головку, паркуйте оси, выравнивайте
-    стол и точно настраивайте температуры, вентиляторы и другие параметры движения.
-  tour.step.controls.title: Управление
-  tour.step.customize.body: Долгое нажатие на любую плитку переводит в режим редактирования
-    — переставляйте, изменяйте размер, удаляйте или добавляйте виджеты, а также добавляйте
-    дополнительные страницы под свой макет.
-  tour.step.customize.title: Настройте главный экран
-  tour.step.filament.body: Загружайте, выгружайте и меняйте катушки. Просматривайте
-    вашу мультифиламентную систему одним взглядом, сопоставляйте цвета со слотами
-    и отслеживайте датчики окончания филамента.
-  tour.step.filament.title: Филамент
-  tour.step.home_grid.body: Нажмите на любую плитку, чтобы открыть её полные элементы
-    управления или переключить состояние.
-  tour.step.home_grid.title: Ваш принтер одним взглядом
-  tour.step.print.body: Отслеживайте выполняющиеся печати — оставшееся время, текущий
-    слой и прогресс. Нажмите, чтобы приостановить, возобновить или отменить активное
-    задание.
-  tour.step.print.title: Статус печати
-  tour.step.settings.body: Сеть, дисплей, звук, настройка принтера и многое другое.
-    Этот тур можно повторить в любой момент из раздела «Справка и о программе».
-  tour.step.settings.title: Настройки
-  tour.step.welcome.body: Давайте устроим краткий тур, чтобы вы могли быстро находить
-    всё нужное.
-  tour.step.welcome.title: Добро пожаловать в HelixScreen
+  'Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities.': 'Макросы, консоль G-code, инструменты калибровки (PID, Input Shaper, Z-смещение), обновления прошивки и утилиты для разработчиков.'
+  Advanced: Дополнительно
+  'Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings.': 'Перемещайте печатающую головку, паркуйте оси, выравнивайте стол и точно настраивайте температуры, вентиляторы и другие параметры движения.'
+  Controls: Управление
+  'Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout.': 'Долгое нажатие на любую плитку переводит в режим редактирования — переставляйте, изменяйте размер, удаляйте или добавляйте виджеты, а также добавляйте дополнительные страницы под свой макет.'
+  Customize your home screen: Настройте главный экран
+  'Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors.': 'Загружайте, выгружайте и меняйте катушки. Просматривайте вашу мультифиламентную систему одним взглядом, сопоставляйте цвета со слотами и отслеживайте датчики окончания филамента.'
+  Tap any tile to open its full controls or toggle its state.: 'Нажмите на любую плитку, чтобы открыть её полные элементы управления или переключить состояние.'
+  Your printer at a glance: Ваш принтер одним взглядом
+  'Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job.': 'Отслеживайте выполняющиеся печати — оставшееся время, текущий слой и прогресс. Нажмите, чтобы приостановить, возобновить или отменить активное задание.'
+  Print status: Статус печати
+  'Network, display, sound, printer setup, and more. You can replay this tour anytime from Help & About.': 'Сеть, дисплей, звук, настройка принтера и многое другое. Этот тур можно повторить в любой момент из раздела «Справка и о программе».'
+  Let's take a quick tour so you can find things fast.: 'Давайте устроим краткий тур, чтобы вы могли быстро находить всё нужное.'
+  Welcome to HelixScreen: Добро пожаловать в HelixScreen
   used: использ.
   v%s available: Доступна v%s
   v{} installed! Restarting...: v{} установлена! Перезапуск...

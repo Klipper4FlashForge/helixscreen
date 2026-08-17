@@ -24,7 +24,9 @@ namespace helix::printer {
 /// favor of FilamentCatalog::load_codes("cfs") — see AmsBackendCfs::parse_box_status.
 class CfsMaterialDb {
   public:
-    /// Strip CFS material_type code prefix: "101001" -> "01001", "-1" -> ""
+    /// Strip the firmware material_type brand-prefix digit (6-char code =
+    /// prefix + 5-char catalog id): "101001" -> "01001" (K2, Creality prefix),
+    /// "000003" -> "00003" (K1, Generic prefix), sentinels -> ""
     static std::string strip_code(const std::string& code);
 
     /// Parse CFS color: "0RRGGBB" -> 0xRRGGBB, sentinels -> 0x808080
@@ -386,28 +388,44 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     }
     void on_started() override;
 
-    /// Push the user's chosen color back to firmware via the undocumented
-    /// `BOX_MODIFY_TN_DATA` gcode (registered by box_wrapper.cpython-39.so,
+    /// Push the user's chosen slot identity back to firmware via the
+    /// `BOX_MODIFY_TN_DATA` gcode (registered by the box_wrapper C extension,
     /// not in `gcode/help`). Format reverse-engineered from K2's master-server
-    /// binary: `BOX_MODIFY_TN_DATA ADDR=<1..4> NUM=<A|B|C|D> PART=color_value
-    /// DATA=0RRGGBB`. Writes persist to `/mnt/UDISK/creality/userdata/box/tn_data.json`.
+    /// binary and confirmed against the K1 module: `BOX_MODIFY_TN_DATA
+    /// ADDR=<1..4> NUM=<A|B|C|D> PART=<field> DATA=<value>`. Writes persist to
+    /// the box userdata (`creality/userdata/box/tn_data.json`), whose shape is
+    /// documented by the #968 reporter dumps.
     ///
-    /// Color-only for now — material_type uses CFS-internal codes (e.g. "101001"
-    /// for PLA) that we lack a complete reverse-map for; round-tripping the
-    /// material risks pushing a wrong/empty code and could confuse the K2's
-    /// stock LCD or the LOAD_MATERIAL macros. Color is the primary user-edit
-    /// anyway and round-trips cleanly because the format is just RGB hex.
+    /// Two fields:
+    ///  - `color_value`, always: `DATA=0RRGGBB` (RGB hex behind a constant 0
+    ///    nibble, matching the firmware's own format).
+    ///  - `material_type`, only when a code for the user's material is known:
+    ///    `DATA=<6-char code>` (e.g. "000003"). Codes are NEVER synthesized —
+    ///    only full codes this printer's firmware itself has reported in a box
+    ///    status are eligible (see observed_material_*_), because a malformed
+    ///    or unknown code can poison the wrapper's material-DB lookups (flush
+    ///    temps, same-material matching) and the stock LCD's slot display.
+    ///    Lookup order: catalog product id, then brand|material, then material
+    ///    family. No code found → color-only write (previous behavior).
+    ///
+    /// The two PART writes go out as ONE gcode script. Firmware applies them
+    /// sequentially and a status poll can land between the echoes, so the
+    /// self-wipe expectation registered with rfid_tracker_ is the SET of
+    /// fingerprints the slot may transiently or finally report (intermediate
+    /// composite + final pair) via SlotFingerprintTracker::expect_any_of.
     ///
     /// **CRITICAL:** sending invalid args (ADDR=0, malformed payload) triggers
     /// a `TypeError` deep in box_wrapper which Klipper escalates to
     /// `invoke_shutdown` — the entire printer goes offline and needs a full
-    /// `RESTART`. This method validates `global_index` in [0, 16) and skips
-    /// when `color_rgb == 0` BEFORE formatting the gcode. Non-fatal on dispatch
-    /// failure (the override is in lane_data either way).
+    /// `RESTART`. This method validates `global_index` in [0, 16) BEFORE
+    /// formatting the gcode. Non-fatal on dispatch failure (the override is in
+    /// lane_data either way).
     ///
     /// Marked virtual + protected so test subclasses can override and capture
     /// the gcode without a live Moonraker connection.
-    virtual void push_slot_color_to_firmware(int global_index, uint32_t color_rgb);
+    virtual void push_slot_identity_to_firmware(int global_index, const std::string& material,
+                                                const std::string& brand,
+                                                const std::string& catalog_id, uint32_t color_rgb);
 
   private:
     friend class ::CfsTestAccess;
@@ -543,11 +561,13 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// override-exclusive fields (spool_name / spoolman_id /
     /// spoolman_vendor_id / remaining_weight_g) are reset.
     ///
-    /// One fingerprint component — color_value — is also WRITTEN by
-    /// push_slot_color_to_firmware, so firmware eventually echoes our own edit
-    /// back as a fingerprint change. That echo is not a swap. push_ therefore
-    /// registers the expected post-write fingerprint with rfid_tracker_, which
-    /// classifies the echo as OwnWriteEcho and leaves the override intact.
+    /// One fingerprint component pair — color_value, and material_type when a
+    /// firmware-observed code for the user's pick exists — is also WRITTEN by
+    /// push_slot_identity_to_firmware, so firmware eventually echoes our own
+    /// edit back as a fingerprint change. That echo is not a swap. push_
+    /// therefore registers the expected post-write fingerprints with
+    /// rfid_tracker_, which classifies the echo as OwnWriteEcho and leaves the
+    /// override intact.
     ///
     /// Returns true iff the override was cleared, so the caller can skip the
     /// lane_data mirror for this parse (a DELETE and a POST against the same
@@ -591,9 +611,21 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
 
     // Per-slot last-observed RFID fingerprint (material_type + "|" +
     // color_value, using the raw pre-strip_code strings), plus the pending
-    // expected fingerprint for a color push we issued. Shared with the other
-    // RFID-fingerprint backend (Snapmaker). All access under mutex_.
+    // expected fingerprints for an identity push we issued. Shared with the
+    // other RFID-fingerprint backend (Snapmaker). All access under mutex_.
     helix::ams::SlotFingerprintTracker rfid_tracker_;
+
+    // Firmware-observed material_type code vocabulary, harvested from box
+    // status by handle_status_update and consulted by
+    // push_slot_identity_to_firmware. Keys are 5-char stripped catalog ids /
+    // "brand|type" / "type"; values are the FULL 6-char codes exactly as the
+    // firmware reported them (brand prefix included) — those full forms are
+    // the only values we ever write back. Insert-if-absent: the first code
+    // observed for a key wins, so a value stays stable across frames. All
+    // access under mutex_.
+    std::unordered_map<std::string, std::string> observed_material_id_codes_;
+    std::unordered_map<std::string, std::string> observed_material_codes_;
+    std::unordered_map<std::string, std::string> observed_material_type_codes_;
 
     // Sub-phase synthesis: CFS sets system_info_.action=LOADING/UNLOADING once
     // at gcode dispatch and leaves it there through cut/retract/feed/purge.

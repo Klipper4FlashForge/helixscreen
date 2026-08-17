@@ -105,6 +105,7 @@
   <translation tag="AFC reset complete" de="AFC-Reset abgeschlossen"/>
   <translation tag="AFC reset failed" de="AFC-Reset fehlgeschlagen"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" de="AFC zieht das Filament am Druckende aus dem Werkzeugkopf zurück"/>
+  <translation tag="AI detection" de="AI-Erkennung"/>
   <translation tag="ALL DEVICES" de="ALLE GERÄTE"/>
   <translation tag="AMS" de="AMS"/>
   <translation tag="AMS Active: " de="AMS aktiv: "/>
@@ -147,6 +148,7 @@
   <translation tag="Adjust until belt appears frozen" de="Anpassen, bis der Riemen stillzustehen scheint"/>
   <translation tag="Adjustments stay active until restart. Save after print completes." de="Anpassungen bleiben bis zum Neustart aktiv. Nach Druckende speichern."/>
   <translation tag="Adjusts individual characteristics of your heaters for optimal control" de="Passt individuelle Eigenschaften Ihrer Heizungen für optimale Regelung an"/>
+  <translation tag="Advanced" de="Erweitert"/>
   <translation tag="After running the commands, tap Check Again below." de="Tippen Sie nach Ausführung der Befehle unten auf Erneut prüfen."/>
   <translation tag="Alert" de="Alarm"/>
   <translation tag="Alerts" de="Alarme"/>
@@ -537,6 +539,7 @@
   <translation tag="Control power relays and smart outlets" de="Relais und smarte Steckdosen steuern"/>
   <translation tag="Controlled by hardware sensor" de="Durch Hardware-Sensor gesteuert"/>
   <translation tag="Controller" de="Controller"/>
+  <translation tag="Controls" de="Steuerung"/>
   <translation tag="Cool Down" de="Abkühlen"/>
   <translation tag="Cool nozzle after filament ops" de="Düse nach Filamentvorgängen abkühlen"/>
   <translation tag="Cooling" de="Kühlung"/>
@@ -596,6 +599,7 @@
   <translation tag="Custom..." de="Benutzerdefiniert..."/>
   <translation tag="Customize Macro Button" de="Makro-Schaltfläche anpassen"/>
   <translation tag="Customize preset temperatures" de="Voreingestellte Temperaturen anpassen"/>
+  <translation tag="Customize your home screen" de="Startbildschirm anpassen"/>
   <translation tag="Cut Distance" de="Schnittweg"/>
   <translation tag="Cut filament" de="Filament schneiden"/>
   <translation tag="Cut tip" de="Spitze schneiden"/>
@@ -1233,6 +1237,7 @@
   <translation tag="Length of filament to purge" de="Zu entlüftende Filamentlänge"/>
   <translation tag="Length of the cooling tube section" de="Länge des Kühlrohrabschnitts"/>
   <translation tag="Length:" de="Länge:"/>
+  <translation tag="Let&apos;s take a quick tour so you can find things fast." de="Machen wir einen kurzen Rundgang, damit Sie sich schnell zurechtfinden."/>
   <translation tag="Leveling Gantry..." de="Gantry nivellieren..."/>
   <translation tag="Library" de="Bibliothek"/>
   <translation tag="Lifetime Print Stats" de="Gesamte Druckstatistik"/>
@@ -1247,6 +1252,7 @@
   <translation tag="Load filament" de="Filament laden"/>
   <translation tag="Load may still be running — response timed out" de="Laden läuft möglicherweise noch — Zeitüberschreitung"/>
   <translation tag="Load the required filaments or start anyway?" de="Benötigte Filamente laden oder trotzdem starten?"/>
+  <translation tag="Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors." de="Spulen laden, entladen und wechseln. Ihr Multi-Filament-System auf einen Blick sehen, Farben den Slots zuordnen und Filamentsensoren überwachen."/>
   <translation tag="Loaded" de="Geladen"/>
   <translation tag="Loading" de="Laden"/>
   <translation tag="Loading Bed Mesh..." de="Bett-Mesh laden..."/>
@@ -1273,6 +1279,7 @@
   <translation tag="Log Level" de="Protokollstufe"/>
   <translation tag="Logs" de="Protokolle"/>
   <translation tag="Long Press Time" de="Dauer für langes Drücken"/>
+  <translation tag="Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout." de="Lange auf eine Kachel drücken, um in den Bearbeitungsmodus zu wechseln — Widgets neu anordnen, in der Größe ändern, entfernen oder hinzufügen und weitere Seiten für Ihr bevorzugtes Layout anlegen."/>
   <translation tag="Long-press the home grid to rearrange widgets (turn off if it triggers by accident)" de="Lange auf das Startraster drücken, um Widgets neu anzuordnen (ausschalten, wenn es versehentlich auslöst)"/>
   <translation tag="Longest Disconnect" de="Längste Trennung"/>
   <translation tag="Loosen Path A belt." de="Riemen von Pfad A lockern."/>
@@ -1318,6 +1325,7 @@
   <translation tag="Macro to resume a paused print" de="Makro zum Fortsetzen eines pausierten Drucks"/>
   <translation tag="Macro to unload filament from extruder" de="Makro zum Entladen von Filament aus dem Extruder"/>
   <translation tag="Macros" de="Makros"/>
+  <translation tag="Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities." de="Makros, G-Code-Konsole, Kalibrierungswerkzeuge (PID, Input Shaper, Z-Offset), Firmware-Updates und Entwicklerwerkzeuge."/>
   <translation tag="Main LED Strip" de="Haupt-LED-Streifen"/>
   <translation tag="Maintaining" de="Wird gehalten"/>
   <translation tag="Maintenance" de="Wartung"/>
@@ -1375,6 +1383,8 @@
   <translation tag="Monitor and set bed temperature" de="Heizbetttemperatur überwachen und einstellen"/>
   <translation tag="Monitor and set chamber temperature" de="Kammertemperatur überwachen und einstellen"/>
   <translation tag="Monitor and set nozzle temperature" de="Düsentemperatur überwachen und einstellen"/>
+  <translation tag="Monitor for print abnormalities (K2 Plus camera-based)" de="Überwacht auf Druckanomalien (K2 Plus kamerabasiert)"/>
+  <translation tag="Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job." de="Laufende Drucke überwachen — verbleibende Zeit, aktuelle Schicht und Fortschritt. Tippen Sie, um den aktiven Auftrag zu pausieren, fortzusetzen oder abzubrechen."/>
   <translation tag="Monitor temperature sensors (single or carousel)" de="Temperatursensoren überwachen (einzeln oder als Karussell)"/>
   <translation tag="Monitoring" de="Überwachung"/>
   <translation tag="Month" de="Monat"/>
@@ -1393,6 +1403,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." de="Bewegen Sie das Papier während der Einstellung hin und her. Stoppen Sie, wenn das Papier leicht greift, aber noch gleitet."/>
   <translation tag="Move selector" de="Selektor bewegen"/>
   <translation tag="Move speed multipliers" de="Multiplikatoren der Verfahrgeschwindigkeit"/>
+  <translation tag="Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings." de="Verfahren Sie den Druckkopf, referenzieren Sie Achsen, nivellieren Sie das Bett und justieren Sie Temperaturen, Lüfter und weitere Bewegungseinstellungen."/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." de="Bewegt den Druckkopf, um Vibrationsfrequenzen auf jeder Achse zu messen. Dauert 2-3 Minuten. Der Drucker wird Geräusche machen — das ist normal."/>
   <translation tag="Moving lane" de="Spur bewegen"/>
   <translation tag="Multi-Filament" de="Multi-Filament"/>
@@ -1425,6 +1436,7 @@
   <translation tag="Network Test" de="Netzwerktest"/>
   <translation tag="Network forgotten" de="Netzwerk vergessen"/>
   <translation tag="Network name cannot be empty" de="Netzwerkname darf nicht leer sein"/>
+  <translation tag="Network, display, sound, printer setup, and more. You can replay this tour anytime from Help &amp; About." de="Netzwerk, Display, Sound, Druckereinrichtung und mehr. Sie können diesen Rundgang jederzeit unter Hilfe &amp; Über erneut abspielen."/>
   <translation tag="Never" de="Nie"/>
   <translation tag="New Spool: Step 1 of 3" de="Neue Spule: Schritt 1 von 3"/>
   <translation tag="New Spool: Step {} of {}" de="Neue Spule: Schritt {} von {}"/>
@@ -1740,6 +1752,7 @@
   <translation tag="Print server rejected the job — check printer status" de="Druckserver hat den Auftrag abgelehnt — Druckerstatus prüfen"/>
   <translation tag="Print setup failed" de="Druckvorbereitung fehlgeschlagen"/>
   <translation tag="Print setup failed: internal error" de="Druckvorbereitung fehlgeschlagen: interner Fehler"/>
+  <translation tag="Print status" de="Druckstatus"/>
   <translation tag="Print timed out waiting for completion" de="Druck – Zeitüberschreitung beim Warten auf Fertigstellung"/>
   <translation tag="Printer" de="Drucker"/>
   <translation tag="Printer Error" de="Druckerfehler"/>
@@ -1859,6 +1872,7 @@
   <translation tag="Recalibrate or view detailed results anytime in Settings." de="Jederzeit in den Einstellungen neu kalibrieren oder detaillierte Ergebnisse anzeigen."/>
   <translation tag="Recent Prints" de="Letzte Drucke"/>
   <translation tag="Recently Printed" de="Zuletzt gedruckt"/>
+  <translation tag="Reconnect"/>
   <translation tag="Record Timelapse" de="Zeitraffer aufnehmen"/>
   <translation tag="Record timelapses of your prints" de="Zeitraffer Ihrer Drucke aufnehmen"/>
   <translation tag="Recorded timelapses will appear here" de="Aufgenommene Zeitraffer werden hier angezeigt"/>
@@ -2288,6 +2302,7 @@
   <translation tag="Tap + to add" de="Zum Hinzufügen + tippen"/>
   <translation tag="Tap again to confirm this orientation" de="Erneut tippen, um diese Ausrichtung zu bestätigen"/>
   <translation tag="Tap an object to exclude it | {} objects ({} excluded)" de="Objekt antippen, um es auszuschließen | {} Objekte ({} ausgeschlossen)"/>
+  <translation tag="Tap any tile to open its full controls or toggle its state." de="Tippen Sie auf eine Kachel, um die vollständige Steuerung zu öffnen oder ihren Zustand umzuschalten."/>
   <translation tag="Tap anywhere if this text is right-side up" de="Tippen Sie irgendwo, wenn dieser Text richtig herum ist"/>
   <translation tag="Tap anywhere to begin" de="Tippen Sie irgendwo, um zu beginnen"/>
   <translation tag="Tap anywhere to begin calibration" de="Tippen Sie irgendwo, um die Kalibrierung zu starten"/>
@@ -2575,6 +2590,7 @@
   <translation tag="Week" de="Woche"/>
   <translation tag="Weekly Print Stats" de="Wöchentliche Druckstatistik"/>
   <translation tag="Weight data is synced from Spoolman to display remaining filament. Changes are also synced when prints start, pause, or complete." de="Gewichtsdaten werden von Spoolman synchronisiert, um verbleibendes Filament anzuzeigen. Änderungen werden auch synchronisiert, wenn Drucke starten, pausieren oder abgeschlossen werden."/>
+  <translation tag="Welcome to HelixScreen" de="Willkommen bei HelixScreen"/>
   <translation tag="What We Collect" de="Was wir erfassen"/>
   <translation tag="When enabled, only the macro runs. When disabled, temperatures are set first, then the macro runs." de="Wenn aktiviert, wird nur das Makro ausgeführt. Wenn deaktiviert, werden zuerst die Temperaturen gesetzt, dann das Makro."/>
   <translation tag="When starting a print, you&apos;ll be able to choose whether to run %s. This saves time when you&apos;ve already done it recently or want more control over your print preparation." de="Beim Starten eines Drucks können Sie wählen, ob %s ausgeführt werden soll. Das spart Zeit, wenn Sie es kürzlich bereits gemacht haben oder mehr Kontrolle über die Druckvorbereitung wünschen."/>
@@ -2625,6 +2641,7 @@
   <translation tag="Your PRINT_START macro will be updated to give you control over:&#10;&#10;" de="Ihr PRINT_START-Makro wird aktualisiert, um Ihnen Kontrolle über Folgendes zu geben:&#10;&#10;"/>
   <translation tag="Your completed prints will appear here" de="Ihre abgeschlossenen Drucke werden hier angezeigt"/>
   <translation tag="Your print start is already fully configured!" de="Ihr Druckstart ist bereits vollständig konfiguriert!"/>
+  <translation tag="Your printer at a glance" de="Ihr Drucker auf einen Blick"/>
   <translation tag="Your printer has an automatic filament changer" de="Ihr Drucker hat einen automatischen Filamentwechsler"/>
   <translation tag="Your printer was offline during setup, so hardware options were skipped. Set them up now?" de="Ihr Drucker war während der Einrichtung offline, daher wurden Hardware-Optionen übersprungen. Jetzt einrichten?"/>
   <translation tag="Z" de="Z"/>
@@ -2682,9 +2699,6 @@
   <translation tag="nozzle" de="Düse"/>
   <translation tag="of" de="von"/>
   <translation tag="off" de="aus"/>
-  <translation tag="pre_print_option.ai_detect.description" de="Überwacht auf Druckanomalien (K2 Plus kamerabasiert)"/>
-  <translation tag="pre_print_option.ai_detect.label" de="AI-Erkennung"/>
-  <translation tag="pre_print_option.timelapse.label" de="Zeitraffer"/>
   <translation tag="prints" de="Drucke"/>
   <translation tag="remaining" de="verbleibend"/>
   <translation tag="remaining before clog detection triggers" de="verbleibend bis Verstopfungserkennung auslöst"/>
@@ -2694,22 +2708,6 @@
   <translation tag="steppers" de="Schrittmotoren"/>
   <translation tag="tall" de="hoch"/>
   <translation tag="tool(s)" de="Werkzeug(e)"/>
-  <translation tag="tour.step.advanced.body" de="Makros, G-Code-Konsole, Kalibrierungswerkzeuge (PID, Input Shaper, Z-Offset), Firmware-Updates und Entwicklerwerkzeuge."/>
-  <translation tag="tour.step.advanced.title" de="Erweitert"/>
-  <translation tag="tour.step.controls.body" de="Verfahren Sie den Druckkopf, referenzieren Sie Achsen, nivellieren Sie das Bett und justieren Sie Temperaturen, Lüfter und weitere Bewegungseinstellungen."/>
-  <translation tag="tour.step.controls.title" de="Steuerung"/>
-  <translation tag="tour.step.customize.body" de="Lange auf eine Kachel drücken, um in den Bearbeitungsmodus zu wechseln — Widgets neu anordnen, in der Größe ändern, entfernen oder hinzufügen und weitere Seiten für Ihr bevorzugtes Layout anlegen."/>
-  <translation tag="tour.step.customize.title" de="Startbildschirm anpassen"/>
-  <translation tag="tour.step.filament.body" de="Spulen laden, entladen und wechseln. Ihr Multi-Filament-System auf einen Blick sehen, Farben den Slots zuordnen und Filamentsensoren überwachen."/>
-  <translation tag="tour.step.filament.title" de="Filament"/>
-  <translation tag="tour.step.home_grid.body" de="Tippen Sie auf eine Kachel, um die vollständige Steuerung zu öffnen oder ihren Zustand umzuschalten."/>
-  <translation tag="tour.step.home_grid.title" de="Ihr Drucker auf einen Blick"/>
-  <translation tag="tour.step.print.body" de="Laufende Drucke überwachen — verbleibende Zeit, aktuelle Schicht und Fortschritt. Tippen Sie, um den aktiven Auftrag zu pausieren, fortzusetzen oder abzubrechen."/>
-  <translation tag="tour.step.print.title" de="Druckstatus"/>
-  <translation tag="tour.step.settings.body" de="Netzwerk, Display, Sound, Druckereinrichtung und mehr. Sie können diesen Rundgang jederzeit unter Hilfe &amp; Über erneut abspielen."/>
-  <translation tag="tour.step.settings.title" de="Einstellungen"/>
-  <translation tag="tour.step.welcome.body" de="Machen wir einen kurzen Rundgang, damit Sie sich schnell zurechtfinden."/>
-  <translation tag="tour.step.welcome.title" de="Willkommen bei HelixScreen"/>
   <translation tag="used" de="verbraucht"/>
   <translation tag="v%s available" de="v%s verfügbar"/>
   <translation tag="v{} installed! Restarting..." de="v{} installiert! Neustart..."/>
