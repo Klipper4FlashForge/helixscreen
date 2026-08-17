@@ -1,5 +1,5 @@
 diff --git a/evpp/TcpClient.h b/evpp/TcpClient.h
-index e355b61..aaba644 100644
+index e355b61..805c649 100644
 --- a/evpp/TcpClient.h
 +++ b/evpp/TcpClient.h
 @@ -1,6 +1,8 @@
@@ -46,7 +46,38 @@ index e355b61..aaba644 100644
          assert(io != NULL);
          hio_set_peeraddr(io, remote_addr, SOCKADDR_LEN(remote_addr));
          channel = std::make_shared<TSocketChannel>(io);
-@@ -108,6 +122,17 @@ public:
+@@ -103,11 +117,48 @@ public:
+         }
+     }
+ 
++    // Re-resolve remote_host into remote_addr. open()/createsocket(port,host)
++    // resolves exactly once, and every auto-reconnect retry dials via
++    // createsocket(sockaddr*) — the overload that never resolves — so a
++    // hostname whose IP changed during a network blip (router reboot
++    // re-lease, mesh roaming, mDNS re-announce) was retried at its stale
++    // address forever. Literal IPs short-circuit inside sockaddr_set_ipport
++    // and pay no DNS. On resolution failure the last known address is KEPT:
++    // the retry chain stays armed and dials something, and the next retry
++    // re-resolves — zeroing it out or killing the chain would trade a stale
++    // dial for no dial at all.
++    bool refresh_remote_addr() {
++        if (remote_host.empty()) return false;
++        sockaddr_u addr;
++        memset(&addr, 0, sizeof(addr));
++        if (sockaddr_set_ipport(&addr, remote_host.c_str(), remote_port) != 0) {
++            hlogw("re-resolve %s:%d failed, keep last known address\n",
++                  remote_host.c_str(), remote_port);
++            return false;
++        }
++        memcpy(&remote_addr, &addr, sizeof(addr));
++        return true;
++    }
++
+     int startConnect() {
+         if (channel == NULL || channel->isClosed()) {
++            // Re-resolve on every dial attempt — the retry path must not be
++            // pinned to the address that was current at open() time.
++            refresh_remote_addr();
              int connfd = createsocket(&remote_addr.sa);
              if (connfd < 0) {
                  hloge("createsocket %s:%d return %d!\n", remote_host.c_str(), remote_port, connfd);
@@ -64,7 +95,7 @@ index e355b61..aaba644 100644
                  return connfd;
              }
          }
-@@ -170,8 +195,14 @@ public:
+@@ -170,8 +221,14 @@ public:
          if (!reconn_setting_can_retry(reconn_setting)) return -2;
          uint32_t delay = reconn_setting_calc_delay(reconn_setting);
          hlogi("reconnect... cnt=%d, delay=%d", reconn_setting->cur_retry_cnt, reconn_setting->cur_delay);
@@ -80,7 +111,7 @@ index e355b61..aaba644 100644
              startConnect();
          });
          return 0;
-@@ -217,6 +248,15 @@ public:
+@@ -217,6 +274,15 @@ public:
  
      void setReconnect(reconn_setting_t* setting) {
          if (setting == NULL) {
@@ -96,7 +127,7 @@ index e355b61..aaba644 100644
              HV_FREE(reconn_setting);
              return;
          }
-@@ -251,6 +291,10 @@ public:
+@@ -251,6 +317,10 @@ public:
      hssl_ctx_opt_t*         tls_setting;
      reconn_setting_t*       reconn_setting;
      unpack_setting_t*       unpack_setting;
