@@ -12,10 +12,14 @@
  * widget registry gates the shutdown widget on that subject.
  */
 
+#include "ui_status_pill.h"
+
 #include "../lvgl_ui_test_fixture.h"
+#include "../test_fixtures.h"
 #include "lvgl/lvgl.h"
 #include "panel_widget_registry.h"
 #include "platform_info.h"
+#include "setting_group.h"
 
 #include <string>
 
@@ -69,4 +73,69 @@ TEST_CASE("Shutdown widget is gated on host power availability", "[android][pane
     REQUIRE(def->hardware_gate_subject != nullptr);
     CHECK(std::string(def->hardware_gate_subject) == "platform_host_power_supported");
     CHECK(def->hardware_gate_hint != nullptr);
+}
+
+namespace {
+
+/// Builds the real advanced_panel.xml so the POWER group's visibility binding
+/// can be exercised against a live tree. Registers the C++ setting_group
+/// widget plus the panel's component dependencies, in the same shape
+/// production's xml_registration.cpp uses.
+class AdvancedPowerGroupFixture : public XMLTestFixture {
+  public:
+    AdvancedPowerGroupFixture() : XMLTestFixture() {
+        setting_group_register();
+        ui_status_pill_register_widget();
+        REQUIRE(register_component("setting_group_header"));
+        REQUIRE(register_component("setting_action_row"));
+        REQUIRE(register_component("beta_feature"));
+        REQUIRE(register_component("advanced_panel"));
+
+        // XMLTestFixture (unlike LVGLUITestFixture) does not route through the
+        // app_globals stub, so ensure the host-power subject exists before the
+        // panel's bindings resolve.
+        if (!lv_xml_get_subject(nullptr, "platform_host_power_supported")) {
+            lv_subject_init_int(&host_power_subject_, 1);
+            lv_xml_register_subject(nullptr, "platform_host_power_supported", &host_power_subject_);
+        }
+
+        panel_ = create_component("advanced_panel");
+        REQUIRE(panel_ != nullptr);
+        group_ = lv_obj_find_by_name(panel_, "group_power");
+        REQUIRE(group_ != nullptr);
+        process_lvgl(50);
+    }
+
+    lv_subject_t* host_power_subject() {
+        auto* subj = lv_xml_get_subject(nullptr, "platform_host_power_supported");
+        REQUIRE(subj != nullptr);
+        return subj;
+    }
+
+    lv_obj_t* panel_ = nullptr;
+    lv_obj_t* group_ = nullptr;
+
+  private:
+    lv_subject_t host_power_subject_{};
+};
+
+} // namespace
+
+TEST_CASE_METHOD(AdvancedPowerGroupFixture,
+                 "Advanced panel POWER group follows host power availability",
+                 "[android][advanced][power]") {
+    // Sanity: a platform that supports host power shows the group.
+    REQUIRE(lv_subject_get_int(host_power_subject()) == 1);
+    CHECK_FALSE(lv_obj_has_flag(group_, LV_OBJ_FLAG_HIDDEN));
+
+    // The feature: unsupported platforms hide the whole POWER group — rows and
+    // header, no orphaned "POWER" heading left behind.
+    lv_subject_set_int(host_power_subject(), 0);
+    process_lvgl(10);
+    CHECK(lv_obj_has_flag(group_, LV_OBJ_FLAG_HIDDEN));
+
+    // And it comes back when the platform supports it again.
+    lv_subject_set_int(host_power_subject(), 1);
+    process_lvgl(10);
+    CHECK_FALSE(lv_obj_has_flag(group_, LV_OBJ_FLAG_HIDDEN));
 }
