@@ -1289,6 +1289,16 @@ class AmsState {
     AmsError commit_slot_edit(int slot_index, const SlotInfo& original, const SlotInfo& info);
 
     /**
+     * @brief Commit an external-spool assignment through every backing store.
+     *
+     * Non-empty (spoolman_id > 0 OR material set) → S5 persist via
+     * set_external_spool_info; empty → S5 erase via clear_external_spool_info
+     * (an empty assigned=true record is the bug the FilamentPanel arm avoided).
+     * S1: set/clear the Spoolman server active spool to match.
+     */
+    void commit_external_spool_edit(const SlotInfo& info);
+
+    /**
      * @brief Set the current AMS action state directly
      *
      * Used by UI to indicate operation in progress (e.g., during UI-managed preheat

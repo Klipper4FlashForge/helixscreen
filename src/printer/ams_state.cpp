@@ -3039,3 +3039,31 @@ AmsError AmsState::commit_slot_edit(int slot_index, const SlotInfo& original,
     sync_from_backend();
     return err;
 }
+
+void AmsState::commit_external_spool_edit(const SlotInfo& info) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+
+    // S1 — match the server active spool to what we are committing
+    if (api_) {
+        if (info.spoolman_id > 0) {
+            api_->spoolman().set_active_spool(
+                info.spoolman_id, []() {},
+                [](const MoonrakerError& err) {
+                    spdlog::warn("[AmsState] Failed to set active spool: {}", err.message);
+                });
+        } else if (get_external_spool_info().value_or(SlotInfo{}).spoolman_id > 0) {
+            api_->spoolman().set_active_spool(
+                0, []() {},
+                [](const MoonrakerError& err) {
+                    spdlog::warn("[AmsState] Failed to clear active spool: {}", err.message);
+                });
+        }
+    }
+
+    // S5 + S7 — same emptiness predicate as the FilamentPanel completion arm
+    if (info.spoolman_id > 0 || !info.material.empty()) {
+        set_external_spool_info(info);
+    } else {
+        clear_external_spool_info();
+    }
+}
