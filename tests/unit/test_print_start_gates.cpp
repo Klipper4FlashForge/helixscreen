@@ -243,11 +243,65 @@ TEST_CASE("material_mismatches_in: non-AMS external spool mismatch",
 
 TEST_CASE("default gate list: names in behavior-preserving order", "[print-start][gate-pipeline]") {
     auto& gates = default_print_start_gates();
-    REQUIRE(gates.size() == 4); // Task 4 grows this to 6, inserting at 2/3
+    REQUIRE(gates.size() == 6);
     CHECK(gates[0].name == "insufficient_spool_weight");
-    CHECK(gates[1].name == "required_filament_present");
-    CHECK(gates[2].name == "unresolved_tools");
-    CHECK(gates[3].name == "material_compatibility");
+    CHECK(gates[1].name == "bypass_engaged_lane_print");
+    CHECK(gates[2].name == "unaccounted_toolhead_filament");
+    CHECK(gates[3].name == "required_filament_present");
+    CHECK(gates[4].name == "unresolved_tools");
+    CHECK(gates[5].name == "material_compatibility");
+}
+
+TEST_CASE("default gate list: new gates inserted at 2 and 3", "[print-start][gate-pipeline]") {
+    auto& gates = default_print_start_gates();
+    REQUIRE(gates.size() == 6);
+    CHECK(gates[1].name == "bypass_engaged_lane_print");
+    CHECK(gates[2].name == "unaccounted_toolhead_filament");
+    CHECK(gates[3].name == "required_filament_present"); // shifted, order otherwise preserved
+}
+
+// ---------------------------------------------------------------------------
+// bypass_engaged_lane_print + unaccounted_toolhead_filament (new gates)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("gate bypass_engaged_lane_print: fires only on bypass + multi-color",
+          "[print-start][gate-pipeline]") {
+    auto make = [](bool bypass, size_t colors) {
+        return ctx_with([&](PrintStartContext& c) {
+            c.any_bypass_active = bypass;
+            c.filament_color_count = colors;
+        });
+    };
+    auto& g = default_print_start_gates()[1];
+    CHECK(g.evaluate(make(false, 4)).verdict == CheckResult::Verdict::Pass); // no bypass
+    CHECK(g.evaluate(make(true, 1)).verdict == CheckResult::Verdict::Pass);  // legit bypass use
+    auto r = g.evaluate(make(true, 4));
+    REQUIRE(r.verdict == CheckResult::Verdict::Warn);
+    CHECK(r.title == "Bypass Is Active");
+    CHECK(r.proceed_label == "Start Anyway");
+    CHECK(r.body.find("bypass") != std::string::npos);
+}
+
+TEST_CASE("gate unaccounted_toolhead_filament: verdict matrix", "[print-start][gate-pipeline]") {
+    auto make = [](bool bypass, std::optional<bool> backend_answer) {
+        return ctx_with([&](PrintStartContext& c) {
+            c.any_bypass_active = bypass;
+            if (backend_answer.has_value()) {
+                c.toolhead_unaccounted = {*backend_answer};
+            }
+        });
+    };
+    auto& g = default_print_start_gates()[2];
+    CHECK(g.evaluate(make(false, std::nullopt)).verdict ==
+          CheckResult::Verdict::Pass); // cannot determine
+    CHECK(g.evaluate(make(false, std::optional<bool>(false))).verdict ==
+          CheckResult::Verdict::Pass);
+    CHECK(g.evaluate(make(true, std::optional<bool>(true))).verdict ==
+          CheckResult::Verdict::Pass); // bypass accounts
+    auto r = g.evaluate(make(false, std::optional<bool>(true)));
+    REQUIRE(r.verdict == CheckResult::Verdict::Warn);
+    CHECK(r.title == "Filament In The Toolhead");
+    CHECK(r.proceed_label == "Start Anyway");
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +317,7 @@ TEST_CASE("gate required_filament_present: auto-unload backends suppress entirel
         c.empty_required_lanes = {{0, 1}}; // would otherwise warn
     });
     auto& gates = default_print_start_gates();
-    auto r = gates[1].evaluate(ctx);
+    auto r = gates[3].evaluate(ctx);
     CHECK(r.verdict == CheckResult::Verdict::Pass);
 }
 
@@ -276,7 +330,7 @@ TEST_CASE("gate required_filament_present: empty required lane warns with Start 
         // -> "Lane 1".
         c.empty_required_lanes = {{0, 0}, {2, 3}};
     });
-    auto r = default_print_start_gates()[1].evaluate(ctx);
+    auto r = default_print_start_gates()[3].evaluate(ctx);
     REQUIRE(r.verdict == CheckResult::Verdict::Warn);
     CHECK(r.title == "No Filament Detected"); // lv_tr identity in the test locale
     CHECK(r.proceed_label == "Start Print");
@@ -290,7 +344,7 @@ TEST_CASE("gate required_filament_present: AMS lanes all fed -> pass",
         c.ams_manages_filament = true;
         c.has_active_backend = true;
     });
-    CHECK(default_print_start_gates()[1].evaluate(ctx).verdict == CheckResult::Verdict::Pass);
+    CHECK(default_print_start_gates()[3].evaluate(ctx).verdict == CheckResult::Verdict::Pass);
 }
 
 TEST_CASE("gate required_filament_present: non-AMS runout says empty -> warn",
@@ -300,21 +354,21 @@ TEST_CASE("gate required_filament_present: non-AMS runout says empty -> warn",
         c.runout_available = true;
         c.runout_detected = false;
     });
-    auto r = default_print_start_gates()[1].evaluate(ctx);
+    auto r = default_print_start_gates()[3].evaluate(ctx);
     REQUIRE(r.verdict == CheckResult::Verdict::Warn);
     CHECK(r.proceed_label == "Start Print");
 }
 
 TEST_CASE("gate required_filament_present: runout disabled/unavailable -> pass",
           "[print-start][gate-pipeline]") {
-    CHECK(default_print_start_gates()[1].evaluate(ctx_with([](PrintStartContext&) {})).verdict ==
+    CHECK(default_print_start_gates()[3].evaluate(ctx_with([](PrintStartContext&) {})).verdict ==
           CheckResult::Verdict::Pass);
     auto ctx = ctx_with([](PrintStartContext& c) {
         c.runout_enabled = true;
         c.runout_available = false;
         c.runout_detected = false;
     });
-    CHECK(default_print_start_gates()[1].evaluate(ctx).verdict == CheckResult::Verdict::Pass);
+    CHECK(default_print_start_gates()[3].evaluate(ctx).verdict == CheckResult::Verdict::Pass);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +389,7 @@ TEST_CASE("gate unresolved_tools: warns with Start Anyway and verbatim title",
         t.material = "PLA";
         c.tool_info = {t};
     });
-    auto r = default_print_start_gates()[2].evaluate(ctx);
+    auto r = default_print_start_gates()[4].evaluate(ctx);
     REQUIRE(r.verdict == CheckResult::Verdict::Warn);
     CHECK(r.title == "Color Mismatch");
     CHECK(r.proceed_label == "Start Anyway");
@@ -351,7 +405,7 @@ TEST_CASE("gate material_compatibility: warns with verbatim title",
         spool.material = "PLA";
         c.external_spool = spool;
     });
-    auto r = default_print_start_gates()[3].evaluate(ctx);
+    auto r = default_print_start_gates()[5].evaluate(ctx);
     REQUIRE(r.verdict == CheckResult::Verdict::Warn);
     CHECK(r.title == "Material Mismatch");
     CHECK(r.proceed_label == "Start Anyway");

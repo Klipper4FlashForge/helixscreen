@@ -87,6 +87,39 @@ CheckResult gate_insufficient_spool_weight(const PrintStartContext& ctx) {
     return warn_result(lv_tr("Not Enough Filament"), body, lv_tr("Start Anyway"));
 }
 
+CheckResult gate_bypass_engaged_lane_print(const PrintStartContext& ctx) {
+    // Single-color prints with bypass engaged are the LEGITIMATE bypass use
+    // case — silent. Multi-color means the file needs AMS lanes, and firmware
+    // (AFC _check_bypass, verified) refuses a lane load while bypass filament
+    // is in the toolhead.
+    if (!ctx.any_bypass_active || ctx.filament_color_count <= 1) {
+        return pass_result();
+    }
+    return warn_result(
+        lv_tr("Bypass Is Active"),
+        lv_tr("Bypass is active, but this print uses AMS lanes. The printer may refuse "
+              "to load a lane while bypass filament is in the toolhead. Remove the "
+              "filament and turn bypass off before printing. Start anyway?"),
+        lv_tr("Start Anyway"));
+}
+
+CheckResult gate_unaccounted_toolhead_filament(const PrintStartContext& ctx) {
+    // Bypass accounts for toolhead filament (previous gate's case). nullopt =
+    // backend cannot determine -> stay silent rather than guess.
+    if (ctx.any_bypass_active) {
+        return pass_result();
+    }
+    for (const auto& answer : ctx.toolhead_unaccounted) {
+        if (answer.has_value() && *answer) {
+            return warn_result(lv_tr("Filament In The Toolhead"),
+                               lv_tr("The toolhead has filament but no AMS lane reports it loaded. "
+                                     "Pull it out manually before printing. Start anyway?"),
+                               lv_tr("Start Anyway"));
+        }
+    }
+    return pass_result();
+}
+
 CheckResult gate_required_filament_present(const PrintStartContext& ctx) {
     // Backends that auto-unload the toolhead after each print (e.g. AD5X IFS)
     // leave the extruder empty by design, so a "no filament" reading at
@@ -412,10 +445,12 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
 }
 
 const std::vector<PrintStartGate>& default_print_start_gates() {
-    // Order is behavior-preserving: the pre-pipeline check order. Task 4
-    // inserts the two new gates at positions 2-3.
+    // Order is behavior-preserving: the pre-pipeline check order, with the two
+    // new gates (bypass + unaccounted toolhead) ahead of the ported four.
     static const std::vector<PrintStartGate> gates = {
         {"insufficient_spool_weight", gate_insufficient_spool_weight},
+        {"bypass_engaged_lane_print", gate_bypass_engaged_lane_print},
+        {"unaccounted_toolhead_filament", gate_unaccounted_toolhead_filament},
         {"required_filament_present", gate_required_filament_present},
         {"unresolved_tools", gate_unresolved_tools},
         {"material_compatibility", gate_material_compatibility},
