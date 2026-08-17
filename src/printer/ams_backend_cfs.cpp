@@ -1884,6 +1884,12 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
             return AmsErrorHelper::invalid_slot(slot_index, system_info_.total_slots - 1);
         }
 
+        // Firmware's last reported id for this bay, captured BEFORE the
+        // optimistic mirror update below — the fork dialect's _BOX_SLOT_SET
+        // re-writes SPOOLMAN_ID, and record_own_spool_write needs the id
+        // in-flight frames will keep reporting until that echo lands.
+        const int previous_firmware_id = target->spoolman_id;
+
         // Update in-memory slot state so get_slot_info returns the edit
         // immediately — covers every SlotInfo field the caller may have set,
         // including persist=false previews that must survive until the next
@@ -1953,6 +1959,17 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
             helix::ams::populate_temps_from_slot_info(ovr, info);
             // updated_at left default — save_async stamps a fresh value.
             overrides_[slot_index] = ovr;
+        }
+
+        // Record our own SPOOLMAN_ID write for the fork dialect (the only
+        // CFS whose _BOX_SLOT_SET carries it — stock CFS never writes ids
+        // and never reports positive ones, so the record would be inert
+        // there). Gate matches the write's reachability exactly:
+        // push_slot_identity_to_firmware's Fork branch runs only for
+        // persist && override_store_. Rule 1 must not read the in-flight
+        // stale ids as an external re-bind (#1281 on flat-schema CFS).
+        if (persist && override_store_ && macro_variant_ == CfsMacroVariant::Fork) {
+            record_own_spool_write(slot_index, info.spoolman_id, previous_firmware_id);
         }
     }
 
@@ -3366,10 +3383,14 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
     // here is implicitly lock-protected. Zero-cost hash miss when the slot
     // has no override — safe in the hot parse path. The whole spec §5 policy
     // + the re-bind/eject rules live in helix::ams::merge_override — the
-    // single implementation every backend shares. CFS firmware never reports
-    // spool ids (firmware_reports_spool_ids() keeps the base false), so those
-    // rules are inert here today; the erase branch is correct tomorrow if a
-    // firmware ever starts reporting ids.
+    // single implementation every backend shares. Rule 1 (re-bind) is NOT
+    // gated by firmware_reports_spool_ids(): flat-schema CFS (the community
+    // fork) parses a per-slot spoolman_id, so a firmware id disagreeing with
+    // the override fires Rule 1 there — fork users get the #1281 fix. Rule 2
+    // (eject) IS what the capability gates, and it stays inert here (base
+    // false): on stock CFS firmware never reports ids and 0 is the everyday
+    // reading. Our own fork writes are protected by the own-write
+    // expectation recorded in set_slot_info.
     auto it = overrides_.find(slot_index);
     if (it == overrides_.end())
         return;
@@ -3378,6 +3399,14 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
     opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
     // Read the override BEFORE any erase — the CFS presence tail below needs it.
     const auto& o = it->second;
+    // Own-write echo suppression (SlotFingerprintTracker::expect()
+    // semantics): the flat-schema fork re-writes SPOOLMAN_ID via
+    // _BOX_SLOT_SET, and in-flight frames keep reporting the old firmware
+    // id for a poll or two — Rule 1 must not read that as an external
+    // re-bind. Inert on stock CFS (never reports a positive id).
+    const auto [own_old_id, own_new_id] = own_write_expectation(slot_index, slot.spoolman_id);
+    opts.suppress_rebind_firmware_old_id = own_old_id;
+    opts.suppress_rebind_firmware_new_id = own_new_id;
     const auto result = helix::ams::merge_override(slot, o, opts);
 
     // Trust the user's assignment for presence. Untagged 3rd-party spools

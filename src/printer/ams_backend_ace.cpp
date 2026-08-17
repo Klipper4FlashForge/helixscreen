@@ -1635,16 +1635,27 @@ void AmsBackendAce::apply_overrides(SlotInfo& slot, int slot_index) {
     // parse_ace_object — so the map read here is implicitly lock-protected.
     // The whole spec §5 policy + the re-bind/eject rules live in
     // helix::ams::merge_override — the single implementation every backend
-    // shares. ACE's firmware never reports spool ids
-    // (firmware_reports_spool_ids() keeps the base false), so those rules are
-    // inert here today; the erase branch is correct tomorrow if a firmware
-    // ever starts reporting ids.
+    // shares. Rule 1 (re-bind) is NOT gated by the capability: it can fire
+    // on any backend whose firmware reports a positive spool id disagreeing
+    // with the override (AFC, Happy Hare, flat-schema CFS). ACE's firmware
+    // never reports one, so Rule 1 cannot fire here today — but that is a
+    // fact about this firmware, not what the capability gates. Rule 2
+    // (eject) IS what firmware_reports_spool_ids() gates (base false here:
+    // 0 is ACE's everyday reading, never an eject), and the erase branch is
+    // correct tomorrow if a firmware ever starts reporting ids.
     auto it = overrides_.find(slot_index);
     if (it == overrides_.end())
         return;
     helix::ams::MergeOptions opts;
     opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
     opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
+    // Own-write echo suppression (SlotFingerprintTracker::expect()
+    // semantics): Rule 1 must not read an in-flight stale firmware id as an
+    // external re-bind. ACE never writes firmware ids, so this is always
+    // {0, 0} today — the call keeps one shape across backends.
+    const auto [own_old_id, own_new_id] = own_write_expectation(slot_index, slot.spoolman_id);
+    opts.suppress_rebind_firmware_old_id = own_old_id;
+    opts.suppress_rebind_firmware_new_id = own_new_id;
     const auto result = helix::ams::merge_override(slot, it->second, opts);
     if (result.cleared_rebind || result.cleared_eject) {
         overrides_.erase(it);

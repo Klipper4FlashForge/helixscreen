@@ -61,6 +61,21 @@ class AfcRebindHelper : public AmsBackendAfc {
         std::lock_guard<std::mutex> lock(mutex_);
         return overrides_.count(slot_index) > 0;
     }
+
+    /// Drive AmsBackend::record_own_spool_write exactly the way
+    /// set_slot_info's SET_SPOOL_ID path does: under mutex_, with the
+    /// firmware-reported id captured before the mirror was updated.
+    void record_own_write(int slot_index, int new_id, int previous_firmware_id) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        record_own_spool_write(slot_index, new_id, previous_firmware_id);
+    }
+
+    /// Consult AmsBackend::own_write_expectation under mutex_ (as
+    /// apply_overrides does) to observe/consume the pending expectation.
+    [[nodiscard]] std::pair<int, int> peek_expectation(int slot_index, int firmware_id) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return own_write_expectation(slot_index, firmware_id);
+    }
 };
 
 namespace {
@@ -165,4 +180,68 @@ TEST_CASE_METHOD(LVGLTestFixture, "Non-id backends: eject rule inert, field merg
     CHECK(survived->brand == "Polymaker");
 
     settings.set_ams_keep_spool_info_on_eject(true);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "AFC own re-link survives the echo race (own-write expectation)",
+                 "[ams][afc][override-merge]") {
+    // F2 regression: HelixScreen itself re-links a lane (42 -> 169 via
+    // SET_SPOOL_ID); in-flight status frames still report the old firmware
+    // id 42, and Rule 1 must not read that stale frame as an external
+    // re-bind and destroy the just-saved override. Mirrors
+    // SlotFingerprintTracker::expect() semantics.
+    SettingsManager::instance().init_subjects();
+
+    AfcRebindHelper afc;
+    // The editor path: stage the override, then record the write the way
+    // set_slot_info does when it emits SET_SPOOL_ID (previous id = what
+    // firmware last reported).
+    afc.set_override(0, spool_override(169));
+    afc.record_own_write(0, 169, 42);
+
+    // In-flight stale frame: firmware still reports the OLD id.
+    afc.feed_stepper("lane1", nlohmann::json{{"spool_id", 42}});
+    CHECK(afc.has_override(0));            // not destroyed by our own write
+    CHECK(afc.visible_spool_id(0) == 169); // override paints normally
+    CHECK(afc.visible_brand(0) == "Polymaker");
+
+    // The echo lands: firmware reports the NEW id. The expectation is
+    // consumed (single-shot, like the fingerprint tracker's).
+    afc.feed_stepper("lane1", nlohmann::json{{"spool_id", 169}});
+    CHECK(afc.has_override(0));
+    CHECK(afc.visible_spool_id(0) == 169);
+    CHECK(afc.peek_expectation(0, 169) == std::make_pair(0, 0)); // echo consumed it
+
+    // A genuine external change to a third id ends the expectation: Rule 1
+    // fires again and firmware truth wins back the lane.
+    afc.feed_stepper("lane1", nlohmann::json{{"spool_id", 200}});
+    CHECK_FALSE(afc.has_override(0));
+    CHECK(afc.visible_spool_id(0) == 200);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "own-write expectation: chained re-link keeps the original previous id",
+                 "[ams][afc][override-merge]") {
+    SettingsManager::instance().init_subjects();
+
+    AfcRebindHelper afc;
+    // 42 -> 169, then a second write before the echo landed: 169 -> 180.
+    // The stored pair must keep the ORIGINAL previous id (42) so stale
+    // frames reporting 42 stay suppressed.
+    afc.record_own_write(0, 169, 42);
+    afc.record_own_write(0, 180, 169);
+    const auto chained = afc.peek_expectation(0, 42);
+    CHECK(chained.first == 42);
+    CHECK(chained.second == 180);
+
+    // A record whose previous matches neither stored id (firmware truly
+    // moved elsewhere in between) replaces the pair wholesale.
+    afc.record_own_write(0, 300, 55);
+    const auto replaced = afc.peek_expectation(0, 55);
+    CHECK(replaced.first == 55);
+    CHECK(replaced.second == 300);
+
+    // An id-less write (an unlink) drops the expectation entirely — nothing
+    // is left to echo, and Rule 1 cannot fire on firmware id 0 anyway.
+    afc.record_own_write(0, 0, 300);
+    CHECK(afc.peek_expectation(0, 55) == std::make_pair(0, 0));
 }

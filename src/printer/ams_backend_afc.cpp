@@ -4629,6 +4629,13 @@ void AmsBackendAfc::apply_overrides(SlotInfo& slot, int slot_index) {
     helix::ams::MergeOptions opts;
     opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
     opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
+    // Own-write echo suppression (SlotFingerprintTracker::expect()
+    // semantics): if we just re-linked this lane's spool id, in-flight
+    // frames keep reporting the old firmware id for a poll or two — Rule 1
+    // must not read that stale frame as an external re-bind.
+    const auto [own_old_id, own_new_id] = own_write_expectation(slot_index, slot.spoolman_id);
+    opts.suppress_rebind_firmware_old_id = own_old_id;
+    opts.suppress_rebind_firmware_new_id = own_new_id;
     const auto result = helix::ams::merge_override(slot, it->second, opts);
     if (result.cleared_rebind || result.cleared_eject) {
         overrides_.erase(it);
@@ -5171,6 +5178,12 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                 //   empty id  -> AFC runs clear_values() and wipes all of the above
                 // Emitting it last made a single save set the data and then destroy it,
                 // which is why an edit needed two passes to stick.
+                //
+                // Record the write before dispatching: in-flight status frames
+                // keep reporting old_spoolman_id until the echo lands, and
+                // Rule 1 must not read those as an external re-bind. An
+                // unlink (id 0) erases the pending expectation instead.
+                record_own_spool_write(slot_index, info.spoolman_id, old_spoolman_id);
                 if (info.spoolman_id > 0) {
                     execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID={}", lane_name,
                                               info.spoolman_id));

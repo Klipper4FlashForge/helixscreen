@@ -3371,6 +3371,46 @@ TEST_CASE("merge_override rule matrix", "[ams][override-merge]") {
         CHECK_FALSE(r.cleared_rebind);
     }
 
+    SECTION("own-write suppression: stale firmware id (pre-write) does not clear; "
+            "fields still paint") {
+        // HelixScreen itself re-linked 42 -> 169; an in-flight frame still
+        // reports the old firmware id 42. Rule 1 must not read that stale
+        // frame as an external re-bind and eat the just-saved override.
+        slot.spoolman_id = 42;
+        helix::ams::MergeOptions opts;
+        opts.suppress_rebind_firmware_old_id = 42;
+        opts.suppress_rebind_firmware_new_id = 169;
+        auto r = merge_override(slot, ovr_with(169), opts);
+        CHECK_FALSE(r.cleared_rebind);
+        CHECK_FALSE(r.cleared_eject);
+        // Suppression changes ONLY the clear decision — the §5 field merge
+        // paints the override normally.
+        CHECK(slot.spoolman_id == 169);
+        CHECK(slot.brand == "Polymaker");
+        CHECK(slot.material == "PLA");
+    }
+
+    SECTION("own-write suppression: the echo (firmware reports the new id) does not clear") {
+        slot.spoolman_id = 169;
+        helix::ams::MergeOptions opts;
+        opts.suppress_rebind_firmware_old_id = 42;
+        opts.suppress_rebind_firmware_new_id = 169;
+        auto r = merge_override(slot, ovr_with(169), opts);
+        CHECK_FALSE(r.cleared_rebind);
+        CHECK(slot.brand == "Polymaker");
+    }
+
+    SECTION("own-write suppression: a third firmware id still clears — external change wins") {
+        slot.spoolman_id = 200;
+        helix::ams::MergeOptions opts;
+        opts.suppress_rebind_firmware_old_id = 42;
+        opts.suppress_rebind_firmware_new_id = 169;
+        auto r = merge_override(slot, ovr_with(169), opts);
+        CHECK(r.cleared_rebind);
+        CHECK(slot.spoolman_id == 200);
+        CHECK(slot.brand.empty());
+    }
+
     SECTION("eject: firmware 0 on an id-reporting backend — retention ON keeps the record") {
         slot.spoolman_id = 0;
         helix::ams::MergeOptions opts;

@@ -1784,7 +1784,15 @@ MergeResult merge_override(SlotInfo& slot, const FilamentSlotOverride& o,
     // AFC plugin) explicitly set a DIFFERENT spool on this lane. That is a
     // statement, not a guess: the whole record drops, firmware truth paints.
     // Never gated by the setting; never fires on eject's 0/null (#1281 step 7).
-    if (slot.spoolman_id > 0 && o.spoolman_id > 0 && slot.spoolman_id != o.spoolman_id) {
+    // The two suppress ids exclude our OWN in-flight re-links: after
+    // HelixScreen writes a spool id, status frames already parsed (or parsed
+    // before the write lands) keep reporting the OLD firmware id for a poll
+    // or two — that stale frame is us, not Mainsail (SlotFingerprintTracker
+    // ::expect() semantics; see MergeOptions). Suppression only skips this
+    // clear; the field merge below still paints the override.
+    if (slot.spoolman_id > 0 && o.spoolman_id > 0 && slot.spoolman_id != o.spoolman_id &&
+        slot.spoolman_id != options.suppress_rebind_firmware_old_id &&
+        slot.spoolman_id != options.suppress_rebind_firmware_new_id) {
         MergeResult r;
         r.cleared_rebind = true;
         return r;

@@ -2404,6 +2404,13 @@ void AmsBackendHappyHare::apply_overrides(SlotInfo& slot, int slot_index) {
     helix::ams::MergeOptions opts;
     opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
     opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
+    // Own-write echo suppression (SlotFingerprintTracker::expect()
+    // semantics): if we just re-linked this gate's spool id, in-flight
+    // frames keep reporting the old firmware id for a poll or two — Rule 1
+    // must not read that stale frame as an external re-bind.
+    const auto [own_old_id, own_new_id] = own_write_expectation(slot_index, slot.spoolman_id);
+    opts.suppress_rebind_firmware_old_id = own_old_id;
+    opts.suppress_rebind_firmware_new_id = own_new_id;
     const auto result = helix::ams::merge_override(slot, it->second, opts);
     if (result.cleared_rebind || result.cleared_eject) {
         overrides_.erase(it);
@@ -2586,6 +2593,16 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
         } else if (info.spoolman_id == 0 && old_spoolman_id > 0) {
             cmd += " SPOOLID=-1"; // Clear existing link
             has_changes = true;
+        }
+
+        // Record our own id write so Rule 1 does not read the in-flight
+        // frames (still reporting old_spoolman_id until the echo lands) as
+        // an external re-bind. An unlink (SPOOLID=-1) erases the pending
+        // expectation instead. The gcode block above runs OUTSIDE mutex_ —
+        // take the lock just for the record, matching every other writer.
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            record_own_spool_write(slot_index, info.spoolman_id, old_spoolman_id);
         }
 
         // Only send command if there are actual changes to persist

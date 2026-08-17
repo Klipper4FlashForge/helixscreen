@@ -255,6 +255,19 @@ struct MergeOptions {
     /// 0/null means "ejected". Elsewhere firmware never reports ids, so 0 is
     /// the everyday reading and MUST NOT be treated as eject.
     bool firmware_reports_spool_ids = false;
+    /// Own-write echo suppression for Rule 1, mirroring
+    /// SlotFingerprintTracker::expect() semantics. When HelixScreen itself
+    /// just (re)linked a spool id on this slot, in-flight status frames keep
+    /// reporting the OLD firmware id for a poll or two; Rule 1 must not read
+    /// such a stale frame as an external re-bind and destroy the just-saved
+    /// override. Non-zero values are the ids firmware may legitimately
+    /// report while the write is in flight: the id it last reported before
+    /// the write and the id we just wrote. Suppression affects ONLY the
+    /// re-bind clear — the §5 field merge paints the override normally
+    /// either way. 0 = none.
+    int suppress_rebind_firmware_old_id = 0;
+    /// The just-written id (see suppress_rebind_firmware_old_id). 0 = none.
+    int suppress_rebind_firmware_new_id = 0;
 };
 
 struct MergeResult {
