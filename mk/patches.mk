@@ -80,7 +80,9 @@ LIBHV_PATCHED_FILES := \
 	base/hsocket.c \
 	base/dns_resolv.c \
 	base/dns_resolv.h \
+	cpputil/hthreadpool.h \
 	evpp/TcpClient.h \
+	http/HttpMessage.h \
 	http/client/WebSocketClient.h \
 	http/client/WebSocketClient.cpp
 
@@ -808,8 +810,32 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ libhv WebSocket backoff patch already applied$(RESET)"; \
 	fi
+	$(Q)if ! grep -q "PATCH NOTE(helixscreen)" "$(LIBHV_DIR)/cpputil/hthreadpool.h" 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying libhv HThreadPool wait() lock patch...$(RESET)"; \
+		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-hthreadpool-wait-lock.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply $(PATCH_DIR)/libhv-hthreadpool-wait-lock.patch && \
+			echo "$(GREEN)✓ libhv HThreadPool wait() lock patch applied$(RESET)"; \
+		else \
+			echo "$(RED)✗ Cannot apply HThreadPool wait() patch — run 'make reapply-patches'. Until then wait() races a worker's pop_front() (nightly TSAN via ThumbnailProcessor::wait_for_completion)$(RESET)"; \
+			exit 1; \
+		fi \
+	else \
+		echo "$(GREEN)✓ libhv HThreadPool wait() lock patch already applied$(RESET)"; \
+	fi
+	$(Q)if ! grep -q "PATCH NOTE(helixscreen)" "$(LIBHV_DIR)/http/HttpMessage.h" 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying libhv HttpRequest cancel atomic patch...$(RESET)"; \
+		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-http-request-cancel-atomic.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply $(PATCH_DIR)/libhv-http-request-cancel-atomic.patch && \
+			echo "$(GREEN)✓ libhv HttpRequest cancel atomic patch applied$(RESET)"; \
+		else \
+			echo "$(RED)✗ Cannot apply HttpRequest cancel patch — run 'make reapply-patches'. Until then CameraStream::stop() races the stream thread's ParseUrl() (nightly TSAN in HttpRequest::Cancel)$(RESET)"; \
+			exit 1; \
+		fi \
+	else \
+		echo "$(GREEN)✓ libhv HttpRequest cancel atomic patch already applied$(RESET)"; \
+	fi
 	$(Q)if [ -d "$(LIBHV_DIR)/include/hv" ]; then \
-		for h in evpp/TcpClient.h http/client/WebSocketClient.h; do \
+		for h in evpp/TcpClient.h http/client/WebSocketClient.h cpputil/hthreadpool.h http/HttpMessage.h; do \
 			base=$$(basename $$h); \
 			if ! diff -q "$(LIBHV_DIR)/$$h" "$(LIBHV_DIR)/include/hv/$$base" >/dev/null 2>&1; then \
 				echo "$(YELLOW)→ Syncing patched $$base to include/hv/$(RESET)"; \
