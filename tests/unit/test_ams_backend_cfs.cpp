@@ -78,9 +78,9 @@ class CfsRemapHelper : public AmsBackendCfs {
     }
 
     // Expose protected firmware-writeback helper for direct test calls.
-    // push_slot_color_to_firmware is protected (called from set_slot_info but
-    // not part of the public IAmsBackend surface).
-    using AmsBackendCfs::push_slot_color_to_firmware;
+    // push_slot_identity_to_firmware is protected (called from set_slot_info
+    // but not part of the public IAmsBackend surface).
+    using AmsBackendCfs::push_slot_identity_to_firmware;
 
     // Capture the assembled load/swap/unload script that change_tool /
     // load_filament / unload_filament hand to dispatch_action_script. Returns
@@ -434,9 +434,18 @@ TEST_CASE("CFS material database", "[ams][cfs]") {
         REQUIRE(info == nullptr);
     }
 
-    SECTION("code stripping: 101001 to 01001") {
+    SECTION("code stripping: 101001 to 01001 (K2, Creality prefix)") {
         auto id = CfsMaterialDb::strip_code("101001");
         REQUIRE(id == "01001");
+    }
+
+    SECTION("code stripping: K1 Generic prefix (#968)") {
+        // K1C reporter tn_data.json: 000001 = PLA, 000003 = PETG — the
+        // catalog ids are 00001 / 00003, so the leading '0' is the same
+        // brand-prefix digit the K2 carries as '1'.
+        REQUIRE(CfsMaterialDb::strip_code("000001") == "00001");
+        REQUIRE(CfsMaterialDb::strip_code("000003") == "00003");
+        REQUIRE(FilamentCatalog::load_codes("cfs").resolve_code("cfs", "00003") != nullptr);
     }
 
     SECTION("short code returned as-is") {
@@ -1208,16 +1217,23 @@ TEST_CASE("CFS change_tool selects load-vs-swap from filament_loaded (#968)", "[
 }
 
 // =============================================================================
-// push_slot_color_to_firmware is color-only: it emits a single
-// BOX_MODIFY_TN_DATA PART=color_value write. Changing the material *type* on CFS
-// is unsupported (no name->code forward map), so no material_type write is ever
-// emitted. Same ADDR/NUM validation + invalid-skip guard as before.
+// push_slot_identity_to_firmware (#968 material-type writeback)
 // =============================================================================
-TEST_CASE("CFS push_slot_color_to_firmware writes color only", "[ams][cfs][firmware_writeback]") {
+//
+// The push writes color_value always, and material_type ONLY when a code for
+// the user's pick exists in the firmware-observed vocabulary harvested by
+// handle_status_update (observed_material_*_). Codes are never synthesized —
+// a value the firmware never reported could poison the wrapper's material-DB
+// lookups (flush temps, same-material matching) and the stock LCD display.
+//
+// K1 codes below (000001 = Generic PLA, 000003 = Generic PETG) come from the
+// #968 reporter's real tn_data.json / box dumps.
+TEST_CASE("CFS push_slot_identity_to_firmware writes color + observed material code",
+          "[ams][cfs][firmware_writeback][968]") {
     CfsRemapHelper helper;
 
-    SECTION("valid slot → color_value write + same-material refresh, no material_type") {
-        helper.push_slot_color_to_firmware(0, 0xFF0000);
+    SECTION("no firmware-observed code → color-only + same-material refresh") {
+        helper.push_slot_identity_to_firmware(0, "PETG", "Generic", "", 0xFF0000);
         // The follow-up BOX_UPDATE_SAME_MATERIAL_LIST mirrors Creality's own
         // master-server, which refreshes the auto-refill equivalence groups
         // after every BOX_MODIFY_TN_DATA write (group membership requires
@@ -1231,19 +1247,119 @@ TEST_CASE("CFS push_slot_color_to_firmware writes color only", "[ams][cfs][firmw
         }
     }
 
-    SECTION("a known RFID fingerprint does NOT trigger a material_type write") {
-        // Fingerprint format is "<raw_material_type>|<raw_color_value>". Even
-        // when present, color push stays color-only — material type is firmware
-        // territory we don't write back.
+    SECTION("baseline present but code never observed → still color-only") {
         CfsTestAccess::set_last_rfid_uid(helper, 5, "101001|0FF0000");
-        helper.push_slot_color_to_firmware(5, 0x00FF00);
+        helper.push_slot_identity_to_firmware(5, "PETG", "Generic", "", 0x00FF00);
         REQUIRE(helper.captured.size() == 2);
+        REQUIRE(helper.captured[0].find("PART=material_type") == std::string::npos);
+        REQUIRE(helper.captured[1] == "BOX_UPDATE_SAME_MATERIAL_LIST");
+    }
+
+    SECTION("K1: brand|type observed on another slot → material + color written") {
+        // Slot 1 carries the PETG spool (K1 code 000003); the user edits
+        // slot 0. The observed vocabulary is system-wide, not per-slot.
+        CfsTestAccess::handle_status(
+            helper, make_cfs_notification(make_single_unit_box({"-1", "000003", "-1", "-1"},
+                                                               {"-1", "01B04AE", "-1", "-1"})));
+        helper.push_slot_identity_to_firmware(0, "PETG", "Generic", "", 0xFF0000);
+        REQUIRE(helper.captured.size() == 2);
+        REQUIRE(helper.captured[0] ==
+                "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=material_type DATA=000003\n"
+                "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0FF0000");
+        REQUIRE(helper.captured[1] == "BOX_UPDATE_SAME_MATERIAL_LIST");
+    }
+
+    SECTION("type-only fallback when brand is unknown") {
+        CfsTestAccess::handle_status(
+            helper, make_cfs_notification(make_single_unit_box({"000003", "-1", "-1", "-1"},
+                                                               {"01B04AE", "-1", "-1", "-1"})));
+        helper.push_slot_identity_to_firmware(1, "PETG", "", "", 0x00FF00);
+        REQUIRE(helper.captured.size() == 2);
+        REQUIRE(helper.captured[0].find("PART=material_type DATA=000003") != std::string::npos);
+        REQUIRE(helper.captured[1] == "BOX_UPDATE_SAME_MATERIAL_LIST");
+    }
+
+    SECTION("catalog product pick resolves through its own cfs code id") {
+        CfsTestAccess::handle_status(
+            helper, make_cfs_notification(make_single_unit_box({"-1", "-1", "000003", "-1"},
+                                                               {"-1", "-1", "0000000", "-1"})));
+        helper.push_slot_identity_to_firmware(0, "PETG", "Generic", "generic-petg", 0xFF0000);
+        REQUIRE(helper.captured.size() == 2);
+        REQUIRE(helper.captured[0].find("PART=material_type DATA=000003") != std::string::npos);
+        REQUIRE(helper.captured[1] == "BOX_UPDATE_SAME_MATERIAL_LIST");
+    }
+
+    SECTION("unknown material → color-only even with a rich vocabulary") {
+        CfsTestAccess::handle_status(
+            helper, make_cfs_notification(make_single_unit_box({"000003", "-1", "-1", "-1"},
+                                                               {"01B04AE", "-1", "-1", "-1"})));
+        helper.push_slot_identity_to_firmware(2, "Unobtanium", "ACME", "", 0xFF0000);
+        REQUIRE(helper.captured.size() == 2);
+        REQUIRE(helper.captured[0].find("PART=material_type") == std::string::npos);
+        REQUIRE(helper.captured[1] == "BOX_UPDATE_SAME_MATERIAL_LIST");
         REQUIRE(helper.captured[0].find("PART=material_type") == std::string::npos);
     }
 
     SECTION("invalid slot index skips the write (must not crash klippy)") {
-        helper.push_slot_color_to_firmware(99, 0xFF0000);
+        helper.push_slot_identity_to_firmware(99, "PETG", "Generic", "", 0xFF0000);
         REQUIRE(helper.captured.empty());
+    }
+}
+
+// The two PART writes land as one script, but a status poll can slip between
+// their echoes and observe the intermediate composite (new material + old
+// color). expect_any_of must classify BOTH echoes as OwnWriteEcho so the
+// fresh override survives its own writeback; a subsequent genuine change must
+// still clear it.
+TEST_CASE("CFS identity writeback echoes do not self-wipe the override",
+          "[ams][cfs][firmware_writeback][968]") {
+    CfsRemapHelper helper;
+
+    // Slot 0 holds Generic PLA (K1 code 000001, NilsOF's dump color 09CFF4F);
+    // slot 1 holds Generic PETG (000003), which is what puts PETG in the
+    // firmware-observed vocabulary the push needs.
+    CfsTestAccess::handle_status(
+        helper, make_cfs_notification(make_single_unit_box({"000001", "000003", "-1", "-1"},
+                                                           {"09CFF4F", "01B04AE", "-1", "-1"})));
+
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "PETG";
+    ovr.brand = "Generic";
+    ovr.color_rgb = 0xFF0000;
+    ovr.color_set = true;
+    ovr.user_locked_color = true;
+    ovr.user_locked_material = true;
+    CfsTestAccess::seed_override(helper, 0, ovr);
+
+    // User picks PETG + red. Material (000003 via observed vocabulary) and
+    // color both differ from the baseline.
+    helper.push_slot_identity_to_firmware(0, "PETG", "Generic", "", 0xFF0000);
+    REQUIRE(helper.captured.size() == 2);
+    REQUIRE(helper.captured[0].find("PART=material_type DATA=000003") != std::string::npos);
+
+    SECTION("intermediate echo (new material, old color) keeps the override") {
+        CfsTestAccess::handle_status(
+            helper, make_cfs_notification(make_single_unit_box({"000003", "-1", "-1", "-1"},
+                                                               {"09CFF4F", "-1", "-1", "-1"})));
+        REQUIRE(CfsTestAccess::get_override(helper, 0).has_value());
+    }
+
+    SECTION("final echo (new material + new color) keeps the override") {
+        // Intermediate first, then final — the realistic poll sequence.
+        CfsTestAccess::handle_status(
+            helper, make_cfs_notification(make_single_unit_box({"000003", "-1", "-1", "-1"},
+                                                               {"09CFF4F", "-1", "-1", "-1"})));
+        CfsTestAccess::handle_status(
+            helper, make_cfs_notification(make_single_unit_box({"000003", "-1", "-1", "-1"},
+                                                               {"0FF0000", "-1", "-1", "-1"})));
+        REQUIRE(CfsTestAccess::get_override(helper, 0).has_value());
+    }
+
+    SECTION("a value we never wrote still clears the override (real swap)") {
+        CfsTestAccess::handle_status(
+            helper, make_cfs_notification(make_single_unit_box({"000001", "-1", "-1", "-1"},
+                                                               {"0FFFFFF", "-1", "-1", "-1"})));
+        REQUIRE_FALSE(CfsTestAccess::get_override(helper, 0).has_value());
     }
 }
 
@@ -1497,7 +1613,7 @@ TEST_CASE("CFS refresh_rfid probes each connected unit via BOX_INFO_REFRESH",
 }
 
 // =============================================================================
-// CFS BOX_MODIFY_TN_DATA color firmware-writeback (push_slot_color_to_firmware)
+// CFS BOX_MODIFY_TN_DATA color firmware-writeback (push_slot_identity_to_firmware)
 // =============================================================================
 //
 // Format reverse-engineered from K2's master-server binary
@@ -1508,16 +1624,16 @@ TEST_CASE("CFS refresh_rfid probes each connected unit via BOX_INFO_REFRESH",
 // .claude/scratchpad/research/k2-box-firmware-writeback.md.
 //
 // CRITICAL: invalid args trigger box_wrapper TypeError → klippy invoke_shutdown.
-// These tests cover the validation guards in push_slot_color_to_firmware that
+// These tests cover the validation guards in push_slot_identity_to_firmware that
 // prevent any out-of-range slot index or zero-color sentinel from reaching the
 // firmware as a malformed gcode.
 
-TEST_CASE("CFS push_slot_color_to_firmware emits BOX_MODIFY_TN_DATA",
+TEST_CASE("CFS push_slot_identity_to_firmware emits BOX_MODIFY_TN_DATA",
           "[ams][cfs][firmware_writeback]") {
     CfsRemapHelper helper;
 
     SECTION("Slot 0 (T1A) red 0xFF0000 → ADDR=1 NUM=A DATA=0FF0000") {
-        helper.push_slot_color_to_firmware(0, 0xFF0000);
+        helper.push_slot_identity_to_firmware(0, "", "", "", 0xFF0000);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
                     "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0FF0000",
@@ -1525,7 +1641,7 @@ TEST_CASE("CFS push_slot_color_to_firmware emits BOX_MODIFY_TN_DATA",
     }
 
     SECTION("Slot 5 (T2B) green 0x00FF00 → ADDR=2 NUM=B DATA=000FF00") {
-        helper.push_slot_color_to_firmware(5, 0x00FF00);
+        helper.push_slot_identity_to_firmware(5, "", "", "", 0x00FF00);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
                     "BOX_MODIFY_TN_DATA ADDR=2 NUM=B PART=color_value DATA=000FF00",
@@ -1533,7 +1649,7 @@ TEST_CASE("CFS push_slot_color_to_firmware emits BOX_MODIFY_TN_DATA",
     }
 
     SECTION("Slot 15 (T4D) white 0xFFFFFF → ADDR=4 NUM=D DATA=0FFFFFF") {
-        helper.push_slot_color_to_firmware(15, 0xFFFFFF);
+        helper.push_slot_identity_to_firmware(15, "", "", "", 0xFFFFFF);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
                     "BOX_MODIFY_TN_DATA ADDR=4 NUM=D PART=color_value DATA=0FFFFFF",
@@ -1543,7 +1659,7 @@ TEST_CASE("CFS push_slot_color_to_firmware emits BOX_MODIFY_TN_DATA",
     SECTION("Color masks high bits — alpha byte from caller is ignored") {
         // If a caller passes 0xAA112233, the alpha byte is dropped. The
         // firmware's leading nibble is always our own '0'.
-        helper.push_slot_color_to_firmware(0, 0xAA112233);
+        helper.push_slot_identity_to_firmware(0, "", "", "", 0xAA112233);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
                     "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0112233",
@@ -1551,7 +1667,7 @@ TEST_CASE("CFS push_slot_color_to_firmware emits BOX_MODIFY_TN_DATA",
     }
 }
 
-TEST_CASE("CFS push_slot_color_to_firmware skips invalid inputs (must NOT crash klippy)",
+TEST_CASE("CFS push_slot_identity_to_firmware skips invalid inputs (must NOT crash klippy)",
           "[ams][cfs][firmware_writeback]") {
     CfsRemapHelper helper;
 
@@ -1561,7 +1677,7 @@ TEST_CASE("CFS push_slot_color_to_firmware skips invalid inputs (must NOT crash 
         // must NOT skip it — that's the bug fixed by the color_set boolean.
         // Caller (set_slot_info) is responsible for not invoking when color
         // wasn't actually set (color_set=false on the override).
-        helper.push_slot_color_to_firmware(0, 0);
+        helper.push_slot_identity_to_firmware(0, "", "", "", 0);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
                     "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0000000",
@@ -1569,14 +1685,14 @@ TEST_CASE("CFS push_slot_color_to_firmware skips invalid inputs (must NOT crash 
     }
 
     SECTION("Negative slot index is skipped") {
-        helper.push_slot_color_to_firmware(-1, 0xFF0000);
+        helper.push_slot_identity_to_firmware(-1, "", "", "", 0xFF0000);
         REQUIRE(helper.captured.empty());
     }
 
     SECTION("slot_index >= 16 is skipped") {
-        helper.push_slot_color_to_firmware(16, 0xFF0000);
+        helper.push_slot_identity_to_firmware(16, "", "", "", 0xFF0000);
         REQUIRE(helper.captured.empty());
-        helper.push_slot_color_to_firmware(99, 0xFF0000);
+        helper.push_slot_identity_to_firmware(99, "", "", "", 0xFF0000);
         REQUIRE(helper.captured.empty());
     }
 }

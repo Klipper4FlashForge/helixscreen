@@ -34,7 +34,14 @@ using json = nlohmann::json;
 std::string CfsMaterialDb::strip_code(const std::string& code) {
     if (code == "-1" || code == "None" || code.empty())
         return "";
-    if (code.size() == 6 && code[0] == '1')
+    // Firmware reports material_type as a 6-char code: one prefix digit
+    // (brand class — '1' Creality on K2, '0' Generic on K1) + the 5-char
+    // catalog id. The K1 half of the rule comes from the #968 reporter dumps
+    // (tn_data.json "000003" resolves to catalog id "00003" = Generic PETG,
+    // "000001" = Generic PLA); the original K2-only '1' strip silently failed
+    // to resolve every K1 code. Catalog ids are always 5 chars, so any 6-char
+    // report is prefixed by construction.
+    if (code.size() == 6)
         return code.substr(1);
     return code;
 }
@@ -133,13 +140,76 @@ bool is_vender_sentinel(const std::string& v) {
 /// parse_box_status.
 ///
 /// Deliberately NOT applied to `color_value`: that field is user-writable
-/// (push_slot_color_to_firmware / the stock LCD both issue BOX_MODIFY_TN_DATA
-/// PART=color_value) and reads a real color on untagged bays, so it cannot
-/// distinguish a tagged bay from an untagged one. `material_type` has no write
-/// path anywhere in the UI, so a non-sentinel value there means — and only
-/// means — that a tag was actually read.
+/// (push_slot_identity_to_firmware / the stock LCD both issue
+/// BOX_MODIFY_TN_DATA PART=color_value) and reads a real color on untagged
+/// bays, so it cannot distinguish a tagged bay from an untagged one.
+/// `material_type` IS user-writable now too (same command, PART=material_type,
+/// #968) — but only ever with a code the firmware itself previously reported,
+/// so a non-sentinel value still means "either a tag was read or the user
+/// labeled this bay". That second case is handled at the presence rule: a
+/// user-labeled untagged bay reads EMPTY from firmware fields and is promoted
+/// back to AVAILABLE by its override in apply_overrides.
 bool is_material_code_sentinel(const std::string& v) {
     return v.empty() || v == "none" || v == "None" || v == "-1" || v == "unknown";
+}
+
+/// Harvest the material_type codes a box status actually reported, keyed three
+/// ways for push_slot_identity_to_firmware's lookup chain (catalog id, then
+/// "brand|type", then type). Values are the FULL 6-char codes exactly as the
+/// firmware sent them — the writeback only ever replays those, never a
+/// synthesized value, because a malformed code can poison the wrapper's
+/// material-DB lookups and the stock LCD's slot display.
+///
+/// emplace = insert-if-absent, so the first code seen for a key stays stable
+/// across frames even when several products share a material family.
+struct ObservedMaterialCodes {
+    std::unordered_map<std::string, std::string> by_id;         // "00003" -> "000003"
+    std::unordered_map<std::string, std::string> by_brand_type; // "Generic|PETG" -> "000003"
+    std::unordered_map<std::string, std::string> by_type;       // "PETG" -> "000003"
+};
+
+ObservedMaterialCodes collect_observed_material_codes(const nlohmann::json& box_json,
+                                                      const FilamentCatalog& catalog) {
+    ObservedMaterialCodes out;
+    for (int n = 1; n <= 4; ++n) {
+        const std::string key = "T" + std::to_string(n);
+        if (!box_json.contains(key) || !box_json[key].is_object())
+            continue;
+        const auto& unit_json = box_json[key];
+        if (!unit_json.contains("material_type") || !unit_json["material_type"].is_array())
+            continue;
+        for (const auto& code_val : unit_json["material_type"]) {
+            if (!code_val.is_string())
+                continue;
+            const std::string code = code_val.get<std::string>();
+            if (is_material_code_sentinel(code))
+                continue;
+            const std::string id = CfsMaterialDb::strip_code(code);
+            if (id.empty())
+                continue;
+            out.by_id.emplace(id, code);
+            if (const auto* f = catalog.resolve_code("cfs", id)) {
+                out.by_brand_type.emplace(f->brand + "|" + f->type, code);
+                out.by_type.emplace(f->type, code);
+            }
+        }
+    }
+    // same_material groups (["101001", "0FF0000", ["T1A"], "PLA"]) give a
+    // material-family name for codes our catalog cannot resolve — the K1C
+    // dumps in #968 show the box reporting these alongside the slot arrays.
+    // Covers the type-only lookup for codes that have no catalog entry.
+    if (box_json.contains("same_material") && box_json["same_material"].is_array()) {
+        for (const auto& group : box_json["same_material"]) {
+            if (!group.is_array() || group.size() < 4 || !group[0].is_string() ||
+                !group[3].is_string())
+                continue;
+            const std::string code = group[0].get<std::string>();
+            if (is_material_code_sentinel(code) || CfsMaterialDb::strip_code(code).empty())
+                continue;
+            out.by_type.emplace(group[3].get<std::string>(), code);
+        }
+    }
+    return out;
 }
 
 std::string quote_gcode_param(const std::string& value) {
@@ -849,13 +919,21 @@ AmsSystemInfo AmsBackendCfs::parse_stock_box_status(const nlohmann::json& box_js
             //
             //     `color_value` is deliberately NOT part of this test even
             //     though it also latches. It is user-writable (the stock LCD
-            //     and our own push_slot_color_to_firmware both write it) and on
-            //     real K2 hardware it reads a real color on EVERY bay, tagged
-            //     or not — including bays whose material_type is "unknown".
-            //     Folding it in would make has_tag_payload permanently true,
-            //     silently disabling the untagged fallback and re-breaking
-            //     #1077. material_type has no write path, so it alone is a
-            //     trustworthy tagged/untagged discriminator.
+            //     and our own push_slot_identity_to_firmware both write it)
+            //     and on real K2 hardware it reads a real color on EVERY bay,
+            //     tagged or not — including bays whose material_type is
+            //     "unknown". Folding it in would make has_tag_payload
+            //     permanently true, silently disabling the untagged fallback
+            //     and re-breaking #1077.
+            //
+            //     `material_type` IS written by the identity push too (#968),
+            //     so a non-sentinel code is no longer PROOF of a tag — it may
+            //     be the user's own label. The consequence is bounded: a
+            //     user-labeled untagged bay suppresses this fallback (reads
+            //     EMPTY from firmware fields), and apply_overrides immediately
+            //     promotes it back to AVAILABLE from the override the same
+            //     edit staged. Untagged bays the user never labeled keep the
+            //     fallback, which is the #1077 population it protects.
             //
             // A user override can still promote a firmware-EMPTY bay back to
             // AVAILABLE (see apply_overrides).
@@ -1172,14 +1250,17 @@ AmsSystemInfo AmsBackendCfs::parse_flat_box_status(const nlohmann::json& box_jso
 // different spool changes at least one of those fields. CFS does NOT expose a
 // dedicated CARD_UID field — this composite is the documented surrogate.
 //
-// color_value is NOT firmware-exclusive: push_slot_color_to_firmware writes it
-// via BOX_MODIFY_TN_DATA so the stock LCD shows the user's chosen color. That
-// write comes back around as a fingerprint change on a later poll, which reads
-// identically to a physical swap. push_ therefore registers the expected
-// post-write fingerprint with rfid_tracker_ (SlotFingerprintTracker::expect),
-// and check_hardware_event_clear classifies the echo as OwnWriteEcho rather
-// than a swap. material_type has no write path — nothing in the UI can set a
-// raw CFS material code.
+// color_value is NOT firmware-exclusive: push_slot_identity_to_firmware
+// writes it (and material_type, when a firmware-observed code for the user's
+// pick exists) via BOX_MODIFY_TN_DATA so the stock LCD shows the user's
+// chosen identity. Those writes come back around as fingerprint changes on
+// later polls, which read identically to a physical swap. push_ therefore
+// registers the expected post-write fingerprints with rfid_tracker_
+// (SlotFingerprintTracker::expect_any_of — one entry per intermediate/final
+// composite), and check_hardware_event_clear classifies each echo as
+// OwnWriteEcho rather than a swap. Material codes are only ever replayed
+// from values this firmware itself reported, so the material half can never
+// drift outside the wrapper's own vocabulary.
 static std::string build_cfs_slot_uid(const nlohmann::json& unit_json, int local_index) {
     auto pick = [&](const char* field) -> std::string {
         if (!unit_json.contains(field) || !unit_json[field].is_array())
@@ -1302,6 +1383,13 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
                 ++firmware_map_generation_;
             }
 
+            // Harvest the material_type codes this frame reported, for the
+            // identity writeback's lookup chain (push_slot_identity_to_
+            // firmware). Runs on the same pre-lock walk as the fingerprint
+            // pass below; the merge itself happens under mutex_.
+            const auto observed_codes =
+                collect_observed_material_codes(box, *FilamentCatalog::load_codes_cached("cfs"));
+
             // Build observed per-slot RFID fingerprints for every unit present
             // in this notification. Slots that weren't included stay empty
             // (observed_uids stays at default ""), and empty-UID observations
@@ -1327,6 +1415,14 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
             }
 
             std::lock_guard<std::mutex> lock(mutex_);
+
+            // Insert-if-absent so a key's first-observed code stays stable.
+            for (const auto& [k, v] : observed_codes.by_id)
+                observed_material_id_codes_.emplace(k, v);
+            for (const auto& [k, v] : observed_codes.by_brand_type)
+                observed_material_codes_.emplace(k, v);
+            for (const auto& [k, v] : observed_codes.by_type)
+                observed_material_type_codes_.emplace(k, v);
 
             if (!new_info.units.empty()) {
                 system_info_.units = std::move(new_info.units);
@@ -1814,17 +1910,17 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
         // firmware parse (expected preview contract).
         //
         // NOTE on self-wipe: CFS's hardware-event check is RFID-fingerprint-
-        // based (material_type + color_value from firmware), and one half of
-        // that fingerprint IS user-writable — push_slot_color_to_firmware
-        // (below, persist path only) rewrites color_value via
-        // BOX_MODIFY_TN_DATA. Firmware echoes that write back on a later poll,
-        // where it is indistinguishable from a physical spool swap and would
-        // erase the override we are staging right here.
+        // based (material_type + color_value from firmware), and BOTH halves
+        // of that fingerprint are user-writable — push_slot_identity_to_
+        // firmware (below, persist path only) rewrites color_value always and
+        // material_type when a firmware-observed code exists, via
+        // BOX_MODIFY_TN_DATA. Firmware echoes those writes back on a later
+        // poll, where they are indistinguishable from a physical spool swap
+        // and would erase the override we are staging right here.
         //
-        // The self-wipe guard lives in push_slot_color_to_firmware, which
-        // registers the expected post-write fingerprint with rfid_tracker_
-        // before dispatching the gcode. material_type has no write path, so
-        // that half of the fingerprint remains pure firmware truth.
+        // The self-wipe guard lives in push_slot_identity_to_firmware, which
+        // registers the expected post-write fingerprints with rfid_tracker_
+        // before dispatching the gcode.
         if (persist) {
             helix::ams::FilamentSlotOverride ovr;
             ovr.brand = info.brand;
@@ -1886,19 +1982,23 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
                 }
             });
 
-        // Push the user's color back to firmware so the K2's stock LCD and
-        // any other Moonraker-DB readers see the same value. Color-only —
-        // material codes are CFS-internal and we don't have a complete
-        // reverse-map. See push_slot_color_to_firmware docs for the discovered
-        // BOX_MODIFY_TN_DATA gcode syntax.
-        push_slot_color_to_firmware(slot_index, info.color_rgb);
+        // Push the user's identity back to firmware so the stock LCD, any
+        // other Moonraker-DB readers, and the wrapper's own material-DB
+        // lookups (flush temps, same-material matching) all see the same
+        // slot. Color always; material_type when a firmware-observed code
+        // for the user's pick exists. See push_slot_identity_to_firmware.
+        push_slot_identity_to_firmware(slot_index, info.material, info.brand, info.catalog_id,
+                                       info.color_rgb);
     }
 
     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
     return AmsErrorHelper::success();
 }
 
-void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color_rgb) {
+void AmsBackendCfs::push_slot_identity_to_firmware(int global_index, const std::string& material,
+                                                   const std::string& brand,
+                                                   const std::string& catalog_id,
+                                                   uint32_t color_rgb) {
     // Validate slot index BEFORE formatting the gcode — invalid args trigger
     // an unhandled TypeError in box_wrapper that Klipper escalates to
     // invoke_shutdown. Better to silently no-op than to crash the printer.
@@ -1909,16 +2009,16 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
     // responsible for only invoking this when a real color was chosen.
     constexpr int CFS_MAX_SLOTS = 16; // 4 units × 4 slots
     if (global_index < 0 || global_index >= CFS_MAX_SLOTS) {
-        spdlog::debug("{} push_slot_color_to_firmware: skipping invalid slot {}", backend_log_tag(),
-                      global_index);
+        spdlog::debug("{} push_slot_identity_to_firmware: skipping invalid slot {}",
+                      backend_log_tag(), global_index);
         return;
     }
 
     // The Fork module defines no BOX_MODIFY_TN_DATA. `_BOX_SLOT_SET` requires
     // a material; explicit clears route through clear_box_slot_profile().
     if (macro_variant_ == CfsMacroVariant::Fork) {
-        std::string material;
-        std::string brand;
+        std::string slot_material;
+        std::string slot_brand;
         std::string name;
         int spoolman_id = 0;
         {
@@ -1926,8 +2026,8 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
             for (const auto& unit : system_info_.units) {
                 for (const auto& slot : unit.slots) {
                     if (slot.global_index == global_index) {
-                        material = slot.material;
-                        brand = slot.brand;
+                        slot_material = slot.material;
+                        slot_brand = slot.brand;
                         name = slot.spool_name;
                         spoolman_id = slot.spoolman_id;
                         break;
@@ -1936,7 +2036,7 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
             }
         }
         std::string gcode =
-            slot_set_gcode(global_index, material, color_rgb, brand, name, spoolman_id);
+            slot_set_gcode(global_index, slot_material, color_rgb, slot_brand, name, spoolman_id);
         if (gcode.empty()) {
             spdlog::debug("{} slot-set skipped for slot {}", backend_log_tag(), global_index);
             return;
@@ -1947,52 +2047,119 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
 
     // A flat box we could not identify: no verified write command at all.
     if (schema_ == CfsSchema::Flat) {
-        spdlog::debug("{} push_slot_color_to_firmware: unknown flat module — local override only",
+        spdlog::debug("{} push_slot_identity_to_firmware: unknown flat module — local override "
+                      "only",
                       backend_log_tag());
         return;
     }
 
     const int unit = (global_index / 4) + 1;           // 1..4
     const char slot_letter = 'A' + (global_index % 4); // A..D
-    char data[16];
+    char color_data[16];
     // CFS color_value format observed in tn_data.json: 7 hex chars, leading
     // nibble appears to be alpha (always 0 in stock data). RGB is the trailing
     // 6 hex digits. Match the firmware's own "0RRGGBB" format exactly.
-    std::snprintf(data, sizeof(data), "0%06X", color_rgb & 0xFFFFFFu);
+    std::snprintf(color_data, sizeof(color_data), "0%06X", color_rgb & 0xFFFFFFu);
 
-    char gcode[96];
-    std::snprintf(gcode, sizeof(gcode),
-                  "BOX_MODIFY_TN_DATA ADDR=%d NUM=%c PART=color_value DATA=%s", unit, slot_letter,
-                  data);
-
-    // Self-wipe guard. Once firmware applies this write it reports the new
-    // color_value back to us, changing the RFID fingerprint that
-    // check_hardware_event_clear watches — which on its own reads exactly like
-    // a physical spool swap and erases the override the user just created.
+    // Resolve the material code to write, if any. One lock covers the lookup,
+    // the baseline read, and the expectation registration so the three stay
+    // consistent even if a status frame lands mid-call.
     //
-    // Register the fingerprint we expect to see once the write lands: the
-    // CURRENT material_type (this gcode does not touch it) paired with the
-    // color we're about to send. We deliberately do NOT overwrite the baseline
-    // outright: the gcode is queued asynchronously behind whatever else Klipper
-    // is running, so firmware keeps reporting the OLD color for an unknown
-    // number of polls first. Those polls must stay Unchanged, and only the
-    // eventual echo may consume the expectation.
-    //
-    // The expectation is single-shot and any non-matching change consumes it
-    // too, so a genuine spool swap that happens while this write is in flight
-    // is still detected and swap detection is never left permanently blinded.
-    //
-    // With no baseline yet there is nothing to build an expectation from — and
-    // none is needed: the first observation for a slot is always a baseline and
-    // never fires a clear.
+    // Lookup chain, most to least specific:
+    //   1. The catalog product the user picked (catalog_id) carries its own
+    //      5-char cfs code; replay it in the FULL form this firmware was seen
+    //      reporting for that id (the brand-prefix digit is firmware's, not
+    //      ours to guess).
+    //   2. "brand|material" observed on any slot of this printer.
+    //   3. Material family observed on any slot (incl. same_material names).
+    // Every candidate value is a code the firmware itself reported — a code
+    // the wrapper never uses could poison its material-DB lookups.
+    std::string mat_code;
+    std::string expected_material_half;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (auto base = rfid_tracker_.baseline(global_index)) {
-            const auto bar = base->find('|');
-            const std::string material = (bar == std::string::npos) ? *base : base->substr(0, bar);
-            rfid_tracker_.expect(global_index, material + "|" + data);
+        auto base = rfid_tracker_.baseline(global_index);
+        const auto bar = base ? base->find('|') : std::string::npos;
+        expected_material_half =
+            base ? ((bar == std::string::npos) ? *base : base->substr(0, bar)) : "";
+
+        if (!catalog_id.empty()) {
+            const auto snap = FilamentCatalog::load_codes_cached("cfs");
+            if (const auto* f = snap->resolve_id(catalog_id)) {
+                auto cit = f->codes.find("cfs");
+                if (cit != f->codes.end()) {
+                    auto hit = observed_material_id_codes_.find(cit->second);
+                    if (hit != observed_material_id_codes_.end())
+                        mat_code = hit->second;
+                }
+            }
+        }
+        if (mat_code.empty() && !brand.empty() && !material.empty()) {
+            auto hit = observed_material_codes_.find(brand + "|" + material);
+            if (hit != observed_material_codes_.end())
+                mat_code = hit->second;
+        }
+        if (mat_code.empty() && !material.empty()) {
+            auto hit = observed_material_type_codes_.find(material);
+            if (hit != observed_material_type_codes_.end())
+                mat_code = hit->second;
+        }
+        if (!mat_code.empty()) {
+            expected_material_half = mat_code;
+        }
+
+        // Self-wipe guard. Once firmware applies the writes it reports the new
+        // values back to us, changing the RFID fingerprint that
+        // check_hardware_event_clear watches — which on its own reads exactly
+        // like a physical spool swap and erases the override the user just
+        // created.
+        //
+        // The two PART writes are one script, but a status poll can land
+        // between their echoes and observe the intermediate composite (new
+        // material + old color). Register the SET of fingerprints the slot may
+        // transiently or finally report; each echo consumes only its own
+        // entry, so both classify as OwnWriteEcho and the override survives.
+        // We deliberately do NOT overwrite the baseline outright: the script
+        // is queued asynchronously behind whatever else Klipper is running, so
+        // firmware keeps reporting the OLD values for an unknown number of
+        // polls first. Those polls must stay Unchanged.
+        //
+        // Any non-matching change consumes every pending entry, so a genuine
+        // spool swap that happens while this write is in flight is still
+        // detected and swap detection is never left permanently blinded.
+        //
+        // With no baseline yet there is nothing to build an expectation from —
+        // and none is needed: the first observation for a slot is always a
+        // baseline and never fires a clear.
+        if (base) {
+            const std::string old_color = (bar == std::string::npos) ? "" : base->substr(bar + 1);
+            const std::string final_fp = expected_material_half + "|" + color_data;
+            const std::string intermediate_fp = expected_material_half + "|" + old_color;
+            std::vector<std::string> expected;
+            if (intermediate_fp != *base && intermediate_fp != final_fp)
+                expected.push_back(intermediate_fp);
+            if (final_fp != *base)
+                expected.push_back(final_fp);
+            if (!expected.empty())
+                rfid_tracker_.expect_any_of(global_index, std::move(expected));
         }
     }
+
+    if (!mat_code.empty()) {
+        spdlog::debug("{} pushing slot {} identity: material_type={} color={}", backend_log_tag(),
+                      global_index, mat_code, color_data);
+    } else {
+        spdlog::debug("{} pushing slot {} color only (no firmware-observed code for '{}{}')",
+                      backend_log_tag(), global_index, brand.empty() ? "" : brand + "|", material);
+    }
+
+    std::string gcode;
+    if (!mat_code.empty()) {
+        gcode += "BOX_MODIFY_TN_DATA ADDR=" + std::to_string(unit) + " NUM=" + slot_letter +
+                 " PART=material_type DATA=" + mat_code + "\n";
+    }
+    gcode += "BOX_MODIFY_TN_DATA ADDR=" + std::to_string(unit) + " NUM=" + slot_letter +
+             " PART=color_value DATA=" + color_data;
 
     auto err = execute_gcode(gcode);
     if (err.result != AmsResult::SUCCESS) {
@@ -2005,7 +2172,7 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
             std::lock_guard<std::mutex> lock(mutex_);
             rfid_tracker_.forget_expected(global_index);
         }
-        spdlog::warn("{} push_slot_color_to_firmware: gcode dispatch failed for slot {}: {}",
+        spdlog::warn("{} push_slot_identity_to_firmware: gcode dispatch failed for slot {}: {}",
                      backend_log_tag(), global_index, err.technical_msg);
         return;
     }
@@ -2474,12 +2641,19 @@ std::string AmsBackendCfs::unload_gcode(CfsMacroVariant variant) {
         return "BOX_UNLOAD";
     }
     if (variant == CfsMacroVariant::K1) {
-        // K1: mirror the firmware BOX_QUIT_MATERIAL step list:
-        //   ERROR_CLEAR → CHECK_MATERIAL → CUT → RETRUDE → safe park.
-        // BOX_CUT_MATERIAL handles the cut; BOX_RETRUDE_MATERIAL is the no-TNN
-        // retract primitive (operates on the currently-loaded slot tracked by
-        // the box driver) — same one BOX_QUIT_MATERIAL uses in box.cfg. Nozzle
-        // is empty after the cut+retract, so no wipe. Homing handled upstream.
+        // K1: the step list follows the firmware's BOX_QUIT_MATERIAL chain
+        // (ERROR_CLEAR → CHECK_MATERIAL → CUT → RETRUDE), but the tail is NOT
+        // a literal mirror: the firmware macro parks at
+        // BOX_GO_TO_BOX_EXTRUDE_POS and has BOX_MOVE_TO_SAFE_POS commented
+        // out, while our shared envelope parks via BOX_MOVE_TO_SAFE_POS.
+        // Deliberate divergence, tracked in #1278 — changing toolhead motion
+        // on K1 hardware nobody on the project owns is the failure class that
+        // opened #968, so the park stays as-is until a K1+CFS owner validates
+        // otherwise. BOX_CUT_MATERIAL handles the cut;
+        // BOX_RETRUDE_MATERIAL is the no-TNN retract primitive (operates on
+        // the currently-loaded slot tracked by the box driver) — same one
+        // BOX_QUIT_MATERIAL uses in box.cfg. Nozzle is empty after the
+        // cut+retract, so no wipe. Homing handled upstream.
         return wrap_with_envelope_k1("BOX_CUT_MATERIAL\n"
                                      "BOX_RETRUDE_MATERIAL");
     }
@@ -3255,11 +3429,12 @@ bool AmsBackendCfs::check_hardware_event_clear(SlotInfo& slot, int slot_index,
         return false;
 
     case helix::ams::FingerprintEvent::OwnWriteEcho:
-        // Firmware just handed back the color_value we wrote in
-        // push_slot_color_to_firmware. The physical spool never moved, so the
-        // user's override stands. The baseline has already advanced to the
-        // echoed value, so the NEXT genuine swap is detected against it.
-        spdlog::debug("{} Slot {} RFID fingerprint {} -> {} matches our own color push — "
+        // Firmware just handed back a value we wrote in
+        // push_slot_identity_to_firmware (material_type and/or color_value).
+        // The physical spool never moved, so the user's override stands. The
+        // baseline has already advanced to the echoed value, so the NEXT
+        // genuine swap is detected against it.
+        spdlog::debug("{} Slot {} RFID fingerprint {} -> {} matches our own identity push — "
                       "override retained",
                       backend_log_tag(), slot_index, old_uid, observed_uid);
         return false;

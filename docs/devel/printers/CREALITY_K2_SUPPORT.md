@@ -441,7 +441,7 @@ Remaining gaps, degraded rather than broken:
 | `set_tool_mapping` via TNN + `box.map` | No equivalent — the module maps tools to slots 1:1 |
 | Bypass / external spool load | **Implemented.** The `external: true` entry is observable and `T<external>` is a registered command (verified from the port's own `box.py` — re-fetched 2026-08-17, sha256 `a5b4d19e…9eeb6f23`, 2892 lines, `API_VERSION = 1`): the change engine runs the same attended flow for the holder as for a bay (heat → wastebin → wait `EXTERNAL_WAIT = 30 s` for insertion → feed 30 mm → flush), `BOX_UNLOAD`'s external branch ejects it, and mid-print `T<external>` pauses for attended loading. `supports_bypass` turns on for the Fork dialect when the payload carries the entry; `loaded_slot` naming it maps to the -2 sentinel. The entry is still skipped when building `unit.slots`, so it never renders as a fifth bay. See `FILAMENT_MANAGEMENT.md` § "CFS" |
 
-Note `push_slot_color_to_firmware` is **not** a gap: its Fork counterpart is `_BOX_SLOT_SET`, which writes color, brand, name, and Spoolman link together. Because it requires a material, the backend reads the current slot profile to build the write. The explicit Clear Spool action emits `_BOX_SLOT_CLEAR`.
+Note `push_slot_identity_to_firmware` is **not** a gap: its Fork counterpart is `_BOX_SLOT_SET`, which writes color, brand, name, and Spoolman link together. Because it requires a material, the backend reads the current slot profile to build the write. The explicit Clear Spool action emits `_BOX_SLOT_CLEAR`.
 
 Parse: `AmsBackendCfs::parse_flat_box_status()`. Builders: `load_gcode` / `unload_gcode` / `swap_gcode` / `slot_set_gcode`. Tests: `tests/unit/test_ams_cfs_flat_schema.cpp` (`[flat]`, `[fork]`), built on the real QJKZEMTS payload.
 

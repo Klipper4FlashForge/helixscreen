@@ -25,6 +25,7 @@ overlap, which is why the conclusions below are worth acting on.
 | **A** | Creality OTA `CR4CU220812S11_ota_img_V2.3.5.34.img` | The shipped rootfs. Extracted and symbol-grepped here; identity confirmed from `/etc/ota_info` (`ota_version=2.3.5.34`, `ota_board_name=CR4CU220812S11`, built 2025-06-12). Ships 11 per-model `box.cfg` files. | **Highest** — the artifact itself |
 | **B** | [FrederickAlt/CREALITY-K1-AND-K1-MAX-CFS-RETRUDE-BEFORE-CUT-MOD](https://github.com/FrederickAlt/CREALITY-K1-AND-K1-MAX-CFS-RETRUDE-BEFORE-CUT-MOD) `docs/` | ~230 KB of behavioral documentation from decompiling the Cythonized module back to `box_wrapper.py`, written explicitly for independent-wrapper authors. Surfaced by @NilsOF on #968 (2026-08-15). | **High** — decompilation, author disclaims correctness |
 | **C** | #968 reporter's own `box.cfg` + console tests on a live K1C v2.3.5.33+ | Field observation on real hardware. | **High for what it covers**, narrow |
+| **D** | @NilsOF's K1C v2.3.5.34 userdata dumps (posted on #968, 2026-08-16): populated `tn_data.json`, `material_box_info.json`, `material_modify_info.json`, `material_option.json` | Live box userdata from a second real K1C, with identified spools | **High** — the actual persisted values |
 
 Source B has since been **checked against A on every command claim in this document and found
 accurate** — including the parameter lists, the `tn_data.json` field names (`vender`
@@ -394,20 +395,36 @@ the **same spellings as the JSON fields**, which our existing color sync already
 BOX_MODIFY_TN_DATA ADDR=<1..4> NUM=<A|B|C|D> PART=material_type DATA=<value>
 ```
 
-Caveats before wiring it:
+The value domain is now known [D]: a **6-char code = one brand-prefix digit + the 5-char
+catalog id** from our own `cfs` scheme in `assets/filaments.json`. NilsOF's populated
+`tn_data.json` carries `000001` on the PLA slot and `000003` on the PETG slots (ids `00001` /
+`00003`), cross-confirmed twice in the same dump: `same_material` groups name the fourth
+element (`["000003", "01b04ae", ["T1B"], "PETG"]`), and `rackMaterial.filamentId "000003"`
+sits beside `materialType "PETG"`. The K2 form `"101001"` (Creality Hyper PLA) is the same
+construction with prefix `1`. The stock LCD itself writes `filamentId` + color on user slot
+edits (`material_modify_info.json`, `editStatus`), so the write path is one Creality's own UI
+exercises.
+
+**Shipped** (K1 + K2, #968): `push_slot_identity_to_firmware` writes color always and
+material_type when a code for the user's pick is in the **firmware-observed vocabulary**
+harvested from box status (`observed_material_*_` in `AmsBackendCfs`) — catalog product id,
+then `brand|type`, then type. Codes are never synthesized: a value the firmware never
+reported could poison the wrapper's material-DB lookups (flush temps, same-material matching)
+and the stock LCD display. The two PART writes go out as one script, and because a status
+poll can land between their echoes, the self-wipe expectation is a *set*
+(`SlotFingerprintTracker::expect_any_of`: intermediate composite + final pair).
+
+Remaining caveats:
 
 - **`vender` is misspelled** in both the JSON and the `PART` argument. Preserve it exactly.
-- The **value format** for `material_type` is still unknown. The field name is confirmed [A],
-  but B calls the value only a "material type identifier" used for same-material grouping and
-  material-database lookups, without giving the domain. The extension contains **no
-  material-name strings at all** — no `PLA`, `PETG`, `ABS` anywhere in the blob — which points
-  at a numeric code resolved against an external table, consistent with the `cfs` scheme in
-  `assets/filament_catalog.json`. Suggestive, not proof. Read a populated `tn_data.json` from
-  a live CFS before writing one.
 - Writes are **not atomic** — the file is rewritten in place, not swapped through a temp file.
   Do not edit it while the wrapper is running. [B]
 - Never write a **partial** `tnn_map`: restore expects all 16 keys when the object is
   non-empty, and a partial map can fail restore. [B]
+- A user-labeled **untagged** bay now carries a non-sentinel `material_type`, so it no longer
+  qualifies for the untagged `remain_len` presence fallback (#1077). Bounded: the same edit
+  staged an override, and `apply_overrides` promotes the bay back to AVAILABLE. See the
+  presence rule in `parse_box_status`.
 
 ---
 
@@ -551,7 +568,7 @@ and the grep must not assume a naming prefix.
 
 | Question | Why it's open | What would settle it |
 |----------|--------------|---------------------|
-| `material_type` value domain | Field name confirmed [A], but the extension carries **no material-name strings** (no `PLA`/`PETG`/…), consistent with a numeric code resolved against an external table — matching our `cfs` scheme in `assets/filament_catalog.json`. Not proven. | Read `tn_data.json` from a live CFS with identified spools |
+| `material_type` value domain | **Settled [D]**: 6-char code = brand-prefix digit + 5-char catalog id (`000001` Generic PLA, `000003` Generic PETG on a live K1C; K2 `101001` = Creality `01001`). Matches the `cfs` scheme in `assets/filaments.json`. Writeback shipped — see "What this settles for material-type writeback". | Echo confirmation on a write (`BOX_MODIFY_TN_DATA PART=material_type` echoed back in box status) |
 | Does K2's module read `Tnn_map` the same way? | This page is K1-only. The K1 answer is now settled (it does, via `T*`), but K2 ships a different module generation. | Symbol-grep the K2 `.so`, or a live K2 remap test |
 | Should swaps use `BOX_MATERIAL_CHANGE_FLUSH`? | Command and params verified present [A]; the trade is purge length + a new blockage failure mode vs. colour bleed | K1 + CFS hardware |
 | `#1278` motion-sequence divergences | Deliberately unresolved — changing them blind risks the belt-skip / chute-collision class already reported | K1 + CFS hardware |
