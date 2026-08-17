@@ -16,7 +16,7 @@
 
 #include "../catch_amalgamated.hpp"
 
-TEST_CASE("ams keep_spool_info_on_eject setting", "[settings][ams]") {
+TEST_CASE_METHOD(LVGLTestFixture, "ams keep_spool_info_on_eject setting", "[settings][ams]") {
     helix::Config* config = helix::Config::get_instance();
     auto& settings = helix::SettingsManager::instance();
     settings.init_subjects();
