@@ -1212,6 +1212,7 @@ translations:
   Keep Navigation Bar: 保留导航栏
   Keep Printing: 继续打印
   Keep Required: 保持必需
+  Keep Spool Info on Eject: ''
   Keep the bypass spool visible when bypass is off: 旁路关闭时保持料盘可见
   Kick away: '拨除废料'
   Kinematics: 运动学
@@ -1940,6 +1941,7 @@ translations:
   Remap Tool: 重映射工具
   Remap needs the HelixPrint plugin: 重新映射需要 HelixPrint 插件
   Remap…: 重新映射……
+  Remember lane spool details across an eject: ''
   Remove: 移除
   Remove PIN: 移除 PIN
   Remove Spoolman?: 移除 Spoolman？

@@ -1338,6 +1338,7 @@ translations:
   Keep Navigation Bar: Mantieni barra di navigazione
   Keep Printing: Continua a stampare
   Keep Required: Mantieni obbligatorio
+  Keep Spool Info on Eject: ''
   Keep the bypass spool visible when bypass is off: Mantieni visibile la bobina di bypass quando il bypass è disabilitato
   Kick away: 'Espelli'
   Kinematics: Cinematica
@@ -2124,6 +2125,7 @@ translations:
   Remap Tool: Rimappa strumento
   Remap needs the HelixPrint plugin: La rimappatura richiede il plugin HelixPrint
   Remap…: Rimappa…
+  Remember lane spool details across an eject: ''
   Remove: Rimuovi
   Remove PIN: Rimuovi PIN
   Remove Spoolman?: Rimuovere Spoolman?
