@@ -301,12 +301,14 @@
   <translation tag="Button taps and navigation sounds" en="Button taps and navigation sounds"/>
   <translation tag="Buzz Servo" en="Buzz Servo"/>
   <translation tag="Bypass" en="Bypass"/>
+  <translation tag="Bypass Is Active" en="Bypass Is Active"/>
   <translation tag="Bypass Mode" en="Bypass Mode"/>
   <translation tag="Bypass controlled by hardware sensor" en="Bypass controlled by hardware sensor"/>
   <translation tag="Bypass controlled by sensor" en="Bypass controlled by sensor"/>
   <translation tag="Bypass disabled" en="Bypass disabled"/>
   <translation tag="Bypass enabled" en="Bypass enabled"/>
   <translation tag="Bypass failed" en="Bypass failed"/>
+  <translation tag="Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?" en="Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?"/>
   <translation tag="Bypass toggle failed" en="Bypass toggle failed"/>
   <translation tag="C" en="C"/>
   <translation tag="CALIBRATION" en="CALIBRATION"/>
@@ -932,6 +934,7 @@
   <translation tag="Filament" en="Filament"/>
   <translation tag="Filament Detected" en="Filament Detected"/>
   <translation tag="Filament Environment" en="Filament Environment"/>
+  <translation tag="Filament In The Toolhead" en="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" en="Filament Mapping"/>
   <translation tag="Filament Runout" en="Filament Runout"/>
   <translation tag="Filament Sensor" en="Filament Sensor"/>
@@ -2363,6 +2366,7 @@
   <translation tag="The printer rejected the filament configuration. The print was not started." en="The printer rejected the filament configuration. The print was not started."/>
   <translation tag="The printer&apos;s firmware chooses the backup spool itself" en="The printer&apos;s firmware chooses the backup spool itself"/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" en="The runout sensor indicates no filament is loaded. Start print anyway?"/>
+  <translation tag="The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?" en="The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" en="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?"/>
   <translation tag="The toolhead sensor indicates no filament is present. Proceed with unload anyway?" en="The toolhead sensor indicates no filament is present. Proceed with unload anyway?"/>
   <translation tag="Theme" en="Theme"/>

@@ -323,12 +323,15 @@ translations:
   Button taps and navigation sounds: Button taps and navigation sounds
   Buzz Servo: Buzz Servo
   Bypass: Bypass
+  Bypass Is Active: Bypass Is Active
   Bypass Mode: Bypass Mode
   Bypass controlled by hardware sensor: Bypass controlled by hardware sensor
   Bypass controlled by sensor: Bypass controlled by sensor
   Bypass disabled: Bypass disabled
   Bypass enabled: Bypass enabled
   Bypass failed: Bypass failed
+  ? Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?
+  : Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?
   Bypass toggle failed: Bypass toggle failed
   C: C
   CALIBRATION: CALIBRATION
@@ -1011,6 +1014,7 @@ translations:
   Filament: Filament
   Filament Detected: Filament Detected
   Filament Environment: Filament Environment
+  Filament In The Toolhead: Filament In The Toolhead
   Filament Mapping: Filament Mapping
   Filament Runout: Filament Runout
   Filament Sensor: Filament Sensor
@@ -2607,6 +2611,7 @@ translations:
   The printer's firmware chooses the backup spool itself: The printer's firmware chooses the backup spool itself
   The runout sensor indicates no filament is loaded. Start print anyway?: The runout
     sensor indicates no filament is loaded. Start print anyway?
+  The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?: The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: The
     toolhead sensor indicates filament is already loaded. Proceed with load anyway?
   The toolhead sensor indicates no filament is present. Proceed with unload anyway?: The

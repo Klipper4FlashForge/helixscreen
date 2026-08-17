@@ -301,12 +301,14 @@
   <translation tag="Button taps and navigation sounds" ja="ボタンタップとナビゲーション音"/>
   <translation tag="Buzz Servo" ja="サーボを小刻みに動かす"/>
   <translation tag="Bypass" ja="バイパス"/>
+  <translation tag="Bypass Is Active"/>
   <translation tag="Bypass Mode" ja="バイパスモード"/>
   <translation tag="Bypass controlled by hardware sensor" ja="ハードウェアセンサーによるバイパス制御"/>
   <translation tag="Bypass controlled by sensor" ja="バイパスはセンサーで制御中"/>
   <translation tag="Bypass disabled" ja="バイパス無効"/>
   <translation tag="Bypass enabled" ja="バイパス有効"/>
   <translation tag="Bypass failed" ja="バイパスに失敗しました"/>
+  <translation tag="Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?"/>
   <translation tag="Bypass toggle failed" ja="バイパス切替に失敗しました"/>
   <translation tag="C" ja="C"/>
   <translation tag="CALIBRATION" ja="キャリブレーション"/>
@@ -932,6 +934,7 @@
   <translation tag="Filament" ja="フィラメント"/>
   <translation tag="Filament Detected" ja="フィラメント検出"/>
   <translation tag="Filament Environment" ja="フィラメント環境"/>
+  <translation tag="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" ja="フィラメントマッピング"/>
   <translation tag="Filament Runout" ja="フィラメント切れ"/>
   <translation tag="Filament Sensor" ja="フィラメントセンサー"/>
@@ -2363,6 +2366,7 @@
   <translation tag="The printer rejected the filament configuration. The print was not started." ja="プリンターがフィラメント設定を拒否しました。印刷は開始されませんでした。"/>
   <translation tag="The printer&apos;s firmware chooses the backup spool itself" ja="バックアップスプールはプリンターのファームウェアが選びます"/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" ja="フィラメント切れセンサーがフィラメント未装填を検出しました。それでも印刷を開始しますか？"/>
+  <translation tag="The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" ja="ツールヘッドセンサーがフィラメント装填済みを検出しました。それでも装填を続行しますか？"/>
   <translation tag="The toolhead sensor indicates no filament is present. Proceed with unload anyway?" ja="ツールヘッドセンサーがフィラメント未検出を報告しました。それでもアンロードを続行しますか？"/>
   <translation tag="Theme" ja="テーマ"/>

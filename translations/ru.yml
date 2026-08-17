@@ -330,12 +330,15 @@ translations:
   Button taps and navigation sounds: Звуки нажатий и навигации
   Buzz Servo: 'Дёрнуть сервопривод'
   Bypass: Обход
+  Bypass Is Active: ''
   Bypass Mode: Режим обхода
   Bypass controlled by hardware sensor: Обход управляется аппаратным датчиком
   Bypass controlled by sensor: Байпас управляется датчиком
   Bypass disabled: Байпас отключён
   Bypass enabled: Байпас включён
   Bypass failed: Ошибка байпаса
+  ? Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?
+  : ''
   Bypass toggle failed: Не удалось переключить байпас
   C: К
   CALIBRATION: КАЛИБРОВКА
@@ -1032,6 +1035,7 @@ translations:
   Filament: Филамент
   Filament Detected: Филамент обнаружен
   Filament Environment: Среда хранения филамента
+  Filament In The Toolhead: ''
   Filament Mapping: Назначение филамента
   Filament Runout: Окончание филамента
   Filament Sensor: Датчик филамента
@@ -2642,6 +2646,7 @@ translations:
   The printer's firmware chooses the backup spool itself: Прошивка принтера сама выбирает резервную катушку
   The runout sensor indicates no filament is loaded. Start print anyway?: Датчик окончания
     филамента показывает, что филамент не загружен. Всё равно начать печать?
+  The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?: ''
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: Датчик
     печатающей головки показывает, что филамент уже загружен. Всё равно продолжить
     загрузку?

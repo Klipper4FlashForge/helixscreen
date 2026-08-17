@@ -301,12 +301,14 @@
   <translation tag="Button taps and navigation sounds" ru="Звуки нажатий и навигации"/>
   <translation tag="Buzz Servo" ru="Дёрнуть сервопривод"/>
   <translation tag="Bypass" ru="Обход"/>
+  <translation tag="Bypass Is Active"/>
   <translation tag="Bypass Mode" ru="Режим обхода"/>
   <translation tag="Bypass controlled by hardware sensor" ru="Обход управляется аппаратным датчиком"/>
   <translation tag="Bypass controlled by sensor" ru="Байпас управляется датчиком"/>
   <translation tag="Bypass disabled" ru="Байпас отключён"/>
   <translation tag="Bypass enabled" ru="Байпас включён"/>
   <translation tag="Bypass failed" ru="Ошибка байпаса"/>
+  <translation tag="Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?"/>
   <translation tag="Bypass toggle failed" ru="Не удалось переключить байпас"/>
   <translation tag="C" ru="К"/>
   <translation tag="CALIBRATION" ru="КАЛИБРОВКА"/>
@@ -932,6 +934,7 @@
   <translation tag="Filament" ru="Филамент"/>
   <translation tag="Filament Detected" ru="Филамент обнаружен"/>
   <translation tag="Filament Environment" ru="Среда хранения филамента"/>
+  <translation tag="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" ru="Назначение филамента"/>
   <translation tag="Filament Runout" ru="Окончание филамента"/>
   <translation tag="Filament Sensor" ru="Датчик филамента"/>
@@ -2363,6 +2366,7 @@
   <translation tag="The printer rejected the filament configuration. The print was not started." ru="Принтер отклонил конфигурацию филамента. Печать не была запущена."/>
   <translation tag="The printer&apos;s firmware chooses the backup spool itself" ru="Прошивка принтера сама выбирает резервную катушку"/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" ru="Датчик окончания филамента показывает, что филамент не загружен. Всё равно начать печать?"/>
+  <translation tag="The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" ru="Датчик печатающей головки показывает, что филамент уже загружен. Всё равно продолжить загрузку?"/>
   <translation tag="The toolhead sensor indicates no filament is present. Proceed with unload anyway?" ru="Датчик печатающей головки показывает, что филамент отсутствует. Всё равно продолжить выгрузку?"/>
   <translation tag="Theme" ru="Тема"/>

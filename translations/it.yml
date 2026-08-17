@@ -336,12 +336,15 @@ translations:
   Button taps and navigation sounds: Suoni pulsanti e navigazione
   Buzz Servo: 'Fai vibrare il servo'
   Bypass: Bypass
+  Bypass Is Active: ''
   Bypass Mode: Modalità bypass
   Bypass controlled by hardware sensor: Bypass controllato da sensore hardware
   Bypass controlled by sensor: Bypass controllato dal sensore
   Bypass disabled: Bypass disabilitato
   Bypass enabled: Bypass abilitato
   Bypass failed: Bypass fallito
+  ? Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?
+  : ''
   Bypass toggle failed: Cambio bypass fallito
   C: C
   CALIBRATION: CALIBRAZIONE
@@ -1044,6 +1047,7 @@ translations:
   Filament: Filamento
   Filament Detected: Filamento rilevato
   Filament Environment: Ambiente filamento
+  Filament In The Toolhead: ''
   Filament Mapping: Mappatura filamento
   Filament Runout: Esaurimento filamento
   Filament Sensor: Sensore filamento
@@ -2673,6 +2677,7 @@ translations:
   The printer's firmware chooses the backup spool itself: Il firmware della stampante sceglie la bobina di riserva
   The runout sensor indicates no filament is loaded. Start print anyway?: Il sensore
     di esaurimento indica che nessun filamento è caricato. Avviare comunque la stampa?
+  The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?: ''
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: Il
     sensore della testina indica che il filamento è già caricato. Procedere comunque
     con il caricamento?

@@ -65,6 +65,7 @@ HelixScreen uses a backend abstraction layer to support multiple multi-filament 
 | `include/tool_state.h` | Tool abstraction: `ToolInfo`, `ToolState` singleton, tool-backend mapping |
 | `include/printer_temperature_state.h` | `ExtruderInfo` struct, multi-extruder dynamic subjects |
 | `include/preflight_validator.h` | Pre-print tool-vs-slot validation; takes bypass as a required input ([§ Bypass suppresses the pre-print filament gates](#bypass-suppresses-the-pre-print-filament-gates)) |
+| `include/print_start_checks.h` | Print-start gate pipeline pure core (context, rules, ordered gate list) |
 | `include/ui_ams_context_menu.h` | Slot context menu (load, unload, edit, spoolman) |
 | `include/ui_ams_device_operations_overlay.h` | Device operations overlay (home, recover, bypass, etc.) |
 
@@ -3521,6 +3522,40 @@ fails with the backend's `not_supported`.
 > run, guard `enable_bypass()` with `bypass_available_for(system_info_.supports_bypass)` rather
 > than `system_info_.supports_bypass` directly - that is what AFC, Happy Hare and the mock do.
 > A hardcoded `not_supported` is the correct answer only when no command exists at all.
+
+**Where the at-tap chain lives now.** The dialog half of the table above is the print-start
+gate pipeline: `PrintStartController::run_gates_from()` iterates
+`default_print_start_gates()` (`include/print_start_checks.h`) — six pure gates over a single
+`gather_print_start_context()` snapshot, in order:
+
+1. `insufficient_spool_weight` — spoolman remaining weight vs. the file's need
+2. `bypass_engaged_lane_print` — bypass engaged **and** the file uses more than one color;
+   a single-color bypass print is the legitimate bypass use and stays silent
+3. `unaccounted_toolhead_filament` — filament in the toolhead that no lane accounts for
+4. `required_filament_present` — the empty-lane / runout dialog (at-tap sibling of the
+   pre-flight block above)
+5. `unresolved_tools` — the color-mismatch dialog above
+6. `material_compatibility` — file material vs. loaded spool
+
+The two bypass suppressions this section describes are entries in that list: gate 4
+(`required_filament_present`) and gate 5 (`unresolved_tools`, whose `unresolved_tools_in()`
+keeps the `ctx.any_bypass_active` early-out). A gate that warns shows one dialog, and "Start
+Anyway" resumes at the next entry — the old proceed-callback chain, flattened.
+
+Gate 2 is the multi-color bypass case the old chain never covered: firmware (AFC's
+`_check_bypass`, verified) refuses a lane load while bypass filament sits in the toolhead,
+so a multi-color file with bypass engaged gets the "Bypass Is Active" warning instead of a
+firmware error mid-print.
+
+Gate 3 asks every backend the `toolhead_filament_unaccounted()` capability question. The
+`AmsBackend` default returns `nullopt` — cannot determine — and the gate stays silent rather
+than guess. AFC, Happy Hare, CFS, and AD5X IFS override it with verified signals; the AD5X
+override trusts the extruder switch pair (`head_switch_seen_` / `head_switch_present_`) and
+never `head_filament_` alone, which is conflated with the motion sensor and reads false on a
+loaded-but-idle lane (see the warning in `include/ams_backend_ad5x_ifs.h`). With no bypass
+engaged, any backend answering `true` produces the "Filament In The Toolhead" warning —
+pull the stray filament or confirm to start anyway. Drive the scenario against the mock
+with `HELIX_MOCK_AMS_STATE=unaccounted` under `--test`.
 
 ### Dynamic Actions (backend-specific)
 
