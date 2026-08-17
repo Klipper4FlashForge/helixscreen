@@ -3,7 +3,7 @@
 HelixScreen builds with a pure GNU Makefile — no CMake, no Ninja — split across a top-level `Makefile`
 and seventeen `mk/*.mk` modules. One `PLATFORM_TARGET` variable selects everything about a build: the
 cross-toolchain, the display backend, per-device asset and feature gates, and the output directory
-(`build/bin/helix-screen` natively, `build-<target>/bin/` for cross builds). The same source tree produces a desktop SDL app, a static musl
+(`build/bin/helix-screen` natively, `build/<target>/bin/` for cross builds). The same source tree produces a desktop SDL app, a static musl
 binary for a MIPS Creality K1, and a DRM+GLES build for a Raspberry Pi; at runtime each binary
 auto-detects its display (DRM, then fbdev, then SDL), which is why one Pi build also covers QIDI and
 one armhf build covers the Sonic Pad. This chapter is the map and the matrix; `BUILD_SYSTEM.md` is the
@@ -14,7 +14,7 @@ flowchart TB
     subgraph hosts["Where the build runs"]
         DEV["Dev workstation<br/>PLATFORM_TARGET=native (SDL)"]
         DOCKER["Per-target Docker images<br/>pi-docker, ad5m-docker, k2-docker, ..."]
-        REMOTE["Build host<br/>remote-build / pi-test"]
+        REMOTE["Build host<br/>remote-pi / pi-test"]
     end
 
     subgraph mk["Makefile + mk/*.mk"]
@@ -24,7 +24,7 @@ flowchart TB
         TESTS["mk/tests.mk<br/>helix-tests + Catch2 shards"]
     end
 
-    BIN["build-TARGET/bin/helix-screen<br/>DRM / fbdev / SDL auto-detect at runtime"]
+    BIN["build/TARGET/bin/helix-screen<br/>DRM / fbdev / SDL auto-detect at runtime"]
     TESTBIN["build/bin/helix-tests"]
     DEPLOY["deploy-pi / deploy-ad5m / deploy-cc1 / ..."]
     DEVICES["Ships on: K1 series, K2, AD5M, AD5X, CC1,<br/>Snapmaker U1, Pi, QIDI Q2/Max 4, Sonic Pad,<br/>x86 SBCs; Yocto recipe; Android APK"]
@@ -87,7 +87,7 @@ Two guards in `mk/rules.mk` make bare `make` safe. A two-phase `all` (`mk/rules.
 itself with bounded `-j$(NPROC)` when it detects unlimited `-j`, so parallelism never crushes the
 machine. And a `build/.build-target` marker auto-cleans when the architecture changes
 (`mk/rules.mk:49`), so you cannot mix ARM and x86 objects in the one shared native `build/` dir —
-cross builds are already isolated (`build-pi/`, `build-ad5m/`, ... via `BUILD_SUBDIR`,
+cross builds are already isolated (`build/pi/`, `build/ad5m/`, ... via `BUILD_SUBDIR`,
 `mk/cross.mk:704`). `make help` prints the target menu; `make help-all` adds the test, cross, and
 remote groups.
 
@@ -150,7 +150,9 @@ those symlinks, plus the typical create / iterate / merge / tear-down workflow. 
 anything bigger than a one-file fix gets a worktree — parallel sessions each get their own branch,
 build dir, and ccache view instead of fighting over one `build/`. Deployment is per-device make targets: `deploy-pi` / `deploy-ad5m` / `deploy-cc1` /
 `deploy-k1` / `deploy-k2` / `deploy-snapmaker-u1` (plus `-fg` foreground and `-bin` binaries-only
-variants), with `pi-test` doing the full build-on-host + deploy + run cycle; Docker wrappers
+variants), with `pi-test` doing the full build + deploy + run cycle and `remote-pi` /
+`remote-native` (`mk/remote.mk`) building on a fast remote host and fetching the binaries back;
+Docker wrappers
 (`pi-docker`, `ad5m-docker`, ...) remove the local-toolchain requirement. Beyond the Makefile three
 packaging pipelines exist: a Yocto recipe in OpenCentauri COSMOS (`YOCTO_BUILD.md`), an Android build
 whose CI job attaches signed APKs and an AAB to every release (`ANDROID_PLAY_STORE.md`), and the
@@ -160,7 +162,7 @@ end-user installer — modular POSIX shell with KIAUH and Moonraker-updater inte
 ## Patterns & gotchas
 
 - **`make -j` and `make test` build different binaries.** Decide which one you are about to run and build exactly that; "works in the app, fails in tests" after skipping a rebuild is a stale-artifact artifact, not a bug.
-- **Switching `PLATFORM_TARGET` auto-cleans the native build dir** (`mk/rules.mk:49`). Don't be surprised by a full rebuild after toggling between `native` and a cross target; cross targets are isolated in `build-<target>/` and unaffected.
+- **Switching `PLATFORM_TARGET` auto-cleans the native build dir** (`mk/rules.mk:49`). Don't be surprised by a full rebuild after toggling between `native` and a cross target; cross targets are isolated in `build/<target>/` and unaffected.
 - **Remote control and dev panels are native-only by default.** A device build has no helixctl server; force it for a dev image with `make PLATFORM_TARGET=pi ENABLE_REMOTE_CONTROL=yes` (`Makefile:463`).
 - **A new patch file must be wired into `mk/patches.mk`** — an apply block plus, if it touches new files, an entry in `LVGL_PATCHED_FILES`/`LIBHV_PATCHED_FILES`. The stamp's wiring check fails the build if you forget, which is the polite outcome; before that check existed, unwired patches silently never applied.
 - **Test builds reach the patch stamp only through the PCH prerequisite** (`mk/rules.mk:208`); the `test` target does not itself gate on `apply-patches`. After a patch red-line or submodule bump, run `make -j` or `make reapply-patches` — don't assume `make test-run` re-verified the tree (#1212).
