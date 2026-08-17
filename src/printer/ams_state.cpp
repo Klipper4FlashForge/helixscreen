@@ -2636,36 +2636,6 @@ void AmsState::set_current_loaded_defaults() {
     }
 }
 
-void AmsState::sync_active_spool_after_edit(int slot_index, int spoolman_id) {
-    if (!api_ || spoolman_id <= 0)
-        return;
-
-    int current_slot = lv_subject_get_int(&current_slot_);
-    if (slot_index != current_slot)
-        return;
-
-    // Skip direct Spoolman API call when the backend manages active spool
-    // natively (e.g., AFC sends SET_SPOOL_ID gcode which triggers AFC to call
-    // spoolman_set_active_spool on its own). Calling Spoolman directly here
-    // would bypass AFC, causing the Spoolman widget to update but not AFC's
-    // internal state (issue #644).
-    AmsBackend* backend = get_backend();
-    if (backend && backend->manages_active_spool()) {
-        spdlog::debug("[AmsState] Skipping direct Spoolman sync for slot {} — backend manages "
-                      "active spool natively",
-                      slot_index);
-        return;
-    }
-
-    spdlog::info("[AmsState] Edited slot {} is loaded, syncing active Spoolman spool to {}",
-                 slot_index, spoolman_id);
-    api_->spoolman().set_active_spool(
-        spoolman_id, []() {},
-        [](const MoonrakerError& err) {
-            spdlog::warn("[AmsState] Failed to set active spool: {}", err.message);
-        });
-}
-
 void AmsState::sync_current_loaded_from_backend() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
 
@@ -2992,4 +2962,81 @@ void AmsState::clear_external_spool_info() {
         lv_subject_set_int(&external_spool_color_, 1);
     }
     lv_subject_set_int(&external_spool_color_, 0);
+}
+
+// ============================================================================
+// Slot edit commit (single authority for spool assignment changes)
+// ============================================================================
+
+AmsError AmsState::commit_slot_edit(int slot_index, const SlotInfo& original,
+                                    const SlotInfo& info) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    AmsBackend* backend = get_backend();
+    if (!backend) {
+        return AmsError(AmsResult::NO_AMS_DETECTED, "no AMS backend",
+                        lv_tr("Multi-Filament System not available"));
+    }
+
+    // S1 — server-side active spool (fire-and-forget, warn on failure)
+    if (api_) {
+        if (info.spoolman_id > 0) {
+            api_->spoolman().set_active_spool(
+                info.spoolman_id, []() {},
+                [](const MoonrakerError& err) {
+                    spdlog::warn("[AmsState] Failed to set active spool: {}", err.message);
+                });
+        } else if (original.spoolman_id > 0) {
+            api_->spoolman().set_active_spool(
+                0, []() {},
+                [](const MoonrakerError& err) {
+                    spdlog::warn("[AmsState] Failed to clear active spool: {}", err.message);
+                });
+        }
+    }
+
+    // S6 — stale identity otherwise survives until a server 404
+    if (original.spoolman_id > 0 && original.spoolman_id != info.spoolman_id) {
+        SpoolmanManager::invalidate_identity(original.spoolman_id);
+    }
+
+    // S3 — backend slot info + firmware gcode
+    AmsError err = backend->set_slot_info(slot_index, info);
+    if (!err.success()) {
+        return err;
+    }
+
+    // S4 + S7
+    sync_from_backend();
+    return err;
+}
+
+void AmsState::commit_external_spool_edit(const SlotInfo& info) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+
+    // S1 — match the server active spool to what we are committing
+    if (api_) {
+        if (info.spoolman_id > 0) {
+            api_->spoolman().set_active_spool(
+                info.spoolman_id, []() {},
+                [](const MoonrakerError& err) {
+                    spdlog::warn("[AmsState] Failed to set active spool: {}", err.message);
+                });
+        } else if (get_external_spool_info().value_or(SlotInfo{}).spoolman_id > 0) {
+            // Committing a manual entry (id=0, material set) over a linked
+            // spool intentionally clears the server link — the UI no longer
+            // shows that spool as in use, so the server must not either.
+            api_->spoolman().set_active_spool(
+                0, []() {},
+                [](const MoonrakerError& err) {
+                    spdlog::warn("[AmsState] Failed to clear active spool: {}", err.message);
+                });
+        }
+    }
+
+    // S5 + S7 — same emptiness predicate as the FilamentPanel completion arm
+    if (info.spoolman_id > 0 || !info.material.empty()) {
+        set_external_spool_info(info);
+    } else {
+        clear_external_spool_info();
+    }
 }

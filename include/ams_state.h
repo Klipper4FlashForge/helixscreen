@@ -1224,19 +1224,6 @@ class AmsState {
     void sync_current_loaded_from_backend(const AmsSystemInfo& primary_info);
 
     /**
-     * @brief Sync Spoolman active spool after a slot edit
-     *
-     * Called when the user edits a slot's spool assignment via the UI.
-     * If the edited slot is the currently loaded slot, sets the Spoolman
-     * active spool. This is needed because backends like AFC only sync
-     * active spool on physical load/unload, not UI-initiated reassignment.
-     *
-     * @param slot_index The slot that was edited
-     * @param spoolman_id The new Spoolman spool ID (0 = unlinked)
-     */
-    void sync_active_spool_after_edit(int slot_index, int spoolman_id);
-
-    /**
      * @brief Set action detail text directly (for UI-managed states)
      *
      * Used when UI is managing a process (like preheat) that the backend
@@ -1271,6 +1258,32 @@ class AmsState {
      * @brief Clear external spool info
      */
     void clear_external_spool_info();
+
+    /**
+     * @brief Commit a backend-slot spool edit through every backing store.
+     *
+     * Single authority for spool assignment changes on backend slots. Order:
+     * 1. S1: Spoolman server active spool — set when linking (id > 0), clear
+     *    (post 0) when unlinking a previously-linked slot. Ungated on
+     *    manages_active_spool() by design: matches the previous overlay
+     *    semantics (see spec § follow-ups for the SET-arm gating question).
+     * 2. S6: invalidate the old spool's identity cache when the link changed.
+     * 3. S3: backend->set_slot_info() (firmware SET_SPOOL_ID gcode rides inside).
+     * 4. S4+S7: sync_from_backend().
+     *
+     * @return the AmsError from set_slot_info so callers keep their error toasts.
+     */
+    AmsError commit_slot_edit(int slot_index, const SlotInfo& original, const SlotInfo& info);
+
+    /**
+     * @brief Commit an external-spool assignment through every backing store.
+     *
+     * Non-empty (spoolman_id > 0 OR material set) → S5 persist via
+     * set_external_spool_info; empty → S5 erase via clear_external_spool_info
+     * (an empty assigned=true record is the bug the FilamentPanel arm avoided).
+     * S1: set/clear the Spoolman server active spool to match.
+     */
+    void commit_external_spool_edit(const SlotInfo& info);
 
     /**
      * @brief Set the current AMS action state directly
