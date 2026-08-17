@@ -2993,3 +2993,49 @@ void AmsState::clear_external_spool_info() {
     }
     lv_subject_set_int(&external_spool_color_, 0);
 }
+
+// ============================================================================
+// Slot edit commit (single authority for spool assignment changes)
+// ============================================================================
+
+AmsError AmsState::commit_slot_edit(int slot_index, const SlotInfo& original,
+                                    const SlotInfo& info) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    AmsBackend* backend = get_backend();
+    if (!backend) {
+        return AmsError(AmsResult::SPOOLMAN_NOT_AVAILABLE, "no AMS backend",
+                        lv_tr("Multi-Filament System not available"));
+    }
+
+    // S1 — server-side active spool (fire-and-forget, warn on failure)
+    if (api_) {
+        if (info.spoolman_id > 0) {
+            api_->spoolman().set_active_spool(
+                info.spoolman_id, []() {},
+                [](const MoonrakerError& err) {
+                    spdlog::warn("[AmsState] Failed to set active spool: {}", err.message);
+                });
+        } else if (original.spoolman_id > 0) {
+            api_->spoolman().set_active_spool(
+                0, []() {},
+                [](const MoonrakerError& err) {
+                    spdlog::warn("[AmsState] Failed to clear active spool: {}", err.message);
+                });
+        }
+    }
+
+    // S6 — stale identity otherwise survives until a server 404
+    if (original.spoolman_id > 0 && original.spoolman_id != info.spoolman_id) {
+        SpoolmanManager::invalidate_identity(original.spoolman_id);
+    }
+
+    // S3 — backend slot info + firmware gcode
+    AmsError err = backend->set_slot_info(slot_index, info);
+    if (!err.success()) {
+        return err;
+    }
+
+    // S4 + S7
+    sync_from_backend();
+    return err;
+}

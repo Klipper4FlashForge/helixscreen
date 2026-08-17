@@ -1273,6 +1273,22 @@ class AmsState {
     void clear_external_spool_info();
 
     /**
+     * @brief Commit a backend-slot spool edit through every backing store.
+     *
+     * Single authority for spool assignment changes on backend slots. Order:
+     * 1. S1: Spoolman server active spool — set when linking (id > 0), clear
+     *    (post 0) when unlinking a previously-linked slot. Ungated on
+     *    manages_active_spool() by design: matches the previous overlay
+     *    semantics (see spec § follow-ups for the SET-arm gating question).
+     * 2. S6: invalidate the old spool's identity cache when the link changed.
+     * 3. S3: backend->set_slot_info() (firmware SET_SPOOL_ID gcode rides inside).
+     * 4. S4+S7: sync_from_backend().
+     *
+     * @return the AmsError from set_slot_info so callers keep their error toasts.
+     */
+    AmsError commit_slot_edit(int slot_index, const SlotInfo& original, const SlotInfo& info);
+
+    /**
      * @brief Set the current AMS action state directly
      *
      * Used by UI to indicate operation in progress (e.g., during UI-managed preheat
