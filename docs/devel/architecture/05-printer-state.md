@@ -73,7 +73,7 @@ Lifecycle is a fan-out, not fourteen registrations. `PrinterState::init_subjects
 
 ### The satellites: ToolState and TemperatureController
 
-`ToolState` (`include/tool_state.h:80`) is a standalone `::instance()` singleton because tools span domains: a tool has a temperature (extruder mapping), a filament source (AMS backend slot), and a Spoolman identity. It owns five subjects — `active_tool`, `tool_count`, `tools_version` (UI rebuild trigger), `tool_badge_text`, `show_tool_badge` — the last two feeding the `nozzle_icon` component's tool badge. Two facts trip contributors:
+`ToolState` (`include/tool_state.h:78`) is a standalone `::instance()` singleton because tools span domains: a tool has a temperature (extruder mapping), a filament source (AMS backend slot), and a Spoolman identity. It owns five subjects — `active_tool`, `tool_count`, `tools_version` (UI rebuild trigger), `tool_badge_text`, `show_tool_badge` — the last two feeding the `nozzle_icon` component's tool badge. Two facts trip contributors:
 
 - `tool_count() != extruder_count()`. When an AMS backend pushes a `ToolTopology` override (`set_ams_topology()`), `tools_` expands to one entry per filament **slot**, so a 4-slot AMS on a single-hotend printer reports 4 tools and 1 extruder. `is_multi_tool()` answers "show multi-tool controls?"; `has_multiple_extruders()` answers "does this printer physically have several hotends?" — the badge test, not the controls test.
 - Spool assignments are persisted by identity, not weight (`assign_spool()` → the tool_spools JSON + Moonraker DB); the whole weight-churn saga is documented in `../ARCHITECTURE.md` § Spoolman.
@@ -226,11 +226,11 @@ Read in this order; about 25 minutes total.
 
 1. `include/printer_state.h:208` — the `PrinterState` class doc, then jump to `:2236` and read the thirteen domain members: plain by-value composition, no pointers, no inheritance.
 2. `src/printer/printer_state.cpp:193` — `init_subjects()`: the ordered domain fan-out, and the single `StaticSubjectRegistry::register_deinit("PrinterState", ...)` at the end. Then `:130` `deinit_subjects()` for the mirror image — guard invalidation, cache unregistration, token expiry, reverse fan-out.
-3. `include/printer_temperature_state.h:64` — a representative domain: 8 fixed subjects, the dynamic `ExtruderInfo` map (`:38`), and `update_from_status()` (`:289`).
+3. `include/printer_temperature_state.h:64` — a representative domain: 8 fixed subjects, the dynamic `ExtruderInfo` map (`:38`), and `update_from_status()` (`:88`).
 4. `include/printer_motion_state.h:38` — a second domain: kinematic envelope, speed/flow, live + persisted z-offset subjects.
 5. `include/tool_state.h:78` — ToolState: the five subjects, `ToolTopology` override (`:67`), `extruder_count()` vs `tool_count()` (`:124`), and `get_subjects_lifetime()` (`:199`) with its death-signal contract.
 6. `include/temperature_controller.h:65` — the controller: `resolved_name()`, `keypad_range()`, `SendOptions` (`:43`), and `set_target()` (`:99`) — the one send.
-7. `include/app_globals.h:76` — the published-global family: `get_temperature_controller()`, the get/set pairs, and `get_printer_state()` at `:141`.
+7. `include/app_globals.h:76` — the published-global family: `get_temperature_controller()`, the get/set pairs, and `get_printer_state()` at `:149`.
 8. `src/application/subject_initializer.cpp:467` — where the controller is constructed and registered as a `PanelWidgetManager` shared resource; scroll up to `:307` for the PrinterState init phase and its ordering comments.
 9. `include/static_subject_registry.h:50` — the registry, and the header comment that makes self-registration mandatory.
 10. `include/static_panel_registry.h:34` — the panel registry: reverse-order destroy, `is_destroying_all()`, `clear()` for soft restart.
