@@ -92,6 +92,13 @@ bool is_moonraker_on_same_host(std::string_view) {
 bool is_android_platform() {
     return false;
 }
+bool platform_host_power_supported() {
+    // Mirrors src/system/platform_info.cpp (excluded from this cut): host power
+    // is available everywhere except Android. show_shutdown_dialog()'s backstop
+    // (e49f8968e) is the first kept TU to reach this — ESP32 drives the printer
+    // host's machine.shutdown/reboot over WiFi, so the answer is true here.
+    return !is_android_platform();
+}
 } // namespace helix
 
 // --- app_globals slice seam (Linux app-lifecycle hub) ------------------------
