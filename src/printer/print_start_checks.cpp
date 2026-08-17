@@ -135,6 +135,9 @@ CheckResult gate_required_filament_present(const PrintStartContext& ctx) {
     // false positives).
     if (ctx.ams_manages_filament && ctx.has_active_backend) {
         if (!ctx.empty_required_lanes.empty()) {
+            spdlog::info("[PrintStartController] {} required tool(s) have an empty lane - "
+                         "showing pre-print warning",
+                         ctx.empty_required_lanes.size());
             return warn_result(lv_tr("No Filament Detected"),
                                build_empty_lane_message(ctx.empty_required_lanes),
                                lv_tr("Start Print"));
@@ -144,6 +147,8 @@ CheckResult gate_required_filament_present(const PrintStartContext& ctx) {
 
     // Non-AMS / no-active-backend fallback: aggregate runout-sensor check.
     if (ctx.runout_enabled && ctx.runout_available && !ctx.runout_detected) {
+        spdlog::info("[PrintStartController] Runout sensor shows no filament - showing pre-print "
+                     "warning");
         return warn_result(
             lv_tr("No Filament Detected"),
             lv_tr("The runout sensor indicates no filament is loaded. Start print anyway?"),

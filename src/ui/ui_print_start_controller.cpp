@@ -140,10 +140,11 @@ void PrintStartController::initiate() {
         return;
     }
 
-    // Ordered pre-print gate pipeline: insufficient spool weight, required
-    // filament present, unresolved tools, material compatibility. Each warning
-    // dialog drives its own continuation (proceed resumes at the next gate
-    // with a freshly gathered context).
+    // Ordered pre-print gate pipeline: insufficient spool weight, bypass
+    // engaged on a lane print, unaccounted toolhead filament, required
+    // filament present, unresolved tools, material compatibility. Each
+    // warning dialog drives its own continuation (proceed resumes at the next
+    // gate with a freshly gathered context).
     run_gates_from(0);
 }
 
