@@ -230,3 +230,14 @@ TEST_CASE("AD5X IFS unaccounted: switch seen + not present -> false",
     REQUIRE(r.has_value());
     CHECK(*r == false);
 }
+
+TEST_CASE("Mock scenario 'unaccounted' drives the gate input", "[ams][toolhead-unaccounted]") {
+    AmsBackendMock mock;
+    mock.set_initial_state_scenario("unaccounted");
+    mock.start();
+    auto r = mock.toolhead_filament_unaccounted();
+    REQUIRE(r.has_value());
+    CHECK(*r == true);
+    CHECK(mock.is_filament_loaded());
+    mock.stop();
+}
