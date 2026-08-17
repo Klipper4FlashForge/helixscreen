@@ -156,12 +156,22 @@ TEST_CASE("AFC lane_data applies the user's slot overrides", "[ams][afc][1195]")
     o.spoolman_id = 77;
     afc.set_override(0, o);
 
-    SECTION("override wins over the DB record's firmware truth") {
-        afc.feed_lane_data(
-            both_lanes(nlohmann::json{{"material", "PLA"}, {"spool_id", 5}, {"color", "#FF0000"}}));
+    SECTION("override wins where firmware echoes the same spool") {
+        afc.feed_lane_data(both_lanes(
+            nlohmann::json{{"material", "PLA"}, {"spool_id", 77}, {"color", "#FF0000"}}));
         CHECK(afc.brand(0) == "Polymaker");
         CHECK(afc.material(0) == "ASA");
         CHECK(afc.spool_id(0) == 77);
+    }
+
+    SECTION("a different firmware id is an external re-bind — the record drops (#1281)") {
+        // Another writer set spool 5 on this lane; our stale override for 77
+        // must not shadow it. Mirrors the status-path test in
+        // test_override_rebind.cpp through the DB parser.
+        afc.feed_lane_data(
+            both_lanes(nlohmann::json{{"material", "PLA"}, {"spool_id", 5}, {"color", "#FF0000"}}));
+        CHECK(afc.spool_id(0) == 5);
+        CHECK(afc.brand(0).empty());
     }
 
     SECTION("override re-supplies identity across the null clear") {

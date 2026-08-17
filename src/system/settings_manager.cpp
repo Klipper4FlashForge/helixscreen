@@ -559,8 +559,15 @@ void SettingsManager::set_ams_always_show_bypass_spool(bool enabled) {
 }
 
 bool SettingsManager::get_ams_keep_spool_info_on_eject() const {
-    return lv_subject_get_int(const_cast<lv_subject_t*>(&ams_keep_spool_info_on_eject_subject_)) !=
-           0;
+    lv_subject_t* subject = const_cast<lv_subject_t*>(&ams_keep_spool_info_on_eject_subject_);
+    // Before init_subjects() (app startup; plain unit tests without a fixture)
+    // the subject carries no value yet — the documented default (retain)
+    // applies. Otherwise an uninitialized read would report "off" and the
+    // backends' eject rule would clear overrides nobody asked to clear.
+    if (subject->type != LV_SUBJECT_TYPE_INT) {
+        return true;
+    }
+    return lv_subject_get_int(subject) != 0;
 }
 
 void SettingsManager::set_ams_keep_spool_info_on_eject(bool enabled) {

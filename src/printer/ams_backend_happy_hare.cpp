@@ -12,6 +12,7 @@
 #include "i_moonraker_api.h"
 #include "json_utils.h"
 #include "operation_patterns.h" // helix::contains_ci
+#include "settings_manager.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -2394,39 +2395,26 @@ AmsError AmsBackendHappyHare::cancel() {
 // ============================================================================
 
 void AmsBackendHappyHare::apply_overrides(SlotInfo& slot, int slot_index) {
-    // Callers hold mutex_. Same merge policy as AFC/ACE: the override wins only
-    // where it carries a real value; sentinels fall through to firmware.
+    // Callers hold mutex_. The whole spec §5 policy + the re-bind/eject rules
+    // live in helix::ams::merge_override — the single implementation every
+    // backend shares.
     auto it = overrides_.find(slot_index);
-    if (it == overrides_.end()) {
+    if (it == overrides_.end())
         return;
+    helix::ams::MergeOptions opts;
+    opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
+    opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
+    const auto result = helix::ams::merge_override(slot, it->second, opts);
+    if (result.cleared_rebind || result.cleared_eject) {
+        overrides_.erase(it);
+        if (override_store_) {
+            override_store_->clear_async(slot_index, [slot_index](bool ok, const std::string& err) {
+                if (!ok)
+                    spdlog::warn("[AMS HH] override clear persist failed for slot {}: {}",
+                                 slot_index, err);
+            });
+        }
     }
-    const auto& o = it->second;
-    if (!o.brand.empty())
-        slot.brand = o.brand;
-    if (!o.spool_name.empty())
-        slot.spool_name = o.spool_name;
-    if (o.spoolman_id > 0)
-        slot.spoolman_id = o.spoolman_id;
-    if (o.spoolman_vendor_id > 0)
-        slot.spoolman_vendor_id = o.spoolman_vendor_id;
-    if (o.remaining_weight_g >= 0.0f)
-        slot.remaining_weight_g = o.remaining_weight_g;
-    if (o.total_weight_g >= 0.0f)
-        slot.total_weight_g = o.total_weight_g;
-    if (o.color_set)
-        slot.color_rgb = o.color_rgb;
-    if (!o.color_name.empty())
-        slot.color_name = o.color_name;
-    if (!o.material.empty())
-        slot.material = o.material;
-    // Catalog product identity — same "override wins only when it carries a
-    // real value" rule as the strings above. Firmware never populates these
-    // (no AMS protocol has a notion of a branded product id), so a non-empty
-    // value here is always a user pick and always wins.
-    if (!o.catalog_id.empty())
-        slot.catalog_id = o.catalog_id;
-    if (!o.product_name.empty())
-        slot.product_name = o.product_name;
 }
 
 void AmsBackendHappyHare::persist_override(int slot_index, const SlotInfo& info) {

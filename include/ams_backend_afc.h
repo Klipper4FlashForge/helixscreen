@@ -487,6 +487,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcPerSlotLoadedHelper;
     friend class AfcCurrentErrorHelper;
     friend class AfcLaneDataClearHelper;
+    friend class AfcRebindHelper;
     friend class AfcFaultEventCharHelper;
     friend class AfcFeatureLevelHelper;
     friend class AfcFixtureHelper;
