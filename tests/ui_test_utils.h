@@ -60,6 +60,16 @@ void set_test_notification_warning_hook(std::function<void(const std::string&)> 
  */
 void set_test_notification_error_hook(std::function<void(const std::string&)> hook);
 
+/**
+ * @brief Install a hook invoked by the test ToastManager::show() stub.
+ *
+ * mk/tests.mk excludes the real ui_toast_manager.o, so a toast raised during a
+ * test is otherwise invisible - which makes "did the user actually get told?"
+ * untestable. The hook receives the toast's message text. Pass nullptr to
+ * clear, and clear it before the observed storage goes out of scope.
+ */
+void set_test_toast_hook(std::function<void(const std::string&)> hook);
+
 } // namespace ui
 } // namespace helix
 

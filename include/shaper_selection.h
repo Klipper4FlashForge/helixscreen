@@ -3,6 +3,7 @@
 #pragma once
 
 #include "calibration_types.h"
+#include "klipper_config_editor.h"
 
 #include <string>
 #include <vector>
@@ -68,5 +69,25 @@ struct SelectedShaper {
 SelectedShaper resolve_selected_shaper(const InputShaperResult& result,
                                        const std::vector<ShaperResponseCurve>& curves,
                                        int selected_index);
+
+/**
+ * @brief Config edits that persist the chosen shapers for both axes.
+ *
+ * One ADD_KEY per written key, so the same list works on a printer that already
+ * has the key and on one that does not: apply_edits() turns ADD_KEY into a
+ * value replacement when the key is present, and creates [input_shaper] itself
+ * when the whole section is absent.
+ *
+ * An axis that is not `is_valid()` contributes nothing — half a calibration
+ * writes half the config rather than writing "" or 0 Hz over a good value.
+ *
+ * Pure function: no logging, no LVGL, no printer I/O. Callers log.
+ *
+ * @param x Selected shaper for the X axis (default-constructed = nothing to write)
+ * @param y Selected shaper for the Y axis
+ * @return Edits for the `input_shaper` section, empty when neither axis is valid.
+ */
+std::vector<helix::system::ConfigEdit> shaper_config_edits(const SelectedShaper& x,
+                                                           const SelectedShaper& y);
 
 } // namespace helix::calibration

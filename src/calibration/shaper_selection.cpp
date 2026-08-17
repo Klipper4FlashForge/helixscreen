@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 
 namespace helix::calibration {
 
@@ -65,6 +66,34 @@ SelectedShaper resolve_selected_shaper(const InputShaperResult& result,
     sel.max_accel = 0.0f;
     sel.metrics_known = false;
     return sel;
+}
+
+namespace {
+
+/// Append the two keys one axis owns. Klipper reads shaper_freq_* as a float,
+/// and one decimal is the resolution the calibration itself reports.
+void append_axis_edits(std::vector<helix::system::ConfigEdit>& edits, char axis,
+                       const SelectedShaper& sel) {
+    if (!sel.is_valid())
+        return;
+
+    const std::string suffix(1, axis);
+
+    char freq_buf[32];
+    snprintf(freq_buf, sizeof(freq_buf), "%.1f", static_cast<double>(sel.frequency));
+
+    edits.push_back({helix::system::ConfigEdit::Type::ADD_KEY, "shaper_type_" + suffix, sel.type});
+    edits.push_back({helix::system::ConfigEdit::Type::ADD_KEY, "shaper_freq_" + suffix, freq_buf});
+}
+
+} // namespace
+
+std::vector<helix::system::ConfigEdit> shaper_config_edits(const SelectedShaper& x,
+                                                           const SelectedShaper& y) {
+    std::vector<helix::system::ConfigEdit> edits;
+    append_axis_edits(edits, 'x', x);
+    append_axis_edits(edits, 'y', y);
+    return edits;
 }
 
 } // namespace helix::calibration

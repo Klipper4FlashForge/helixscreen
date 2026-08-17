@@ -527,6 +527,7 @@ helix::TemperatureController* get_temperature_controller() {
 namespace {
 std::function<void(const std::string&)> g_test_warning_hook;
 std::function<void(const std::string&)> g_test_error_hook;
+std::function<void(const std::string&)> g_test_toast_hook;
 } // namespace
 
 namespace helix {
@@ -536,6 +537,9 @@ void set_test_notification_warning_hook(std::function<void(const std::string&)> 
 }
 void set_test_notification_error_hook(std::function<void(const std::string&)> hook) {
     g_test_error_hook = std::move(hook);
+}
+void set_test_toast_hook(std::function<void(const std::string&)> hook) {
+    g_test_toast_hook = std::move(hook);
 }
 } // namespace ui
 } // namespace helix
@@ -659,6 +663,9 @@ void ToastManager::show(ToastSeverity severity, const char* message, uint32_t du
     (void)severity;
     (void)duration_ms;
     spdlog::debug("[Test Stub] ToastManager::show: {}", message ? message : "(null)");
+    if (g_test_toast_hook) {
+        g_test_toast_hook(message ? message : "");
+    }
 }
 
 void ToastManager::show_with_detail(ToastSeverity severity, const char* message, const char* detail,

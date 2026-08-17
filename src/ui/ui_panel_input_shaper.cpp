@@ -983,36 +983,88 @@ void InputShaperPanel::apply_y_after_x(const std::string& shaper_type, float fre
 }
 
 void InputShaperPanel::save_configuration() {
-    if (!calibrator_) {
+    if (!api_) {
+        spdlog::error("[InputShaper] Cannot save - no printer connection");
+        ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Failed to save configuration"),
+                                      3000);
         return;
     }
 
-    spdlog::info("[InputShaper] Saving configuration (SAVE_CONFIG)");
+    // Resolve BOTH axes up front. Callers close the panel and clear the results
+    // right after this returns, so nothing may be read out of x_result_/y_result_
+    // once we are into the async chain.
+    const helix::calibration::SelectedShaper x_sel = selected_shaper_for('X');
+    const helix::calibration::SelectedShaper y_sel = selected_shaper_for('Y');
 
-    // Suppress recovery dialog — SAVE_CONFIG triggers an expected Klipper restart
-    EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::LONG);
-    if (api_) {
-        api_->suppress_disconnect_modal(15000);
+    auto edits = helix::calibration::shaper_config_edits(x_sel, y_sel);
+    if (edits.empty()) {
+        spdlog::error("[InputShaper] Nothing to save - neither axis has a valid shaper "
+                      "(X type='{}' freq={:.1f}, Y type='{}' freq={:.1f})",
+                      x_sel.type, x_sel.frequency, y_sel.type, y_sel.frequency);
+        ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Failed to save configuration"),
+                                      3000);
+        return;
     }
+
+    spdlog::info("[InputShaper] Writing [input_shaper] to config: {} edit(s)", edits.size());
+    for (const auto& e : edits) {
+        spdlog::debug("[InputShaper]   {} = {}", e.key, e.value);
+    }
+
+    // safe_multi_edit() ends in FIRMWARE_RESTART, so the disconnect that follows
+    // is expected rather than an emergency.
+    EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::EXTRA);
+    api_->suppress_disconnect_modal(30000);
 
     ToastManager::instance().show(ToastSeverity::WARNING,
                                   lv_tr("Saving config... Klipper will restart."), 3000);
 
-    auto tok = lifetime_.token();
+    auto token = lifetime_.token();
 
-    calibrator_->save_to_config(
-        [tok]() {
-            if (tok.expired())
-                return;
-            spdlog::info("[InputShaper] SAVE_CONFIG sent - Klipper restarting");
+    // Both callbacks land on an HTTP thread, and by the time they do the panel
+    // is normally gone: handle_save_clicked() calls go_back() the moment this
+    // function returns, so the panel's token is expired for every callback
+    // below. That splits the work in two.
+    //
+    // The toast is a GLOBAL concern - it is the only thing that tells the user
+    // their config was rolled back because Klipper failed to restart - so it
+    // must survive panel teardown. It goes through the global update queue,
+    // capturing values only and never `this`. (ToastManager is a singleton, but
+    // main-thread only, hence still needing the hop.)
+    //
+    // Only the config-card refresh belongs to the panel, so only that half is
+    // guarded by the panel's token.
+    config_editor_.safe_multi_edit(
+        *api_, "input_shaper", edits,
+        [this, token]() {
+            helix::ui::queue_update("InputShaperPanel::save_config_success_toast", []() {
+                spdlog::info("[InputShaper] Input shaper settings written and Klipper restarted");
+                ToastManager::instance().show(ToastSeverity::SUCCESS,
+                                              lv_tr("Input shaper settings applied!"), 2500);
+            });
+
+            token.defer("InputShaperPanel::save_config_refresh", [this]() {
+                // Re-read what the printer now reports so the "current config"
+                // card matches the file we just wrote.
+                if (!api_)
+                    return;
+                auto tok2 = lifetime_.token();
+                api_->advanced().get_input_shaper_config(
+                    [this, tok2](const InputShaperConfig& config) {
+                        tok2.defer("InputShaperPanel::populate_after_save",
+                                   [this, config]() { populate_current_config(config); });
+                    },
+                    [](const MoonrakerError&) {});
+            });
         },
-        [tok](const std::string& err) {
-            if (tok.expired())
-                return;
-            spdlog::error("[InputShaper] SAVE_CONFIG failed: {}", err);
-            ToastManager::instance().show(ToastSeverity::ERROR,
-                                          lv_tr("Failed to save configuration"), 3000);
-        });
+        [](const std::string& err) {
+            helix::ui::queue_update("InputShaperPanel::save_config_error_toast", [err]() {
+                spdlog::error("[InputShaper] Failed to save input shaper config: {}", err);
+                ToastManager::instance().show(ToastSeverity::ERROR,
+                                              lv_tr("Failed to save configuration"), 3000);
+            });
+        },
+        static_cast<int>(save_restart_timeout_ms_));
 }
 
 // ============================================================================
@@ -1324,13 +1376,17 @@ void InputShaperPanel::refresh_axis_display(char axis) {
     update_axis_display(axis, sel.type, sel.frequency, sel.vibrations, sel.max_accel);
 }
 
-bool InputShaperPanel::resolve_shaper_for_apply(char axis, std::string& out_type,
-                                                float& out_freq) const {
+helix::calibration::SelectedShaper InputShaperPanel::selected_shaper_for(char axis) const {
     const InputShaperResult& res = (axis == 'X') ? x_result_ : y_result_;
     const auto& chart_data = (axis == 'X') ? x_chart_ : y_chart_;
 
-    const helix::calibration::SelectedShaper sel = helix::calibration::resolve_selected_shaper(
-        res, chart_data.shaper_curves, chart_data.selected_shaper);
+    return helix::calibration::resolve_selected_shaper(res, chart_data.shaper_curves,
+                                                       chart_data.selected_shaper);
+}
+
+bool InputShaperPanel::resolve_shaper_for_apply(char axis, std::string& out_type,
+                                                float& out_freq) const {
+    const helix::calibration::SelectedShaper sel = selected_shaper_for(axis);
 
     if (!sel.is_valid()) {
         spdlog::debug("[InputShaper] {} axis: no selectable shaper to apply (type='{}', freq={})",
@@ -1853,19 +1909,22 @@ void InputShaperPanel::handle_retry_clicked() {
 
 void InputShaperPanel::handle_save_config_clicked() {
     spdlog::debug("[InputShaper] Save Config clicked");
+    // save_configuration() reads the results, so it has to run BEFORE they are cleared.
+    save_configuration();
     clear_results();
     set_state(State::IDLE);
     NavigationManager::instance().go_back();
-    save_configuration();
 }
 
 void InputShaperPanel::handle_save_clicked() {
-    spdlog::debug("[InputShaper] Save clicked — applying and saving to config");
-    apply_recommendation();
+    spdlog::debug("[InputShaper] Save clicked - writing shaper settings to the printer's config");
+    // No SET_INPUT_SHAPER first: safe_multi_edit() ends in a FIRMWARE_RESTART that
+    // reloads the very config we are about to write, so a runtime apply would be
+    // overwritten seconds later by the same values.
+    save_configuration();
     clear_results();
     set_state(State::IDLE);
     NavigationManager::instance().go_back();
-    save_configuration();
 }
 
 void InputShaperPanel::handle_print_test_pattern_clicked() {

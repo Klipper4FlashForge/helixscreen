@@ -8,8 +8,10 @@
 #include "async_lifetime_guard.h"
 #include "calibration_types.h" // For InputShaperResult
 #include "input_shaper_calibrator.h"
+#include "klipper_config_editor.h"
 #include "overlay_base.h"
 #include "platform_capabilities.h"
+#include "shaper_selection.h"
 #include "subject_managed_panel.h"
 
 #include <algorithm>
@@ -23,6 +25,8 @@ namespace helix {
 class IMoonrakerClient;
 }
 class IMoonrakerAPI;
+
+class InputShaperPanelTestAccess; // test-only friend (tests/test_helpers/)
 
 /**
  * @file ui_panel_input_shaper.h
@@ -41,8 +45,13 @@ class IMoonrakerAPI;
  * ## Klipper Commands Used:
  * - MEASURE_AXES_NOISE: Check accelerometer noise level
  * - SHAPER_CALIBRATE AXIS=X/Y: Run resonance test
- * - SET_INPUT_SHAPER: Apply recommended settings
- * - SAVE_CONFIG: Save settings permanently (restarts Klipper)
+ * - SET_INPUT_SHAPER: Apply settings for the current session only
+ *
+ * Saving is NOT SAVE_CONFIG: that would persist whatever SHAPER_CALIBRATE
+ * staged (the firmware's own recommendation) and ignore the chip the user
+ * picked. Save rewrites [input_shaper] in the printer's config via
+ * KlipperConfigEditor::safe_multi_edit(), which backs the file up and reverts
+ * it if Klipper fails to come back.
  *
  * ## Usage:
  * ```cpp
@@ -181,6 +190,8 @@ class InputShaperPanel : public OverlayBase {
     void handle_chip_y_clicked(int index);
 
   private:
+    friend class InputShaperPanelTestAccess;
+
     // Subject manager for RAII cleanup
     SubjectManager subjects_;
 
@@ -249,6 +260,11 @@ class InputShaperPanel : public OverlayBase {
     /// Shaper the user has chosen for an axis, falling back to the firmware recommendation.
     /// Returns false when there is nothing valid to apply.
     bool resolve_shaper_for_apply(char axis, std::string& out_type, float& out_freq) const;
+
+    /// Same resolution as resolve_shaper_for_apply(), keeping the metrics the
+    /// config write does not need but the caller may. Invalid when the axis has
+    /// no result and no selection.
+    [[nodiscard]] helix::calibration::SelectedShaper selected_shaper_for(char axis) const;
 
     // Widget/client references (overlay_root_ inherited from OverlayBase)
     lv_obj_t* parent_screen_ = nullptr;
@@ -379,6 +395,15 @@ class InputShaperPanel : public OverlayBase {
 
     AxisChartData x_chart_;
     AxisChartData y_chart_;
+
+    /// Writes [input_shaper] into the printer's config, with backup + revert
+    helix::system::KlipperConfigEditor config_editor_;
+
+    /// How long safe_multi_edit() waits for Klipper to come back after the
+    /// FIRMWARE_RESTART it ends with, before reverting the file. 30s is the
+    /// budget a real MCU reset needs; tests shorten it so the health monitor
+    /// reaches its verdict in about a second.
+    uint32_t save_restart_timeout_ms_ = 30000;
 
     // Freq data availability subjects (gating chart visibility in XML)
     lv_subject_t is_x_has_freq_data_{};
