@@ -550,6 +550,8 @@ export HELIX_TOUCH_MAX_Y=900
 ./build/bin/helix-screen
 ```
 
+**Known panel needing this:** the Qidi Q2's Goodix digitizer *over-reports* its ABS range — EVIOCGABS says 800x480 but the glass only emits ~460x237 — so the auto-installed coarse scale over-divides and taps compress toward the top-left until calibrated ([#943](https://github.com/prestonbrown/helixscreen/issues/943); calibration span-check logs the captured/target ratio, ~0.57x/0.49y on this panel). Setting the four values to the **emitted** range restores 1:1 mapping; the affine calibration from the wizard fixes it without env vars. Full hardware notes: [`printers/QIDI_SUPPORT.md`](printers/QIDI_SUPPORT.md).
+
 ### Affine Calibration (config file)
 
 For precise calibration including rotation and skew correction, use the touch calibration wizard. The wizard computes a 6-coefficient affine transform and saves it to the config file at `input.calibration.{a,b,c,d,e,f}`. (The legacy `display.calibration` path is auto-migrated to `input.calibration` on load — see `docs/devel/CONFIG_MIGRATION.md`.)
