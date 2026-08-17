@@ -20,7 +20,7 @@ flowchart TD
 
     MR <-- "JSON-RPC / WebSocket frames" --> WS
 
-    subgraph MAIN["Main thread — one iteration of Application::run()"]
+    subgraph MAIN["Main thread — one iteration of Application::main_loop()"]
         DEQ["MoonrakerManager::process_notifications()<br/>dequeue + dispatch (before lv_timer_handler)"]
         UPD["PrinterState::update_from_status()<br/>fan-out to state components"]
         SET["set_*_internal()<br/>change-gated lv_subject_set_*()"]
@@ -85,7 +85,7 @@ m_client->register_notify_update([this, alive](const json& notification) {
 
 (verbatim from `src/application/moonraker_manager.cpp:591`; the `alive` flag is the manager's destruction guard). Connection-state changes ride the same queue as synthesized `_connection_state` marker objects (`:574`). Nothing on that thread touches LVGL.
 
-The dequeue happens on the main thread. `Application::run()`'s loop calls, in order: heartbeat and input housekeeping, `check_timeouts()`, then `process_notifications()` (`src/application/application.cpp:3950`), and only then `lv_timer_handler()` (`:3979`) where rendering happens. `MoonrakerManager::process_notifications()` (`src/application/moonraker_manager.cpp:233`) drains the whole queue each pass: `_connection_state` markers go to `PrinterState::set_printer_connection_state()`, while `notify_status_update` frames are unpacked — Klipper `eventtime` and the cached-snapshot marker are read out alongside the status object — and handed to the state model:
+The dequeue happens on the main thread. `Application::main_loop()` (`src/application/application.cpp:3805`, entered once from `run()`) iterates: heartbeat and input housekeeping, `check_timeouts()`, then `process_notifications()` (`src/application/application.cpp:3950`), and only then `lv_timer_handler()` (`:3979`) where rendering happens. `MoonrakerManager::process_notifications()` (`src/application/moonraker_manager.cpp:233`) drains the whole queue each pass: `_connection_state` markers go to `PrinterState::set_printer_connection_state()`, while `notify_status_update` frames are unpacked — Klipper `eventtime` and the cached-snapshot marker are read out alongside the status object — and handed to the state model:
 
 ```cpp
 const double eventtime = (params.size() > 1 && params[1].is_number())
