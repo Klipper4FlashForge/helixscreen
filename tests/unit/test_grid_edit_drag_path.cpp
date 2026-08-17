@@ -448,6 +448,14 @@ struct GuardFixture {
     PanelWidgetConfig* config = nullptr;
     std::string panel_id;
     int page_index = 1;
+    // lv_obj_set_grid_dsc_array() stores the RAW pointers — LVGL does not copy
+    // the arrays — so they must outlive the container exactly like
+    // PanelWidgetManager's grid_descriptors_ member does in production. As
+    // locals in make_guard_fixture() they died at return while the container
+    // kept using them (nightly ASAN: heap-use-after-free in
+    // grid_count_tracks via GridEditMode::current_metrics).
+    std::vector<int32_t> col_dsc;
+    std::vector<int32_t> row_dsc;
 };
 
 GuardFixture make_guard_fixture(lv_obj_t* parent, const std::string& panel_id) {
@@ -476,9 +484,9 @@ GuardFixture make_guard_fixture(lv_obj_t* parent, const std::string& panel_id) {
     lv_obj_set_style_border_width(f.container, 0, 0);
     lv_obj_set_size(f.container, content_w, content_h);
 
-    auto col_dsc = GridLayout::make_col_dsc(UiBreakpoint::Medium);
-    auto row_dsc = GridLayout::make_row_dsc(UiBreakpoint::Medium);
-    lv_obj_set_grid_dsc_array(f.container, col_dsc.data(), row_dsc.data());
+    f.col_dsc = GridLayout::make_col_dsc(UiBreakpoint::Medium);
+    f.row_dsc = GridLayout::make_row_dsc(UiBreakpoint::Medium);
+    lv_obj_set_grid_dsc_array(f.container, f.col_dsc.data(), f.row_dsc.data());
     lv_obj_set_style_pad_column(f.container, gutter, 0);
     lv_obj_set_style_pad_row(f.container, gutter, 0);
 
