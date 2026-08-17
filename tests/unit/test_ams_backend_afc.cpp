@@ -1588,6 +1588,42 @@ TEST_CASE("AFC reset_tool_mappings sends single command regardless of lane count
     REQUIRE(helper.has_gcode("RESET_AFC_MAPPING RUNOUT=no"));
 }
 
+// AFC dev/1.3 (Klipper-Add-On #832) deregistered RESET_AFC_MAPPING in favour of
+// AFC_RESET_MAPPING. The new firmware is recognisable by the multiple_tool_mapping
+// flag its get_status publishes alongside the rename — the flag's VALUE is the
+// opt-in to virtual tools and defaults false, so key presence is the version
+// signal, never the value.
+TEST_CASE("AFC reset_tool_mappings uses AFC_RESET_MAPPING once multiple_tool_mapping is reported",
+          "[ams][afc][tool_mapping][reset]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    // Flag present but FALSE — virtual tools disabled, renamed firmware.
+    helper.feed_afc_state({{"multiple_tool_mapping", false}});
+
+    auto result = helper.reset_tool_mappings();
+
+    REQUIRE(result.success());
+    REQUIRE(helper.has_gcode("AFC_RESET_MAPPING RUNOUT=no"));
+    REQUIRE(helper.captured_gcodes.size() == 1);
+}
+
+TEST_CASE("AFC reset_tool_mappings keeps the old name until the firmware reports the flag",
+          "[ams][afc][tool_mapping][reset]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    // A status frame from firmware predating the rename carries no flag; the
+    // old macro name must survive — the new name is an unknown command there.
+    helper.feed_afc_state({{"led_state", true}});
+
+    auto result = helper.reset_tool_mappings();
+
+    REQUIRE(result.success());
+    REQUIRE(helper.has_gcode("RESET_AFC_MAPPING RUNOUT=no"));
+    REQUIRE(helper.captured_gcodes.size() == 1);
+}
+
 // ============================================================================
 // reset_endless_spool() Tests
 // ============================================================================

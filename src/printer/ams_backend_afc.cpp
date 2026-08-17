@@ -2124,6 +2124,14 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
         }
     }
 
+    // Virtual-tools firmware marker (#832): publishes multiple_tool_mapping
+    // unconditionally, whatever the opt-in's value. Presence alone flips the
+    // reset-mapping macro name — reading the bool would pin every stock install
+    // to the old name on the very firmware that deregistered it.
+    if (afc_data.contains("multiple_tool_mapping")) {
+        afc_reset_mapping_renamed_ = true;
+    }
+
     // Parse global quiet_mode and LED state
     if (afc_data.contains("quiet_mode") && afc_data["quiet_mode"].is_boolean()) {
         afc_quiet_mode_ = afc_data["quiet_mode"].get<bool>();
@@ -5341,8 +5349,12 @@ AmsError AmsBackendAfc::apply_endless_spool_backup(int slot_index, int backup_sl
 AmsError AmsBackendAfc::reset_tool_mappings() {
     spdlog::info("[AMS AFC] Resetting tool mappings");
 
-    // Use RESET_AFC_MAPPING with RUNOUT=no to only reset tool mappings
-    AmsError result = execute_gcode("RESET_AFC_MAPPING RUNOUT=no");
+    // RUNOUT=no keeps the endless-spool lanes out of the reset on both macro
+    // generations. The name flipped in #832 and the old one is DEREGISTERED
+    // there, so guessing wrong is an "unknown command" error, not a no-op —
+    // hence the presence-detected latch rather than a version floor.
+    const char* macro = afc_reset_mapping_renamed_ ? "AFC_RESET_MAPPING" : "RESET_AFC_MAPPING";
+    AmsError result = execute_gcode(fmt::format("{} RUNOUT=no", macro));
 
     // Tool mapping will be refreshed from next status update
     return result;
