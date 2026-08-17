@@ -2005,6 +2005,15 @@ class AmsBackend {
         return false;
     }
 
+    /// Whether this backend's firmware reports a Spoolman spool id per slot
+    /// while a spool is loaded (AFC and Happy Hare publish spool_id in their
+    /// status). Only there does a firmware id of 0/null mean "ejected"; on
+    /// every other backend firmware never reports ids and 0 is the everyday
+    /// reading. merge_override() uses this to arm the eject rule.
+    [[nodiscard]] virtual bool firmware_reports_spool_ids() const {
+        return false;
+    }
+
     /**
      * @brief Whether this backend unloads the toolhead automatically after a print
      *

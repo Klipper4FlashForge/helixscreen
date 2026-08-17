@@ -177,6 +177,14 @@ void SettingsManager::init_subjects() {
                            ams_always_show_bypass_spool ? 1 : 0, "ams_always_show_bypass_spool",
                            subjects_);
 
+    // Keep Spoolman spool info on a slot the firmware reports as ejected
+    // (default: on — retention is the designed behavior; the eject rule only
+    // arms on backends whose firmware reports spool ids). Per-printer setting.
+    bool ams_keep_spool_info =
+        config->get<bool>(config->df() + "ams/keep_spool_info_on_eject", true);
+    UI_MANAGED_SUBJECT_INT(ams_keep_spool_info_on_eject_subject_, ams_keep_spool_info ? 1 : 0,
+                           "ams_keep_spool_info_on_eject", subjects_);
+
     // Show the bypass controls even when the firmware reports no bypass (default:
     // off). Happy Hare's [mmu_machine] has_bypass defaults to 0 for mmu_vendor
     // "Other" — what a Qidi Box under Happy Hare reports — so machines that can
@@ -547,6 +555,19 @@ void SettingsManager::set_ams_always_show_bypass_spool(bool enabled) {
     lv_subject_set_int(&ams_always_show_bypass_spool_subject_, enabled ? 1 : 0);
     Config* config = Config::get_instance();
     config->set<bool>(config->df() + "ams/always_show_bypass_spool", enabled);
+    config->save();
+}
+
+bool SettingsManager::get_ams_keep_spool_info_on_eject() const {
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&ams_keep_spool_info_on_eject_subject_)) !=
+           0;
+}
+
+void SettingsManager::set_ams_keep_spool_info_on_eject(bool enabled) {
+    spdlog::info("[SettingsManager] set_ams_keep_spool_info_on_eject({})", enabled);
+    lv_subject_set_int(&ams_keep_spool_info_on_eject_subject_, enabled ? 1 : 0);
+    Config* config = Config::get_instance();
+    config->set<bool>(config->df() + "ams/keep_spool_info_on_eject", enabled);
     config->save();
 }
 
