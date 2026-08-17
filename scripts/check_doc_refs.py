@@ -15,8 +15,9 @@
 #   - a lesson taught lv_xml_component_register_from_file(), a transposed name
 #     that exists nowhere
 #
-# Two checks:
+# Three checks:
 #   refs   — every backticked path in an agent-facing doc resolves
+#   links  — every markdown [text](target) link in a scanned doc resolves
 #   index  — every doc in docs/devel/ is listed in docs/devel/CLAUDE.md
 #
 # The index check is what makes lazy loading trustworthy: a doc missing from the
@@ -27,6 +28,11 @@
 #   check_doc_refs.py --refs     # broken references only
 #   check_doc_refs.py --index    # index completeness only
 #   check_doc_refs.py --list     # show what was scanned
+#   check_doc_refs.py --devel [PATHS...]
+#                                # refs+links over docs/devel/**/*.md, or only
+#                                # the given PATHS (.md files, or directories
+#                                # walked for .md). Point-in-time subdirs
+#                                # (plans/, printer-research/) are exempt.
 
 import argparse
 import os
@@ -43,12 +49,30 @@ EXEMPT_SUBSTRINGS = (
 # Tokens that are obviously placeholders rather than real paths.
 PLACEHOLDER_CHARS = ('<', '>', '*', '$', '…', '{')
 
-# `some/path/file.ext` in prose or a table cell.
+# `some/path/file.ext` in prose or a table cell. The path may carry a `:123`
+# line or a `:func_name()` symbol suffix; the path charset excludes ':' so the
+# suffix can never be part of a real path and is stripped before checking.
 PATH_RE = re.compile(
-    r'`([A-Za-z0-9_./-]+\.(?:md|cpp|cc|h|hpp|c|xml|py|sh|json|mk|bats|yml|yaml|html|txt))`')
+    r'`([A-Za-z0-9_./-]+\.(?:md|cpp|cc|h|hpp|c|xml|py|sh|json|mk|bats|yml|yaml|html|txt)'
+    r'(?::\d+|:[A-Za-z0-9_]+\(\))?)`')
+
+# Markdown [text](target) links. The anchor part (#+...) is optional and dropped;
+# the target is resolved relative to the doc's own directory.
+LINK_RE = re.compile(r'\[[^\]]*\]\(([^)#\s]+)(?:#[^)]*)?\)')
+
+# Link targets that cannot be verified on disk.
+LINK_SKIP_PREFIXES = ('http://', 'https://', 'mailto:', '#')
+LINK_SKIP_SUFFIXES = ('.d2', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
+                      '.bmp', '.ico')
 
 DOC_INDEX = 'docs/devel/CLAUDE.md'
 DOC_DIR = 'docs/devel'
+
+# Point-in-time docs under docs/devel/ — dated plans and device research notes
+# whose citations rot by design. Matched as directory-name components during a
+# walk, so a scan rooted anywhere (meta-test fixture, targeted run) exempts a
+# plans/ or printer-research/ subdir the same way the default walk does.
+DEVEL_EXEMPT_SUBDIRS = ('plans', 'printer-research')
 
 # Docs deliberately not routed from the index.
 INDEX_EXEMPT = {
@@ -116,7 +140,36 @@ def scan_targets():
     return sorted(targets)
 
 
-def check_refs(targets, allpaths, verbose=False):
+def scan_devel_targets(paths):
+    """--devel mode targets: docs/devel/**/*.md, or only the given paths.
+
+    An explicit .md path is scanned as-is (even one under an exempt subdir — an
+    explicit request is explicit). A directory is walked for .md files the same
+    way the default docs/devel walk is, exemptions included. Anything else is
+    dropped.
+    """
+    def walk_md(root):
+        out = []
+        for dirpath, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs
+                       if d not in SKIP_DIRS and d not in DEVEL_EXEMPT_SUBDIRS]
+            for f in files:
+                if f.endswith('.md'):
+                    out.append(os.path.join(dirpath, f))
+        return out
+
+    if paths:
+        targets = []
+        for p in paths:
+            if os.path.isdir(p):
+                targets.extend(walk_md(p))
+            elif p.endswith('.md'):
+                targets.append(p)
+        return sorted(set(targets))
+    return sorted(walk_md(DOC_DIR))
+
+
+def check_refs(targets, allpaths, devel=False):
     problems = []
     for target in targets:
         base = os.path.dirname(target)
@@ -130,12 +183,47 @@ def check_refs(targets, allpaths, verbose=False):
                 continue
             if any(s in ref for s in EXEMPT_SUBSTRINGS):
                 continue
-            if os.path.exists(ref):
+            path = ref.split(':', 1)[0]  # strip a :123 / :func_name() suffix
+            if os.path.exists(path):
                 continue
-            if base and os.path.exists(os.path.join(base, ref)):
+            if base and os.path.exists(os.path.join(base, path)):
                 continue
+            if devel and base:
+                # A devel doc cites repo-rooted paths (src/…, include/…). In the
+                # repo those resolve from the cwd above; a scratch tree handed to
+                # --devel has the same shape one level above the doc's directory
+                # (<root>/devel/doc.md citing <root>/src/…).
+                parent = os.path.dirname(base)
+                if parent and os.path.exists(os.path.join(parent, path)):
+                    continue
             # a bare or partial path is fine if exactly that suffix exists somewhere
-            if any(p == ref or p.endswith('/' + ref) for p in allpaths):
+            if any(p == path or p.endswith('/' + path) for p in allpaths):
+                continue
+            line = text.count('\n', 0, m.start()) + 1
+            problems.append((target, line, ref))
+    return problems
+
+
+def check_links(targets):
+    """Markdown links must resolve relative to the doc's own directory.
+
+    http(s)/mailto targets, bare #anchors, and .d2/image references cannot be
+    verified on disk and are skipped.
+    """
+    problems = []
+    for target in targets:
+        base = os.path.dirname(target)
+        try:
+            text = open(target, errors='ignore').read()
+        except OSError:
+            continue
+        for m in LINK_RE.finditer(text):
+            ref = m.group(1)
+            if ref.startswith(LINK_SKIP_PREFIXES):
+                continue
+            if ref.lower().endswith(LINK_SKIP_SUFFIXES):
+                continue
+            if os.path.exists(os.path.join(base, ref) if base else ref):
                 continue
             line = text.count('\n', 0, m.start()) + 1
             problems.append((target, line, ref))
@@ -161,39 +249,59 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--refs', action='store_true', help='Only check references resolve')
     ap.add_argument('--index', action='store_true', help='Only check index completeness')
+    ap.add_argument('--devel', nargs='*', dest='devel_paths', metavar='PATH',
+                    help='Check docs/devel/**/*.md (or only the given .md files '
+                         'and directories): path refs and markdown links')
     ap.add_argument('--list', action='store_true', help='List scanned files')
     args = ap.parse_args()
 
-    do_refs = args.refs or not args.index
-    do_index = args.index or not args.refs
+    devel = args.devel_paths is not None
+    if devel:
+        targets = scan_devel_targets(args.devel_paths)
+        do_refs = True
+        do_index = False
+    else:
+        targets = scan_targets()
+        do_refs = args.refs or not args.index
+        do_index = args.index or not args.refs
 
-    targets = scan_targets()
     if args.list:
+        label = 'scanned (devel)' if devel else 'scanned'
         for t in targets:
-            print('  scanned:', t)
+            print('  %s: %s' % (label, t))
 
     exit_code = 0
 
     if do_refs:
-        problems = check_refs(targets, repo_files())
+        problems = check_refs(targets, repo_files(), devel=devel)
+        link_problems = check_links(targets)
         skipped = uninitialized_submodules()
-        if problems and skipped:
+        if (problems or link_problems) and skipped:
             # Cannot distinguish "stale reference" from "lives in a submodule that is not
             # checked out", so do not fail the build on a guess. Developer pre-commit runs
             # have submodules populated and enforce strictly.
             print('⚠️  Doc references unverifiable — submodule(s) not checked out: %s'
                   % ', '.join(skipped))
-            for target, line, ref in problems:
+            for target, line, ref in problems + link_problems:
                 print('   %s:%d: `%s`' % (target, line, ref))
             print('   Run locally with submodules populated to check these strictly.')
-        elif problems:
-            print('❌ Doc references that do not resolve:')
-            for target, line, ref in problems:
-                print('   %s:%d: `%s`' % (target, line, ref))
-            print('   Fix the path, or use a <placeholder> if it is illustrative.')
-            exit_code = 1
         else:
-            print('✅ Doc references: all resolve (%d files scanned)' % len(targets))
+            if problems:
+                print('❌ Doc references that do not resolve:')
+                for target, line, ref in problems:
+                    print('   %s:%d: `%s`' % (target, line, ref))
+                print('   Fix the path, or use a <placeholder> if it is illustrative.')
+                exit_code = 1
+            else:
+                print('✅ Doc references: all resolve (%d files scanned)' % len(targets))
+            if link_problems:
+                print('❌ Doc links that do not resolve:')
+                for target, line, ref in link_problems:
+                    print('   %s:%d: `%s`' % (target, line, ref))
+                print('   Fix the target, or use a full URL if it is not in-tree.')
+                exit_code = 1
+            else:
+                print('✅ Doc links: all resolve (%d files scanned)' % len(targets))
 
     if do_index:
         unindexed, present = check_index()
