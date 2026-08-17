@@ -1404,15 +1404,21 @@ void AmsOverviewPanel::show_detail_context_menu(int slot_index, lv_obj_t* near_w
 #if HELIX_HAS_CAMERA
             spdlog::info("[AmsOverview] SCAN_QR action for slot {}", slot);
             auto& scanner = helix::ui::get_qr_scanner_overlay();
-            scanner.show(parent_screen_, slot, [this, slot](const SpoolInfo& spool) {
+            scanner.show(parent_screen_, slot, [slot](const SpoolInfo& spool) {
                 AmsBackend* be = AmsState::instance().get_backend();
                 if (!be)
                     return;
 
-                SlotInfo info = be->get_slot_info(slot);
-                apply_spool_to_slot(info, spool);
-                be->set_slot_info(slot, info);
-                AmsState::instance().sync_from_backend();
+                // Capture the pre-edit slot BEFORE the commit — its unlink arm
+                // (clear the server active spool) needs the old link.
+                SlotInfo original = be->get_slot_info(slot);
+                SlotInfo applied = original;
+                apply_spool_to_slot(applied, spool);
+                AmsError err = AmsState::instance().commit_slot_edit(slot, original, applied);
+                if (!err.success()) {
+                    helix::ui::notify_ams_error(err);
+                    return;
+                }
                 spdlog::info("[AmsOverview] QR scan assigned spool #{} to slot {}", spool.id, slot);
             });
 #endif // HELIX_HAS_CAMERA

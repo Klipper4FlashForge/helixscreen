@@ -2973,7 +2973,7 @@ AmsError AmsState::commit_slot_edit(int slot_index, const SlotInfo& original,
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     AmsBackend* backend = get_backend();
     if (!backend) {
-        return AmsError(AmsResult::SPOOLMAN_NOT_AVAILABLE, "no AMS backend",
+        return AmsError(AmsResult::NO_AMS_DETECTED, "no AMS backend",
                         lv_tr("Multi-Filament System not available"));
     }
 
@@ -3022,6 +3022,9 @@ void AmsState::commit_external_spool_edit(const SlotInfo& info) {
                     spdlog::warn("[AmsState] Failed to set active spool: {}", err.message);
                 });
         } else if (get_external_spool_info().value_or(SlotInfo{}).spoolman_id > 0) {
+            // Committing a manual entry (id=0, material set) over a linked
+            // spool intentionally clears the server link — the UI no longer
+            // shows that spool as in use, so the server must not either.
             api_->spoolman().set_active_spool(
                 0, []() {},
                 [](const MoonrakerError& err) {

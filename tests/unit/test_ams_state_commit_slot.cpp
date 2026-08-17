@@ -136,6 +136,38 @@ TEST_CASE("commit_slot_edit clears server active spool on unlink", "[ams][spoolm
     REQUIRE(f.backend->get_slot_info(0).spoolman_id == 0);
 }
 
+TEST_CASE("commit_slot_edit leaves server active spool alone on a no-link clear",
+          "[ams][spoolman][commit]") {
+    CommitFixture f;
+    MoonrakerAPIMock* mock_api = f.setup(0);
+
+    // Another lane's spool is active server-side. The unlink arm must not
+    // touch it just because THIS slot's edit happened to be a clear.
+    mock_api->spoolman_mock().set_active_spool(77, nullptr, nullptr);
+    REQUIRE(mock_api->spoolman_mock().get_mock_active_spool_id() == 77);
+
+    // A clear on a slot that never had a Spoolman link (original and edited
+    // spoolman_id both 0): NO set_active_spool call may fire — not even a
+    // clear(0), which would unlink whatever other lane the server tracks.
+    // (The mock's demo data links every lane, so stage a link-less one.)
+    SlotInfo seeded = f.backend->get_slot_info(1);
+    seeded.material = "PLA";
+    seeded.spoolman_id = 0;
+    f.backend->set_slot_info(1, seeded, /*persist=*/false);
+
+    SlotInfo original = f.backend->get_slot_info(1);
+    REQUIRE(original.spoolman_id == 0);
+
+    SlotInfo cleared = original;
+    cleared.material.clear();
+
+    AmsError err = AmsState::instance().commit_slot_edit(1, original, cleared);
+    REQUIRE(err.success());
+
+    // REQUIRED: the active spool id is UNCHANGED.
+    CHECK(mock_api->spoolman_mock().get_mock_active_spool_id() == 77);
+}
+
 TEST_CASE("commit_slot_edit invalidates identity cache on link change", "[ams][spoolman][commit]") {
     CommitFixture f;
     f.setup(169);

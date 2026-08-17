@@ -46,8 +46,10 @@ struct TempConfigFixture : public HelixTestFixture {
         // Initialize Config singleton with temp path
         Config::get_instance()->init(config_path);
 
-        // Clear any external spool state leaked from other tests in this shard
-        SettingsManager::instance().clear_external_spool_info();
+        // Clear any external spool state leaked from other tests in this
+        // shard. AmsState's clear also resets the in-memory override, killing
+        // an order dependence on which test last wrote it.
+        AmsState::instance().clear_external_spool_info();
     }
 
     ~TempConfigFixture() {
@@ -83,7 +85,9 @@ struct ExternalSpoolCommitFixture : LVGLTestFixture {
         std::filesystem::remove(AppConstants::Update::env_backup_fallback());
 
         Config::get_instance()->init(config_path);
-        SettingsManager::instance().clear_external_spool_info();
+        // AmsState's clear resets the in-memory override too, not just the
+        // settings record (same cross-test guard as TempConfigFixture).
+        AmsState::instance().clear_external_spool_info();
 
         AmsState::instance().set_moonraker_api(&api);
     }

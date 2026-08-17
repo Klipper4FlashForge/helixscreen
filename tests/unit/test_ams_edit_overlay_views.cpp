@@ -21,6 +21,7 @@
 #include "printer_state.h"
 #include "spoolman_manager.h"
 #include "spoolman_slot_saver.h"
+#include "src/ui/panel_widgets/active_spool_widget.h"
 
 #include <memory>
 
@@ -1316,6 +1317,63 @@ TEST_CASE_METHOD(OverlayConsumerCommitFixture,
     get_printer_state().set_spoolman_available(false); // restore clean slate
     UpdateQueue::instance().drain();
     process_lvgl(10);
+}
+
+TEST_CASE_METHOD(OverlayConsumerCommitFixture,
+                 "active_spool widget completion routes the edit through commit_slot_edit",
+                 "[ams_edit_overlay][active_spool][commit]") {
+    // Final-review find: ActiveSpoolWidget is the sixth completion consumer of
+    // the shared edit overlay. Its backend-slot arm used to write the backend
+    // directly (set_slot_info) — no server active-spool sync, no identity
+    // invalidation. The consumer commit owns both; this drives the widget's
+    // own click → editor → Save path and asserts the server sync fired.
+
+    // The mock backend starts with slot 0 loaded and current by construction;
+    // give that lane a Spoolman link the way a live one carries it.
+    SlotInfo seeded = backend->get_slot_info(0);
+    seeded.spoolman_id = 169;
+    seeded.material = "PLA";
+    backend->set_slot_info(0, seeded, /*persist=*/false);
+
+    // Spoolman "unavailable" so the editor's Save takes the synchronous
+    // local-close branch (no async PATCH seam).
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 0);
+    get_printer_state().set_spoolman_available(false);
+
+    // Build the home-panel component + controller, then tap it the way a user
+    // does — the widget's own completion wiring is the code under test.
+    lv_obj_t* comp =
+        static_cast<lv_obj_t*>(lv_xml_create(test_screen(), "panel_widget_active_spool", nullptr));
+    REQUIRE(comp != nullptr);
+    ActiveSpoolWidget widget(&api);
+    widget.attach(comp, test_screen());
+
+    lv_obj_t* btn = lv_obj_find_by_name(comp, "spoolman_btn");
+    REQUIRE(btn != nullptr);
+    lv_obj_send_event(btn, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // The editor opened on the loaded slot; stage an edit and header-Save the
+    // overlay the widget opened.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+    SlotInfo edited = seeded;
+    edited.material = "PETG";
+    access.set_working_info(edited);
+    access.call_handle_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // REQUIRED: the edit reached the backend slot through commit_slot_edit...
+    const SlotInfo after = backend->get_slot_info(0);
+    REQUIRE(after.material == "PETG");
+    REQUIRE(after.spoolman_id == 169);
+    // ...AND the server active-spool sync fired — the old direct-write arm
+    // never did, which is exactly the branch regression this pins.
+    REQUIRE(api.spoolman_mock().get_mock_active_spool_id() == 169);
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture,
