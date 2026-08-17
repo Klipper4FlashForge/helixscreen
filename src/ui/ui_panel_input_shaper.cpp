@@ -284,6 +284,10 @@ void InputShaperPanel::init_subjects() {
     UI_MANAGED_SUBJECT_INT(is_x_num_shapers_, 0, "is_x_num_shapers", subjects_);
     UI_MANAGED_SUBJECT_INT(is_y_num_shapers_, 0, "is_y_num_shapers", subjects_);
 
+    // Number of chart chips per axis (controls chip visibility via bind_flag_if_le)
+    UI_MANAGED_SUBJECT_INT(is_x_num_chips_, 0, "is_x_num_chips", subjects_);
+    UI_MANAGED_SUBJECT_INT(is_y_num_chips_, 0, "is_y_num_chips", subjects_);
+
     UI_MANAGED_SUBJECT_STRING(is_result_x_shaper_, is_result_x_shaper_buf_, "",
                               "is_result_x_shaper", subjects_);
     UI_MANAGED_SUBJECT_STRING(is_result_x_explanation_, is_result_x_explanation_buf_, "",
@@ -1355,10 +1359,12 @@ void InputShaperPanel::populate_chart(char axis, const InputShaperResult& result
     auto& chart_data = (axis == 'X') ? x_chart_ : y_chart_;
     auto& chips = (axis == 'X') ? x_chips_ : y_chips_;
     auto& has_freq_data = (axis == 'X') ? is_x_has_freq_data_ : is_y_has_freq_data_;
+    auto& num_chips = (axis == 'X') ? is_x_num_chips_ : is_y_num_chips_;
 
     // Check if freq data available
     if (result.freq_response.empty() || !chart_data.chart) {
         lv_subject_set_int(&has_freq_data, 0);
+        lv_subject_set_int(&num_chips, 0);
         return;
     }
 
@@ -1383,6 +1389,7 @@ void InputShaperPanel::populate_chart(char axis, const InputShaperResult& result
         spdlog::warn(
             "[InputShaper] {} axis: freq_response non-empty but produced no amplitude data", axis);
         lv_subject_set_int(&has_freq_data, 0);
+        lv_subject_set_int(&num_chips, 0);
         return;
     }
 
@@ -1442,6 +1449,11 @@ void InputShaperPanel::populate_chart(char axis, const InputShaperResult& result
         lv_subject_set_int(&chips[i].active, 0);
     }
 
+    // Hide the chips with no curve behind them (the XML has a fixed MAX_SHAPERS
+    // of them, and empty outlines read as broken)
+    lv_subject_set_int(&num_chips,
+                       static_cast<int>(std::min(chart_data.shaper_curves.size(), MAX_SHAPERS)));
+
     // Update legend to reflect initially selected shaper
     update_legend(axis);
 
@@ -1453,8 +1465,10 @@ void InputShaperPanel::clear_chart(char axis) {
     auto& chart_data = (axis == 'X') ? x_chart_ : y_chart_;
     auto& chips = (axis == 'X') ? x_chips_ : y_chips_;
     auto& has_freq_data = (axis == 'X') ? is_x_has_freq_data_ : is_y_has_freq_data_;
+    auto& num_chips = (axis == 'X') ? is_x_num_chips_ : is_y_num_chips_;
 
     lv_subject_set_int(&has_freq_data, 0);
+    lv_subject_set_int(&num_chips, 0);
 
     if (chart_data.chart) {
         ui_frequency_response_chart_clear(chart_data.chart);
