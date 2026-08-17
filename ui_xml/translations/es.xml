@@ -105,6 +105,7 @@
   <translation tag="AFC reset complete" es="Reinicio AFC completado"/>
   <translation tag="AFC reset failed" es="Error en reinicio AFC"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" es="AFC retrae el filamento del cabezal al finalizar la impresión"/>
+  <translation tag="AI detection" es="Detección AI"/>
   <translation tag="ALL DEVICES" es="TODOS LOS DISPOSITIVOS"/>
   <translation tag="AMS" es="AMS"/>
   <translation tag="AMS Active: " es="AMS activo: "/>
@@ -147,6 +148,7 @@
   <translation tag="Adjust until belt appears frozen" es="Ajustar hasta que la correa parezca congelada"/>
   <translation tag="Adjustments stay active until restart. Save after print completes." es="Los ajustes permanecen activos hasta reiniciar. Guarde después de que termine la impresión."/>
   <translation tag="Adjusts individual characteristics of your heaters for optimal control" es="Ajusta las características individuales de sus calentadores para un control óptimo"/>
+  <translation tag="Advanced" es="Avanzado"/>
   <translation tag="After running the commands, tap Check Again below." es="Después de ejecutar los comandos, toque Verificar de nuevo abajo."/>
   <translation tag="Alert" es="Alerta"/>
   <translation tag="Alerts" es="Alertas"/>
@@ -537,6 +539,7 @@
   <translation tag="Control power relays and smart outlets" es="Controlar relés y enchufes inteligentes"/>
   <translation tag="Controlled by hardware sensor" es="Controlado por sensor de hardware"/>
   <translation tag="Controller" es="Controlador"/>
+  <translation tag="Controls" es="Controles"/>
   <translation tag="Cool Down" es="Enfriar"/>
   <translation tag="Cool nozzle after filament ops" es="Enfriar boquilla tras cargar/descargar"/>
   <translation tag="Cooling" es="Enfriamiento"/>
@@ -596,6 +599,7 @@
   <translation tag="Custom..." es="Personalizado..."/>
   <translation tag="Customize Macro Button" es="Personalizar Botón de Macro"/>
   <translation tag="Customize preset temperatures" es="Personalizar temperaturas preestablecidas"/>
+  <translation tag="Customize your home screen" es="Personaliza tu pantalla de inicio"/>
   <translation tag="Cut Distance" es="Distancia de corte"/>
   <translation tag="Cut filament" es="Cortar filamento"/>
   <translation tag="Cut tip" es="Cortar la punta"/>
@@ -1233,6 +1237,7 @@
   <translation tag="Length of filament to purge" es="Longitud de filamento a purgar"/>
   <translation tag="Length of the cooling tube section" es="Longitud de la sección del tubo de enfriamiento"/>
   <translation tag="Length:" es="Longitud:"/>
+  <translation tag="Let&apos;s take a quick tour so you can find things fast." es="Hagamos un recorrido rápido para que encuentres las cosas fácilmente."/>
   <translation tag="Leveling Gantry..." es="Nivelando pórtico..."/>
   <translation tag="Library" es="Biblioteca"/>
   <translation tag="Lifetime Print Stats" es="Estadísticas de impresión totales"/>
@@ -1247,6 +1252,7 @@
   <translation tag="Load filament" es="Cargar filamento"/>
   <translation tag="Load may still be running — response timed out" es="La carga puede seguir en curso — tiempo de espera agotado"/>
   <translation tag="Load the required filaments or start anyway?" es="¿Cargar los filamentos requeridos o iniciar de todos modos?"/>
+  <translation tag="Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors." es="Carga, descarga e intercambia bobinas. Ve tu sistema multi-filamento de un vistazo, asigna colores a los slots y monitoriza los sensores de agotamiento."/>
   <translation tag="Loaded" es="Cargado"/>
   <translation tag="Loading" es="Cargando"/>
   <translation tag="Loading Bed Mesh..." es="Cargando malla de cama..."/>
@@ -1273,6 +1279,7 @@
   <translation tag="Log Level" es="Nivel de registro"/>
   <translation tag="Logs" es="Registros"/>
   <translation tag="Long Press Time" es="Tiempo de pulsación larga"/>
+  <translation tag="Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout." es="Mantén pulsada cualquier casilla para entrar en modo edición — reorganiza, redimensiona, elimina o añade widgets, y añade páginas extra para tu distribución preferida."/>
   <translation tag="Long-press the home grid to rearrange widgets (turn off if it triggers by accident)" es="Mantén pulsada la cuadrícula de inicio para reordenar los widgets (desactívalo si se activa por accidente)"/>
   <translation tag="Longest Disconnect" es="Desconexión más larga"/>
   <translation tag="Loosen Path A belt." es="Aflojar correa de Ruta A."/>
@@ -1318,6 +1325,7 @@
   <translation tag="Macro to resume a paused print" es="Macro para reanudar una impresión pausada"/>
   <translation tag="Macro to unload filament from extruder" es="Macro para descargar filamento del extrusor"/>
   <translation tag="Macros" es="Macros"/>
+  <translation tag="Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities." es="Macros, consola de G-code, herramientas de calibración (PID, input shaper, z-offset), actualizaciones de firmware y utilidades para desarrolladores."/>
   <translation tag="Main LED Strip" es="Tira LED Principal"/>
   <translation tag="Maintaining" es="Manteniendo"/>
   <translation tag="Maintenance" es="Mantenimiento"/>
@@ -1375,6 +1383,8 @@
   <translation tag="Monitor and set bed temperature" es="Monitorizar y ajustar la temperatura de la cama"/>
   <translation tag="Monitor and set chamber temperature" es="Monitorizar y ajustar la temperatura de la cámara"/>
   <translation tag="Monitor and set nozzle temperature" es="Monitorizar y ajustar la temperatura de la boquilla"/>
+  <translation tag="Monitor for print abnormalities (K2 Plus camera-based)" es="Monitorear anomalías de impresión (basado en cámara del K2 Plus)"/>
+  <translation tag="Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job." es="Monitoriza las impresiones en curso — tiempo restante, capa actual y progreso. Toca para pausar, reanudar o cancelar el trabajo activo."/>
   <translation tag="Monitor temperature sensors (single or carousel)" es="Monitorizar sensores de temperatura (uno o en carrusel)"/>
   <translation tag="Monitoring" es="Monitorizando"/>
   <translation tag="Month" es="Mes"/>
@@ -1393,6 +1403,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." es="Mueva el papel hacia adelante y atrás mientras ajusta. Deténgase cuando el papel se enganche ligeramente pero aún se deslice."/>
   <translation tag="Move selector" es="Mover selector"/>
   <translation tag="Move speed multipliers" es="Multiplicadores de velocidad de movimiento"/>
+  <translation tag="Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings." es="Mueve el cabezal, haz origen de los ejes, nivela la cama y ajusta temperaturas, ventiladores y otros parámetros de movimiento."/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." es="Mueve el cabezal para medir frecuencias de vibración en cada eje. Tarda 2-3 minutos. La impresora hará ruido — esto es normal."/>
   <translation tag="Moving lane" es="Moviendo carril"/>
   <translation tag="Multi-Filament" es="Multi-Filamento"/>
@@ -1425,6 +1436,7 @@
   <translation tag="Network Test" es="Prueba de Red"/>
   <translation tag="Network forgotten" es="Red olvidada"/>
   <translation tag="Network name cannot be empty" es="El nombre de red no puede estar vacío"/>
+  <translation tag="Network, display, sound, printer setup, and more. You can replay this tour anytime from Help &amp; About." es="Red, pantalla, sonido, configuración de impresora y más. Puedes repetir este tour en cualquier momento desde Ayuda y Acerca de."/>
   <translation tag="Never" es="Nunca"/>
   <translation tag="New Spool: Step 1 of 3" es="Nueva Bobina: Paso 1 de 3"/>
   <translation tag="New Spool: Step {} of {}" es="Nueva bobina: paso {} de {}"/>
@@ -1740,6 +1752,7 @@
   <translation tag="Print server rejected the job — check printer status" es="El servidor de impresión rechazó el trabajo — revisa el estado de la impresora"/>
   <translation tag="Print setup failed" es="Falló la preparación de la impresión"/>
   <translation tag="Print setup failed: internal error" es="Falló la preparación de la impresión: error interno"/>
+  <translation tag="Print status" es="Estado de impresión"/>
   <translation tag="Print timed out waiting for completion" es="La impresión agotó el tiempo de espera de finalización"/>
   <translation tag="Printer" es="Impresora"/>
   <translation tag="Printer Error" es="Error de Impresora"/>
@@ -2289,6 +2302,7 @@
   <translation tag="Tap + to add" es="Toca + para añadir"/>
   <translation tag="Tap again to confirm this orientation" es="Toque de nuevo para confirmar esta orientación"/>
   <translation tag="Tap an object to exclude it | {} objects ({} excluded)" es="Toca un objeto para excluirlo | {} objetos ({} excluidos)"/>
+  <translation tag="Tap any tile to open its full controls or toggle its state." es="Toca cualquier casilla para abrir sus controles completos o alternar su estado."/>
   <translation tag="Tap anywhere if this text is right-side up" es="Toque en cualquier lugar si este texto está derecho"/>
   <translation tag="Tap anywhere to begin" es="Toca en cualquier lugar para comenzar"/>
   <translation tag="Tap anywhere to begin calibration" es="Toca en cualquier lugar para iniciar la calibración"/>
@@ -2576,6 +2590,7 @@
   <translation tag="Week" es="Semana"/>
   <translation tag="Weekly Print Stats" es="Estadísticas de impresión semanales"/>
   <translation tag="Weight data is synced from Spoolman to display remaining filament. Changes are also synced when prints start, pause, or complete." es="Los datos de peso se sincronizan desde Spoolman para mostrar el filamento restante. Los cambios también se sincronizan cuando las impresiones inician, pausan o completan."/>
+  <translation tag="Welcome to HelixScreen" es="Bienvenido a HelixScreen"/>
   <translation tag="What We Collect" es="Lo que recopilamos"/>
   <translation tag="When enabled, only the macro runs. When disabled, temperatures are set first, then the macro runs." es="Cuando está activado, solo se ejecuta el macro. Cuando está desactivado, primero se establecen las temperaturas y luego se ejecuta el macro."/>
   <translation tag="When starting a print, you&apos;ll be able to choose whether to run %s. This saves time when you&apos;ve already done it recently or want more control over your print preparation." es="Al iniciar una impresión, podrá elegir si ejecutar %s. Esto ahorra tiempo cuando ya lo ha hecho recientemente o desea más control sobre la preparación de su impresión."/>
@@ -2626,6 +2641,7 @@
   <translation tag="Your PRINT_START macro will be updated to give you control over:&#10;&#10;" es="Su macro PRINT_START se actualizará para darle control sobre:&#10;&#10;"/>
   <translation tag="Your completed prints will appear here" es="Sus impresiones completadas aparecerán aquí"/>
   <translation tag="Your print start is already fully configured!" es="¡Su inicio de impresión ya está completamente configurado!"/>
+  <translation tag="Your printer at a glance" es="Tu impresora de un vistazo"/>
   <translation tag="Your printer has an automatic filament changer" es="Tu impresora tiene un cambiador de filamento automático"/>
   <translation tag="Your printer was offline during setup, so hardware options were skipped. Set them up now?" es="Su impresora estaba desconectada durante la configuración, por lo que se omitieron las opciones de hardware. ¿Configurarlas ahora?"/>
   <translation tag="Z" es="Z"/>
@@ -2683,9 +2699,6 @@
   <translation tag="nozzle" es="boquilla"/>
   <translation tag="of" es="de"/>
   <translation tag="off" es="apagado"/>
-  <translation tag="pre_print_option.ai_detect.description" es="Monitorear anomalías de impresión (basado en cámara del K2 Plus)"/>
-  <translation tag="pre_print_option.ai_detect.label" es="Detección AI"/>
-  <translation tag="pre_print_option.timelapse.label" es="Timelapse"/>
   <translation tag="prints" es="impresiones"/>
   <translation tag="remaining" es="restante"/>
   <translation tag="remaining before clog detection triggers" es="restante antes de que se active la detección de obstrucción"/>
@@ -2695,22 +2708,6 @@
   <translation tag="steppers" es="motores paso a paso"/>
   <translation tag="tall" es="de alto"/>
   <translation tag="tool(s)" es="herramienta(s)"/>
-  <translation tag="tour.step.advanced.body" es="Macros, consola de G-code, herramientas de calibración (PID, input shaper, z-offset), actualizaciones de firmware y utilidades para desarrolladores."/>
-  <translation tag="tour.step.advanced.title" es="Avanzado"/>
-  <translation tag="tour.step.controls.body" es="Mueve el cabezal, haz origen de los ejes, nivela la cama y ajusta temperaturas, ventiladores y otros parámetros de movimiento."/>
-  <translation tag="tour.step.controls.title" es="Controles"/>
-  <translation tag="tour.step.customize.body" es="Mantén pulsada cualquier casilla para entrar en modo edición — reorganiza, redimensiona, elimina o añade widgets, y añade páginas extra para tu distribución preferida."/>
-  <translation tag="tour.step.customize.title" es="Personaliza tu pantalla de inicio"/>
-  <translation tag="tour.step.filament.body" es="Carga, descarga e intercambia bobinas. Ve tu sistema multi-filamento de un vistazo, asigna colores a los slots y monitoriza los sensores de agotamiento."/>
-  <translation tag="tour.step.filament.title" es="Filamento"/>
-  <translation tag="tour.step.home_grid.body" es="Toca cualquier casilla para abrir sus controles completos o alternar su estado."/>
-  <translation tag="tour.step.home_grid.title" es="Tu impresora de un vistazo"/>
-  <translation tag="tour.step.print.body" es="Monitoriza las impresiones en curso — tiempo restante, capa actual y progreso. Toca para pausar, reanudar o cancelar el trabajo activo."/>
-  <translation tag="tour.step.print.title" es="Estado de impresión"/>
-  <translation tag="tour.step.settings.body" es="Red, pantalla, sonido, configuración de impresora y más. Puedes repetir este tour en cualquier momento desde Ayuda y Acerca de."/>
-  <translation tag="tour.step.settings.title" es="Ajustes"/>
-  <translation tag="tour.step.welcome.body" es="Hagamos un recorrido rápido para que encuentres las cosas fácilmente."/>
-  <translation tag="tour.step.welcome.title" es="Bienvenido a HelixScreen"/>
   <translation tag="used" es="usado"/>
   <translation tag="v%s available" es="v%s disponible"/>
   <translation tag="v{} installed! Restarting..." es="¡v{} instalado! Reiniciando..."/>

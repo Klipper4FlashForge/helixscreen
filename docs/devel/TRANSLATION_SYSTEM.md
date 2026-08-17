@@ -152,6 +152,19 @@ active locale's pack via the locale loader (`src/system/translation_loader.cpp`,
 `helix::ui::ensure_translation_loaded()` → `lv_xml_register_translation_from_file()`),
 so it never has to parse every language up front.
 
+**English never loads a pack.** English tags ARE the English UI text, and
+`lv_translation_get()` returns the tag unchanged when no pack matches, so
+`ensure_translation_loaded()` skips the identity locale entirely (heap + lookup
+scan savings — see `kIdentityLocale`). The hard consequence: **every key in
+`translations/en.yml` must be its own English text.** A "semantic" key whose
+value differs from the key (`pre_print_option.timelapse.label: Timelapse`)
+renders as the raw dotted identifier in the English UI — that exact bug shipped
+in v0.99.114 (timelapse toggle row, first-run tour). If the English text already
+exists as a tag, point the reference (C++ / XML / `printer_database.json`) at
+the existing tag instead of adding a near-duplicate key.
+`scripts/check_translation_identity.py` (wired into `quality-checks.sh`) fails
+the build if `en.yml` ever grows a non-identity entry.
+
 ### Legacy `lv_i18n` C table (opt-in)
 
 `src/generated/lv_i18n_translations.c`/`.h` was a parallel i18n subsystem kept
@@ -419,8 +432,8 @@ dead, because keys reached *indirectly* are invisible to it:
 
 | Indirect pattern | Example |
 |------------------|---------|
-| Tag in a struct initializer, resolved via `lv_tr(var)` | `tour.step.*` in `src/ui/tour/tour_steps.cpp` |
-| Tag stored as JSON data | `pre_print_option.*` in `assets/config/printer_database.json` |
+| Tag in a struct initializer, resolved via `lv_tr(var)` | tour titles/bodies in `src/ui/tour/tour_steps.cpp` |
+| Tag stored as JSON data | pre-print option labels in `assets/config/printer_database.json` |
 | Label text declared in a header | `include/ui_panel_controls.h` |
 
 Matching is deliberately **delimited, not substring** — otherwise the word

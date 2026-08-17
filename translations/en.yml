@@ -3004,10 +3004,8 @@ translations:
   nozzle: nozzle
   of: of
   'off': 'off'
-  pre_print_option.ai_detect.description: Monitor for print abnormalities (K2 Plus
-    camera-based)
-  pre_print_option.ai_detect.label: AI detection
-  pre_print_option.timelapse.label: Timelapse
+  Monitor for print abnormalities (K2 Plus camera-based): Monitor for print abnormalities (K2 Plus camera-based)
+  AI detection: AI detection
   prints: prints
   remaining: remaining
   remaining before clog detection triggers: remaining before clog detection triggers
@@ -3017,28 +3015,20 @@ translations:
   steppers: steppers
   tall: tall
   tool(s): tool(s)
-  tour.step.advanced.body: Macros, G-code console, calibration tools (PID, input shaper,
-    z-offset), firmware updates, and developer utilities.
-  tour.step.advanced.title: Advanced
-  tour.step.controls.body: Move the toolhead, home axes, level the bed, and fine-tune
-    temperatures, fans, and other motion settings.
-  tour.step.controls.title: Controls
-  tour.step.customize.body: Long-press any tile to enter edit mode — rearrange, resize,
-    remove, or add widgets, and add extra pages for your preferred layout.
-  tour.step.customize.title: Customize your home screen
-  tour.step.filament.body: Load, unload, and swap spools. View your multi-filament
-    system at a glance, map colors to slots, and monitor runout sensors.
-  tour.step.filament.title: Filament
-  tour.step.home_grid.body: Tap any tile to open its full controls or toggle its state.
-  tour.step.home_grid.title: Your printer at a glance
-  tour.step.print.body: Monitor prints in progress — time remaining, current layer,
-    and progress. Tap to pause, resume, or cancel the active job.
-  tour.step.print.title: Print status
-  tour.step.settings.body: Network, display, sound, printer setup, and more. You can
-    replay this tour anytime from Help & About.
-  tour.step.settings.title: Settings
-  tour.step.welcome.body: Let's take a quick tour so you can find things fast.
-  tour.step.welcome.title: Welcome to HelixScreen
+  'Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities.': 'Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities.'
+  Advanced: Advanced
+  'Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings.': 'Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings.'
+  Controls: Controls
+  'Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout.': 'Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout.'
+  Customize your home screen: Customize your home screen
+  'Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors.': 'Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors.'
+  Tap any tile to open its full controls or toggle its state.: Tap any tile to open its full controls or toggle its state.
+  Your printer at a glance: Your printer at a glance
+  'Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job.': 'Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job.'
+  Print status: Print status
+  'Network, display, sound, printer setup, and more. You can replay this tour anytime from Help & About.': 'Network, display, sound, printer setup, and more. You can replay this tour anytime from Help & About.'
+  Let's take a quick tour so you can find things fast.: Let's take a quick tour so you can find things fast.
+  Welcome to HelixScreen: Welcome to HelixScreen
   used: used
   v%s available: v%s available
   v{} installed! Restarting...: v{} installed! Restarting...

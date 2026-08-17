@@ -1205,7 +1205,7 @@ void PrinterState::apply_dynamic_options() {
     if (lv_subject_get_int(capabilities_state_.get_printer_has_timelapse_subject()) == 1) {
         PrePrintOption tl;
         tl.id = "timelapse";
-        tl.label_key = "pre_print_option.timelapse.label";
+        tl.label_key = "Timelapse";
         tl.category = PrePrintCategory::Monitoring;
         tl.order = 100;
         // Default reflects the global moonraker-timelapse `enabled` setting

@@ -3090,10 +3090,8 @@ translations:
   nozzle: bico
   of: de
   'off': desligado
-  pre_print_option.ai_detect.description: Monitorar anomalias de impressão (baseado
-    na câmera do K2 Plus)
-  pre_print_option.ai_detect.label: Detecção por AI
-  pre_print_option.timelapse.label: Timelapse
+  Monitor for print abnormalities (K2 Plus camera-based): Monitorar anomalias de impressão (baseado na câmera do K2 Plus)
+  AI detection: Detecção por AI
   prints: impressões
   remaining: restante
   remaining before clog detection triggers: restante antes da detecção de obstrução
@@ -3104,32 +3102,20 @@ translations:
   steppers: motores de passo
   tall: de altura
   tool(s): ferramenta(s)
-  tour.step.advanced.body: Macros, console G-code, ferramentas de calibração (PID,
-    input shaper, z-offset), atualizações de firmware e utilitários de desenvolvedor.
-  tour.step.advanced.title: Avançado
-  tour.step.controls.body: Mova o cabeçote, referencie eixos, nivele a mesa e ajuste
-    temperaturas, ventoinhas e outras configurações de movimento.
-  tour.step.controls.title: Controles
-  tour.step.customize.body: Pressione e segure qualquer bloco para entrar no modo
-    de edição — reorganize, redimensione, remova ou adicione widgets, e adicione páginas
-    extras para o seu layout preferido.
-  tour.step.customize.title: Personalize sua tela inicial
-  tour.step.filament.body: Carregue, descarregue e troque carretéis. Visualize seu
-    sistema de múltiplos filamentos rapidamente, mapeie cores para slots e monitore
-    sensores de fim de filamento.
-  tour.step.filament.title: Filamento
-  tour.step.home_grid.body: Toque em qualquer bloco para abrir seus controles completos
-    ou alternar seu estado.
-  tour.step.home_grid.title: Sua impressora num relance
-  tour.step.print.body: Monitore impressões em andamento — tempo restante, camada
-    atual e progresso. Toque para pausar, retomar ou cancelar o trabalho ativo.
-  tour.step.print.title: Status da impressão
-  tour.step.settings.body: Rede, tela, som, configuração da impressora e muito mais.
-    Você pode repetir este tour a qualquer momento em Ajuda e sobre.
-  tour.step.settings.title: Configurações
-  tour.step.welcome.body: Vamos fazer um tour rápido para você encontrar as coisas
-    com facilidade.
-  tour.step.welcome.title: Bem-vindo ao HelixScreen
+  'Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities.': 'Macros, console G-code, ferramentas de calibração (PID, input shaper, z-offset), atualizações de firmware e utilitários de desenvolvedor.'
+  Advanced: Avançado
+  'Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings.': 'Mova o cabeçote, referencie eixos, nivele a mesa e ajuste temperaturas, ventoinhas e outras configurações de movimento.'
+  Controls: Controles
+  'Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout.': 'Pressione e segure qualquer bloco para entrar no modo de edição — reorganize, redimensione, remova ou adicione widgets, e adicione páginas extras para o seu layout preferido.'
+  Customize your home screen: Personalize sua tela inicial
+  'Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors.': 'Carregue, descarregue e troque carretéis. Visualize seu sistema de múltiplos filamentos rapidamente, mapeie cores para slots e monitore sensores de fim de filamento.'
+  Tap any tile to open its full controls or toggle its state.: Toque em qualquer bloco para abrir seus controles completos ou alternar seu estado.
+  Your printer at a glance: Sua impressora num relance
+  'Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job.': 'Monitore impressões em andamento — tempo restante, camada atual e progresso. Toque para pausar, retomar ou cancelar o trabalho ativo.'
+  Print status: Status da impressão
+  'Network, display, sound, printer setup, and more. You can replay this tour anytime from Help & About.': 'Rede, tela, som, configuração da impressora e muito mais. Você pode repetir este tour a qualquer momento em Ajuda e sobre.'
+  Let's take a quick tour so you can find things fast.: Vamos fazer um tour rápido para você encontrar as coisas com facilidade.
+  Welcome to HelixScreen: Bem-vindo ao HelixScreen
   used: usado
   v%s available: v%s disponível
   v{} installed! Restarting...: v{} instalado! Reiniciando...

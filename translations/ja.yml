@@ -2799,9 +2799,8 @@ translations:
   nozzle: ノズル
   of: の
   'off': オフ
-  pre_print_option.ai_detect.description: 印刷異常を監視 (K2 Plus カメラベース)
-  pre_print_option.ai_detect.label: AI 検出
-  pre_print_option.timelapse.label: タイムラプス
+  Monitor for print abnormalities (K2 Plus camera-based): 印刷異常を監視 (K2 Plus カメラベース)
+  AI detection: AI 検出
   prints: 印刷
   remaining: 残り
   remaining before clog detection triggers: 残りで詰まり検出が作動します
@@ -2811,22 +2810,20 @@ translations:
   steppers: ステッパー
   tall: 高さ
   tool(s): ツール
-  tour.step.advanced.body: マクロ、G-code コンソール、キャリブレーションツール（PID、入力シェイパー、Z オフセット）、ファームウェア更新、開発者向けユーティリティ。
-  tour.step.advanced.title: 詳細設定
-  tour.step.controls.body: ツールヘッドを動かし、軸をホーミングし、ベッドをレベリングし、温度、ファン、その他のモーション設定を微調整します。
-  tour.step.controls.title: コントロール
-  tour.step.customize.body: タイルを長押しして編集モードに入ります — ウィジェットの並べ替え、サイズ変更、削除、追加や、好みのレイアウトに合わせたページの追加ができます。
-  tour.step.customize.title: ホーム画面をカスタマイズ
-  tour.step.filament.body: スプールのロード、アンロード、交換を行います。マルチフィラメントシステムを一目で確認し、色をスロットにマッピングし、ランアウトセンサーを監視できます。
-  tour.step.filament.title: フィラメント
-  tour.step.home_grid.body: タイルをタップすると、全機能のコントロールを開いたり、状態を切り替えたりできます。
-  tour.step.home_grid.title: プリンターを一目で確認
-  tour.step.print.body: 印刷の進行状況を監視します — 残り時間、現在のレイヤー、進捗。タップすれば進行中のジョブを一時停止、再開、キャンセルできます。
-  tour.step.print.title: 印刷ステータス
-  tour.step.settings.body: ネットワーク、ディスプレイ、サウンド、プリンター設定など。このツアーは「ヘルプと情報」からいつでも再生できます。
-  tour.step.settings.title: 設定
-  tour.step.welcome.body: 機能をすぐに見つけられるよう、簡単なツアーを始めましょう。
-  tour.step.welcome.title: HelixScreen へようこそ
+  'Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities.': マクロ、G-code コンソール、キャリブレーションツール（PID、入力シェイパー、Z オフセット）、ファームウェア更新、開発者向けユーティリティ。
+  Advanced: 詳細設定
+  'Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings.': ツールヘッドを動かし、軸をホーミングし、ベッドをレベリングし、温度、ファン、その他のモーション設定を微調整します。
+  Controls: コントロール
+  'Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout.': タイルを長押しして編集モードに入ります — ウィジェットの並べ替え、サイズ変更、削除、追加や、好みのレイアウトに合わせたページの追加ができます。
+  Customize your home screen: ホーム画面をカスタマイズ
+  'Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors.': スプールのロード、アンロード、交換を行います。マルチフィラメントシステムを一目で確認し、色をスロットにマッピングし、ランアウトセンサーを監視できます。
+  Tap any tile to open its full controls or toggle its state.: タイルをタップすると、全機能のコントロールを開いたり、状態を切り替えたりできます。
+  Your printer at a glance: プリンターを一目で確認
+  'Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job.': 印刷の進行状況を監視します — 残り時間、現在のレイヤー、進捗。タップすれば進行中のジョブを一時停止、再開、キャンセルできます。
+  Print status: 印刷ステータス
+  'Network, display, sound, printer setup, and more. You can replay this tour anytime from Help & About.': ネットワーク、ディスプレイ、サウンド、プリンター設定など。このツアーは「ヘルプと情報」からいつでも再生できます。
+  Let's take a quick tour so you can find things fast.: 機能をすぐに見つけられるよう、簡単なツアーを始めましょう。
+  Welcome to HelixScreen: HelixScreen へようこそ
   used: 使用
   v%s available: v%s が利用可能です
   v{} installed! Restarting...: v{} をインストールしました！再起動中...

@@ -105,6 +105,7 @@
   <translation tag="AFC reset complete" ru="Сброс AFC завершён"/>
   <translation tag="AFC reset failed" ru="Ошибка сброса AFC"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" ru="AFC выгружает филамент из печатающей головки по завершении печати"/>
+  <translation tag="AI detection" ru="AI-детекция"/>
   <translation tag="ALL DEVICES" ru="ВСЕ УСТРОЙСТВА"/>
   <translation tag="AMS" ru="AMS"/>
   <translation tag="AMS Active: " ru="AMS активен: "/>
@@ -147,6 +148,7 @@
   <translation tag="Adjust until belt appears frozen" ru="Регулируйте, пока ремень не покажется неподвижным"/>
   <translation tag="Adjustments stay active until restart. Save after print completes." ru="Настройки активны до перезагрузки. Сохраните после завершения печати."/>
   <translation tag="Adjusts individual characteristics of your heaters for optimal control" ru="Настраивает индивидуальные характеристики нагревателей для оптимального контроля"/>
+  <translation tag="Advanced" ru="Дополнительно"/>
   <translation tag="After running the commands, tap Check Again below." ru="После выполнения команд нажмите «Проверить снова» ниже."/>
   <translation tag="Alert" ru="Оповещение"/>
   <translation tag="Alerts" ru="Оповещения"/>
@@ -537,6 +539,7 @@
   <translation tag="Control power relays and smart outlets" ru="Управление реле и умными розетками"/>
   <translation tag="Controlled by hardware sensor" ru="Управляется аппаратным датчиком"/>
   <translation tag="Controller" ru="Контроллер"/>
+  <translation tag="Controls" ru="Управление"/>
   <translation tag="Cool Down" ru="Охладить"/>
   <translation tag="Cool nozzle after filament ops" ru="Остужать сопло после операций с филаментом"/>
   <translation tag="Cooling" ru="Охлаждение"/>
@@ -596,6 +599,7 @@
   <translation tag="Custom..." ru="Настроить..."/>
   <translation tag="Customize Macro Button" ru="Настроить кнопку макроса"/>
   <translation tag="Customize preset temperatures" ru="Настройка пресетов температур"/>
+  <translation tag="Customize your home screen" ru="Настройте главный экран"/>
   <translation tag="Cut Distance" ru="Расстояние реза"/>
   <translation tag="Cut filament" ru="Обрезать филамент"/>
   <translation tag="Cut tip" ru="Обрезка кончика"/>
@@ -1233,6 +1237,7 @@
   <translation tag="Length of filament to purge" ru="Длина продуваемого филамента"/>
   <translation tag="Length of the cooling tube section" ru="Длина участка трубки охлаждения"/>
   <translation tag="Length:" ru="Длина:"/>
+  <translation tag="Let&apos;s take a quick tour so you can find things fast." ru="Давайте устроим краткий тур, чтобы вы могли быстро находить всё нужное."/>
   <translation tag="Leveling Gantry..." ru="Выравнивание портала..."/>
   <translation tag="Library" ru="Библиотека"/>
   <translation tag="Lifetime Print Stats" ru="Статистика за всё время"/>
@@ -1247,6 +1252,7 @@
   <translation tag="Load filament" ru="Загрузка филамента"/>
   <translation tag="Load may still be running — response timed out" ru="Загрузка может ещё выполняться — время ожидания истекло"/>
   <translation tag="Load the required filaments or start anyway?" ru="Загрузить нужные филаменты или начать без них?"/>
+  <translation tag="Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors." ru="Загружайте, выгружайте и меняйте катушки. Просматривайте вашу мультифиламентную систему одним взглядом, сопоставляйте цвета со слотами и отслеживайте датчики окончания филамента."/>
   <translation tag="Loaded" ru="Загружен"/>
   <translation tag="Loading" ru="Загрузка"/>
   <translation tag="Loading Bed Mesh..." ru="Загрузка сетки стола..."/>
@@ -1273,6 +1279,7 @@
   <translation tag="Log Level" ru="Уровень журнала"/>
   <translation tag="Logs" ru="Журналы"/>
   <translation tag="Long Press Time" ru="Время долгого нажатия"/>
+  <translation tag="Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout." ru="Долгое нажатие на любую плитку переводит в режим редактирования — переставляйте, изменяйте размер, удаляйте или добавляйте виджеты, а также добавляйте дополнительные страницы под свой макет."/>
   <translation tag="Long-press the home grid to rearrange widgets (turn off if it triggers by accident)" ru="Долгое нажатие на сетку главного экрана переставляет виджеты (отключите, если срабатывает случайно)"/>
   <translation tag="Longest Disconnect" ru="Самое долгое отключение"/>
   <translation tag="Loosen Path A belt." ru="Ослабьте ремень Пути A."/>
@@ -1318,6 +1325,7 @@
   <translation tag="Macro to resume a paused print" ru="Макрос для возобновления приостановленной печати"/>
   <translation tag="Macro to unload filament from extruder" ru="Макрос для выгрузки филамента из экструдера"/>
   <translation tag="Macros" ru="Макросы"/>
+  <translation tag="Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities." ru="Макросы, консоль G-code, инструменты калибровки (PID, Input Shaper, Z-смещение), обновления прошивки и утилиты для разработчиков."/>
   <translation tag="Main LED Strip" ru="Основная LED-лента"/>
   <translation tag="Maintaining" ru="Поддержание"/>
   <translation tag="Maintenance" ru="Обслуживание"/>
@@ -1375,6 +1383,8 @@
   <translation tag="Monitor and set bed temperature" ru="Контроль и настройка температуры стола"/>
   <translation tag="Monitor and set chamber temperature" ru="Контроль и настройка температуры камеры"/>
   <translation tag="Monitor and set nozzle temperature" ru="Контроль и настройка температуры сопла"/>
+  <translation tag="Monitor for print abnormalities (K2 Plus camera-based)" ru="Отслеживание дефектов печати (на основе камеры K2 Plus)"/>
+  <translation tag="Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job." ru="Отслеживайте выполняющиеся печати — оставшееся время, текущий слой и прогресс. Нажмите, чтобы приостановить, возобновить или отменить активное задание."/>
   <translation tag="Monitor temperature sensors (single or carousel)" ru="Отслеживать датчики температуры (один или карусель)"/>
   <translation tag="Monitoring" ru="Мониторинг"/>
   <translation tag="Month" ru="Месяц"/>
@@ -1393,6 +1403,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." ru="Перемещайте бумагу вперёд-назад во время регулировки. Остановитесь, когда бумага слегка цепляется, но ещё скользит."/>
   <translation tag="Move selector" ru="Двигать селектор"/>
   <translation tag="Move speed multipliers" ru="Множители скорости перемещения"/>
+  <translation tag="Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings." ru="Перемещайте печатающую головку, паркуйте оси, выравнивайте стол и точно настраивайте температуры, вентиляторы и другие параметры движения."/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." ru="Перемещает печатающую головку для измерения частот вибрации по каждой оси. Занимает 2-3 минуты. Принтер будет шуметь — это нормально."/>
   <translation tag="Moving lane" ru="Перемещение слота"/>
   <translation tag="Multi-Filament" ru="Мульти-филамент"/>
@@ -1425,6 +1436,7 @@
   <translation tag="Network Test" ru="Тест сети"/>
   <translation tag="Network forgotten" ru="Сеть забыта"/>
   <translation tag="Network name cannot be empty" ru="Имя сети не может быть пустым"/>
+  <translation tag="Network, display, sound, printer setup, and more. You can replay this tour anytime from Help &amp; About." ru="Сеть, дисплей, звук, настройка принтера и многое другое. Этот тур можно повторить в любой момент из раздела «Справка и о программе»."/>
   <translation tag="Never" ru="Никогда"/>
   <translation tag="New Spool: Step 1 of 3" ru="Новая катушка: Шаг 1 из 3"/>
   <translation tag="New Spool: Step {} of {}" ru="Новая катушка: шаг {} из {}"/>
@@ -1740,6 +1752,7 @@
   <translation tag="Print server rejected the job — check printer status" ru="Сервер печати отклонил задание — проверьте статус принтера"/>
   <translation tag="Print setup failed" ru="Не удалось подготовить печать"/>
   <translation tag="Print setup failed: internal error" ru="Не удалось подготовить печать: внутренняя ошибка"/>
+  <translation tag="Print status" ru="Статус печати"/>
   <translation tag="Print timed out waiting for completion" ru="Время ожидания завершения печати истекло"/>
   <translation tag="Printer" ru="Принтер"/>
   <translation tag="Printer Error" ru="Ошибка принтера"/>
@@ -2289,6 +2302,7 @@
   <translation tag="Tap + to add" ru="Нажмите +, чтобы добавить"/>
   <translation tag="Tap again to confirm this orientation" ru="Нажмите ещё раз для подтверждения ориентации"/>
   <translation tag="Tap an object to exclude it | {} objects ({} excluded)" ru="Коснитесь объекта, чтобы исключить его | {} объектов ({} исключено)"/>
+  <translation tag="Tap any tile to open its full controls or toggle its state." ru="Нажмите на любую плитку, чтобы открыть её полные элементы управления или переключить состояние."/>
   <translation tag="Tap anywhere if this text is right-side up" ru="Нажмите в любом месте, если текст расположен правильно"/>
   <translation tag="Tap anywhere to begin" ru="Нажмите в любом месте для начала"/>
   <translation tag="Tap anywhere to begin calibration" ru="Нажмите в любом месте для начала калибровки"/>
@@ -2576,6 +2590,7 @@
   <translation tag="Week" ru="Неделя"/>
   <translation tag="Weekly Print Stats" ru="Статистика за неделю"/>
   <translation tag="Weight data is synced from Spoolman to display remaining filament. Changes are also synced when prints start, pause, or complete." ru="Данные о весе синхронизируются из Spoolman для отображения оставшегося филамента. Изменения также синхронизируются при начале, паузе или завершении печати."/>
+  <translation tag="Welcome to HelixScreen" ru="Добро пожаловать в HelixScreen"/>
   <translation tag="What We Collect" ru="Что мы собираем"/>
   <translation tag="When enabled, only the macro runs. When disabled, temperatures are set first, then the macro runs." ru="Когда включено, запускается только макрос. Когда выключено, сначала задаются температуры, затем запускается макрос."/>
   <translation tag="When starting a print, you&apos;ll be able to choose whether to run %s. This saves time when you&apos;ve already done it recently or want more control over your print preparation." ru="При запуске печати вы сможете выбрать, запускать ли %s. Это экономит время, если вы уже делали это недавно или хотите больше контроля над подготовкой печати."/>
@@ -2626,6 +2641,7 @@
   <translation tag="Your PRINT_START macro will be updated to give you control over:&#10;&#10;" ru="Ваш макрос PRINT_START будет обновлён, чтобы дать вам контроль над:&#10;&#10;"/>
   <translation tag="Your completed prints will appear here" ru="Ваши завершённые печати появятся здесь"/>
   <translation tag="Your print start is already fully configured!" ru="Ваш старт печати уже полностью настроен!"/>
+  <translation tag="Your printer at a glance" ru="Ваш принтер одним взглядом"/>
   <translation tag="Your printer has an automatic filament changer" ru="Ваш принтер оснащён автоматическим сменщиком филамента"/>
   <translation tag="Your printer was offline during setup, so hardware options were skipped. Set them up now?" ru="Принтер был не в сети во время настройки, поэтому параметры оборудования пропущены. Настроить их сейчас?"/>
   <translation tag="Z" ru="Z"/>
@@ -2683,9 +2699,6 @@
   <translation tag="nozzle" ru="сопло"/>
   <translation tag="of" ru="из"/>
   <translation tag="off" ru="выкл"/>
-  <translation tag="pre_print_option.ai_detect.description" ru="Отслеживание дефектов печати (на основе камеры K2 Plus)"/>
-  <translation tag="pre_print_option.ai_detect.label" ru="AI-детекция"/>
-  <translation tag="pre_print_option.timelapse.label" ru="Таймлапс"/>
   <translation tag="prints" ru="печатей"/>
   <translation tag="remaining" ru="осталось"/>
   <translation tag="remaining before clog detection triggers" ru="осталось до срабатывания обнаружения засора"/>
@@ -2695,22 +2708,6 @@
   <translation tag="steppers" ru="шаговые двигатели"/>
   <translation tag="tall" ru="высотой"/>
   <translation tag="tool(s)" ru="инструмент(ы)"/>
-  <translation tag="tour.step.advanced.body" ru="Макросы, консоль G-code, инструменты калибровки (PID, Input Shaper, Z-смещение), обновления прошивки и утилиты для разработчиков."/>
-  <translation tag="tour.step.advanced.title" ru="Дополнительно"/>
-  <translation tag="tour.step.controls.body" ru="Перемещайте печатающую головку, паркуйте оси, выравнивайте стол и точно настраивайте температуры, вентиляторы и другие параметры движения."/>
-  <translation tag="tour.step.controls.title" ru="Управление"/>
-  <translation tag="tour.step.customize.body" ru="Долгое нажатие на любую плитку переводит в режим редактирования — переставляйте, изменяйте размер, удаляйте или добавляйте виджеты, а также добавляйте дополнительные страницы под свой макет."/>
-  <translation tag="tour.step.customize.title" ru="Настройте главный экран"/>
-  <translation tag="tour.step.filament.body" ru="Загружайте, выгружайте и меняйте катушки. Просматривайте вашу мультифиламентную систему одним взглядом, сопоставляйте цвета со слотами и отслеживайте датчики окончания филамента."/>
-  <translation tag="tour.step.filament.title" ru="Филамент"/>
-  <translation tag="tour.step.home_grid.body" ru="Нажмите на любую плитку, чтобы открыть её полные элементы управления или переключить состояние."/>
-  <translation tag="tour.step.home_grid.title" ru="Ваш принтер одним взглядом"/>
-  <translation tag="tour.step.print.body" ru="Отслеживайте выполняющиеся печати — оставшееся время, текущий слой и прогресс. Нажмите, чтобы приостановить, возобновить или отменить активное задание."/>
-  <translation tag="tour.step.print.title" ru="Статус печати"/>
-  <translation tag="tour.step.settings.body" ru="Сеть, дисплей, звук, настройка принтера и многое другое. Этот тур можно повторить в любой момент из раздела «Справка и о программе»."/>
-  <translation tag="tour.step.settings.title" ru="Настройки"/>
-  <translation tag="tour.step.welcome.body" ru="Давайте устроим краткий тур, чтобы вы могли быстро находить всё нужное."/>
-  <translation tag="tour.step.welcome.title" ru="Добро пожаловать в HelixScreen"/>
   <translation tag="used" ru="использ."/>
   <translation tag="v%s available" ru="Доступна v%s"/>
   <translation tag="v{} installed! Restarting..." ru="v{} установлена! Перезапуск..."/>
