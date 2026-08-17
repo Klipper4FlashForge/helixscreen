@@ -1216,6 +1216,7 @@ translations:
   Keep Navigation Bar: 保留导航栏
   Keep Printing: 继续打印
   Keep Required: 保持必需
+  Keep current: ''
   Keep the bypass spool visible when bypass is off: 旁路关闭时保持料盘可见
   Kick away: '拨除废料'
   Kinematics: 运动学
@@ -1829,6 +1830,7 @@ translations:
   Printer name: 打印机名称
   Printer not ready: 打印机未就绪
   Printer ready: 打印机就绪
+  Printer type mismatch: ''
   'Printer:': '打印机:'
   'Printer: ': '打印机: '
   PrinterIdentify: 识别打印机
@@ -1904,6 +1906,7 @@ translations:
   Ramming Volume: '填充体积'
   Raspberry Pi: Raspberry Pi
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
+  Re-identify: ''
   Re-probe: 重新探测
   Re-read spool RFID tags and remaining length: '重新读取料盘 RFID 标签与剩余长度'
   Re-syncs Happy Hare's tracked state with the hardware.: 将 Happy Hare 跟踪的状态与硬件重新同步。
@@ -2465,6 +2468,8 @@ translations:
   : 此插件让 HelixScreen 控制打印启动选项，如热床网格和 QGL。安装后，使用下面的配置 PRINT_START 启用可选步骤。
   This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?: 本次打印需要约
     %.0fg，但料盘仅剩约 %.0fg。仍要开始吗？
+  ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
+  : ''
   This tool probes each bed screw and tells you how much to adjust.: 此工具探测每个热床螺丝并告诉您需要调整多少。
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
     The printer will briefly disconnect.
