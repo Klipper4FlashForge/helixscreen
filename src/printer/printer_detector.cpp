@@ -1849,3 +1849,16 @@ std::string PrinterDetector::screws_tilt_direction_override() {
     }
     return "";
 }
+
+bool PrinterDetector::should_warn_type_mismatch(const std::string& saved_type,
+                                                const std::string& detected_type,
+                                                int detected_confidence,
+                                                const std::string& flag_value) {
+    if (detected_confidence < 70)
+        return false;
+    if (detected_type.empty() || detected_type == saved_type)
+        return false;
+    if (saved_type.empty() || saved_type == "Custom/Other" || saved_type == "Unknown")
+        return false;
+    return flag_value != saved_type;
+}

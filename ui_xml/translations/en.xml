@@ -1184,6 +1184,7 @@
   <translation tag="Keep Navigation Bar" en="Keep Navigation Bar"/>
   <translation tag="Keep Printing" en="Keep Printing"/>
   <translation tag="Keep Required" en="Keep Required"/>
+  <translation tag="Keep current" en="Keep current"/>
   <translation tag="Keep the bypass spool visible when bypass is off" en="Keep the bypass spool visible when bypass is off"/>
   <translation tag="Kick away" en="Kick away"/>
   <translation tag="Kinematics" en="Kinematics"/>
@@ -1784,6 +1785,7 @@
   <translation tag="Printer name" en="Printer name"/>
   <translation tag="Printer not ready" en="Printer not ready"/>
   <translation tag="Printer ready" en="Printer ready"/>
+  <translation tag="Printer type mismatch" en="Printer type mismatch"/>
   <translation tag="Printer:" en="Printer:"/>
   <translation tag="Printer: " en="Printer: "/>
   <translation tag="PrinterIdentify" en="PrinterIdentify"/>
@@ -1858,6 +1860,7 @@
   <translation tag="Ramming Volume" en="Ramming Volume"/>
   <translation tag="Raspberry Pi" en="Raspberry Pi"/>
   <translation tag="Raspberry Pi (32-bit)" en="Raspberry Pi (32-bit)"/>
+  <translation tag="Re-identify" en="Re-identify"/>
   <translation tag="Re-probe" en="Re-probe"/>
   <translation tag="Re-read spool RFID tags and remaining length" en="Re-read spool RFID tags and remaining length"/>
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." en="Re-syncs Happy Hare&apos;s tracked state with the hardware."/>
@@ -2388,6 +2391,7 @@
   <translation tag="This may take up to 30 seconds" en="This may take up to 30 seconds"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." en="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" en="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?"/>
+  <translation tag="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets." en="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets."/>
   <translation tag="This tool probes each bed screw and tells you how much to adjust." en="This tool probes each bed screw and tells you how much to adjust."/>
   <translation tag="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect." en="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect."/>
   <translation tag="This will apply the Z-offset to your probe and restart Klipper to save the configuration. The printer will briefly disconnect." en="This will apply the Z-offset to your probe and restart Klipper to save the configuration. The printer will briefly disconnect."/>

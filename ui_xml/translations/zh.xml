@@ -1184,6 +1184,7 @@
   <translation tag="Keep Navigation Bar" zh="保留导航栏"/>
   <translation tag="Keep Printing" zh="继续打印"/>
   <translation tag="Keep Required" zh="保持必需"/>
+  <translation tag="Keep current"/>
   <translation tag="Keep the bypass spool visible when bypass is off" zh="旁路关闭时保持料盘可见"/>
   <translation tag="Kick away" zh="拨除废料"/>
   <translation tag="Kinematics" zh="运动学"/>
@@ -1784,6 +1785,7 @@
   <translation tag="Printer name" zh="打印机名称"/>
   <translation tag="Printer not ready" zh="打印机未就绪"/>
   <translation tag="Printer ready" zh="打印机就绪"/>
+  <translation tag="Printer type mismatch"/>
   <translation tag="Printer:" zh="打印机:"/>
   <translation tag="Printer: " zh="打印机: "/>
   <translation tag="PrinterIdentify" zh="识别打印机"/>
@@ -1858,6 +1860,7 @@
   <translation tag="Ramming Volume" zh="填充体积"/>
   <translation tag="Raspberry Pi" zh="Raspberry Pi"/>
   <translation tag="Raspberry Pi (32-bit)" zh="Raspberry Pi (32-bit)"/>
+  <translation tag="Re-identify"/>
   <translation tag="Re-probe" zh="重新探测"/>
   <translation tag="Re-read spool RFID tags and remaining length" zh="重新读取料盘 RFID 标签与剩余长度"/>
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." zh="将 Happy Hare 跟踪的状态与硬件重新同步。"/>
@@ -2388,6 +2391,7 @@
   <translation tag="This may take up to 30 seconds" zh="这可能需要 30 秒"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." zh="此插件让 HelixScreen 控制打印启动选项，如热床网格和 QGL。安装后，使用下面的配置 PRINT_START 启用可选步骤。"/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" zh="本次打印需要约 %.0fg，但料盘仅剩约 %.0fg。仍要开始吗？"/>
+  <translation tag="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets."/>
   <translation tag="This tool probes each bed screw and tells you how much to adjust." zh="此工具探测每个热床螺丝并告诉您需要调整多少。"/>
   <translation tag="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect." zh="这将把 Z-offset 应用到限位开关并重启 Klipper 以保存配置。打印机将短暂断开连接。"/>
   <translation tag="This will apply the Z-offset to your probe and restart Klipper to save the configuration. The printer will briefly disconnect." zh="这将把 Z-offset 应用到探针并重启 Klipper 以保存配置。打印机将短暂断开连接。"/>

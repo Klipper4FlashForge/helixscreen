@@ -2724,6 +2724,110 @@ void Application::prompt_deferred_hardware_setup(std::vector<helix::wizard::Step
         this, lv_tr("Not now"));
 }
 
+void Application::settle_type_mismatch_warning() {
+    auto* cfg = Config::get_instance();
+    cfg->set<std::string>(cfg->df() + helix::wizard::TYPE_MISMATCH_SHOWN_FOR,
+                          cfg->get<std::string>(cfg->df() + helix::wizard::PRINTER_TYPE, ""));
+    if (!cfg->save()) {
+        spdlog::warn("[Application] Failed to persist type mismatch decision");
+    }
+}
+
+void Application::maybe_warn_type_mismatch(const helix::PrinterDiscovery& hardware) {
+    if (m_type_mismatch_shown)
+        return;
+    if (std::getenv("HELIX_MOCK_PRINTER"))
+        return; // mock clears the saved type each launch (moonraker_manager.cpp)
+    if (Config::get_instance()->is_wizard_required() || is_wizard_active())
+        return;
+
+    auto* cfg = Config::get_instance();
+    const std::string saved = cfg->get<std::string>(cfg->df() + helix::wizard::PRINTER_TYPE, "");
+    const std::string flag =
+        cfg->get<std::string>(cfg->df() + helix::wizard::TYPE_MISMATCH_SHOWN_FOR, "");
+
+    auto detected = PrinterDetector::auto_detect(hardware);
+    if (!detected.detected())
+        return;
+    if (!PrinterDetector::should_warn_type_mismatch(saved, detected.type_name, detected.confidence,
+                                                    flag))
+        return;
+
+    // Session guard: one prompt per boot regardless of which button dismisses it.
+    m_type_mismatch_shown = true;
+    spdlog::info("[Application] Printer type mismatch: saved '{}' but detected '{}' ({}%)", saved,
+                 detected.type_name, detected.confidence);
+
+    // modal_show_confirmation takes a plain const char* — compose the
+    // parameterized body first (fmt::runtime: the format string is the
+    // translated handle, not a compile-time literal).
+    const std::string body =
+        fmt::format(fmt::runtime(lv_tr("This printer looks like a {} ({}% confidence), but it is "
+                                       "set up as a {}. A wrong type applies incorrect pre-print "
+                                       "options and presets.")),
+                    detected.type_name, detected.confidence, saved);
+
+    helix::ui::modal_show_confirmation(
+        lv_tr("Printer type mismatch"), body.c_str(), ModalSeverity::Warning, lv_tr("Re-identify"),
+        [](lv_event_t* e) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Application] type_mismatch_confirm");
+            auto* app = static_cast<Application*>(lv_event_get_user_data(e));
+            Modal::hide(Modal::get_top());
+            // Settle first: the wizard tears itself down asynchronously, and a
+            // crash mid-run must not leave the prompt pending forever.
+            app->settle_type_mismatch_warning();
+            // Build the wizard AFTER the modal's exit animation, not inside the
+            // click that started it: Modal::hide() only marks the backdrop
+            // exiting, so creating the full-screen wizard here would put it
+            // underneath a still-fading backdrop (same 300 ms one-shot as
+            // launch_deferred_hardware_setup).
+            lv_timer_t* launch = lv_timer_create(
+                [](lv_timer_t* t) {
+                    auto* self = static_cast<Application*>(lv_timer_get_user_data(t));
+                    lv_timer_delete(t);
+                    self->launch_type_reidentify_wizard();
+                },
+                300, app);
+            lv_timer_set_repeat_count(launch, 1);
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        [](lv_event_t* e) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Application] type_mismatch_decline");
+            Modal::hide(Modal::get_top());
+            // Declining is final for this saved type. Keeping the type is a
+            // deliberate choice (a heavily modified printer can legitimately
+            // outvote a 70% heuristic), and the persisted flag stops the
+            // prompt from re-appearing every boot. Re-identify remains
+            // available via the full `--wizard` run.
+            static_cast<Application*>(lv_event_get_user_data(e))->settle_type_mismatch_warning();
+            spdlog::info("[Application] Type mismatch warning declined");
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        this, lv_tr("Keep current"));
+}
+
+void Application::launch_type_reidentify_wizard() {
+    spdlog::info("[Application] Launching printer re-identify wizard");
+    ui_wizard_register_event_callbacks();
+    ui_wizard_container_register_responsive_constants();
+    ui_wizard_init_subjects();
+    // Back on the first targeted step has nothing to retreat to, so give it the
+    // same dismiss semantics as the deferred hardware-setup session.
+    set_wizard_cancel_callback([]() {
+        ui_wizard_complete_targeted();
+        set_wizard_cancel_callback(nullptr);
+    });
+    Application* app = this;
+    ui_wizard_create_targeted(m_screen, {helix::wizard::StepId::PrinterIdentify}, [app]() {
+        set_wizard_cancel_callback(nullptr);
+        // The identify step's cleanup already persisted PRINTER_TYPE and applied
+        // the new preset (ui_wizard_printer_identify.cpp cleanup). The preset
+        // rewrote fan/heater role keys, so rebind the runtime mappings the same
+        // way the deferred hardware-setup session does.
+        app->reapply_hardware_roles();
+    });
+}
+
 void Application::setup_discovery_callbacks() {
     IMoonrakerClient* client = m_moonraker->client();
     IMoonrakerAPI* api = m_moonraker->api();
@@ -3154,6 +3258,21 @@ void Application::setup_discovery_callbacks() {
                 } else {
                     app->prompt_deferred_hardware_setup(std::move(steps));
                 }
+            }
+
+            // Saved printer type vs detected hardware (bundle F2LNLQCC: a Voron
+            // Trident saved as "FlashForge Adventurer 5M Pro" silently received
+            // AD5M pre-print options, presets, and screws-tilt direction on every
+            // boot — auto_detect_and_save self-guards on a saved type and never
+            // re-checks). One actionable prompt per saved type. Gated exactly
+            // like the reconfig wizard and deferred offer above — plus
+            // reconfig_steps.empty() and !hardware_setup_deferred so the three
+            // never stack in one discovery pass — and on the same hw_changed
+            // gate: detection is purely a function of the hardware shape.
+            if (hw_changed && !print_active && reconfig_steps.empty() && !hardware_setup_deferred &&
+                !Config::get_instance()->is_wizard_required() && !is_wizard_active() &&
+                !app->m_type_mismatch_shown) {
+                app->maybe_warn_type_mismatch(api->hardware());
             }
 
             // Save session snapshot for next comparison (even if no issues)

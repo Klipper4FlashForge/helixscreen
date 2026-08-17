@@ -1351,6 +1351,7 @@ translations:
   Keep Navigation Bar: Navigationsleiste behalten
   Keep Printing: Weiter drucken
   Keep Required: Erforderlich behalten
+  Keep current: ''
   Keep the bypass spool visible when bypass is off: Bypass-Spule sichtbar halten, wenn Bypass deaktiviert ist
   Kick away: 'Wegschieben'
   Kinematics: Kinematik
@@ -2010,6 +2011,7 @@ translations:
   Printer name: Druckername
   Printer not ready: Drucker nicht bereit
   Printer ready: Drucker bereit
+  Printer type mismatch: ''
   'Printer:': 'Drucker:'
   'Printer: ': 'Drucker: '
   PrinterIdentify: Drucker identifizieren
@@ -2090,6 +2092,7 @@ translations:
   Ramming Volume: 'Ramming-Volumen'
   Raspberry Pi: Raspberry Pi
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
+  Re-identify: ''
   Re-probe: Erneut abtasten
   Re-read spool RFID tags and remaining length: 'RFID-Tags der Spulen und Restlänge erneut lesen'
   Re-syncs Happy Hare's tracked state with the hardware.: Synchronisiert den von Happy
@@ -2726,6 +2729,8 @@ translations:
   This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?: Dieser
     Druck benötigt etwa %.0fg, aber die Spule hat noch etwa %.0fg übrig. Trotzdem
     starten?
+  ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
+  : ''
   This tool probes each bed screw and tells you how much to adjust.: Dieses Werkzeug
     tastet jede Bettschraube ab und zeigt Ihnen, wie viel Sie einstellen müssen.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
