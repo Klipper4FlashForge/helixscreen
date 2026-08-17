@@ -14,8 +14,13 @@
 
 #include "../lvgl_test_fixture.h"
 #include "ams_backend_afc.h"
+#include "ams_backend_cfs.h"
 #include "ams_types.h"
+#include "moonraker_api_mock.h"
+#include "moonraker_client_mock.h"
+#include "printer_state.h"
 #include "settings_manager.h"
+#include "test_helpers/cfs_test_access.h"
 
 #include <string>
 
@@ -105,5 +110,59 @@ TEST_CASE_METHOD(LVGLTestFixture, "AFC eject retains by default, clears with set
     afc.feed_stepper("lane2", nlohmann::json{{"spool_id", nullptr}});
     CHECK(afc.visible_spool_id(1) == 0); // start fresh
     CHECK_FALSE(afc.has_override(1));
+    settings.set_ams_keep_spool_info_on_eject(true);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "Non-id backends: eject rule inert, field merge intact",
+                 "[ams][cfs][override-merge]") {
+    // CFS keeps firmware spoolman_id at 0 (it never reports one) yet carries a
+    // real override. Even with retention OFF nothing clears — and the CFS
+    // EMPTY->AVAILABLE promotion tail must keep working. Fixture mirrors the
+    // "override loaded at init" test in test_ams_backend_cfs.cpp.
+    auto& settings = SettingsManager::instance();
+    settings.init_subjects();
+    settings.set_ams_keep_spool_info_on_eject(false);
+
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    helix::printer::AmsBackendCfs backend(&api, nullptr);
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.brand = "Polymaker"; // a real user assignment — no id, no locks
+    ovr.material = "PLA";
+    CfsTestAccess::seed_override(backend, 0, ovr);
+
+    // Every bay reads EMPTY: untagged 3rd-party spools report no vender and no
+    // remaining length, and CFS firmware never reports a spool id (0).
+    const nlohmann::json box = nlohmann::json::parse(R"({
+        "state": "connect", "filament": 1, "auto_refill": 1, "enable": 1,
+        "filament_useup": 0,
+        "map": {"T1A": "T1A", "T1B": "T1B", "T1C": "T1C", "T1D": "T1D"},
+        "T1": {
+            "state": "connect", "filament": "None", "temperature": "27",
+            "dry_and_humidity": "40", "version": "1.1.3", "sn": "SERIAL",
+            "mode": "0",
+            "vender": ["none", "none", "none", "none"],
+            "remain_len": ["-1", "-1", "-1", "-1"],
+            "color_value": ["-1", "-1", "-1", "-1"],
+            "material_type": ["-1", "-1", "-1", "-1"],
+            "change_color_num": ["-1", "-1", "-1", "-1"]
+        }
+    })");
+    CfsTestAccess::handle_status(
+        backend,
+        nlohmann::json{{"params", nlohmann::json::array({nlohmann::json{{"box", box}}, 0})}});
+
+    const auto info = backend.get_slot_info(0);
+    CHECK(info.brand == "Polymaker");            // override still paints
+    CHECK(info.spoolman_id == 0);                // firmware id 0 — nothing cleared it
+    CHECK(info.status == SlotStatus::AVAILABLE); // CFS tail promoted EMPTY->AVAILABLE
+    // The in-memory override entry survived the merge.
+    const auto survived = CfsTestAccess::get_override(backend, 0);
+    REQUIRE(survived.has_value());
+    CHECK(survived->brand == "Polymaker");
+
     settings.set_ams_keep_spool_info_on_eject(true);
 }

@@ -19,6 +19,7 @@
 #include "i_moonraker_client.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "post_op_cooldown_manager.h"
+#include "settings_manager.h"
 #include "spdlog/spdlog.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -1632,42 +1633,30 @@ void AmsBackendAce::apply_overrides(SlotInfo& slot, int slot_index) {
     // overrides_ writers (on_started initial load, set_slot_info persist path)
     // hold mutex_, and every caller of apply_overrides runs under mutex_ via
     // parse_ace_object — so the map read here is implicitly lock-protected.
+    // The whole spec §5 policy + the re-bind/eject rules live in
+    // helix::ams::merge_override — the single implementation every backend
+    // shares. ACE's firmware never reports spool ids
+    // (firmware_reports_spool_ids() keeps the base false), so those rules are
+    // inert here today; the erase branch is correct tomorrow if a firmware
+    // ever starts reporting ids.
     auto it = overrides_.find(slot_index);
     if (it == overrides_.end())
         return;
-    const auto& o = it->second;
-    // Merge policy matches AD5X IFS / Snapmaker: override wins only when the
-    // override field carries a real value; default sentinels (empty string,
-    // spoolman_id == 0, weights == -1.0, color_rgb == 0) fall through to the
-    // firmware-reported data. For ACE this covers color/material too — ACE
-    // can't set those via gcode, so user edits live exclusively in the
-    // override record.
-    if (!o.brand.empty())
-        slot.brand = o.brand;
-    if (!o.spool_name.empty())
-        slot.spool_name = o.spool_name;
-    if (o.spoolman_id > 0)
-        slot.spoolman_id = o.spoolman_id;
-    if (o.spoolman_vendor_id > 0)
-        slot.spoolman_vendor_id = o.spoolman_vendor_id;
-    if (o.remaining_weight_g >= 0.0f)
-        slot.remaining_weight_g = o.remaining_weight_g;
-    if (o.total_weight_g >= 0.0f)
-        slot.total_weight_g = o.total_weight_g;
-    if (o.color_set)
-        slot.color_rgb = o.color_rgb;
-    if (!o.color_name.empty())
-        slot.color_name = o.color_name;
-    if (!o.material.empty())
-        slot.material = o.material;
-    // Catalog product identity — same "override wins only when it carries a
-    // real value" rule as the strings above. Firmware never populates these
-    // (no AMS protocol has a notion of a branded product id), so a non-empty
-    // value here is always a user pick and always wins.
-    if (!o.catalog_id.empty())
-        slot.catalog_id = o.catalog_id;
-    if (!o.product_name.empty())
-        slot.product_name = o.product_name;
+    helix::ams::MergeOptions opts;
+    opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
+    opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
+    const auto result = helix::ams::merge_override(slot, it->second, opts);
+    if (result.cleared_rebind || result.cleared_eject) {
+        overrides_.erase(it);
+        if (override_store_) {
+            const std::string tag = backend_log_tag();
+            override_store_->clear_async(slot_index, [tag, slot_index](bool ok, std::string err) {
+                if (!ok) {
+                    spdlog::warn("{} clear_async failed for slot {}: {}", tag, slot_index, err);
+                }
+            });
+        }
+    }
 }
 
 void AmsBackendAce::check_hardware_event_clear(SlotInfo& slot, int slot_index, SlotStatus prev,

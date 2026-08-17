@@ -3364,48 +3364,43 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
     // Every caller of apply_overrides runs under mutex_ (handle_status_update
     // post-parse loop). overrides_ writers also hold mutex_, so the map read
     // here is implicitly lock-protected. Zero-cost hash miss when the slot
-    // has no override — safe in the hot parse path.
+    // has no override — safe in the hot parse path. The whole spec §5 policy
+    // + the re-bind/eject rules live in helix::ams::merge_override — the
+    // single implementation every backend shares. CFS firmware never reports
+    // spool ids (firmware_reports_spool_ids() keeps the base false), so those
+    // rules are inert here today; the erase branch is correct tomorrow if a
+    // firmware ever starts reporting ids.
     auto it = overrides_.find(slot_index);
     if (it == overrides_.end())
         return;
+    helix::ams::MergeOptions opts;
+    opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
+    opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
+    // Read the override BEFORE any erase — the CFS presence tail below needs it.
     const auto& o = it->second;
-    // Merge policy matches Snapmaker / ACE. Override wins only when the
-    // override field carries a real value; defaults fall through to firmware.
-    if (!o.brand.empty())
-        slot.brand = o.brand;
-    if (!o.spool_name.empty())
-        slot.spool_name = o.spool_name;
-    if (o.spoolman_id > 0)
-        slot.spoolman_id = o.spoolman_id;
-    if (o.spoolman_vendor_id > 0)
-        slot.spoolman_vendor_id = o.spoolman_vendor_id;
-    if (o.remaining_weight_g >= 0.0f)
-        slot.remaining_weight_g = o.remaining_weight_g;
-    if (o.total_weight_g >= 0.0f)
-        slot.total_weight_g = o.total_weight_g;
-    if (o.color_set)
-        slot.color_rgb = o.color_rgb;
-    if (!o.color_name.empty())
-        slot.color_name = o.color_name;
-    if (!o.material.empty())
-        slot.material = o.material;
-    // Catalog product identity — same "override wins only when it carries a
-    // real value" rule as the strings above. Firmware never populates these
-    // (no AMS protocol has a notion of a branded product id), so a non-empty
-    // value here is always a user pick and always wins.
-    if (!o.catalog_id.empty())
-        slot.catalog_id = o.catalog_id;
-    if (!o.product_name.empty())
-        slot.product_name = o.product_name;
+    const auto result = helix::ams::merge_override(slot, o, opts);
 
     // Trust the user's assignment for presence. Untagged 3rd-party spools
     // always read RFID -1, so firmware reports the bay EMPTY even though a
     // spool is physically present. If the override carries a real assignment,
     // the user has told us a spool is in this bay — promote it to AVAILABLE.
+    // (CFS-specific presence policy, not §5 merge policy — stays here.)
     const bool real_assignment = o.spoolman_id > 0 || !o.material.empty() || !o.brand.empty() ||
                                  !o.spool_name.empty() || o.color_set;
     if (real_assignment && slot.status == SlotStatus::EMPTY) {
         slot.status = SlotStatus::AVAILABLE;
+    }
+
+    if (result.cleared_rebind || result.cleared_eject) {
+        overrides_.erase(it);
+        if (override_store_) {
+            const std::string tag = backend_log_tag();
+            override_store_->clear_async(slot_index, [tag, slot_index](bool ok, std::string err) {
+                if (!ok) {
+                    spdlog::warn("{} clear_async failed for slot {}: {}", tag, slot_index, err);
+                }
+            });
+        }
     }
 }
 
