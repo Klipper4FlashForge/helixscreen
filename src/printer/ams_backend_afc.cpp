@@ -2588,6 +2588,7 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
             // the same tool cannot resurrect it without AFC restating current_map.
             lane_current_tool_.erase(lane_name);
             slots_.clear_tool_mapping(slot_index);
+            firmware_mapped_slots_.erase(slot_index);
         } else {
             // One tool per lane is all SlotRegistry can express: set_tool_mapping()
             // drops the slot's previous tool from the forward map, so writing N tools
@@ -2631,7 +2632,19 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
                 // later.
                 slots_.set_tool_mapping(slot_index, chosen,
                                         helix::printer::SlotRegistry::MappingSource::Firmware);
+                firmware_mapped_slots_.insert(slot_index);
                 spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, chosen);
+
+                // A T(n)-keyed lane_data payload that arrived before any mapping
+                // existed could not resolve its records. This mapping may be the
+                // one they were waiting for, and query_lane_data() is one-shot —
+                // replay is their only second chance. parse_lane_data() re-parks
+                // whatever still resolves to nothing.
+                if (pending_tool_lane_data_.has_value()) {
+                    nlohmann::json pending = std::move(*pending_tool_lane_data_);
+                    pending_tool_lane_data_.reset();
+                    parse_lane_data(pending);
+                }
 
                 if (tools.size() > 1 && multi_tool_warned_lanes_.insert(lane_name).second) {
                     // Logged in AFC's own order, which is not sorted.
@@ -3702,18 +3715,86 @@ int AmsBackendAfc::tool_index_for_extruder_unlocked(const std::string& ext_name)
 }
 
 void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
-    // Lane data format:
-    // {
-    //   "lane1": {"color": "FF0000", "material": "PLA", "loaded": false, ...},
-    //   "lane2": {"color": "00FF00", "material": "PETG", "loaded": true, ...}
-    // }
+    // Lane data format — two key styles, one per firmware generation:
+    //   pre-virtual-tools: keyed by LANE NAME
+    //     { "lane1": {"color": "#FF0000", "material": "PLA", ...}, ... }
+    //   virtual-tools firmware (#832): keyed by T(n) MAPPING, one record per
+    //   mapped tool (a multi-mapped lane appears once per T(n)), with no lane
+    //   identity inside the record:
+    //     { "T0": {"color": "#FF0000", ...}, "T5": {...}, "T16": {...} }
+    //   The T(n) style is resolved through the live tool mapping — the same one
+    //   the status path builds from lane "map"/"current_map".
+    //
+    // A key that exactly names a known lane always takes the lane-name reading:
+    // lane names are user-configurable in AFC, so "T0" is ambiguous in theory —
+    // but only a lane literally named T0 can hit that, and the lane-name
+    // interpretation is the one every older firmware uses.
+
+    // Classify keys and resolve each slot's record up front.
+    std::vector<const nlohmann::json*> slot_records(
+        slots_.is_initialized() ? static_cast<size_t>(slots_.slot_count()) : 0, nullptr);
+    std::vector<std::string> lane_keys; // lane-name keys, for bootstrap only
+    bool has_unresolved_tool_key = false;
+
+    for (auto it = lane_data.begin(); it != lane_data.end(); ++it) {
+        const std::string& key = it.key();
+        if (!it.value().is_object()) {
+            continue; // not a record; the field loop below requires an object
+        }
+
+        // Lane-name reading first (see comment above).
+        if (slots_.is_initialized()) {
+            const int slot = slots_.index_of(key);
+            if (slot >= 0) {
+                lane_keys.push_back(key);
+                slot_records[slot] = &it.value();
+                continue;
+            }
+        }
+
+        // Tool-key reading: exact "T<digits>", digits within the same bound the
+        // status path accepts.
+        int tool = -1;
+        if (key.size() >= 2 && key[0] == 'T' &&
+            std::all_of(key.begin() + 1, key.end(),
+                        [](unsigned char c) { return std::isdigit(c) != 0; })) {
+            try {
+                tool = std::stoi(key.substr(1));
+            } catch (...) {
+                tool = -1; // out of int range — not a usable tool number
+            }
+        }
+
+        if (tool < 0 || tool > AFC_MAX_TOOL_NUMBER) {
+            // Neither a known lane name nor a tool key. Old firmware with lanes
+            // we have not discovered yet — hand it to bootstrap below.
+            lane_keys.push_back(key);
+            continue;
+        }
+
+        const int slot = slots_.is_initialized() ? slots_.slot_for_tool(tool) : -1;
+        if (slot >= 0 && firmware_mapped_slots_.count(slot) > 0) {
+            if (!slot_records[slot]) {
+                slot_records[slot] = &it.value();
+            }
+        } else {
+            // No lane claims this tool (yet), or the mapping is still the
+            // identity placeholder initialize_slots() seeded. Park the whole
+            // payload: the DB query is one-shot, so the record must survive
+            // until a firmware-asserted mapping arrives — parse_afc_stepper()
+            // replays it.
+            has_unresolved_tool_key = true;
+        }
+    }
+
+    if (has_unresolved_tool_key) {
+        pending_tool_lane_data_ = lane_data;
+    } else {
+        pending_tool_lane_data_.reset();
+    }
 
     // Extract lane names and sort numerically (lane2 < lane10, not alphabetically)
-    std::vector<std::string> new_lane_names;
-    for (auto it = lane_data.begin(); it != lane_data.end(); ++it) {
-        new_lane_names.push_back(it.key());
-    }
-    std::sort(new_lane_names.begin(), new_lane_names.end(), natural_less);
+    std::sort(lane_keys.begin(), lane_keys.end(), natural_less);
 
     // This payload is a supplement (colours, materials, spool ids), never the
     // authority on WHICH lanes exist. Klipper's object list is. AFC empties the
@@ -3729,15 +3810,27 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
     //
     // So: only ever bootstrap an empty registry, and prefer discovery when it
     // has something to offer. Once the registry exists, leave its shape alone.
+    // Tool keys NEVER bootstrap: "T0" names a tool, and slots named after tools
+    // would be invisible to the status path (which iterates lanes) forever.
+    //
+    // By value: initialize_slots() clears discovered_lane_names_ on its way
+    // out, which would dangle a reference bound to it.
     if (!slots_.is_initialized()) {
-        // By value: initialize_slots() clears discovered_lane_names_ on its way
-        // out, which would dangle a reference bound to it.
         const std::vector<std::string> initial_lanes =
-            !discovered_lane_names_.empty() ? discovered_lane_names_ : new_lane_names;
+            !discovered_lane_names_.empty() ? discovered_lane_names_ : lane_keys;
         if (initial_lanes.empty()) {
             return; // Nothing names a lane yet; a later payload or discovery will.
         }
         initialize_slots(initial_lanes);
+        // Bootstrap may have just created the slots lane_keys names; resolve
+        // those records now so the loop below can apply them.
+        slot_records.assign(static_cast<size_t>(slots_.slot_count()), nullptr);
+        for (const std::string& name : lane_keys) {
+            const int slot = slots_.index_of(name);
+            if (slot >= 0 && lane_data.contains(name) && lane_data[name].is_object()) {
+                slot_records[slot] = &lane_data[name];
+            }
+        }
     }
 
     // Track whether any lane has tool_loaded — used to update filament_loaded
@@ -3748,13 +3841,11 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
 
     // Update lane information
     for (int i = 0; i < slots_.slot_count(); ++i) {
-        std::string lane_name = slots_.name_of(i);
-        if (lane_name.empty() || !lane_data.contains(lane_name) ||
-            !lane_data[lane_name].is_object()) {
+        const nlohmann::json* lane_ptr = slot_records[i];
+        if (lane_ptr == nullptr) {
             continue;
         }
-
-        const auto& lane = lane_data[lane_name];
+        const auto& lane = *lane_ptr;
         auto* entry = slots_.get_mut(i);
         if (!entry) {
             continue;
@@ -4152,6 +4243,10 @@ void AmsBackendAfc::initialize_slots(const std::vector<std::string>& lane_names)
     for (int i = 0; i < lane_count; ++i)
         default_map[i] = i;
     slots_.set_tool_map(default_map);
+
+    // No lane has asserted a mapping yet — the identity map above is a
+    // placeholder. parse_lane_data()'s T(n) join must not trust it.
+    firmware_mapped_slots_.clear();
 
     // Clear pre-init storage now that registry is initialized
     discovered_lane_names_.clear();
