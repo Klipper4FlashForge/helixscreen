@@ -251,7 +251,7 @@ TEST_CASE("default gate list: names in behavior-preserving order", "[print-start
 }
 
 // ---------------------------------------------------------------------------
-// required_filament_present gate (ported from check_required_filament_present)
+// required_filament_present gate (ported from the old controller chain)
 // ---------------------------------------------------------------------------
 
 TEST_CASE("gate required_filament_present: auto-unload backends suppress entirely",
@@ -355,4 +355,114 @@ TEST_CASE("gate material_compatibility: warns with verbatim title",
     REQUIRE(r.verdict == CheckResult::Verdict::Warn);
     CHECK(r.title == "Material Mismatch");
     CHECK(r.proceed_label == "Start Anyway");
+}
+
+// ---------------------------------------------------------------------------
+// Runner mechanics (toy gates — no printer state needed)
+// ---------------------------------------------------------------------------
+
+#include "ui_print_start_controller.h"
+
+#include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/print_start_controller_test_access.h"
+#include "moonraker_api_mock.h"
+#include "moonraker_client_mock.h"
+#include "printer_state.h"
+
+namespace {
+
+using namespace helix::ui;
+
+CheckResult warn_result(const char* title) {
+    CheckResult r;
+    r.verdict = CheckResult::Verdict::Warn;
+    r.title = title;
+    r.body = "body";
+    r.severity = GateSeverity::Warning;
+    r.proceed_label = "Start Anyway";
+    return r;
+}
+CheckResult pass_result() {
+    return CheckResult{};
+}
+
+/// Fixture with a controller wired to counting callbacks. LVGLUITestFixture
+/// (not bare LVGLTestFixture): modal_show_confirmation builds XML components.
+class GateRunnerFixture : public LVGLUITestFixture {
+  public:
+    MoonrakerClientMock client{MoonrakerClientMock::PrinterType::VORON_24};
+    PrinterState state;
+    std::unique_ptr<MoonrakerAPIMock> api;
+    PrintStartController controller{state, nullptr};
+    int button_updates = 0;
+    int cancelled = 0;
+    bool gate_b_ran = false;
+
+    GateRunnerFixture() {
+        state.init_subjects(false);
+        api = std::make_unique<MoonrakerAPIMock>(client, state);
+        controller.set_api(api.get());
+        controller.set_update_print_button([this]() { ++button_updates; });
+        controller.set_on_print_cancelled([this]() { ++cancelled; });
+    }
+    ~GateRunnerFixture() override {
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    void use_toy_gates(bool warn_first) {
+        std::vector<PrintStartGate> gates;
+        gates.push_back(
+            {"toy_a", warn_first ? +[](const PrintStartContext&) { return warn_result("Toy A"); }
+                                 : +[](const PrintStartContext&) { return pass_result(); }});
+        gates.push_back({"toy_b", +[](const PrintStartContext&) { return pass_result(); }});
+        PrintStartControllerTestAccess::set_gates(controller, std::move(gates));
+    }
+};
+
+} // namespace
+
+TEST_CASE("gate runner: warn stops at gate 0 and shows the modal", "[print-start][gate-pipeline]") {
+    GateRunnerFixture fx;
+    fx.use_toy_gates(/*warn_first=*/true);
+
+    PrintStartControllerTestAccess::run_gates(fx.controller);
+    CHECK(PrintStartControllerTestAccess::print_gate_modal(fx.controller) != nullptr);
+    CHECK(PrintStartControllerTestAccess::gate_resume_index(fx.controller) == 0);
+    CHECK(fx.button_updates == 0); // still parked on the dialog
+}
+
+TEST_CASE("gate runner: proceed resumes at NEXT gate", "[print-start][gate-pipeline]") {
+    GateRunnerFixture fx;
+    fx.use_toy_gates(/*warn_first=*/true);
+
+    PrintStartControllerTestAccess::run_gates(fx.controller);
+    PrintStartControllerTestAccess::gate_proceed(fx.controller);
+    // toy_b passes -> pipeline ran off the end into execute_print_start(),
+    // which fails on the missing prep manager: re-enables the button exactly
+    // once and shows an error. That once-count IS the completion signal.
+    CHECK(PrintStartControllerTestAccess::print_gate_modal(fx.controller) == nullptr);
+    CHECK(fx.button_updates == 1);
+    CHECK(fx.cancelled == 0);
+}
+
+TEST_CASE("gate runner: cancel re-enables button and fires on_print_cancelled",
+          "[print-start][gate-pipeline]") {
+    GateRunnerFixture fx;
+    fx.use_toy_gates(/*warn_first=*/true);
+
+    PrintStartControllerTestAccess::run_gates(fx.controller);
+    PrintStartControllerTestAccess::gate_cancel(fx.controller);
+    CHECK(PrintStartControllerTestAccess::print_gate_modal(fx.controller) == nullptr);
+    CHECK(fx.button_updates == 1);
+    CHECK(fx.cancelled == 1);
+}
+
+TEST_CASE("gate runner: all-pass reaches execute (button re-enabled once, no modal)",
+          "[print-start][gate-pipeline]") {
+    GateRunnerFixture fx;
+    fx.use_toy_gates(/*warn_first=*/false);
+
+    PrintStartControllerTestAccess::run_gates(fx.controller);
+    CHECK(PrintStartControllerTestAccess::print_gate_modal(fx.controller) == nullptr);
+    CHECK(fx.button_updates == 1);
 }

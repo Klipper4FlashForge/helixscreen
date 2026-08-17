@@ -2432,10 +2432,11 @@ bool show_demo_overlay(const std::string& name) {
 
     if (name == "color-mismatch") {
         // The SECOND gate on a Print tap, after the pre-flight empty-slot block:
-        // PrintStartController warns when a tool resolves to no slot at all. Only
-        // reachable from a real multi-tool file whose tools do not map, so mock
-        // navigation cannot get here. Text mirrors show_color_mismatch_warning()
-        // exactly — two unresolved tools, color name plus material per row.
+        // the print-start pipeline warns when a tool resolves to no slot at all.
+        // Only reachable from a real multi-tool file whose tools do not map, so
+        // mock navigation cannot get here. Text mirrors the unresolved_tools
+        // gate's dialog exactly — two unresolved tools, color name plus
+        // material per row.
         std::string message = lv_tr("These tools have no matching filament loaded:");
         message += "\n\n";
         message += std::string("  ") + LV_SYMBOL_BULLET +
