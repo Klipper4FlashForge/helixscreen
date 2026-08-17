@@ -4852,6 +4852,40 @@ bool AmsBackendAfc::toolhead_is_free_unlocked() const {
     return true;
 }
 
+std::optional<bool> AmsBackendAfc::toolhead_filament_unaccounted() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Mirror of toolhead_is_free_unlocked()'s three signals, split by
+    // question: that predicate asks "is anything claiming or blocking the
+    // toolhead"; this asks "is filament PRESENT while nothing claims it".
+    // (1) physical sensors say present...
+    bool sensor_present = tool_start_sensor_ || tool_end_sensor_;
+    for (const auto& [name, s] : extruder_sensors_) {
+        if (s.tool_start || s.tool_end) {
+            sensor_present = true;
+        }
+    }
+    if (!sensor_present) {
+        return false; // hardware without sensors reports both false — no false positive
+    }
+    // (2) AFC.current names the seated lane -> accounted
+    if (!toolhead_lane_.empty()) {
+        return false;
+    }
+    // (3) any per-extruder lane_loaded names a lane -> accounted
+    for (const auto& [name, s] : extruder_sensors_) {
+        if (!s.lane_loaded.empty()) {
+            return false;
+        }
+    }
+    // (4) any lane's persisted tool_loaded (SlotStatus::LOADED) -> accounted
+    for (int i = 0; i < slots_.slot_count(); ++i) {
+        if (const auto* entry = slots_.get(i); entry && entry->info.status == SlotStatus::LOADED) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool AmsBackendAfc::recovery_attribution_valid_unlocked() const {
     // Callers hold mutex_.
     //

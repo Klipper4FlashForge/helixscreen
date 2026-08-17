@@ -233,6 +233,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// being blamed on an arbitrary lane.
     [[nodiscard]] bool slot_has_filament_at_toolhead(int slot_index) const override;
 
+    /// Filament at a toolhead sensor while no lane claims the toolhead —
+    /// neither AFC.current (toolhead_lane_) nor any lane's persisted
+    /// tool_loaded. See toolhead_is_free_unlocked() for why these three
+    /// signals and NOT system_info_.filament_loaded.
+    [[nodiscard]] std::optional<bool> toolhead_filament_unaccounted() const override;
+
     /// Status-driven fault, surfaced by AmsErrorBridge on the AmsAction::ERROR
     /// edge. Keyed on AFC's error_state, which upstream sets in lockstep with
     /// current_state = State.ERROR — the same transition that produced the edge.
@@ -481,6 +487,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Allow test helper access to private members
     friend class AmsBackendAfcTestHelper;
     friend class AfcPerSlotLoadedHelper;
+    friend class AfcHelper;
     friend class AfcCurrentErrorHelper;
     friend class AfcLaneDataClearHelper;
     friend class AfcFaultEventCharHelper;
