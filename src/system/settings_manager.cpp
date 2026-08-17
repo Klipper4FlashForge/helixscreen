@@ -562,6 +562,17 @@ void SettingsManager::set_ams_force_bypass_controls(bool enabled) {
     config->save();
 }
 
+bool SettingsManager::get_bypass_declared() const {
+    Config* config = Config::get_instance();
+    return config->get<bool>(config->df() + "ams/bypass_declared", false);
+}
+
+void SettingsManager::set_bypass_declared(bool declared) {
+    Config* config = Config::get_instance();
+    config->set<bool>(config->df() + "ams/bypass_declared", declared);
+    config->save();
+}
+
 bool SettingsManager::get_filament_auto_cooldown() const {
     return lv_subject_get_int(const_cast<lv_subject_t*>(&filament_auto_cooldown_subject_)) != 0;
 }

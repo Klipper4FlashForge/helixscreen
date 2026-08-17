@@ -439,7 +439,7 @@ Remaining gaps, degraded rather than broken:
 |---------------|---------------|
 | RFID fingerprinting (`build_cfs_slot_uid`) for hardware-change detection | No per-slot UID in the schema; baseline/clear logic no-ops |
 | `set_tool_mapping` via TNN + `box.map` | No equivalent — the module maps tools to slots 1:1 |
-| Bypass / external spool load | The `external: true` entry is observable and `T<external>` exists, but the flow is untested here. `supports_bypass` stays `false` and the entry is skipped when building `unit.slots`, so it never renders as a fifth bay; `loaded_slot` is bounds-checked because it can name it. Users who feed the holder by hand can surface it for tracking with the `force_bypass_controls` override (`FILAMENT_MANAGEMENT.md` § "Bypass visibility and the force override") |
+| Bypass / external spool load | **Implemented.** The `external: true` entry is observable and `T<external>` is a registered command (verified from the port's own `box.py` — re-fetched 2026-08-17, sha256 `a5b4d19e…9eeb6f23`, 2892 lines, `API_VERSION = 1`): the change engine runs the same attended flow for the holder as for a bay (heat → wastebin → wait `EXTERNAL_WAIT = 30 s` for insertion → feed 30 mm → flush), `BOX_UNLOAD`'s external branch ejects it, and mid-print `T<external>` pauses for attended loading. `supports_bypass` turns on for the Fork dialect when the payload carries the entry; `loaded_slot` naming it maps to the -2 sentinel. The entry is still skipped when building `unit.slots`, so it never renders as a fifth bay. See `FILAMENT_MANAGEMENT.md` § "CFS" |
 
 Note `push_slot_color_to_firmware` is **not** a gap: its Fork counterpart is `_BOX_SLOT_SET`, which writes color, brand, name, and Spoolman link together. Because it requires a material, the backend reads the current slot profile to build the write. The explicit Clear Spool action emits `_BOX_SLOT_CLEAR`.
 
@@ -550,7 +550,7 @@ These are the **stock K2** commands (`CfsMacroVariant::K2`). Two other dialects 
 | Command | Description |
 |---------|-------------|
 | `BOX_ENABLE_CFS_PRINT ENABLE={0\|1}` | Enable/disable CFS for printing |
-| `BOX_ENABLE_AUTO_REFILL <PARAM>={0\|1}` | **Setter, not a toggle.** The handler reads an int via `gcmd.get_int`, so it sets auto-refill on or off rather than flipping it. **The parameter's spelling is not recoverable from the stripped binary** — `gcmd.get_int` takes the name as a Python string constant that Cython folded away. `src/printer/ams_backend_cfs.cpp` currently sends it bare with no argument; whether `gcmd.get_int` then throws, or the handler supplies a default, is untested. Do not "fix" the call site until someone can watch the response on a live box. |
+| `BOX_ENABLE_AUTO_REFILL ENABLE={0\|1}` | **Setter, not a toggle.** The handler reads an int via `gcmd.get_int`, so it sets auto-refill on or off rather than flipping it. **Parameter spelling RECOVERED** (2026-08-17): Creality's own master-server sends `BOX_ENABLE_AUTO_REFILL ENABLE=1` / `ENABLE=0` — present in the string tables of both OTA images (K1 `CR4CU220812S11_ota_img_V2.3.5.34.img`, K2 Plus `CR0CN240110C10_ota_img_V1.1.4.11.img`). HelixScreen's `toggle_auto_refill` device action inverts the last box-reported flag and sends the explicit argument. |
 | `BOX_SET_BOX_MODE` | Set CFS operating mode |
 | `BOX_SET_TEMP` | Set extrusion temperature |
 | `BOX_SET_PRE_LOADING ADDR={n} NUM={n} ACTION=RUN` | Pre-load filament |

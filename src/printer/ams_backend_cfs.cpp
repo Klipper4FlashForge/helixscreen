@@ -5,6 +5,7 @@
 
 #include "ui_temperature_utils.h"
 
+#include "ams_bypass_policy.h"
 #include "ams_fault_event.h"
 #include "ams_tool_map_sync.h"
 #include "filament_catalog.h"
@@ -16,6 +17,7 @@
 #include "operation_patterns.h" // helix::contains_ci
 #include "post_op_cooldown_manager.h"
 #include "printer_detector.h"
+#include "settings_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -394,6 +396,10 @@ AmsBackendCfs::AmsBackendCfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client
     : AmsSubscriptionBackend(api, client) {
     system_info_.type = AmsType::CFS;
     system_info_.type_name = "CFS";
+    // Starts false and converges on the first full box frame in
+    // handle_status_update — see the convergence comment there for the two
+    // dialect rules (Fork: verified T<external> command + payload entry;
+    // stock: sensor-derived rule, no load command exists).
     system_info_.supports_bypass = false;
     system_info_.tip_method = TipMethod::CUT;
     system_info_.supports_purge = true;
@@ -443,6 +449,18 @@ bool AmsBackendCfs::owns_filament_sensor(const std::string& bare_name,
 void AmsBackendCfs::on_started() {
     spdlog::info("[AMS CFS] Backend started — querying initial box state");
 
+    // Restore the persisted stock-dialect bypass declaration. The
+    // BOX_ENABLE_CFS_PRINT ENABLE=0 sent when it was made survives in the
+    // box's own tn_data.json, but nothing firmware-side records that
+    // HelixScreen was the one who stood it down — without this restore, a
+    // restart mid-bypass would leave the box stood down with no toggle
+    // showing why. Main thread (backend start), like the override load below.
+    if (SettingsManager::instance().get_bypass_declared()) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        bypass_declared_ = true;
+        spdlog::info("[AMS CFS] Bypass declaration restored from settings");
+    }
+
     // Load persisted per-slot overrides from the shared FilamentSlotOverrideStore
     // BEFORE issuing the initial status query — otherwise the first status
     // callback (libhv background thread) could fire and parse slots before
@@ -478,23 +496,26 @@ void AmsBackendCfs::on_started() {
 
     nlohmann::json params = {{"objects", objects_to_query}};
 
-    client_->send_jsonrpc(
-        "printer.objects.query", params,
-        [this](const nlohmann::json& response) {
-            if (response.contains("result") && response["result"].contains("status") &&
-                response["result"]["status"].is_object()) {
-                // Wrap in notify_status_update format for handle_status_update
-                nlohmann::json notification = {
-                    {"params", nlohmann::json::array({response["result"]["status"]})}};
-                handle_status_update(notification);
-                spdlog::info("[AMS CFS] Initial state loaded");
-            } else {
-                spdlog::warn("[AMS CFS] Initial state query returned unexpected format");
-            }
-        },
-        [](const MoonrakerError& err) {
-            spdlog::warn("[AMS CFS] Failed to query initial state: {}", err.message);
-        });
+    // client_ null in test constructions (CfsRemapHelper passes nullptr).
+    if (client_) {
+        client_->send_jsonrpc(
+            "printer.objects.query", params,
+            [this](const nlohmann::json& response) {
+                if (response.contains("result") && response["result"].contains("status") &&
+                    response["result"]["status"].is_object()) {
+                    // Wrap in notify_status_update format for handle_status_update
+                    nlohmann::json notification = {
+                        {"params", nlohmann::json::array({response["result"]["status"]})}};
+                    handle_status_update(notification);
+                    spdlog::info("[AMS CFS] Initial state loaded");
+                } else {
+                    spdlog::warn("[AMS CFS] Initial state query returned unexpected format");
+                }
+            },
+            [](const MoonrakerError& err) {
+                spdlog::warn("[AMS CFS] Failed to query initial state: {}", err.message);
+            });
+    }
 }
 
 // --- Static parser ---
@@ -524,6 +545,26 @@ CfsSchema AmsBackendCfs::detect_schema(const nlohmann::json& box_json) {
 AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
     return detect_schema(box_json) == CfsSchema::Flat ? parse_flat_box_status(box_json)
                                                       : parse_stock_box_status(box_json);
+}
+
+// Index of the `external: true` entry in a Flat payload's slots[], -1 when
+// absent. The Fork firmware registers T<that index> for the external spool
+// holder (external_slot = max_physical_slot + 1 — it moves with the configured
+// box_count, so it must be read from the payload, never recomputed).
+static int find_external_slot_index(const nlohmann::json& box_json) {
+    auto it = box_json.find("slots");
+    if (it == box_json.end() || !it->is_array()) {
+        return -1;
+    }
+    for (const auto& slot_json : *it) {
+        if (slot_json.is_object() && helix::json_util::safe_bool(slot_json, "external", false)) {
+            int reported = helix::json_util::safe_int(slot_json, "index", -1);
+            if (reported >= 0) {
+                return reported;
+            }
+        }
+    }
+    return -1;
 }
 
 AmsSystemInfo AmsBackendCfs::parse_stock_box_status(const nlohmann::json& box_json) {
@@ -925,10 +966,14 @@ AmsSystemInfo AmsBackendCfs::parse_flat_box_status(const nlohmann::json& box_jso
     info.tip_method = TipMethod::CUT;
     info.supports_purge = true;
 
-    // Bypass stays unsupported even though slots[] carries an `external: true`
-    // entry for the spool holder. The entry is observable, but the port's
-    // box.py is unpublished, so no verified command drives a load from it —
-    // advertising bypass would put a button on screen that cannot work.
+    // Bypass on a Flat payload is decided at convergence in
+    // handle_status_update, not here: the holder entry is observable, but only
+    // the identified Fork dialect has a verified command for it (`T<external>`
+    // is registered by the port's own box.py; BOX_UNLOAD's external branch
+    // ejects it). This static parser cannot see the latched dialect, so it
+    // reports the entry's presence (find_external_slot_index) and leaves the
+    // capability false; an unidentified Flat module keeps bypass off — same
+    // rule as reject_if_flat_schema.
     info.supports_bypass = false;
 
     // runout_swap_enabled is the fork's endless-spool flag. safe_bool rather
@@ -1091,12 +1136,17 @@ AmsSystemInfo AmsBackendCfs::parse_flat_box_status(const nlohmann::json& box_jso
     info.total_slots = unit.slot_count;
 
     // loaded_slot is -1 when nothing is loaded. It indexes the same slots[]
-    // array, so it needs no translation — but it can name the external entry,
-    // which is not in our vector, hence the bounds check.
+    // array — including the external entry, which is not in our vector. A bay
+    // index lands in the bounds branch; the external index maps to the -2
+    // bypass sentinel (the same convention AFC and Happy Hare use, and what
+    // AmsState's bypass subjects key off).
     int loaded_slot = helix::json_util::safe_int(box_json, "loaded_slot", -1);
     if (loaded_slot >= 0 && loaded_slot < unit.slot_count) {
         info.current_slot = loaded_slot;
         info.current_tool = loaded_slot;
+    } else if (loaded_slot >= 0 && loaded_slot == find_external_slot_index(box_json)) {
+        info.current_slot = -2;
+        info.current_tool = -2;
     }
 
     info.units.push_back(std::move(unit));
@@ -1238,6 +1288,10 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
         if (is_full_update) {
             auto new_info = parse_box_status(box);
 
+            // Payload reads happen before the lock; the values converge under
+            // it with everything else below.
+            const int external_index = is_flat ? find_external_slot_index(box) : -1;
+
             // Firmware-sourced mapping tick. box.map is what the CFS itself
             // reports — verified on a live K2: BOX_MODIFY_TN T1A=T1B echoed back
             // as a single-key delta in ~0.7s. This is what lets a remap restore
@@ -1281,6 +1335,51 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
                 system_info_.tool_to_slot_map = std::move(new_info.tool_to_slot_map);
             }
 
+            // Bypass capability convergence. Two rules, one per dialect axis:
+            //  - Flat: only the identified Fork dialect has a verified command
+            //    for the holder (T<external>, registered by the port's own
+            //    box.py). An unidentified Flat module keeps bypass off.
+            //  - Stock: the first full box frame proves a CFS is attached, and
+            //    every stock CFS machine pairs an external holder with the
+            //    toolhead filament_sensor we already subscribe to — the
+            //    sensor-derived bypass rule is available. There is no load
+            //    command (Creality's own UI drives the box over RS-485), so
+            //    enable_bypass() is a declaration backed by that sensor, not a
+            //    gcode.
+            if (is_flat) {
+                external_slot_index_ = external_index;
+                // The declaration is a stock-dialect concept; drop it if the
+                // payload ever flips dialects mid-session so is_bypass_active()
+                // cannot report a stale engage.
+                bypass_declared_ = false;
+                const bool fork_bypass =
+                    macro_variant_ == CfsMacroVariant::Fork && external_slot_index_ >= 0;
+                if (system_info_.supports_bypass != fork_bypass) {
+                    spdlog::info("[AMS CFS] supports_bypass {} -> {} (flat, fork dialect={}, "
+                                 "external slot index={})",
+                                 system_info_.supports_bypass, fork_bypass,
+                                 macro_variant_ == CfsMacroVariant::Fork, external_slot_index_);
+                    system_info_.supports_bypass = fork_bypass;
+                }
+            } else if (!system_info_.supports_bypass) {
+                spdlog::info("[AMS CFS] supports_bypass -> true (stock: external holder + "
+                             "toolhead sensor rule)");
+                system_info_.supports_bypass = true;
+            }
+
+            // Cross-UI drift guard: the box re-arming (enable=1) while a
+            // declaration is latched means someone re-enabled the CFS through
+            // Creality's own screen — the box is an active agent again, so the
+            // declaration is stale. In-memory clear only; this runs on the
+            // libhv thread and the persisted flag is idempotently re-cleared
+            // on the next boot's restore. Only an explicit 1 acts — a missing
+            // or sentinel (-1) enable means "unknown", not "re-armed".
+            if (bypass_declared_ && helix::json_util::safe_int(box, "enable", -1) == 1) {
+                bypass_declared_ = false;
+                spdlog::info("[AMS CFS] Bypass declaration dropped — box reports enable=1 "
+                             "(re-armed outside HelixScreen)");
+            }
+
             // Deliberately do NOT touch filament_loaded here. box.filament is a
             // selection index, not a loaded flag (see parse_box_status). The
             // toolhead-sensor branch below is the sole writer of
@@ -1302,7 +1401,10 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
             // a loaded flag. Gate on has_unit_data so a partial top-level-only
             // update (e.g. box:{filament:N} during a tool change) can't clobber
             // a still-valid active slot.
-            if (new_info.current_slot >= 0) {
+            // The -2 bypass sentinel (flat payload with loaded_slot naming the
+            // external entry) takes the same copy path as a bay index — the
+            // else branch would otherwise clobber it to -1.
+            if (new_info.current_slot >= 0 || new_info.current_slot == -2) {
                 system_info_.current_slot = new_info.current_slot;
                 system_info_.current_tool = new_info.current_tool;
             } else if ((has_unit_data || is_flat) && system_info_.action != AmsAction::LOADING) {
@@ -1434,10 +1536,13 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
 
     // The lane letter and the toolhead switch arrive on independent branches
     // above (and often on independent notifications), so the seated bay can
-    // only be resolved once both have been applied.
+    // only be resolved once both have been applied. Same independence is why
+    // the stock bypass derivation lives here too: it needs the sensor's
+    // filament_loaded AND the box branch's lane state.
     {
         std::lock_guard<std::mutex> lock(mutex_);
         apply_seated_slot_stamp_locked();
+        derive_stock_bypass_locked();
     }
 
     if (changed) {
@@ -1902,7 +2007,16 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
         }
         spdlog::warn("{} push_slot_color_to_firmware: gcode dispatch failed for slot {}: {}",
                      backend_log_tag(), global_index, err.technical_msg);
+        return;
     }
+
+    // Refresh the box's auto-refill equivalence groups. same_material
+    // membership requires EXACT color equality, so this write changed group
+    // membership — and Creality's own master-server sends this command
+    // immediately after its BOX_MODIFY_TN_DATA writes on both families ([A]:
+    // string tables in CR4CU220812S11 V2.3.5.34 and CR0CN240110C10 V1.1.4.11).
+    // Fire-and-forget like the vendor's own call.
+    execute_gcode("BOX_UPDATE_SAME_MATERIAL_LIST");
 }
 
 AmsError AmsBackendCfs::set_tool_mapping(int tool_number, int slot_index) {
@@ -1992,12 +2106,170 @@ AmsError AmsBackendCfs::set_tool_mapping(int tool_number, int slot_index) {
     return execute_gcode(cmd);
 }
 
+// --- Bypass / external spool ---
+
+void AmsBackendCfs::derive_stock_bypass_locked() {
+    // Stock-dialect bypass state machine, driven by the two signals no stock
+    // firmware joins for us: the toolhead filament_switch_sensor (filament at
+    // the nozzle) and the box's active-lane report (current_slot).
+    //
+    // ARMED by the user's declaration only. "Filament present with no active
+    // lane" is ambiguous on its own — it is also the #1199 state where the
+    // box drops its lane report while bay filament stays threaded, which must
+    // stay -1 (no bay may claim it, and neither may bypass). The declaration
+    // is what says "the next filament the sensor sees is mine". Engaged maps
+    // to the -2 sentinel; filament gone while -2 maps back, so the state does
+    // not outlive the spool.
+    //
+    // Flat/Fork is excluded: that firmware reports the external slot directly
+    // via loaded_slot, and this derivation would race it. The action guard
+    // keeps a mid-load sensor rise (feed reaches the toolhead before the box
+    // frame naming the bay) from reading as a bypass engage.
+    if (!bypass_declared_ || schema_ == CfsSchema::Flat || !system_info_.supports_bypass ||
+        system_info_.action != AmsAction::IDLE) {
+        return;
+    }
+    if (system_info_.filament_loaded && system_info_.current_slot == -1) {
+        system_info_.current_slot = -2;
+        system_info_.current_tool = -2;
+        spdlog::info("[AMS CFS] Bypass engaged: toolhead filament with no active CFS lane");
+    } else if (!system_info_.filament_loaded && system_info_.current_slot == -2) {
+        system_info_.current_slot = -1;
+        system_info_.current_tool = -1;
+        spdlog::info("[AMS CFS] Bypass filament no longer detected");
+    }
+}
+
 AmsError AmsBackendCfs::enable_bypass() {
-    return AmsErrorHelper::not_supported("CFS has no bypass");
+    auto err = check_preconditions();
+    if (err.result != AmsResult::SUCCESS) {
+        return err;
+    }
+
+    // Same policy as the other capability questions: the user's force override
+    // is folded in by bypass_available_for, never written into
+    // supports_bypass itself.
+    if (!helix::bypass_available_for(system_info_.supports_bypass)) {
+        return AmsError(AmsResult::NOT_SUPPORTED, "Bypass not supported",
+                        "No verified bypass command for this CFS firmware", "");
+    }
+
+    // Filament still loaded from a bay is the caller's problem on backends
+    // that refuse chaining (#1229 discipline); CFS allows it, and the sidebar
+    // unloads first, but refuse here anyway so a direct API caller cannot
+    // strand bay filament behind an external feed.
+    if (system_info_.filament_loaded && system_info_.current_slot >= 0) {
+        return AmsError(AmsResult::WRONG_STATE, "Filament is loaded",
+                        "Unload the CFS filament before enabling bypass", "");
+    }
+
+    if (schema_ == CfsSchema::Flat) {
+        // Fork dialect: the firmware owns the whole attended flow. T<external>
+        // heats, moves to the wastebin, then waits (EXTERNAL_WAIT = 30 s in
+        // box.py) for the user to insert filament before feeding — a gcode
+        // that legitimately blocks, so it goes through dispatch_action_script
+        // for the homing/verification plumbing like every other CFS action.
+        if (macro_variant_ != CfsMacroVariant::Fork || external_slot_index_ < 0) {
+            return AmsError(AmsResult::NOT_SUPPORTED, "Bypass not supported",
+                            "This CFS firmware exposes no external spool slot", "");
+        }
+        std::string gcode = "T" + std::to_string(external_slot_index_);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            system_info_.action = AmsAction::LOADING;
+            begin_phase_tracking();
+        }
+        spdlog::info("[AMS CFS] Enabling bypass via fork T{} (attended load)",
+                     external_slot_index_);
+        return dispatch_action_script(std::move(gcode));
+    }
+
+    // Stock dialect: no Klipper-side command loads from the holder (Creality's
+    // own UI drives the box over RS-485), so the load itself is the user
+    // hand-feeding. But the box MUST be stood down first — with `enable` left
+    // at 1 it stays an active agent: print-file tool changes still route
+    // through its feed path and a toolhead-sensor runout still runs
+    // BOX_CHECK_MATERIAL_REFILL, either of which drives bay filament into a
+    // tube the external spool already occupies. BOX_ENABLE_CFS_PRINT ENABLE=0
+    // is [A]-verified on both families (K2 command table; K1 .so symbol list
+    // carries both the name and the ENABLE parameter token). Plain
+    // execute_gcode, not dispatch_action_script — it is a state flag, not a
+    // motion, same as toggle_auto_refill.
+    {
+        auto err = execute_gcode("BOX_ENABLE_CFS_PRINT ENABLE=0");
+        if (err.result != AmsResult::SUCCESS) {
+            return err;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        bypass_declared_ = true;
+        derive_stock_bypass_locked();
+    }
+    // Persist: the ENABLE=0 it sent lives in the box's tn_data.json across
+    // restarts, so the declaration must survive too or a reboot mid-bypass
+    // strands the stood-down state (see on_started's restore).
+    SettingsManager::instance().set_bypass_declared(true);
+    spdlog::info("[AMS CFS] Bypass enabled (stock dialect): CFS print feed stood down, "
+                 "declaration latched — feed the external spool by hand");
+    return AmsErrorHelper::success();
 }
 
 AmsError AmsBackendCfs::disable_bypass() {
-    return AmsErrorHelper::not_supported("CFS has no bypass");
+    auto err = check_preconditions();
+    if (err.result != AmsResult::SUCCESS) {
+        return err;
+    }
+
+    if (schema_ == CfsSchema::Flat) {
+        // BOX_UNLOAD's external branch heats, retracts, cuts, pulls the
+        // filament clear and waits for the user to remove it — the same
+        // command the bay unload uses, selected by the firmware from
+        // loaded_slot.
+        if (!is_bypass_active()) {
+            return AmsErrorHelper::success();
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            system_info_.action = AmsAction::UNLOADING;
+            begin_phase_tracking();
+        }
+        return dispatch_action_script(unload_gcode(macro_variant_));
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!bypass_declared_ && system_info_.current_slot != -2) {
+            return AmsErrorHelper::success();
+        }
+        // Only the declaration is cleared. current_slot stays with the
+        // derivation: if the toolhead sensor still sees the external filament,
+        // bypass IS still engaged (the next update would re-derive -2 anyway),
+        // and it clears the moment the user pulls the filament free.
+        bypass_declared_ = false;
+    }
+    // Re-arm the box's print participation (the enable=0 sent when bypass was
+    // declared). Fire-and-forget restore: if this send fails, the box stays
+    // stood down and the next enable/disable cycle retries — the safer of the
+    // two stale states.
+    {
+        auto err = execute_gcode("BOX_ENABLE_CFS_PRINT ENABLE=1");
+        if (err.result != AmsResult::SUCCESS) {
+            return err;
+        }
+    }
+    SettingsManager::instance().set_bypass_declared(false);
+    spdlog::info("[AMS CFS] Bypass disabled (stock dialect): CFS print feed re-armed, "
+                 "declaration cleared");
+    return AmsErrorHelper::success();
+}
+
+bool AmsBackendCfs::is_bypass_active() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Fork: purely firmware-reported (loaded_slot named the external entry).
+    // Stock: the declaration OR the sensor-derived sentinel — either half
+    // keeps the sidebar toggle and the pre-print gates honest.
+    return system_info_.current_slot == -2 || bypass_declared_;
 }
 
 // --- GCode helpers ---
@@ -2882,7 +3154,19 @@ AmsError AmsBackendCfs::execute_device_action(const std::string& action_id,
     }
 
     if (action_id == "toggle_auto_refill") {
-        return execute_gcode("BOX_ENABLE_AUTO_REFILL");
+        // Setter, not a toggle: the handler reads ENABLE via gcmd.get_int, and
+        // Creality's own master-server sends an explicit ENABLE=1/0 on both
+        // families ([A]: string tables in CR4CU220812S11 V2.3.5.34 and
+        // CR0CN240110C10 V1.1.4.11). A bare call leaves the argument absent;
+        // whether the wrapper then throws or defaults is unverified, so send
+        // the state we want — the inverse of the last box-reported flag.
+        bool enable;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            enable = !system_info_.endless_spool_enabled;
+        }
+        return execute_gcode(enable ? "BOX_ENABLE_AUTO_REFILL ENABLE=1"
+                                    : "BOX_ENABLE_AUTO_REFILL ENABLE=0");
     }
 
     if (action_id == "nozzle_clean") {

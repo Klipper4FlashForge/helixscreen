@@ -11,6 +11,7 @@
 #include "moonraker_client_mock.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
+#include "settings_manager.h"
 #include "test_helpers/cfs_test_access.h"
 
 #include <filesystem>
@@ -122,6 +123,225 @@ TEST_CASE("CFS Box profile clear is Fork-only", "[ams][cfs][fork]") {
     backend.clear_box_slot_profile(2);
 
     REQUIRE(backend.captured == std::vector<std::string>{"_BOX_SLOT_CLEAR SLOT=2"});
+}
+
+// =============================================================================
+// CFS bypass / external spool
+// =============================================================================
+//
+// Two dialect answers, one per axis from FILAMENT_MANAGEMENT.md § CFS:
+//  - Fork (community Kalico box.py): the firmware registers T<external_slot>
+//    for the holder and BOX_UNLOAD's external branch ejects it, so bypass is
+//    commanded with real gcode.
+//  - Stock (K1 BOX_* / K2 CR_BOX_*): no Klipper-side command loads from the
+//    holder (Creality's own UI drives the box over RS-485), so enabling is a
+//    declaration confirmed by the toolhead filament sensor.
+
+// Wrap a box object in the notify_status_update envelope. Defined with the
+// status-parsing fixtures further down; forward-declared so the bypass tests
+// above them can share it.
+static json make_cfs_notification(const json& box_obj);
+
+TEST_CASE("CFS bypass: fork dialect commands the attended load", "[ams][cfs][bypass]") {
+    CfsRemapHelper backend;
+    backend.mark_running();
+    CfsTestAccess::set_flat_fork(backend, /*external_index=*/4);
+
+    SECTION("enable dispatches T<external>") {
+        auto err = backend.enable_bypass();
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(backend.dispatched.size() == 1);
+        REQUIRE(backend.dispatched[0] == "T4");
+    }
+
+    SECTION("no external entry in the payload means no bypass") {
+        CfsTestAccess::set_flat_fork(backend, /*external_index=*/-1);
+        auto err = backend.enable_bypass();
+        REQUIRE(err.result == AmsResult::NOT_SUPPORTED);
+        REQUIRE(backend.dispatched.empty());
+    }
+
+    SECTION("disable while engaged dispatches BOX_UNLOAD") {
+        // Engaged = firmware named the external entry in loaded_slot.
+        CfsTestAccess::handle_status(backend, make_cfs_notification(json::parse(
+                                                  R"({"api_version": 1, "loaded_slot": 4, "slots": [
+                 {"index": 0, "external": false, "present": true},
+                 {"index": 1, "external": false, "present": true},
+                 {"index": 2, "external": false, "present": true},
+                 {"index": 3, "external": false, "present": true},
+                 {"index": 4, "external": true,  "present": true}]})")));
+        REQUIRE(backend.is_bypass_active());
+
+        auto err = backend.disable_bypass();
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(backend.dispatched.size() == 1);
+        REQUIRE(backend.dispatched[0] == "BOX_UNLOAD");
+    }
+
+    SECTION("disable when not engaged is a no-op success") {
+        auto err = backend.disable_bypass();
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(backend.dispatched.empty());
+    }
+}
+
+TEST_CASE("CFS bypass: stock dialect declaration + sensor derivation", "[ams][cfs][bypass]") {
+    CfsRemapHelper backend;
+    backend.mark_running();
+    // Stock dialect is the default schema; a full box frame is what flips
+    // supports_bypass on.
+    CfsTestAccess::handle_status(backend, make_cfs_notification(json::parse(
+                                              R"({"state": "connect", "filament": 0, "enable": 1,
+            "filament_useup": 0,
+            "map": {"T1A": "T1A"},
+            "T1": {"state": "connect", "filament": "None",
+                   "vender": ["none"], "remain_len": ["-1"],
+                   "color_value": ["-1"], "material_type": ["-1"]}})")));
+
+    SECTION("first full box frame flips supports_bypass") {
+        auto info = backend.get_system_info();
+        REQUIRE(info.supports_bypass);
+    }
+
+    SECTION("enable stands the CFS down and declares; sensor feed confirms; "
+            "sensor clear retracts") {
+        auto err = backend.enable_bypass();
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        // No motion script exists for stock — but the box's print feed is
+        // stood down so it cannot drive bay filament into the tube the
+        // external spool occupies.
+        REQUIRE(backend.captured == std::vector<std::string>{"BOX_ENABLE_CFS_PRINT ENABLE=0"});
+        REQUIRE(backend.dispatched.empty());
+        REQUIRE(backend.is_bypass_active()); // declaration half
+
+        // Toolhead sensor sees hand-fed filament with no active lane.
+        CfsTestAccess::set_filament_sensor(backend, /*seen=*/true, /*detected=*/true);
+        CfsTestAccess::handle_status(backend, json{{"params", json::array({json::object(), 0})}});
+        REQUIRE(backend.get_system_info().current_slot == -2);
+
+        // Filament pulled back out: sentinel clears. The declaration itself
+        // persists until the user toggles bypass off — is_bypass_active()
+        // keeps reporting the declared half, matching the sidebar toggle.
+        CfsTestAccess::set_filament_sensor(backend, /*seen=*/true, /*detected=*/false);
+        CfsTestAccess::handle_status(backend, json{{"params", json::array({json::object(), 0})}});
+        REQUIRE(backend.get_system_info().current_slot == -1);
+        REQUIRE(backend.is_bypass_active());
+    }
+
+    SECTION("sensor never saw filament: no derivation") {
+        CfsTestAccess::set_filament_sensor(backend, /*seen=*/false, /*detected=*/false);
+        CfsTestAccess::handle_status(backend, json{{"params", json::array({json::object(), 0})}});
+        REQUIRE(backend.get_system_info().current_slot == -1);
+    }
+
+    SECTION("disable re-arms the CFS and clears the declaration") {
+        backend.enable_bypass();
+        backend.captured.clear();
+
+        auto err = backend.disable_bypass();
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(backend.captured == std::vector<std::string>{"BOX_ENABLE_CFS_PRINT ENABLE=1"});
+        REQUIRE_FALSE(backend.is_bypass_active());
+
+        // Re-enable works after a disable.
+        REQUIRE(backend.enable_bypass().result == AmsResult::SUCCESS);
+    }
+
+    SECTION("disable when fully off is a no-op — no spurious re-arm send") {
+        auto err = backend.disable_bypass();
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(backend.captured.empty());
+        REQUIRE(backend.dispatched.empty());
+    }
+
+    SECTION("enable persists the declaration; disable clears it") {
+        SettingsManager::instance().set_bypass_declared(false);
+        backend.enable_bypass();
+        REQUIRE(SettingsManager::instance().get_bypass_declared());
+
+        backend.disable_bypass();
+        REQUIRE_FALSE(SettingsManager::instance().get_bypass_declared());
+    }
+
+    SECTION("declaration survives a restart via on_started restore") {
+        SettingsManager::instance().set_bypass_declared(false);
+        backend.enable_bypass();
+        REQUIRE(SettingsManager::instance().get_bypass_declared());
+
+        // New backend instance = new process, same persisted settings.
+        CfsRemapHelper restarted;
+        CfsTestAccess::call_on_started(restarted);
+        REQUIRE(restarted.is_bypass_active());
+
+        SettingsManager::instance().set_bypass_declared(false); // test-env cleanup
+    }
+
+    SECTION("box re-armed elsewhere drops the declaration") {
+        SettingsManager::instance().set_bypass_declared(false);
+        backend.enable_bypass();
+        REQUIRE(backend.is_bypass_active());
+
+        // enable=1 in a full box frame: someone re-armed the CFS through
+        // Creality's own screen. The declaration is stale and must drop.
+        CfsTestAccess::handle_status(
+            backend, make_cfs_notification(json::parse(
+                         R"({"state":"connect","filament":0,"auto_refill":0,"enable":1,
+                "map":{"T1A":"T1A"},
+                "T1":{"state":"connect","filament":"None","vender":["none"],
+                      "remain_len":["-1"],"color_value":["-1"],
+                      "material_type":["-1"]}})")));
+        REQUIRE_FALSE(backend.is_bypass_active());
+    }
+
+    SECTION("bay filament at the toolhead blocks enable") {
+        CfsTestAccess::set_loaded_state(backend, /*filament_loaded=*/true,
+                                        /*current_slot=*/2);
+        auto err = backend.enable_bypass();
+        REQUIRE(err.result == AmsResult::WRONG_STATE);
+        REQUIRE(backend.dispatched.empty());
+    }
+}
+
+TEST_CASE("CFS auto-refill device action sends an explicit ENABLE", "[ams][cfs]") {
+    // BOX_ENABLE_AUTO_REFILL is a setter, not a toggle: the handler reads
+    // ENABLE via gcmd.get_int, and Creality's own master-server sends
+    // ENABLE=1/0 explicitly on both families. The device action must invert
+    // the last box-reported flag and send the spelled-out command.
+    CfsRemapHelper backend;
+    backend.mark_running();
+    backend.captured.clear();
+
+    SECTION("auto-refill currently off → ENABLE=1") {
+        CfsTestAccess::set_loaded_state(backend, false, -1);
+        {
+            // Seed endless_spool_enabled=false via a box frame (auto_refill=0).
+            CfsTestAccess::handle_status(
+                backend, make_cfs_notification(json::parse(
+                             R"({"state":"connect","filament":0,"auto_refill":0,"enable":1,
+                    "map":{"T1A":"T1A"},
+                    "T1":{"state":"connect","filament":"None","vender":["none"],
+                          "remain_len":["-1"],"color_value":["-1"],
+                          "material_type":["-1"]}})")));
+        }
+        backend.captured.clear();
+        auto err = backend.execute_device_action("toggle_auto_refill");
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(backend.captured == std::vector<std::string>{"BOX_ENABLE_AUTO_REFILL ENABLE=1"});
+    }
+
+    SECTION("auto-refill currently on → ENABLE=0") {
+        CfsTestAccess::handle_status(
+            backend, make_cfs_notification(json::parse(
+                         R"({"state":"connect","filament":0,"auto_refill":1,"enable":1,
+                "map":{"T1A":"T1A"},
+                "T1":{"state":"connect","filament":"None","vender":["none"],
+                      "remain_len":["-1"],"color_value":["-1"],
+                      "material_type":["-1"]}})")));
+        backend.captured.clear();
+        auto err = backend.execute_device_action("toggle_auto_refill");
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(backend.captured == std::vector<std::string>{"BOX_ENABLE_AUTO_REFILL ENABLE=0"});
+    }
 }
 
 TEST_CASE("CFS type enum", "[ams][cfs]") {
@@ -996,12 +1216,19 @@ TEST_CASE("CFS change_tool selects load-vs-swap from filament_loaded (#968)", "[
 TEST_CASE("CFS push_slot_color_to_firmware writes color only", "[ams][cfs][firmware_writeback]") {
     CfsRemapHelper helper;
 
-    SECTION("valid slot → single color_value write, no material_type") {
+    SECTION("valid slot → color_value write + same-material refresh, no material_type") {
         helper.push_slot_color_to_firmware(0, 0xFF0000);
-        REQUIRE(helper.captured.size() == 1);
+        // The follow-up BOX_UPDATE_SAME_MATERIAL_LIST mirrors Creality's own
+        // master-server, which refreshes the auto-refill equivalence groups
+        // after every BOX_MODIFY_TN_DATA write (group membership requires
+        // exact color equality).
+        REQUIRE(helper.captured.size() == 2);
         REQUIRE(helper.captured[0] ==
                 "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0FF0000");
-        REQUIRE(helper.captured[0].find("PART=material_type") == std::string::npos);
+        REQUIRE(helper.captured[1] == "BOX_UPDATE_SAME_MATERIAL_LIST");
+        for (const auto& c : helper.captured) {
+            REQUIRE(c.find("PART=material_type") == std::string::npos);
+        }
     }
 
     SECTION("a known RFID fingerprint does NOT trigger a material_type write") {
@@ -1010,7 +1237,7 @@ TEST_CASE("CFS push_slot_color_to_firmware writes color only", "[ams][cfs][firmw
         // territory we don't write back.
         CfsTestAccess::set_last_rfid_uid(helper, 5, "101001|0FF0000");
         helper.push_slot_color_to_firmware(5, 0x00FF00);
-        REQUIRE(helper.captured.size() == 1);
+        REQUIRE(helper.captured.size() == 2);
         REQUIRE(helper.captured[0].find("PART=material_type") == std::string::npos);
     }
 
@@ -1293,21 +1520,24 @@ TEST_CASE("CFS push_slot_color_to_firmware emits BOX_MODIFY_TN_DATA",
         helper.push_slot_color_to_firmware(0, 0xFF0000);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
-                    "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0FF0000"});
+                    "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0FF0000",
+                    "BOX_UPDATE_SAME_MATERIAL_LIST"});
     }
 
     SECTION("Slot 5 (T2B) green 0x00FF00 → ADDR=2 NUM=B DATA=000FF00") {
         helper.push_slot_color_to_firmware(5, 0x00FF00);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
-                    "BOX_MODIFY_TN_DATA ADDR=2 NUM=B PART=color_value DATA=000FF00"});
+                    "BOX_MODIFY_TN_DATA ADDR=2 NUM=B PART=color_value DATA=000FF00",
+                    "BOX_UPDATE_SAME_MATERIAL_LIST"});
     }
 
     SECTION("Slot 15 (T4D) white 0xFFFFFF → ADDR=4 NUM=D DATA=0FFFFFF") {
         helper.push_slot_color_to_firmware(15, 0xFFFFFF);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
-                    "BOX_MODIFY_TN_DATA ADDR=4 NUM=D PART=color_value DATA=0FFFFFF"});
+                    "BOX_MODIFY_TN_DATA ADDR=4 NUM=D PART=color_value DATA=0FFFFFF",
+                    "BOX_UPDATE_SAME_MATERIAL_LIST"});
     }
 
     SECTION("Color masks high bits — alpha byte from caller is ignored") {
@@ -1316,7 +1546,8 @@ TEST_CASE("CFS push_slot_color_to_firmware emits BOX_MODIFY_TN_DATA",
         helper.push_slot_color_to_firmware(0, 0xAA112233);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
-                    "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0112233"});
+                    "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0112233",
+                    "BOX_UPDATE_SAME_MATERIAL_LIST"});
     }
 }
 
@@ -1333,7 +1564,8 @@ TEST_CASE("CFS push_slot_color_to_firmware skips invalid inputs (must NOT crash 
         helper.push_slot_color_to_firmware(0, 0);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{
-                    "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0000000"});
+                    "BOX_MODIFY_TN_DATA ADDR=1 NUM=A PART=color_value DATA=0000000",
+                    "BOX_UPDATE_SAME_MATERIAL_LIST"});
     }
 
     SECTION("Negative slot index is skipped") {
