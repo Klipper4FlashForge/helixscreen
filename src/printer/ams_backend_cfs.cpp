@@ -1902,7 +1902,16 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
         }
         spdlog::warn("{} push_slot_color_to_firmware: gcode dispatch failed for slot {}: {}",
                      backend_log_tag(), global_index, err.technical_msg);
+        return;
     }
+
+    // Refresh the box's auto-refill equivalence groups. same_material
+    // membership requires EXACT color equality, so this write changed group
+    // membership — and Creality's own master-server sends this command
+    // immediately after its BOX_MODIFY_TN_DATA writes on both families ([A]:
+    // string tables in CR4CU220812S11 V2.3.5.34 and CR0CN240110C10 V1.1.4.11).
+    // Fire-and-forget like the vendor's own call.
+    execute_gcode("BOX_UPDATE_SAME_MATERIAL_LIST");
 }
 
 AmsError AmsBackendCfs::set_tool_mapping(int tool_number, int slot_index) {
@@ -2882,7 +2891,19 @@ AmsError AmsBackendCfs::execute_device_action(const std::string& action_id,
     }
 
     if (action_id == "toggle_auto_refill") {
-        return execute_gcode("BOX_ENABLE_AUTO_REFILL");
+        // Setter, not a toggle: the handler reads ENABLE via gcmd.get_int, and
+        // Creality's own master-server sends an explicit ENABLE=1/0 on both
+        // families ([A]: string tables in CR4CU220812S11 V2.3.5.34 and
+        // CR0CN240110C10 V1.1.4.11). A bare call leaves the argument absent;
+        // whether the wrapper then throws or defaults is unverified, so send
+        // the state we want — the inverse of the last box-reported flag.
+        bool enable;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            enable = !system_info_.endless_spool_enabled;
+        }
+        return execute_gcode(enable ? "BOX_ENABLE_AUTO_REFILL ENABLE=1"
+                                    : "BOX_ENABLE_AUTO_REFILL ENABLE=0");
     }
 
     if (action_id == "nozzle_clean") {

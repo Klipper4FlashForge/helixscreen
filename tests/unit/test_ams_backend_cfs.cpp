@@ -124,6 +124,48 @@ TEST_CASE("CFS Box profile clear is Fork-only", "[ams][cfs][fork]") {
     REQUIRE(backend.captured == std::vector<std::string>{"_BOX_SLOT_CLEAR SLOT=2"});
 }
 
+TEST_CASE("CFS auto-refill device action sends an explicit ENABLE", "[ams][cfs]") {
+    // BOX_ENABLE_AUTO_REFILL is a setter, not a toggle: the handler reads
+    // ENABLE via gcmd.get_int, and Creality's own master-server sends
+    // ENABLE=1/0 explicitly on both families. The device action must invert
+    // the last box-reported flag and send the spelled-out command.
+    CfsRemapHelper backend;
+    backend.mark_running();
+    backend.captured.clear();
+
+    SECTION("auto-refill currently off → ENABLE=1") {
+        CfsTestAccess::set_loaded_state(backend, false, -1);
+        {
+            // Seed endless_spool_enabled=false via a box frame (auto_refill=0).
+            CfsTestAccess::handle_status(
+                backend, make_cfs_notification(json::parse(
+                             R"({"state":"connect","filament":0,"auto_refill":0,"enable":1,
+                    "map":{"T1A":"T1A"},
+                    "T1":{"state":"connect","filament":"None","vender":["none"],
+                          "remain_len":["-1"],"color_value":["-1"],
+                          "material_type":["-1"]}})")));
+        }
+        backend.captured.clear();
+        auto err = backend.execute_device_action("toggle_auto_refill");
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(backend.captured == std::vector<std::string>{"BOX_ENABLE_AUTO_REFILL ENABLE=1"});
+    }
+
+    SECTION("auto-refill currently on → ENABLE=0") {
+        CfsTestAccess::handle_status(
+            backend, make_cfs_notification(json::parse(
+                         R"({"state":"connect","filament":0,"auto_refill":1,"enable":1,
+                "map":{"T1A":"T1A"},
+                "T1":{"state":"connect","filament":"None","vender":["none"],
+                      "remain_len":["-1"],"color_value":["-1"],
+                      "material_type":["-1"]}})")));
+        backend.captured.clear();
+        auto err = backend.execute_device_action("toggle_auto_refill");
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(backend.captured == std::vector<std::string>{"BOX_ENABLE_AUTO_REFILL ENABLE=0"});
+    }
+}
+
 TEST_CASE("CFS type enum", "[ams][cfs]") {
     SECTION("CFS is a valid AmsType") {
         auto t = AmsType::CFS;
