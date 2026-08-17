@@ -1530,7 +1530,7 @@ void AmsOverviewPanel::show_edit_modal(int slot_index, bool open_on_picker) {
             parent_screen_, -2, initial_info, api_,
             [](const helix::ui::AmsEditOverlay::EditResult& result) {
                 if (result.saved) {
-                    AmsState::instance().set_external_spool_info(result.slot_info);
+                    AmsState::instance().commit_external_spool_edit(result.slot_info);
                     // bypass display update handled reactively by external_spool_observer_
                     NOTIFY_INFO(lv_tr("External spool updated"));
                 }
@@ -1554,8 +1554,15 @@ void AmsOverviewPanel::show_edit_modal(int slot_index, bool open_on_picker) {
             if (result.saved && result.slot_index >= 0) {
                 AmsBackend* backend = AmsState::instance().get_backend();
                 if (backend) {
-                    backend->set_slot_info(result.slot_index, result.slot_info);
-                    AmsState::instance().sync_from_backend();
+                    // Capture the pre-edit slot BEFORE the commit — its unlink
+                    // arm (clear the server active spool) needs the old link.
+                    SlotInfo original = backend->get_slot_info(result.slot_index);
+                    AmsError err = AmsState::instance().commit_slot_edit(
+                        result.slot_index, original, result.slot_info);
+                    if (!err.success()) {
+                        helix::ui::notify_ams_error(err);
+                        return;
+                    }
                     NOTIFY_INFO(lv_tr("Slot {} updated"), result.slot_index + 1);
                 }
             }

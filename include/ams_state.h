@@ -1224,19 +1224,6 @@ class AmsState {
     void sync_current_loaded_from_backend(const AmsSystemInfo& primary_info);
 
     /**
-     * @brief Sync Spoolman active spool after a slot edit
-     *
-     * Called when the user edits a slot's spool assignment via the UI.
-     * If the edited slot is the currently loaded slot, sets the Spoolman
-     * active spool. This is needed because backends like AFC only sync
-     * active spool on physical load/unload, not UI-initiated reassignment.
-     *
-     * @param slot_index The slot that was edited
-     * @param spoolman_id The new Spoolman spool ID (0 = unlinked)
-     */
-    void sync_active_spool_after_edit(int slot_index, int spoolman_id);
-
-    /**
      * @brief Set action detail text directly (for UI-managed states)
      *
      * Used when UI is managing a process (like preheat) that the backend

@@ -228,8 +228,9 @@ TEST_CASE("commit_slot_edit clears active spool even when backend manages it",
 
     // Premise of the regression: the backend reports that firmware manages the
     // active spool (AFC sends SET_SPOOL_ID on load). The old
-    // sync_active_spool_after_edit() gated on this and never cleared — but
-    // AFC's SET_SPOOL_ID SPOOL_ID= does NOT unlink server-side either.
+    // sync_active_spool_after_edit() (since removed) gated on this and never
+    // cleared — but AFC's SET_SPOOL_ID SPOOL_ID= does NOT unlink server-side
+    // either.
     REQUIRE(AmsState::instance().get_backend()->manages_active_spool());
 
     mock_api->spoolman_mock().set_active_spool(169, nullptr, nullptr);
