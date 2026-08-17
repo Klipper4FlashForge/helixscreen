@@ -506,7 +506,7 @@ additional configuration. **Verified against OrcaSlicer upstream/main
 | Snapmaker U1 | HelixScreen (`FilamentSlotOverrideStore`) | `T<n>` (0-based) — tool changer | `lane_data` namespace |
 | ACE (Anycubic ACE Pro) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
 | CFS (Creality K2) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
-| AFC / Box Turtle | AFC's own Klipper plugin | `laneN` (1-based) — moving to `T<n>`, see below | `lane_data` namespace (AFC is the originator) |
+| AFC / Box Turtle | AFC's own Klipper plugin | `T(n)` per mapping (virtual-tools firmware, #832); `laneN` (1-based) before | `lane_data` namespace (AFC is the originator) |
 | Happy Hare | Happy Hare's own Klipper plugin (`components/mmu_server.py` `push_lane_data`) | `laneN` (1-based) | `lane_data` namespace — Orca prefers it over the live `mmu` object |
 | Tool Changer | (not applicable — no per-slot metadata) | — | N/A |
 
@@ -530,15 +530,21 @@ atomic for AFC. User overrides go to a private namespace instead (#1158).
 That is outdated: HH's `push_lane_data` now writes the namespace directly and
 Orca prefers it; the `mmu` object is the fallback.)
 
-**AFC is moving its outer key from `laneN` to `T<n>`** (announced 2026-08-15,
-not yet shipped — upstream `DEV` still keys by lane name). One lane can answer
-to several `T` commands under AFC's virtual-tools work, which a lane-name key
-cannot express, so each mapping gets its own record. No HelixScreen code change
-is needed: our reader is key-agnostic, and the tool-changer `laneN` → `T<n>`
-migration only touches keys we authored. Full analysis, including the new
-key-space overlap with Mainsail, is in
-[`../specs/filament_slots.md` § "Announced: AFC is moving from `laneN` to
-`T<n>`"](../specs/filament_slots.md#announced-afc-is-moving-from-lanen-to-tn).
+**AFC moved its outer key from `laneN` to `T<n>`** (shipped on upstream `DEV`
+2026-08-16, Klipper-Add-On #832 — the 1.3 release line). One lane can answer
+to several `T` commands under virtual tools, which a lane-name key cannot
+express, so each mapping gets its own record and the record carries no lane
+identity. Two HelixScreen changes followed: the live AFC reader
+(`parse_lane_data` in `ams_backend_afc.cpp`) joins `T(n)` keys through the
+firmware-asserted tool mapping (parking a payload that lands before any
+mapping and replaying it once one arrives — the DB query is one-shot), and
+`reset_tool_mappings()` sends `AFC_RESET_MAPPING` on firmware that reports
+`multiple_tool_mapping` (#832 deregistered the old name). The override-store
+reader needed nothing: it is key-agnostic and HelixScreen authors no records
+on AFC printers. Full analysis, including the new key-space overlap with
+Mainsail, is in
+[`../specs/filament_slots.md` § "Shipped: AFC moved from `laneN` to
+`T<n>`"](../specs/filament_slots.md#shipped-afc-moved-from-lanen-to-tn-virtual-tools-firmware).
 
 #### Schema lineage and what Orca actually matches on
 
@@ -648,7 +654,8 @@ Read that section before touching key formatting, the load filter, or the
 migration. The summary:
 
 - **Writers and their key style**: HelixScreen (`T<n>` on tool changers,
-  `laneN` otherwise), AFC (`laneN`, moving to `T<n>`), Happy Hare (`laneN`), Mainsail #2510
+  `laneN` otherwise), AFC (`T(n)` per mapping since the virtual-tools firmware,
+  `laneN` before), Happy Hare (`laneN`), Mainsail #2510
   (`T<n>` on Spoolman + tool changer).
 - **Readers**: OrcaSlicer is **key-opaque** (reads the inner `lane` field, never
   the outer key — `MoonrakerPrinterAgent.cpp:780`), requires the inner `lane`
@@ -1877,12 +1884,13 @@ politeness mirror of an upstream guard.* Do not remove it as redundant.
 carrying a Spoolman `spool_id` survive; lanes without one silently revert. HelixScreen's
 `FilamentSlotOverrideStore` (private AFC namespace) exists to preserve identity across this.
 
-**Moonraker database** (AFC namespace, `lane_data` key -- v1.0.32+):
+**Moonraker database** (AFC namespace, `lane_data` key -- v1.0.32+; outer keys
+are `T(n)` per mapping on the virtual-tools firmware, `laneN` before):
 
 ```json
 {
-  "lane1": {"color": "FF0000", "material": "PLA", "loaded": false},
-  "lane2": {"color": "00FF00", "material": "PETG", "loaded": true}
+  "T0": {"color": "FF0000", "material": "PLA", "loaded": false},
+  "T1": {"color": "00FF00", "material": "PETG", "loaded": true}
 }
 ```
 
@@ -1914,7 +1922,7 @@ given machine. `BT_*` macros are BoxTurtle-specific and do not exist on other un
 | `SET_SPOOL_ID LANE={name} SPOOL_ID={id}` | Python | Link a lane to a Spoolman spool |
 | `SET_BOWDEN_LENGTH HUB={hub} LENGTH={mm}` | Python | Set bowden length (mux keyed on `HUB`) |
 | `SET_RUNOUT LANE={name} RUNOUT={backup_lane}` | Python | Set endless spool backup |
-| `RESET_AFC_MAPPING RUNOUT=no` | Python | Reset tool mappings only |
+| `RESET_AFC_MAPPING RUNOUT=no` | Python | Reset tool mappings only. **Renamed `AFC_RESET_MAPPING` by the virtual-tools firmware (Klipper-Add-On #832), which deregistered the old name**; HelixScreen picks per firmware via the `multiple_tool_mapping` status flag |
 | `AFC_CALIBRATION` | Python | Run calibration wizard |
 | `AFC_RESET_MOTOR_TIME LANE={name}` | Python | Reset motor run-time counter |
 | `AFC_QUIET_MODE` | Python | Toggle quiet mode |
