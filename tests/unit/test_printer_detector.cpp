@@ -4482,3 +4482,36 @@ TEST_CASE_METHOD(
 
     TearDown();
 }
+
+// ============================================================================
+// Type Mismatch Warning Decider
+// ============================================================================
+
+TEST_CASE("should_warn_type_mismatch table", "[detector][mismatch]") {
+    using PD = PrinterDetector;
+    const std::string none; // "" — flag never shown
+    const std::string ad5m = "FlashForge Adventurer 5M Pro";
+    const std::string trident = "Voron Trident";
+
+    SECTION("high-confidence different type warns") {
+        REQUIRE(PD::should_warn_type_mismatch(ad5m, trident, 85, none));
+    }
+    SECTION("boundary: 70 warns, 69 does not") {
+        REQUIRE(PD::should_warn_type_mismatch(ad5m, trident, 70, none));
+        REQUIRE_FALSE(PD::should_warn_type_mismatch(ad5m, trident, 69, none));
+    }
+    SECTION("same type never warns") {
+        REQUIRE_FALSE(PD::should_warn_type_mismatch(ad5m, ad5m, 95, none));
+    }
+    SECTION("deliberate picks and undetected saves are exempt") {
+        REQUIRE_FALSE(PD::should_warn_type_mismatch("Custom/Other", trident, 95, none));
+        REQUIRE_FALSE(PD::should_warn_type_mismatch("Unknown", trident, 95, none));
+        REQUIRE_FALSE(PD::should_warn_type_mismatch("", trident, 95, none));
+    }
+    SECTION("flag suppresses until the saved type changes") {
+        REQUIRE_FALSE(PD::should_warn_type_mismatch(ad5m, trident, 85, ad5m));
+        // User re-ran wizard and picked ANOTHER wrong type: re-arm once.
+        const std::string k1max = "Creality K1 Max (with CFS)";
+        REQUIRE(PD::should_warn_type_mismatch(k1max, trident, 85, ad5m));
+    }
+}

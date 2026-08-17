@@ -503,4 +503,16 @@ class PrinterDetector {
      * @return "cw", "ccw", or empty string if not declared (treat as "cw")
      */
     static std::string screws_tilt_direction_override();
+
+    /**
+     * @brief Decide whether to show the one-time saved-vs-detected type warning.
+     *
+     * True iff detection is high-confidence (>= 70, the wizard's override
+     * threshold), contradicts a meaningful saved type (not Custom/Other,
+     * Unknown, or empty), and the per-printer flag does not already equal the
+     * current saved type (changing the type re-arms the warning once).
+     */
+    static bool should_warn_type_mismatch(const std::string& saved_type,
+                                          const std::string& detected_type, int detected_confidence,
+                                          const std::string& flag_value);
 };
