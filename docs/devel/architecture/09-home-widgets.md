@@ -107,6 +107,10 @@ The catalog itself, as the registry defines it (gate subjects from the def table
 | `camera` | `CameraWidget` — `HELIX_HAS_CAMERA` builds only | — |
 | `notifications` | *pure XML* | — |
 
+That catalog, rendered — the stock grid a fresh mock instance builds from `assets/config/default_layout.json` anchors: the print-library and status tiles anchor the top, everything else auto-places below them:
+
+<img src="../../images/screenshot-home-panel.png" alt="Home panel grid: print library card and status card (nozzle temp, fan rows, LED strip, notifications) on a dark theme with a left nav rail" width="800"/>
+
 ### populate_widgets(): from saved layout to attached grid
 
 `PanelWidgetManager::populate_widgets(panel_id, container, page_index, reuse)` (`panel_widget_manager.cpp:92`) is the single build path; `HomePanel::populate_page()` is its only caller of note.

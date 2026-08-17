@@ -78,6 +78,14 @@ flowchart TB
 
 `NavigationManager` keeps `panel_stack_`, a `vector<lv_obj_t*>` in z-order whose slot 0 is always the active root panel; every entry above it is an overlay (`include/ui_nav_manager.h:719`).
 
+The same screen three states later, as the user meets the stacks (mock `--test` instance): a root panel; the safety overlay pushed on top of it — the exemplar open path from `ui_settings_safety.cpp`, shown below; and the runout modal, which lives on `ModalStack` and dims *everything* beneath it, overlay included, without `NavigationManager` knowing anything changed:
+
+<img src="../../images/screenshot-nav-stack-panel.png" alt="Settings root panel: category list with a left nav rail" width="800"/>
+
+<img src="../../images/screenshot-nav-stack-overlay.png" alt="The same screen with the Safety &amp; Notifications overlay pushed over the Settings panel — full-width toggle rows and a back affordance" width="800"/>
+
+<img src="../../images/screenshot-nav-stack-modal.png" alt="The same screen again with the Filament Runout modal centered on its own backdrop, dimming the safety overlay beneath it" width="800"/>
+
 A push is always queued through `helix::ui::queue_update()`. `push_overlay()` (`src/ui/ui_nav_manager.cpp:1931`) validates the widget pointer survived the deferral, rejects duplicates, deactivates whatever it covers (the root panel for the first overlay, the previous overlay otherwise), snapshots the frozen backdrop *before* hiding, resolves the width class, shows with slide-in, then calls `on_activate()`. `go_back()` (`:2208`) resets in-flight pointer input (`lv_indev_reset`), calls `on_deactivate()` on the closing overlay *before* the animation, pops, and re-activates the restored view exactly once via the `restore_activation_pending_` latch — `on_activate()` handlers are not all idempotent, so a double fire is a real bug.
 
 Two entry points to the roots differ in one load-bearing way. `set_active(PanelId)` swaps the base panel *underneath* whatever is stacked, while `request_panel()` (`include/ui_nav_manager.h:195`) is the whole navbar-tap decision — the Home re-tap carousel reset, connection and Klippy-ready gating (`BlockedDisconnected`, `BlockedKlippyNotReady`), and the stack-clearing switch.

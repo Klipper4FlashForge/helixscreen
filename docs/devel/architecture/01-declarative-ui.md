@@ -150,6 +150,10 @@ Structural conditionals avoid building both branches: `<if cond="expr">...</if>`
 
 Three files, no direct references between them. The XML names a subject and a callback; C++ publishes both by name; the engine ties them at instantiation. This is the shape essentially every interactive element in the app takes.
 
+The panel those three files produce, as the user meets it — the preset buttons bottom-right are the excerpt's `preset_m0`/`m1`/`m2` widgets, their labels ("PLA", "PETG", "ABS") arriving through the `preset_material_*` subjects that `preset_materials.cpp` registers:
+
+<img src="../../images/screenshot-bed-temp-panel.png" alt="The Heatbed Temperature overlay: temperature graph, current/target card, and the preset buttons built from bed_temp_panel.xml" width="800"/>
+
 ### The globals scope: where subjects live
 
 The `globals` component is not a screen. Its scope is the app-wide namespace every binding falls back to. `ui_xml/globals.xml` (844 lines) declares the theme-token consts (`<color>`, `<px>`, `<str>`) and a first wave of XML-owned subjects (106 `<string>` declarations at audit time). The bulk of the namespace is registered from C++ after that: `lv_xml_register_subject(nullptr, name, &subject)` — a null scope means globals — from subject initializers across the tree (`src/application/subject_initializer.cpp` sequences them; `src/printer/ams_state.cpp` alone registers 39).

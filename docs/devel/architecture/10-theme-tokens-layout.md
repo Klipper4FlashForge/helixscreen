@@ -112,6 +112,12 @@ Live switching is the payoff, and `theme_manager_apply_theme(theme, dark)` is th
 
 No widget is recreated. The theme editor overlay (`src/ui/ui_theme_editor_overlay.cpp`) drives the same entry point for live previews while editing.
 
+The same home panel under `theme_manager_apply_theme()` in both modes — identical XML, identical tokens, only the palette swapped (these are `--dark` / `--light` captures from the screenshot pipeline):
+
+<img src="../../images/screenshot-theme-dark.png" alt="Home panel in dark mode: dark background, light text, blue accents" width="800"/>
+
+<img src="../../images/screenshot-theme-light.png" alt="The same home panel in light mode: light gray background, dark text, same layout and accents" width="800"/>
+
 A few colors are *computed* from the palette rather than named by it: `theme_get_knob_color()` picks the more saturated of primary/tertiary for switch and slider handles, `theme_get_accent_color()` the more saturated of primary/secondary for icon accents, and `theme_manager_get_contrast_color(bg)` returns text from whichever palette contrasts with the given background. One rotating palette exists outside the theme entirely: `theme_manager_get_object_palette_color(index)` cycles the fixed `object_color_1..8` consts so the same excluded object keeps the same color across the map, list, and 3D brackets.
 
 The user-facing controls live in Settings → Display: `DisplaySettingsManager` (`src/system/display_settings_manager.cpp:394`) guards against requesting a mode the theme lacks, persists `/dark_mode` and `/display/theme` to settings.json, and disables the toggle outright for single-mode themes (a dark-only theme also force-switches the mode and hides the control). It publishes `settings_dark_mode` and `settings_dark_mode_available` subjects for the settings UI to bind; `Application` calls its `on_theme_changed()` once after both theme and settings are up so the toggle reflects what the loaded theme actually supports (`src/application/application.cpp:850`).
