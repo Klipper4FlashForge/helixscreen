@@ -1180,6 +1180,7 @@
   <translation tag="Keep Navigation Bar" ru="Сохранить панель навигации"/>
   <translation tag="Keep Printing" ru="Продолжить печать"/>
   <translation tag="Keep Required" ru="Оставить обязательным"/>
+  <translation tag="Keep current"/>
   <translation tag="Keep the bypass spool visible when bypass is off" ru="Показывать катушку байпаса, даже когда байпас выключен"/>
   <translation tag="Kick away" ru="Сброс остатка"/>
   <translation tag="Kinematics" ru="Кинематика"/>
@@ -1771,6 +1772,7 @@
   <translation tag="Printer name" ru="Название принтера"/>
   <translation tag="Printer not ready" ru="Принтер не готов"/>
   <translation tag="Printer ready" ru="Принтер готов"/>
+  <translation tag="Printer type mismatch"/>
   <translation tag="Printer:" ru="Принтер:"/>
   <translation tag="Printer: " ru="Принтер: "/>
   <translation tag="PrinterIdentify" ru="Определить принтер"/>
@@ -1845,6 +1847,7 @@
   <translation tag="Ramming Volume" ru="Объём рэмминга"/>
   <translation tag="Raspberry Pi" ru="Raspberry Pi"/>
   <translation tag="Raspberry Pi (32-bit)" ru="Raspberry Pi (32-bit)"/>
+  <translation tag="Re-identify"/>
   <translation tag="Re-probe" ru="Перепроверить"/>
   <translation tag="Re-read spool RFID tags and remaining length" ru="Перечитать RFID-метки катушек и остаток"/>
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." ru="Повторно синхронизирует отслеживаемое состояние Happy Hare с оборудованием."/>
@@ -2373,6 +2376,7 @@
   <translation tag="This may take up to 30 seconds" ru="Это может занять до 30 секунд"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." ru="Этот плагин позволяет HelixScreen управлять опциями начала печати, такими как сетка стола и QGL. После установки используйте «Настроить PRINT_START» ниже для включения опциональных шагов."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" ru="Для этой печати нужно около %.0fг, но на катушке осталось около %.0fг. Всё равно начать?"/>
+  <translation tag="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets."/>
   <translation tag="This tool probes each bed screw and tells you how much to adjust." ru="Этот инструмент проверяет каждый винт стола и показывает, насколько его нужно отрегулировать."/>
   <translation tag="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect." ru="Z-offset будет применён к вашему концевику, и Klipper перезапустится для сохранения конфигурации. Принтер ненадолго отключится."/>
   <translation tag="This will apply the Z-offset to your probe and restart Klipper to save the configuration. The printer will briefly disconnect." ru="Z-offset будет применён к вашему зонду, и Klipper перезапустится для сохранения конфигурации. Принтер ненадолго отключится."/>
