@@ -50,6 +50,8 @@ flowchart TD
 
 ## How it works
 
+Four mechanics carry the load: the file-to-widget pipeline (including live editing), binding resolution, the shared subject namespace, and the custom-widget layer where app code meets the engine.
+
 ### From XML file to live widget
 
 At boot, `Application` runs the phases in a fixed order (phase numbers and lines from `src/application/application.cpp`):
@@ -82,6 +84,12 @@ Components compose. A panel's `<view extends="overlay_panel">` inherits a regist
 
 Widget naming follows a three-level precedence, set in the engine at `lib/helix-xml/src/xml/lv_xml.c:514`: an explicit `name="..."` at the instantiation site wins; otherwise a `name` the component set on its own `<view>` root is kept; otherwise the object gets a default `<component>_#`. (Older docs claimed `<view name>` never propagated and unnamed instances were unfindable — our fork fixed that; an instance-site name that displaces a `<view>` name now logs a one-time warning, `lib/helix-xml/src/xml/lv_xml.c:473`.)
 
+That boot-time registration is also what makes live editing work.
+
+**Nothing above is compiled in.** `ui_xml/` files are read from disk at startup, so an XML edit takes effect on the next launch with no `make` needed. With `HELIX_HOT_RELOAD=1` you do not even relaunch: `XmlHotReloader` (`src/application/xml_hot_reloader.cpp`) polls `ui_xml/` every 500 ms on a background thread, well-formedness-checks changed files with expat (no LVGL state touched off the main thread), re-registers changed components, and rebuilds the active panel/overlay/modal in place via `NavigationManager::rebuild_active_views()`. Invalid XML — mid-write truncation, syntax errors — is silently skipped; the existing UI stays live and the next poll retries. Hot reload defaults ON for native dev builds and OFF for cross-compiled release builds; `HELIX_HOT_RELOAD={0,1}` overrides either way (`src/system/runtime_config.cpp:80`). Three components are exempt because C++ extends their scopes after registration — `globals`, `color_picker`, `color_swatch_grid` (`src/application/xml_hot_reloader.cpp:38`) — a fresh registration of those would lose theme tokens and breakpoint constants. Editing `globals.xml` therefore still needs a relaunch.
+
+One trap follows directly from runtime loading: the XML and the binary can drift. XML referencing a widget that this binary never registered produces an unknown-element path, not a build error (`lib/helix-xml/src/xml/lv_xml.c:530`). If a layout change "does nothing", confirm the binary actually contains the C++ side of what the XML uses.
+
 ### How bindings reach data
 
 Two binding vocabularies exist, and both end at the same lookup.
@@ -109,15 +117,7 @@ Events flow the other direction through the same registration idea: XML declares
 
 Structural conditionals avoid building both branches: `<if cond="expr">...</if>` / `<else>` builds only the matching side, and `<repeat count="4">` clones a fragment with the loop index available as bare `$i` or embedded `${i}` (`lib/helix-xml/src/xml/lv_xml.c:1137` and `:1121`). A `count` that names a subject rebuilds the fragment when that subject changes. Compound conditions stay in XML too — `<subject_expr name="x" expr="a or b gt c"/>` derives a new subject from existing ones via the integer-only evaluator in `lib/helix-xml/src/xml/lv_xml_expr.c`. Do not hand-write a C++ observer to combine subjects; the evaluator already does it.
 
-### The globals scope: where subjects live
-
-The `globals` component is not a screen. Its scope is the app-wide namespace every binding falls back to. `ui_xml/globals.xml` (844 lines) declares the theme-token consts (`<color>`, `<px>`, `<str>`) and a first wave of XML-owned subjects (106 `<string>` declarations at audit time). The bulk of the namespace is registered from C++ after that: `lv_xml_register_subject(nullptr, name, &subject)` — a null scope means globals — from subject initializers across the tree (`src/application/subject_initializer.cpp` sequences them; `src/printer/ams_state.cpp` alone registers 39).
-
-The ownership split matters at teardown: XML-declared subjects are owned by the scope and die with it, while C++-registered subjects are *borrowed* — the scope stores the pointer but never frees it (the hot reloader relies on this; see `lib/helix-xml/src/xml/lv_xml.c:782` for the same split in explicit unregistration). Practically: declare a subject in `globals.xml` when only XML writes it, register from C++ when C++ owns the storage.
-
-### A preset button, end to end
-
-One button in `ui_xml/bed_temp_panel.xml:73` exercises the whole pipeline:
+**A preset button, end to end.** One button in `ui_xml/bed_temp_panel.xml:73` exercises every vocabulary above at once:
 
 ```xml
 <ui_button name="preset_m0" width="48%" bind_text="preset_material_0_name">
@@ -150,19 +150,19 @@ One button in `ui_xml/bed_temp_panel.xml:73` exercises the whole pipeline:
 
 Three files, no direct references between them. The XML names a subject and a callback; C++ publishes both by name; the engine ties them at instantiation. This is the shape essentially every interactive element in the app takes.
 
-### The 30 custom widgets
+### The globals scope: where subjects live
+
+The `globals` component is not a screen. Its scope is the app-wide namespace every binding falls back to. `ui_xml/globals.xml` (844 lines) declares the theme-token consts (`<color>`, `<px>`, `<str>`) and a first wave of XML-owned subjects (106 `<string>` declarations at audit time). The bulk of the namespace is registered from C++ after that: `lv_xml_register_subject(nullptr, name, &subject)` — a null scope means globals — from subject initializers across the tree (`src/application/subject_initializer.cpp` sequences them; `src/printer/ams_state.cpp` alone registers 39).
+
+Components can declare subjects of their own in a `<subjects>` block (e.g. `ui_xml/hidden_network_modal.xml:31`); those live in the component scope and shadow same-named globals — see the gotcha below.
+
+The ownership split matters at teardown: XML-declared subjects are owned by the scope and die with it, while C++-registered subjects are *borrowed* — the scope stores the pointer but never frees it (the hot reloader relies on this; see `lib/helix-xml/src/xml/lv_xml.c:782` for the same split in explicit unregistration). Practically: declare a subject in `globals.xml` when only XML writes it, register from C++ when C++ owns the storage.
+
+### Custom widgets and the engine that runs them
 
 The widget-processor table is not only built-ins. Thirty files under `src/` call `lv_xml_register_widget()` to teach the engine new tags — the visual vocabulary of the app: `ui_card`, `ui_button`, `ui_dialog`, `ui_icon`, `ui_markdown`, `ui_spinner`, `ui_switch`, `ui_text_input`, `ui_temp_display`, `ui_carousel`, `helix_sparkline`, canvas widgets like `ui_bed_mesh` and `ui_gcode_viewer`, and more (full list: `rg -l 'lv_xml_register_widget' src/`). Each file pairs a *create* handler (runs once per instance, sets defaults) with an *apply* handler (runs on attribute application, may run again). `src/ui/ui_card.cpp` is the cleanest example and a tour stop below.
 
-### The engine is ours
-
-`lib/helix-xml/` is a permanent hard fork, extracted from LVGL at commit `a15dcbeb5` — the last tree (v9.4.0-358) that still contained the XML engine before v9.5 removed it from core. It is MIT-licensed, lives in its own repository (prestonbrown/helix-xml), and upstream is us: there is no LVGL-side upstream to track. Engine changes are committed directly in the submodule, then the bumped pointer is committed here; the `patches/*.patch` workflow applies only to third-party submodules, never to this one. Because LVGL now sells an XML-based product (LVGL Pro / SquareLine), there is a clean-room rule for anything their commercial offering also has — read `LVGL_XML_SITUATION.md` (listed below) before touching the engine.
-
-### Edit without rebuilding
-
-`ui_xml/` files are read from disk at startup, not compiled in. Editing a layout and relaunching the binary shows the change; no `make` needed. With `HELIX_HOT_RELOAD=1` you do not even relaunch: `XmlHotReloader` (`src/application/xml_hot_reloader.cpp`) polls `ui_xml/` every 500 ms on a background thread, well-formedness-checks changed files with expat (no LVGL state touched off the main thread), re-registers changed components, and rebuilds the active panel/overlay/modal in place via `NavigationManager::rebuild_active_views()`. Invalid XML — mid-write truncation, syntax errors — is silently skipped; the existing UI stays live and the next poll retries. Hot reload defaults ON for native dev builds and OFF for cross-compiled release builds; `HELIX_HOT_RELOAD={0,1}` overrides either way (`src/system/runtime_config.cpp:80`). Three components are exempt because C++ extends their scopes after registration — `globals`, `color_picker`, `color_swatch_grid` (`src/application/xml_hot_reloader.cpp:38`) — a fresh registration of those would lose theme tokens and breakpoint constants. Editing `globals.xml` therefore still needs a relaunch.
-
-One trap follows directly from runtime loading: the XML and the binary can drift. XML referencing a widget that this binary never registered produces an unknown-element path, not a build error (`lib/helix-xml/src/xml/lv_xml.c:530`). If a layout change "does nothing", confirm the binary actually contains the C++ side of what the XML uses.
+The engine those 30 files register into stopped being LVGL's code in v9.5. `lib/helix-xml/` is a permanent hard fork, extracted from LVGL at commit `a15dcbeb5` — the last tree (v9.4.0-358) that still contained the XML engine before v9.5 removed it from core. It is MIT-licensed, lives in its own repository (prestonbrown/helix-xml), and upstream is us: there is no LVGL-side upstream to track. Engine changes are committed directly in the submodule, then the bumped pointer is committed here; the `patches/*.patch` workflow applies only to third-party submodules, never to this one. Because LVGL now sells an XML-based product (LVGL Pro / SquareLine), there is a clean-room rule for anything their commercial offering also has — read `LVGL_XML_SITUATION.md` (listed below) before touching the engine.
 
 ## Patterns & gotchas
 
