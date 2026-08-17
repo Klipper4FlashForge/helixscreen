@@ -57,8 +57,9 @@ namespace {
 // Widget IDs used below, all single-instance and un-gated (no
 // hardware_gate_subject in panel_widget_registry.cpp) — a gated row is dimmed
 // and unclickable for an unrelated reason, which would mask what these tests
-// assert.
-constexpr const char* PLACED_ID = "shutdown";        // enabled, has a cell
+// assert. ("lock" took this role after "shutdown" grew the
+// platform_host_power_supported gate.)
+constexpr const char* PLACED_ID = "lock";            // enabled, has a cell
 constexpr const char* LIMBO_ID = "motion";           // enabled, no cell
 constexpr const char* DISABLED_ID = "gcode_console"; // not enabled
 constexpr const char* MULTI_ID = "favorite_macro";   // multi_instance base
