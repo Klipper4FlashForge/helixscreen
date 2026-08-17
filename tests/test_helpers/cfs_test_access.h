@@ -62,6 +62,13 @@ class CfsTestAccess {
         b.system_info_.filament_loaded = filament_loaded;
         b.system_info_.current_slot = current_slot;
     }
+    // Seed only the seated bay (current_slot) for tests that pin the seated
+    // lane independently of the nozzle-loaded flag (e.g. the
+    // toolhead-unaccounted gate, which reads the pair separately).
+    static void set_seated_bay(helix::printer::AmsBackendCfs& b, int slot) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.system_info_.current_slot = slot;
+    }
     static void set_last_rfid_uid(helix::printer::AmsBackendCfs& b, int slot_index,
                                   const std::string& uid) {
         std::lock_guard<std::mutex> lock(b.mutex_);

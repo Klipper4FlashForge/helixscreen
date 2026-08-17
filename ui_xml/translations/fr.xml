@@ -301,12 +301,14 @@
   <translation tag="Button taps and navigation sounds" fr="Sons de boutons et de navigation"/>
   <translation tag="Buzz Servo" fr="Faire vibrer le servo"/>
   <translation tag="Bypass" fr="Bypass"/>
+  <translation tag="Bypass Is Active"/>
   <translation tag="Bypass Mode" fr="Mode bypass"/>
   <translation tag="Bypass controlled by hardware sensor" fr="Bypass contrôlé par capteur matériel"/>
   <translation tag="Bypass controlled by sensor" fr="Bypass contrôlé par le capteur"/>
   <translation tag="Bypass disabled" fr="Bypass désactivé"/>
   <translation tag="Bypass enabled" fr="Bypass activé"/>
   <translation tag="Bypass failed" fr="Échec du bypass"/>
+  <translation tag="Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?"/>
   <translation tag="Bypass toggle failed" fr="Échec de la bascule du bypass"/>
   <translation tag="C" fr="C"/>
   <translation tag="CALIBRATION" fr="CALIBRATION"/>
@@ -932,6 +934,7 @@
   <translation tag="Filament" fr="Filament"/>
   <translation tag="Filament Detected" fr="Filament détecté"/>
   <translation tag="Filament Environment" fr="Environnement du filament"/>
+  <translation tag="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" fr="Mappage du filament"/>
   <translation tag="Filament Runout" fr="Fin de filament"/>
   <translation tag="Filament Sensor" fr="Capteur de filament"/>
@@ -2363,6 +2366,7 @@
   <translation tag="The printer rejected the filament configuration. The print was not started." fr="L&apos;imprimante a rejeté la configuration du filament. L&apos;impression n&apos;a pas été démarrée."/>
   <translation tag="The printer&apos;s firmware chooses the backup spool itself" fr="Le firmware de l&apos;imprimante choisit lui-même la bobine de secours"/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" fr="Le capteur de fin de filament indique qu&apos;aucun filament n&apos;est chargé. Démarrer l&apos;impression quand même ?"/>
+  <translation tag="The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" fr="Le capteur de la tête d&apos;outil indique que du filament est déjà chargé. Procéder au chargement quand même ?"/>
   <translation tag="The toolhead sensor indicates no filament is present. Proceed with unload anyway?" fr="Le capteur de la tête d&apos;outil indique qu&apos;aucun filament n&apos;est présent. Procéder au déchargement quand même ?"/>
   <translation tag="Theme" fr="Thème"/>

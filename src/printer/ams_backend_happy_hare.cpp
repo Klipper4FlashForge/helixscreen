@@ -2738,6 +2738,15 @@ bool AmsBackendHappyHare::is_bypass_active() const {
     return system_info_.current_slot == -2;
 }
 
+std::optional<bool> AmsBackendHappyHare::toolhead_filament_unaccounted() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!system_info_.filament_loaded) {
+        return false;
+    }
+    // current_slot: >=0 gate feeding, -1 none, -2 bypass.
+    return system_info_.current_slot == -1;
+}
+
 // ============================================================================
 // Endless Spool Operations (group-based, runtime-editable on a single unit)
 // ============================================================================

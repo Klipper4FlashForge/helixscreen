@@ -164,6 +164,10 @@ class AmsBackendMock : public AmsBackend {
     AmsError disable_bypass() override;
     [[nodiscard]] bool is_bypass_active() const override;
 
+    /// nullopt until the "unaccounted" scenario runs; then true — the mock
+    /// cannot observe a toolhead, so only the staged scenario answers.
+    [[nodiscard]] std::optional<bool> toolhead_filament_unaccounted() const override;
+
     // Environment sensors
     [[nodiscard]] bool has_environment_sensors() const override;
 
@@ -572,7 +576,7 @@ class AmsBackendMock : public AmsBackend {
      * before they can be applied. This stores the scenario name and applies
      * it at the end of start().
      *
-     * @param scenario One of: "idle", "loading", "error", "bypass"
+     * @param scenario One of: "idle", "loading", "error", "bypass", "unaccounted"
      */
     void set_initial_state_scenario(const std::string& scenario);
 
@@ -775,6 +779,7 @@ class AmsBackendMock : public AmsBackend {
     std::string initial_state_scenario_;
     std::thread scenario_thread_; ///< Thread for deferred loading/bypass scenario
     std::atomic<bool> scenario_thread_running_{false}; ///< Guards against double-join
+    bool mock_toolhead_unaccounted_ = false; ///< "unaccounted" scenario staged (gate input)
 
     // Test override for native-tracking capability. False in production; tests
     // flip this to exercise the FilamentConsumptionTracker gating path.

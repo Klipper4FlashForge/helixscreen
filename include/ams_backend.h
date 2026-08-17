@@ -436,6 +436,22 @@ class AmsBackend {
      */
     [[nodiscard]] virtual bool is_filament_loaded() const = 0;
 
+    /**
+     * @brief Whether filament sits in the toolhead that this backend cannot
+     *        account for (no lane/spool claims it).
+     *
+     * Print-start gate input: an unaccounted toolhead load at print start
+     * usually means leftover filament from a cancelled or aborted operation;
+     * the print-start pipeline warns so the user can purge it or accept it.
+     * Backends that cannot determine this return std::nullopt ("unknown" —
+     * no warning). The base default is "cannot determine".
+     *
+     * @return true/false when known, std::nullopt when the backend cannot tell
+     */
+    [[nodiscard]] virtual std::optional<bool> toolhead_filament_unaccounted() const {
+        return std::nullopt;
+    }
+
     // ========================================================================
     // Filament Path Visualization
     // ========================================================================

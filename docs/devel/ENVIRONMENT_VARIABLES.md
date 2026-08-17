@@ -1026,7 +1026,7 @@ Select the mock AMS visual scenario.
 
 | Property | Value |
 |----------|-------|
-| **Values** | `idle`, `loading`, `error`, `bypass` |
+| **Values** | `idle`, `loading`, `error`, `bypass`, `unaccounted` |
 | **Default** | `idle` (slot 0 loaded, slot 3 empty, others available) |
 | **File** | `src/printer/ams_backend.cpp` |
 
@@ -1036,6 +1036,7 @@ Select the mock AMS visual scenario.
 | `loading` | Active load in progress with realistic segment animation |
 | `error` | Slot errors visible; buffer fault also shown when combined with `afc` mode |
 | `bypass` | Bypass mode active |
+| `unaccounted` | Filament at the toolhead that no lane accounts for (drives the print-start gate warning) |
 
 ```bash
 # Show error states (slot errors + buffer fault)

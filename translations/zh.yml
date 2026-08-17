@@ -304,12 +304,15 @@ translations:
   Button taps and navigation sounds: 按钮点击和导航声音
   Buzz Servo: '轻动舵机'
   Bypass: 旁路
+  Bypass Is Active: ''
   Bypass Mode: 旁路模式
   Bypass controlled by hardware sensor: 旁路由硬件传感器控制
   Bypass controlled by sensor: 旁通由传感器控制
   Bypass disabled: 旁通已禁用
   Bypass enabled: 旁通已启用
   Bypass failed: 旁通失败
+  ? Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?
+  : ''
   Bypass toggle failed: 旁通切换失败
   C: 腔
   CALIBRATION: 校准
@@ -946,6 +949,7 @@ translations:
   Filament: 耗材
   Filament Detected: 检测到耗材
   Filament Environment: 耗材环境
+  Filament In The Toolhead: ''
   Filament Mapping: 耗材映射
   Filament Runout: 耗材用尽
   Filament Sensor: 耗材传感器
@@ -2429,6 +2433,7 @@ translations:
   The printer rejected the filament configuration. The print was not started.: 打印机拒绝了该耗材配置。打印未启动。
   The printer's firmware chooses the backup spool itself: 备用料盘由打印机固件自行选择
   The runout sensor indicates no filament is loaded. Start print anyway?: 断料传感器显示未装载耗材。仍要开始打印吗？
+  The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?: ''
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: 工具头传感器显示耗材已装载。仍要继续装载吗？
   The toolhead sensor indicates no filament is present. Proceed with unload anyway?: 工具头传感器显示无耗材。仍要继续卸载吗？
   Theme: 主题

@@ -301,12 +301,14 @@
   <translation tag="Button taps and navigation sounds" de="Tastentöne und Navigationstöne"/>
   <translation tag="Buzz Servo" de="Servo antippen"/>
   <translation tag="Bypass" de="Bypass"/>
+  <translation tag="Bypass Is Active"/>
   <translation tag="Bypass Mode" de="Bypass-Modus"/>
   <translation tag="Bypass controlled by hardware sensor" de="Bypass wird durch Hardware-Sensor gesteuert"/>
   <translation tag="Bypass controlled by sensor" de="Bypass durch Sensor gesteuert"/>
   <translation tag="Bypass disabled" de="Bypass deaktiviert"/>
   <translation tag="Bypass enabled" de="Bypass aktiviert"/>
   <translation tag="Bypass failed" de="Bypass fehlgeschlagen"/>
+  <translation tag="Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?"/>
   <translation tag="Bypass toggle failed" de="Bypass-Umschaltung fehlgeschlagen"/>
   <translation tag="C" de="K"/>
   <translation tag="CALIBRATION" de="KALIBRIERUNG"/>
@@ -932,6 +934,7 @@
   <translation tag="Filament" de="Filament"/>
   <translation tag="Filament Detected" de="Filament erkannt"/>
   <translation tag="Filament Environment" de="Filamentumgebung"/>
+  <translation tag="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" de="Filament-Zuordnung"/>
   <translation tag="Filament Runout" de="Filament aufgebraucht"/>
   <translation tag="Filament Sensor" de="Filamentsensor"/>
@@ -2363,6 +2366,7 @@
   <translation tag="The printer rejected the filament configuration. The print was not started." de="Der Drucker hat die Filamentkonfiguration abgelehnt. Der Druck wurde nicht gestartet."/>
   <translation tag="The printer&apos;s firmware chooses the backup spool itself" de="Die Drucker-Firmware wählt die Reserve-Spule selbst"/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" de="Der Auslaufsensor zeigt an, dass kein Filament geladen ist. Druck trotzdem starten?"/>
+  <translation tag="The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" de="Der Werkzeugkopfsensor zeigt an, dass Filament bereits geladen ist. Trotzdem mit dem Laden fortfahren?"/>
   <translation tag="The toolhead sensor indicates no filament is present. Proceed with unload anyway?" de="Der Werkzeugkopfsensor zeigt an, dass kein Filament vorhanden ist. Trotzdem mit dem Entladen fortfahren?"/>
   <translation tag="Theme" de="Thema"/>

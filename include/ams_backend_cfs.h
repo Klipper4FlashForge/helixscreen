@@ -376,6 +376,15 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     [[nodiscard]] std::optional<helix::ErrorEvent>
     classify_error(const std::string& raw_line, const helix::ClassifyContext& ctx) const override;
 
+    /// The #1199 pair read together for the pre-print unaccounted gate:
+    /// toolhead switch detected while no bay letter (T{n}.filament) names the
+    /// seated lane. nullopt until the switch has ever published a reading.
+    /// current_slot < 0 deliberately includes the bypass sentinel (-2):
+    /// bypass suppression is centralized in the gate layer's
+    /// any_bypass_active early-out (gate_unaccounted_toolhead_filament,
+    /// print_start_checks.cpp) — do not narrow to == -1.
+    [[nodiscard]] std::optional<bool> toolhead_filament_unaccounted() const override;
+
   protected:
     /// Recovery buttons for a CFS runout. **Caller must hold mutex_** (base
     /// contract; this override takes no lock of its own and mutex_ is not

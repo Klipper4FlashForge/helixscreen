@@ -303,6 +303,17 @@ AmsError AmsBackendMock::start() {
                 scenario_thread_running_ = false;
             });
             spdlog::info("[AMS Mock] Applied initial state scenario: bypass");
+        } else if (scenario == "unaccounted") {
+            // Filament at the toolhead with no lane accounting for it — drives
+            // the unaccounted_toolhead_filament print-start gate (hand-fed /
+            // removed-bypass-filament states).
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                system_info_.filament_loaded = true;
+                system_info_.current_slot = -1;
+                mock_toolhead_unaccounted_ = true;
+            }
+            spdlog::info("[AMS Mock] Applied initial state scenario: unaccounted");
         }
     }
 
@@ -317,6 +328,7 @@ void AmsBackendMock::stop() {
     }
 
     running_ = false;
+    mock_toolhead_unaccounted_ = false;
     // Note: Don't log here - this may be called during static destruction
     // when spdlog's logger has already been destroyed (causes SIGSEGV)
 }
@@ -501,6 +513,14 @@ int AmsBackendMock::get_current_slot() const {
 bool AmsBackendMock::is_filament_loaded() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return system_info_.filament_loaded;
+}
+
+std::optional<bool> AmsBackendMock::toolhead_filament_unaccounted() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!mock_toolhead_unaccounted_) {
+        return std::nullopt;
+    }
+    return true;
 }
 
 PathTopology AmsBackendMock::get_topology() const {

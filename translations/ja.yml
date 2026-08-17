@@ -305,12 +305,15 @@ translations:
   Button taps and navigation sounds: ボタンタップとナビゲーション音
   Buzz Servo: 'サーボを小刻みに動かす'
   Bypass: バイパス
+  Bypass Is Active: ''
   Bypass Mode: バイパスモード
   Bypass controlled by hardware sensor: ハードウェアセンサーによるバイパス制御
   Bypass controlled by sensor: バイパスはセンサーで制御中
   Bypass disabled: バイパス無効
   Bypass enabled: バイパス有効
   Bypass failed: バイパスに失敗しました
+  ? Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?
+  : ''
   Bypass toggle failed: バイパス切替に失敗しました
   C: C
   CALIBRATION: キャリブレーション
@@ -952,6 +955,7 @@ translations:
   Filament: フィラメント
   Filament Detected: フィラメント検出
   Filament Environment: フィラメント環境
+  Filament In The Toolhead: ''
   Filament Mapping: フィラメントマッピング
   Filament Runout: フィラメント切れ
   Filament Sensor: フィラメントセンサー
@@ -2438,6 +2442,7 @@ translations:
   The printer rejected the filament configuration. The print was not started.: プリンターがフィラメント設定を拒否しました。印刷は開始されませんでした。
   The printer's firmware chooses the backup spool itself: バックアップスプールはプリンターのファームウェアが選びます
   The runout sensor indicates no filament is loaded. Start print anyway?: フィラメント切れセンサーがフィラメント未装填を検出しました。それでも印刷を開始しますか？
+  The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?: ''
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: ツールヘッドセンサーがフィラメント装填済みを検出しました。それでも装填を続行しますか？
   The toolhead sensor indicates no filament is present. Proceed with unload anyway?: ツールヘッドセンサーがフィラメント未検出を報告しました。それでもアンロードを続行しますか？
   Theme: テーマ
