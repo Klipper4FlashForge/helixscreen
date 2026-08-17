@@ -14,12 +14,15 @@
 
 #include "ui_status_pill.h"
 
+#include "../../src/ui/panel_widgets/shutdown_widget.h"
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_fixtures.h"
+#include "async_lifetime_guard.h"
 #include "lvgl/lvgl.h"
 #include "panel_widget_registry.h"
 #include "platform_info.h"
 #include "setting_group.h"
+#include "ui_split_button.h"
 
 #include <string>
 
@@ -138,4 +141,30 @@ TEST_CASE_METHOD(AdvancedPowerGroupFixture,
     lv_subject_set_int(host_power_subject(), 1);
     process_lvgl(10);
     CHECK_FALSE(lv_obj_has_flag(group_, LV_OBJ_FLAG_HIDDEN));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "show_shutdown_dialog is a no-op without host power support",
+                 "[android][shutdown][power]") {
+    REQUIRE(register_component("shutdown_modal"));
+    ui_split_button_init();
+
+    // Control case first: with host power supported the dialog shows, so the
+    // suppression below can only be the platform guard.
+    SECTION("supported platform shows the dialog") {
+        ShutdownModal modal;
+        helix::AsyncLifetimeGuard lifetime;
+        set_platform_override(0);
+        helix::show_shutdown_dialog(&api(), modal, lifetime, test_screen());
+        CHECK(modal.is_visible());
+    }
+
+    // Both entry points (home widget, Advanced panel rows) funnel through
+    // show_shutdown_dialog — the guard keeps any future caller honest too.
+    SECTION("Android shows nothing") {
+        PlatformOverrideGuard android(1);
+        ShutdownModal modal;
+        helix::AsyncLifetimeGuard lifetime;
+        helix::show_shutdown_dialog(&api(), modal, lifetime, test_screen());
+        CHECK_FALSE(modal.is_visible());
+    }
 }
