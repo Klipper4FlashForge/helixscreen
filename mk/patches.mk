@@ -834,6 +834,18 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ libhv HttpRequest cancel atomic patch already applied$(RESET)"; \
 	fi
+	$(Q)if ! grep -q "install the TcpClient-level channel callbacks" "$(LIBHV_DIR)/http/client/WebSocketClient.cpp" 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying libhv WebSocketClient install-once callbacks patch...$(RESET)"; \
+		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-websocket-open-install-once.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply $(PATCH_DIR)/libhv-websocket-open-install-once.patch && \
+			echo "$(GREEN)✓ libhv WebSocketClient install-once patch applied$(RESET)"; \
+		else \
+			echo "$(RED)✗ Cannot apply WebSocketClient install-once patch — run 'make reapply-patches'. Until then concurrent connect() can corrupt the heap (SIGABRT free(): invalid next size)$(RESET)"; \
+			exit 1; \
+		fi \
+	else \
+		echo "$(GREEN)✓ libhv WebSocketClient install-once patch already applied$(RESET)"; \
+	fi
 	$(Q)if [ -d "$(LIBHV_DIR)/include/hv" ]; then \
 		for h in evpp/TcpClient.h http/client/WebSocketClient.h cpputil/hthreadpool.h http/HttpMessage.h; do \
 			base=$$(basename $$h); \

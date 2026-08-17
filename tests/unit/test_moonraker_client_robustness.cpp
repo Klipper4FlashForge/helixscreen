@@ -222,18 +222,16 @@ TEST_CASE_METHOD(MoonrakerRobustnessFixture,
 
 // FIXME: Flaky on Linux CI — concurrent connect()/disconnect() from multiple
 // threads occasionally triggers SIGABRT inside libhv's internal state machine.
-// Diagnosis: WebSocketClient::open() reassigns its onConnection/onMessage
-// std::function members and mutates http_req_ from the CALLER's thread while
-// the event-loop thread may be mid-invoke on the previous attempt's closures
-// — the same mechanism the install-once trampolines fixed for Moonraker's own
-// callbacks (bundle UK9QCFY3), but inside libhv. A fix belongs in
-// libhv's WebSocketClient, not here.
-// Hidden via [.] until that lands — invoke with
+// Root cause FOUND: WebSocketClient::open() reassigned its onConnection/
+// onMessage std::function members from the CALLER's thread while the event
+// loop could be mid-invoke on the previous attempt's closures — freeing the
+// function storage under the running lambda. Fixed by
+// patches/libhv-websocket-open-install-once.patch (callbacks installed once in
+// the constructor). Stays hidden via [.] until a green nightly confirms the
+// fix on the Linux runners this flake was seen on; then remove [.] and restore
+// [eventloop] to re-enlist it in the Event Loop Stress Tests job.
+// Invoke meanwhile with
 // helix-tests "MoonrakerClient handles concurrent connect/disconnect".
-// [eventloop] deliberately NOT among the tags: Catch2's [.] only hides a test
-// from DEFAULT runs, and the nightly "Event Loop Stress Tests" job selects
-// "[eventloop]" explicitly — a hidden test carrying that tag runs anyway
-// (163945bb3 fixed the identical trap on the sibling send_jsonrpc test).
 TEST_CASE_METHOD(MoonrakerRobustnessFixture,
                  "MoonrakerClient handles concurrent connect/disconnect",
                  "[.][connection][edge][concurrent][priority1]") {
