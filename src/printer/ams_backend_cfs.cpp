@@ -2972,6 +2972,17 @@ std::string AmsBackendCfs::phase_verdict_message(PhaseVerdict verdict) {
     return {};
 }
 
+std::optional<bool> AmsBackendCfs::toolhead_filament_unaccounted() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Klipper reports filament_detected null until the sensor takes a first
+    // reading; before that (and on sensor-less printers) the default is not
+    // an observation — refuse to conclude.
+    if (!filament_sensor_seen_) {
+        return std::nullopt;
+    }
+    return last_filament_detected_ && system_info_.current_slot < 0;
+}
+
 void AmsBackendCfs::finish_action() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (system_info_.action == AmsAction::IDLE) {

@@ -289,6 +289,11 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
     [[nodiscard]] std::optional<helix::ErrorEvent> current_error() const override;
 
+    /// Pre-print unaccounted gate: the SWITCH pair only, never head_filament_
+    /// alone (motion-sensor false negatives, see the block comment above).
+    /// nullopt until the switch has ever published a reading.
+    [[nodiscard]] std::optional<bool> toolhead_filament_unaccounted() const override;
+
     /// Which auto-switchover plugin the live printer has, from the same two
     /// signals set_slot_info()/parse_save_variables() already trust: the
     /// detected variable prefix and the `gcode_macro _ifs_vars` existence latch.

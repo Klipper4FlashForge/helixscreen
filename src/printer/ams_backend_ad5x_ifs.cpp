@@ -2128,6 +2128,19 @@ std::optional<helix::ErrorEvent> AmsBackendAd5xIfs::current_error() const {
                                        build_recovery_actions());
 }
 
+std::optional<bool> AmsBackendAd5xIfs::toolhead_filament_unaccounted() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // The SWITCH pair is the authority (head_switch_seen_ latches only on a
+    // real filament_switch_sensor publish); head_filament_ is conflated with
+    // the motion sensor, which reads false on a loaded-but-idle lane — gating
+    // on it would misreport a healthy seated lane as unaccounted. Until the
+    // switch has ever been seen there is no observation, so no verdict.
+    if (!head_switch_seen_) {
+        return std::nullopt;
+    }
+    return head_switch_present_ && system_info_.current_slot < 0;
+}
+
 // --- Plugin visibility (lessWaste / bambufy auto switchover) ---
 
 AmsBackendAd5xIfs::IfsPlugin AmsBackendAd5xIfs::get_plugin() const {
