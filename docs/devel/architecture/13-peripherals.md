@@ -140,7 +140,7 @@ edit overlay. It renders once — `LabelRenderer::render()` produces a 1bpp `Lab
 | Family | Wire protocol | Transport | Native DPI |
 |--------|---------------|-----------|------------|
 | Brother QL | ESC/P raster | TCP 9100 or RFCOMM | 300 |
-| Brother PT | PT command stream | RFCOMM | 203 |
+| Brother PT | PT command stream | RFCOMM | 180 |
 | Phomemo | ESC/POS raster | USB (libusb), RFCOMM, or BLE GATT | 203 |
 | Niimbot | Custom BLE packets (`0x55 0x55 …`) | BLE GATT only | 203 |
 | MakeID/Wewin | `0x66` frames, LZO1X-compressed | RFCOMM | 203 |
