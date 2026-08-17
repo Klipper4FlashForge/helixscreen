@@ -20,7 +20,7 @@ flowchart TD
     GATE -->|"count rises → build fails"| NEW
 
     subgraph EXEMPT["Structurally exempt — correct forever, not debt"]
-        W["30 files calling lv_xml_register_widget"]
+        W["29 files calling lv_xml_register_widget"]
         C["C++-created widgets (canvas, charts, pools)"]
         H["DELETE / draw / size / scroll events"]
         A["17 DECLARATIVE_OK annotations"]
@@ -137,7 +137,7 @@ The gate does not merely tolerate these cases — it excludes them structurally,
 
 | Case | Why C++ is correct |
 |------|--------------------|
-| **Custom XML widget implementations — the 30 files calling `lv_xml_register_widget`** | The file *is* the widget; there is no XML beneath it to bind to (counted: 30) |
+| **Custom XML widget implementations — the 29 files calling `lv_xml_register_widget`** | The file *is* the widget; there is no XML beneath it to bind to (counted: 29 — `rg -l 'lv_xml_register_widget' src/ include/` yields 31, two of which are the validator tool's regex references, not calls) |
 | `LV_EVENT_DELETE` cleanup, draw hooks (`DRAW_MAIN`/`DRAW_POST`), `SIZE_CHANGED`, gestures/scroll | No declarative equivalent exists |
 | **Measured layout and computed fonts** — `decide_nozzle_layout()` (`src/ui/panel_widgets/nozzle_layout.h:31`), breakpoint fonts | Depends on runtime pixel measurement |
 | Widgets created in C++ (`lv_*_create`) — canvas, procedural rendering, gcode viewer | Never had an XML layer |
