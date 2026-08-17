@@ -241,3 +241,14 @@ TEST_CASE("Mock scenario 'unaccounted' drives the gate input", "[ams][toolhead-u
     CHECK(mock.is_filament_loaded());
     mock.stop();
 }
+
+TEST_CASE("Mock scenario 'unaccounted' cleared on stop (no stale flag across restarts)",
+          "[ams][toolhead-unaccounted]") {
+    AmsBackendMock mock;
+    mock.set_initial_state_scenario("unaccounted");
+    mock.start();
+    REQUIRE(mock.toolhead_filament_unaccounted().has_value());
+    CHECK(*mock.toolhead_filament_unaccounted() == true);
+    mock.stop();
+    CHECK_FALSE(mock.toolhead_filament_unaccounted().has_value());
+}

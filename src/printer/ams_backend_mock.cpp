@@ -328,6 +328,7 @@ void AmsBackendMock::stop() {
     }
 
     running_ = false;
+    mock_toolhead_unaccounted_ = false;
     // Note: Don't log here - this may be called during static destruction
     // when spdlog's logger has already been destroyed (causes SIGSEGV)
 }
