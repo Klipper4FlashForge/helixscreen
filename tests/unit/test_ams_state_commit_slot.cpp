@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "ui_ams_detail.h"
 #include "ui_update_queue.h"
 
 #include "../lvgl_test_fixture.h"
@@ -189,6 +190,35 @@ TEST_CASE("commit_slot_edit propagates set_slot_info failure", "[ams][commit]") 
     // REQUIRED: sync_from_backend() was NOT re-run — the subject still shows
     // the color from the last explicit sync, not the drifted backend value.
     REQUIRE(lv_subject_get_int(ams.get_slot_color_subject(0)) == seeded_color);
+}
+
+TEST_CASE("context-menu clear wipes slot and clears server active spool",
+          "[ams][commit][context-menu]") {
+    CommitFixture f;
+    MoonrakerAPIMock* mock_api = f.setup(169);
+
+    // Give the slot a material so the wipe itself is observable, not just the
+    // unlink. The dispatch constructs its own cleared copy from get_slot_info.
+    SlotInfo seeded = f.backend->get_slot_info(0);
+    seeded.material = "PLA";
+    f.backend->set_slot_info(0, seeded, /*persist=*/false);
+
+    // Server thinks 169 is active — the state bundle F2LNLQCC left dangling
+    // when the quick-clear only wiped the backend slot.
+    mock_api->spoolman_mock().set_active_spool(169, nullptr, nullptr);
+    REQUIRE(mock_api->spoolman_mock().get_mock_active_spool_id() == 169);
+
+    // Drive the actual context-menu dispatch the way both AMS panels do.
+    REQUIRE(
+        ui::ams_dispatch_backend_action(ui::AmsContextMenu::MenuAction::CLEAR_SPOOL, 0, nullptr));
+
+    // REQUIRED: the backend slot was wiped...
+    const SlotInfo after = f.backend->get_slot_info(0);
+    REQUIRE(after.spoolman_id == 0);
+    REQUIRE(after.material.empty());
+    // ...AND the server-side active spool was cleared — the F2LNLQCC fix
+    // (a restart must not re-assert the cleared spool).
+    REQUIRE(mock_api->spoolman_mock().get_mock_active_spool_id() == 0);
 }
 
 TEST_CASE("commit_slot_edit clears active spool even when backend manages it",
