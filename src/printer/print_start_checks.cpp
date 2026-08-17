@@ -1,35 +1,211 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * @file print_start_checks.cpp
- * @brief Pure-rule implementations for the print-start gate pipeline.
+ * @brief Pure core of the print-start gate pipeline: rules + gate fns.
  *
  * Rule bodies are ports of the imperative checks in
  * src/ui/ui_print_start_controller.cpp (unresolved_tools_for, the initiate()
- * spool-weight math, find_material_mismatches). Behavior is ported as-is; the
- * only deltas are the PrintStartContext substitutions the design mandates
- * (detail view / AmsState / SettingsManager reads become ctx fields).
+ * spool-weight math, find_material_mismatches); the gate evaluate-functions
+ * port the dialog message builders (build_empty_lane_message,
+ * show_*_warning) verbatim. Behavior is ported as-is; the only deltas are the
+ * PrintStartContext substitutions the design mandates (detail view / AmsState /
+ * SettingsManager reads become ctx fields). Evaluate fns build strings
+ * (lv_tr/fmt) but never touch lv objects or subjects.
  */
 
 #include "print_start_checks.h"
 
-#include "filament_database.h"
+#include "ui_filament_mapping_card.h"
 
+#include "color_utils.h"
+#include "filament_database.h"
+#include "lvgl/src/others/translation/lv_translation.h"
+
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
+
+#include <lvgl.h>
 
 namespace helix {
 
 namespace {
-/// Mirror of FilamentMappingCard::find_by_tool_index (a UI header, unusable
-/// from this LVGL-free core): look up by real tool_index because tool_info may
-/// be used-filtered (compacted), so vector position != tool number.
-const GcodeToolInfo* find_tool_by_index(const std::vector<GcodeToolInfo>& tool_info,
-                                        int tool_index) {
-    for (const auto& t : tool_info) {
-        if (t.tool_index == tool_index) {
-            return &t;
+/// All-clear result shared by every gate's pass paths.
+CheckResult pass_result() {
+    CheckResult r;
+    r.verdict = CheckResult::Verdict::Pass;
+    return r;
+}
+
+/// Warning result with the dialog strings a gate mandates.
+CheckResult warn_result(std::string title, std::string body, std::string proceed_label) {
+    CheckResult r;
+    r.verdict = CheckResult::Verdict::Warn;
+    r.title = std::move(title);
+    r.body = std::move(body);
+    r.proceed_label = std::move(proceed_label);
+    r.severity = GateSeverity::Warning;
+    return r;
+}
+
+/// Ported verbatim from PrintStartController::build_empty_lane_message.
+std::string build_empty_lane_message(const std::vector<std::pair<int, int>>& empty) {
+    // Name the offending tool(s) and the AMS lane each routes to so the user
+    // knows exactly which lane to load. Lane numbers are 1-based for display
+    // (slot 0 -> "Lane 1") to match the rest of the slot UI.
+    std::string message;
+    if (empty.size() == 1) {
+        message = fmt::format(lv_tr("Tool {} → Lane {}: no filament loaded."), empty[0].first,
+                              empty[0].second + 1);
+    } else {
+        message = lv_tr("These tools have no filament loaded:");
+        message += "\n\n";
+        for (const auto& [tool, slot] : empty) {
+            message += fmt::format("  {} {} {} → {} {}\n", LV_SYMBOL_BULLET, lv_tr("Tool"), tool,
+                                   lv_tr("Lane"), slot + 1);
         }
     }
-    return nullptr;
+    message += "\n\n";
+    message += lv_tr("Start print anyway?");
+    return message;
+}
+
+// ---- gate evaluate-functions (dialog-bearing halves of the rules above) ----
+
+CheckResult gate_insufficient_spool_weight(const PrintStartContext& ctx) {
+    auto weights = insufficient_spool_weight_in(ctx);
+    if (!weights.has_value()) {
+        return pass_result();
+    }
+
+    // Body ported verbatim from show_insufficient_filament_warning.
+    char body[256];
+    std::snprintf(body, sizeof(body),
+                  lv_tr("This print needs about %.0fg but the spool has about %.0fg "
+                        "remaining. Start anyway?"),
+                  weights->first, weights->second);
+
+    return warn_result(lv_tr("Not Enough Filament"), body, lv_tr("Start Anyway"));
+}
+
+CheckResult gate_required_filament_present(const PrintStartContext& ctx) {
+    // Backends that auto-unload the toolhead after each print (e.g. AD5X IFS)
+    // leave the extruder empty by design, so a "no filament" reading at
+    // print-start is expected and the warning is noise. ANY such backend
+    // suppresses the warning.
+    if (ctx.any_auto_unload_backend) {
+        return pass_result();
+    }
+
+    // AMS lane-truth path: scoped to the tools the print actually uses,
+    // consulting the backend's authoritative per-slot presence instead of the
+    // aggregate motion sensors (avoids staged-but-retracted and unused-empty
+    // false positives).
+    if (ctx.ams_manages_filament && ctx.has_active_backend) {
+        if (!ctx.empty_required_lanes.empty()) {
+            return warn_result(lv_tr("No Filament Detected"),
+                               build_empty_lane_message(ctx.empty_required_lanes),
+                               lv_tr("Start Print"));
+        }
+        return pass_result();
+    }
+
+    // Non-AMS / no-active-backend fallback: aggregate runout-sensor check.
+    if (ctx.runout_enabled && ctx.runout_available && !ctx.runout_detected) {
+        return warn_result(
+            lv_tr("No Filament Detected"),
+            lv_tr("The runout sensor indicates no filament is loaded. Start print anyway?"),
+            lv_tr("Start Print"));
+    }
+
+    return pass_result();
+}
+
+CheckResult gate_unresolved_tools(const PrintStartContext& ctx) {
+    auto unresolved = unresolved_tools_in(ctx);
+    if (unresolved.empty()) {
+        return pass_result();
+    }
+
+    // Body ported verbatim from show_color_mismatch_warning (no static buffer:
+    // modal_show_confirmation copies the message string).
+    std::string message = lv_tr("These tools have no matching filament loaded:");
+    message += "\n\n";
+    for (int tool_idx : unresolved) {
+        // Look up by real tool_index — tool_info may be used-filtered
+        // (compacted), so its vector position no longer equals the tool number.
+        const auto* tool = ui::FilamentMappingCard::find_by_tool_index(ctx.tool_info, tool_idx);
+        if (tool) {
+            std::string color_name = describe_color(tool->color_rgb);
+            message += "  " + std::string(LV_SYMBOL_BULLET) + " T" + std::to_string(tool_idx) +
+                       ": " + color_name;
+            if (!tool->material.empty()) {
+                message += " (" + tool->material + ")";
+            }
+            message += "\n";
+        }
+    }
+    message += "\n";
+    message += lv_tr("Load the required filaments or start anyway?");
+
+    return warn_result(lv_tr("Color Mismatch"), std::move(message), lv_tr("Start Anyway"));
+}
+
+CheckResult gate_material_compatibility(const PrintStartContext& ctx) {
+    auto mismatches = material_mismatches_in(ctx);
+    if (mismatches.empty()) {
+        return pass_result();
+    }
+
+    // Body ported verbatim from show_material_mismatch_warning (no static
+    // buffer: modal_show_confirmation copies the message string).
+    std::string message;
+
+    if (mismatches.size() == 1) {
+        // Single-tool format: "This file was sliced for X but Y is loaded."
+        const auto& m = mismatches[0];
+        message = fmt::format(lv_tr("This file was sliced for {} but {} is loaded."),
+                              m.expected_material, m.loaded_material);
+
+        // Add temperature details if available
+        if (m.expected_nozzle_min > 0 && m.loaded_nozzle_min > 0) {
+            message += "\n\n";
+            message +=
+                fmt::format("  {} {}: {}\u2013{}°C {}, {}°C {}\n"
+                            "  {} {}: {}\u2013{}°C {}, {}°C {}",
+                            LV_SYMBOL_BULLET, m.expected_material, m.expected_nozzle_min,
+                            m.expected_nozzle_max, lv_tr("nozzle"), m.expected_bed_temp,
+                            lv_tr("bed"), LV_SYMBOL_BULLET, m.loaded_material, m.loaded_nozzle_min,
+                            m.loaded_nozzle_max, lv_tr("nozzle"), m.loaded_bed_temp, lv_tr("bed"));
+        }
+    } else {
+        // Multi-tool format: list each mismatched tool
+        message = lv_tr("These tools have incompatible materials loaded:");
+        message += "\n\n";
+        for (const auto& m : mismatches) {
+            std::string expected_temps;
+            if (m.expected_nozzle_min > 0) {
+                expected_temps =
+                    fmt::format(" ({}\u2013{}°C)", m.expected_nozzle_min, m.expected_nozzle_max);
+            }
+            std::string loaded_temps;
+            if (m.loaded_nozzle_min > 0) {
+                loaded_temps =
+                    fmt::format(" ({}\u2013{}°C)", m.loaded_nozzle_min, m.loaded_nozzle_max);
+            }
+            // "needs X (range): You have Y (range)" — clearer than the old
+            // "X -> Y" form, which read as a transformation rather than a
+            // comparison. Two short clauses joined by a colon scan well.
+            message += fmt::format("  {} T{}: {} {}{}: {} {}{}\n", LV_SYMBOL_BULLET, m.tool_index,
+                                   lv_tr("needs"), m.expected_material, expected_temps,
+                                   lv_tr("you have"), m.loaded_material, loaded_temps);
+        }
+    }
+
+    message += "\n\n";
+    message += lv_tr("Printing with the wrong material can cause clogs, poor adhesion, "
+                     "or failed prints.");
+
+    return warn_result(lv_tr("Material Mismatch"), std::move(message), lv_tr("Start Anyway"));
 }
 } // namespace
 
@@ -139,7 +315,8 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
             // Get expected material from gcode tool info. Look up by real
             // tool_index — tool_info may be used-filtered (compacted), so its
             // vector position no longer equals the tool number.
-            if (const auto* tool = find_tool_by_index(tool_info, m.tool_index)) {
+            if (const auto* tool =
+                    ui::FilamentMappingCard::find_by_tool_index(tool_info, m.tool_index)) {
                 detail.expected_material = tool->material;
             }
 
@@ -235,8 +412,14 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
 }
 
 const std::vector<PrintStartGate>& default_print_start_gates() {
-    // Filled by Task 2; empty until the gate evaluations land.
-    static const std::vector<PrintStartGate> gates = {};
+    // Order is behavior-preserving: the pre-pipeline check order. Task 4
+    // inserts the two new gates at positions 2-3.
+    static const std::vector<PrintStartGate> gates = {
+        {"insufficient_spool_weight", gate_insufficient_spool_weight},
+        {"required_filament_present", gate_required_filament_present},
+        {"unresolved_tools", gate_unresolved_tools},
+        {"material_compatibility", gate_material_compatibility},
+    };
     return gates;
 }
 

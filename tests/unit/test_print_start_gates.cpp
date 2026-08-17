@@ -236,3 +236,123 @@ TEST_CASE("material_mismatches_in: non-AMS external spool mismatch",
     CHECK(out[0].expected_material == "ABS");
     CHECK(out[0].loaded_material == "PLA");
 }
+
+// ---------------------------------------------------------------------------
+// default_print_start_gates: order + names
+// ---------------------------------------------------------------------------
+
+TEST_CASE("default gate list: names in behavior-preserving order", "[print-start][gate-pipeline]") {
+    auto& gates = default_print_start_gates();
+    REQUIRE(gates.size() == 4); // Task 4 grows this to 6, inserting at 2/3
+    CHECK(gates[0].name == "insufficient_spool_weight");
+    CHECK(gates[1].name == "required_filament_present");
+    CHECK(gates[2].name == "unresolved_tools");
+    CHECK(gates[3].name == "material_compatibility");
+}
+
+// ---------------------------------------------------------------------------
+// required_filament_present gate (ported from check_required_filament_present)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("gate required_filament_present: auto-unload backends suppress entirely",
+          "[print-start][gate-pipeline]") {
+    auto ctx = ctx_with([](PrintStartContext& c) {
+        c.ams_manages_filament = true;
+        c.has_active_backend = true;
+        c.any_auto_unload_backend = true;  // e.g. AD5X IFS post-print retract
+        c.empty_required_lanes = {{0, 1}}; // would otherwise warn
+    });
+    auto& gates = default_print_start_gates();
+    auto r = gates[1].evaluate(ctx);
+    CHECK(r.verdict == CheckResult::Verdict::Pass);
+}
+
+TEST_CASE("gate required_filament_present: empty required lane warns with Start Print",
+          "[print-start][gate-pipeline]") {
+    auto ctx = ctx_with([](PrintStartContext& c) {
+        c.ams_manages_filament = true;
+        c.has_active_backend = true;
+        // (tool_index, 0-based slot_index); lanes display slot + 1, so tool 0
+        // -> "Lane 1".
+        c.empty_required_lanes = {{0, 0}, {2, 3}};
+    });
+    auto r = default_print_start_gates()[1].evaluate(ctx);
+    REQUIRE(r.verdict == CheckResult::Verdict::Warn);
+    CHECK(r.title == "No Filament Detected"); // lv_tr identity in the test locale
+    CHECK(r.proceed_label == "Start Print");
+    CHECK(r.body.find("Tool 0") != std::string::npos);
+    CHECK(r.body.find("Lane 1") != std::string::npos);
+}
+
+TEST_CASE("gate required_filament_present: AMS lanes all fed -> pass",
+          "[print-start][gate-pipeline]") {
+    auto ctx = ctx_with([](PrintStartContext& c) {
+        c.ams_manages_filament = true;
+        c.has_active_backend = true;
+    });
+    CHECK(default_print_start_gates()[1].evaluate(ctx).verdict == CheckResult::Verdict::Pass);
+}
+
+TEST_CASE("gate required_filament_present: non-AMS runout says empty -> warn",
+          "[print-start][gate-pipeline]") {
+    auto ctx = ctx_with([](PrintStartContext& c) {
+        c.runout_enabled = true;
+        c.runout_available = true;
+        c.runout_detected = false;
+    });
+    auto r = default_print_start_gates()[1].evaluate(ctx);
+    REQUIRE(r.verdict == CheckResult::Verdict::Warn);
+    CHECK(r.proceed_label == "Start Print");
+}
+
+TEST_CASE("gate required_filament_present: runout disabled/unavailable -> pass",
+          "[print-start][gate-pipeline]") {
+    CHECK(default_print_start_gates()[1].evaluate(ctx_with([](PrintStartContext&) {})).verdict ==
+          CheckResult::Verdict::Pass);
+    auto ctx = ctx_with([](PrintStartContext& c) {
+        c.runout_enabled = true;
+        c.runout_available = false;
+        c.runout_detected = false;
+    });
+    CHECK(default_print_start_gates()[1].evaluate(ctx).verdict == CheckResult::Verdict::Pass);
+}
+
+// ---------------------------------------------------------------------------
+// unresolved_tools + material gates: verdict shape only (rules covered above)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("gate unresolved_tools: warns with Start Anyway and verbatim title",
+          "[print-start][gate-pipeline]") {
+    auto ctx = ctx_with([](PrintStartContext& c) {
+        c.filament_color_count = 2;
+        ToolMapping unresolved;
+        unresolved.tool_index = 1;
+        unresolved.is_auto = true;
+        c.mappings = {unresolved};
+        GcodeToolInfo t;
+        t.tool_index = 1;
+        t.color_rgb = 0xFF0000;
+        t.material = "PLA";
+        c.tool_info = {t};
+    });
+    auto r = default_print_start_gates()[2].evaluate(ctx);
+    REQUIRE(r.verdict == CheckResult::Verdict::Warn);
+    CHECK(r.title == "Color Mismatch");
+    CHECK(r.proceed_label == "Start Anyway");
+}
+
+TEST_CASE("gate material_compatibility: warns with verbatim title",
+          "[print-start][gate-pipeline]") {
+    auto ctx = ctx_with([](PrintStartContext& c) {
+        c.has_detail_view = true;
+        c.ams_available = false;
+        c.filament_materials = {"ABS"};
+        SlotInfo spool;
+        spool.material = "PLA";
+        c.external_spool = spool;
+    });
+    auto r = default_print_start_gates()[3].evaluate(ctx);
+    REQUIRE(r.verdict == CheckResult::Verdict::Warn);
+    CHECK(r.title == "Material Mismatch");
+    CHECK(r.proceed_label == "Start Anyway");
+}
