@@ -476,6 +476,77 @@ text, which B notes is the least stable surface. [B]
 
 ---
 
+## Stock screen firmware cross-reference
+
+> Added 2026-08-17. Both screen-side binaries read out of the two OTA images: K1 family
+> `CR4CU220812S11_ota_img_V2.3.5.34.img` (`master-server` / `display-server`, MIPS) and
+> K2 Plus `CR0CN240110C10_ota_img_V1.1.4.11.img` (same pair, ARM; image is plain cpio,
+> not 7z). All findings below are **[A]** — string tables and disassembly of the shipped
+> artifacts, no behavior observed live.
+
+### Who sends what
+
+| Channel | K1 screen | K2 screen |
+|---|---|---|
+| CFS load/unload | `master-server` → Moonraker `gcode/script` → `BOX_*` (same lane we use) | **direct RS-485** — zero `CR_BOX_*` strings in either binary |
+| CFS enable flag | `BOX_ENABLE_CFS_PRINT ENABLE=1/0` via `gcode/script` | same — this one DOES go through Klipper on both |
+| Rack metadata | `FILAMENT_RACK_MODIFY COLOR_VALUE=%s MATERIAL_TYPE=%s` — metadata only, **no load/unload command for the holder exists anywhere** | same |
+| Print start | macro chain `CX_NOZZLE_CLEAR` → `ACCURATE_G28` → `PRINT_TEMP_SET` → `M109 S140` → `SET_BOX_MODE_PRINT_WHEN_NOZZLE_CLEAR` → `NOZZLE_CLEAR WAIT_TEMP=1` | parses `START_PRINT`/`M141 S`/`M191 S` out of the file's gcode metadata |
+
+The K2 asymmetry confirms the doc's "Stock UI note": the K2 screen's CFS operations
+bypass Klipper entirely, and its only CFS-relevant Klipper traffic we can find is the
+enable flag. Everything the K2 screen does to the box happens on `/dev/ttyS5`.
+
+### Findings that changed HelixScreen behavior
+
+1. **`BOX_ENABLE_CFS_PRINT ENABLE=0` is the sanctioned stand-down.** The K2 handler was
+   disassembled (`master-server` `0x320cc`, `Control/PrintfManager.c`): a UI request
+   with an enable flag picks `ENABLE=1` (`0x3211c`) or `ENABLE=0` (`0x32180`), then ships
+   it via `gcode/script`. HelixScreen's stock-dialect bypass enable sends the same
+   command on the same lane — the box must stand down while external filament occupies
+   the tube, or its own runout refill / print-file tool changes can feed bay filament
+   into it. Creality's screen says the same thing to users: *"CFS filament in use. If a
+   spool holder filament is required, retract the CFS filament first, then feed the
+   spool holder filament and restart."*
+2. **`BOX_ENABLE_AUTO_REFILL` takes an explicit `ENABLE=1|0`** (both families' string
+   tables). HelixScreen previously sent it bare.
+3. **`BOX_UPDATE_SAME_MATERIAL_LIST` follows every `BOX_MODIFY_TN_DATA` write** the
+   screen makes (color + material). `same_material` membership requires exact color
+   equality, so a color write changes group membership and the box's auto-refill groups
+   must be refreshed. HelixScreen now sends it after its color writeback too.
+4. **The stock external-spool UX is guidance, not motion.** `display-server` carries the
+   full modal set: "No CFS detected. Printing with filament from the spool holder.",
+   "Printing use spool holder filament", "Please manually remove the spoolholder
+   filament", "Spoolholder Filament does not match print file, please check and retry" —
+   and tracks rack presence/runout separately (`external mater connect %d, runout %d`,
+   `using cfs %d, mater sensor %c`). This is the model HelixScreen's stock-dialect
+   bypass follows: declare, steer, confirm via sensors; never pretend a load command
+   exists.
+5. **The K1 "Insert Filament" flow validates our load envelope.** The screen's sequence
+   is `M104 S%d` → `BOX_EXTRUDE_MATERIAL TNN=` → `BOX_EXTRUDER_EXTRUDE TNN=` →
+   `BOX_MATERIAL_FLUSH` — the same primitive chain HelixScreen's K1 `load_gcode`
+   assembles (which was modelled on the shipped `box.cfg` macro of the same shape).
+
+### Inventory addendum — commands the `BOX_*` regex missed
+
+The appendix inventory below was built with `\b(CR_)?BOX_[A-Z0-9_]+`, which misses
+C-extension handlers whose names do not start with `BOX_`. Symbol grep of the `.so`
+finds three more (each with a `cmd_*` handler):
+
+| Command | Purpose |
+|---|---|
+| `MODIFY_BOX_CFG <key>=<value>` | Live box.cfg edit (cut positions, velocities, clean positions, buffer length, …). Replies `MODIFY_BOX_CFG: success, … please use SAVE_BOX_CFG to save box.cfg`. |
+| `SAVE_BOX_CFG` | Persists the edited values to box.cfg. |
+| `TEST_BOX_EXTRUDE` | Calibration extrude used by the screen's cutter/setup screens. |
+
+These are the screen's cutter-calibration surface (`BOX_FIND_CUT_POS` probes, then
+`MODIFY_BOX_CFG cut_pos_*=…` + `SAVE_BOX_CFG`). HelixScreen does not expose them;
+`display-server`'s `TEST_BOX_CLEAN` string has **no** handler in the `.so` — dead on
+this firmware. The inventory lesson generalizes: only a symbol grep settles presence,
+and the grep must not assume a naming prefix.
+
+---
+
 ## Open questions
 
 | Question | Why it's open | What would settle it |

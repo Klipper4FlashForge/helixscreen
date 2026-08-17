@@ -3071,24 +3071,61 @@ parsed for one purpose only - a material-code-to-name lookup used when resolving
 material name - and is not wired to endless spool.
 
 The user-facing on/off control is the `toggle_auto_refill` device action, which emits
-`BOX_ENABLE_AUTO_REFILL`; it is not an endless-spool *edit* in the
+`BOX_ENABLE_AUTO_REFILL ENABLE=1|0` — a setter, not a toggle: it inverts the last
+box-reported `endless_spool_enabled` and sends the explicit argument, mirroring
+Creality's own master-server (string tables in both OTA images; a bare call leaves the
+handler's `gcmd.get_int` without its argument, whose behavior is unverified). It is not
+an endless-spool *edit* in the
 `set_endless_spool_backup()` sense, which is why editability stays `ReadOnly`.
 
 ### Bypass / external spool
 
-`supports_bypass` is hardcoded `false` in three places - the constructor and both schema
-parsers - and `enable_bypass()` / `disable_bypass()` return `not_supported` without consulting
-`bypass_available_for()`. So the **Enable Bypass Controls** override renders the external-spool
-node and its metadata menu, but the sidebar's bypass toggle still fails. See
-[Bypass visibility and the force override](#bypass-visibility-and-the-force-override).
+Supported, with a different mechanism per dialect. `supports_bypass` starts `false`
+in the constructor and converges on the first full box frame in `handle_status_update`:
 
-The `Flat` schema does carry an `external: true` entry in `slots[]` for the spool holder.
-`parse_flat_box_status()` skips it (it is not a CFS bay, and counting it renders a phantom
-fifth slot on a 4-bay unit) and bounds-checks `loaded_slot` against the resulting vector,
-because that field indexes the payload's array and can therefore name the external entry.
-Bypass stays unsupported anyway: the port's `box.py` is unpublished, so there is no verified
-command that loads from the holder, and advertising bypass would put a button on screen that
-cannot work.
+- **Flat schema:** true only when the Fork dialect is identified (`api_version == 1`)
+  AND the payload carries an `external: true` entry (`find_external_slot_index()`,
+  latched into `external_slot_index_`). An unidentified Flat module keeps bypass off —
+  same rule as `reject_if_flat_schema`, no verified command means no button.
+- **Stock schema:** true unconditionally on the first full box frame. Every stock CFS
+  machine pairs the external holder with the `filament_switch_sensor filament_sensor`
+  we already subscribe to, which is all the sensor-derived rule below needs.
+
+`enable_bypass()` / `disable_bypass()` consult `bypass_available_for()` (the
+`force_bypass_controls` override folds in like every other backend):
+
+- **Fork:** `enable` dispatches `T<external_slot_index_>` — the port's own `box.py`
+  registers that command for the holder and owns the whole attended flow (heat →
+  wastebin → wait up to `EXTERNAL_WAIT = 30 s` for insertion → feed → flush). `disable`
+  while engaged dispatches `BOX_UNLOAD`, whose external branch ejects and then waits
+  for the user to pull the filament clear. Engaged state is firmware-reported:
+  `loaded_slot` naming the external entry maps to the `-2` sentinel in
+  `parse_flat_box_status()`.
+- **Stock:** no Klipper-side command loads from the holder (Creality's own screen drives
+  the box over RS-485; its Klipper-lane traffic for this is only
+  `BOX_ENABLE_CFS_PRINT ENABLE=1/0` via `gcode/script` — verified from the master-server
+  string tables in both OTA images). `enable` sends `BOX_ENABLE_CFS_PRINT ENABLE=0` (the
+  box must stand down, or a print-file tool change / its runout refill can drive bay
+  filament into the tube the external spool occupies), latches `bypass_declared_`, and
+  `derive_stock_bypass_locked()` maps toolhead-sensor filament with no active lane to the
+  `-2` sentinel. `disable` re-arms with `ENABLE=1` and drops the declaration.
+
+Two deliberate subtleties in the stock derivation:
+
+- **It is armed by the declaration only.** "Filament at the toolhead, no active lane" is
+  also the #1199 state where the box drops its lane report while bay filament stays
+  threaded — that state must stay `-1`, and only the user's toggle says the next
+  filament the sensor sees belongs to the holder.
+- **`is_bypass_active()` is `current_slot == -2 || bypass_declared_`.** After the user
+  pulls the external filament back out, the sentinel clears but the declaration stands
+  until the toggle is turned off — matching what the sidebar toggle shows.
+
+The declaration survives restarts: `enable_bypass`/`disable_bypass` persist it through
+`SettingsManager::get/set_bypass_declared()` (per-printer `ams/bypass_declared`),
+`on_started()` restores it — pairing with the `ENABLE=0` the box's own `tn_data.json`
+kept — and a full box frame reporting an explicit `enable == 1` drops it (someone
+re-armed the CFS through Creality's own screen; in-memory clear on the bg thread, the
+persisted flag re-clears idempotently on the next boot).
 
 ### Known limitations on K1
 
@@ -3414,7 +3451,7 @@ Where the override lands, by backend:
 | AFC | `afc_defaults` caps, default `true` | no | Consults `bypass_available_for()` |
 | AD5X IFS | `true` (`ams_backend_ad5x_ifs.cpp:85`) | no | Real command via `less_waste_external` |
 | Happy Hare | Runtime from `[mmu_machine] has_bypass`; `false` until first status | Only when `has_bypass: 0` | Consults `bypass_available_for()`; `MMU_SELECT_BYPASS` runs |
-| CFS | Hardcoded `false` in ctor + both parsers (`:397`, `:526`, `:917`) | yes | `not_supported`, unconditionally |
+| CFS | Converges on first full box frame: true (Fork: + payload `external` entry) | no | Consults `bypass_available_for()` — real `T<external>` on Fork, sensor-derived declaration on stock |
 | ACE | Hardcoded `false` (`:43`) | yes | `not_supported` |
 | Snapmaker | Hardcoded `false` (`:237`) | yes | `not_supported` |
 | Tool Changer | Hardcoded `false` (`:31`) | yes | `not_supported` |

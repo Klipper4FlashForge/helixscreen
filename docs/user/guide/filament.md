@@ -144,12 +144,13 @@ Some filament systems do not report a bypass position. On those, the Bypass togg
 
 | System | Reason |
 |--------|--------|
-| Creality CFS | Firmware reports no bypass, on stock K1/K2 and on community builds |
 | Anycubic ACE Pro | The ACE protocol has no bypass |
 | Snapmaker U1 | Each toolhead has its own path, so there is nothing to bypass |
 | Tool changers (generic Klipper) | Each tool has its own path |
 | QIDI Box | Not implemented in the QIDI backend yet |
 | Happy Hare | Only when `[mmu_machine] has_bypass` is `0` |
+
+The Creality CFS no longer appears here — it has a working external spool. See [CFS and the External Spool](#cfs-and-the-external-spool).
 
 To show the controls anyway, turn on **Enable Bypass Controls** in Settings > Hardware & Devices > Multi-Filament System Management. The setting appears only when your firmware reports no bypass.
 
@@ -159,7 +160,7 @@ With it on, the external spool appears on the filament path beside your slots. T
 
 **On the other systems, the setting changes only what HelixScreen displays.** There is no bypass command to send, so the Bypass toggle reports that the operation is not supported. Use the external spool to record the material and color you loaded by hand: [filament tracking](filament-tracking.md), spool presets, and purge temperatures all read from it. Load and unload with your own macros or from the Extrusion panel.
 
-**On the systems where bypass genuinely engages** (AFC, AD5X IFS, Happy Hare), it also quiets the pre-print filament checks. Filament fed through the bypass never passes through a slot, so a print started that way would otherwise be flagged for every tool it uses. See [Pre-Print Filament Check](print-monitoring.md#pre-print-filament-check). On the display-only systems above nothing is suppressed, because bypass never actually engages there.
+**On the systems where bypass genuinely engages** (AFC, AD5X IFS, Happy Hare, Creality CFS), it also quiets the pre-print filament checks. Filament fed through the bypass never passes through a slot, so a print started that way would otherwise be flagged for every tool it uses. See [Pre-Print Filament Check](print-monitoring.md#pre-print-filament-check). On the display-only systems above nothing is suppressed, because bypass never actually engages there.
 
 **Always Show Bypass Spool**, in the same place, keeps the external spool on the filament path while bypass is disengaged. It applies to AFC systems only (Box Turtle, OpenAMS), which report a bypass sensor whether or not one is wired, so the spool is otherwise hidden until bypass is engaged.
 
@@ -363,9 +364,13 @@ Tap the menu icon on the CFS panel to access device actions:
 
 ### CFS and the External Spool
 
-CFS reports no bypass position, so the Bypass toggle and the external spool are hidden. This applies to every CFS firmware: stock K2, the official K1 upgrade, and the community K2 Plus builds. The community builds do report an external spool holder in their status data, but no documented command loads filament from it, so HelixScreen does not offer the control.
+Every CFS printer has a spool holder that feeds the toolhead directly, next to the CFS, and HelixScreen's Bypass toggle drives it. How much the firmware does for you depends on which CFS firmware you have:
 
-To record a spool you feed directly, turn on **Enable Bypass Controls** - see [When Bypass Doesn't Appear](#when-bypass-doesnt-appear).
+**Community K2 Plus firmware (Kalico port): the bypass is fully automatic.** Turn the Bypass toggle on and the printer takes over — it heats, moves to the waste bin, and waits for you to insert the filament into the holder. Feed it in, and the printer draws it to the toolhead and flushes. Turning the toggle off reverses the whole thing: the printer retracts and cuts, then asks you to pull the filament out. The external spool also appears on the filament path, and you can tap it to set material, color, and brand or link a Spoolman spool.
+
+**Stock K1/K2 firmware (Creality's own): you feed the holder by hand.** Creality's firmware has no command that loads from the holder — even Creality's own screen leaves the feeding to you. When you turn the Bypass toggle on, HelixScreen stands the CFS down so it cannot push bay filament into the tube your spool is using, then watches the toolhead sensor: the moment it sees your filament, the external spool shows as active. Inserting and removing the filament updates this automatically. Turning the toggle off re-arms the CFS for normal printing. You can still tap the external spool to record material, color, and brand, and prints started from bypass skip the loaded-filament checks.
+
+> **Tip:** On stock firmware, turn bypass on *before* you feed the holder. The toolhead sensor can only attribute filament to the external spool while the bypass toggle is on — filament that appears without it is treated as unknown, not bypass.
 
 ---
 
