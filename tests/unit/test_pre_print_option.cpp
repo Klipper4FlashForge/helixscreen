@@ -301,8 +301,45 @@ TEST_CASE("render_pre_start_gcode interpolates {file}", "[pre_print_option][rend
     auto opt = parse_pre_print_option(j);
     REQUIRE(opt.has_value());
 
-    CHECK(render_pre_start_gcode(*opt, true, "part.gcode") ==
+    PreStartGcodeContext ctx;
+    ctx.filename = "part.gcode";
+    CHECK(render_pre_start_gcode(*opt, true, ctx) ==
           "BED_MESH_CALIBRATE_START_PRINT GCODE_FILE='part.gcode'");
+}
+
+TEST_CASE("render_pre_start_gcode interpolates the job temperatures",
+          "[pre_print_option][render]") {
+    // Creality's mesh macro falls back to custom_macro.default_bed_temp (50C)
+    // when BED_TEMP is absent, so it cools down from print temp, meshes at the
+    // wrong temperature, and START_PRINT then reheats. Observed on a K2 Plus:
+    // a 100C bed dropped to a 50C target and sat there for 20 minutes.
+    json j = {{"id", "bed_mesh"},
+              {"strategy", "pre_start_gcode"},
+              {"gcode_template", "BED_MESH_CALIBRATE_START_PRINT GCODE_FILE='{file}' "
+                                 "BED_TEMP={bed_temp} EXTRUDER_TEMP={extruder_temp}"}};
+    auto opt = parse_pre_print_option(j);
+    REQUIRE(opt.has_value());
+
+    PreStartGcodeContext ctx;
+    ctx.filename = "part.gcode";
+    ctx.bed_temp = 105;
+    ctx.extruder_temp = 260;
+
+    CHECK(render_pre_start_gcode(*opt, true, ctx) ==
+          "BED_MESH_CALIBRATE_START_PRINT GCODE_FILE='part.gcode' BED_TEMP=105 "
+          "EXTRUDER_TEMP=260");
+}
+
+TEST_CASE("render_pre_start_gcode renders unknown temperatures as zero",
+          "[pre_print_option][render]") {
+    // 0 lets the firmware macro apply its own default rather than receiving a
+    // literal placeholder it would choke on.
+    json j = {{"id", "bed_mesh"},
+              {"strategy", "pre_start_gcode"},
+              {"gcode_template", "M BED_TEMP={bed_temp} EXTRUDER_TEMP={extruder_temp}"}};
+    auto opt = parse_pre_print_option(j);
+    REQUIRE(opt.has_value());
+    CHECK(render_pre_start_gcode(*opt, true) == "M BED_TEMP=0 EXTRUDER_TEMP=0");
 }
 
 TEST_CASE("render_pre_start_gcode leaves {file} empty when no filename is supplied",

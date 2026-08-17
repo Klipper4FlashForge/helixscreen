@@ -546,6 +546,11 @@ void PrintPreparationManager::set_cached_file_size(size_t size) {
                   static_cast<double>(size) / (1024.0 * 1024.0));
 }
 
+void PrintPreparationManager::set_cached_first_layer_temps(int bed_temp, int extruder_temp) {
+    cached_bed_temp_ = bed_temp;
+    cached_extruder_temp_ = extruder_temp;
+}
+
 std::string PrintPreparationManager::get_temp_directory() const {
     // Delegate to global helper for consistent cache directory selection
     return get_helix_cache_dir("gcode_temp");
@@ -1170,7 +1175,11 @@ PrintPreparationManager::collect_pre_start_gcode_lines(const std::string& filena
             continue;
         }
 
-        std::string line = render_pre_start_gcode(opt, enabled, filename);
+        PreStartGcodeContext ctx;
+        ctx.filename = filename;
+        ctx.bed_temp = cached_bed_temp_;
+        ctx.extruder_temp = cached_extruder_temp_;
+        std::string line = render_pre_start_gcode(opt, enabled, ctx);
         if (line.empty()) {
             // render_pre_start_gcode logs its own warning on type mismatch.
             continue;

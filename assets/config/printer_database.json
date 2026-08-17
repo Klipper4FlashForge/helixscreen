@@ -1284,7 +1284,7 @@
             "order": 10,
             "default_enabled": true,
             "strategy": "pre_start_gcode",
-            "gcode_template": "BED_MESH_CALIBRATE_START_PRINT GCODE_FILE='{file}'",
+            "gcode_template": "BED_MESH_CALIBRATE_START_PRINT GCODE_FILE='{file}' BED_TEMP={bed_temp} EXTRUDER_TEMP={extruder_temp}",
             "emit_when_disabled": false
           },
           {
@@ -1427,7 +1427,7 @@
             "order": 10,
             "default_enabled": true,
             "strategy": "pre_start_gcode",
-            "gcode_template": "BED_MESH_CALIBRATE_START_PRINT GCODE_FILE='{file}'",
+            "gcode_template": "BED_MESH_CALIBRATE_START_PRINT GCODE_FILE='{file}' BED_TEMP={bed_temp} EXTRUDER_TEMP={extruder_temp}",
             "emit_when_disabled": false
           },
           {

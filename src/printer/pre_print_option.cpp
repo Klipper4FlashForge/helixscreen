@@ -237,7 +237,7 @@ std::string render_macro_param(const PrePrintOption& opt, bool enabled) {
 }
 
 std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled,
-                                   const std::string& filename) {
+                                   const PreStartGcodeContext& ctx) {
     const auto* p = std::get_if<PrePrintStrategyPreStartGcode>(&opt.strategy);
     if (!p) {
         spdlog::warn("[PrePrintOption] render_pre_start_gcode called on option '{}' with non-"
@@ -246,7 +246,9 @@ std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled,
         return {};
     }
     std::string out = replace_all(p->gcode_template, "{value}", enabled ? "1" : "0");
-    return replace_all(std::move(out), "{file}", filename);
+    out = replace_all(std::move(out), "{file}", ctx.filename);
+    out = replace_all(std::move(out), "{bed_temp}", std::to_string(ctx.bed_temp));
+    return replace_all(std::move(out), "{extruder_temp}", std::to_string(ctx.extruder_temp));
 }
 
 bool is_macro_gate_closed(const PrePrintOption& opt) {

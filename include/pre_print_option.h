@@ -71,8 +71,14 @@ struct PrePrintStrategyMacroParam {
 /// `PreStartGcode`: a gcode line emitted before the start macro. The literal
 /// substring `{value}` is interpolated to `1` when enabled, `0` when disabled.
 struct PrePrintStrategyPreStartGcode {
-    /// `{value}` becomes 1/0 for the toggle state; `{file}` becomes the file
-    /// being printed (empty when the caller has none).
+    /// Placeholders: `{value}` (1/0 toggle state), `{file}`, `{bed_temp}`,
+    /// `{extruder_temp}` — see PreStartGcodeContext.
+    ///
+    /// Passing the job's real temperatures matters when the macro would
+    /// otherwise fall back to a config default: Creality's
+    /// BED_MESH_CALIBRATE_START_PRINT meshes at `default_bed_temp` (50C) unless
+    /// given BED_TEMP, so omitting it makes the printer sit through a cooldown
+    /// from print temp and then mesh at the wrong one.
     std::string gcode_template;
 
     /// Whether to emit the line when the user has the option switched OFF.
@@ -213,8 +219,17 @@ std::string render_macro_param(const PrePrintOption& opt, bool enabled);
  *
  * Returns the empty string if the option is not a `PreStartGcode` strategy.
  */
+/// Values a pre-start gcode template can interpolate about the job it prepares
+/// for. Zero temperatures mean "unknown" and render as 0, leaving the firmware
+/// macro free to apply its own default.
+struct PreStartGcodeContext {
+    std::string filename;  ///< `{file}`
+    int bed_temp = 0;      ///< `{bed_temp}` — first-layer bed target, degrees C
+    int extruder_temp = 0; ///< `{extruder_temp}` — first-layer nozzle target, degrees C
+};
+
 std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled,
-                                   const std::string& filename = {});
+                                   const PreStartGcodeContext& ctx = {});
 
 /**
  * @brief True iff `opt` declares a `requires_macro` AND that macro is not

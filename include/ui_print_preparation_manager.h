@@ -318,6 +318,9 @@ class PrintPreparationManager {
      */
     void set_cached_file_size(size_t size);
 
+    /// Cache first-layer targets from Moonraker metadata (0 = unknown).
+    void set_cached_first_layer_temps(int bed_temp, int extruder_temp);
+
     /**
      * @brief Check if G-code modification can be performed safely
      *
@@ -518,6 +521,12 @@ class PrintPreparationManager {
     std::optional<gcode::ScanResult> cached_scan_result_;
     std::string cached_scan_filename_;
     std::optional<size_t> cached_file_size_; ///< File size from Moonraker metadata
+    /// First-layer targets from Moonraker metadata, pushed in by the detail
+    /// view alongside the file size. Feed the {bed_temp}/{extruder_temp}
+    /// placeholders so a pre-start macro runs at the job's real temperatures
+    /// instead of falling back to its own config default.
+    int cached_bed_temp_ = 0;
+    int cached_extruder_temp_ = 0;
 
     /**
      * @brief Get the cached pre-print option set from PrinterState

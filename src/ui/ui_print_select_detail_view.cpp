@@ -1573,6 +1573,16 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                 // Cache for PrintStartController's pre-print checks (e.g., filament weight)
                 cached_file_metadata_ = metadata;
 
+                // Hand the job's first-layer targets to the pre-print pipeline.
+                // A pre-start macro that takes temperatures (Creality's
+                // BED_MESH_CALIBRATE_START_PRINT) otherwise falls back to a
+                // config default and makes the printer cool to it first.
+                if (prep_manager_) {
+                    prep_manager_->set_cached_first_layer_temps(
+                        static_cast<int>(metadata.first_layer_bed_temp),
+                        static_cast<int>(metadata.first_layer_extr_temp));
+                }
+
                 // Check if file is safe to render given available RAM
                 if (!helix::is_gcode_2d_streaming_safe(metadata.size)) {
                     auto mem = helix::get_system_memory_info();
