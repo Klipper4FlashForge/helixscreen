@@ -238,6 +238,38 @@ bool mirror_firmware_to_lane_data(FilamentSlotOverrideStore* store,
                                   MirrorPolicy policy, const std::string& log_tag);
 
 // =============================================================================
+// Shared override-wins merge (filament_slots.md §5)
+// =============================================================================
+//
+// Every AMS backend merges a loaded FilamentSlotOverride onto firmware-reported
+// SlotInfo values before the UI paints a lane. This is the ONE implementation
+// of that policy plus the two cross-field rules (external re-bind, eject) that
+// previously lived as hand-rolled if-chains per backend.
+
+struct MergeOptions {
+    /// From SettingsManager::get_ams_keep_spool_info_on_eject() (Task 2).
+    /// Default true = today's designed retention across eject.
+    bool keep_spool_info_on_eject = true;
+    /// True only on backends whose firmware reports a spool id while a spool
+    /// is loaded (AFC, Happy Hare). There — and only there — a firmware id of
+    /// 0/null means "ejected". Elsewhere firmware never reports ids, so 0 is
+    /// the everyday reading and MUST NOT be treated as eject.
+    bool firmware_reports_spool_ids = false;
+};
+
+struct MergeResult {
+    bool cleared_rebind = false; ///< firmware re-bound to a different spool; record dropped
+    bool cleared_eject = false;  ///< eject signal + setting OFF; record dropped
+};
+
+/// Single implementation of filament_slots.md §5 plus the two cross-field
+/// rules. `slot` carries FIRMWARE-reported values on entry; on return it
+/// carries the values the UI should paint. When either cleared_* is true the
+/// caller must drop its in-memory override and persist the clear.
+MergeResult merge_override(SlotInfo& slot, const FilamentSlotOverride& o,
+                           const MergeOptions& options);
+
+// =============================================================================
 // Shared per-slot firmware-observation baseline tracker
 // =============================================================================
 
