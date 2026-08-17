@@ -6,7 +6,7 @@ Quick patterns and cheat sheets for developers working on the HelixScreen codeba
 
 ## Class Patterns
 
-HelixScreen uses class-based patterns for all new code. For architectural rationale, see [ARCHITECTURE.md](ARCHITECTURE.md#preferred-class-based-architecture).
+HelixScreen uses class-based patterns for all new code. For architectural rationale, see [chapter 08 — Panels, overlays & modals](architecture/08-panels-navigation.md).
 
 ### Panel Pattern
 
@@ -98,7 +98,7 @@ private:
 
 **Domain classes:** `printer_*_state.h` — Temperature, Motion, Fan, Print, Calibration, Capabilities, ExcludedObjects, Network, Versions, Led, HardwareValidation, PluginStatus, CompositeVisibility
 
-**For architectural rationale, see [ARCHITECTURE.md § Domain Decomposition](ARCHITECTURE.md#domain-decomposition-printerstate).**
+**For architectural rationale, see [chapter 05 — Printer state & singletons](architecture/05-printer-state.md).**
 
 ---
 
@@ -129,7 +129,7 @@ StaticSubjectRegistry::instance().register_deinit(
     "MySingleton", []() { MySingleton::instance().deinit_subjects(); });
 ```
 
-**See [ARCHITECTURE.md § Shutdown Order](ARCHITECTURE.md#shutdown-order-staticpanelregistry--staticsubjectregistry) for full pattern.**
+**See [chapter 11 — Startup & shutdown](architecture/11-startup-shutdown.md) for full pattern.**
 
 ---
 
@@ -405,7 +405,7 @@ lv_subject_init_color(&subj, lv_color_hex(0xFF0000));
 
 ## Registration Order (CRITICAL)
 
-Subjects must be initialized BEFORE creating XML to ensure bindings find initialized values. For detailed rationale, see [ARCHITECTURE.md](ARCHITECTURE.md#subject-initialization-pattern).
+Subjects must be initialized BEFORE creating XML to ensure bindings find initialized values. For detailed rationale, see [chapter 02 — Subjects & data flow](architecture/02-subjects-dataflow.md).
 
 ```cpp
 lv_xml_register_font(...);                    // 1. Fonts
@@ -451,14 +451,14 @@ style_flex_cross_place="center"
 
 | ❌ Wrong | ✅ Correct | See Also |
 |----------|-----------|----------|
-| `char buf[128];` (stack) | `static char buf[128];` (static/heap) | [ARCHITECTURE.md - Subject Lifecycle](ARCHITECTURE.md#subject-lifecycle) |
+| `char buf[128];` (stack) | `static char buf[128];` (static/heap) | [ch. 02 — Subjects & data flow](architecture/02-subjects-dataflow.md) |
 | `flex_align="..."` | `style_flex_main_place` + `style_flex_cross_place` | [LVGL9_XML_GUIDE.md](LVGL9_XML_GUIDE.md) |
-| Register subjects after `lv_xml_create` | Register subjects BEFORE | [ARCHITECTURE.md - Subject Initialization](ARCHITECTURE.md#subject-initialization-pattern) |
+| Register subjects after `lv_xml_create` | Register subjects BEFORE | [ch. 02 — Subjects & data flow](architecture/02-subjects-dataflow.md) |
 | `style_img_recolor` | `style_image_recolor` (full word) | |
 | `style_pad_row` + `style_flex_track_place="space_evenly"` | Use one or the other (track_place overrides pad_row) | |
 | `<lv_label><lv_label-bind_text subject="x"/></lv_label>` | `<lv_label bind_text="x"/>` (attribute, not child) | |
-| `lv_obj_add_event_cb()` in C++ | XML `<event_cb trigger="clicked" callback="name"/>` | [ARCHITECTURE.md - Reactive-First](ARCHITECTURE.md#critical-reactive-first-principle---the-helixscreen-way) |
-| `lv_label_set_text()` for reactive data | `bind_text` subject binding | [ARCHITECTURE.md - Reactive Patterns](ARCHITECTURE.md#reactive-patterns-for-common-ui-tasks) |
+| `lv_obj_add_event_cb()` in C++ | XML `<event_cb trigger="clicked" callback="name"/>` | [ch. 01 — Declarative UI](architecture/01-declarative-ui.md) |
+| `lv_label_set_text()` for reactive data | `bind_text` subject binding | [ch. 01 — Declarative UI](architecture/01-declarative-ui.md) |
 | Hardcoded colors in C++ | `theme_manager_get_color("card_bg")` | [Responsive Design Tokens](#responsive-design-tokens) |
 | `lv_subject_set_*()` from WebSocket | `helix::ui::queue_update()` | [Threading Model](#threading-model) |
 | Raw `lv_subject_add_observer_*()` | `observe_int_async<Panel>()` from factory | [Observer Factory](#observer-factory-critical) |

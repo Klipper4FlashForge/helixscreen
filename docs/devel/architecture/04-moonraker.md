@@ -163,7 +163,7 @@ The mock arm of all this is what `--test` runs. `RuntimeConfig` (`include/runtim
 - **Name interfaces, never concretes.** `helix::IMoonrakerClient`, `IMoonrakerAPI`, and the ten `IXxxAPI` types are the consumer vocabulary; the bats gate at `tests/shell/test_code_lint.bats:168` fails CI on `MoonrakerClient`/`MoonrakerAPI` outside the network-layer allowlist. Compile-time-only exceptions (static timeout constants, the `MPCResult` alias) are documented in that file's comment block.
 - **Adding a pure virtual to an interface breaks the build twice** — concrete first, then the mock — by design. That cascade is the drift protection working; implement both, don't weaken the interface.
 - **New RPC method: sub-API, not façade.** Declare on the `IXxxAPI`, implement in the `moonraker_*_api.cpp` pair, and the mock inherits parity pressure. The façade is for cross-cutting sends only.
-- **Temperature sends go through `TemperatureController`.** Calling `set_temperature` directly is lint-enforced against — see chapter 02 and `../ARCHITECTURE.md` § Centralized Temperature Sends.
+- **Temperature sends go through `TemperatureController`.** Calling `set_temperature` directly is lint-enforced against — see chapter 02 and chapter 05 (the TemperatureController section).
 - **No raw `std::thread` for HTTP.** `HttpExecutor::fast()`/`slow()` exist because per-request spawning hit `EAGAIN` thread exhaustion on shared-user hosts; the two-lane rationale is in `../MOONRAKER_ARCHITECTURE.md` § HTTP Work Execution.
 - **Read `../RPC_ERROR_OWNERSHIP.md` before adding `on_error`.** Passing a logging callback but claiming `caller_surfaces_errors = true` silences Klipper's `!!` broadcast — the surface that would have explained the failure.
 - **Client callbacks run on the libhv event loop.** Touching LVGL from one is the chapter 03 crash family; the manager's queue and `bg_cb()` marshalling are the sanctioned crossings.
@@ -180,7 +180,7 @@ The mock arm of all this is what `--test` runs. `RuntimeConfig` (`include/runtim
 - `../UPDATE_SYSTEM.md` — release channels, the R2 CDN, and how `UpdateChecker` picks between `releases.helixscreen.org` and the GitHub API.
 - `../TELEMETRY_ADMIN.md` and `../CRASH_REPORTER.md` — the pipelines behind the two `*.helixscreen.org` endpoints.
 - `../ENVIRONMENT_VARIABLES.md` — the full `HELIX_MOCK_*` matrix and every runtime knob the mock stack reads.
-- `../ARCHITECTURE.md` § Test Mode Architecture — the factory pattern behind `should_mock_*()` and the fixture-isolation design the mocks feed into.
+- `../TESTING.md` — the fixture-isolation design the mocks feed into (`HelixTestFixture` / `XMLTestFixture`) and the `[compile][drift]` tests that pin mock parity.
 - `02-subjects-dataflow.md` — the main-thread half of this chapter's notification path: queue, dispatch ordering, subject writes.
 - `03-threading-lifetime.md` — the guards (`AsyncLifetimeGuard`, `bg_cb`) the event marshalling here relies on.
 

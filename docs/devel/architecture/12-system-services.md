@@ -98,7 +98,7 @@ When each one comes up is chapter 11's ladder; the service-eye view, with the ca
 
 ### Update & recovery
 
-**UpdateChecker** is a singleton with two joined worker threads (`worker_thread_`, `src/system/update_checker.cpp:2452`; `download_thread_`, `:1289`). It polls a release manifest on the R2 CDN at `releases.helixscreen.org` (GitHub releases API as fallback — chapter 04 has the endpoint story) on three channels: Stable, Beta, Dev (`UpdateChannel`, `include/system/update_checker.h:116`). Checks are rate-limited to `MIN_CHECK_INTERVAL = 10 minutes` (`update_checker.h:557` — ARCHITECTURE.md's "1 check per hour" is stale); auto-check runs 15s after boot, then every 24h (`update_checker.h:437`). The install ladder is the `DownloadStatus` enum (`update_checker.h:121`):
+**UpdateChecker** is a singleton with two joined worker threads (`worker_thread_`, `src/system/update_checker.cpp:2452`; `download_thread_`, `:1289`). It polls a release manifest on the R2 CDN at `releases.helixscreen.org` (GitHub releases API as fallback — chapter 04 has the endpoint story) on three channels: Stable, Beta, Dev (`UpdateChannel`, `include/system/update_checker.h:116`). Checks are rate-limited to `MIN_CHECK_INTERVAL = 10 minutes` (`update_checker.h:557` — the old monolith's "1 check per hour" was stale); auto-check runs 15s after boot, then every 24h (`update_checker.h:437`). The install ladder is the `DownloadStatus` enum (`update_checker.h:121`):
 
 | Step | What happens | Guard |
 |------|--------------|-------|

@@ -329,7 +329,7 @@ As a last-resort safety net, `LedController` also force-clears the counter (`for
 
 ## Home Panel Widget Integration
 
-The lightbulb button on the home panel is implemented by `LedWidget` (`src/ui/panel_widgets/led_widget.cpp`). It uses the version-observer self-binding pattern documented in `ARCHITECTURE.md`.
+The lightbulb button on the home panel is implemented by `LedWidget` (`src/ui/panel_widgets/led_widget.cpp`). It uses the version-observer self-binding pattern documented in [chapter 09 — Home panel widgets](architecture/09-home-widgets.md).
 
 ### LedWidget Binding Flow
 

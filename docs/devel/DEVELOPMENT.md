@@ -425,13 +425,20 @@ void ui_panel_motion_init(lv_obj_t* parent);
 
 **Naming conventions:**
 - Functions/variables: `snake_case` (`ui_panel_home_init`, `temp_target`)
-- XML files: `kebab-case` (`nozzle-temp-panel.xml`)
+- XML files: `snake_case` (`bed_temp_panel.xml`)
 - Constants: `UPPER_SNAKE_CASE` (`MAX_TEMP`) — including `constexpr`, file-scope
   `static const`, and enum enumerators. **Not** Google's `kCamelCase`: the tree
   drifted into it for a while and was swept back, so a `kFoo` you find in a diff
   is a mistake to fix, not a precedent to follow. The exceptions are names that
   mirror a third-party API verbatim (Apple's `kCWSecurityWPA2Personal`) — match
   the foreign spelling there rather than inventing a local one.
+
+**Namespace organization:** all HelixScreen code lives under `helix::` (UI
+helpers in `helix::ui::`, sensor managers in `helix::sensors`):
+- No `using` declarations in headers — always fully-qualified names in `.h`
+  files; `using namespace helix;` is acceptable in `.cpp` files only
+- Enums are `enum class` within `helix::` (e.g., `helix::PanelId`, `helix::PrintState`)
+- JSON forward declarations come from `#include "json_fwd.h"`
 
 **Critical patterns:**
 ```cpp

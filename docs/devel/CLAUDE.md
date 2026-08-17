@@ -8,7 +8,8 @@ All developer documentation lives here. When working on features, look up the re
 |-----|-------------|
 | `DEVELOPMENT.md` | Build setup, dev environment, contributing |
 | `HELIXCTL.md` | Driving the UI / screenshots via `helix-screen ctl` (replaces the old `-p`/`--panel` flags). **Read the socket-isolation box first** — a bare `ctl` drives whichever instance started first and still reports success |
-| `ARCHITECTURE.md` | System design, component relationships, extended systems |
+| `ARCHITECTURE.md` | The 15-minute whole-app model (XML → Subjects → C++) + the routing table into the chapter series. Start here for "how does the app fit together" |
+| `architecture/` | The 15-chapter architecture guide — one subsystem per chapter, ~1 hour each. `architecture/README.md` is the "I want to work on..." index |
 | `THREADING.md` | **Single source of truth** for threading, async-callback, and object-lifetime rules. Read before any code that crosses a thread boundary, observes a subject, or destroys a widget |
 | `BUILD_SYSTEM.md` | Makefile internals, make target reference, cross-compilation, worktree workflow, ccache, patches |
 | `REVIEW_RUBRIC.md` | The quality bar for reviews: crash families, silent-failure traps, what not to flag, what the gates already cover |

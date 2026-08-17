@@ -252,7 +252,7 @@ See [docs/user/TROUBLESHOOTING.md](docs/user/TROUBLESHOOTING.md) for more soluti
 | Guide | Description |
 |-------|-------------|
 | [Development](docs/devel/DEVELOPMENT.md) | Build system, workflow, contributing |
-| [Architecture](docs/devel/ARCHITECTURE.md) | System design, patterns |
+| [Architecture](docs/devel/ARCHITECTURE.md) | Whole-app model + guide to the 15 architecture chapters |
 | [LVGL9 XML Guide](docs/devel/LVGL9_XML_GUIDE.md) | XML syntax reference |
 | [UI Contributor Guide](docs/devel/UI_CONTRIBUTOR_GUIDE.md) | Breakpoints, tokens, colors, widgets |
 | [Changelog](CHANGELOG.md) | Release history |

@@ -170,6 +170,7 @@ Supporting rules that trip contributors:
 
   (condensed from `src/ui/ui_screensaver.cpp:173`; the comment explains why the manager not stopping the active screensaver first makes dtor cancellation mandatory). The gate accepts a `// TIMER_DTOR_OK: <reason>` annotation for `LifetimeToken`-guarded timer callbacks.
 - **`ObserverGuard::reset()`, never `release()`**, in normal cleanup — `release()` leaks the observer context and corrupts rendering; it exists only for pre-deinit registry callbacks (#579, seventeen reports).
+- **Custom-widget state memory is RAII-wrapped, never raw `lv_malloc`/`lv_free`.** Build state with `lvgl_make_unique<T>()` (`include/ui_widget_memory.h`) and hand ownership to the widget via `release()` into `user_data`; the `LV_EVENT_DELETE` callback re-wraps the raw pointer in an `lvgl_unique_ptr<T>` on entry so an early return or exception cannot leak it. Nested buffers use `lvgl_make_unique_array<T>(n)` (`:127`). Reference shapes: `src/ui/ui_jog_pad.cpp` (flat struct on `user_data`), `src/ui/ui_step_progress.cpp` (nested per-item arrays).
 - **No new detached `std::thread` spawns.** Grep for an existing pool first (`HttpExecutor::fast()/slow()`, `BusThread`); a fresh detached spawn reintroduces the `EAGAIN` abort on the smallest device you ship to. The one sanctioned shape is the try/catch spawn with a toast, and only for domains with no pool.
 - **Background-thread heuristics have teeth:** `HelixTestFixture` opts into strict mode, so a new L081 instance fails the test suite, not the field.
 - **When something crashes, do not guess —** `THREADING.md` §12 is a symptom→cause→fix index for exactly these families ("SIGSEGV in `lv_event_mark_deleted`", "app hangs, stops answering pings", ...). Check it before debugging from scratch.
@@ -180,7 +181,6 @@ Supporting rules that trip contributors:
 - `02-subjects-dataflow.md` — the same boundary from the data side: the notification queue, the marshalling setter pattern, and the observer-factory worked examples.
 - `../MOONRAKER_ARCHITECTURE.md` — § "HTTP Work Execution (HttpExecutor)": lane discipline and the submit/run_sync contract in full.
 - `../PLUGIN_DEVELOPMENT.md` § "Threading Model" — the same rules restated for plugin authors, whose event callbacks arrive on background threads by default.
-- `../ARCHITECTURE.md` § "Thread Safety" — the predecessor summary this chapter absorbs and extends with the guards and gates.
 - `../REVIEW_RUBRIC.md` — which crash families the automated gates already cover, so review effort goes where the gates are blind.
 
 ## Guided code tour

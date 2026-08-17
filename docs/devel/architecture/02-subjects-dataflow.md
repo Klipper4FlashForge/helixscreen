@@ -189,7 +189,7 @@ The trap the defaulted parameter hides: the factories take `const SubjectLifetim
 - `../LVGL9_XML_GUIDE.md` — the binding vocabulary from the XML side, including observer cleanup in DELETE handlers.
 - `../CONTRIBUTOR_GOTCHAS.md` — symptom-indexed traps ("if you see X, you forgot Y") for subjects and XML bindings.
 - `01-declarative-ui.md` — the previous chapter: how bindings resolve subjects by scope at creation time, and the lint gate keeping new code declarative.
-- `../ARCHITECTURE.md` § "Data Flow Architecture" and § "Memory Management" — the legacy narrative these chapters replace; still useful for the RAII widget-memory rules not covered here.
+- `03-threading-lifetime.md` — the next chapter: the guard family behind dynamic-subject safety, and the widget-memory RAII wrappers (`lvgl_make_unique`) in its supporting rules.
 
 ## Guided code tour
 

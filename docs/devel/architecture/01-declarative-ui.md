@@ -12,7 +12,7 @@ flowchart TD
     end
 
     subgraph BOOT["Boot — one-time registration"]
-        WIDGETS["30 C++ widget files<br/>call lv_xml_register_widget()"]
+        WIDGETS["29 C++ widget files<br/>call lv_xml_register_widget()"]
         REG["src/xml_registration.cpp<br/>~300 components via<br/>lv_xml_register_component_from_file()"]
         SUBJ["SubjectInitializer<br/>registers C++ data as named subjects"]
     end
@@ -42,7 +42,7 @@ flowchart TD
 | `ui_xml/overlay_panel.xml` | Reusable wrapper component most overlay panels extend |
 | `ui_xml/bed_temp_panel.xml` | A representative panel: consts, bindings, event callbacks |
 | `ui_xml/app_layout.xml` | Root layout, created once at startup |
-| `src/ui/ui_card.cpp` | Representative custom widget (one of the 30 `lv_xml_register_widget` files) |
+| `src/ui/ui_card.cpp` | Representative custom widget (one of the 29 `lv_xml_register_widget` files) |
 | `lib/helix-xml/src/xml/lv_xml.c` | Engine core: create dispatch, subject lookup, binding elements |
 | `lib/helix-xml/src/xml/lv_xml_component.c` | Component registration, scopes, instantiation |
 | `lib/helix-xml/src/xml/lv_xml_expr.c` | Integer expression evaluator behind `cond="..."` and `<subject_expr>` |
@@ -56,7 +56,7 @@ Four mechanics carry the load: the file-to-widget pipeline (including live editi
 
 At boot, `Application` runs the phases in a fixed order (phase numbers and lines from `src/application/application.cpp`):
 
-1. Phase 7 — `register_widgets()` (`:1744`): registers the 30 C++ widget types so the engine knows tags like `ui_card` and `ui_button`.
+1. Phase 7 — `register_widgets()` (`:1744`): registers the 29 C++ widget types so the engine knows tags like `ui_card` and `ui_button`.
 2. Phase 8a — translations, before any UI exists.
 3. Phase 8b — rotation probe and layout-manager init, so per-display XML variant directories are known.
 4. Phase 8c — `register_xml_components()` (`:1777`): registers every XML component file.
@@ -125,7 +125,7 @@ Structural conditionals avoid building both branches: `<if cond="expr">...</if>`
 </ui_button>
 ```
 
-- `ui_button` is a custom widget: one of the 30 files calling `lv_xml_register_widget`, wired up in `Application::register_widgets()`.
+- `ui_button` is a custom widget: one of the 29 files calling `lv_xml_register_widget`, wired up in `Application::register_widgets()`.
 - `bind_text="preset_material_0_name"` resolves at creation against the globals scope. The subject is registered from C++ in `src/system/preset_materials.cpp`:
 
   ```cpp
@@ -164,7 +164,7 @@ The ownership split matters at teardown: XML-declared subjects are owned by the 
 
 ### Custom widgets and the engine that runs them
 
-The widget-processor table is not only built-ins. Thirty files under `src/` call `lv_xml_register_widget()` to teach the engine new tags — the visual vocabulary of the app: `ui_card`, `ui_button`, `ui_dialog`, `ui_icon`, `ui_markdown`, `ui_spinner`, `ui_switch`, `ui_text_input`, `ui_temp_display`, `ui_carousel`, `helix_sparkline`, canvas widgets like `ui_bed_mesh` and `ui_gcode_viewer`, and more (full list: `rg -l 'lv_xml_register_widget' src/`). Each file pairs a *create* handler (runs once per instance, sets defaults) with an *apply* handler (runs on attribute application, may run again). `src/ui/ui_card.cpp` is the cleanest example and a tour stop below.
+The widget-processor table is not only built-ins. Twenty-nine files under `src/` call `lv_xml_register_widget()` to teach the engine new tags — the visual vocabulary of the app: `ui_card`, `ui_button`, `ui_dialog`, `ui_icon`, `ui_markdown`, `ui_spinner`, `ui_switch`, `ui_text_input`, `ui_temp_display`, `ui_carousel`, `helix_sparkline`, canvas widgets like `ui_bed_mesh` and `ui_gcode_viewer`, and more (full list: `rg -l 'lv_xml_register_widget' src/`). Each file pairs a *create* handler (runs once per instance, sets defaults) with an *apply* handler (runs on attribute application, may run again). `src/ui/ui_card.cpp` is the cleanest example and a tour stop below.
 
 The engine those 30 files register into stopped being LVGL's code in v9.5. `lib/helix-xml/` is a permanent hard fork, extracted from LVGL at commit `a15dcbeb5` — the last tree (v9.4.0-358) that still contained the XML engine before v9.5 removed it from core. It is MIT-licensed, lives in its own repository (prestonbrown/helix-xml), and upstream is us: there is no LVGL-side upstream to track. Engine changes are committed directly in the submodule, then the bumped pointer is committed here; the `patches/*.patch` workflow applies only to third-party submodules, never to this one. Because LVGL now sells an XML-based product (LVGL Pro / SquareLine), there is a clean-room rule for anything their commercial offering also has — read `LVGL_XML_SITUATION.md` (listed below) before touching the engine.
 
@@ -178,7 +178,7 @@ The engine those 30 files register into stopped being LVGL's code in v9.5. `lib/
 - **Choose visibility mechanics by cost.** `<bind_flag_if_eq flag="hidden">` toggles an *already-built* subtree — right for cheap show/hide. `<if cond="...">` builds only the matching branch — right when the subtree is expensive to create (a whole card, an alternate layout). Do not build both and hide one.
 - **Expression word forms, not operators.** `cond` and `<subject_expr>` use word forms (`or`, `and`, `gt`, `lt`) because `&&` and `<` need XML escaping; the evaluator is integer-only, so string formatting stays in C++ formatters.
 - **C++ may not touch LVGL from background threads, and subject writes count.** `lv_subject_set_*()` fires observers that call widget APIs. Background code routes through `ui_queue_update()`. Chapter 3 and `THREADING.md` own the details; the rule is absolute here because the XML engine's observers run on whatever thread sets the subject.
-- **Custom widgets are the sanctioned escape hatch.** The 30 files calling `lv_xml_register_widget` implement widget *types*; there is no XML beneath them to bind to, so imperative code inside them is correct by definition (see `src/ui/ui_card.cpp:26`). If your genuinely un-declarative site does not fit an escape hatch, annotate it `// DECLARATIVE_OK: <reason>` so audits skip it.
+- **Custom widgets are the sanctioned escape hatch.** The 29 files calling `lv_xml_register_widget` implement widget *types*; there is no XML beneath them to bind to, so imperative code inside them is correct by definition (see `src/ui/ui_card.cpp:26`). If your genuinely un-declarative site does not fit an escape hatch, annotate it `// DECLARATIVE_OK: <reason>` so audits skip it.
 
 ## Going deeper
 
