@@ -60,13 +60,20 @@
 #   footer_container, both visible at once), and it was measured at five
 #   breakpoints with its full worst case on screen — AFC diagram, three wrapping
 #   buttons AND the footer row — via `ctl demo action-prompt-worst`. It fits at
-#   every one, footer flush with the card bottom:
+#   every one, footer flush with the card bottom (card vs the 85% cap):
 #
-#     480x272  card 216  last_bottom 244 == card_bottom
-#     480x320  card 231  last_bottom 276 == card_bottom
-#     640x400  card 282  last_bottom 341 == card_bottom
-#     800x480  card 385  last_bottom 433 == card_bottom
-#    1024x600  card 459  last_bottom 530 == card_bottom
+#     480x272  card 226  cap 231  last_bottom == card_bottom
+#     480x320  card 247  cap 272  last_bottom == card_bottom
+#     640x400  card 298  cap 340  last_bottom == card_bottom
+#     800x480  card 397  cap 408  last_bottom == card_bottom
+#    1024x600  card 483  cap 510  last_bottom == card_bottom
+#
+#   Headroom is thinnest at 480x272 (5px) and 800x480 (11px), so a further
+#   increase in the button row's height needs re-measuring, not arithmetic.
+#
+#   Prompt buttons can also wrap to more than two rows when a macro supplies
+#   many long labels — `ctl demo action-prompt-many` is that shape (seven
+#   material presets over three rows, card 193 at 480x272).
 #
 #   So the gap is real but currently unexercised. A NEW modal with two button
 #   rows would slip past this gate — measure it with a demo hook rather than
