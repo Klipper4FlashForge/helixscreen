@@ -73,6 +73,17 @@ class CfsTestAccess {
     static void set_macro_variant_fork(helix::printer::AmsBackendCfs& b) {
         b.macro_variant_ = helix::printer::CfsMacroVariant::Fork;
     }
+    // Seed the flat-schema state a real payload would have latched: schema,
+    // Fork dialect, and the external spool entry's slots[] index (-1 = no
+    // external entry in the payload). Lets enable_bypass's Fork branch be
+    // exercised without a live box frame.
+    static void set_flat_fork(helix::printer::AmsBackendCfs& b, int external_index) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.schema_ = helix::printer::CfsSchema::Flat;
+        b.macro_variant_ = helix::printer::CfsMacroVariant::Fork;
+        b.external_slot_index_ = external_index;
+        b.system_info_.supports_bypass = external_index >= 0;
+    }
     // Seed N connected CFS units (unit_index 0..N-1) so device-action code that
     // iterates system_info_.units (e.g. refresh_rfid → BOX_INFO_REFRESH) has
     // addressable units without a live Moonraker parse.
@@ -120,5 +131,11 @@ class CfsTestAccess {
     /// including phase verification.
     static void complete_action(helix::printer::AmsBackendCfs& b) {
         b.finish_action();
+    }
+
+    /// Run the real on_started (declaration restore + initial query; the
+    /// Moonraker query itself is null-guarded in test constructions).
+    static void call_on_started(helix::printer::AmsBackendCfs& b) {
+        b.on_started();
     }
 };

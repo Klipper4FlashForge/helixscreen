@@ -203,12 +203,14 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // stock CFS dialects have no equivalent command.
     void clear_box_slot_profile(int slot_index);
 
-    // Bypass (not supported)
+    // Bypass / external spool. Fork firmware owns the flow (`T<external>` to
+    // feed, BOX_UNLOAD to eject — box.py registers T for the external slot
+    // alongside the bays); stock K1/K2 firmware has no command for the holder,
+    // so enabling is a declaration backed by toolhead-sensor confirmation and
+    // the state is derived from the sensor + active-lane pair.
     AmsError enable_bypass() override;
     AmsError disable_bypass() override;
-    [[nodiscard]] bool is_bypass_active() const override {
-        return false;
-    }
+    [[nodiscard]] bool is_bypass_active() const override;
 
     // Capabilities
 
@@ -436,9 +438,32 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// kept off stock command paths.
     CfsSchema schema_ = CfsSchema::Stock;
 
+    /// slots[] index of the `external: true` entry in the last Flat payload,
+    /// -1 when none was seen. The Fork firmware registers `T<external_slot>`
+    /// itself (external_slot = max_physical_slot + 1, so it moves with the
+    /// configured box_count) — this records what the payload actually said
+    /// rather than recomputing the arithmetic.
+    int external_slot_index_ = -1;
+
+    /// Stock dialect only: the user has declared bypass intent (sidebar toggle
+    /// ON after the chained unload). Paired with BOX_ENABLE_CFS_PRINT ENABLE=0
+    /// on enable (the box must stand down or it can drive bay filament into a
+    /// tube the external spool occupies) and ENABLE=1 on disable. The engaged
+    /// display state is confirmed by the toolhead sensor. The Fork dialect
+    /// never sets it — its firmware owns the external slot natively.
+    bool bypass_declared_ = false;
+
     /// SUCCESS for stock schemas and the identified Fork dialect; returns
     /// not_supported for an unidentified Flat implementation.
     [[nodiscard]] AmsError reject_if_flat_schema(const char* operation) const;
+
+    /// Stock-dialect bypass derivation: filament at the toolhead with no
+    /// active CFS lane means the user hand-fed the external holder — map
+    /// current_slot to the -2 sentinel, and back to -1 when the filament
+    /// leaves the sensor. Caller must hold mutex_. Flat/Fork is excluded
+    /// (that firmware reports the external slot itself) as is any non-IDLE
+    /// action (a mid-load sensor rise is the bay feed, not a bypass engage).
+    void derive_stock_bypass_locked();
 
     // Callback lifetime management
     helix::AsyncLifetimeGuard lifetime_;
