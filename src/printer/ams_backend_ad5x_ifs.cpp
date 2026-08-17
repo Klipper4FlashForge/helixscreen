@@ -584,7 +584,16 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
     // flip to ERROR with no EVENT_STATE_CHANGED to carry it to the UI.
     const bool runout_changed = evaluate_runout_locked();
 
+    // Consume the #1247 repair request under the same lock hold that staged
+    // it; dispatch below with the lock released (execute_gcode blocks).
+    const bool repair_staged = ifs_vars_repair_staged_;
+    ifs_vars_repair_staged_ = false;
+
     lock.unlock();
+
+    if (repair_staged) {
+        dispatch_ifs_vars_repair();
+    }
 
     // No AD5X-specific plugin subjects to publish: the auto-switchover state is
     // now carried by the backend-neutral `ams_endless_state` / `ams_endless_text`
@@ -766,6 +775,31 @@ void AmsBackendAd5xIfs::parse_save_variables(const json& vars) {
                  ++i) {
                 if (tools[i].is_number_integer()) {
                     tool_map_[i] = tools[i].get<int>();
+                }
+            }
+        }
+
+        // #1247 shape guard: lessWaste's `_colors`/`_types` arrays are
+        // TOOL_MAP_SIZE-entry tool-indexed state, but our mirror bug pushed
+        // 4-entry port-indexed lists — and `_IFS_VARS` replaces the arrays
+        // wholesale, so every push truncated them (after which `_RUNOUT_HEAD`'s
+        // scan of tools 4..15 could never find a backup lane). SAVE_VARIABLE
+        // persists the damage across reboots, and lessWaste's own start dialog
+        // only re-heals it until our next push. Detect the truncated shape and
+        // stage a repair; handle_status_update() dispatches it with mutex_
+        // released. bambufy arrays legitimately hold 4 entries, so the check is
+        // lessWaste-only. Not an array (string/absent) means the plugin never
+        // wrote the row or uses another form — leave it alone.
+        if (p == "less_waste" && !ifs_vars_repair_staged_) {
+            for (const std::string key : {p + "_colors", p + "_types"}) {
+                const auto it = vars.find(key);
+                if (it != vars.end() && it->is_array() &&
+                    it->size() < static_cast<size_t>(TOOL_MAP_SIZE)) {
+                    spdlog::warn("{} {} carries {} entries; lessWaste expects {} "
+                                 "tool-indexed — staging _IFS_VARS repair (#1247)",
+                                 backend_log_tag(), key, it->size(), TOOL_MAP_SIZE);
+                    ifs_vars_repair_staged_ = true;
+                    break;
                 }
             }
         }
@@ -2133,30 +2167,57 @@ bool AmsBackendAd5xIfs::parse_ifs_vars_macro_locked(const json& macro_status) {
     if (!macro_status.is_object() || macro_status.empty()) {
         return false;
     }
+
+    const auto parse_boolish = [](const json& v) -> std::optional<bool> {
+        if (v.is_boolean()) {
+            return v.get<bool>();
+        }
+        if (v.is_number_integer()) {
+            return v.get<int>() != 0;
+        }
+        return std::nullopt;
+    };
+
+    bool changed = false;
+
     // lessWaste's runout backup toggle. Accepts the jinja int form the variable
     // dump shows (`variable_backup: 0`) and a bool, since neither plugin's schema
     // is pinned by anything we control.
-    const auto it = macro_status.find("variable_backup");
-    if (it == macro_status.end()) {
-        return false;
+    const auto backup_it = macro_status.find("variable_backup");
+    if (backup_it != macro_status.end()) {
+        std::optional<bool> parsed = parse_boolish(*backup_it);
+        if (parsed.has_value() && parsed != ifs_backup_variable_) {
+            ifs_backup_variable_ = parsed;
+            // Mirror into the snapshot so get_system_info() agrees with the capabilities.
+            // ifs_backup_variable_ stays the source of truth - it can be nullopt, which
+            // the bool cannot express and which caps.enabled reports as Unknown.
+            system_info_.endless_spool_enabled = *parsed;
+            spdlog::info(
+                "{} _IFS_VARS variable_backup = {} (automatic backup-spool switching on runout)",
+                backend_log_tag(), *parsed ? "on" : "off");
+            changed = true;
+        }
     }
-    std::optional<bool> parsed;
-    if (it->is_boolean()) {
-        parsed = it->get<bool>();
-    } else if (it->is_number_integer()) {
-        parsed = it->get<int>() != 0;
+
+    // lessWaste's own post-boot IFS-unlock workaround (`_UNLOCK_IFS` ->
+    // IFS_F18 after display_off_timeout). Log-only visibility, no state
+    // subjects consume it: when a runout investigation lands on a device where
+    // this is off, the bundle must show it, because a plain reboot may itself
+    // change IFS behavior (clamped lanes) and confound a screen A/B (#1247).
+    // The plugin owns the unlock; HelixScreen does not send hardware motion
+    // unprompted.
+    const auto unlock_it = macro_status.find("variable_ifs_unlock_after_boot");
+    if (unlock_it != macro_status.end()) {
+        std::optional<bool> parsed = parse_boolish(*unlock_it);
+        if (parsed.has_value() && parsed != ifs_unlock_after_boot_) {
+            ifs_unlock_after_boot_ = parsed;
+            spdlog::info("{} _IFS_VARS ifs_unlock_after_boot = {} (plugin's own post-boot "
+                         "IFS-unlock workaround)",
+                         backend_log_tag(), *parsed ? "on" : "off");
+        }
     }
-    if (!parsed.has_value() || parsed == ifs_backup_variable_) {
-        return false;
-    }
-    ifs_backup_variable_ = parsed;
-    // Mirror into the snapshot so get_system_info() agrees with the capabilities.
-    // ifs_backup_variable_ stays the source of truth - it can be nullopt, which
-    // the bool cannot express and which caps.enabled reports as Unknown.
-    system_info_.endless_spool_enabled = *parsed;
-    spdlog::info("{} _IFS_VARS variable_backup = {} (automatic backup-spool switching on runout)",
-                 backend_log_tag(), *parsed ? "on" : "off");
-    return true;
+
+    return changed;
 }
 
 // --- Backend-driven operation step model ---
@@ -2627,29 +2688,72 @@ AmsError AmsBackendAd5xIfs::disable_bypass() {
 // --- Private helpers ---
 
 std::string AmsBackendAd5xIfs::build_color_list_value() const {
-    // Build Python list literal for _IFS_VARS macro.
-    // Outer double quotes delimit the G-code parameter value (Klipper strips them).
-    // _IFS_VARS passes the inner content to SAVE_VARIABLE, adding its own quoting.
-    // Single quotes for string elements inside the list.
-    // Example: "['FF0000', '00FF00', '0000FF', 'FFFFFF']"
-    std::ostringstream ss;
-    ss << "\"[";
-    for (int i = 0; i < NUM_PORTS; ++i) {
-        if (i > 0)
-            ss << ", ";
-        ss << "'" << colors_[static_cast<size_t>(i)] << "'";
-    }
-    ss << "]\"";
-    return ss.str();
+    return build_ifs_list_value(/*colors=*/true);
 }
 
 std::string AmsBackendAd5xIfs::build_type_list_value() const {
+    return build_ifs_list_value(/*colors=*/false);
+}
+
+std::string AmsBackendAd5xIfs::build_ifs_list_value(bool colors) const {
+    // Shape is plugin-specific (#1247):
+    //
+    //   * bambufy: 4-entry, PORT-indexed. `_RUNOUT_HEAD` iterates `ifs.types`
+    //     (4 entries) and indexes `ifs.colors[port-1]` — the port-indexed
+    //     payload this builder always produced.
+    //   * lessWaste: 16-entry, TOOL-indexed. `variable_tools` maps tool->port
+    //     (`[1,2,3,4,5,5,...]`) and `_RUNOUT_HEAD` scans ALL 16 tool slots
+    //     comparing `ifs.colors[ifs.current_tool] == ifs.colors[index]` (plus
+    //     type + the candidate's own port sensor) to find a backup lane. Our
+    //     old 4-entry port-indexed payload was a wholesale replacement
+    //     (`_IFS_VARS` does SET_GCODE_VARIABLE + SAVE_VARIABLE), so one push
+    //     truncated the arrays to 4 — after which the scan of tools 4..15 read
+    //     out of range and no backup could ever match, and the runout fell
+    //     through to a plain pause with an empty toolhead.
+    //
+    // `_IFS_VARS` passes the value straight to SET_GCODE_VARIABLE, which evals
+    // it as a Python literal; both shapes ride that unchanged.
     std::ostringstream ss;
     ss << "\"[";
-    for (int i = 0; i < NUM_PORTS; ++i) {
-        if (i > 0)
+    if (var_prefix_ != "less_waste") {
+        for (int i = 0; i < NUM_PORTS; ++i) {
+            if (i > 0)
+                ss << ", ";
+            ss << "'"
+               << (colors ? colors_[static_cast<size_t>(i)] : materials_[static_cast<size_t>(i)])
+               << "'";
+        }
+        ss << "]\"";
+        return ss.str();
+    }
+
+    // Tool-indexed projection. Until the plugin's `<prefix>_tools` array has
+    // been parsed, tool_map_ is all-UNMAPPED; lessWaste's own default mapping
+    // there is identity (T0..T3 -> ports 1..4), so fall back to that rather
+    // than overwrite a fresh plugin's defaults with 16 empty entries.
+    bool any_mapped = false;
+    for (int port : tool_map_) {
+        if (port >= 1 && port <= NUM_PORTS) {
+            any_mapped = true;
+            break;
+        }
+    }
+    for (int t = 0; t < TOOL_MAP_SIZE; ++t) {
+        if (t > 0)
             ss << ", ";
-        ss << "'" << materials_[static_cast<size_t>(i)] << "'";
+        int port = tool_map_[static_cast<size_t>(t)];
+        if (!any_mapped) {
+            port = (t < NUM_PORTS) ? t + 1 : UNMAPPED_PORT;
+        }
+        if (port >= 1 && port <= NUM_PORTS) {
+            const auto idx = static_cast<size_t>(port - 1);
+            ss << "'" << (colors ? colors_[idx] : materials_[idx]) << "'";
+        } else {
+            // Unmapped tool: no lane, no colour. A candidate on an unmapped
+            // tool can never pass lessWaste's port-sensor check, so the empty
+            // entry is inert in `_RUNOUT_HEAD`'s comparisons.
+            ss << "''";
+        }
     }
     ss << "]\"";
     return ss.str();
@@ -2680,6 +2784,33 @@ AmsError AmsBackendAd5xIfs::write_ifs_var(const std::string& key, const std::str
     std::string gcode = "_IFS_VARS " + key + "=" + value;
     spdlog::debug("{} Writing IFS var: {} = {}", backend_log_tag(), key, value);
     return execute_gcode(gcode);
+}
+
+void AmsBackendAd5xIfs::dispatch_ifs_vars_repair() {
+    // lessWaste-only by construction (only parse_save_variables' lessWaste
+    // branch stages it). Re-check the gate under the lock so a macro that went
+    // missing between staging and dispatch (FIRMWARE_RESTART mid-frame) can't
+    // get an _IFS_VARS write — the Unknown-command self-heal path relies on us
+    // not prodding a dead macro.
+    std::string colors_val, types_val;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!has_ifs_vars_) {
+            return;
+        }
+        colors_val = build_color_list_value();
+        types_val = build_type_list_value();
+    }
+    spdlog::info("{} Repairing truncated lessWaste colors/types arrays "
+                 "(_IFS_VARS mirror, #1247)",
+                 backend_log_tag());
+    // No SHOW=0 suffix — lessWaste's _IFS_VARS has no SHOW param (bambufy-only).
+    if (auto err = execute_gcode("_IFS_VARS colors=" + colors_val); !err.success()) {
+        spdlog::warn("{} repair colors write failed: {}", backend_log_tag(), err.technical_msg);
+    }
+    if (auto err = execute_gcode("_IFS_VARS types=" + types_val); !err.success()) {
+        spdlog::warn("{} repair types write failed: {}", backend_log_tag(), err.technical_msg);
+    }
 }
 
 AmsError AmsBackendAd5xIfs::write_adventurer_json(int slot_index) {

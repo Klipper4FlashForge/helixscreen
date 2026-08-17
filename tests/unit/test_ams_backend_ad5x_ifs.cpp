@@ -1079,11 +1079,50 @@ TEST_CASE("AD5X IFS build_color_list_value format", "[ams][ad5x_ifs]") {
     seed_standard_colors(backend);
 
     std::string colors = Ad5xIfsTestAccess::build_colors(backend);
-    // Expected: Python list literal with outer double quotes. Function is no
-    // longer wired into the color write path (CHANGE_ZCOLOR is per-slot), but
-    // it remains for any future _IFS_VARS payload that legitimately needs the
-    // shape — keep the formatter test as a regression guard.
-    REQUIRE(colors == "\"['FF0000', '00FF00', '0000FF', 'FFFFFF']\"");
+    // var_prefix_ defaults to "less_waste" and tool_map_ is all-unmapped, so
+    // the builder takes the identity fallback (T0..T3 -> ports 1..4, matching
+    // lessWaste's own variable_tools default) and emits a 16-entry
+    // TOOL-indexed list: the 4 port colours then 12 empty entries for the
+    // unmapped virtual tools (#1247 — lessWaste's _RUNOUT_HEAD scans all 16
+    // tool slots, so a 4-entry payload truncated the arrays and no backup
+    // lane could ever match).
+    std::string expected = "\"['FF0000', '00FF00', '0000FF', 'FFFFFF'";
+    for (int i = 0; i < 12; ++i) {
+        expected += ", ''";
+    }
+    expected += "]\"";
+    REQUIRE(colors == expected);
+}
+
+TEST_CASE("AD5X IFS lessWaste list payload projects tool_map_ per tool", "[ams][ad5x_ifs]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    seed_standard_colors(backend);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+
+    // Swapped T0/T1, T2/T3, virtual tools 4-14 unmapped, T15 -> port 1.
+    json vars{{"less_waste_tools", json::array({2, 1, 4, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 1})}};
+    Ad5xIfsTestAccess::parse_vars(backend, vars);
+
+    // Tool t's entry is colors_[tool_map_[t]-1]; unmapped tools carry ''.
+    REQUIRE(Ad5xIfsTestAccess::build_colors(backend) ==
+            "\"['00FF00', 'FF0000', 'FFFFFF', '0000FF', '', '', '', '', '', '', '', "
+            "'', '', '', '', 'FF0000']\"");
+    REQUIRE(Ad5xIfsTestAccess::build_types(backend) ==
+            "\"['PETG', 'PLA', 'TPU', 'ABS', '', '', '', '', '', '', '', "
+            "'', '', '', '', 'PLA']\"");
+}
+
+TEST_CASE("AD5X IFS bambufy list payload stays port-indexed 4-entry", "[ams][ad5x_ifs]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    seed_standard_colors(backend);
+    Ad5xIfsTestAccess::set_var_prefix(backend, "bambufy");
+
+    // bambufy's _RUNOUT_HEAD iterates ifs.types (4 entries) and indexes
+    // ifs.colors[port-1] — the port-indexed shape is correct there, and the
+    // #1247 tool-indexing must not leak across prefixes.
+    REQUIRE(Ad5xIfsTestAccess::build_colors(backend) ==
+            "\"['FF0000', '00FF00', '0000FF', 'FFFFFF']\"");
+    REQUIRE(Ad5xIfsTestAccess::build_types(backend) == "\"['PLA', 'PETG', 'ABS', 'TPU']\"");
 }
 
 // ==========================================================================
@@ -5783,6 +5822,83 @@ TEST_CASE("AD5X IFS bambufy prefix gets SHOW=0 to suppress _IFS_VARS echo",
     }
     CHECK(colors_has_show0);
     CHECK(types_has_show0);
+}
+
+// #1247: lessWaste's <prefix>_colors/_types save_variables are 16-entry
+// TOOL-indexed arrays, but the HelixScreen mirror pushed 4-entry port-indexed
+// lists — and _IFS_VARS replaces the arrays wholesale, so every push truncated
+// them. _RUNOUT_HEAD's backup scan of tools 4..15 then read out of range and no
+// backup spool could ever match (the "filament backup fails to switch" report).
+// SAVE_VARIABLE persists the damage across reboots, so parse_save_variables
+// must detect the truncated shape and dispatch a correctly-shaped repair push.
+TEST_CASE("AD5X IFS repairs truncated lessWaste colors/types, leaves healthy state alone",
+          "[ams][ad5x_ifs][1247]") {
+    // nullptr api: the repair dispatch is captured by the execute_gcode
+    // override, and a null api keeps handle_status_update's JSON-poll backstop
+    // idle so the test queues no UpdateQueue work.
+    GcodeCapturingBackend backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+    seed_standard_colors(backend);
+
+    // Damaged frame: 4-entry colors/types (the truncation signature) beside a
+    // healthy 16-entry tools map — exactly what an affected install persists.
+    const json identity_tools = json::array({1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5});
+    json damaged{{"less_waste_tools", identity_tools},
+                 {"less_waste_colors", json::array({"FF0000", "00FF00", "0000FF", "FFFFFF"})},
+                 {"less_waste_types", json::array({"PLA", "PETG", "ABS", "TPU"})}};
+    Ad5xIfsTestAccess::handle_status(backend, make_save_variables(damaged));
+
+    REQUIRE(backend.any_gcode_starts_with("_IFS_VARS colors="));
+    REQUIRE(backend.any_gcode_starts_with("_IFS_VARS types="));
+    std::string expected_tail = "\"['FF0000', '00FF00', '0000FF', 'FFFFFF'";
+    for (int i = 0; i < 12; ++i) {
+        expected_tail += ", ''";
+    }
+    expected_tail += "]\"";
+    bool repair_shapes_ok = false;
+    for (const auto& g : backend.captured_gcodes) {
+        if (g == "_IFS_VARS colors=" + expected_tail) {
+            repair_shapes_ok = true;
+        }
+    }
+    REQUIRE(repair_shapes_ok);
+    // lessWaste repair must not carry the bambufy-only SHOW=0 suffix.
+    for (const auto& g : backend.captured_gcodes) {
+        if (g.rfind("_IFS_VARS ", 0) == 0) {
+            CHECK(g.find("SHOW=0") == std::string::npos);
+        }
+    }
+
+    // Healthy frame: full 16-entry arrays — no further repair dispatch.
+    backend.captured_gcodes.clear();
+    json healthy_colors = json::array();
+    json healthy_types = json::array();
+    for (int i = 0; i < 16; ++i) {
+        healthy_colors.push_back(i < 4 ? "FF0000" : "");
+        healthy_types.push_back(i < 4 ? "PLA" : "");
+    }
+    json healthy{{"less_waste_tools", identity_tools},
+                 {"less_waste_colors", healthy_colors},
+                 {"less_waste_types", healthy_types}};
+    Ad5xIfsTestAccess::handle_status(backend, make_save_variables(healthy));
+    CHECK_FALSE(backend.any_gcode_starts_with("_IFS_VARS colors="));
+    CHECK_FALSE(backend.any_gcode_starts_with("_IFS_VARS types="));
+}
+
+TEST_CASE("AD5X IFS no repair for bambufy 4-entry arrays (#1247)", "[ams][ad5x_ifs][1247]") {
+    GcodeCapturingBackend backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+    Ad5xIfsTestAccess::set_var_prefix(backend, "bambufy");
+
+    // bambufy's arrays legitimately hold 4 port-indexed entries — its
+    // _RUNOUT_HEAD iterates ifs.types (4) — so the truncation signature check
+    // must not fire for that prefix.
+    json frame{{"bambufy_tools", json::array({1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4})},
+               {"bambufy_colors", json::array({"FF0000", "00FF00", "0000FF", "FFFFFF"})},
+               {"bambufy_types", json::array({"PLA", "PETG", "ABS", "TPU"})}};
+    Ad5xIfsTestAccess::handle_status(backend, make_save_variables(frame));
+    CHECK_FALSE(backend.any_gcode_starts_with("_IFS_VARS colors="));
+    CHECK_FALSE(backend.any_gcode_starts_with("_IFS_VARS types="));
 }
 
 TEST_CASE("AD5X IFS mirror skipped when has_ifs_vars_ is false (stock zmod)",
