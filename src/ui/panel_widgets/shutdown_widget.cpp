@@ -9,11 +9,11 @@
 #include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
-#include "config.h"
-#include "host_identity.h"
+#include "app_globals.h"
 #include "i_moonraker_api.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "printer_state.h"
 #include "runtime_config.h"
 #include "system_power.h"
 
@@ -374,12 +374,9 @@ void show_shutdown_dialog(IMoonrakerAPI* api, ShutdownModal& modal, AsyncLifetim
         return;
     }
 
-    std::string host;
-    if (Config* cfg = Config::get_instance()) {
-        host = cfg->get<std::string>(cfg->df() + "moonraker_host", "localhost");
-    }
-
-    if (helix::is_moonraker_on_same_host(host)) {
+    // Same-host single-scope follows the LIVE connection verdict rather than
+    // the Config host (stale across a mid-session printer switch).
+    if (!get_printer_state().is_moonraker_remote()) {
         // Same-host single-scope: normally Moonraker's machine.shutdown brings
         // the whole device down. If Moonraker isn't connected (e.g., Klipper
         // failed to boot, or the user runs SonicPad as a screen-only with the

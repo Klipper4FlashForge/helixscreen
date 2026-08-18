@@ -13,6 +13,7 @@
 #include "i_moonraker_client.h"
 #include "lvgl/lvgl.h"
 #include "moonraker_manager.h"
+#include "printer_state.h"
 #include "theme_manager.h"
 #include "utils/network_validation.h"
 
@@ -451,11 +452,15 @@ void show_connection_failed_modal(const std::string& title, const std::string& m
         // the one case where changing the address is exactly the right action,
         // and defaulting to a loopback literal would take that action away from
         // every user who has not set a host yet.
+        // The emptiness check stays Config-based: an unconfigured host must keep
+        // offering "Change Address", and the subject cannot distinguish "local"
+        // from "never connected". The locality verdict itself follows the live
+        // connection endpoint.
         std::string host;
         if (Config* cfg = Config::get_instance()) {
             host = cfg->get<std::string>(cfg->df() + "moonraker_host", "");
         }
-        if (!host.empty() && helix::is_moonraker_on_same_host(host)) {
+        if (!host.empty() && !get_printer_state().is_moonraker_remote()) {
             helix::ui::modal_show_alert(title.c_str(), message.c_str(), ModalSeverity::Error,
                                         lv_tr("OK"));
             return;

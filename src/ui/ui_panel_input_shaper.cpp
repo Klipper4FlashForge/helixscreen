@@ -12,14 +12,14 @@
 #include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
-#include "config.h"
+#include "app_globals.h"
 #include "format_utils.h"
-#include "host_identity.h"
 #include "i_moonraker_api.h"
 #include "i_moonraker_client.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
 #include "platform_capabilities.h"
+#include "printer_state.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 
@@ -1003,11 +1003,7 @@ void InputShaperPanel::on_calibration_result(const InputShaperResult& result) {
         // The chart needs Klipper's /tmp CSV, which is only readable when
         // HelixScreen runs on the printer host. If Moonraker is remote, say so;
         // otherwise it's a transient/local read issue.
-        std::string host;
-        if (Config* cfg = Config::get_instance()) {
-            host = cfg->get<std::string>(cfg->df() + "moonraker_host", "localhost");
-        }
-        const bool same_host = helix::is_moonraker_on_same_host(host);
+        const bool same_host = !get_printer_state().is_moonraker_remote();
         spdlog::warn("[InputShaper] {} axis: calibration CSV unreadable, chart unavailable "
                      "(same_host={})",
                      result.axis, same_host);
