@@ -673,8 +673,30 @@ class AmsBackend {
      * firmware macro this backend dispatches homes on its own; "not sure" must
      * stay false, because a permanent false refusal is its own broken workflow
      * (bundle JX2FVRB9).
+     *
+     * Distinct from delegates_homing_to_printer() (load/unload homing
+     * delegation); the two must stay separate.
      */
     [[nodiscard]] virtual bool filament_ops_self_home() const {
+        return false;
+    }
+
+    /**
+     * @brief Does the printer-side system arrange its own homing for filament
+     *        load/unload ops, so HelixScreen should neither prompt nor send G28?
+     *
+     * AFC answers true when [AFC] auto_home is set in AFC.cfg: its macros
+     * home-if-needed themselves, so both our confirmation prompt and the G28
+     * that ensure_homed_then() would synthesize are redundant.
+     *
+     * False-until-config-loaded by construction: the AFC override reads
+     * afc_config_, which lands asynchronously, so an early or failed load
+     * answers false — at worst one redundant prompt, never a skipped home.
+     *
+     * NOT the same question as filament_ops_self_home() (which gates
+     * PAUSED-print refusal); the two must stay separate.
+     */
+    [[nodiscard]] virtual bool delegates_homing_to_printer() const {
         return false;
     }
 
