@@ -651,6 +651,18 @@ void PrinterState::set_printer_connection_state_internal(int state, const char* 
     network_state_.set_printer_connection_state_internal(state, message);
 }
 
+void PrinterState::set_moonraker_is_remote(bool remote) {
+    // Thread-safe wrapper: defer LVGL subject updates to main thread
+    async_lifetime_.defer("PrinterState::set_moonraker_is_remote", [this, remote]() {
+        network_state_.set_moonraker_is_remote_internal(remote);
+    });
+}
+
+bool PrinterState::is_moonraker_remote() {
+    // Main-thread convenience read; UI decision points only.
+    return lv_subject_get_int(network_state_.get_moonraker_is_remote_subject()) != 0;
+}
+
 void PrinterState::set_network_status(int status) {
     // Delegate to network_state_ component
     network_state_.set_network_status(status);
