@@ -243,7 +243,7 @@ The base container for all modal dialog cards. Registered as a custom LVGL XML w
   answers "am I inside a dialog" by walking an object's parents looking for this
   bit, so **nothing else may set it**, on any object, for any reason. It is one
   of only four user flag bits; see the ledger in
-  [ARCHITECTURE.md](ARCHITECTURE.md) under Panel Widget System before claiming
+  [chapter 09 — Home panel widgets](architecture/09-home-widgets.md) before claiming
   one
 
 Usage in XML:

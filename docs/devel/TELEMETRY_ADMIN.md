@@ -103,7 +103,7 @@ Allow a minute or two for AE ingestion before concluding a day is missing.
 
 **A non-zero `errors` count on a channel means installs on it are failing their
 update check.** This is not cosmetic: it was how we found that
-`/beta/manifest.json` was returning 404 to ~19 devices a day before the 1.0
+/beta/manifest.json was returning 404 to ~19 devices a day before the 1.0
 branch cut created it.
 
 **Known gap:** the Overview query filters `blob2 = 'stable'`, so the tile's

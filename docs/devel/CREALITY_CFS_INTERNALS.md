@@ -23,12 +23,12 @@ overlap, which is why the conclusions below are worth acting on.
 | # | Source | What it is | Strength |
 |---|--------|-----------|----------|
 | **A** | Creality OTA `CR4CU220812S11_ota_img_V2.3.5.34.img` | The shipped rootfs. Extracted and symbol-grepped here; identity confirmed from `/etc/ota_info` (`ota_version=2.3.5.34`, `ota_board_name=CR4CU220812S11`, built 2025-06-12). Ships 11 per-model `box.cfg` files. | **Highest** — the artifact itself |
-| **B** | [FrederickAlt/CREALITY-K1-AND-K1-MAX-CFS-RETRUDE-BEFORE-CUT-MOD](https://github.com/FrederickAlt/CREALITY-K1-AND-K1-MAX-CFS-RETRUDE-BEFORE-CUT-MOD) `docs/` | ~230 KB of behavioral documentation from decompiling the Cythonized module back to `box_wrapper.py`, written explicitly for independent-wrapper authors. Surfaced by @NilsOF on #968 (2026-08-15). | **High** — decompilation, author disclaims correctness |
+| **B** | [FrederickAlt/CREALITY-K1-AND-K1-MAX-CFS-RETRUDE-BEFORE-CUT-MOD](https://github.com/FrederickAlt/CREALITY-K1-AND-K1-MAX-CFS-RETRUDE-BEFORE-CUT-MOD) `docs/` | ~230 KB of behavioral documentation from decompiling the Cythonized module back to box_wrapper.py, written explicitly for independent-wrapper authors. Surfaced by @NilsOF on #968 (2026-08-15). | **High** — decompilation, author disclaims correctness |
 | **C** | #968 reporter's own `box.cfg` + console tests on a live K1C v2.3.5.33+ | Field observation on real hardware. | **High for what it covers**, narrow |
-| **D** | @NilsOF's K1C v2.3.5.34 userdata dumps (posted on #968, 2026-08-16): populated `tn_data.json`, `material_box_info.json`, `material_modify_info.json`, `material_option.json` | Live box userdata from a second real K1C, with identified spools | **High** — the actual persisted values |
+| **D** | @NilsOF's K1C v2.3.5.34 userdata dumps (posted on #968, 2026-08-16): populated tn_data.json, material_box_info.json, material_modify_info.json, material_option.json | Live box userdata from a second real K1C, with identified spools | **High** — the actual persisted values |
 
 Source B has since been **checked against A on every command claim in this document and found
-accurate** — including the parameter lists, the `tn_data.json` field names (`vender`
+accurate** — including the parameter lists, the tn_data.json field names (`vender`
 misspelling and all), and four separate runout give-up literals. That is a strong signal for
 the parts of B we cannot verify directly, but it is not a licence to skip verification: B's
 behavioral claims (sequencing, retry counts, timeouts) are still decompiler-derived.
@@ -101,7 +101,7 @@ like firmware bugs.
 | `BOX_MOVE_TO_SAFE_POS` | — | Parks at `safe_pos_y` if XY is homed. [A][B] |
 | `BOX_SAVE_FAN` / `BOX_RESTORE_FAN` | — | Suppress and restore part-cooling around the whole operation. Present on K1 [A]; added to the K1 envelope for #1278. |
 | `BOX_MODIFY_TN` | `T1A=T2C` | Remap table write; persists all 16 keys, prints nothing. Applies to the slicer's `T0`-`T15`, not to our `TNN=` primitives — see [Tool remap](#tool-remap-box_modify_tn---corrected-no-defect). [A][B] |
-| `BOX_MODIFY_TN_DATA` | `ADDR=` `PART=` `[NUM=]` `DATA=` | Live state edit. `PART` names match `tn_data.json` field names. [B] |
+| `BOX_MODIFY_TN_DATA` | `ADDR=` `PART=` `[NUM=]` `DATA=` | Live state edit. `PART` names match tn_data.json field names. [B] |
 | `BOX_ENABLE_AUTO_REFILL` | `ENABLE=<0\|1>` | Runtime flag only; **separate from** the persisted `BOX_ENABLE_CFS_PRINT`. [B] |
 
 `BOX_MATERIAL_FLUSH`'s parameter list is now confirmed by all three sources independently
@@ -135,7 +135,7 @@ no-op."* That is **wrong**, and it originated in a misreading of the #968 report
 test.
 
 `BOX_MODIFY_TN T1A=T2C` works on K1. It updates the in-memory remap table and persists the
-whole 16-key map to `tn_data.json`. It just produces **no console output**, which is exactly
+whole 16-key map to tn_data.json. It just produces **no console output**, which is exactly
 what the reporter saw and reported as "did not appear to do anything." [B]
 
 It also lands where we need it. The remap exists for the **slicer's** in-print tool changes,
@@ -347,9 +347,9 @@ runs on K1 too. `BOX_MODE_WAIT` really is absent and stays out. (#1278)
 
 ---
 
-## `tn_data.json` — the persistence contract
+## tn_data.json — the persistence contract
 
-`creality/userdata/box/tn_data.json`. This closes the open ask from #968 comment 5 (we asked
+creality/userdata/box/tn_data.json. This closes the open ask from #968 comment 5 (we asked
 the reporter for this file and never received it).
 
 ```json
@@ -397,12 +397,12 @@ BOX_MODIFY_TN_DATA ADDR=<1..4> NUM=<A|B|C|D> PART=material_type DATA=<value>
 
 The value domain is now known [D]: a **6-char code = one brand-prefix digit + the 5-char
 catalog id** from our own `cfs` scheme in `assets/filaments.json`. NilsOF's populated
-`tn_data.json` carries `000001` on the PLA slot and `000003` on the PETG slots (ids `00001` /
+tn_data.json carries `000001` on the PLA slot and `000003` on the PETG slots (ids `00001` /
 `00003`), cross-confirmed twice in the same dump: `same_material` groups name the fourth
 element (`["000003", "01b04ae", ["T1B"], "PETG"]`), and `rackMaterial.filamentId "000003"`
 sits beside `materialType "PETG"`. The K2 form `"101001"` (Creality Hyper PLA) is the same
 construction with prefix `1`. The stock LCD itself writes `filamentId` + color on user slot
-edits (`material_modify_info.json`, `editStatus`), so the write path is one Creality's own UI
+edits (material_modify_info.json, `editStatus`), so the write path is one Creality's own UI
 exercises.
 
 **Shipped** (K1 + K2, #968): `push_slot_identity_to_firmware` writes color always and
@@ -517,7 +517,7 @@ enable flag. Everything the K2 screen does to the box happens on `/dev/ttyS5`.
 ### Findings that changed HelixScreen behavior
 
 1. **`BOX_ENABLE_CFS_PRINT ENABLE=0` is the sanctioned stand-down.** The K2 handler was
-   disassembled (`master-server` `0x320cc`, `Control/PrintfManager.c`): a UI request
+   disassembled (`master-server` `0x320cc`, Control/PrintfManager.c): a UI request
    with an enable flag picks `ENABLE=1` (`0x3211c`) or `ENABLE=0` (`0x32180`), then ships
    it via `gcode/script`. HelixScreen's stock-dialect bypass enable sends the same
    command on the same lane — the box must stand down while external filament occupies
@@ -633,7 +633,7 @@ Notable absences and additions:
 Parameter tokens present in the string pool: `ACTION` `ADDR` `DATA` `ENABLE` `LAST_TNN` `LEN`
 `MODE` `NUM` `PART` `PERCENT` `POSITION` `TEMP` `TNN` `TRIGGER` `VELOCITY`.
 
-`tn_data.json` field names present verbatim: `base_data` `color_value` `last_cmd`
+tn_data.json field names present verbatim: `base_data` `color_value` `last_cmd`
 `material_type` `remain_len` `tnn_map` `vender` (misspelling confirmed at source).
 
 ---

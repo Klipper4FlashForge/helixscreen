@@ -221,7 +221,7 @@ looked up:
 
 Spaces are the common case, not the exotic one — slicers put the model and
 filament names in the filename. Moonraker's own print-start path quotes it
-identically (`klippy_apis.py`, `SDCARD_PRINT_FILE FILENAME="{filename}"`).
+identically (klippy_apis.py, `SDCARD_PRINT_FILE FILENAME="{filename}"`).
 
 Inside the quotes, `\n`, `\r`, `;`, `#`, `*`, `=`, `"` and `\` are still
 rejected: `"` closes the value early, `\` is shlex's POSIX escape, and the rest
@@ -282,7 +282,7 @@ beginning**.
 first (`/usr/data`, `/mnt/UDISK`), then the first `/gcodes/` segment as a
 fallback for a relocated `virtual_sdcard: path`.
 
-Verified by reading `klippy/extras/virtual_sdcard.py` and `klippy/gcode.py` on a
+Verified by reading klippy/extras/virtual_sdcard.py and klippy/gcode.py on a
 physical K1C.
 
 With no resolvable filename there is no safe command to send, so the offer is

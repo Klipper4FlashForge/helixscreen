@@ -2,7 +2,7 @@
 
 This document describes the architecture of the Moonraker integration layer.
 
-> **Last Updated:** 2026-02-10
+> **Last Updated:** 2026-08-17
 
 ## Overview
 
@@ -21,8 +21,8 @@ The Moonraker integration is split into three distinct layers with clean separat
 │  │   ├─ heaters, fans, sensors, leds                            │
 │  │   ├─ macros, hostname, printer_info                          │
 │  │   └─ capability queries (has_qgl, has_probe, etc.)           │
-│  ├─ Bed mesh data (active_bed_mesh_, bed_mesh_profiles_)        │
-│  ├─ Hardware guessing (guess_bed_heater, guess_hotend_sensor)   │
+│  ├─ Bed mesh data (owned by the advanced() sub-API)            │
+│  ├─ Hardware guessing (via PrinterHardware, printer_hardware.h) │
 │  ├─ G-code execution (execute_gcode)                            │
 │  ├─ Temperature control (set_temperature)                       │
 │  └─ Object exclusion (get_excluded_objects, get_available_objects)│
@@ -44,7 +44,7 @@ The Moonraker integration is split into three distinct layers with clean separat
 
 **Abstraction Boundary (enforced Feb 2026):** UI code should ONLY talk to the API layer, never the transport layer directly. The API provides proxy methods for connection state, subscriptions, database operations, and plugin RPCs. The dead `IMoonrakerDomainService` interface has been deleted; shared data types live in `moonraker_types.h`.
 
-**Interfaces are the consumer contract (Plan 3, Jul 2026):** `IMoonrakerAPI` (`include/i_moonraker_api.h`), `helix::IMoonrakerClient` (`include/i_moonraker_client.h`), and the ten sub-API interfaces in `include/i_moonraker_sub_apis.h` are what every consumer depends on — not the concrete classes. This started as a narrower mock-parity mirror (Apr 2026) of the currently-virtual methods on each concrete class; Plan 3 widened it into the full contract so the network layer can be swapped out (e.g. the ESP32 port's non-libhv client) behind the same interfaces. The concretes (`MoonrakerAPI`, `helix::MoonrakerClient`, the ten `Moonraker*API` sub-classes) live behind `MoonrakerManager` (`include/moonraker_manager.h`), which owns them via `std::unique_ptr<IMoonrakerAPI>` / `std::unique_ptr<helix::IMoonrakerClient>` and constructs them in `create_api()` / `create_client()`. Mocks still inherit the concretes. Drift protection: `tests/unit/test_interface_drift_moonraker_*.cpp`. Lint-enforced: `tests/shell/test_code_lint.bats` fails CI if a concrete type is named outside the network layer.
+**Interfaces are the consumer contract (Plan 3, Jul 2026):** `IMoonrakerAPI` (`include/i_moonraker_api.h`), `helix::IMoonrakerClient` (`include/i_moonraker_client.h`), and the ten sub-API interfaces in `include/i_moonraker_sub_apis.h` are what every consumer depends on — not the concrete classes. This started as a narrower mock-parity mirror (Apr 2026) of the currently-virtual methods on each concrete class; Plan 3 widened it into the full contract so the network layer can be swapped out (e.g. the ESP32 port's non-libhv client) behind the same interfaces. The concretes (`MoonrakerAPI`, `helix::MoonrakerClient`, the ten `Moonraker*API` sub-classes) live behind `MoonrakerManager` (`include/moonraker_manager.h`), which owns them via `std::unique_ptr<MoonrakerAPI>` (the concrete façade — the mock inherits it) / `std::unique_ptr<helix::IMoonrakerClient>` and constructs them in `create_api()` / `create_client()`. Mocks still inherit the concretes. Drift protection: `tests/unit/test_interface_drift_moonraker_*.cpp`. Lint-enforced: `tests/shell/test_code_lint.bats` fails CI if a concrete type is named outside the network layer.
 
 ## Layer Responsibilities
 
@@ -79,8 +79,8 @@ A new consumer of this notification needs to state which axis it filters on befo
 
 **Responsibilities:**
 - **Owns `PrinterDiscovery`** - single source of truth for all hardware info
-- **Owns bed mesh data** (`active_bed_mesh_`, `bed_mesh_profiles_`)
-- Hardware guessing (`guess_bed_heater()`, `guess_hotend_sensor()`, etc.)
+- **Owns bed mesh data** - in the `advanced()` sub-API (`MoonrakerAdvancedAPI`: `get_active_bed_mesh()`, `get_bed_mesh_profiles()`, `has_bed_mesh()`)
+- Hardware guessing via `PrinterHardware` (`include/printer_hardware.h`) - `guess_bed_heater()`, `guess_hotend_sensor()`, etc. are methods of a guesser constructed from the discovery lists
 - G-code command execution
 - Temperature control
 - Object exclusion state queries
@@ -110,7 +110,7 @@ Before adding a command to `detail::categorize_gcode_token()` in `gcode_classify
 - Store printer metadata: hostname, klipper_version, mcu_version
 - Provide unified query interface for all hardware capabilities
 
-**Accessed via:** `MoonrakerAPI::hardware_discovery()`
+**Accessed via:** `MoonrakerAPI::hardware()`
 
 **Note:** `PrinterCapabilities` class has been DELETED. All its functionality is now in `PrinterDiscovery`.
 
@@ -174,6 +174,7 @@ enum class MoonrakerEventType {
     MESSAGE_OVERSIZED,    // Received message exceeds size limit
     RPC_ERROR,            // JSON-RPC request failed and no other surface will report it
     KLIPPY_DISCONNECTED,  // Klipper firmware disconnected
+    KLIPPY_SHUTDOWN,      // Klipper firmware entered shutdown state (M112, thermal, error)
     KLIPPY_READY,         // Klipper firmware ready
     DISCOVERY_FAILED,     // Printer discovery failed
     REQUEST_TIMEOUT       // JSON-RPC request timed out
@@ -258,26 +259,26 @@ The following methods have been removed from `MoonrakerClient` and are now in `M
 
 | Removed from MoonrakerClient | Now in MoonrakerAPI |
 |------------------------------|---------------------|
-| `get_heaters()` | `hardware_discovery().heaters()` |
-| `get_fans()` | `hardware_discovery().fans()` |
-| `get_sensors()` | `hardware_discovery().sensors()` |
-| `get_leds()` | `hardware_discovery().leds()` |
-| `get_hostname()` | `hardware_discovery().hostname()` |
-| `get_active_bed_mesh()` | `get_active_bed_mesh()` |
-| `get_bed_mesh_profiles()` | `get_bed_mesh_profiles()` |
-| `has_bed_mesh()` | `has_bed_mesh()` |
-| `guess_bed_heater()` | `guess_bed_heater()` |
-| `guess_hotend_heater()` | `guess_hotend_heater()` |
-| `guess_bed_sensor()` | `guess_bed_sensor()` |
-| `guess_hotend_sensor()` | `guess_hotend_sensor()` |
+| `get_heaters()` | `hardware().heaters()` |
+| `get_fans()` | `hardware().fans()` |
+| `get_sensors()` | `hardware().sensors()` |
+| `get_leds()` | `hardware().leds()` |
+| `get_hostname()` | `hardware().hostname()` |
+| `get_active_bed_mesh()` | `advanced().get_active_bed_mesh()` |
+| `get_bed_mesh_profiles()` | `advanced().get_bed_mesh_profiles()` |
+| `has_bed_mesh()` | `advanced().has_bed_mesh()` |
+| `guess_bed_heater()` | `PrinterHardware::guess_bed_heater()` (`printer_hardware.h`) |
+| `guess_hotend_heater()` | `PrinterHardware::guess_hotend_heater()` (`printer_hardware.h`) |
+| `guess_bed_sensor()` | `PrinterHardware::guess_bed_sensor()` (`printer_hardware.h`) |
+| `guess_hotend_sensor()` | `PrinterHardware::guess_hotend_sensor()` (`printer_hardware.h`) |
 
 ### Deleted Classes
 
 | Deleted Class | Replacement |
 |---------------|-------------|
-| `PrinterCapabilities` | `PrinterDiscovery` (accessed via `MoonrakerAPI::hardware_discovery()`) |
+| `PrinterCapabilities` | `PrinterDiscovery` (accessed via `MoonrakerAPI::hardware()`) |
 
-**Migration:** Replace `PrinterCapabilities` usage with `api->hardware_discovery().has_qgl()`, `api->hardware_discovery().macros()`, etc.
+**Migration:** Replace `PrinterCapabilities` usage with `api->hardware().has_qgl()`, `api->hardware().macros()`, etc.
 
 ## Key Differences: API vs Client
 
@@ -285,7 +286,7 @@ The following methods have been removed from `MoonrakerClient` and are now in `M
 |--------|--------------|-----------------|
 | **Purpose** | Domain logic + data ownership | Transport only |
 | **Hardware data** | Owns `PrinterDiscovery` | Dispatches via callbacks |
-| **Bed mesh** | Owns `active_bed_mesh_`, `bed_mesh_profiles_` | Dispatches via callbacks |
+| **Bed mesh** | Owns `active_bed_mesh_`, `bed_mesh_profiles_` (in the `advanced()` sub-API) | Dispatches via callbacks |
 | Return types | Pointers (nullable) | N/A for hardware data |
 | G-code | `execute_gcode()` (async) | `gcode_script()` (sync-ish) |
 | Connection state | `is_connected()`, `get_connection_state()` | Internal state |
@@ -377,9 +378,11 @@ const BedMeshProfile& mesh = client->get_active_bed_mesh();  // REMOVED
 **After (CURRENT):**
 ```cpp
 MoonrakerAPI* api = get_moonraker_api();
-std::string bed_heater = api->guess_bed_heater();
-const std::vector<std::string>& heaters = api->hardware_discovery().heaters();
-const BedMeshProfile* mesh = api->get_active_bed_mesh();  // Note: pointer!
+helix::PrinterHardware guesser(api->hardware().heaters(), api->hardware().sensors(),
+                               api->hardware().fans(), api->hardware().leds());
+std::string bed_heater = guesser.guess_bed_heater();
+const std::vector<std::string>& heaters = api->hardware().heaters();
+const BedMeshProfile* mesh = api->advanced().get_active_bed_mesh();  // Note: pointer!
 if (mesh) {
     // Use mesh data
 }
@@ -398,8 +401,8 @@ const auto& macros = caps.macros();
 **After (CURRENT):**
 ```cpp
 MoonrakerAPI* api = get_moonraker_api();
-bool has_qgl = api->hardware_discovery().has_qgl();
-const auto& macros = api->hardware_discovery().macros();
+bool has_qgl = api->hardware().has_qgl();
+const auto& macros = api->hardware().macros();
 ```
 
 ### Migrating from get_client() / get_moonraker_client()
@@ -446,10 +449,10 @@ api->suppress_disconnect_modal(15000);
 
 ### Key Changes
 
-1. **Hardware data:** All hardware queries go through `api->hardware_discovery()`
-2. **Bed mesh:** Owned by MoonrakerAPI, accessed via `api->get_active_bed_mesh()`
+1. **Hardware data:** All hardware queries go through `api->hardware()`
+2. **Bed mesh:** Owned by the `advanced()` sub-API, accessed via `api->advanced().get_active_bed_mesh()`
 3. **Null checks:** `MoonrakerAPI` returns pointers for bed mesh, not references
-4. **PrinterCapabilities deleted:** Use `PrinterDiscovery` via `api->hardware_discovery()`
+4. **PrinterCapabilities deleted:** Use `PrinterDiscovery` via `api->hardware()`
 5. **Global accessor:** Use `get_moonraker_api()` for domain operations
 6. **IMoonrakerDomainService deleted:** `BedMeshProfile` and `GcodeStoreEntry` now in `moonraker_types.h`
 7. **UI abstraction boundary:** UI code uses API proxy methods, never `get_client()` or `get_moonraker_client()`
@@ -487,7 +490,7 @@ extruder1: temperature, target
 When a tool changer is detected, the subscription includes:
 
 ```
-toolchanger: tool_number
+toolchanger: status, tool_number, tool_numbers
 tool T0: active, mounted, detect_state, gcode_x_offset, gcode_y_offset, gcode_z_offset, extruder, fan
 tool T1: active, mounted, detect_state, ...
 ```

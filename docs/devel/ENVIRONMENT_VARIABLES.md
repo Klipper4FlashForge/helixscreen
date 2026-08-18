@@ -1702,7 +1702,7 @@ journalctl -u helixscreen | grep '\[TouchDebug\]'  # Pi/x86 (systemd journal)
 
 ### `HELIX_CRASH_TEST`
 
-Deliberately segfault through a known call chain to verify that the crash handler's stack unwind works on a given piece of hardware. Fires immediately after `crash_handler::install()`, so the resulting `crash.txt` exercises the real handler and can be checked for correct frame resolution.
+Deliberately segfault through a known call chain to verify that the crash handler's stack unwind works on a given piece of hardware. Fires immediately after `crash_handler::install()`, so the resulting crash.txt exercises the real handler and can be checked for correct frame resolution.
 
 | Property | Value |
 |----------|-------|
@@ -2176,7 +2176,7 @@ Used as fallback when `XDG_DATA_HOME` is not set.
 
 ### `HELIX_CONFIG_DIR`
 
-Override the directory HelixScreen reads and writes its user configuration from — `settings.json`, `helixscreen.env`, `crash.txt` and everything else resolved through `helix::writable_path()`.
+Override the directory HelixScreen reads and writes its user configuration from — `settings.json`, `helixscreen.env`, crash.txt and everything else resolved through `helix::writable_path()`.
 
 | Property | Value |
 |----------|-------|
@@ -2351,7 +2351,7 @@ Set these in `helixscreen.env`, which the launcher sources before it builds the 
 - Resolution is CLI flag > env var (including `helixscreen.env` and hook exports) > `/log_dest` and `/log_path` in `settings.json` > default.
 - `HELIX_LOG_LEVEL` takes priority over `HELIX_DEBUG`: a named level emits `--log-level=<level>` and the legacy `-vv` branch is never reached.
 - `HELIX_LOG_DEST=auto` is the only value that produces no launcher flag. `auto` resolves to the systemd journal when `/run/systemd/journal/socket` exists, otherwise syslog on Linux, console on macOS. It **never** resolves to a file on any platform — the file sink has to be asked for, which is what the embedded platform hooks do.
-- The launcher resolves these **after** sourcing `platform/hooks.sh`, so a value exported from `platform_pre_start` is picked up. Six of the seven hooks rely on that.
+- The launcher resolves these **after** sourcing platform/hooks.sh, so a value exported from `platform_pre_start` is picked up. Six of the seven hooks rely on that.
 - An unopenable `HELIX_LOG_FILE` is not fatal: the sink construction is caught and the platform's normal system sink takes over with a warning.
 
 **Example:**
@@ -2475,4 +2475,4 @@ HELIX_BACKLIGHT_DEVICE=sysfs \
 - [Development Guide](DEVELOPMENT.md) - Daily development workflow
 - [Build System](BUILD_SYSTEM.md) - Build configuration
 - [Testing Guide](TESTING.md) - Test infrastructure
-- [User Configuration](user/CONFIGURATION.md) - End-user setup
+- [User Configuration](../user/CONFIGURATION.md) - End-user setup

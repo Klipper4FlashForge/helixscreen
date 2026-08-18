@@ -82,7 +82,7 @@ copies one to the other, and HelixScreen does not call it.
 
 ### Moonraker Update Manager
 
-ZMOD configures Moonraker to check for HelixScreen updates. The `release_info.json` file tells Moonraker which release asset to download:
+ZMOD configures Moonraker to check for HelixScreen updates. The release_info.json file tells Moonraker which release asset to download:
 
 ```json
 {
@@ -149,7 +149,7 @@ prestonbrown/helixscreen#431, prestonbrown/helixscreen#303 for history.
 **User workarounds** (documented in `docs/user/TROUBLESHOOTING.md`):
 
 1. Settings → Display → Sleep → **Never** (`sleep_sec = 0`)
-2. Edit `helixconfig.json`: set `display.sleep_backlight_off = false` to
+2. Edit helixconfig.json: set `display.sleep_backlight_off = false` to
    keep the backlight on during sleep
 
 **Investigation TODO:**

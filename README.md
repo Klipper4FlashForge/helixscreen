@@ -176,6 +176,10 @@ See the [Installation Guide](docs/user/INSTALL.md) for detailed instructions, di
 
 ## Development
 
+**Want to contribute? Start at [CONTRIBUTING.md](CONTRIBUTING.md)** — it routes you by what you want to do. New contributors follow a marked path: onboarding (environment + build + a 15-minute mental model) → an annotated first contribution → the per-subsystem architecture guide.
+
+The short version, if you just want to see it run:
+
 ```bash
 # Check/install dependencies
 make check-deps && make install-deps
@@ -183,24 +187,19 @@ make check-deps && make install-deps
 # Build
 make -j
 
-# Run with mock printer (no hardware needed)
-./build/bin/helix-screen --test -vv
-
-# Run with real printer
-./build/bin/helix-screen
-
-# XML hot reload is ON by default for native builds (edit XML, save, see changes live)
+# Run with mock printer (no hardware needed) — 'S' takes a screenshot;
+# -v (INFO), -vv (DEBUG), -vvv (TRACE) for logging
 ./build/bin/helix-screen --test -vv
 
 # Run tests
 make test-run
 ```
 
-**Controls:** Click navigation icons, press 'S' for screenshot, use `-v` (INFO), `-vv` (DEBUG), or `-vvv` (TRACE) for logging.
+XML layouts hot-reload by default on native builds — edit `ui_xml/*.xml`, save, watch the running UI update live.
 
 **Test suite:** 5,000+ test cases across 600+ test files covering printer state, UI components, XML parsing, multi-material, and more.
 
-See [docs/devel/DEVELOPMENT.md](docs/devel/DEVELOPMENT.md) for detailed setup, cross-compilation, and contributing guidelines.
+For the daily-workflow reference (run flags, logging, config, IDE setup), see [docs/devel/DEVELOPMENT.md](docs/devel/DEVELOPMENT.md).
 
 ## FAQ
 
@@ -251,8 +250,8 @@ See [docs/user/TROUBLESHOOTING.md](docs/user/TROUBLESHOOTING.md) for more soluti
 ### Developer Guides
 | Guide | Description |
 |-------|-------------|
-| [Development](docs/devel/DEVELOPMENT.md) | Build system, workflow, contributing |
-| [Architecture](docs/devel/ARCHITECTURE.md) | System design, patterns |
+| [Development](docs/devel/DEVELOPMENT.md) | Daily workflow: run flags, logging, config, IDE setup |
+| [Architecture](docs/devel/ARCHITECTURE.md) | Whole-app model + guide to the 15 architecture chapters |
 | [LVGL9 XML Guide](docs/devel/LVGL9_XML_GUIDE.md) | XML syntax reference |
 | [UI Contributor Guide](docs/devel/UI_CONTRIBUTOR_GUIDE.md) | Breakpoints, tokens, colors, widgets |
 | [Changelog](CHANGELOG.md) | Release history |

@@ -39,7 +39,7 @@ as the answer to a layout gap (see below) and turned out not to work yet.
 
 Three things follow.
 
-**Nothing feeds `beta` or `dev` yet.** `dl.helixscreen.org/dev/manifest.json` serves
+**Nothing feeds `beta` or `dev` yet.** dl.helixscreen.org/dev/manifest.json serves
 v0.99.111 — an ordinary `main` build. Until step 2 above happens, telling a user to
 switch to Dev gets them newer `main`, not the devel track. Any plan that routes
 users to bleeding edge to pick up 1.1 work is blocked on the flip, not on the work.
@@ -123,16 +123,16 @@ live. See `ANDROID_PLAY_STORE.md`.
 
 The two-track routing has never run end-to-end against real R2. Verify both.
 
-- [ ] First `stable` tag from `release/1.0`: confirm `stable/manifest.json` serves
+- [ ] First `stable` tag from `release/1.0`: confirm stable/manifest.json serves
       `1.0.0`, and that `notify-website` fired (docs deploy is gated on
       `channel == 'stable'` now, not on the tag lacking a hyphen).
-- [ ] First `beta` tag from `main`: confirm `beta/manifest.json` **and**
-      `dev/manifest.json` both move, that the GitHub release is marked
+- [ ] First `beta` tag from `main`: confirm beta/manifest.json **and**
+      dev/manifest.json both move, that the GitHub release is marked
       prerelease, and that `notify-website` did **not** fire.
 
-      **`beta/manifest.json` does not exist yet and is actively 404ing.** Zone
+      **beta/manifest.json does not exist yet and is actively 404ing.** Zone
       analytics for 2026-08-08..15 show **150 failed polls, ~19/day**, against
-      `/beta/manifest.json` - consistent with the 30 Beta-channel installs in
+      /beta/manifest.json - consistent with the 30 Beta-channel installs in
       the telemetry split below. Those devices have been failing every update
       check silently for as long as the object has been missing. The tag from
       `main` creates it and fixes them; nothing else is needed. If the cut

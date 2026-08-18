@@ -149,7 +149,7 @@ AFC, Happy Hare, Tool Changer, and Mock inherit the no-op
 `clear_slot_override` default from `AmsBackend`. They manage their own
 override semantics independently — AFC and Happy Hare write `lane_data`
 directly from their Klipper plugins, and HelixScreen does not touch those
-records. For AFC that is not merely etiquette: `AFC.py` `delete_lane_data()`
+records. For AFC that is not merely etiquette: AFC.py `delete_lane_data()`
 wipes the whole namespace at the start of every PREP and refills it one lane at
 a time, so the namespace is non-durable across reboots *and* transiently
 incomplete during them. AFC/HH overrides go to a private namespace
@@ -307,7 +307,7 @@ The migration is idempotent: once records exist under `lane_data`, the
 "`lane_data` empty" guard fails and the legacy path is skipped. After a
 successful migration, the legacy MR DB entry is best-effort deleted via
 `database_delete_item`, and the pre-Task-6 per-backend JSON cache file
-(`ace_slot_overrides.json` / `cfs_slot_overrides.json`) is also removed from
+(ace_slot_overrides.json / cfs_slot_overrides.json) is also removed from
 the user config dir. Delete failures are logged at warn but do not break the
 migrated result — a lingering legacy blob is harmless because the idempotence
 guard would short-circuit on the next startup anyway. Migration also deletes
