@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 /**
- * @file test_afc_firmware_retains.cpp
- * @brief firmware_retains_spool_info(): is AFC's own per-lane
+ * @file test_afc_printer_retains.cpp
+ * @brief printer_retains_spool_info(): is AFC's own per-lane
  * remember_spool retention currently owning eject behavior? (#1281
  * follow-up)
  *
@@ -49,32 +49,32 @@ class AfcRetainsHelper : public AmsBackendAfc {
 };
 
 TEST_CASE_METHOD(LVGLTestFixture,
-                 "AFC firmware_retains_spool_info requires every lane at remember_spool true",
+                 "AFC printer_retains_spool_info requires every lane at remember_spool true",
                  "[ams][afc][spool-retention]") {
     AfcRetainsHelper afc;
 
     // Nothing reported yet — the everyday default is not retaining.
-    CHECK_FALSE(afc.firmware_retains_spool_info());
+    CHECK_FALSE(afc.printer_retains_spool_info());
 
     // AFC default (remember_spool = false): the lane clears on eject and
     // the HelixScreen toggle governs retention.
     afc.feed_stepper("lane1", nlohmann::json{{"status", "Loaded"}, {"remember_spool", false}});
-    CHECK_FALSE(afc.firmware_retains_spool_info());
+    CHECK_FALSE(afc.printer_retains_spool_info());
 
     // Every lane retaining: firmware owns retention end to end.
     afc.feed_stepper("lane1", nlohmann::json{{"remember_spool", true}});
     afc.feed_stepper("lane2", nlohmann::json{{"status", "Loaded"}, {"remember_spool", true}});
-    CHECK(afc.firmware_retains_spool_info());
+    CHECK(afc.printer_retains_spool_info());
 
     // Mixed config: the toggle still governs the remember_spool = false
     // lanes, so it must stay enabled.
     afc.feed_stepper("lane2", nlohmann::json{{"remember_spool", false}});
-    CHECK_FALSE(afc.firmware_retains_spool_info());
+    CHECK_FALSE(afc.printer_retains_spool_info());
 
     // Moonraker sends deltas: a frame without the key keeps the last value.
     afc.feed_stepper("lane2", nlohmann::json{{"remember_spool", true}});
     afc.feed_stepper("lane2", nlohmann::json{{"weight", 750.0}});
-    CHECK(afc.firmware_retains_spool_info());
+    CHECK(afc.printer_retains_spool_info());
 }
 
 TEST_CASE_METHOD(LVGLTestFixture,
@@ -86,13 +86,13 @@ TEST_CASE_METHOD(LVGLTestFixture,
     // retaining would disable the toggle on partial information; the safe
     // default keeps it enabled.
     afc.feed_stepper("lane1", nlohmann::json{{"status", "Loaded"}, {"remember_spool", true}});
-    CHECK_FALSE(afc.firmware_retains_spool_info());
+    CHECK_FALSE(afc.printer_retains_spool_info());
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "firmware_retains_spool_info base default is false",
+TEST_CASE_METHOD(LVGLTestFixture, "printer_retains_spool_info base default is false",
                  "[ams][capabilities][spool-retention]") {
     // Qualified call pins the BASE default (false), matching the
-    // firmware_reports_spool_ids pattern in test_ams_firmware_persistence.cpp.
+    // printer_reports_spool_ids pattern in test_ams_firmware_persistence.cpp.
     auto afc = std::make_unique<AmsBackendAfc>(nullptr, nullptr);
-    CHECK_FALSE(afc->AmsBackend::firmware_retains_spool_info());
+    CHECK_FALSE(afc->AmsBackend::printer_retains_spool_info());
 }

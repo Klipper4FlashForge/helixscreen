@@ -1813,7 +1813,7 @@ MergeResult merge_override(SlotInfo& slot, const FilamentSlotOverride& o,
     // CFS firmware reports no ids at all, and flat-schema CFS parses a
     // per-slot id without giving 0 an eject meaning — so the rule stays
     // inert.
-    if (options.firmware_reports_spool_ids && slot.spoolman_id <= 0 && o.spoolman_id > 0 &&
+    if (options.printer_reports_spool_ids && slot.spoolman_id <= 0 && o.spoolman_id > 0 &&
         !options.keep_spool_info_on_eject) {
         MergeResult r;
         r.cleared_eject = true;

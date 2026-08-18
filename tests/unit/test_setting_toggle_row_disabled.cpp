@@ -9,7 +9,7 @@
  *
  * Used by the AMS Management overlay's "Keep Spool Info on Eject" row:
  * when AFC's own remember_spool retention owns the behavior
- * (ams_device_ops_fw_retains_spool_info), the toggle must show disabled
+ * (ams_device_ops_printer_retains_spool_info), the toggle must show disabled
  * rather than silently doing nothing.
  */
 

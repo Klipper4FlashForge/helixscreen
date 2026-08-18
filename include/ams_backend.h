@@ -2056,7 +2056,7 @@ class AmsBackend {
     /// reports a positive spool id that disagrees with the override (AFC,
     /// Happy Hare, and flat-schema CFS, whose per-slot spoolman_id parse
     /// feeds it today).
-    [[nodiscard]] virtual bool firmware_reports_spool_ids() const {
+    [[nodiscard]] virtual bool printer_reports_spool_ids() const {
         return false;
     }
 
@@ -2068,7 +2068,7 @@ class AmsBackend {
     /// the spool id, so neither the eject rule nor the #1289 re-assert push
     /// ever fires. The AMS Management overlay shows the toggle disabled
     /// with a note rather than letting it silently lie.
-    [[nodiscard]] virtual bool firmware_retains_spool_info() const {
+    [[nodiscard]] virtual bool printer_retains_spool_info() const {
         return false;
     }
 

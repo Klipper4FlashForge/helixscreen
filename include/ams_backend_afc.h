@@ -352,14 +352,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
         return true; // AFC uses SET_SPOOL_ID gcode for persistence
     }
 
-    [[nodiscard]] bool firmware_reports_spool_ids() const override {
+    [[nodiscard]] bool printer_reports_spool_ids() const override {
         return true; // AFC publishes a lane spool_id in its status
     }
 
     /// Per-lane remember_spool = true on EVERY reporting lane (ALL
     /// semantics — a mixed config still leaves the toggle governing the
-    /// false lanes). See AmsBackend::firmware_retains_spool_info().
-    [[nodiscard]] bool firmware_retains_spool_info() const override;
+    /// false lanes). See AmsBackend::printer_retains_spool_info().
+    [[nodiscard]] bool printer_retains_spool_info() const override;
 
     /**
      * @brief Whether AFC unloads the toolhead automatically after a print.

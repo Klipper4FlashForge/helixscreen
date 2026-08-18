@@ -505,9 +505,9 @@ Two footguns this area has repeatedly hit (fixed in #1065; keep them fixed):
     eject and keeps reporting the spool id — so neither the merge's eject rule
     nor the re-assert push ever fires and the toggle has no observable effect
     in either position. Rather than let it silently lie, the overlay disables
-    it with a note: `AmsBackend::firmware_retains_spool_info()` (ALL-lane
+    it with a note: `AmsBackend::printer_retains_spool_info()` (ALL-lane
     semantics; a mixed config leaves the toggle governing the `false` lanes)
-    drives the `ams_device_ops_fw_retains_spool_info` subject, which the row's
+    drives the `ams_device_ops_printer_retains_spool_info` subject, which the row's
     `disabled` prop and the note bind to (#1281 follow-up).
 
 ### OrcaSlicer compatibility — by backend

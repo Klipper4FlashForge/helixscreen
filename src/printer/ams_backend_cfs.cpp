@@ -3395,7 +3395,7 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
     // has no override — safe in the hot parse path. The whole spec §5 policy
     // + the re-bind/eject rules live in helix::ams::merge_override — the
     // single implementation every backend shares. Rule 1 (re-bind) is NOT
-    // gated by firmware_reports_spool_ids(): flat-schema CFS (the community
+    // gated by printer_reports_spool_ids(): flat-schema CFS (the community
     // fork) parses a per-slot spoolman_id, so a firmware id disagreeing with
     // the override fires Rule 1 there — fork users get the #1281 fix. Rule 2
     // (eject) IS what the capability gates, and it stays inert here (base
@@ -3406,7 +3406,7 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
     if (it == overrides_.end())
         return;
     helix::ams::MergeOptions opts;
-    opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
+    opts.printer_reports_spool_ids = printer_reports_spool_ids();
     opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
     // Read the override BEFORE any erase — the CFS presence tail below needs it.
     const auto& o = it->second;

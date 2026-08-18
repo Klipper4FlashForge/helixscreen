@@ -976,14 +976,14 @@ void AmsBackendAd5xIfs::apply_overrides(SlotInfo& slot, int slot_index) {
     // flat-schema CFS). IFS firmware never reports one, so Rule 1 cannot
     // fire here today — but that is a fact about this firmware, not what
     // the capability gates. Rule 2 (eject) IS what
-    // firmware_reports_spool_ids() gates (base false here: 0 is IFS's
+    // printer_reports_spool_ids() gates (base false here: 0 is IFS's
     // everyday reading, never an eject), and the erase branch is correct
     // tomorrow if a firmware ever starts reporting ids.
     auto it = overrides_.find(slot_index);
     if (it == overrides_.end())
         return;
     helix::ams::MergeOptions opts;
-    opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
+    opts.printer_reports_spool_ids = printer_reports_spool_ids();
     opts.keep_spool_info_on_eject =
         helix::SettingsManager::instance().get_ams_keep_spool_info_on_eject();
     // Own-write echo suppression (SlotFingerprintTracker::expect()

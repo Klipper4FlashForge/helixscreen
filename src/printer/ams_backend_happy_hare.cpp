@@ -2402,7 +2402,7 @@ void AmsBackendHappyHare::apply_overrides(SlotInfo& slot, int slot_index) {
     if (it == overrides_.end())
         return;
     helix::ams::MergeOptions opts;
-    opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
+    opts.printer_reports_spool_ids = printer_reports_spool_ids();
     opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
     // Own-write echo suppression (SlotFingerprintTracker::expect()
     // semantics): if we just re-linked this gate's spool id, in-flight
