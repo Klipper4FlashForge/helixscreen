@@ -322,12 +322,17 @@ TEST_CASE_METHOD(ConnFailedFixture, "A never-connected remote host still offers 
     UpdateQueue::instance().drain();
     REQUIRE(Modal::get_top() != nullptr);
 
-    // Confirmation-style dialog (primary action + dismiss), not the OK-only
-    // alert the same-host path shows.
+    // Confirmation-style dialog, not the alert the same-host path shows:
+    // primary is Reconnect, and Change Address survives as the secondary
+    // action (the merge of the reconnect-first flow moved it off primary).
     const char* primary_text = static_cast<const char*>(
         lv_subject_get_pointer(helix::ui::modal_get_primary_text_subject()));
     REQUIRE(primary_text != nullptr);
-    CHECK(std::string(primary_text).find("Change Address") != std::string::npos);
+    CHECK(std::string(primary_text).find("Reconnect") != std::string::npos);
+    const char* cancel_text = static_cast<const char*>(
+        lv_subject_get_pointer(helix::ui::modal_get_cancel_text_subject()));
+    REQUIRE(cancel_text != nullptr);
+    CHECK(std::string(cancel_text).find("Change Address") != std::string::npos);
     CHECK(lv_subject_get_int(helix::ui::modal_get_show_cancel_subject()) == 1);
 
     cfg->set<std::string>(key, prev);
