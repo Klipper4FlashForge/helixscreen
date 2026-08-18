@@ -1026,7 +1026,7 @@ Select the mock AMS visual scenario.
 
 | Property | Value |
 |----------|-------|
-| **Values** | `idle`, `loading`, `error`, `bypass`, `unaccounted` |
+| **Values** | `idle`, `loading`, `error`, `bypass`, `unaccounted`, `grade` |
 | **Default** | `idle` (slot 0 loaded, slot 3 empty, others available) |
 | **File** | `src/printer/ams_backend.cpp` |
 
@@ -1037,6 +1037,7 @@ Select the mock AMS visual scenario.
 | `error` | Slot errors visible; buffer fault also shown when combined with `afc` mode |
 | `bypass` | Bypass mode active |
 | `unaccounted` | Filament at the toolhead that no lane accounts for (drives the print-start gate warning) |
+| `grade` | Every lane holds `PLA-CF` instead of its usual filament — same compat group, so the mapper routes a PLA tool exactly as before and the print-start **grade** dialog is what fires. All four lanes, not one, because a tool lands on a lane by colour and then by positional fallback over the file's whole palette |
 
 ```bash
 # Show error states (slot errors + buffer fault)
@@ -1047,6 +1048,10 @@ HELIX_MOCK_AMS_STATE=loading ./build/bin/helix-screen --test
 
 # Show bypass mode
 HELIX_MOCK_AMS_STATE=bypass ./build/bin/helix-screen --test
+
+# Filled-grade lanes: drives the "Filament Grade Mismatch" print-start dialog.
+# Open any PLA file (xyz-10mm-calibration-cube) and tap Print.
+HELIX_MOCK_AMS_STATE=grade ./build/bin/helix-screen --test -vv
 
 # Combine with topology selection
 HELIX_MOCK_AMS=afc HELIX_MOCK_AMS_STATE=error ./build/bin/helix-screen --test
