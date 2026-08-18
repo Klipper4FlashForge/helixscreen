@@ -1063,6 +1063,7 @@ translations:
   Filament: Filament
   Filament Detected: Filament erkannt
   Filament Environment: Filamentumgebung
+  Filament Grade Mismatch: ''
   Filament In The Toolhead: ''
   Filament Mapping: Filament-Zuordnung
   Filament Runout: Filament aufgebraucht
@@ -2672,6 +2673,8 @@ translations:
   The filament system reported an error: Das Filamentsystem meldete einen Fehler
   The heater will cycle on and off several times.: Die Heizung wird mehrmals ein-
     und ausschalten.
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : ''
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "Der Motor lässt den Riemen vibrieren, während ein Stroboskoplicht mit derselben Frequenz blinkt. Wenn der Riemen stillzustehen scheint (eingefroren), haben Sie die Resonanzfrequenz gefunden.\n\nVerwenden Sie die Frequenztasten, um die Werte durchzugehen, bis der Riemen stillzustehen scheint, und fixieren Sie dann den Messwert."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2707,6 +2710,7 @@ translations:
   Theme changes apply after restart.: Themenänderungen werden nach dem Neustart wirksam.
   Theme reset to defaults: Thema auf Standardwerte zurückgesetzt
   'Theme: ': 'Design: '
+  'These tools have a different filament grade loaded:': ''
   'These tools have incompatible materials loaded:': 'Diese Werkzeuge haben inkompatible
     Materialien geladen:'
   'These tools have no filament loaded:': 'Diese Werkzeuge haben kein Filament geladen:'
@@ -2725,6 +2729,7 @@ translations:
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Dies passt nicht zur verknüpften Spoolman-Spule. Als neue Spule hinzufügen oder die verknüpfte entsprechend aktualisieren?
   This file was sliced for {} but {} is loaded.: Diese Datei wurde für {} gesliced,
     aber {} ist geladen.
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: Dies sind genau die Daten, die gesendet
     werden
   This is what data would be sent if enabled: Diese Daten würden bei Aktivierung gesendet

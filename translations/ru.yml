@@ -1036,6 +1036,7 @@ translations:
   Filament: Филамент
   Filament Detected: Филамент обнаружен
   Filament Environment: Среда хранения филамента
+  Filament Grade Mismatch: ''
   Filament In The Toolhead: ''
   Filament Mapping: Назначение филамента
   Filament Runout: Окончание филамента
@@ -2636,6 +2637,8 @@ translations:
   The filament system reported an error: Система филамента сообщила об ошибке
   The heater will cycle on and off several times.: Нагреватель будет несколько раз
     включаться и выключаться.
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : ''
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным, затем зафиксируйте показание."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2665,6 +2668,7 @@ translations:
   Theme changes apply after restart.: Изменения темы применяются после перезапуска.
   Theme reset to defaults: Тема сброшена к настройкам по умолчанию
   'Theme: ': 'Тема: '
+  'These tools have a different filament grade loaded:': ''
   'These tools have incompatible materials loaded:': 'В этих инструментах загружены
     несовместимые материалы:'
   'These tools have no filament loaded:': 'В эти инструменты не загружен филамент:'
@@ -2683,6 +2687,7 @@ translations:
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Это не совпадает с привязанной катушкой Spoolman. Добавить как новую катушку или обновить привязанную?
   This file was sliced for {} but {} is loaded.: Файл нарезан для {}, но загружен
     {}.
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: Это именно те данные, которые будут
     отправлены
   This is what data would be sent if enabled: Эти данные были бы отправлены при включении

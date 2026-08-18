@@ -935,6 +935,7 @@
   <translation tag="Filament" zh="耗材"/>
   <translation tag="Filament Detected" zh="检测到耗材"/>
   <translation tag="Filament Environment" zh="耗材环境"/>
+  <translation tag="Filament Grade Mismatch"/>
   <translation tag="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" zh="耗材映射"/>
   <translation tag="Filament Runout" zh="耗材用尽"/>
@@ -2361,6 +2362,7 @@
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again."/>
   <translation tag="The filament system reported an error" zh="耗材系统报告错误"/>
   <translation tag="The heater will cycle on and off several times." zh="加热器将多次开关循环。"/>
+  <translation tag="The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." zh="电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。&#10;&#10;使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." zh="打印已暂停。现在切换工具会移动工具头并更换喷嘴处的耗材。切换完成后请恢复打印。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" zh="打印机已停止此打印且无法恢复。从头重新开始？"/>
@@ -2381,6 +2383,7 @@
   <translation tag="Theme changes apply after restart." zh="主题更改在重启后生效。"/>
   <translation tag="Theme reset to defaults" zh="主题已重置为默认值"/>
   <translation tag="Theme: " zh="主题: "/>
+  <translation tag="These tools have a different filament grade loaded:"/>
   <translation tag="These tools have incompatible materials loaded:" zh="这些工具加载了不兼容的材料："/>
   <translation tag="These tools have no filament loaded:" zh="以下工具未加载耗材:"/>
   <translation tag="These tools have no matching filament loaded:" zh="以下工具未加载匹配的耗材："/>
@@ -2393,6 +2396,7 @@
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" zh="此设备内存极少。共振校准会占用大量内存，可能导致 &quot;Timer Too Close&quot; 错误。仍要继续吗？"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" zh="这与关联的 Spoolman 料盘不匹配。是否添加为新料盘，或更新关联料盘以匹配？"/>
   <translation tag="This file was sliced for {} but {} is loaded." zh="此文件为 {} 切片，但当前加载的是 {}。"/>
+  <translation tag="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs."/>
   <translation tag="This is exactly the data that will be sent" zh="这正是将要发送的数据"/>
   <translation tag="This is what data would be sent if enabled" zh="这是启用后将发送的数据"/>
   <translation tag="This may take up to 30 seconds" zh="这可能需要 30 秒"/>

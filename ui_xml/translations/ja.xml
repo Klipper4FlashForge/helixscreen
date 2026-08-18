@@ -935,6 +935,7 @@
   <translation tag="Filament" ja="フィラメント"/>
   <translation tag="Filament Detected" ja="フィラメント検出"/>
   <translation tag="Filament Environment" ja="フィラメント環境"/>
+  <translation tag="Filament Grade Mismatch"/>
   <translation tag="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" ja="フィラメントマッピング"/>
   <translation tag="Filament Runout" ja="フィラメント切れ"/>
@@ -2361,6 +2362,7 @@
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again."/>
   <translation tag="The filament system reported an error" ja="フィラメントシステムがエラーを報告しました"/>
   <translation tag="The heater will cycle on and off several times." ja="ヒーターは数回オン/オフを繰り返します。"/>
+  <translation tag="The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." ja="モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。&#10;&#10;周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。"/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." ja="印刷は一時停止中です。ここでツールを交換すると、ツールヘッドが移動してノズルのフィラメントが入れ替わります。交換が完了したら印刷を再開してください。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" ja="プリンターはこの印刷を停止し、再開できません。最初からやり直しますか？"/>
@@ -2381,6 +2383,7 @@
   <translation tag="Theme changes apply after restart." ja="テーマの変更は再起動後に適用されます。"/>
   <translation tag="Theme reset to defaults" ja="テーマをデフォルトにリセットしました"/>
   <translation tag="Theme: " ja="テーマ: "/>
+  <translation tag="These tools have a different filament grade loaded:"/>
   <translation tag="These tools have incompatible materials loaded:" ja="これらのツールには互換性のない素材がロードされています:"/>
   <translation tag="These tools have no filament loaded:" ja="これらのツールにフィラメントが装填されていません:"/>
   <translation tag="These tools have no matching filament loaded:" ja="これらのツールに一致するフィラメントが装填されていません:"/>
@@ -2393,6 +2396,7 @@
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" ja="このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、&quot;Timer Too Close&quot; エラーを引き起こす可能性があります。それでも続行しますか？"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" ja="リンクされた Spoolman のスプールと一致しません。新しいスプールとして追加しますか、それともリンク先を一致するよう更新しますか？"/>
   <translation tag="This file was sliced for {} but {} is loaded." ja="このファイルは {} 用にスライスされていますが、{} がロードされています。"/>
+  <translation tag="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs."/>
   <translation tag="This is exactly the data that will be sent" ja="これが送信されるデータです"/>
   <translation tag="This is what data would be sent if enabled" ja="これは有効にした場合に送信されるデータです"/>
   <translation tag="This may take up to 30 seconds" ja="最大30秒かかる場合があります"/>

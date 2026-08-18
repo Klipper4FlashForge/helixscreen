@@ -19,11 +19,13 @@
 
 #include "color_utils.h"
 #include "filament_database.h"
+#include "filament_variants.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <lvgl.h>
 
 namespace helix {
@@ -56,6 +58,28 @@ int bypass_print_tool(const PrintStartContext& ctx) {
         return *ctx.tools_used.begin();
     }
     return 0;
+}
+
+/// The two-step material comparison every branch runs. Kept in one place so a
+/// branch cannot answer the same question differently: FilamentMapper decides
+/// whether the polymer is right, filament::grades_match() whether the grade is.
+/// An unknown material on either side is not something to warn about.
+enum class MaterialVerdict { Ok, GradeChange, Mismatch };
+
+MaterialVerdict compare_material(const std::string& expected, const std::string& loaded) {
+    if (expected.empty() || loaded.empty()) {
+        return MaterialVerdict::Ok;
+    }
+    if (!FilamentMapper::materials_match(expected, loaded)) {
+        return MaterialVerdict::Mismatch;
+    }
+    return filament::grades_match(expected, loaded) ? MaterialVerdict::Ok
+                                                    : MaterialVerdict::GradeChange;
+}
+
+/// Log label for a verdict, so the two spdlog lines say which finding fired.
+const char* detail_kind(MaterialVerdict v) {
+    return v == MaterialVerdict::GradeChange ? "grade change" : "material mismatch";
 }
 
 /// Warning result with the dialog strings a gate mandates.
@@ -219,10 +243,58 @@ CheckResult gate_unresolved_tools(const PrintStartContext& ctx) {
     return warn_result(lv_tr("Color Mismatch"), std::move(message), lv_tr("Start Anyway"));
 }
 
+/// Dialog for mismatches that are ALL grade changes: same polymer, different
+/// filler. Separate from the material dialog because the advice is different
+/// and because calling a correct-polymer lane a "material mismatch" trains the
+/// user to click through the dialog that matters.
+CheckResult grade_change_warning(const std::vector<MaterialMismatchDetail>& mismatches) {
+    std::string message;
+
+    if (mismatches.size() == 1) {
+        const auto& m = mismatches[0];
+        // The risk is not symmetric. Filled filament loaded against an unfilled
+        // profile runs abrasive material at the base polymer's flow rate, on
+        // what may well be a brass nozzle. The reverse just prints slower and
+        // hotter than the spool needs, which costs time and nothing else.
+        if (filament::is_filled_grade(m.loaded_material)) {
+            message = fmt::format(lv_tr("The loaded spool is {}, but this file was sliced "
+                                        "for {}. Filled filament runs at a lower flow rate "
+                                        "and needs a hardened nozzle."),
+                                  m.loaded_material, m.expected_material);
+        } else {
+            message = fmt::format(lv_tr("This file was sliced for {}, but {} is loaded. "
+                                        "It will print slower and hotter than the loaded "
+                                        "spool needs."),
+                                  m.expected_material, m.loaded_material);
+        }
+    } else {
+        message = lv_tr("These tools have a different filament grade loaded:");
+        message += "\n\n";
+        for (const auto& m : mismatches) {
+            message += fmt::format("  {} T{}: {} {}: {} {}\n", LV_SYMBOL_BULLET, m.tool_index,
+                                   lv_tr("needs"), m.expected_material, lv_tr("you have"),
+                                   m.loaded_material);
+        }
+    }
+
+    message += "\n\n";
+    message += lv_tr("Start print anyway?");
+
+    return warn_result(lv_tr("Filament Grade Mismatch"), std::move(message), lv_tr("Start Anyway"));
+}
+
 CheckResult gate_material_compatibility(const PrintStartContext& ctx) {
     auto mismatches = material_mismatches_in(ctx);
     if (mismatches.empty()) {
         return pass_result();
+    }
+
+    // A hard mismatch anywhere keeps the material dialog, grade rows included:
+    // the wrong polymer is the more urgent finding, and two dialogs on one tap
+    // is worse than one that lists everything.
+    if (std::all_of(mismatches.begin(), mismatches.end(),
+                    [](const MaterialMismatchDetail& m) { return m.grade_only; })) {
+        return grade_change_warning(mismatches);
     }
 
     // Body ported verbatim from show_material_mismatch_warning (no static
@@ -408,14 +480,13 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
             ctx.external_spool->material.empty()) {
             return mismatches;
         }
-        if (!FilamentMapper::materials_match(expected, ctx.external_spool->material)) {
-            mismatches.push_back(
-                external_spool_mismatch(ctx.external_spool.value(), tool, expected));
-        }
-        if (!mismatches.empty()) {
-            spdlog::info("[PrintStartController] Bypass print: material mismatch vs external "
-                         "spool ({} vs {})",
-                         expected, ctx.external_spool->material);
+        const auto verdict = compare_material(expected, ctx.external_spool->material);
+        if (verdict != MaterialVerdict::Ok) {
+            auto detail = external_spool_mismatch(ctx.external_spool.value(), tool, expected);
+            detail.grade_only = (verdict == MaterialVerdict::GradeChange);
+            mismatches.push_back(std::move(detail));
+            spdlog::info("[PrintStartController] Bypass print: {} vs external spool ({} vs {})",
+                         detail_kind(verdict), expected, ctx.external_spool->material);
         }
         return mismatches;
     }
@@ -427,16 +498,6 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
         const auto& slots = ctx.available_slots;
 
         for (const auto& m : mappings) {
-            if (!m.material_mismatch) {
-                continue;
-            }
-            if (!tool_is_used(m.tool_index)) {
-                spdlog::debug("[PrintStartController] Skipping T{} mismatch — "
-                              "tool has zero filament usage in gcode",
-                              m.tool_index);
-                continue;
-            }
-
             MaterialMismatchDetail detail;
             detail.tool_index = m.tool_index;
 
@@ -458,6 +519,26 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
 
             // Skip if either material is unknown (can't warn about unknowns)
             if (detail.expected_material.empty() || detail.loaded_material.empty()) {
+                continue;
+            }
+
+            // The mapper already ruled on the polymer, so trust its flag rather
+            // than re-deciding it here; a lane it considers a MATCH still gets
+            // the grade question asked, which is the only new work in this loop.
+            if (!m.material_mismatch) {
+                if (filament::grades_match(detail.expected_material, detail.loaded_material)) {
+                    continue;
+                }
+                detail.grade_only = true;
+            }
+
+            // Deliberately after the two "nothing to report" outcomes above: a
+            // tool the file never extrudes from is only worth a log line when
+            // it would otherwise have produced a dialog row.
+            if (!tool_is_used(m.tool_index)) {
+                spdlog::debug("[PrintStartController] Skipping T{} {} — "
+                              "tool has zero filament usage in gcode",
+                              m.tool_index, detail.grade_only ? "grade change" : "mismatch");
                 continue;
             }
 
@@ -501,8 +582,11 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
             return mismatches;
         }
 
-        if (!FilamentMapper::materials_match(expected, spool_info->material)) {
-            mismatches.push_back(external_spool_mismatch(*spool_info, 0, expected));
+        const auto verdict = compare_material(expected, spool_info->material);
+        if (verdict != MaterialVerdict::Ok) {
+            auto detail = external_spool_mismatch(*spool_info, 0, expected);
+            detail.grade_only = (verdict == MaterialVerdict::GradeChange);
+            mismatches.push_back(std::move(detail));
         }
     }
 
