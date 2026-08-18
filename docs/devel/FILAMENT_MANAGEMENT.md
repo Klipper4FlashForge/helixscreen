@@ -3536,13 +3536,20 @@ gate pipeline: `PrintStartController::run_gates_from()` iterates
 `gather_print_start_context()` snapshot, in order:
 
 1. `insufficient_spool_weight` — spoolman remaining weight vs. the file's need
-2. `bypass_engaged_lane_print` — bypass engaged **and** the file uses more than one color;
-   a single-color bypass print is the legitimate bypass use and stays silent
+2. `bypass_engaged_lane_print` — bypass engaged **and** the file uses more than one tool;
+   a single-tool bypass print is the legitimate bypass use and stays silent. "Single-tool"
+   is the gcode-scan's used-tool count, not the filament palette size — slicers emit a
+   full-profile palette (e.g. `PLA;ASA-GF;ASA-GF;PLA`) even for a file extruding from one
+   tool, which made the palette-count form of this gate nag every such file (K2 CFS case)
 3. `unaccounted_toolhead_filament` — filament in the toolhead that no lane accounts for
 4. `required_filament_present` — the empty-lane / runout dialog (at-tap sibling of the
-   pre-flight block above)
+   pre-flight block above); a single-tool bypass print skips lane truth entirely — its
+   mapped lanes describe filament that is not being printed with
 5. `unresolved_tools` — the color-mismatch dialog above
-6. `material_compatibility` — file material vs. loaded spool
+6. `material_compatibility` — file material vs. loaded spool. Under an engaged bypass on a
+   single-tool file the comparison target is the **external spool**, not the mapped lanes,
+   with exact-match semantics: a same-family grade change (file sliced ASA-GF, spool ASA)
+   still warns, since the spool is the only thing feeding the print
 
 The two bypass suppressions this section describes are entries in that list: gate 4
 (`required_filament_present`) and gate 5 (`unresolved_tools`, whose `unresolved_tools_in()`
@@ -3563,6 +3570,46 @@ loaded-but-idle lane (see the warning in `include/ams_backend_ad5x_ifs.h`). With
 engaged, any backend answering `true` produces the "Filament In The Toolhead" warning —
 pull the stray filament or confirm to start anyway. Drive the scenario against the mock
 with `HELIX_MOCK_AMS_STATE=unaccounted` under `--test`.
+
+### Bypass companions: runout arming and the external lane
+
+Two cross-cutting behaviors ride the same `any_bypass_active()` edge in
+`AmsState::sync_from_backend()`. Both live in their own abstraction layers — AmsState only
+notifies; per the vendor/layer rules no backend implements either one itself.
+
+**Runout arming** (`FilamentSensorManager::on_bypass_active_changed`): filament fed through
+the bypass passes no backend lane, so mid-print runout protection falls to the toolhead
+sensor alone — and on firmwares that leave that sensor disabled outside their own filament
+system (Creality's macros toggle it around every CFS operation; the K2 sits at
+`enabled: false` between sequences), a bypass print would run with no protection at all.
+Engaging bypass arms every RUNOUT-role sensor the firmware holds disabled
+(`SET_FILAMENT_SENSOR SENSOR=<name> ENABLE=1`, bare name, same form the vendor macros use);
+disengaging restores exactly what we armed. Firmware reports of a sensor being disabled
+behind our back (vendor macro ran mid-bypass) drop it from the armed set, so the restore
+never sends a command for state we no longer own. The user's monitoring switches (master
+enable, per-sensor enable) gate the arming — it is a temporary firmware-state change, not a
+settings change.
+
+**External lane publish** (`AmsBackend::publish_external_spool_lane` +
+`helix::ams::publish_external_lane`): the external spool is published as the lane one past
+the last physical slot in the shared `lane_data` namespace, so OrcaSlicer's
+MoonrakerPrinterAgent can select it as the "next tool over" (T4 beside T0–T3). Readers key
+off the inner 0-based `lane` field (`filament_slots.md` §4), which is the slot count.
+Triggered on bypass engage and on every external-spool identity change
+(`AmsState::apply_external_spool_store`), on every backend — each override decides for
+itself:
+
+| Backend | Publishes | Namespace owner / source-verified caveat |
+|---------|-----------|------------------------------------------|
+| CFS | `lane{N+1}` via its own mirror store | ZMOD/stock never writes lane_data; the namespace is ours |
+| AD5X IFS | `lane{NUM_PORTS+1}` via its own mirror store | same — ours alone |
+| AFC | `T{N}` via a dedicated shared-namespace store (lazy, from `api_`) | AFC's plugin never publishes extern (`AFC_lane.send_lane_data` runs only for lanes with a tool mapping) and **deletes the whole namespace at boot** (its `delete_lane_data()`); our entry dies at AFC restart and is re-published on the next trigger |
+| Happy Hare | `lane{N+1}` via a dedicated shared-namespace store | HH's plugin publishes gates only (`push_lane_data` in its Moonraker component), and its **boot-time cleanup deletes records with `lane >= num_gates`**; same die-at-restart, re-publish-on-trigger cycle |
+| ACE / Snapmaker / QIDI / Tool Changer | no (default no-op) | `supports_bypass` is false — there is no external spool to publish |
+
+The identity rule is shared in `publish_external_lane()`: a null or identity-less record
+(no Spoolman id, no material, default-gray color) **clears** the lane rather than
+publishing a phantom tray; pure black is a real pick and publishes.
 
 ### Dynamic Actions (backend-specific)
 

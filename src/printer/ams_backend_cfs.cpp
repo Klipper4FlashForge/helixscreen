@@ -3606,6 +3606,29 @@ void AmsBackendCfs::clear_box_slot_profile(int slot_index) {
     }
 }
 
+void AmsBackendCfs::publish_external_spool_lane(const SlotInfo* spool) {
+    // The external spool as an extra OrcaSlicer-selectable lane. Index is the
+    // 0-based slot count → format_lane_key emits lane{N+1}, one past the last
+    // physical bay — no collision with real lanes (16 on a 4-unit CFS), and a
+    // stable key however many units are attached.
+    //
+    // Deliberately NOT routed through overrides_ (the per-bay override map):
+    // hardware-event clearing and stale-override logic walk that map by real
+    // slot index, and the external spool is not a bay. A one-shot record built
+    // by the shared helper keeps the mirror map untouched.
+    int lane_index = 0;
+    bool supported = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        supported = system_info_.supports_bypass && override_store_ != nullptr;
+        lane_index = system_info_.total_slots;
+    }
+    if (!supported || lane_index <= 0) {
+        return;
+    }
+    helix::ams::publish_external_lane(override_store_.get(), lane_index, spool, backend_log_tag());
+}
+
 } // namespace helix::printer
 
 #endif // HELIX_HAS_CFS

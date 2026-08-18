@@ -21,6 +21,7 @@
 #include "data_root_resolver.h"
 #include "filament_database.h"
 #include "filament_display_name.h"
+#include "filament_sensor_manager.h"
 #include "helix_psram_attr.h"
 #include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
@@ -1487,6 +1488,24 @@ void AmsState::sync_from_backend() {
         spdlog::debug("[AmsState] Bypass -> {}, bumping slots_version for the pre-print check",
                       bypass_now);
         bump_slots_version();
+        // Notification only — the bypass⇄sensor policy (arm/restore runout
+        // sensors at the firmware level) lives entirely in
+        // FilamentSensorManager, the sensor abstraction layer.
+        FilamentSensorManager::instance().on_bypass_active_changed(bypass_now);
+
+        // Publish the external spool as an extra lane_data entry for slicer
+        // sync (OrcaSlicer) when bypass engages. Capability question via the
+        // backend virtual — only backends that own a lane_data mirror and
+        // support bypass answer; AmsState names no system.
+        if (bypass_now) {
+            const auto spool = get_external_spool_info();
+            for (auto& backend : backends_) {
+                if (backend) {
+                    backend->publish_external_spool_lane(spool.has_value() ? &spool.value()
+                                                                           : nullptr);
+                }
+            }
+        }
     }
     int new_supports_bypass = helix::bypass_available_for(info.supports_bypass) ? 1 : 0;
     if (lv_subject_get_int(&supports_bypass_) != new_supports_bypass) {
@@ -3016,6 +3035,14 @@ void AmsState::apply_external_spool_store(const SlotInfo& info) {
         set_external_spool_info(info);
     } else {
         clear_external_spool_info();
+    }
+
+    // Keep the slicer-sync lane (OrcaSlicer lane_data mirror) fresh on every
+    // identity change — same capability dispatch as the bypass-engage hook.
+    for (auto& backend : backends_) {
+        if (backend) {
+            backend->publish_external_spool_lane(&info);
+        }
     }
 }
 

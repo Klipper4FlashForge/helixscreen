@@ -1118,7 +1118,7 @@ All four have UI equivalents in **Settings > Hardware & Devices > Multi-Filament
 #### `force_bypass_controls`
 **Type:** boolean
 **Default:** `false`
-**Description:** Show the bypass controls and the external spool on the filament path even when the firmware reports no bypass position. Applies to Creality CFS, Anycubic ACE Pro, Snapmaker U1, tool changers, QIDI Box, and Happy Hare configs where `[mmu_machine] has_bypass` is `0`. The matching UI row is hidden whenever the firmware *does* report a bypass.
+**Description:** Show the bypass controls and the external spool on the filament path even when the firmware reports no bypass position. Applies to Anycubic ACE Pro, Snapmaker U1, tool changers, QIDI Box, and Happy Hare configs where `[mmu_machine] has_bypass` is `0`. The matching UI row is hidden whenever the firmware *does* report a bypass - including the Creality CFS, whose bypass always works.
 
 On Happy Hare, `MMU_SELECT_BYPASS` ignores `has_bypass` and works either way, so this setting makes the bypass usable on `mmu_vendor: Other` setups and on uncalibrated type-A selectors. On the other systems there is no bypass command to send: the Bypass toggle reports that the operation is not supported, and the setting controls only whether the external spool is displayed and tracked.
 

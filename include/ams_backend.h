@@ -1403,6 +1403,30 @@ class AmsBackend {
         (void)slot_index;
     }
 
+    /**
+     * @brief Publish the external (bypass) spool into the backend's lane_data
+     *        mirror, or clear it.
+     *
+     * Capability question, not vendor dispatch: "can this filament system's
+     * external spool appear as an extra lane in the shared lane_data namespace
+     * (so slicers like OrcaSlicer can select it)?" Default no-op — backends
+     * whose firmware publishes lane_data itself (AFC, Happy Hare) or that have
+     * no bypass never publish. A backend that owns its lane_data mirror and
+     * supports bypass (CFS) publishes the spool as the lane one past its last
+     * physical slot.
+     *
+     * Called by AmsState when bypass engages and whenever the external spool's
+     * identity changes. Not called on bypass disengage — the lane mirrors the
+     * spool record, not the feed state, so a slicer mapping survives a
+     * bypass-off period.
+     *
+     * @param spool external spool info; nullptr (or an identity-less record)
+     *              clears the published lane
+     */
+    virtual void publish_external_spool_lane(const SlotInfo* spool) {
+        (void)spool;
+    }
+
     // ========================================================================
     // Bypass Mode Operations
     // ========================================================================

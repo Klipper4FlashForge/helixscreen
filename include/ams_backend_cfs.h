@@ -201,6 +201,12 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // preserved. Only spool_name / spoolman_* / remaining_weight_g are zeroed.
     void clear_slot_override(int slot_index) override;
 
+    /// Publish the external spool as the lane one past the last physical slot
+    /// (lane{total_slots+1}) in our lane_data mirror, so OrcaSlicer can select
+    /// it. Stock and fork dialects alike: the lane is OUR mirror record, no
+    /// firmware involvement.
+    void publish_external_spool_lane(const SlotInfo* spool) override;
+
     // Explicit Clear Spool action. Fork firmware owns the persisted profile;
     // stock CFS dialects have no equivalent command.
     void clear_box_slot_profile(int slot_index);

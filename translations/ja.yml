@@ -307,6 +307,7 @@ translations:
   Bypass: バイパス
   Bypass Is Active: ''
   Bypass Mode: バイパスモード
+  Bypass active — this print runs on the external spool, not on the lanes below.: ''
   Bypass controlled by hardware sensor: ハードウェアセンサーによるバイパス制御
   Bypass controlled by sensor: バイパスはセンサーで制御中
   Bypass disabled: バイパス無効

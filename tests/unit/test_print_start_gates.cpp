@@ -237,6 +237,67 @@ TEST_CASE("material_mismatches_in: non-AMS external spool mismatch",
     CHECK(out[0].loaded_material == "PLA");
 }
 
+TEST_CASE("material_mismatches_in: bypass print compares external spool, not lanes",
+          "[print-start][gate-pipeline]") {
+    // K2 CFS regression: file sliced ASA-GF on lane 2, bypass engaged,
+    // external spool set to Spoolman ASA. The lane mapping is irrelevant —
+    // the dialog must name the external spool's material, and a same-family
+    // grade change (ASA vs ASA-GF) still warns.
+    auto make = [](const char* spool_material) {
+        return ctx_with([&](PrintStartContext& c) {
+            c.has_detail_view = true;
+            c.ams_available = true; // AMS present — bypass is what redirects
+            c.any_bypass_active = true;
+            c.tools_used = {1};
+            c.filament_color_count = 4; // full profile palette, one tool used
+            GcodeToolInfo t;
+            t.tool_index = 1;
+            t.material = "ASA-GF";
+            c.tool_info = {t};
+            ToolMapping m; // lane mapping would be a MATCH — must be ignored
+            m.tool_index = 1;
+            m.mapped_slot = 1;
+            m.material_mismatch = false;
+            c.mappings = {m};
+            SlotInfo spool;
+            spool.material = spool_material;
+            c.external_spool = spool;
+        });
+    };
+    auto out = material_mismatches_in(make("ASA"));
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].tool_index == 1);
+    CHECK(out[0].expected_material == "ASA-GF");
+    CHECK(out[0].loaded_material == "ASA");
+
+    // Exact same material (case-insensitive) stays silent.
+    CHECK(material_mismatches_in(make("asa-gf")).empty());
+
+    // Unknown spool material — nothing to compare, stay silent.
+    CHECK(material_mismatches_in(make("")).empty());
+}
+
+TEST_CASE("material_mismatches_in: bypass falls back to palette materials",
+          "[print-start][gate-pipeline]") {
+    // No mapping-card tool_info (e.g. scan produced tools_used but the card
+    // was never built) — the file's palette still names the used tool's
+    // material.
+    auto ctx = ctx_with([](PrintStartContext& c) {
+        c.has_detail_view = true;
+        c.any_bypass_active = true;
+        c.tools_used = {2};
+        c.filament_materials = {"PLA", "PLA", "ASA-GF", "PLA"};
+        SlotInfo spool;
+        spool.material = "ASA";
+        c.external_spool = spool;
+    });
+    auto out = material_mismatches_in(ctx);
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].tool_index == 2);
+    CHECK(out[0].expected_material == "ASA-GF");
+    CHECK(out[0].loaded_material == "ASA");
+}
+
 // ---------------------------------------------------------------------------
 // default_print_start_gates: order + names
 // ---------------------------------------------------------------------------
@@ -280,6 +341,34 @@ TEST_CASE("gate bypass_engaged_lane_print: fires only on bypass + multi-color",
     CHECK(r.title == "Bypass Is Active");
     CHECK(r.proceed_label == "Start Anyway");
     CHECK(r.body.find("bypass") != std::string::npos);
+}
+
+TEST_CASE("gate bypass_engaged_lane_print: used-tool count beats palette size",
+          "[print-start][gate-pipeline]") {
+    // K2 CFS regression: a single-tool file sliced on a 4-lane profile carries
+    // a full palette (PLA;ASA-GF;ASA-GF;PLA) but extrudes from one tool. The
+    // print needs no lanes, so bypass is the legitimate source — no warning.
+    auto& g = default_print_start_gates()[1];
+    auto single_used_tool = ctx_with([](PrintStartContext& c) {
+        c.any_bypass_active = true;
+        c.filament_color_count = 4; // full profile palette
+        c.tools_used = {1};         // gcode scan: only T1 extrudes
+    });
+    CHECK(g.evaluate(single_used_tool).verdict == CheckResult::Verdict::Pass);
+
+    auto two_used_tools = ctx_with([](PrintStartContext& c) {
+        c.any_bypass_active = true;
+        c.filament_color_count = 4;
+        c.tools_used = {0, 2};
+    });
+    CHECK(g.evaluate(two_used_tools).verdict == CheckResult::Verdict::Warn);
+
+    // No scan result (empty tools_used) falls back to the palette count.
+    auto no_scan = ctx_with([](PrintStartContext& c) {
+        c.any_bypass_active = true;
+        c.filament_color_count = 4;
+    });
+    CHECK(g.evaluate(no_scan).verdict == CheckResult::Verdict::Warn);
 }
 
 TEST_CASE("gate unaccounted_toolhead_filament: verdict matrix", "[print-start][gate-pipeline]") {
@@ -345,6 +434,30 @@ TEST_CASE("gate required_filament_present: AMS lanes all fed -> pass",
         c.has_active_backend = true;
     });
     CHECK(default_print_start_gates()[3].evaluate(ctx).verdict == CheckResult::Verdict::Pass);
+}
+
+TEST_CASE("gate required_filament_present: single-tool bypass ignores empty lanes",
+          "[print-start][gate-pipeline]") {
+    // Bypass feeds the toolhead from the external spool; the mapped lane's
+    // emptiness is irrelevant for a single-tool print and must not warn.
+    auto ctx = ctx_with([](PrintStartContext& c) {
+        c.ams_manages_filament = true;
+        c.has_active_backend = true;
+        c.any_bypass_active = true;
+        c.tools_used = {1};
+        c.empty_required_lanes = {{1, 2}}; // would warn without bypass
+    });
+    CHECK(default_print_start_gates()[3].evaluate(ctx).verdict == CheckResult::Verdict::Pass);
+
+    // Multi-tool bypass still needs lanes — lane truth stays active there.
+    auto multi = ctx_with([](PrintStartContext& c) {
+        c.ams_manages_filament = true;
+        c.has_active_backend = true;
+        c.any_bypass_active = true;
+        c.tools_used = {0, 2};
+        c.empty_required_lanes = {{2, 3}};
+    });
+    CHECK(default_print_start_gates()[3].evaluate(multi).verdict == CheckResult::Verdict::Warn);
 }
 
 TEST_CASE("gate required_filament_present: non-AMS runout says empty -> warn",

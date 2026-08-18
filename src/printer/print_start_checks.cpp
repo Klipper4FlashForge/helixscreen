@@ -24,6 +24,7 @@
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
+#include <cctype>
 #include <lvgl.h>
 
 namespace helix {
@@ -34,6 +35,44 @@ CheckResult pass_result() {
     CheckResult r;
     r.verdict = CheckResult::Verdict::Pass;
     return r;
+}
+
+/// Does this print need AMS lanes? True when more than one tool is actually
+/// used. tools_used comes from the gcode scan and is authoritative; the
+/// filament-color palette is the fallback because slicers emit a full-profile
+/// palette (e.g. PLA;ASA-GF;ASA-GF;PLA) even for a file that extrudes from a
+/// single tool — counting the palette would misread every single-tool file
+/// sliced on a multi-tool profile as a lane print.
+size_t print_lane_requirement(const PrintStartContext& ctx) {
+    if (!ctx.tools_used.empty()) {
+        return ctx.tools_used.size();
+    }
+    return ctx.filament_color_count;
+}
+
+/// The one tool a bypass print runs on: the (single) used tool when the scan
+/// knows it, else tool 0. Valid only when print_lane_requirement() <= 1.
+int bypass_print_tool(const PrintStartContext& ctx) {
+    if (!ctx.tools_used.empty()) {
+        return *ctx.tools_used.begin();
+    }
+    return 0;
+}
+
+/// Case-insensitive exact material equality. Deliberately stricter than
+/// FilamentMapper::materials_match, whose family resolution treats "ASA-GF"
+/// and "ASA" as compatible: for a bypass print the loaded spool is the ONLY
+/// thing feeding the print, and a grade change (GF/CF filler, silk, …)
+/// changes flow, cooling and abrasiveness — worth a heads-up dialog even
+/// though the family matches. The user can still proceed.
+bool materials_equal_exact(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    return std::equal(a.begin(), a.end(), b.begin(), [](char ca, char cb) {
+        return std::tolower(static_cast<unsigned char>(ca)) ==
+               std::tolower(static_cast<unsigned char>(cb));
+    });
 }
 
 /// Warning result with the dialog strings a gate mandates.
@@ -88,11 +127,12 @@ CheckResult gate_insufficient_spool_weight(const PrintStartContext& ctx) {
 }
 
 CheckResult gate_bypass_engaged_lane_print(const PrintStartContext& ctx) {
-    // Single-color prints with bypass engaged are the LEGITIMATE bypass use
-    // case — silent. Multi-color means the file needs AMS lanes, and firmware
-    // (AFC _check_bypass, verified) refuses a lane load while bypass filament
-    // is in the toolhead.
-    if (!ctx.any_bypass_active || ctx.filament_color_count <= 1) {
+    // Single-tool prints with bypass engaged are the LEGITIMATE bypass use
+    // case — silent. "Single-tool" is the used-tool count, not the palette
+    // size (see print_lane_requirement). Multi-tool means the file needs AMS
+    // lanes, and firmware (AFC _check_bypass, verified) refuses a lane load
+    // while bypass filament is in the toolhead.
+    if (!ctx.any_bypass_active || print_lane_requirement(ctx) <= 1) {
         return pass_result();
     }
     return warn_result(
@@ -133,6 +173,14 @@ CheckResult gate_required_filament_present(const PrintStartContext& ctx) {
     // consulting the backend's authoritative per-slot presence instead of the
     // aggregate motion sensors (avoids staged-but-retracted and unused-empty
     // false positives).
+    //
+    // A single-tool bypass print feeds from the external spool, not from any
+    // lane — the lanes it happens to map to are irrelevant, and an empty one
+    // must not block the print. Bypass engage itself proved filament at the
+    // toolhead. (Multi-tool bypass keeps the check; gate 2 already warned.)
+    if (ctx.any_bypass_active && print_lane_requirement(ctx) <= 1) {
+        return pass_result();
+    }
     if (ctx.ams_manages_filament && ctx.has_active_backend) {
         if (!ctx.empty_required_lanes.empty()) {
             spdlog::info("[PrintStartController] {} required tool(s) have an empty lane - "
@@ -245,6 +293,36 @@ CheckResult gate_material_compatibility(const PrintStartContext& ctx) {
 
     return warn_result(lv_tr("Material Mismatch"), std::move(message), lv_tr("Start Anyway"));
 }
+/// Material mismatch detail for a print running on the external spool:
+/// temperature context from the filament database (or the spool's own preset
+/// when the user set one). Shared by the non-AMS path and the bypass path.
+MaterialMismatchDetail external_spool_mismatch(const SlotInfo& spool, int tool_index,
+                                               const std::string& expected) {
+    MaterialMismatchDetail detail;
+    detail.tool_index = tool_index;
+    detail.expected_material = expected;
+    detail.loaded_material = spool.material;
+
+    // Temperature from filament database for expected material
+    if (auto expected_info = filament::find_material(expected)) {
+        detail.expected_nozzle_min = expected_info->nozzle_min;
+        detail.expected_nozzle_max = expected_info->nozzle_max;
+        detail.expected_bed_temp = expected_info->bed_temp;
+    }
+
+    // Temperature from external spool (user-set) or fall back to database
+    if (spool.nozzle_temp_min > 0 && spool.nozzle_temp_max > 0) {
+        detail.loaded_nozzle_min = spool.nozzle_temp_min;
+        detail.loaded_nozzle_max = spool.nozzle_temp_max;
+        detail.loaded_bed_temp = spool.bed_temp;
+    } else if (auto loaded_info = filament::find_material(spool.material)) {
+        detail.loaded_nozzle_min = loaded_info->nozzle_min;
+        detail.loaded_nozzle_max = loaded_info->nozzle_max;
+        detail.loaded_bed_temp = loaded_info->bed_temp;
+    }
+    return detail;
+}
+
 } // namespace
 
 std::vector<int> unresolved_tools_in(const PrintStartContext& ctx) {
@@ -330,6 +408,35 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
         return filament_weights[tool_index] > 0.0;
     };
 
+    if (ctx.any_bypass_active && print_lane_requirement(ctx) <= 1) {
+        // Single-tool bypass print: the material actually printing is the
+        // EXTERNAL spool's, whatever the lane mapping happens to say. Compare
+        // the file's material for the used tool against the external spool —
+        // same comparison the non-AMS path runs, scoped to the bypass tool.
+        // The mapped lanes describe filament that is not being printed with.
+        std::string expected;
+        const int tool = bypass_print_tool(ctx);
+        if (const auto* t = ui::FilamentMappingCard::find_by_tool_index(ctx.tool_info, tool)) {
+            expected = t->material;
+        } else if (tool < static_cast<int>(ctx.filament_materials.size())) {
+            expected = ctx.filament_materials[tool];
+        }
+        if (expected.empty() || !ctx.external_spool.has_value() ||
+            ctx.external_spool->material.empty()) {
+            return mismatches;
+        }
+        if (!materials_equal_exact(expected, ctx.external_spool->material)) {
+            mismatches.push_back(
+                external_spool_mismatch(ctx.external_spool.value(), tool, expected));
+        }
+        if (!mismatches.empty()) {
+            spdlog::info("[PrintStartController] Bypass print: material mismatch vs external "
+                         "spool ({} vs {})",
+                         expected, ctx.external_spool->material);
+        }
+        return mismatches;
+    }
+
     if (ctx.ams_available) {
         // AMS path: check ToolMapping.material_mismatch flags
         const auto& mappings = ctx.mappings;
@@ -412,34 +519,7 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
         }
 
         if (!FilamentMapper::materials_match(expected, spool_info->material)) {
-            MaterialMismatchDetail detail;
-            detail.tool_index = 0;
-            detail.expected_material = expected;
-            detail.loaded_material = spool_info->material;
-
-            // Temperature from filament database for expected material
-            auto expected_info = filament::find_material(expected);
-            if (expected_info) {
-                detail.expected_nozzle_min = expected_info->nozzle_min;
-                detail.expected_nozzle_max = expected_info->nozzle_max;
-                detail.expected_bed_temp = expected_info->bed_temp;
-            }
-
-            // Temperature from external spool (user-set) or fall back to database
-            if (spool_info->nozzle_temp_min > 0 && spool_info->nozzle_temp_max > 0) {
-                detail.loaded_nozzle_min = spool_info->nozzle_temp_min;
-                detail.loaded_nozzle_max = spool_info->nozzle_temp_max;
-                detail.loaded_bed_temp = spool_info->bed_temp;
-            } else {
-                auto loaded_info = filament::find_material(spool_info->material);
-                if (loaded_info) {
-                    detail.loaded_nozzle_min = loaded_info->nozzle_min;
-                    detail.loaded_nozzle_max = loaded_info->nozzle_max;
-                    detail.loaded_bed_temp = loaded_info->bed_temp;
-                }
-            }
-
-            mismatches.push_back(std::move(detail));
+            mismatches.push_back(external_spool_mismatch(*spool_info, 0, expected));
         }
     }
 

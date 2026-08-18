@@ -325,6 +325,7 @@ translations:
   Bypass: Bypass
   Bypass Is Active: Bypass Is Active
   Bypass Mode: Bypass Mode
+  Bypass active — this print runs on the external spool, not on the lanes below.: Bypass active — this print runs on the external spool, not on the lanes below.
   Bypass controlled by hardware sensor: Bypass controlled by hardware sensor
   Bypass controlled by sensor: Bypass controlled by sensor
   Bypass disabled: Bypass disabled

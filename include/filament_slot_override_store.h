@@ -237,6 +237,26 @@ bool mirror_firmware_to_lane_data(FilamentSlotOverrideStore* store,
                                   const std::string& firmware_material, bool slot_has_filament,
                                   MirrorPolicy policy, const std::string& log_tag);
 
+/// Publish (or clear) the external / bypass spool as an extra lane one past
+/// the last physical slot, so slicers (OrcaSlicer's MoonrakerPrinterAgent)
+/// can select it as the "next tool over" (T4 beside T0-T3). The record rides
+/// the same lane_data format as every other lane; readers (Orca) key off the
+/// inner 0-based `lane` field, which is `lane_index`.
+///
+/// Who calls this: AmsBackend::publish_external_spool_lane overrides — the
+/// backend gates on its own supports_bypass + store, then hands off here.
+/// Backends whose firmware owns the lane_data namespace (AFC, Happy Hare)
+/// must pass a store constructed on the SHARED "lane_data" namespace, not
+/// their private override namespace.
+///
+/// `spool` null or identity-less (no Spoolman id, no material, default-gray
+/// color) CLEARS the lane instead of publishing an empty phantom. Pure black
+/// (0x000000) is a real pick and publishes.
+///
+/// Returns true if a record was published (false for the clear path).
+bool publish_external_lane(FilamentSlotOverrideStore* store, int lane_index, const SlotInfo* spool,
+                           const std::string& log_tag);
+
 // =============================================================================
 // Shared override-wins merge (filament_slots.md §5)
 // =============================================================================

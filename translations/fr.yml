@@ -344,6 +344,7 @@ translations:
   Bypass: Bypass
   Bypass Is Active: ''
   Bypass Mode: Mode bypass
+  Bypass active — this print runs on the external spool, not on the lanes below.: ''
   Bypass controlled by hardware sensor: Bypass contrôlé par capteur matériel
   Bypass controlled by sensor: Bypass contrôlé par le capteur
   Bypass disabled: Bypass désactivé

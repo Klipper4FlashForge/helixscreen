@@ -306,6 +306,7 @@ translations:
   Bypass: 旁路
   Bypass Is Active: ''
   Bypass Mode: 旁路模式
+  Bypass active — this print runs on the external spool, not on the lanes below.: ''
   Bypass controlled by hardware sensor: 旁路由硬件传感器控制
   Bypass controlled by sensor: 旁通由传感器控制
   Bypass disabled: 旁通已禁用
