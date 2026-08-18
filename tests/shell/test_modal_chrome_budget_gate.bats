@@ -56,6 +56,44 @@ EOF
     [ "$status" -eq 1 ]
 }
 
+@test "flags a SECOND button row on the standard cap" {
+    # The ladder budgets exactly ONE button row. A second (klipper_recovery's
+    # restart row + Dismiss) is the tall-chrome shape and belongs on
+    # #dialog_content_tall_chrome_max, which reserves that row's height.
+    cat > "${FIXTURE}/ui_xml/two_rows.xml" <<'EOF'
+<component>
+  <view name="two_rows" extends="ui_dialog" height="content" style_max_height="85%">
+    <lv_obj name="content" height="content" style_max_height="#dialog_content_max"/>
+    <divider_horizontal/>
+    <modal_button_row/>
+    <divider_horizontal/>
+    <lv_obj height="#button_height" flex_flow="row"/>
+  </view>
+</component>
+EOF
+    run python3 "${GATE}" --repo-root "${FIXTURE}"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"two_rows"* ]]
+}
+
+@test "flags a card raised above the shared 85% cap" {
+    # klipper_recovery_dialog carried 90% for exactly this reason before the
+    # tall-chrome ladder existed (#1277). Raising one card unsizes the ladder
+    # arithmetic every modal shares, so the hack itself is flagged now.
+    cat > "${FIXTURE}/ui_xml/own_cap.xml" <<'EOF'
+<component>
+  <view name="own_cap" extends="ui_dialog" height="content" style_max_height="90%">
+    <lv_obj name="content" height="content" style_max_height="#dialog_content_max"/>
+    <divider_horizontal/>
+    <modal_button_row/>
+  </view>
+</component>
+EOF
+    run python3 "${GATE}" --repo-root "${FIXTURE}"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"90%"* ]]
+}
+
 # --- the shapes it must stay QUIET about ------------------------------------
 
 @test "silent on the reference shape: content, divider, button row" {
@@ -122,16 +160,36 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "silent on a modal that sized its own root cap" {
-    # klipper_recovery_dialog raises the card to 90% because it carries two
-    # button rows, and records the arithmetic. It opted out of the shared budget.
+@test "silent on a self-sized modal that uses no shared ladder" {
+    # favorite_macro_config_modal caps its card at a flat 520px and never
+    # references a #dialog_content_* token — it sized itself and is not the
+    # shared budget's business. Only a RAISED cap on a modal that ALSO uses a
+    # shared content token is flagged.
     cat > "${FIXTURE}/ui_xml/own_cap.xml" <<'EOF'
 <component>
-  <view name="own_cap" extends="ui_dialog" height="content" style_max_height="90%">
-    <lv_obj name="content" height="content" style_max_height="#dialog_content_max"/>
-    <lv_obj name="extra_block" height="content"/>
+  <view name="own_cap" extends="ui_dialog" height="content" style_max_height="520">
+    <lv_obj name="content" height="content" style_max_height="400"/>
     <divider_horizontal/>
     <modal_button_row/>
+  </view>
+</component>
+EOF
+    run python3 "${GATE}" --repo-root "${FIXTURE}"
+    [ "$status" -eq 0 ]
+}
+
+@test "silent on the tall-chrome shape: second button row on the tall cap" {
+    # klipper_recovery_dialog's shape — a restart-row block (wrapper hides with
+    # the restart actions), its divider, then Dismiss — on the tall-chrome token.
+    cat > "${FIXTURE}/ui_xml/tall_chrome.xml" <<'EOF'
+<component>
+  <view name="tall_chrome" extends="ui_dialog" height="content" style_max_height="85%">
+    <lv_obj name="content" height="content" style_max_height="#dialog_content_tall_chrome_max"/>
+    <lv_obj name="restart_actions" height="content">
+      <bind_flag_if_eq subject="recovery_can_restart" flag="hidden" ref_value="0"/>
+    </lv_obj>
+    <divider_horizontal/>
+    <ui_button name="dismiss" height="#button_height"/>
   </view>
 </component>
 EOF
