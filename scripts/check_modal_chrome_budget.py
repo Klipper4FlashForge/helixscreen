@@ -223,6 +223,7 @@ def find_violations(path):
             # everything after that must be paid for out of the token's budget.
             budget = TOKEN_BUDGET[token]
             button_rows_seen = 0
+            first_button_row = None
 
             for sibling in children[idx + 1:]:
                 if is_divider(sibling):
@@ -230,7 +231,15 @@ def find_violations(path):
                 if is_button_row(sibling):
                     button_rows_seen += 1
                     if button_rows_seen == 1:
+                        first_button_row = sibling
                         continue  # the one row every budget covers
+                    # State-switched rows never co-render: a modal whose button
+                    # row swaps with debug_bundle_state-style bindings shows
+                    # exactly one row at a time, so the extra rows cost no
+                    # chrome. Compare against the FIRST row (the budgeted one),
+                    # same predicate as the pinned-block exemption below.
+                    if first_button_row is not None and mutually_exclusive(first_button_row, sibling):
+                        continue
                     # A second button row is the tall-chrome shape: it costs
                     # a budget slot like a pinned block.
                     if budget > 0:
