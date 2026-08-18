@@ -69,6 +69,23 @@ struct LaneDataAnomalies {
 [[nodiscard]] std::optional<std::pair<int, FilamentSlotOverride>>
 from_lane_data_record(const nlohmann::json& j);
 
+/// Process-wide fallback dir for the store's on-disk read-cache, consulted
+/// by cache_dir_effective() when an instance has no per-instance cache_dir_
+/// pinned. Production leaves it empty (instances then resolve
+/// helix::get_user_config_dir()). The shared test fixture points it at its
+/// per-PID sandbox before main() so AMS backend tests — which construct real
+/// backends, and thus real stores, without pinning a dir — cannot write
+/// filament_slot_overrides.json into the repo's config/ dir. Same role
+/// ToolState::set_config_dir() plays for tool_spools.json, and mutable for
+/// the same reason AppConstants::Update::detail::state_dir_ref() is.
+/// Write it before threads exist; afterwards it is read-only.
+namespace detail {
+inline std::filesystem::path& slot_override_cache_dir_ref() {
+    static std::filesystem::path dir;
+    return dir;
+}
+} // namespace detail
+
 class FilamentSlotOverrideStore {
   public:
     // key_style defaults to Lane so the many lane-based construction sites and

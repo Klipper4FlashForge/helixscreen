@@ -638,7 +638,17 @@ FilamentSlotOverrideStore::FilamentSlotOverrideStore(IMoonrakerAPI* api, std::st
       namespace_(std::move(ns)) {}
 
 std::filesystem::path FilamentSlotOverrideStore::cache_dir_effective() const {
-    return cache_dir_.empty() ? std::filesystem::path(helix::get_user_config_dir()) : cache_dir_;
+    if (!cache_dir_.empty()) {
+        return cache_dir_;
+    }
+    // Test-binary seam: the shared fixture points the process-wide fallback
+    // at its sandbox before main() (helix_test_fixture.cpp). Empty in
+    // production, where the user config dir below remains the answer.
+    const std::filesystem::path& process_default = detail::slot_override_cache_dir_ref();
+    if (!process_default.empty()) {
+        return process_default;
+    }
+    return std::filesystem::path(helix::get_user_config_dir());
 }
 
 std::filesystem::path FilamentSlotOverrideStore::cache_path() const {
