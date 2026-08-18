@@ -196,8 +196,9 @@ class PrinterDetector {
      * @brief Build list options string from database
      *
      * Dynamically builds a newline-separated string of printer names suitable
-     * for LVGL list widget. Only includes entries with `show_in_list: true`
-     * (defaults to true if field is missing). Always appends "Custom/Other"
+     * for LVGL list widget. Includes an entry when `show_in_list` is true or
+     * missing (default true); entries that explicitly set it `false` (the
+     * non-printer addons) are excluded. Always appends "Custom/Other"
      * and "Unknown" at the end.
      *
      * The string is cached after first build for performance.

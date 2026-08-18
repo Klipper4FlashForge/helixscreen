@@ -283,8 +283,8 @@ def main():
         do_index = args.index or not args.refs
 
     if args.list:
-        label = 'scanned (devel)' if devel else 'scanned'
         for t in targets:
+            label = 'scanned (devel)' if t.startswith('docs/devel') else 'scanned'
             print('  %s: %s' % (label, t))
 
     exit_code = 0

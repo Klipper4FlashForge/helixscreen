@@ -250,7 +250,7 @@ See [docs/user/TROUBLESHOOTING.md](docs/user/TROUBLESHOOTING.md) for more soluti
 ### Developer Guides
 | Guide | Description |
 |-------|-------------|
-| [Development](docs/devel/DEVELOPMENT.md) | Build system, workflow, contributing |
+| [Development](docs/devel/DEVELOPMENT.md) | Daily workflow: run flags, logging, config, IDE setup |
 | [Architecture](docs/devel/ARCHITECTURE.md) | Whole-app model + guide to the 15 architecture chapters |
 | [LVGL9 XML Guide](docs/devel/LVGL9_XML_GUIDE.md) | XML syntax reference |
 | [UI Contributor Guide](docs/devel/UI_CONTRIBUTOR_GUIDE.md) | Breakpoints, tokens, colors, widgets |

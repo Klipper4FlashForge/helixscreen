@@ -56,7 +56,7 @@ Four mechanics carry the load: the file-to-widget pipeline (including live editi
 
 At boot, `Application` runs the phases in a fixed order (phase numbers and lines from `src/application/application.cpp`):
 
-1. Phase 7 — `register_widgets()` (`:1744`): registers the 29 C++ widget types so the engine knows tags like `ui_card` and `ui_button`.
+1. Phase 7 — `register_widgets()` (`:1744`): registers the first 13 C++ widget types so the engine knows tags like `ui_card` and `ui_button`.
 2. Phase 8a — translations, before any UI exists.
 3. Phase 8b — rotation probe and layout-manager init, so per-display XML variant directories are known.
 4. Phase 8c — `register_xml_components()` (`:1777`): registers every XML component file.
@@ -78,7 +78,7 @@ At boot, `Application` runs the phases in a fixed order (phase numbers and lines
 
 (excerpted from `ui_xml/bed_temp_panel.xml:4`; comments removed). A template is not yet widgets — just a parsed definition waiting to be instantiated. On ESP-class targets the registration sweep yields periodically (`boot_yield.h`) so the watchdog never fires mid-sweep.
 
-Creation happens later, on demand. When navigation needs a panel, `PanelFactory` calls `lv_xml_create(parent, "bed_temp_panel", attrs)`. The engine (`lib/helix-xml/src/xml/lv_xml.c:438`) first looks the name up in the widget-processor table — the built-in `lv_label`/`lv_slider` types plus our 30 custom `ui_*` widgets. If that misses, it looks up a registered component scope and instantiates the template: recursively creating child widgets, applying attributes, and resolving bindings as it goes.
+Creation happens later, on demand. When navigation needs a panel, `PanelFactory` calls `lv_xml_create(parent, "bed_temp_panel", attrs)`. The engine (`lib/helix-xml/src/xml/lv_xml.c:438`) first looks the name up in the widget-processor table — the built-in `lv_label`/`lv_slider` types plus our custom `ui_*` widgets. If that misses, it looks up a registered component scope and instantiates the template: recursively creating child widgets, applying attributes, and resolving bindings as it goes.
 
 Components compose. A panel's `<view extends="overlay_panel">` inherits a registered wrapper template (`ui_xml/overlay_panel.xml`, registered at `src/xml_registration.cpp:414`) instead of a bare `lv_obj`; the `extends` link is resolved at instantiation time through the same widget/component tables (`lib/helix-xml/src/xml/lv_xml_component.c:200`). A component file may also declare `<consts>` — named values visible to that component's bindings and styles — which is where per-panel colors and sizes live when they are not global theme tokens.
 
