@@ -5,6 +5,7 @@
 
 #include "ui_confetti.h"
 #include "ui_filename_utils.h"
+#include "ui_format_utils.h"
 #include "ui_icon.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
@@ -140,6 +141,22 @@ static void cleanup_helix_temp_file(const std::string& filename) {
 }
 
 // Helper to show the rich print completion modal
+CompletionStats build_completion_stats(int duration_secs, int estimated_secs, int total_layers,
+                                       int filament_mm) {
+    CompletionStats out;
+    out.duration = format::duration_padded(duration_secs) + " " + lv_tr("elapsed");
+    if (estimated_secs > 0) {
+        out.estimate = std::string("est") + " " + format::duration_padded(estimated_secs);
+    }
+    out.layers =
+        ui::format_layer_count(total_layers > 0 ? static_cast<uint32_t>(total_layers) : 0U);
+    if (filament_mm > 0) {
+        out.filament =
+            format::format_filament_length(static_cast<double>(filament_mm)) + " " + lv_tr("used");
+    }
+    return out;
+}
+
 static void show_rich_completion_modal(PrintJobState state, const char* filename) {
     init_completion_subjects();
 
@@ -183,29 +200,21 @@ static void show_rich_completion_modal(PrintJobState state, const char* filename
     lv_subject_copy_string(&s_title_subject, lv_tr(title));
     lv_subject_copy_string(&s_filename_subject, filename);
 
-    std::string duration_str = format::duration_padded(duration_secs) + " " + lv_tr("elapsed");
-    lv_subject_copy_string(&s_duration_subject, duration_str.c_str());
+    const CompletionStats stats =
+        build_completion_stats(duration_secs, estimated_secs, total_layers, filament_mm);
 
-    if (estimated_secs > 0) {
-        std::string est_str = std::string("est") + " " + format::duration_padded(estimated_secs);
-        lv_subject_copy_string(&s_estimate_subject, est_str.c_str());
-        lv_subject_set_int(&s_has_estimate_subject, 1);
-    } else {
-        lv_subject_set_int(&s_has_estimate_subject, 0);
+    lv_subject_copy_string(&s_duration_subject, stats.duration.c_str());
+    lv_subject_copy_string(&s_layers_subject, stats.layers.c_str());
+
+    if (!stats.estimate.empty()) {
+        lv_subject_copy_string(&s_estimate_subject, stats.estimate.c_str());
     }
+    lv_subject_set_int(&s_has_estimate_subject, stats.estimate.empty() ? 0 : 1);
 
-    char layers_tmp[32];
-    snprintf(layers_tmp, sizeof(layers_tmp), "%d %s", total_layers, lv_tr("layers"));
-    lv_subject_copy_string(&s_layers_subject, layers_tmp);
-
-    if (filament_mm > 0) {
-        std::string fil_str =
-            format::format_filament_length(static_cast<double>(filament_mm)) + " " + lv_tr("used");
-        lv_subject_copy_string(&s_filament_subject, fil_str.c_str());
-        lv_subject_set_int(&s_has_filament_subject, 1);
-    } else {
-        lv_subject_set_int(&s_has_filament_subject, 0);
+    if (!stats.filament.empty()) {
+        lv_subject_copy_string(&s_filament_subject, stats.filament.c_str());
     }
+    lv_subject_set_int(&s_has_filament_subject, stats.filament.empty() ? 0 : 1);
 
     // Show modal - XML bind_text and bind_flag_if_eq resolve from subjects above
     lv_obj_t* dialog = helix::ui::modal_show("print_completion_modal");

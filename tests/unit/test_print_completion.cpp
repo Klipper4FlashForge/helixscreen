@@ -16,8 +16,11 @@
  * TEST-FIRST: Documents expected behavior for the fix.
  */
 
+#include "ui_format_utils.h"
+
 #include "../test_helpers/printer_state_test_access.h"
 #include "../ui_test_utils.h"
+#include "print_completion.h"
 #include "printer_state.h"
 
 #include <spdlog/spdlog.h>
@@ -469,4 +472,51 @@ TEST_CASE_METHOD(PrintCompletionTestFixture,
     // Only the final terminal transition should count
     REQUIRE(get_completion_callback_count() == 1);
     REQUIRE(get_last_completion_state() == PrintJobState::CANCELLED);
+}
+
+// ============================================================================
+// Completion stats formatting
+// ============================================================================
+
+TEST_CASE("build_completion_stats renders layers through the canonical formatter",
+          "[print_completion][format]") {
+    // The completion modal used to hand-roll snprintf("%d %s", n, lv_tr("layers")),
+    // which renders "0 layers" where the shared helper returns UNAVAILABLE and
+    // "1 layers" where it returns the singular. It also used a second, separate
+    // translation key for the same word. Asserting equality with the helper
+    // states the contract directly and survives translation.
+    SECTION("zero layers matches the helper's unavailable form") {
+        auto stats = helix::build_completion_stats(60, 0, 0, 0);
+        REQUIRE(stats.layers == helix::ui::format_layer_count(0));
+    }
+
+    SECTION("a single layer is not pluralised") {
+        auto stats = helix::build_completion_stats(60, 0, 1, 0);
+        REQUIRE(stats.layers == helix::ui::format_layer_count(1));
+    }
+
+    SECTION("many layers match the helper") {
+        auto stats = helix::build_completion_stats(60, 0, 250, 0);
+        REQUIRE(stats.layers == helix::ui::format_layer_count(250));
+    }
+}
+
+TEST_CASE("build_completion_stats omits optional fields when unknown",
+          "[print_completion][format]") {
+    SECTION("no estimate yields an empty estimate string") {
+        auto stats = helix::build_completion_stats(60, 0, 10, 500);
+        REQUIRE(stats.estimate.empty());
+    }
+
+    SECTION("no filament yields an empty filament string") {
+        auto stats = helix::build_completion_stats(60, 120, 10, 0);
+        REQUIRE(stats.filament.empty());
+    }
+
+    SECTION("both present yields both populated") {
+        auto stats = helix::build_completion_stats(60, 120, 10, 500);
+        REQUIRE_FALSE(stats.estimate.empty());
+        REQUIRE_FALSE(stats.filament.empty());
+        REQUIRE_FALSE(stats.duration.empty());
+    }
 }
