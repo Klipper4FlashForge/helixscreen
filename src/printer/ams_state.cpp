@@ -3010,6 +3010,23 @@ AmsError AmsState::commit_slot_edit(int slot_index, const SlotInfo& original,
     return err;
 }
 
+void AmsState::apply_external_spool_store(const SlotInfo& info) {
+    // S5 + S7 — same emptiness predicate as the FilamentPanel completion arm
+    if (info.spoolman_id > 0 || !info.material.empty()) {
+        set_external_spool_info(info);
+    } else {
+        clear_external_spool_info();
+    }
+}
+
+void AmsState::invalidate_stale_external_identity(const SlotInfo& info) {
+    // S6 — stale identity otherwise survives until a server 404
+    const int previous_id = get_external_spool_info().value_or(SlotInfo{}).spoolman_id;
+    if (previous_id > 0 && previous_id != info.spoolman_id) {
+        SpoolmanManager::invalidate_identity(previous_id);
+    }
+}
+
 void AmsState::commit_external_spool_edit(const SlotInfo& info) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
 
@@ -3033,10 +3050,60 @@ void AmsState::commit_external_spool_edit(const SlotInfo& info) {
         }
     }
 
-    // S5 + S7 — same emptiness predicate as the FilamentPanel completion arm
-    if (info.spoolman_id > 0 || !info.material.empty()) {
-        set_external_spool_info(info);
-    } else {
-        clear_external_spool_info();
+    invalidate_stale_external_identity(info);
+
+    // S5 + S7
+    apply_external_spool_store(info);
+}
+
+void AmsState::commit_external_spool_edit(const SlotInfo& info, std::function<void()> on_committed,
+                                          std::function<void(const MoonrakerError& err)> on_error) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+
+    invalidate_stale_external_identity(info);
+
+    if (api_ && info.spoolman_id > 0) {
+        // Server-first: the store subset waits for the server round-trip. The
+        // API callbacks fire on a background thread, so both the store write
+        // and the caller's completion are marshalled to the main thread.
+        api_->spoolman().set_active_spool(
+            info.spoolman_id,
+            [info, on_committed = std::move(on_committed)]() {
+                helix::ui::queue_update("AmsState::commit_external_spool_edit",
+                                        [info, on_committed]() {
+                                            if (s_shutdown_flag.load(std::memory_order_acquire)) {
+                                                return;
+                                            }
+                                            AmsState::instance().apply_external_spool_store(info);
+                                            if (on_committed) {
+                                                on_committed();
+                                            }
+                                        });
+            },
+            [on_error = std::move(on_error)](const MoonrakerError& err) {
+                helix::ui::queue_update("AmsState::commit_external_spool_edit", [on_error, err]() {
+                    if (on_error) {
+                        on_error(err);
+                    }
+                });
+            });
+        return;
+    }
+
+    // Manual entry or clear: no server identity gates the store write. The
+    // clear arm (replacing a linked spool with an empty record) still tells
+    // the server, fire-and-forget, exactly like the sync commit.
+    if (api_ && info.spoolman_id == 0 &&
+        get_external_spool_info().value_or(SlotInfo{}).spoolman_id > 0) {
+        api_->spoolman().set_active_spool(
+            0, []() {},
+            [](const MoonrakerError& err) {
+                spdlog::warn("[AmsState] Failed to clear active spool: {}", err.message);
+            });
+    }
+
+    apply_external_spool_store(info);
+    if (on_committed) {
+        on_committed();
     }
 }

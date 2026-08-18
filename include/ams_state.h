@@ -12,11 +12,13 @@
 #include "filament_consumption_tracker.h"
 #include "filament_mapper.h"
 #include "lvgl/lvgl.h"
+#include "moonraker_error.h"
 #include "subject_managed_panel.h"
 
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -1282,8 +1284,26 @@ class AmsState {
      * set_external_spool_info; empty → S5 erase via clear_external_spool_info
      * (an empty assigned=true record is the bug the FilamentPanel arm avoided).
      * S1: set/clear the Spoolman server active spool to match.
+     * S6: invalidate the replaced link's identity cache entry on a link change
+     * (mirrors commit_slot_edit).
      */
     void commit_external_spool_edit(const SlotInfo& info);
+
+    /**
+     * @brief Server-first variant for callers that must gate the local store
+     * write on the server round-trip (SpoolmanPanel::set_active_spool).
+     *
+     * S6 runs up front. When info links a spool (spoolman_id > 0), S1's
+     * set_active_spool() is issued with the caller's completion: on server
+     * success the S5+S7 store subset runs and on_committed fires (both on the
+     * main thread); on server failure on_error fires (main thread) and no
+     * store is written. Manual entries and clears have no server identity to
+     * gate on — the clear arm fires fire-and-forget exactly like the sync
+     * commit, the store subset runs at once, and on_committed fires
+     * immediately.
+     */
+    void commit_external_spool_edit(const SlotInfo& info, std::function<void()> on_committed,
+                                    std::function<void(const MoonrakerError& err)> on_error);
 
     /**
      * @brief Set the current AMS action state directly
@@ -1449,6 +1469,16 @@ class AmsState {
     // Moonraker API for Spoolman integration
     IMoonrakerAPI* api_ = nullptr;
     int last_synced_spoolman_id_ = 0; ///< Track to avoid duplicate set_active_spool calls
+
+    /// S5+S7 store subset shared by both commit_external_spool_edit arms:
+    /// persist non-empty records, erase empty ones (kills empty
+    /// assigned=true records).
+    void apply_external_spool_store(const SlotInfo& info);
+
+    /// S6 — drop the replaced link's identity-cache entry when the external
+    /// spool's Spoolman link changes (mirrors commit_slot_edit's original-vs-
+    /// edited guard).
+    void invalidate_stale_external_identity(const SlotInfo& info);
 
     // Subject manager for automatic cleanup
     SubjectManager subjects_;
