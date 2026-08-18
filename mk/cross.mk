@@ -2344,7 +2344,7 @@ k1-dynamic-test: k1-dynamic-docker deploy-k1-dynamic-fg
 # Hardware-validated on K2 Plus (2026-03-23).
 # See docs/devel/printers/CREALITY_K2_SUPPORT.md
 #
-# Example: make deploy-k2 K2_HOST=192.168.30.197
+# Example: make deploy-k2 K2_HOST=192.168.30.196
 # Note: K2 uses BusyBox/OpenWrt - tar/ssh transfer, no rsync
 # Note: K2 hostname does NOT resolve via mDNS - always use IP address
 K2_HOST ?=
