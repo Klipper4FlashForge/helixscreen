@@ -862,6 +862,10 @@ class PrinterState {
      * Integer subject holding PrintStartPhase enum value.
      * Use with bind_flag_if_eq/not_eq in XML to show/hide progress overlay.
      */
+    lv_subject_t* get_print_lifecycle_subject() {
+        return print_domain_.get_print_lifecycle_subject();
+    }
+
     lv_subject_t* get_print_start_phase_subject() {
         return print_domain_.get_print_start_phase_subject();
     }

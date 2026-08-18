@@ -48,6 +48,7 @@
 #include "../test_helpers/printer_state_test_access.h"
 #include "../ui_test_utils.h"
 #include "app_globals.h"
+#include "print_lifecycle_state.h"
 
 #include "../catch_amalgamated.hpp"
 
@@ -1809,5 +1810,60 @@ TEST_CASE("Print characterization: edge cases", "[characterization][print][edge]
         // Should be stored (buffer is 256 chars)
         const char* stored = lv_subject_get_string(state.get_print_filename_subject());
         REQUIRE(std::strlen(stored) > 0);
+    }
+}
+
+// ============================================================================
+// Authoritative lifecycle subject
+// ============================================================================
+
+TEST_CASE("print_lifecycle subject publishes the derived UI state",
+          "[characterization][print][lifecycle]") {
+    // Three components used to re-derive the UI-level print state from the raw
+    // job-state enum, each with its own rules. This subject is the one value
+    // they observe instead.
+    lv_init_safe();
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    auto lifecycle = [&state]() {
+        return static_cast<PrintState>(lv_subject_get_int(state.get_print_lifecycle_subject()));
+    };
+
+    SECTION("follows print_stats.state when no phase is running") {
+        state.update_from_status(json{{"print_stats", {{"state", "printing"}}}});
+        REQUIRE(lifecycle() == PrintState::Printing);
+
+        state.update_from_status(json{{"print_stats", {{"state", "paused"}}}});
+        REQUIRE(lifecycle() == PrintState::Paused);
+
+        state.update_from_status(json{{"print_stats", {{"state", "complete"}}}});
+        REQUIRE(lifecycle() == PrintState::Complete);
+
+        state.update_from_status(json{{"print_stats", {{"state", "standby"}}}});
+        REQUIRE(lifecycle() == PrintState::Idle);
+    }
+
+    SECTION("a live pre-print phase reads Preparing even from a terminal job state") {
+        // This is the reported K2 shape: the previous job is still COMPLETE in
+        // print_stats while a host-side pre-start block runs.
+        state.update_from_status(json{{"print_stats", {{"state", "complete"}}}});
+        REQUIRE(lifecycle() == PrintState::Complete);
+
+        state.set_print_start_state(PrintStartPhase::INITIALIZING, "Preparing Print...", 0);
+        helix::ui::UpdateQueue::instance().drain();
+        REQUIRE(lifecycle() == PrintState::Preparing);
+    }
+
+    SECTION("clearing the phase returns to the job state") {
+        state.update_from_status(json{{"print_stats", {{"state", "printing"}}}});
+        state.set_print_start_state(PrintStartPhase::INITIALIZING, "Preparing Print...", 0);
+        helix::ui::UpdateQueue::instance().drain();
+        REQUIRE(lifecycle() == PrintState::Preparing);
+
+        state.reset_print_start_state();
+        helix::ui::UpdateQueue::instance().drain();
+        REQUIRE(lifecycle() == PrintState::Printing);
     }
 }

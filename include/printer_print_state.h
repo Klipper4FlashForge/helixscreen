@@ -270,6 +270,17 @@ class PrinterPrintState {
     static constexpr int MAX_EXTRUDER_SCAN = 16;
 
     /// Current PrintStartPhase enum value
+    /**
+     * @brief The authoritative UI-level print state (PrintState enum)
+     *
+     * Derived from print_stats.state and the pre-print phase by
+     * derive_print_state(). Consumers observe this instead of re-deriving
+     * their own answer from the raw job-state enum.
+     */
+    lv_subject_t* get_print_lifecycle_subject() {
+        return &print_lifecycle_;
+    }
+
     lv_subject_t* get_print_start_phase_subject() {
         return &print_start_phase_;
     }
@@ -603,6 +614,9 @@ class PrinterPrintState {
      */
     [[nodiscard]] bool is_in_print_start() const;
 
+    /// Recompute and publish print_lifecycle from job state + pre-print phase.
+    void publish_lifecycle_state();
+
   private:
     friend class PrinterPrintStateTestAccess;
 
@@ -723,6 +737,7 @@ class PrinterPrintState {
 
     // Print start progress subjects
     lv_subject_t print_start_phase_{};    // Integer: PrintStartPhase enum
+    lv_subject_t print_lifecycle_{};      // Integer: PrintState enum (derived)
     lv_subject_t print_start_message_{};  // String: phase message
     lv_subject_t print_start_progress_{}; // Integer: 0-100%
 

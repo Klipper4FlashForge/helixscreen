@@ -13,6 +13,7 @@
 
 #include "data_root_resolver.h"
 #include "format_utils.h"
+#include "print_lifecycle_state.h"
 #include "printer_state.h" // For enum definitions
 #include "state/subject_macros.h"
 #include "unit_conversions.h"
@@ -95,6 +96,7 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     // Print start progress subjects
     INIT_SUBJECT_INT(print_start_phase, static_cast<int>(PrintStartPhase::IDLE), subjects_,
                      register_xml);
+    INIT_SUBJECT_INT(print_lifecycle, static_cast<int>(PrintState::Idle), subjects_, register_xml);
     INIT_SUBJECT_STRING(print_start_message, "", subjects_, register_xml);
     INIT_SUBJECT_INT(print_start_progress, 0, subjects_, register_xml);
 
@@ -427,6 +429,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                               state_str, static_cast<int>(new_state),
                               static_cast<int>(current_state));
                 lv_subject_set_int(&print_state_enum_, static_cast<int>(new_state));
+                publish_lifecycle_state();
             }
 
             // Update string subject AFTER enum so observers see consistent state
@@ -455,6 +458,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                             phase);
                         lv_subject_set_int(&print_start_phase_,
                                            static_cast<int>(PrintStartPhase::IDLE));
+                        publish_lifecycle_state();
                         lv_subject_copy_string(&print_start_message_, "");
                         lv_subject_set_int(&print_start_progress_, 0);
                         update_display_message_visible();
@@ -1104,6 +1108,7 @@ void PrinterPrintState::set_print_start_state(PrintStartPhase phase, const char*
         }
         if (lv_subject_get_int(&print_start_phase_) != static_cast<int>(phase)) {
             lv_subject_set_int(&print_start_phase_, static_cast<int>(phase));
+            publish_lifecycle_state();
             update_display_message_visible();
         }
         if (!msg.empty() &&
@@ -1124,6 +1129,7 @@ void PrinterPrintState::reset_print_start_state() {
         if (phase != static_cast<int>(PrintStartPhase::IDLE)) {
             spdlog::debug("[PrinterPrintState] Resetting print start state to IDLE");
             lv_subject_set_int(&print_start_phase_, static_cast<int>(PrintStartPhase::IDLE));
+            publish_lifecycle_state();
             lv_subject_copy_string(&print_start_message_, "");
             lv_subject_set_int(&print_start_progress_, 0);
             update_print_show_progress();
@@ -1237,6 +1243,15 @@ bool PrinterPrintState::can_start_new_print() const {
 
 bool PrinterPrintState::is_print_in_progress() const {
     return lv_subject_get_int(const_cast<lv_subject_t*>(&print_in_progress_)) != 0;
+}
+
+void PrinterPrintState::publish_lifecycle_state() {
+    const auto job_state = static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
+    const int phase = lv_subject_get_int(&print_start_phase_);
+    const int derived = static_cast<int>(derive_print_state(job_state, phase));
+    if (lv_subject_get_int(&print_lifecycle_) != derived) {
+        lv_subject_set_int(&print_lifecycle_, derived);
+    }
 }
 
 bool PrinterPrintState::is_in_print_start() const {

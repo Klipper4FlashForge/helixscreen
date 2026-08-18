@@ -219,13 +219,48 @@ step shrinks the next.
 |---|---|---|
 | 1 | Fix `s_is_initial_transition` re-arming | Live bug. Small, own test. Lands regardless of the rest. |
 | 2 | Pure deletions: `clear_print_info`, `is_in_print_start`, `clear_gcode_loaded`, the duplicate `StateChangeResult` boolean, the ignored `on_job_state_changed` `outcome` param, the `print_completion` layer-string reimplementation (it renders `"1 layers"` and `"0 layers"`, both of which `format_layer_count()` gets right) | No behavior change |
-| 3 | Unify media identity: delete `PrintStatusPanel::set_thumbnail_source`, route through `ActivePrintMediaManager`, remove the three doubled call sites | Subtractive |
+| ~~3~~ | **Folded into step 5.** Not separable - see below | - |
 | 4 | Move `PrintLifecycleState` out of `PrintStatusPanel`; consolidate the eight prev-state trackers behind one edge source; settle on one definition of "active"; move `is_active_print_state` to `printer_state.h` | Pure refactor, large |
 | 5 | Re-scope the `print_active == 0` invariant, then `Preparing` at commit with `begin_preparing` / `retire_preparing` | The actual fix, now small |
 | 6 | One owner for the preparation estimate; three estimators demoted to strategies | Structural |
 | 7 | Elapsed/remaining rendered strings into `PrinterPrintState`, following `print_progress_text` (`52b6cef7d`) | Separable; own PR |
 
 Steps 1-6 in this branch. Step 7 split out.
+
+Dependency order, not size order: step 4 gives step 5 somewhere to put the owner.
+
+### Why step 3 folded into step 5
+
+The two `set_thumbnail_source` methods are not an accidental clone. The call site
+comment states the fanout is deliberate:
+
+```
+// - Panel: local gcode viewer and thumbnail display
+// - Manager: shared subjects for HomePanel
+```
+
+Both consumers genuinely need the identity. The defect is that every caller must
+remember to call both, and the two copies have **different lifetimes**:
+
+| Copy | Set by | Cleared |
+|---|---|---|
+| `PrintStatusPanel::thumbnail_source_filename_` | 3 call sites | `ui_panel_print_status.cpp:2719`, on `print_ended` -> Idle |
+| `ActivePrintMediaManager::thumbnail_source_filename_` | 2 of those 3 | **never** - both `.clear()` sites sit in `clear_thumbnail_source()` and `clear_print_info()`, neither of which has a production caller |
+
+So the panel forgets its override when a print ends and the media manager keeps it
+for the life of the process - and the media manager is the one feeding the shared
+subjects the HomePanel reads. A print that sets an override (USB path,
+`.helix_temp/modified_*`) leaves it live in APMM indefinitely.
+`PrintStartController::initiate_reprint` sets neither, so a reprint after such a
+print runs with the previous job's identity still in force on the home card. That is
+the #526 mechanism reached by a different route.
+
+Deleting the panel method standalone also drops its `displayed_file_.clear()`, which
+invalidates panel-local preview cache that APMM does not own - risking #1044's
+family.
+
+Both are symptoms of there being no single owner of job identity. `begin_preparing(job)`
+is that owner, so this work belongs with it rather than ahead of it.
 
 ### Consolidation targets
 
