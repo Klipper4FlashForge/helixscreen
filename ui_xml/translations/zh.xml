@@ -20,6 +20,7 @@
   <translation tag="%zu changes" zh="%zu 项更改"/>
   <translation tag="%zu events queued" zh="%zu 个事件已排队"/>
   <translation tag="%zu plugins failed to load" zh="%zu 个插件加载失败"/>
+  <translation tag="(different grade)"/>
   <translation tag="(incompatible)" zh="(不兼容)"/>
   <translation tag="(multi-tool)" zh="(多工具)"/>
   <translation tag="(none detected)" zh="(未检测到)"/>

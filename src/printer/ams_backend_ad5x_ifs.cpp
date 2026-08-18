@@ -5593,9 +5593,15 @@ int AmsBackendAd5xIfs::find_backup_slot_locked(int runout_slot) const {
     return -1;
 }
 
-bool AmsBackendAd5xIfs::is_endless_spool_backup_eligible(int slot_index, int backup_slot) const {
+helix::printer::BackupEligibility
+AmsBackendAd5xIfs::endless_spool_backup_eligibility(int slot_index, int backup_slot) const {
+    using helix::printer::BackupEligibility;
     std::lock_guard<std::mutex> lock(mutex_);
-    return backup_eligible_locked(slot_index, backup_slot);
+    // Binary on purpose. The firmware matches ffmType and ffmColor exactly, so
+    // a lane it will not select is not a choice to offer with a caveat - it is
+    // a choice that would silently never fire. No GradeDiffers here.
+    return backup_eligible_locked(slot_index, backup_slot) ? BackupEligibility::Eligible
+                                                           : BackupEligibility::Incompatible;
 }
 
 helix::printer::EndlessSpoolCapabilities AmsBackendAd5xIfs::get_endless_spool_capabilities() const {

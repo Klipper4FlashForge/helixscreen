@@ -20,6 +20,7 @@
   <translation tag="%zu changes" fr="%zu modifications"/>
   <translation tag="%zu events queued" fr="%zu événements en file"/>
   <translation tag="%zu plugins failed to load" fr="%zu plugins nont pas pu se charger"/>
+  <translation tag="(different grade)"/>
   <translation tag="(incompatible)" fr="(incompatible)"/>
   <translation tag="(multi-tool)" fr="(multi-outils)"/>
   <translation tag="(none detected)" fr="(aucun détecté)"/>

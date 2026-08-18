@@ -20,6 +20,7 @@
   <translation tag="%zu changes" ru="%zu изменений"/>
   <translation tag="%zu events queued" ru="%zu событий в очереди"/>
   <translation tag="%zu plugins failed to load" ru="Не удалось загрузить %zu плагинов"/>
+  <translation tag="(different grade)"/>
   <translation tag="(incompatible)" ru="(несовместимо)"/>
   <translation tag="(multi-tool)" ru="(мультиинструмент)"/>
   <translation tag="(none detected)" ru="(не обнаружено)"/>

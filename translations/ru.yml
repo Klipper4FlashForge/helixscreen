@@ -21,6 +21,7 @@ translations:
   '%zu changes': '%zu изменений'
   '%zu events queued': '%zu событий в очереди'
   '%zu plugins failed to load': Не удалось загрузить %zu плагинов
+  (different grade): ''
   (incompatible): (несовместимо)
   (multi-tool): (мультиинструмент)
   (none detected): (не обнаружено)

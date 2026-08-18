@@ -21,6 +21,7 @@ translations:
   '%zu changes': '%zu Änderungen'
   '%zu events queued': '%zu Ereignisse in Warteschlange'
   '%zu plugins failed to load': '%zu Plugins konnten nicht geladen werden'
+  (different grade): ''
   (incompatible): (inkompatibel)
   (multi-tool): (Multi-Werkzeug)
   (none detected): (keine erkannt)

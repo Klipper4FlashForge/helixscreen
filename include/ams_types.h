@@ -1559,6 +1559,28 @@ enum class EndlessSpoolAvailability : int {
 };
 
 /**
+ * @brief May this lane stand in for another when that one runs out?
+ *
+ * Tri-state because the honest answer has three cases, and flattening the
+ * middle one loses either safety or the feature itself:
+ *
+ *  - `Eligible` - same polymer, same grade. Nothing to say.
+ *  - `GradeDiffers` - same polymer, different filler (PLA-CF behind PLA). The
+ *    swap WILL work, so refusing it would let a print die at a runout with a
+ *    usable spool one lane over. But filled filament is abrasive and runs at a
+ *    lower flow rate, and an endless-spool swap happens mid-print with nobody
+ *    watching, so the user is told before choosing it.
+ *  - `Incompatible` - a different polymer, or a backend-specific rule the
+ *    firmware enforces. Tagged and refused.
+ *
+ * Backends own the verdict. Only the base rule ever answers `GradeDiffers`: a
+ * backend whose firmware matches the type string exactly (AD5X IFS) has no soft
+ * case to express, because a lane its firmware will not select is not a choice
+ * worth offering.
+ */
+enum class BackupEligibility : int { Eligible = 0, GradeDiffers = 1, Incompatible = 2 };
+
+/**
  * @brief Is endless spool switched on right now?
  *
  * Tri-state on purpose: "we could not read it" is a different answer from "it

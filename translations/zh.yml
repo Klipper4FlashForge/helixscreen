@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu 项更改'
   '%zu events queued': '%zu 个事件已排队'
   '%zu plugins failed to load': '%zu 个插件加载失败'
+  (different grade): ''
   (incompatible): (不兼容)
   (multi-tool): (多工具)
   (none detected): (未检测到)

@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu件の変更'
   '%zu events queued': '%zu 件のイベントを待機中'
   '%zu plugins failed to load': '%zu 個のプラグインの読み込みに失敗しました'
+  (different grade): ''
   (incompatible): (非対応)
   (multi-tool): (マルチツール)
   (none detected): (検出なし)

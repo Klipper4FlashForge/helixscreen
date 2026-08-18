@@ -20,6 +20,7 @@
   <translation tag="%zu changes" ja="%zu件の変更"/>
   <translation tag="%zu events queued" ja="%zu 件のイベントを待機中"/>
   <translation tag="%zu plugins failed to load" ja="%zu 個のプラグインの読み込みに失敗しました"/>
+  <translation tag="(different grade)"/>
   <translation tag="(incompatible)" ja="(非対応)"/>
   <translation tag="(multi-tool)" ja="(マルチツール)"/>
   <translation tag="(none detected)" ja="(検出なし)"/>

@@ -1459,7 +1459,7 @@ A backend supplies only these:
 |------|----------------|
 | `apply_endless_spool_backup(slot, backup)` (protected virtual) | Transport only. Reached **after** the base accepted the write, so it must not re-check availability, editability, ranges or self-backup - and must not update a local mirror of the mapping before its transport has accepted the command. |
 | `endless_spool_slot_count()` (protected virtual) | How many slots the relation spans; drives range validation and the reset loop. Default `get_system_info().total_slots`. Override when the transport's slot space differs, or to report 0 while not ready. |
-| `is_endless_spool_backup_eligible(slot, backup)` | Is this pairing acceptable? Base default is the material-compatibility test the AMS context menu has always applied (`filament::are_materials_compatible()`, with an unknown material on either side counting as eligible rather than blocking a slot the user simply has not labelled). AD5X IFS overrides it with the rule its firmware actually enforces - exact material **and** exact colour **and** the port reporting filament present - sharing `backup_eligible_locked()` with `find_backup_slot_locked()` so its runout hint text and its eligibility answer cannot diverge. |
+| `endless_spool_backup_eligibility(slot, backup)` | May this lane stand in for that one? Returns `BackupEligibility` (`Eligible` / `GradeDiffers` / `Incompatible`), not a bool. The base default asks two questions in order: `filament::materials_compatible()` for the polymer, then `filament::grades_match()` for the grade, so a filled variant of the right polymer answers `GradeDiffers` - tagged in the dropdown, still selectable, because a swap that keeps the print alive beats a print that dies at a runout. An unknown material on either side stays `Eligible` rather than blocking a slot the user simply has not labelled. AD5X IFS overrides it with the rule its firmware actually enforces - exact material **and** exact colour **and** the port reporting filament present - sharing `backup_eligible_locked()` with `find_backup_slot_locked()` so its runout hint text and its eligibility answer cannot diverge, and answering only `Eligible`/`Incompatible` because a lane its firmware will not select is not a choice worth offering. |
 
 `reset_endless_spool()` has a real base implementation: walk
 `set_endless_spool_backup(slot, -1)` over every slot, continue past failures so it clears as
@@ -2920,7 +2920,7 @@ never written. The only write path would be `write_ifs_var("backup", …)`, whic
 demotes `has_ifs_vars_` for the session - not something to drive a user-facing toggle from.
 
 There is no per-slot relation either, so no backup dropdown appears. What the plugin *will*
-switch to is answered instead by `is_endless_spool_backup_eligible()`, which IFS overrides
+switch to is answered instead by `endless_spool_backup_eligibility()`, which IFS overrides
 with the rule the firmware enforces: exact material **and** exact colour **and** the port
 reporting filament present. It shares `backup_eligible_locked()` with
 `find_backup_slot_locked()`, so the runout detail text and the eligibility answer cannot
@@ -3428,10 +3428,20 @@ predicate `AmsContextMenu::decide_show_backup_row(caps, has_relation)`:
 - Read-only with no relation - hidden. This is the CFS and AD5X IFS case: the firmware picks
   the backup and publishes no mapping, so a visible dropdown could only ever read "None".
 
-The "(incompatible)" suffix on backup options still comes from
-`filament::are_materials_compatible()` directly in `build_backup_options()`; it does not yet
-route through `AmsBackend::is_endless_spool_backup_eligible()`, so a backend that tightens the
-rule (AD5X IFS) does not yet tighten this label.
+Backup options are tagged from `AmsBackend::endless_spool_backup_eligibility()`, so a backend
+that tightens the rule (AD5X IFS) tightens the label too. The verdict is tri-state and the two
+non-empty answers are tagged differently, because they mean different things to the user:
+
+| Verdict | Suffix | Selectable? |
+|---------|--------|-------------|
+| `Eligible` | none | yes |
+| `GradeDiffers` | `(different grade)` | **yes** - same polymer, filled variant; it will print |
+| `Incompatible` | `(incompatible)` | no - `decide_backup_refused()` bounces it with a toast |
+
+`GradeDiffers` is the only verdict where the label and the refusal deliberately disagree, and
+it is why the enum exists: refusing a PLA-CF backup for a PLA lane would leave a print dead at
+a runout with a usable spool one lane over, while waving it through silently hides that the
+swap brings an abrasive, slower filament mid-print with nobody watching.
 
 ---
 
@@ -3825,7 +3835,7 @@ Create include/ams_backend_mysystem.h and src/printer/ams_backend_mysystem.cpp. 
 - `clear_fault()` -- Clear a latched fault, bookkeeping only (default: forwards to `cancel()`)
 - `recover_lane_position()` -- Physical retract of a stranded lane (default: NOT_SUPPORTED)
 - `get_dryer_info()`, `start_drying()`, `stop_drying()`, `update_drying()` -- Dryer control
-- `get_endless_spool_capabilities()`, `get_endless_spool_config()` -- Endless spool state. `set_endless_spool_backup()` is **not** an override point: it is non-virtual and owns every rejection. Supply `apply_endless_spool_backup()` (protected, transport only), `endless_spool_slot_count()` (protected, only if `total_slots` is wrong for you), and `is_endless_spool_backup_eligible()` (only to tighten the default material-compatibility rule). `reset_endless_spool()` already works for any editable backend by looping the setter with -1 - override it only if your firmware has a real reset primitive. See § [Endless Spool](#endless-spool-shared-model).
+- `get_endless_spool_capabilities()`, `get_endless_spool_config()` -- Endless spool state. `set_endless_spool_backup()` is **not** an override point: it is non-virtual and owns every rejection. Supply `apply_endless_spool_backup()` (protected, transport only), `endless_spool_slot_count()` (protected, only if `total_slots` is wrong for you), and `endless_spool_backup_eligibility()` (only to tighten the default polymer-plus-grade rule; return `Eligible`/`Incompatible` only, unless your firmware genuinely has a soft case). `reset_endless_spool()` already works for any editable backend by looping the setter with -1 - override it only if your firmware has a real reset primitive. See § [Endless Spool](#endless-spool-shared-model).
 - `get_tool_mapping_capabilities()`, `get_tool_mapping()` -- Tool mapping
 - `get_device_sections()`, `get_device_actions()`, `execute_device_action()` -- Device-specific actions
 - `set_discovered_lanes()`, `set_discovered_tools()` -- Discovery configuration

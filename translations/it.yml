@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu modifiche'
   '%zu events queued': '%zu eventi in coda'
   '%zu plugins failed to load': Caricamento di %zu plugin non riuscito
+  (different grade): ''
   (incompatible): (incompatibile)
   (multi-tool): (multi-utensile)
   (none detected): (nessuno rilevato)
