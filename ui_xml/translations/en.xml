@@ -1928,6 +1928,7 @@
   <translation tag="Requires Moonraker power device" en="Requires Moonraker power device"/>
   <translation tag="Requires Moonraker-Timelapse plugin" en="Requires Moonraker-Timelapse plugin"/>
   <translation tag="Requires Multi-Filament System or MMU hardware" en="Requires Multi-Filament System or MMU hardware"/>
+  <translation tag="Requires a filament system with bypass" en="Requires a filament system with bypass"/>
   <translation tag="Requires clog detection hardware" en="Requires clog detection hardware"/>
   <translation tag="Resend write failed at chunk {}" en="Resend write failed at chunk {}"/>
   <translation tag="Reset" en="Reset"/>
@@ -2444,6 +2445,7 @@
   <translation tag="Toggle Auto-Refill" en="Toggle Auto-Refill"/>
   <translation tag="Toggle Moonraker power devices" en="Toggle Moonraker power devices"/>
   <translation tag="Toggle Quiet Mode" en="Toggle Quiet Mode"/>
+  <translation tag="Toggle external spool bypass" en="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" en="Toggle toolhead LED for an extruder"/>
   <translation tag="Toggle:" en="Toggle:"/>
   <translation tag="Too humid" en="Too humid"/>

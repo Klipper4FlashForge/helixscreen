@@ -2157,6 +2157,7 @@ translations:
   Requires Moonraker power device: 'Richiede un dispositivo di alimentazione Moonraker'
   Requires Moonraker-Timelapse plugin: Richiede plugin Moonraker-Timelapse
   Requires Multi-Filament System or MMU hardware: 'Richiede un sistema multi-filamento o hardware MMU'
+  Requires a filament system with bypass: ''
   Requires clog detection hardware: 'Richiede hardware per il rilevamento intasamenti'
   Resend write failed at chunk {}: Reinvio scrittura fallito al chunk {}
   Reset: Ripristina
@@ -2794,6 +2795,7 @@ translations:
   Toggle Auto-Refill: 'Alterna il rifornimento automatico'
   Toggle Moonraker power devices: 'Alterna i dispositivi di alimentazione Moonraker'
   Toggle Quiet Mode: 'Alterna la modalità silenziosa'
+  Toggle external spool bypass: ''
   Toggle toolhead LED for an extruder: 'Alterna il LED della testina per un estrusore'
   'Toggle:': 'Commuta:'
   Too humid: Troppo umido

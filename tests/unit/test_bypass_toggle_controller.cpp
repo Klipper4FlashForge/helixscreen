@@ -11,13 +11,16 @@
 #include "ui_update_queue.h"
 
 #include "../lvgl_test_fixture.h"
+#include "../lvgl_ui_test_fixture.h"
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "ams_types.h"
 #include "app_globals.h"
+#include "panel_widget_registry.h"
 #include "printer_state.h"
 
 #include <memory>
+#include <string_view>
 
 #include "../catch_amalgamated.hpp"
 
@@ -153,4 +156,22 @@ TEST_CASE("bypass toggle chain: event not ours is ignored", "[ams][bypass-home]"
     seed_print_state(PrintJobState::STANDBY);
     CHECK_FALSE(fx.controller.on_ams_action_changed(AmsAction::IDLE, AmsAction::LOADING));
     CHECK_FALSE(fx.controller.on_ams_action_changed(AmsAction::UNLOADING, AmsAction::IDLE));
+}
+
+// --- Tile render/gate (needs LVGL + XML registration) ---
+
+TEST_CASE("bypass widget: gated on ams_supports_bypass", "[ams][bypass-home]") {
+    LVGLUITestFixture fx; // registers XML components incl. panel_widget_bypass
+
+    const auto* def = helix::find_widget_def("bypass");
+    REQUIRE(def != nullptr);
+    CHECK(def->hardware_gate_subject != nullptr);
+    CHECK(std::string_view(def->hardware_gate_subject) == "ams_supports_bypass");
+    // Default span 1x1, scalable to 2x1 per the registry row.
+    CHECK(def->colspan == 1);
+    CHECK(def->rowspan == 1);
+    CHECK(def->max_colspan == 2);
+    CHECK(def->max_rowspan == 1);
+    // opt-in tile, like the ams row
+    CHECK_FALSE(def->default_enabled);
 }

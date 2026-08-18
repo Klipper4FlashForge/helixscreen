@@ -1981,6 +1981,7 @@ translations:
   Requires Moonraker power device: 'Moonraker電源デバイスが必要です'
   Requires Moonraker-Timelapse plugin: Moonraker-Timelapse プラグインが必要です
   Requires Multi-Filament System or MMU hardware: 'マルチフィラメントシステムまたはMMUハードウェアが必要です'
+  Requires a filament system with bypass: ''
   Requires clog detection hardware: '詰まり検出ハードウェアが必要です'
   Resend write failed at chunk {}: チャンク {} で再送信の書き込みに失敗しました
   Reset: リセット
@@ -2535,6 +2536,7 @@ translations:
   Toggle Auto-Refill: '自動補充を切り替え'
   Toggle Moonraker power devices: 'Moonraker電源デバイスを切り替え'
   Toggle Quiet Mode: '静音モードを切り替え'
+  Toggle external spool bypass: ''
   Toggle toolhead LED for an extruder: 'エクストルーダーのツールヘッドLEDを切り替え'
   'Toggle:': '切り替え:'
   Too humid: 湿度が高すぎます
