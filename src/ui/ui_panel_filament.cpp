@@ -1254,7 +1254,9 @@ void FilamentPanel::handle_load_button() {
         // AmsSubscriptionBackend::ensure_homed_then() right before the tier-1
         // dispatch (unchanged) -- only the confirmation moves earlier, so a
         // decline never wastes a preheat cycle (#1235-adjacent).
-        if (!helix::toolhead_is_homed(printer_state_)) {
+        AmsBackend* delegating_backend = AmsState::instance().get_backend();
+        if (!helix::toolhead_is_homed(printer_state_) &&
+            !(delegating_backend && delegating_backend->delegates_homing_to_printer())) {
             spdlog::info("[{}] Toolhead not homed -- asking before starting preheat for load",
                          get_name());
             // FilamentPanel is an immortal singleton [L012] -- capturing
