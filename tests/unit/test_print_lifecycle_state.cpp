@@ -369,7 +369,6 @@ TEST_CASE("gcode_loaded preserved on all terminal states", "[lifecycle][state]")
         TA::set_gcode_loaded(sm, true);
 
         auto result = sm.on_job_state_changed(PrintJobState::COMPLETE, PrintOutcome::COMPLETE);
-        REQUIRE(result.clear_gcode_loaded == false);
         REQUIRE(sm.gcode_loaded() == true);
     }
 
@@ -379,7 +378,6 @@ TEST_CASE("gcode_loaded preserved on all terminal states", "[lifecycle][state]")
         TA::set_gcode_loaded(sm, true);
 
         auto result = sm.on_job_state_changed(PrintJobState::CANCELLED, PrintOutcome::CANCELLED);
-        REQUIRE(result.clear_gcode_loaded == false);
         REQUIRE(sm.gcode_loaded() == true);
     }
 
@@ -389,7 +387,6 @@ TEST_CASE("gcode_loaded preserved on all terminal states", "[lifecycle][state]")
         TA::set_gcode_loaded(sm, true);
 
         auto result = sm.on_job_state_changed(PrintJobState::ERROR, PrintOutcome::ERROR);
-        REQUIRE(result.clear_gcode_loaded == false);
         REQUIRE(sm.gcode_loaded() == true);
     }
 
@@ -399,7 +396,6 @@ TEST_CASE("gcode_loaded preserved on all terminal states", "[lifecycle][state]")
         TA::set_gcode_loaded(sm, true);
 
         auto result = sm.on_job_state_changed(PrintJobState::STANDBY, PrintOutcome::NONE);
-        REQUIRE(result.clear_gcode_loaded == true);
         REQUIRE(sm.gcode_loaded() == false);
     }
 }

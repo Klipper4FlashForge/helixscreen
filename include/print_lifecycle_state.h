@@ -38,7 +38,6 @@ struct StateChangeResult {
     bool should_freeze_complete = false;
     bool should_animate_cancelled = false;
     bool should_animate_error = false;
-    bool clear_gcode_loaded = false;
 
     PrintState old_state = PrintState::Idle;
     PrintState new_state = PrintState::Idle;

@@ -72,10 +72,13 @@ StateChangeResult PrintLifecycleState::on_job_state_changed(helix::PrintJobState
     // through Complete/Cancelled/Error so the user can see final state.
     bool print_ended = going_idle;
 
-    bool should_reset_progress_bar =
+    // A fresh entry into Printing - i.e. not the resume half of a pause cycle.
+    // Both per-job resets below key off this one condition; they stay separate
+    // fields because they answer different consumer questions and may diverge.
+    const bool entering_print_fresh =
         (new_state == PrintState::Printing && current_state_ != PrintState::Paused);
-    bool should_clear_excluded_objects =
-        (new_state == PrintState::Printing && current_state_ != PrintState::Paused);
+    bool should_reset_progress_bar = entering_print_fresh;
+    bool should_clear_excluded_objects = entering_print_fresh;
     bool should_freeze_complete = (new_state == PrintState::Complete);
     bool should_animate_cancelled = (new_state == PrintState::Cancelled);
     bool should_animate_error = (new_state == PrintState::Error);
@@ -122,7 +125,6 @@ StateChangeResult PrintLifecycleState::on_job_state_changed(helix::PrintJobState
     result.should_freeze_complete = should_freeze_complete;
     result.should_animate_cancelled = should_animate_cancelled;
     result.should_animate_error = should_animate_error;
-    result.clear_gcode_loaded = clear_gcode_loaded;
     result.old_state = old_state;
     result.new_state = new_state;
     result.should_show_viewer = should_show_viewer;

@@ -2738,7 +2738,7 @@ void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
 #endif
             pending_gcode_filename_.clear();
             // The print is over. lifecycle_ already reset its own gcode_loaded
-            // flag inside on_job_state_changed() (result.clear_gcode_loaded). The
+            // flag inside on_job_state_changed(). The
             // widgets keep showing the final frame; the desired file becomes
             // empty, so leave displayed_file_ as-is — a new print's filename
             // change clears it.
