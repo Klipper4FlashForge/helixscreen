@@ -124,7 +124,7 @@ to skip verification. Use `--sim-speed 4..10` to reach an active print in second
 | `check_l081_anti_pattern.py` | No bare `tok.expired()` then `this` access on a bg thread |
 | `check_subscription_null_safety.py` | Subscription-handler JSON reads are guarded (baseline 0) |
 | `check_imperative_ui.py` | XML-owned widgets driven from C++ (ratcheting baseline) |
-| `check_doc_refs.py` | Docs cite files that exist; `docs/devel/` index is complete |
+| `check_doc_refs.py` | Docs cite files that exist (CLAUDE.md files, skills, all of `docs/devel/`); `docs/devel/` index is complete |
 | `check_gcode_error_ownership.py` | Log-only error callbacks declare `caller_surfaces_errors=false` (baseline 0) |
 | `check_translation_format_specifiers.py` | Translated strings keep their placeholders |
 | spdlog-only | No `printf`/`cout`/`LV_LOG_` outside CLI subcommands |

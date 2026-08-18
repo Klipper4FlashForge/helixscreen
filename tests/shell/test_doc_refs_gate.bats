@@ -49,3 +49,16 @@ EOF
     run python3 "$CHECK" --devel "$FIX"
     [ "$status" -eq 0 ]
 }
+
+@test "devel: C++ lambda with unnamed pointer param is not a link" {
+    cat > "$FIX/lambda.md" <<'EOF'
+```cpp
+.on_destroy = [](lv_obj_t*) {
+    g_api->log_debug("cleanup");
+}
+```
+EOF
+    run python3 "$CHECK" --devel "$FIX/lambda.md"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"lv_obj_t*"* ]]
+}

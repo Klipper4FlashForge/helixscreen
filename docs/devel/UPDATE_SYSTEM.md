@@ -130,9 +130,9 @@ Three channels are available. The channel is stored in config at `/update/channe
 
 | Channel | Enum | Config Value | Source | Description |
 |---------|------|-------------|--------|-------------|
-| **Stable** | `UpdateChannel::Stable` | `0` | R2 `stable/manifest.json`, fallback: GitHub `/releases/latest` | Production releases only. Default for all users. |
-| **Beta** | `UpdateChannel::Beta` | `1` | R2 `beta/manifest.json`, fallback: GitHub `/releases` array (first prerelease) | Includes pre-release tags (`v1.0.0-beta.1`, `v1.0.0-rc.1`). Falls back to latest stable if no prereleases exist. |
-| **Dev** | `UpdateChannel::Dev` | `2` | R2 `dev/manifest.json`, or explicit `/update/dev_url` | Cutting-edge builds. Supports custom manifest URLs for local development servers. |
+| **Stable** | `UpdateChannel::Stable` | `0` | R2 stable/manifest.json, fallback: GitHub `/releases/latest` | Production releases only. Default for all users. |
+| **Beta** | `UpdateChannel::Beta` | `1` | R2 beta/manifest.json, fallback: GitHub `/releases` array (first prerelease) | Includes pre-release tags (`v1.0.0-beta.1`, `v1.0.0-rc.1`). Falls back to latest stable if no prereleases exist. |
+| **Dev** | `UpdateChannel::Dev` | `2` | R2 dev/manifest.json, or explicit `/update/dev_url` | Cutting-edge builds. Supports custom manifest URLs for local development servers. |
 
 ### Channel Selection in UI
 
@@ -371,11 +371,11 @@ Idle (0) ──> Confirming (1) ──> Downloading (2) ──> Verifying (3) �
 
 The installer is found by searching these paths in order:
 1. Resolved from `/proc/self/exe` (strips `/bin/helix-screen` to find install root)
-2. `/opt/helixscreen/install.sh`
-3. `/root/printer_software/helixscreen/install.sh`
-4. `/usr/data/helixscreen/install.sh`
-5. `/home/biqu/helixscreen/install.sh`
-6. `/home/pi/helixscreen/install.sh`
+2. /opt/helixscreen/install.sh
+3. /root/printer_software/helixscreen/install.sh
+4. /usr/data/helixscreen/install.sh
+5. /home/biqu/helixscreen/install.sh
+6. /home/pi/helixscreen/install.sh
 7. `scripts/install.sh` (development fallback)
 
 ### Safe Execution
@@ -422,19 +422,19 @@ Key points:
 - `type: web` -- Moonraker downloads ZIP assets from GitHub releases (workaround for mainsail-crew/mainsail#2444 where `type: zip` always shows UP-TO-DATE)
 - `type: web` does **not** support `install_script`, `managed_services`, or `persistent_files` -- do not add these options (Moonraker will warn about unparsed config)
 - User config files live in `printer_data/config/helixscreen/` (outside the managed path), so they survive Moonraker's `shutil.rmtree` without needing `persistent_files`
-- `release_info.json` -- Written to the install directory so Moonraker can detect the installed version
-- A systemd path unit (`helixscreen-update.path`) watches `release_info.json` and restarts the service after Moonraker extracts an update
+- release_info.json -- Written to the install directory so Moonraker can detect the installed version
+- A systemd path unit (`helixscreen-update.path`) watches release_info.json and restarts the service after Moonraker extracts an update
 - As a self-healing fallback, `helixscreen.service` runs `refresh-service-units.sh` on every start to re-template systemd units and install missing watcher units
 
 #### Moonraker version requirement (helixscreen#993)
 
 **This stanza requires Moonraker >= v0.10.0 (or a git checkout newer than 2025-01-19).** The installer probes for the capability and skips writing the stanza when it isn't there — see `moonraker_asset_name_support()` in `scripts/lib/installer/moonraker.sh`, which inspects the installed Moonraker source (found via `find_moonraker_update_manager_dir()`) rather than parsing a version string, since `v0.9.3-73-gfab6c5c1`-style descriptions can't be ordered across branches. It returns three states: `supported` (net_deploy.py containing `asset_name`), `unsupported` (zip_deploy.py/web_deploy.py, or a net_deploy.py without it), and `undetermined` (no source found — preserves the previous behavior and warns, rather than guessing). On `unsupported` the installer also *removes* an already-written stanza.
 
-Asset selection lives in Moonraker's `NetDeploy._get_remote_version()` (`moonraker/components/update_manager/net_deploy.py`). It seeds `release_asset = assets[0]` and only overrides it when `release_info.json`'s `asset_name` **exactly** matches an asset name; a miss logs `Asset '<name>' not found` at INFO and downloads `assets[0]` anyway. Support for `asset_name` arrived in commit `530f1c2016` (2025-01-19), which also renamed `zip_deploy.py` to `net_deploy.py`; the first tag containing it is **v0.10.0** (2026-01-21). Every earlier version reads `assets[0]` unconditionally and never looks at `asset_name`.
+Asset selection lives in Moonraker's `NetDeploy._get_remote_version()` (moonraker/components/update_manager/net_deploy.py). It seeds `release_asset = assets[0]` and only overrides it when release_info.json's `asset_name` **exactly** matches an asset name; a miss logs `Asset '<name>' not found` at INFO and downloads `assets[0]` anyway. Support for `asset_name` arrived in commit `530f1c2016` (2025-01-19), which also renamed zip_deploy.py to net_deploy.py; the first tag containing it is **v0.10.0** (2026-01-21). Every earlier version reads `assets[0]` unconditionally and never looks at `asset_name`.
 
 That matters because the GitHub API returns release assets **sorted by name**, and `_extract_release()` runs `shutil.rmtree(self.path)` *before* opening the archive. On an unsupported Moonraker the in-UI update button therefore wipes the install directory and then fails with `zipfile.BadZipFile: File is not a zip file`. Release symbol assets are named `symbols-<platform>.sym.zst` specifically so they sort after the `helixscreen-*` artifacts and never land in `assets[0]` (see the guard in `.github/workflows/release.yml`).
 
-**Rollback is unsupported on every Moonraker version, including master.** `NetDeploy.rollback()` ignores `asset_name` entirely — it is still hardcoded to `result.get('assets', [{}])[0]`. The Mainsail/Fluidd rollback button will always fetch the alphabetically-first asset regardless of what `release_info.json` says, so it cannot be made to work from our side. Use HelixScreen's built-in updater or re-run the installer pinned to a version instead.
+**Rollback is unsupported on every Moonraker version, including master.** `NetDeploy.rollback()` ignores `asset_name` entirely — it is still hardcoded to `result.get('assets', [{}])[0]`. The Mainsail/Fluidd rollback button will always fetch the alphabetically-first asset regardless of what release_info.json says, so it cannot be made to work from our side. Use HelixScreen's built-in updater or re-run the installer pinned to a version instead.
 
 ### Service Allowlist
 
@@ -710,7 +710,7 @@ Run with:
 
 - Check that `[update_manager helixscreen]` exists in `moonraker.conf`
 - Check that `helixscreen` is listed in `moonraker.asvc`
-- Check that `release_info.json` exists in the install directory
+- Check that release_info.json exists in the install directory
 - Restart Moonraker after config changes
 
 ### Debug Logging

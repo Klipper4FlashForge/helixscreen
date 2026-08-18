@@ -281,9 +281,14 @@ std::vector<BackendSlotSubjects> secondary_slot_subjects_; // Per-backend subjec
 struct BackendSlotSubjects {
     std::vector<lv_subject_t> colors;
     std::vector<lv_subject_t> statuses;
+    std::vector<lv_subject_t> fills;  // int: fill percent 0-100, -1 = unknown
     int slot_count = 0;
+    // Lifetime token shared by every subject in this struct: these subjects are
+    // DYNAMIC (destroyed in deinit() on backend rediscovery), so any observer
+    // bound to them MUST hold a copy of this token. deinit() invalidates it.
+    SubjectLifetime lifetime;
     void init(int count);   // Allocate and init subjects
-    void deinit();          // Deinit subjects
+    void deinit();          // Deinit subjects, invalidate lifetime
 };
 ```
 
@@ -399,7 +404,7 @@ escape its own quotes), `=`, control characters, and non-ASCII bytes.
 arguments - anything that is not a bare `G`/`M` code, which `SET_MATERIAL` and
 `MMU_GATE_MAP` both are - with `shlex.shlex(posix=True, whitespace_split=True,
 commenters="#;")`, then splits each token on its first `=` (verified in Kalico
-`klippy/gcode.py`, the extended-command parameter parser). An unquoted `MATERIAL=Silk PLA`
+klippy/gcode.py, the extended-command parameter parser). An unquoted `MATERIAL=Silk PLA`
 therefore arrives as two tokens, the second with no `=` anywhere in it, and
 Klipper answers "Malformed command" - the value never reaches firmware at all, so
 a space in a material name was never merely dropped, it broke the whole command.
@@ -497,7 +502,7 @@ Two footguns this area has repeatedly hit (fixed in #1065; keep them fixed):
 All HelixScreen-managed AMS backends write the AFC-standard `lane_data`
 record on edit, so every one of them round-trips to OrcaSlicer with no
 additional configuration. **Verified against OrcaSlicer upstream/main
-(post-2.4.0-beta nightly)**, source `MoonrakerPrinterAgent.cpp`
+(post-2.4.0-beta nightly)**, source MoonrakerPrinterAgent.cpp
 `fetch_moonraker_filament_data()`.
 
 | Backend | Writer | Key style | How OrcaSlicer picks it up |
@@ -507,7 +512,7 @@ additional configuration. **Verified against OrcaSlicer upstream/main
 | ACE (Anycubic ACE Pro) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
 | CFS (Creality K2) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
 | AFC / Box Turtle | AFC's own Klipper plugin | `T(n)` per mapping (virtual-tools firmware, #832); `laneN` (1-based) before | `lane_data` namespace (AFC is the originator) |
-| Happy Hare | Happy Hare's own Klipper plugin (`components/mmu_server.py` `push_lane_data`) | `laneN` (1-based) | `lane_data` namespace — Orca prefers it over the live `mmu` object |
+| Happy Hare | Happy Hare's own Klipper plugin (components/mmu_server.py `push_lane_data`) | `laneN` (1-based) | `lane_data` namespace — Orca prefers it over the live `mmu` object |
 | Tool Changer | (not applicable — no per-slot metadata) | — | N/A |
 
 The key style is derived from the AMS type (`lane_key_style_for(get_type())`),
@@ -522,7 +527,7 @@ infrastructure and publish to `lane_data`; AFC and Happy Hare each write
 records, and HelixScreen's AFC/HH backends route user edits through G-code
 (`SET_COLOR`/`SET_MATERIAL`, `MMU_GATE_MAP`) only. The reason is stronger than
 clobber risk: AFC deletes every key in the namespace on each Klipper boot
-(`AFC.py` `delete_lane_data()`) and rebuilds it lane by lane as PREP advances,
+(AFC.py `delete_lane_data()`) and rebuilds it lane by lane as PREP advances,
 so a record we wrote there would vanish on reboot, and a *read* landing in that
 window sees a partial namespace. Treat `lane_data` as neither durable nor
 atomic for AFC. User overrides go to a private namespace instead (#1158).
@@ -581,7 +586,7 @@ HelixScreen stores the precise identity the user chose — `ASA-GF`, `PLA Silk`,
 `PPS-CF` — but Orca can only match a type string its own library carries. Writing
 the precise string verbatim is what caused the original bug: OrcaSlicer resolves an
 unmatched `material` to **the first library preset whose name contains "PLA"**
-(`Preset.cpp:3300`), and because that bogus id then resolves cleanly it
+(Preset.cpp:3300), and because that bogus id then resolves cleanly it
 **short-circuits the similarity search** that would otherwise have found a closer
 type (`PresetBundle.cpp:3320-3346`). So `ASA-GF` synced as *Generic PLA* — PLA
 temperatures on a glass-filled ASA — while the color came through untouched.
@@ -658,7 +663,7 @@ migration. The summary:
   `laneN` before), Happy Hare (`laneN`), Mainsail #2510
   (`T<n>` on Spoolman + tool changer).
 - **Readers**: OrcaSlicer is **key-opaque** (reads the inner `lane` field, never
-  the outer key — `MoonrakerPrinterAgent.cpp:780`), requires the inner `lane`
+  the outer key — MoonrakerPrinterAgent.cpp:780), requires the inner `lane`
   to be a JSON **string**, and does **no deduplication**. HelixScreen's reader
   is **key-agnostic** and prefers the canonical key for its own style on
   duplicates (`load_blocking` in `filament_slot_override_store.cpp`).
@@ -671,7 +676,7 @@ migration. The summary:
 claims against the tools' **source**, not their PR or release text. Mainsail
 #2510's companion PR broadened an AFC `map` TypeScript type to `string[]`,
 which looked like a schema change but was speculative — upstream AFC still
-emits a scalar `map`. Confirming against `MoonrakerPrinterAgent.cpp` (Orca) and
+emits a scalar `map`. Confirming against MoonrakerPrinterAgent.cpp (Orca) and
 the AFC plugin source, not the PR descriptions, is what kept this change
 correct. Cite exact source lines in the spec so a future reader re-verifies the
 same way.
@@ -680,13 +685,13 @@ same way.
 
 ## Filament Catalog (`filaments.json`)
 
-**Design spec:** [`specs/2026-07-02-filament-catalog-merge-design.md`](specs/2026-07-02-filament-catalog-merge-design.md)
+**Design spec:** [`plans/2026-07-02-filament-catalog-merge-phase1.md`](plans/2026-07-02-filament-catalog-merge-phase1.md)
 
 HelixScreen ships a single generated catalog of **branded** filament products —
 `assets/filaments.json` — that unifies what used to be two disconnected data
 sources: the generic material-**type** table in `include/filament_database.h`
 (PLA, ABS, PETG, … — untouched, still `constexpr`, still the source of
-physical truth) and the old CFS-only `assets/cfs_materials.json` (renamed and
+physical truth) and the old CFS-only assets/cfs_materials.json (renamed and
 superseded). The catalog is generic infrastructure — not CFS-specific — even
 though the CFS backend is currently its only consumer.
 
@@ -783,13 +788,13 @@ which replaced the old `CfsMaterialDb` JSON table with
 `FilamentCatalog::load_codes("cfs").resolve_code("cfs", mat_id)`. Behavior is
 unchanged for CFS users — same slot fields get filled — the catalog is just
 richer and no longer CFS-gated. A user-editable overlay
-(`config/user_filaments.json`, read-write, merged by `load_with_overlay()`)
+(config/user_filaments.json, read-write, merged by `load_with_overlay()`)
 exists at the load-path level today; the UI to author it is Phase 3 (out of
 scope here).
 
 ### User overlay format
 
-`config/user_filaments.json` is the on-disk shape for everything a user
+config/user_filaments.json is the on-disk shape for everything a user
 contributes about filaments — product entries (override/add to the built-in
 catalog) and Orca-type hints (so a display name not in our snapshot resolves
 correctly in OrcaSlicer without waiting for a HelixScreen release). The file
@@ -850,7 +855,7 @@ bare-array overlays to object form on first save, recovers from a corrupt
 existing file rather than blocking the save (preserving the unparseable
 original as `<path>.bak` for hand-recovery), and creates missing parent
 directories. On a fresh install where no overlay exists yet, the write target
-falls back to the canonical `config/user_filaments.json` so the first save can
+falls back to the canonical config/user_filaments.json so the first save can
 create the file. The caller supplies pre-built
 `nlohmann::json` product objects (one per entry, minimum field `id`) —
 typically the modal's form-handler builds these. `orca_type_map` has no
@@ -871,7 +876,7 @@ This shallow-clones OrcaSlicer's `resources/profiles` at the pinned tag into
 `scripts/import_orca_filaments.py` to resolve `inherits` chains, extract
 facts, and union them with the preserved CFS-code seed
 (`scripts/fixtures/cfs_seed.json`), writes `assets/filaments.json`, mirrors it
-to `android/app/src/main/assets/assets/filaments.json`, and discards the
+to android/app/src/main/assets/assets/filaments.json, and discards the
 cloned Orca checkout. Nothing from the Orca clone is committed — only the
 derived output. Bump `ORCA_TAG` to refresh against newer Orca data.
 
@@ -946,7 +951,7 @@ raising `MAX_UNITS` stays a one-constant change.
 
 ### Error State Visualization
 
-Per-slot error indicators and per-unit error badges, driven by `SlotInfo.error` and `AmsUnit::buffer_health` from the backend layer. See `docs/devel/plans/2026-02-15-error-state-visualization-design.md` for full design.
+Per-slot error indicators and per-unit error badges, driven by `SlotInfo.error` and `AmsUnit::buffer_health` from the backend layer. (The original 2026-02-15 error-state-visualization design doc is no longer in-tree; the data model below is the surviving summary.)
 
 **Data model** (`ams_types.h`):
 - `SlotError` — message + severity (INFO/WARNING/ERROR), `std::optional` on `SlotInfo`
@@ -1569,7 +1574,7 @@ side effect.
 `endless_spool_enabled` is in the `mmu` subscription field list
 (`src/api/moonraker_discovery_sequence.cpp`) alongside `endless_spool_groups`. Happy Hare
 publishes the bit under two keys, `endless_spool_enabled` and `endless_spool`, both tagged
-DEPRECATED in `mmu.py`'s `get_status()` with no replacement shipped, so the parse reads the
+DEPRECATED in mmu.py's `get_status()` with no replacement shipped, so the parse reads the
 newer spelling and falls back to the older one; if a future Happy Hare drops both, the flag
 keeps its last value instead of silently flipping to off. It lands in
 `AmsSystemInfo::endless_spool_enabled`, which is what `caps.enabled` is derived from. Before
@@ -1783,10 +1788,10 @@ slicer-deprecation warning at the head hiding the actionable load error behind i
 already-empty queue is a harmless no-op.
 
 *The queue only ever grows on its own.* One entry per `AFC_logger.error()` / `.warning()`
-call — **not** one per line; the per-line loop in `AFC_logger.py` writes the log file, and the
+call — **not** one per line; the per-line loop in AFC_logger.py writes the log file, and the
 `message_queue.append((message, ...))` that follows it sits outside that loop, so a five-line
 `TOOL_LOAD` diagnostic is a single entry carrying embedded newlines. Nothing pops entries
-implicitly: `reset_failure()` (`AFC_error.py`) and `AFC_RESUME` both leave `message_queue`
+implicitly: `reset_failure()` (AFC_error.py) and `AFC_RESUME` both leave `message_queue`
 untouched, so entries accumulate across a whole session and anything left behind resurfaces as
 the next session's stale error. (Verified against the add-on source on a live BoxTurtle,
 2026-07-29.)
@@ -1854,7 +1859,7 @@ resulting de-seat undone before the next.
 **When every lane on a hub has been eliminated, the hub holds a broken fragment.** Each
 wrong-lane diagnostic rules out one candidate. Once the whole roster routed to that hub has
 returned it, nothing on that unit owns the obstruction, no lane reset can ever clear it, and it
-comes out by hand. AFC reaches the same conclusion on the load path: `AFC.py` raises *"Hub not
+comes out by hand. AFC reaches the same conclusion on the load path: AFC.py raises *"Hub not
 clear when trying to load. Please check that hub does not contain broken filament and is
 clear"*. This case is not exotic; it occurred twice in one evening on the `.112` rig. A recovery
 flow modelled only on "which lane is it" never terminates here.
@@ -1931,7 +1936,7 @@ given machine. `BT_*` macros are BoxTurtle-specific and do not exist on other un
 | `BT_LANE_MOVE` / `BT_LANE_EJECT` / `BT_TOOL_UNLOAD` / `BT_CHANGE_TOOL` / `BT_PREP` | config macro | **BoxTurtle only.** Thin wrappers over the Python commands above — prefer the Python command. |
 
 **`LANE_MOVE`'s `DISTANCE` is a float, and AFC's own metadata says otherwise.** The
-`cmd_LANE_MOVE_options` dict (`extras/AFC.py:1010`) labels it `{"type": "int"}`, but nothing
+`cmd_LANE_MOVE_options` dict (extras/AFC.py:1010) labels it `{"type": "int"}`, but nothing
 consumes that dict for parsing — the command body does `gcmd.get_float('DISTANCE', 0)`. Read the
 function body, not the options metadata, when documenting any AFC command; the metadata is
 descriptive and can be wrong about its own command. (This exact mistake was made and caught
@@ -1972,8 +1977,8 @@ the decorative cut/brush lines.
 
 | Shape | Phase | Source |
 |-------|-------|--------|
-| `Loading laneN` | `feed` | `AFC.py` `TOOL_LOAD` |
-| `Unloading laneN` | `unload` | `AFC.py` `TOOL_UNLOAD` |
+| `Loading laneN` | `feed` | AFC.py `TOOL_LOAD` |
+| `Unloading laneN` | `unload` | AFC.py `TOOL_UNLOAD` |
 | `laneN is now loaded in toolhead t:N` | `load` | load complete (`t:N` absent on pre-toolchanger builds) |
 | `Lane laneN unload done t:N` | `unload` | unload complete |
 | `Tool Change - laneN -> laneN`, `Tool Change - None -> laneN` | *(none)* | toolchange banner — no phase in the template |
@@ -2060,7 +2065,7 @@ AFC_BoxTurtle.py:527  ' FAILED TO LOAD, CHECK FILAMENT AT TRIGGER\n||==>--||----
 **The art is a hardcoded literal per error site, not a rendering of live sensor state**, so
 parsing it buys nothing and costs precision: `:1345` (**pre** extruder gear) and `:1370` (**post**
 extruder gear) emit byte-identical bars for two faults with different remedies, and
-`AFC_BoxTurtle.py` writes `||------||` where `AFC.py` writes `||-----||`. We therefore map the
+AFC_BoxTurtle.py writes `||------||` where AFC.py writes `||-----||`. We therefore map the
 **message text**, and strip the art.
 
 `helix::afc::afc_fault_position()` (`include/afc_fault_position.h`) — a pure function, no LVGL, no
@@ -2153,14 +2158,14 @@ punctuation:
 
 | Needle(s) | Phase | Emitted by |
 |---|---|---|
-| `is now loaded in toolhead`, `load complete`, `loaded in toolhead` | `load` | `extras/AFC.py` |
-| `unload` | `unload` | `extras/AFC.py` |
+| `is now loaded in toolhead`, `load complete`, `loaded in toolhead` | `load` | extras/AFC.py |
+| `unload` | `unload` | extras/AFC.py |
 | `clean nozzle`, `cleaning nozzle`, `brush` | `brush` | `config/macros/Brush.cfg` (`AFC_BRUSH`) |
 | `purg`, `poop` | `poop` | `AFC_POOP`, in AFC's shipped `config/macros/` |
 | `kick` | `kick` | `AFC_KICK`, same |
 | `cut` | `cut` | `AFC_CUT`, same |
 | `retract` | `unload` | `AFC_CUT`'s retract step (#1046) |
-| `to hub`, `feed`, `loading lane` | `feed` | `extras/AFC_functions.py`, `extras/AFC_BoxTurtle.py` |
+| `to hub`, `feed`, `loading lane` | `feed` | extras/AFC_functions.py, extras/AFC_BoxTurtle.py |
 | `heat` | `heat` | toolhead heat-up narration |
 
 **Order is load-bearing in both matchers** and is not an implementation detail: `unload` must be
@@ -2178,7 +2183,7 @@ console, is anchored.
 
 1. Grep the new AFC tree for each literal in the table above. Anything that has moved needs the
    needle updated *and* the verbatim new string added to `tests/unit/test_afc_console_corpus.cpp`.
-2. Re-check Channel 3's five error sites in `extras/AFC.py` and `extras/AFC_BoxTurtle.py`; those
+2. Re-check Channel 3's five error sites in extras/AFC.py and extras/AFC_BoxTurtle.py; those
    are matched on message text, not on the position art, so a reworded *sentence* is what breaks
    them, not a redrawn bar.
 3. Run `./build/bin/helix-tests "[afc][narration][corpus]" "[narration][router]" "[afc][fault]"`.
@@ -2328,7 +2333,7 @@ absent from `src/` and `include/`, and is recorded here so the reasoning is not 
   out themselves. A re-seat would have to advance in bounded steps and stop the moment
   `raw_load_state` returns true, never move a fixed distance, since overshoot pushes filament
   back at a hub that is still blocked. `LANE_MOVE`'s printing guard is not an obstacle for the
-  common case: `AFC_functions.py`'s `is_printing()` compares `print_stats.state` against
+  common case: AFC_functions.py's `is_printing()` compares `print_stats.state` against
   `"printing"` only, so a paused print does not trip it and no `FORCE=1` is needed.
 
 ### Capabilities
@@ -2427,7 +2432,7 @@ whichever of these the printer is running:
 
 ### History
 
-The ACE backend was originally written **blind for ValgACE** (keying on a Klipper object literally named `ace`) and never matched a real Anycubic ACE hub — so Combo printers on Rinkhals got no AMS backend detected at all. Fixed **2026-06-13** to detect `filament_hub` first. The native object name was confirmed in Anycubic GoKlipper `extras_ace.go` and Rinkhals `mmu_ace.py`. The native `ACE_*` G-code verbs turned out to be exactly what the backend was already sending (ValgACE mirrored them), so the fix was a detection + status-parsing change, not a command-dialect rewrite.
+The ACE backend was originally written **blind for ValgACE** (keying on a Klipper object literally named `ace`) and never matched a real Anycubic ACE hub — so Combo printers on Rinkhals got no AMS backend detected at all. Fixed **2026-06-13** to detect `filament_hub` first. The native object name was confirmed in Anycubic GoKlipper `extras_ace.go` and Rinkhals mmu_ace.py. The native `ACE_*` G-code verbs turned out to be exactly what the backend was already sending (ValgACE mirrored them), so the fix was a detection + status-parsing change, not a command-dialect rewrite.
 
 ### Detection
 
@@ -2652,7 +2657,7 @@ On native ZMOD (no lessWaste / bambufy plugin) the backend reconciles **two** in
 - Slot body is `MATERIAL`, `MATERIAL/HEX`, or `MATERIAL/NAME/HEX`. Material is everything before the first `/`; hex is everything after the **last** `/`. A response with slot rows but no `/HEX` is flagged `is_old_format` (pre-zmod-`ad2802ab`, Apr 2026) — presence only, colors still come from JSON.
 - A response whose lines contain `action:prompt_` means **old zmod returned the interactive dialog instead of silent text** → `is_prompt_fallback` (see presence-ownership rule below).
 
-**`IFS_STATUS`** (`zmod_ifs.py` `cmd_IFS_STATUS` → `ifs_data.get_values()`) is a cleaner, structured alternative that ships in zmod 1.7.1 but is **not yet consumed** by HelixScreen. It returns clean JSON:
+**`IFS_STATUS`** (zmod_ifs.py `cmd_IFS_STATUS` → `ifs_data.get_values()`) is a cleaner, structured alternative that ships in zmod 1.7.1 but is **not yet consumed** by HelixScreen. It returns clean JSON:
 
 ```json
 {"State": 4, "Ports": [false, true, true, true], "Silk": 14,
@@ -2768,7 +2773,7 @@ wording, the runout-warning log, and the longer confirm delay.
 | Command | Action |
 |---------|--------|
 | `INSERT_PRUTOK_IFS PRUTOK={port}` | Load filament from port (looks up temp from config) |
-| `IFS_REMOVE_PRUTOK` | **Bare, with no `PRUTOK=`: a guaranteed no-op.** `cmd_IFS_REMOVE_PRUTOK` defaults `PRUTOK=0` and returns immediately on `prutok == 0` (`zmod_ifs.py:1113`). Given an explicit `PRUTOK=N` it forwards to the firmware's `_IFS_REMOVE_PRUTOK` macro for lane N, which is how `IFS_REMOVE_CURRENT_PRUTOK` calls it internally. HelixScreen never sends it, bare or otherwise |
+| `IFS_REMOVE_PRUTOK` | **Bare, with no `PRUTOK=`: a guaranteed no-op.** `cmd_IFS_REMOVE_PRUTOK` defaults `PRUTOK=0` and returns immediately on `prutok == 0` (zmod_ifs.py:1113). Given an explicit `PRUTOK=N` it forwards to the firmware's `_IFS_REMOVE_PRUTOK` macro for lane N, which is how `IFS_REMOVE_CURRENT_PRUTOK` calls it internally. HelixScreen never sends it, bare or otherwise |
 | `REMOVE_PRUTOK_IFS PRUTOK={port}` | Toolhead unload (heat + retract the currently-loaded filament). **Not** a per-port jog — `PRUTOK=N` does not eject an idle lane; see note below |
 | `IFS_F11 PRUTOK={port} LEN={mm} SPEED={s} CHECK=0` | Cold per-lane retract — reverse one idle lane's feed motor toward the spool; no heat, no presence guard. Used for idle-lane recovery (#996) |
 | `A_CHANGE_FILAMENT CHANNEL={port}` | Full tool change |
@@ -2782,11 +2787,11 @@ wording, the runout-warning log, and the longer confirm delay.
 
 **Plugin compatibility**: HelixScreen auto-detects the variable prefix from whichever `save_variables` are present on the printer. Both lessWaste and bambufy use the same schema, just different prefixes.
 
-**Unload is toolhead-oriented, not per-lane**: `REMOVE_PRUTOK_IFS PRUTOK={port}` runs the toolhead unload sequence — it heats the hotend and retracts whatever filament is currently loaded to the toolhead. The `PRUTOK={port}` argument does **not** select an idle lane to jog independently; observed on a real AD5X (native ZMOD), `REMOVE_PRUTOK_IFS PRUTOK=N` unloaded the currently-loaded filament (in a different slot) and ignored port N. (Bare `IFS_REMOVE_PRUTOK` is not a third way to do this: it is a firmware no-op, see the table above.) An older note here claimed the command "can error `No filament N in IFS`". **It cannot.** That string lives in `print_result()` on `RET_SILK` (`zmod_ifs.py:789`), which is reached only from the load paths; the error the unload chain actually raises is `"Failed to extract filament from extruder"` (`zmod_ifs.py:1140`), when the extruder sensor is still tripped after the retract. A cold per-lane retract, by contrast, **is** available at the gcode layer via `IFS_F11 PRUTOK={n} LEN={mm} SPEED={s} CHECK=0` (core ZMOD — a thin wrapper over raw serial `F11 C{port}…` with no heating and, with `CHECK=0`, no presence guard). This is why HelixScreen keeps the currently-loaded slot unloadable after runout (#995); and #996 implements HelixScreen calling `IFS_F11` directly for idle-lane recovery (e.g. a snapped chunk stuck in a lane's feed path — no hot nozzle involved). See `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` §12.
+**Unload is toolhead-oriented, not per-lane**: `REMOVE_PRUTOK_IFS PRUTOK={port}` runs the toolhead unload sequence — it heats the hotend and retracts whatever filament is currently loaded to the toolhead. The `PRUTOK={port}` argument does **not** select an idle lane to jog independently; observed on a real AD5X (native ZMOD), `REMOVE_PRUTOK_IFS PRUTOK=N` unloaded the currently-loaded filament (in a different slot) and ignored port N. (Bare `IFS_REMOVE_PRUTOK` is not a third way to do this: it is a firmware no-op, see the table above.) An older note here claimed the command "can error `No filament N in IFS`". **It cannot.** That string lives in `print_result()` on `RET_SILK` (zmod_ifs.py:789), which is reached only from the load paths; the error the unload chain actually raises is `"Failed to extract filament from extruder"` (zmod_ifs.py:1140), when the extruder sensor is still tripped after the retract. A cold per-lane retract, by contrast, **is** available at the gcode layer via `IFS_F11 PRUTOK={n} LEN={mm} SPEED={s} CHECK=0` (core ZMOD — a thin wrapper over raw serial `F11 C{port}…` with no heating and, with `CHECK=0`, no presence guard). This is why HelixScreen keeps the currently-loaded slot unloadable after runout (#995); and #996 implements HelixScreen calling `IFS_F11` directly for idle-lane recovery (e.g. a snapped chunk stuck in a lane's feed path — no hot nozzle involved). See `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` §12.
 
 #### Per-lane eject (`eject_lane()`)
 
-A real per-lane eject — pulling a whole spool's worth of filament back out of an idle lane so the user can remove it by hand — is **not** a single `IFS_F11`. A bare `IFS_F11` defaults to `LEN=90` (`zmod_ifs.py` `cmd_IFS_F11`, `gcmd.get_int('LEN', 90)`), which barely moves the filament, and an **unclamped** gear doesn't grip at all. `eject_lane()` (commit `dfcc83c0f`) mirrors zmod's own `_REMOVE_PRUTOK_IFS` macro with a three-command sequence:
+A real per-lane eject — pulling a whole spool's worth of filament back out of an idle lane so the user can remove it by hand — is **not** a single `IFS_F11`. A bare `IFS_F11` defaults to `LEN=90` (zmod_ifs.py `cmd_IFS_F11`, `gcmd.get_int('LEN', 90)`), which barely moves the filament, and an **unclamped** gear doesn't grip at all. `eject_lane()` (commit `dfcc83c0f`) mirrors zmod's own `_REMOVE_PRUTOK_IFS` macro with a three-command sequence:
 
 ```
 IFS_F24 PRUTOK={port}                          # clamp — the gear now grips
@@ -2794,7 +2799,7 @@ IFS_F11 PRUTOK={port} LEN={tube} SPEED={speed} # cold retract the FULL tube leng
 IFS_F39 PRUTOK={port}                          # unclamp — filament is free to pull out by hand
 ```
 
-- **`LEN` / `SPEED` are per-material**, resolved from zmod's `/mod_data/filament.json` keyed by the lane's material type. Fetched once at startup by `fetch_filament_json()` (mirrors `read_adventurer_json` threading; 404 on non-zmod is silent), parsed by `parse_filament_json()` into `filament_eject_params_`. Structure:
+- **`LEN` / `SPEED` are per-material**, resolved from zmod's /mod_data/filament.json keyed by the lane's material type. Fetched once at startup by `fetch_filament_json()` (mirrors `read_adventurer_json` threading; 404 on non-zmod is silent), parsed by `parse_filament_json()` into `filament_eject_params_`. Structure:
 
   ```json
   { "default": { "filament_tube_length": 1000, "filament_ifs_speed": 1200, ... },
@@ -2827,7 +2832,7 @@ Positive switch evidence is required to claim empty, because the errors are not 
 
 `can_unload_from_toolhead()` deliberately does **not** move onto the switch pair: it only decides whether the Unload affordance is offered, and its harmful direction is the opposite one (a false empty would hide the #995 recovery affordance for filament that is physically seated).
 
-> **The switch pair is a proxy for a sensor we do not read.** The firmware's actual gate is `get_extruder_sensor()` (`zmod_ifs.py:1149`), an ADC read of `temperature_sensor filamentValue` (`result = value >= 0.72` when `value > 0.3`, `True` otherwise — a missing reading counts as loaded, `zmod_ifs.py:353-361`). HelixScreen subscribes to it nowhere. Subscribing is the proper fix; it needs a real AD5X to confirm the object is published, and there is no AD5X in the fleet and no `ad5x` mock profile.
+> **The switch pair is a proxy for a sensor we do not read.** The firmware's actual gate is `get_extruder_sensor()` (zmod_ifs.py:1149), an ADC read of `temperature_sensor filamentValue` (`result = value >= 0.72` when `value > 0.3`, `True` otherwise — a missing reading counts as loaded, `zmod_ifs.py:353-361`). HelixScreen subscribes to it nowhere. Subscribing is the proper fix; it needs a real AD5X to confirm the object is published, and there is no AD5X in the fleet and no `ad5x` mock profile.
 
 #### External-change triggers (the gcode-response listener)
 
@@ -2836,7 +2841,7 @@ Positive switch evidence is required to claim empty, because the errors are not 
 | Token in stream | Why it fires | Notes |
 |-----------------|--------------|-------|
 | `RUN_ZCOLOR` / `CHANGE_ZCOLOR` | Deliberate external color/material edit (AD5X LCD, Mainsail, zmod COLOR macro). HelixScreen persists colors by writing `Adventurer5M.json` directly and **never** emits these — so they can only be external. | `CHANGE_ZCOLOR SLOT=N` carrying a real locked override also clears that stale override so the new firmware color wins (#981). |
-| bare `Extruder: <N>` | zmod's `_SET_EXTRUDER_SLOT` (`zmod_color.py` `cmd_SET_EXTRUDER_SLOT`) emits `Extruder: {zslot}` via `respond_raw` at the channel-commit step near the **end** of an operation. This is the marker that catches **external unloads/loads done via zmod's own color macro**, where the stream carries no `RUN_ZCOLOR`/`CHANGE_ZCOLOR`. | Matched by a **strict** regex (`^\s*(?://\s*)?Extruder:\s*\d+\s*$`). |
+| bare `Extruder: <N>` | zmod's `_SET_EXTRUDER_SLOT` (zmod_color.py `cmd_SET_EXTRUDER_SLOT`) emits `Extruder: {zslot}` via `respond_raw` at the channel-commit step near the **end** of an operation. This is the marker that catches **external unloads/loads done via zmod's own color macro**, where the stream carries no `RUN_ZCOLOR`/`CHANGE_ZCOLOR`. | Matched by a **strict** regex (`^\s*(?://\s*)?Extruder:\s*\d+\s*$`). |
 
 **Why `IN_ZCOLOR` is NOT watched.** An external unload via zmod's color macro emits `IN_ZCOLOR SLOT=N NAPR=0/1` (load/unload) — but the literal `IN_ZCOLOR` token only appears in the **dialog button *definition* echo** (`action:prompt_button Unload|IN_ZCOLOR SLOT=N NAPR=1…`) at *prompt-render* time, **not** when the unload actually runs. Watching it would false-fire on dialog-open and still miss the real unload. The bare `Extruder: <N>` channel-commit marker is the reliable terminal signal instead.
 
@@ -2844,7 +2849,7 @@ Positive switch evidence is required to claim empty, because the errors are not 
 
 #### zmod IFS command reference
 
-The raw IFS commands (`zmod_ifs.py` registrations + `docs/en/AD5X.md`). `F##` numbers are thin wrappers over raw serial `F## C{port}…`. Not every raw `F##` the IFS firmware accepts is exposed as a zmod gcode macro — e.g. `F19` is used at the raw-serial layer but has no `IFS_F19` command (community knowledge, ninjamida's multi-IFS project); only the subset ZMOD actually drives is wrapped:
+The raw IFS commands (zmod_ifs.py registrations + docs/en/AD5X.md). `F##` numbers are thin wrappers over raw serial `F## C{port}…`. Not every raw `F##` the IFS firmware accepts is exposed as a zmod gcode macro — e.g. `F19` is used at the raw-serial layer but has no `IFS_F19` command (community knowledge, ninjamida's multi-IFS project); only the subset ZMOD actually drives is wrapped:
 
 | Command | Action |
 |---------|--------|
@@ -2853,7 +2858,7 @@ The raw IFS commands (`zmod_ifs.py` registrations + `docs/en/AD5X.md`). `F##` nu
 | `IFS_F13` | Query IFS state |
 | `IFS_F24 PRUTOK=N` | Clamp the lane (gear grips) |
 | `IFS_F39 PRUTOK=N` | Unclamp one lane (filament free to pull) |
-| `IFS_F18` | Unclamp **all** lanes at once — no `PRUTOK` needed. ⚠️ zmod's `docs/en/AD5X.md` mistranslates this as "Filament purge everywhere"; the actual handler (`cmd_IFS_F18`) responds *"Unlocking all filaments"*. Handy for recovery when you don't know which lane is clamped (community tip, ninjamida) |
+| `IFS_F18` | Unclamp **all** lanes at once — no `PRUTOK` needed. ⚠️ zmod's docs/en/AD5X.md mistranslates this as "Filament purge everywhere"; the actual handler (`cmd_IFS_F18`) responds *"Unlocking all filaments"*. Handy for recovery when you don't know which lane is clamped (community tip, ninjamida) |
 | `IFS_F112` | Stop filament feed |
 | `IFS_STATUS` | Structured JSON state (`State`/`Ports`/`Silk`/`Chan`/…) — clean future presence source |
 | `GET_ZCOLOR SILENT=1` | Per-slot loaded state + active lane as `// `-prefixed text (silk-sensor truth) |
@@ -2964,7 +2969,7 @@ The `box` Klipper object is shared by several firmwares that agree on almost not
 |----------------|--------------------|---------------|-----------------|
 | K2, K2 Pro, K2 Plus (built-in CFS) | Creality K2 firmware | `CR_BOX_*` primitives + `BOX_SAVE_FAN`/`BOX_MODE_WAIT` envelope | `PrinterDetector::is_creality_k1() == false` |
 | K1, K1C, K1 Max (official CFS upgrade ≥ v2.3.5.33) | Creality K1 CFS upgrade firmware | Plain `BOX_*` primitives, no mode-wait (fan-save **does** exist — see below) | `PrinterDetector::is_creality_k1() == true` |
-| K2 Plus on a community Kalico port | [`Jacob10383/kalico`](https://github.com/Jacob10383/kalico) + a reimplemented `box.py` | High-level bare `T<n>` / `BOX_UNLOAD` | `api_version == 1` in the box payload |
+| K2 Plus on a community Kalico port | [`Jacob10383/kalico`](https://github.com/Jacob10383/kalico) + a reimplemented box.py | High-level bare `T<n>` / `BOX_UNLOAD` | `api_version == 1` in the box payload |
 
 **Axis 2 — box schema** (`CfsSchema`), detected per-payload by `AmsBackendCfs::detect_schema()`:
 
@@ -2979,7 +2984,7 @@ The command dialect is selected by the explicit `api_version == 1` field rather 
 
 A `Flat` box whose module we cannot identify still has its control paths refused by `reject_if_flat_schema()`. Full field mapping, command signatures and remaining gaps: `printers/CREALITY_K2_SUPPORT.md` § "Community Kalico port".
 
-[`Jacob10383/kalico`](https://github.com/Jacob10383/kalico) is the Kalico (Danger-Klipper) fork the port builds on — it is the firmware *base*, and it does **not** contain the CFS modules. `box.py` and its siblings are dropped in by the port's installer and are not committed to any public repo, so the repo link is context rather than a source for the command surface. To read the modules themselves, fetch them from the port's content-addressed firmware store: `printers/CREALITY_K2_SUPPORT.md` § "Getting the module source".
+[`Jacob10383/kalico`](https://github.com/Jacob10383/kalico) is the Kalico (Danger-Klipper) fork the port builds on — it is the firmware *base*, and it does **not** contain the CFS modules. box.py and its siblings are dropped in by the port's installer and are not committed to any public repo, so the repo link is context rather than a source for the command surface. To read the modules themselves, fetch them from the port's content-addressed firmware store: `printers/CREALITY_K2_SUPPORT.md` § "Getting the module source".
 
 ### Firmware requirements
 
@@ -3021,7 +3026,7 @@ A `Flat` box whose module we cannot identify still has its control paths refused
 > symbol grep of the extension in `CR4CU220812S11_ota_img_V2.3.5.34`. `BOX_MODE_WAIT` genuinely is absent.
 >
 > Two evidence traps to avoid repeating: **neither `box.cfg` nor `printer.gcode.help` can prove a `BOX_*`
-> command absent.** `gcode.py` records a description only when one is supplied, and the extension carries
+> command absent.** gcode.py records a description only when one is supplied, and the extension carries
 > 5 help strings against 69 handlers — roughly 64 commands are executable and invisible to help. Only a
 > symbol grep of the `.so` settles presence.
 >
@@ -3038,14 +3043,14 @@ A `Flat` box whose module we cannot identify still has its control paths refused
 | Unload current | `CR_BOX_PRE_OPT` → `CR_BOX_CUT` → `BOX_MODE_WAIT` → `CR_BOX_RETRUDE` → `CR_BOX_END_OPT` | `BOX_CUT_MATERIAL` → `BOX_RETRUDE_MATERIAL` |
 | Envelope close (with wipe) | `BOX_NOZZLE_CLEAN` → `BOX_RESTORE_FAN` → `BOX_MOVE_TO_SAFE_POS` → `RESTORE_GCODE_STATE` | `BOX_NOZZLE_CLEAN` → `BOX_RESTORE_FAN` → `BOX_MOVE_TO_SAFE_POS` → `RESTORE_GCODE_STATE` |
 | Tool remap | `BOX_MODIFY_TN T<src>=T<dst>` | (same syntax — but **inert as we use it**, see below) |
-| Color sync | `BOX_MODIFY_TN_DATA ADDR=… NUM=… PART=color_value DATA=0RRGGBB` + `BOX_UPDATE_SAME_MATERIAL_LIST` | (same — `PART` names match the `tn_data.json` fields; the same-material refresh follows on both families because group membership requires exact color equality) |
+| Color sync | `BOX_MODIFY_TN_DATA ADDR=… NUM=… PART=color_value DATA=0RRGGBB` + `BOX_UPDATE_SAME_MATERIAL_LIST` | (same — `PART` names match the tn_data.json fields; the same-material refresh follows on both families because group membership requires exact color equality) |
 
 The K1 envelope is shorter only because `BOX_MODE_WAIT` does not exist on K1 — verified by
 symbol grep, which finds it nowhere in the extension. `BOX_SAVE_FAN`/`BOX_RESTORE_FAN` are
 present on both families and are now emitted on both.
 
 > **`BOX_MODIFY_TN` is not broken on K1 — our use of it is.** The command writes the remap
-> table and persists all 16 keys to `tn_data.json` exactly as documented; it just prints
+> table and persists all 16 keys to tn_data.json exactly as documented; it just prints
 > nothing, which is why the #968 reporter read it as a no-op. The real problem is that
 > **only the firmware's own `T0`–`T15` / `T1A`–`T4D` entrypoints read `Tnn_map`.** We emit
 > `BOX_EXTRUDE_MATERIAL TNN=<physical>` directly, bypassing the mapping layer, so a remap we
@@ -3102,7 +3107,7 @@ in the constructor and converges on the first full box frame in `handle_status_u
 `enable_bypass()` / `disable_bypass()` consult `bypass_available_for()` (the
 `force_bypass_controls` override folds in like every other backend):
 
-- **Fork:** `enable` dispatches `T<external_slot_index_>` — the port's own `box.py`
+- **Fork:** `enable` dispatches `T<external_slot_index_>` — the port's own box.py
   registers that command for the holder and owns the whole attended flow (heat →
   wastebin → wait up to `EXTERNAL_WAIT = 30 s` for insertion → feed → flush). `disable`
   while engaged dispatches `BOX_UNLOAD`, whose external branch ejects and then waits
@@ -3130,7 +3135,7 @@ Two deliberate subtleties in the stock derivation:
 
 The declaration survives restarts: `enable_bypass`/`disable_bypass` persist it through
 `SettingsManager::get/set_bypass_declared()` (per-printer `ams/bypass_declared`),
-`on_started()` restores it — pairing with the `ENABLE=0` the box's own `tn_data.json`
+`on_started()` restores it — pairing with the `ENABLE=0` the box's own tn_data.json
 kept — and a full box frame reporting an explicit `enable == 1` drops it (someone
 re-armed the CFS through Creality's own screen; in-memory clear on the bg thread, the
 persisted flag re-clears idempotently on the next boot).
@@ -3175,7 +3180,7 @@ inference.
   internal `T*` path uses, but adopting it changes purge length on unowned hardware and adds a
   blockage failure mode — gated on #1278.
 - `BOX_MODIFY_TN_DATA` (color sync) syntax is confirmed correct — `PART` values are the
-  `tn_data.json` field names. Material-type writeback is unblocked *except* for the
+  tn_data.json field names. Material-type writeback is unblocked *except* for the
   `material_type` value domain, which is still unknown.
 - `BOX_LOAD_MATERIAL_WITH_MATERIAL` and `BOX_QUIT_MATERIAL` (K1 high-level orchestrators) are not used; HelixScreen drives the primitives directly to keep behavior parallel between the two backends.
 - Bed-area shrink for the rear-mounted K1 CFS upgrade (~5 mm Y) is not yet applied via the printer database.
@@ -3209,7 +3214,7 @@ The `assets/config/printer_database.json` entries for `qidi_plus_4` and `qidi_q2
 
 QIDI printers (Q1 Pro and newer) run forks of Klipper and Moonraker from [QIDITECH/klipper](https://github.com/QIDITECH/klipper) and [QIDITECH/moonraker](https://github.com/QIDITECH/moonraker). SSH is open by default (`mks` / `makerbase`), and KIAUH is pre-installed. QIDI discourages upstream Klipper updates because their board requires their fork.
 
-**The Box firmware itself ships as obfuscated `.so` Python extension modules.** A community open-source reimplementation at [qidi-community/Plus4-Wiki customisable_qidibox_firmware](https://github.com/qidi-community/Plus4-Wiki/tree/main/content/customisable_qidibox_firmware) replaces six modules (`box_detect.py`, `box_rfid.py`, `box_stepper.py`, `box_extras.py`, `aht20_f.py`, `buttons_irq.py`) with editable Python. Maintainers label it "strongly WIP." This repo is the primary protocol reference for a HelixScreen integrator.
+**The Box firmware itself ships as obfuscated `.so` Python extension modules.** A community open-source reimplementation at [qidi-community/Plus4-Wiki customisable_qidibox_firmware](https://github.com/qidi-community/Plus4-Wiki/tree/main/content/customisable_qidibox_firmware) replaces six modules (box_detect.py, box_rfid.py, box_stepper.py, box_extras.py, aht20_f.py, buttons_irq.py) with editable Python. Maintainers label it "strongly WIP." This repo is the primary protocol reference for a HelixScreen integrator.
 
 ### Control Surface (expected)
 
@@ -3257,7 +3262,7 @@ Spools identify via MIFARE Classic RFID tags. Data lives in sector 1 block 0. Th
 | Bypass Mode | Unknown | Need hardware inspection. Backend hardcodes `false`; [the force override](#bypass-visibility-and-the-force-override) shows the external spool for tracking only |
 | Spoolman | Optional | Works through standard Moonraker `[spoolman]` |
 | Auto-Heat on Load | Unknown | |
-| Dryer | Yes (up to 65°C) | `aht20_f.py` owns humidity sensing |
+| Dryer | Yes (up to 65°C) | aht20_f.py owns humidity sensing |
 | Device Actions | Unknown | |
 
 ### Key Files
@@ -3695,7 +3700,7 @@ Add any component discovery (lane names, tool names, etc.) as needed.
 
 ### 3. Implement the Backend Class
 
-Create `include/ams_backend_mysystem.h` and `src/printer/ams_backend_mysystem.cpp`. Implement all pure virtual methods from `AmsBackend`:
+Create include/ams_backend_mysystem.h and src/printer/ams_backend_mysystem.cpp. Implement all pure virtual methods from `AmsBackend`:
 
 **Required overrides:**
 
@@ -3819,7 +3824,7 @@ Key patterns:
 | `ui_xml/wizard_filament_row.xml` | Selectable filament row (lv_button with checked style) |
 | `src/ui/ui_color_picker.cpp` | Color picker modal (used by filament creation) |
 
-See `docs/devel/plans/2026-02-15-spool-wizard-status.md` for visual test plan.
+The original spool-wizard visual test plan (2026-02-15) is no longer in-tree; treat the wizard steps above as the reference.
 
 ---
 
@@ -3869,7 +3874,7 @@ See `docs/devel/plans/2026-02-15-spool-wizard-status.md` for visual test plan.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| IFS not detected | Missing or outdated ZMOD firmware | Install ZMOD v1.7.0+ (v1.6.2 hard minimum). Verify `zmod_ifs.py` is installed and `_ifs_port_sensor_*` sensors appear in `printer.objects.list` |
+| IFS not detected | Missing or outdated ZMOD firmware | Install ZMOD v1.7.0+ (v1.6.2 hard minimum). Verify zmod_ifs.py is installed and `_ifs_port_sensor_*` sensors appear in `printer.objects.list` |
 | Colors/materials empty | `save_variables` not populated | Run IFS calibration wizard in ZMOD to initialize `less_waste_*` variables |
 | Slots all EMPTY | Port sensors not subscribed | Check that `filament_switch_sensor _ifs_port_sensor_{1-4}` are present |
 | Tool mapping wrong | Stale `less_waste_tools` | Check `save_variables.variables.less_waste_tools` — ports are 1-based, 5=unmapped |

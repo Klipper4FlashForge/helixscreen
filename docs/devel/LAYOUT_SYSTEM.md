@@ -85,7 +85,7 @@ ui_xml/
 ```
 
 **The rule is simple:** to override `controls_panel.xml` for ultrawide screens, create
-`ui_xml/ultrawide/controls_panel.xml`. That's it. HelixScreen will automatically pick it up.
+ui_xml/ultrawide/controls_panel.xml. That's it. HelixScreen will automatically pick it up.
 
 ---
 
@@ -120,7 +120,7 @@ cp ui_xml/controls_panel.xml ui_xml/ultrawide/controls_panel.xml
 
 **3. Edit the override to rearrange the layout**
 
-Open `ui_xml/ultrawide/controls_panel.xml` and restructure it for the target screen shape.
+Open ui_xml/ultrawide/controls_panel.xml and restructure it for the target screen shape.
 The key rules are listed below in [Layout Override Rules](#layout-override-rules).
 
 **4. Test it**

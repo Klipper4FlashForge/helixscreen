@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Lint gate: agent-facing docs must not cite files that don't exist.
+# Lint gate: agent-facing docs and docs/devel/ docs must not cite files that
+# don't exist.
 #
 # CLAUDE.md files and skills work by progressive disclosure — they are mostly
 # pointers, and a pointer to a renamed or deleted file is worse than no pointer.
@@ -24,7 +25,8 @@
 # routing table is a doc nobody will find.
 #
 # Usage:
-#   check_doc_refs.py            # both checks, fail on any problem
+#   check_doc_refs.py            # everything: agent docs + docs/devel/**/*.md,
+#                                # refs+links, plus the docs/devel index check
 #   check_doc_refs.py --refs     # broken references only
 #   check_doc_refs.py --index    # index completeness only
 #   check_doc_refs.py --list     # show what was scanned
@@ -56,9 +58,11 @@ PATH_RE = re.compile(
     r'`([A-Za-z0-9_./-]+\.(?:md|cpp|cc|h|hpp|c|xml|py|sh|json|mk|bats|yml|yaml|html|txt)'
     r'(?::\d+|:[A-Za-z0-9_]+\(\))?)`')
 
-# Markdown [text](target) links. The anchor part (#+...) is optional and dropped;
-# the target is resolved relative to the doc's own directory.
-LINK_RE = re.compile(r'\[[^\]]*\]\(([^)#\s]+)(?:#[^)]*)?\)')
+# Markdown [text](target) links. Link text must be non-empty — `[](...)` is a
+# C++ lambda with a parenthesized parameter list (e.g. `.on_destroy = [](lv_obj_t*)`
+# in a doc's code sample), never a markdown link. The anchor part (#+...) is
+# optional and dropped; the target is resolved relative to the doc's own directory.
+LINK_RE = re.compile(r'\[[^\]]+\]\(([^)#\s]+)(?:#[^)]*)?\)')
 
 # Link targets that cannot be verified on disk.
 LINK_SKIP_PREFIXES = ('http://', 'https://', 'mailto:', '#')
@@ -72,6 +76,12 @@ DOC_DIR = 'docs/devel'
 # whose citations rot by design. Matched as directory-name components during a
 # walk, so a scan rooted anywhere (meta-test fixture, targeted run) exempts a
 # plans/ or printer-research/ subdir the same way the default walk does.
+#
+# 'plans' deliberately covers BOTH docs/devel/plans/ and docs/devel/specs/plans/:
+# both hold dated implementation plans written against the tree as it stood on
+# their date, so their citations are historical record, not promises. The specs
+# directly under docs/devel/specs/ ARE scanned — design docs stay live long
+# enough to owe the reader resolving paths.
 DEVEL_EXEMPT_SUBDIRS = ('plans', 'printer-research')
 
 # Docs deliberately not routed from the index.
@@ -261,7 +271,14 @@ def main():
         do_refs = True
         do_index = False
     else:
-        targets = scan_targets()
+        # Default scope = agent-facing docs + the docs/devel target set. The
+        # docs/devel half used to be opt-in via --devel; it flipped to default
+        # enforcement once the surviving docs were swept clean, so CI catches
+        # future citation rot in feature docs instead of accumulating it.
+        targets = sorted(set(scan_targets()) | set(scan_devel_targets([])))
+        # devel=True enables the parent-dir resolution fallback for docs/devel
+        # citations; for repo-root CLAUDE.md files it is a harmless no-op.
+        devel = True
         do_refs = args.refs or not args.index
         do_index = args.index or not args.refs
 
