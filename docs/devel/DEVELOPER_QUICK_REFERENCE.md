@@ -10,7 +10,7 @@ HelixScreen uses class-based patterns for all new code. For architectural ration
 
 ### Panel Pattern
 
-**Canonical example:** `include/ui_panel_motion.h` + `src/ui/ui_panel_motion.cpp`
+**Canonical example:** `include/ui_panel_filament.h` + `src/ui/ui_panel_filament.cpp`
 
 ```cpp
 class ExamplePanel : public PanelBase {  // Use SubjectManager subjects_; member for auto cleanup
@@ -42,18 +42,20 @@ private:
 ```cpp
 class WiFiManager {
 public:
-    static WiFiManager& instance();  // Singleton access
+    // No ::instance() — global access is a free function returning shared_ptr:
+    //   std::shared_ptr<WiFiManager> get_wifi_manager();
 
-    bool start();   // Initialize and begin operation
-    void stop();    // Graceful shutdown
+    explicit WiFiManager(bool silent = false);  // Backend auto-selected per platform
+    ~WiFiManager();
 
     // Async operations with callbacks
-    void scan(ScanCallback on_complete);
-    void connect(const std::string& ssid, ConnectCallback on_result);
+    std::vector<WiFiNetwork> scan_once();  // Single synchronous scan
+    void start_scan(std::function<void(const std::vector<WiFiNetwork>&)> on_networks_updated);
+    void stop_scan();
+    void connect(const std::string& ssid, const std::string& password,
+                 std::function<void(bool success, const std::string& error)> on_complete);
 
 private:
-    WiFiManager();  // Private constructor for singleton
-    ~WiFiManager();
     std::unique_ptr<WifiBackend> backend_;  // Pluggable implementation
 };
 ```
@@ -85,10 +87,9 @@ class PrinterTemperatureState {
 public:
     void init_subjects();       // Initialize all subjects
     void deinit_subjects();     // Shutdown cleanup
-    void reset_for_testing();   // Test reset
 
-    lv_subject_t* nozzle_temp_subject();   // Accessor for binding
-    void set_nozzle_temp(int temp);        // Update via helix::ui::queue_update
+    lv_subject_t* get_active_extruder_temp_subject();  // Accessor for binding
+    void set_active_extruder(const std::string& name); // Update via helix::ui::queue_update
 
 private:
     lv_subject_t nozzle_temp_{};
@@ -124,7 +125,7 @@ void MySingleton::deinit_subjects() {
     initialized_ = false;
 }
 
-// Registration (in SubjectInitializer):
+// Self-registration (last line of init_subjects()) — never from SubjectInitializer
 StaticSubjectRegistry::instance().register_deinit(
     "MySingleton", []() { MySingleton::instance().deinit_subjects(); });
 ```
@@ -143,7 +144,7 @@ Use `observer_factory.h` for type-safe, auto-cleaned observers. **Never use raw 
 // In setup_observers():
 // Integer observer with async UI update
 add_observer(observe_int_async<MyPanel>(
-    &PrinterState::instance().temp_nozzle_subject(),
+    get_printer_state().temperature_state().get_active_extruder_temp_subject(),
     this,
     [](MyPanel* self, int32_t temp) {
         self->update_temp_display(temp);
@@ -152,7 +153,7 @@ add_observer(observe_int_async<MyPanel>(
 
 // String observer
 add_observer(observe_string<MyPanel>(
-    &PrinterState::instance().filename_subject(),
+    get_printer_state().get_print_filename_subject(),
     this,
     [](MyPanel* self, const char* name) {
         lv_label_set_text(self->filename_label_, name);
@@ -163,7 +164,7 @@ add_observer(observe_string<MyPanel>(
 // Signature: observe_connection_state(subject, panel, on_connected);
 // on_connected is void(Panel*) — fired when the state becomes CONNECTED.
 add_observer(observe_connection_state<MyPanel>(
-    &printer_connection_state_subject,
+    get_printer_state().get_printer_connection_state_subject(),
     this,
     [](MyPanel* self) {
         self->set_controls_enabled(true);
@@ -198,16 +199,14 @@ class MyPanel {
 
 ### SubscriptionGuard
 
-Auto-unsubscribes from MoonrakerClient notifications:
+Auto-unsubscribes from Moonraker client notification subscriptions:
 
 ```cpp
 SubscriptionGuard sub_;
 
-void setup() {
-    sub_.reset(MoonrakerClient::instance().subscribe_notify(
-        "notify_gcode_response",
-        [this](const json& data) { handle_response(data); }
-    ));
+void setup(helix::IMoonrakerClient* client) {
+    sub_ = SubscriptionGuard(client, client->register_notify_update(
+        [this](const json& notification) { handle_response(notification); }));
 }
 // Auto-unsubscribes on destruction
 ```
@@ -323,9 +322,9 @@ Only four preset tiers exist for seven breakpoints, deliberately: Tiny and Small
 #include "ui_step_progress.h"
 
 ui_step_t steps[] = {
-    {"Step 1", UI_STEP_STATE_COMPLETED},
-    {"Step 2", UI_STEP_STATE_ACTIVE},
-    {"Step 3", UI_STEP_STATE_PENDING}
+    {"Step 1", helix::StepState::Completed},
+    {"Step 2", helix::StepState::Active},
+    {"Step 3", helix::StepState::Pending}
 };
 lv_obj_t* progress = ui_step_progress_create(parent, steps, 3, false);  // false=vertical
 ui_step_progress_set_current(progress, 2);  // Advance to step 3
@@ -335,12 +334,12 @@ ui_step_progress_set_current(progress, 2);  // Advance to step 3
 
 ## Sensor Framework
 
-Extensible sensor system via `ISensorManager` interface. See `include/sensors/`.
+Extensible sensor system via `ISensorManager` interface (`include/sensor_registry.h`). Headers live flat in `include/` (`*_sensor_manager.h`).
 
 **Available managers:**
 - `AccelSensorManager` - ADXL345, LIS2DW, LIS3DH, MPU9250, ICM20948
 - `FilamentSensorManager` - Runout detection
-- `ProbePositionZOffsetSensor` - Z-probe tracking
+- `ProbeSensorManager` - Z-probe tracking
 - `ColorSensorManager` - Filament color
 - `WidthSensorManager` - Filament diameter
 - `HumiditySensorManager` - Chamber humidity
@@ -410,7 +409,7 @@ Subjects must be initialized BEFORE creating XML to ensure bindings find initial
 ```cpp
 lv_xml_register_font(...);                    // 1. Fonts
 lv_xml_register_image(...);                   // 2. Images
-lv_xml_component_register_from_file(...);     // 3. Components (globals first!)
+lv_xml_register_component_from_file(...);     // 3. Components (globals first!)
 lv_subject_init_*(...);                       // 4. Init subjects
 lv_xml_register_subject(...);                 // 5. Register subjects
 lv_xml_create(...);                           // 6. Create UI
@@ -484,10 +483,11 @@ Standard Ok/Cancel button row for modals. Used at the bottom of modal XML layout
 | `secondary_text` | string | `"Cancel"` | Left button label |
 | `primary_callback` | string | — | XML event callback name for primary |
 | `secondary_callback` | string | — | XML event callback name for secondary |
-| `primary_bg_color` | string | `""` | Optional color override for primary button |
-| `show_secondary` | string | `"true"` | Set `"false"` to hide cancel button |
+| `primary_variant` | string | `"primary"` | Button variant — `"danger"` for destructive actions |
+| `tertiary_text`/`tertiary_callback`/… | string | `""` | Optional leading (tertiary) action, e.g. "Reset to defaults"; hidden unless `hide_tertiary="false"` |
+| `show_secondary` | string | `"true"` | Declared but not wired in the component template — currently a no-op |
 
-**Note:** `primary_bg_color` and `show_secondary` are declared but not yet wired in the component template. They are currently no-ops.
+**Note:** `show_secondary` is declared but not referenced in the component view (no-op). There is no `primary_bg_color` prop — use `primary_variant` for the destructive look.
 
 Renders a horizontal divider + two equal-width buttons. See any `*_modal.xml` for usage examples.
 
@@ -614,12 +614,12 @@ Quick patterns for working with the multi-extruder and tool abstraction systems.
 ```cpp
 #include "printer_state.h"
 
-auto& ps = helix::PrinterState::instance();
-auto& pts = ps.temperature();
+auto& ps = get_printer_state();
+auto& pts = ps.temperature_state();
 
-// Legacy: first extruder (backward compatible)
-lv_subject_t* temp = pts.get_extruder_temp_subject();     // decidegrees
-lv_subject_t* target = pts.get_extruder_target_subject();
+// Active extruder (decidegrees, tracks set_active_extruder)
+lv_subject_t* temp = pts.get_active_extruder_temp_subject();
+lv_subject_t* target = pts.get_active_extruder_target_subject();
 
 // Per-extruder by Klipper name
 lv_subject_t* t1_temp = pts.get_extruder_temp_subject("extruder1");
@@ -656,7 +656,7 @@ if (tool) {
 
     // Get temperature for this tool's extruder
     if (tool->extruder_name) {
-        auto* temp = ps.temperature().get_extruder_temp_subject(*tool->extruder_name);
+        auto* temp = ps.temperature_state().get_extruder_temp_subject(*tool->extruder_name);
     }
 }
 ```
