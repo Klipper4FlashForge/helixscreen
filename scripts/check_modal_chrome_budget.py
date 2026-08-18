@@ -30,54 +30,53 @@
 #   Everything except a divider and the button row lives INSIDE the scroll
 #   container. Then the one global token is correct by construction.
 #
-#   Where a block must stay pinned and visible while the text scrolls (the AFC
-#   fault diagram — the whole point of that modal is showing WHERE filament
-#   stopped, and burying it below the fold guts the feature), the container opts
-#   into `#dialog_content_pinned_max` instead, which reserves that block's height.
+#   Where extra chrome must stay visible while the text scrolls, the container
+#   opts into the sibling token measured for that shape instead:
+#
+#     #dialog_content_pinned_max       ONE pinned block (a diagram, a status
+#                                      row) below the scroll area
+#     #dialog_content_tall_chrome_max  a SECOND button row with its divider
+#                                      (klipper_recovery_dialog's restart row
+#                                      plus Dismiss)
+#
+#   Both reserve exactly one extra block of height; which one is right depends
+#   on the shape, because their ladders were measured against different chrome.
+#   A shape with more than that (action_prompt_modal: AFC diagram + wrapping
+#   prompt rows + a footer row) is beyond any single ladder — measure it on
+#   device and mark the file MODAL_CHROME_OK.
 #
 # WHAT IS FLAGGED
-#   An element that follows a `#dialog_content_max` container among its siblings
-#   and is neither a divider nor a button row. Fix it by moving the element
-#   inside the scroll container, or by switching the container to
-#   `#dialog_content_pinned_max`.
+#   - An element that follows a shared-cap container among its siblings and is
+#     neither a divider nor the FIRST button row, when the container's token
+#     has no budget left for it. Fix by moving the element inside the scroll
+#     container, or by switching to the sibling token that reserves its height.
+#   - A SECOND button row below the container while it is still on
+#     #dialog_content_max — the tall-chrome shape; switch the container to
+#     #dialog_content_tall_chrome_max.
+#   - A card raised ABOVE the shared 85% cap (`style_max_height="90%"` &c) in
+#     a file that uses a shared content token. Raising one card unsizes the
+#     ladder arithmetic every modal shares — klipper_recovery_dialog carried
+#     90% for exactly this reason before the tall-chrome ladder existed, and
+#     porting it back onto the token is what retired the hack.
 #
 # NOT FLAGGED
-#   - Dividers and button rows after the container. That is the budgeted shape.
-#   - Containers already on `#dialog_content_pinned_max`, which get one extra
-#     pinned block before they are flagged again.
-#   - Modals that set an explicit `style_max_height` of their own on the root
-#     instead of inheriting the 85% cap. They have opted out of the shared
-#     budget and are the author's problem (klipper_recovery_dialog raises its
-#     root to 90% precisely because it carries two button rows).
+#   - Dividers, and the first button row after the container. That is the
+#     budgeted shape.
+#   - Containers on a sibling token, which get one extra paid block — a pinned
+#     block OR a second button row — before they are flagged again.
+#   - Modals that size themselves without any shared content token (flat px
+#     caps, favorite_macro_config_modal's 520). They opted out of the shared
+#     budget and are the author's problem.
 #   - Two sibling blocks that can never be visible together, because they are
 #     bound to the same subject with different `ref_value`s. Their heights do
 #     not sum (hidden_network_modal's form vs its connecting spinner).
 #
 # KNOWN GAP
-#   Every divider and button row is treated as budgeted, but the ladder is sized
-#   for exactly ONE button row, so a modal carrying two is under-counted here.
-#   The only such modal today is action_prompt_modal (button_container plus
-#   footer_container, both visible at once), and it was measured at five
-#   breakpoints with its full worst case on screen — AFC diagram, three wrapping
-#   buttons AND the footer row — via `ctl demo action-prompt-worst`. It fits at
-#   every one, footer flush with the card bottom (card vs the 85% cap):
-#
-#     480x272  card 226  cap 231  last_bottom == card_bottom
-#     480x320  card 247  cap 272  last_bottom == card_bottom
-#     640x400  card 298  cap 340  last_bottom == card_bottom
-#     800x480  card 397  cap 408  last_bottom == card_bottom
-#    1024x600  card 483  cap 510  last_bottom == card_bottom
-#
-#   Headroom is thinnest at 480x272 (5px) and 800x480 (11px), so a further
-#   increase in the button row's height needs re-measuring, not arithmetic.
-#
-#   Prompt buttons can also wrap to more than two rows when a macro supplies
-#   many long labels — `ctl demo action-prompt-many` is that shape (seven
-#   material presets over three rows, card 193 at 480x272).
-#
-#   So the gap is real but currently unexercised. A NEW modal with two button
-#   rows would slip past this gate — measure it with a demo hook rather than
-#   trusting the ladder.
+#   A wrapping button row (`row_wrap`) is recognised as the budgeted row but
+#   can grow to TWO+ rows of buttons when a macro supplies many long labels
+#   (`ctl demo action-prompt-many`: seven material presets over three rows).
+#   The single-row budget does not cover that growth; it was measured to fit
+#   at five breakpoints and is re-measured, not assumed, when it changes.
 #
 # Opt out with `MODAL_CHROME_OK: <reason>` anywhere in the file.
 
@@ -94,10 +93,15 @@ SKIP_PARTS = ('android', 'build', '.worktrees', 'translations')
 
 STANDARD_TOKEN = '#dialog_content_max'
 PINNED_TOKEN = '#dialog_content_pinned_max'
+TALL_TOKEN = '#dialog_content_tall_chrome_max'
+SHARED_TOKENS = (STANDARD_TOKEN, PINNED_TOKEN, TALL_TOKEN)
 
-# The cap the shared budget is derived from. A root carrying anything else has
-# opted out and sized itself.
-DEFAULT_ROOT_CAP = '85%'
+# Extra non-chrome blocks each token's budget has already paid for.
+TOKEN_BUDGET = {STANDARD_TOKEN: 0, PINNED_TOKEN: 1, TALL_TOKEN: 1}
+
+# The cap the shared budget is derived from. A card raised above it while
+# using a shared content token has unsized the ladder for everyone.
+DEFAULT_ROOT_CAP_PCT = 85
 
 OPT_OUT = 'MODAL_CHROME_OK'
 
@@ -130,8 +134,18 @@ def is_button_row(el):
     return 'button' in name and flex.startswith('row')
 
 
-def is_budgeted_chrome(el):
-    return el.tag in DIVIDER_TAGS or is_button_row(el)
+def is_divider(el):
+    return el.tag in DIVIDER_TAGS
+
+
+def raised_cap_pct(value):
+    """The percentage of a `style_max_height` like '90%', or None."""
+    if value is None or not value.endswith('%'):
+        return None
+    try:
+        return int(value[:-1])
+    except ValueError:
+        return None
 
 
 def hidden_bindings(el):
@@ -168,7 +182,11 @@ def mutually_exclusive(a, b):
 
 
 def find_violations(path):
-    """Yield (parent_tag, offending_tag, token) for each unbudgeted pinned block."""
+    """Yield (kind, where, detail) tuples for every over-budget shape.
+
+    kind 'pinned_block': an unbudgeted element below a shared-cap container.
+    kind 'raised_cap':   a card cap above 85% in a file using a shared token.
+    """
     text = path.read_text(encoding='utf-8', errors='replace')
     if OPT_OUT in text:
         return
@@ -180,35 +198,52 @@ def find_violations(path):
         # silent here beats reporting a parse error as a chrome violation.
         return
 
-    # A modal that sets its own root cap has opted out of the shared 85% budget
-    # and did its own arithmetic (klipper_recovery_dialog raises the card to 90%
-    # precisely because it carries two button rows, and records the numbers in a
-    # comment). Only the modals inheriting the standard cap are this gate's
-    # business.
+    uses_shared = any(
+        el.get('style_max_height') in SHARED_TOKENS for el in root.iter()
+    )
+
+    # A card raised above 85% while budgeting its content against a shared
+    # ladder: the extra room is per-dialog arithmetic that unsizes the ladder
+    # for every other modal. The fix is the sibling token that reserves the
+    # extra chrome, never a taller card.
     for view in root.iter('view'):
-        root_cap = view.get('style_max_height')
-        if root_cap is not None and root_cap != DEFAULT_ROOT_CAP:
-            return
+        pct = raised_cap_pct(view.get('style_max_height'))
+        if pct is not None and pct > DEFAULT_ROOT_CAP_PCT and uses_shared:
+            yield ('raised_cap', view.get('name') or view.tag,
+                   view.get('style_max_height'))
 
     for parent in root.iter():
         children = list(parent)
         for idx, child in enumerate(children):
             token = child.get('style_max_height')
-            if token not in (STANDARD_TOKEN, PINNED_TOKEN):
+            if token not in SHARED_TOKENS:
                 continue
 
-            # A pinned container has already paid for exactly one extra block.
-            budget = 1 if token == PINNED_TOKEN else 0
+            # Dividers and the FIRST button row are the budgeted chrome;
+            # everything after that must be paid for out of the token's budget.
+            budget = TOKEN_BUDGET[token]
+            button_rows_seen = 0
 
             for sibling in children[idx + 1:]:
-                if is_budgeted_chrome(sibling):
+                if is_divider(sibling):
+                    continue
+                if is_button_row(sibling):
+                    button_rows_seen += 1
+                    if button_rows_seen == 1:
+                        continue  # the one row every budget covers
+                    # A second button row is the tall-chrome shape: it costs
+                    # a budget slot like a pinned block.
+                    if budget > 0:
+                        budget -= 1
+                        continue
+                    yield ('pinned_block', sibling.tag, token)
                     continue
                 if mutually_exclusive(child, sibling):
                     continue
                 if budget > 0:
                     budget -= 1
                     continue
-                yield (parent.tag, sibling.tag, token)
+                yield ('pinned_block', sibling.tag, token)
 
 
 def iter_xml_files(repo_root):
@@ -232,28 +267,34 @@ def main():
 
     violations = []
     for path in iter_xml_files(repo_root):
-        for parent_tag, tag, token in find_violations(path):
-            violations.append((path.relative_to(repo_root), parent_tag, tag, token))
+        for kind, where, detail in find_violations(path):
+            violations.append((path.relative_to(repo_root), kind, where, detail))
 
     if not violations:
         print('✅ Modal chrome budget: every pinned block is accounted for')
         return 0
 
-    print(f'❌ Modal chrome budget: {len(violations)} unbudgeted pinned block(s)\n')
-    for rel, parent_tag, tag, token in violations:
-        print(f'  {rel}: <{tag}> follows a {token} container (in <{parent_tag}>)')
+    print(f'❌ Modal chrome budget: {len(violations)} violation(s)\n')
+    for rel, kind, where, detail in violations:
+        if kind == 'raised_cap':
+            print(f'  {rel}: card "{where}" is capped at {detail}, above the '
+                  f'shared {DEFAULT_ROOT_CAP_PCT}%')
+        else:
+            print(f'  {rel}: <{where}> follows a {detail} container')
 
     print(
         '\n'
         'Each of these sits BELOW the scroll area and outside the budget that\n'
-        f'{STANDARD_TOKEN} was sized for, so the modal overruns its 85% cap and\n'
-        'the button row is clipped off the bottom of the card.\n'
+        'the container\'s token was sized for, so the modal overruns its 85% cap\n'
+        'and the button row is clipped off the bottom of the card.\n'
         '\n'
-        'Fix by either:\n'
+        'Fix by one of:\n'
         '  - moving the element INSIDE the scroll container (preferred), or\n'
-        f'  - switching that container to {PINNED_TOKEN}, which reserves the\n'
-        '    height of one pinned block, when it must stay visible while the\n'
-        '    text scrolls.\n'
+        f'  - switching that container to the sibling token that reserves its\n'
+        f'    height — {PINNED_TOKEN} for one pinned block,\n'
+        f'    {TALL_TOKEN} for a second button row — when it must stay\n'
+        '    visible while the text scrolls.\n'
+        'A raised card cap is never the fix: it unsizes the shared ladder.\n'
         '\n'
         f'Deliberate exception? Add "{OPT_OUT}: <reason>" to the file.'
     )
