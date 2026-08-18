@@ -15,10 +15,19 @@
  *    bytes under a new (size, mtime) key. And the oversize viewer reject
  *    must remove the canonical file (bounded by the headless scan still
  *    needing it) so rejected downloads can't pile up on disk.
+ * 3. The oversize-reject removal is gated on scan SETTLEMENT, not on
+ *    readiness: the preflight safety timeout flips headless_scan_done_
+ *    while a download/scan is still in flight (tap Print on a slow oversize
+ *    download → timeout → late completion), and that stale done must not
+ *    authorize deleting the file under the running scanner — it cannot tell
+ *    a deleted file from "no tools used" and would store an
+ *    authoritative-empty set (same poison family as 1).
  *
  * Determinism notes:
  * - MoonrakerAPIMock resolves downloads synchronously on the calling thread
  *   (asset copy, or immediate on_error for an unknown filename) — no network.
+ *   Test 3 additionally holds the transfer open via DelayedFileTransfers
+ *   (opt-in) so the timeout can fire mid-download, then releases it.
  * - HELIX_FORCE_GCODE_MEMORY_FAIL=1 forces is_gcode_2d_streaming_safe() to
  *   fail, keeping the gcode viewer's load out of these tests: they target
  *   the download/scan plumbing, not the render path. This is also the
@@ -41,6 +50,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <set>
 #include <string>
@@ -117,13 +127,71 @@ std::string find_test_asset(const std::string& filename) {
     return {};
 }
 
+/// MoonrakerFileTransferAPIMock with an opt-in transfer HOLD. While
+/// hold_transfers is set, download_file_to_path captures the request instead
+/// of resolving it; the test later releases the queue to simulate a slow
+/// network finishing. Lets the preflight timeout fire genuinely mid-download
+/// — the exact compound race the settlement gate guards against.
+class DelayedFileTransfers : public MoonrakerFileTransferAPIMock {
+  public:
+    using MoonrakerFileTransferAPIMock::MoonrakerFileTransferAPIMock;
+
+    void download_file_to_path(const std::string& root, const std::string& path,
+                               const std::string& dest_path, StringCallback on_success,
+                               ErrorCallback on_error, ProgressCallback on_progress) override {
+        (void)on_progress;
+        if (!hold_transfers) {
+            MoonrakerFileTransferAPIMock::download_file_to_path(
+                root, path, dest_path, std::move(on_success), std::move(on_error));
+            return;
+        }
+        held_.push_back([this, root, path, dest_path, on_success = std::move(on_success),
+                         on_error = std::move(on_error)]() {
+            MoonrakerFileTransferAPIMock::download_file_to_path(root, path, dest_path, on_success,
+                                                                on_error);
+        });
+    }
+
+    bool hold_transfers = false;
+
+    /// Resolve every held transfer (copies the real asset, fires callbacks
+    /// synchronously — same as an unheld call).
+    void release_held() {
+        auto held = std::move(held_);
+        held_.clear();
+        for (auto& h : held) {
+            h();
+        }
+    }
+
+  private:
+    std::vector<std::function<void()>> held_;
+};
+
+/// MoonrakerAPIMock whose transfers() serves the holdable DelayedFileTransfers
+/// instance (everything else behaves identically to the plain mock).
+class DelayedMoonrakerAPIMock : public MoonrakerAPIMock {
+  public:
+    DelayedMoonrakerAPIMock(helix::MoonrakerClient& client, helix::PrinterState& state,
+                            DelayedFileTransfers& transfers)
+        : MoonrakerAPIMock(client, state), transfers_(transfers) {}
+
+    MoonrakerFileTransferAPI& transfers() override {
+        return transfers_;
+    }
+
+  private:
+    DelayedFileTransfers& transfers_;
+};
+
 /// LVGL UI fixture + the mock API stack the detail view talks to (mirrors
-/// MoonrakerAPIMockTestFixture in test_moonraker_api_mock.cpp).
+/// MoonrakerAPIMockTestFixture in test_moonraker_api_mock.cpp), with an
+/// opt-in delayed-transfer seam (see DelayedFileTransfers).
 class DetailDownloadFixture : public LVGLUITestFixture {
   public:
     DetailDownloadFixture() : client_(MoonrakerClientMock::PrinterType::VORON_24) {
         state_.init_subjects(false); // no XML bindings in tests
-        api_ = std::make_unique<MoonrakerAPIMock>(client_, state_);
+        api_ = std::make_unique<DelayedMoonrakerAPIMock>(client_, state_, transfers_);
 
         register_xml_callbacks({
             {"on_print_select_detail_backdrop", detail_noop_cb},
@@ -150,6 +218,7 @@ class DetailDownloadFixture : public LVGLUITestFixture {
     // ordering via the PrinterState singleton outliving the view).
     MoonrakerClientMock client_;
     PrinterState state_;
+    DelayedFileTransfers transfers_{client_, ""};
     std::unique_ptr<MoonrakerAPIMock> api_;
     helix::ui::PrintSelectDetailView view_;
     lv_subject_t* ready_ = nullptr;
@@ -306,6 +375,76 @@ TEST_CASE_METHOD(DetailDownloadFixture,
 
     const auto canonical = canonical_path_for("3DBenchy.gcode");
     REQUIRE_FALSE(std::filesystem::exists(canonical));
+
+    pop_and_drain();
+}
+
+// ============================================================================
+// Fix 3: timeout-fueled readiness must not authorize removal (settlement gate)
+// ============================================================================
+
+TEST_CASE_METHOD(DetailDownloadFixture,
+                 "preflight timeout readiness does not authorize removing the file under a late "
+                 "scan",
+                 "[print_select][detail_view][gcode_cache]") {
+    CacheDirGuard guard;
+    EnvGuard mem_fail("HELIX_FORCE_GCODE_MEMORY_FAIL", "1");
+
+    // u1_4color_ring.gcode carries standalone T0–T3 lines: a correct scan
+    // yields {0,1,2,3}; a scan whose file was deleted mid-run yields {} —
+    // distinguishable, unlike 3DBenchy's legitimate empty set.
+    const std::string asset = find_test_asset("u1_4color_ring.gcode");
+    REQUIRE_FALSE(asset.empty());
+    const auto file_size = static_cast<size_t>(std::filesystem::file_size(asset));
+    constexpr time_t kMtime = 42;
+    const std::string key = "u1_4color_ring.gcode";
+
+    // The hole, reproduced deterministically with a held transfer:
+    //   1. hold the shared download open (slow oversize file over network)
+    //   2. user taps Print → preflight timeout armed
+    //   3. timeout expires (virtual clock) → done=true, scan NOT settled
+    //   4. download finally completes → scan submits + viewer rejects oversize
+    //   5. the reject must keep the file: the scanner is still reading it
+    transfers_.hold_transfers = true;
+
+    // 1–2. Cold cache: activation queues BOTH waiters on the held transfer.
+    view_.show(key, "", "PLA", {"#FF0000", "#00FF00", "#0000FF", "#FFFF00"}, {}, file_size, kMtime);
+    drain_queue_chain();
+    REQUIRE_FALSE(view_.is_preflight_ready()); // transfer held → nothing settled
+
+    view_.run_when_preflight_ready([]() {}); // the Print tap → arms 8s timer
+
+    // 3. Fire the safety timeout on the virtual clock.
+    // (PREFLIGHT_READY_TIMEOUT_MS is private — 8000ms, mirrored here.)
+    process_lvgl(8500);
+    // The timeout flips readiness for the gate (member, not the subject —
+    // the timeout deliberately doesn't republish detail_mapping_ready).
+    REQUIRE(view_.is_preflight_ready());
+    // …while the scan is UNSETTLED — this combination is the hole.
+
+    // 4. The slow network finishes (held transfer resolves on this thread;
+    // its completion crosses the UpdateQueue, and the fan-out submits the
+    // slow-lane scan BEFORE the viewer waiter evaluates the oversize reject).
+    transfers_.release_held();
+    drain_queue_chain();
+
+    // 5. The reject must NOT have removed the file (gate reads settlement,
+    // not readiness). Under the old gate (headless_scan_done_) the file is
+    // gone here and the in-flight scan stores {} as authoritative.
+    const auto canonical = canonical_path_for(key);
+    REQUIRE(std::filesystem::exists(canonical));
+
+    // The late scan runs against the INTACT file and persists the real set.
+    REQUIRE(wait_until(
+        [&]() {
+            helix::ToolsUsedCache fresh;
+            return fresh.lookup(key, file_size, kMtime).has_value();
+        },
+        15000));
+    helix::ToolsUsedCache fresh;
+    const auto got = fresh.lookup(key, file_size, kMtime);
+    REQUIRE(got.has_value());
+    REQUIRE(*got == std::set<int>{0, 1, 2, 3});
 
     pop_and_drain();
 }

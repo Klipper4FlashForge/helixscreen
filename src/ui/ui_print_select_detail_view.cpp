@@ -463,12 +463,14 @@ void PrintSelectDetailView::show(const std::string& filename, const std::string&
     // first frame.
     headless_tools_used_.reset();
     headless_scan_done_ = false;
+    headless_scan_settled_ = false;
     lv_subject_set_int(&detail_mapping_ready_, 0);
 
     if (auto cached = tools_used_cache_.lookup(current_file_key(), current_file_size_bytes_,
                                                current_file_modified_)) {
         headless_tools_used_ = *cached;
-        headless_scan_done_ = true; // readiness now true; the scan below is skipped
+        headless_scan_done_ = true;    // readiness now true; the scan below is skipped
+        headless_scan_settled_ = true; // the cached answer IS the settled answer
         spdlog::debug("[DetailView] Tools-used cache hit ({} tools)", cached->size());
 
         // Seed the authoritative render from the cached set — the same shape
@@ -689,8 +691,12 @@ void PrintSelectDetailView::on_deactivate() {
     gcode_loaded_ = false;
     // Readiness drops with the view — headless_scan_done_ goes false too, so
     // the publish below resolves to 0 and the skeleton latch re-arms. show()
-    // re-seeds (cache) / re-runs (scan) it on the next open.
+    // re-seeds (cache) / re-runs (scan) it on the next open. The settled flag
+    // follows: a late finish_scan from a still-running worker is invalidated
+    // with the view's lifetime token anyway, and the next open must not treat
+    // the previous open's settlement as authorization to delete files.
     headless_scan_done_ = false;
+    headless_scan_settled_ = false;
     publish_mapping_ready();
 
     // Drop any pending run_when_loaded() callback. If the user tapped Print
@@ -1459,6 +1465,11 @@ void PrintSelectDetailView::run_when_preflight_ready(std::function<void()> cb) {
                          "tools_used (graceful degradation)");
             // Mark done so a later readiness signal doesn't double-fire, and so
             // is_preflight_ready() returns true for the deferred re-entry.
+            // Deliberately does NOT set headless_scan_settled_: the download +
+            // scan may still be in flight behind the timeout, and settling
+            // here would authorize oversize-reject removal of the canonical
+            // file while the scanner is reading it (authoritative-empty
+            // poison — see load_gcode_for_preview's oversize gate).
             self->headless_scan_done_ = true;
             self->fire_on_preflight_ready();
         },
@@ -1491,6 +1502,9 @@ void PrintSelectDetailView::finish_scan(LifetimeToken tok, std::set<int> tools,
                                                    authoritative]() mutable {
         headless_tools_used_ = std::move(tools);
         headless_scan_done_ = true;
+        // The scan has truly settled — the oversize-reject cleanup may now
+        // treat the canonical file as unreferenced (see load_gcode_for_preview).
+        headless_scan_settled_ = true;
         spdlog::debug("[DetailView] Headless tools_used scan complete: {} tools",
                       headless_tools_used_->size());
 
@@ -1577,7 +1591,10 @@ void PrintSelectDetailView::kick_off_headless_tools_scan() {
         // "proceed without tools_used" instead of hanging, publish readiness
         // (skeleton resolves immediately), and release any deferred attempt
         // right away rather than making it wait out the safety timeout.
+        // Nothing can ever download or scan in this state, so the question is
+        // as settled as it can be.
         headless_scan_done_ = true;
+        headless_scan_settled_ = true;
         publish_mapping_ready();
         fire_on_preflight_ready();
         return;
@@ -1709,13 +1726,15 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                          local_size, mem.available_mb());
             // The viewer just rejected the file — remove the canonical copy
             // so oversize re-downloads can't pile up on disk (SD-card leak).
-            // Gated on the headless tools scan being through with it: the
-            // scan streams this same file on the slow lane and cannot tell a
-            // deleted file from "no tools used", so removing it mid-scan
-            // would persist an authoritative-empty cache entry. While the
-            // scan is still pending, on_ui_destroyed() reclaims the file at
-            // view teardown instead.
-            if (headless_scan_done_) {
+            // Gated on the scan having actually SETTLED, not on readiness:
+            // the preflight safety timeout flips headless_scan_done_ while a
+            // download/scan is still in flight (tap Print on a slow oversize
+            // download → timeout → late completion → this reject), and the
+            // scanner cannot tell a deleted file from "no tools used" — so
+            // removing it mid-scan would persist an authoritative-empty
+            // cache entry. While the scan is still pending,
+            // on_ui_destroyed() reclaims the file at view teardown instead.
+            if (headless_scan_settled_) {
                 if (temp_gcode_path_ == path) {
                     temp_gcode_path_.clear();
                 }

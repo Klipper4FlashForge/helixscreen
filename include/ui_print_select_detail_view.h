@@ -582,6 +582,14 @@ class PrintSelectDetailView : public OverlayBase {
     // never parsed. See kick_off_headless_tools_scan().
     std::optional<std::set<int>> headless_tools_used_; // result of the streaming scan
     bool headless_scan_done_ = false;                  // scan finished (success/empty/fail/timeout)
+    // True ONLY where the scan actually SETTLED: finish_scan's deferred body,
+    // the show() cache-hit seed, or the no-API early-out. Deliberately NOT
+    // set by the preflight safety timeout, which flips headless_scan_done_
+    // while a download/scan may still be in flight. Gates oversize-reject
+    // removal of the canonical gcode file — removing it under a still-running
+    // scan would make the scanner see "no file" ≡ "no tools" and persist an
+    // authoritative-empty tools set (the Finding-1 poison).
+    bool headless_scan_settled_ = false;
     // Pending callback registered via run_when_preflight_ready() while neither the
     // viewer parse nor the headless scan had completed. Fired once when readiness
     // arrives (or on the safety timeout), then cleared. Reset on show().
