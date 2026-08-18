@@ -119,6 +119,17 @@ TEST_CASE_METHOD(LVGLTestFixture,
     AfcDispatchHelper afc;
     afc.load_config(CFG_WITH_AUTO_HOME);
 
+    // Armed BEFORE the delegating dispatch, so the flag is live on the
+    // short-circuit path. Phase 1 discriminates the delegating behavior
+    // itself: payload dispatched, no prompt, no G28 -- and the guard must
+    // not consume the flag on the way past. Phase 2 is the discriminator
+    // for that consume: the SAME still-armed flag (never re-armed) plus a
+    // non-delegating config must suppress the prompt via the
+    // pre-confirmation and send G28 unprompted. A consume hoisted above
+    // the guard would eat the flag in phase 1, leaving phase 2 unarmed --
+    // its prompt would fire and CHECK_FALSE(afc.prompted) would fail.
+    afc.arm_home_preconfirmed();
+
     ScopedHomeConfirmPrompter prompter(
         [&afc](std::function<void()> on_confirm, std::function<void()>) {
             afc.prompted = true;
@@ -136,12 +147,11 @@ TEST_CASE_METHOD(LVGLTestFixture,
     CHECK(std::none_of(afc.captured.begin(), afc.captured.end(),
                        [](const std::string& g) { return g == "G28"; }));
 
-    // A delegating dispatch must not consume an armed home_preconfirmed_:
-    // the short-circuit fires before the std::exchange() consume, so the
-    // flag survives for a later NON-delegating dispatch, which then sends
-    // its G28 without asking again.
+    // Phase 2: non-delegating config, flag still armed from phase 1 (no
+    // re-arm). The pre-confirmation must suppress the prompt and the G28
+    // must still fire -- proving the delegating dispatch left the flag
+    // armed for a later non-delegating one.
     afc.load_config(CFG_WITHOUT_AUTO_HOME);
-    afc.arm_home_preconfirmed();
     afc.prompted = false;
     afc.captured.clear();
 
