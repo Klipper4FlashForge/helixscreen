@@ -23,6 +23,7 @@
 #include "app_constants.h"
 #include "app_globals.h"
 #include "config.h"
+#include "host_identity.h"
 #include "i_moonraker_client.h"
 #include "macro_modification_manager.h"
 #include "moonraker_api.h"
@@ -40,6 +41,7 @@
 #include "print_start_profile.h"
 #include "printer_detector.h"
 #include "printer_state.h"
+#include "runtime_config.h"
 #include "sound_manager.h"
 #include "spoolman_manager.h"
 #include "tool_state.h"
@@ -257,6 +259,20 @@ void MoonrakerManager::process_notifications() {
             if (new_state == static_cast<int>(ConnectionState::CONNECTED) && m_api) {
                 helix::PowerDeviceState::instance().subscribe(*m_api);
                 helix::SensorState::instance().subscribe(*m_api);
+
+                // Remote-screen verdict from the LIVE endpoint — Config's
+                // moonraker_host can lag a mid-session printer switch. Published
+                // on every CONNECTED edge so gated affordances re-truth after a
+                // switch. HELIX_MOCK_REMOTE_PRINTER forces it for --test runs
+                // (the mock's loopback endpoint always reads same-host).
+                bool moonraker_remote = !helix::is_moonraker_on_same_host(
+                    helix::extract_host_from_websocket_url(m_api->get_websocket_url()));
+                if (get_runtime_config()->should_mock_remote_printer()) {
+                    spdlog::info("[MoonrakerManager] HELIX_MOCK_REMOTE_PRINTER set — forcing "
+                                 "remote-screen mode");
+                    moonraker_remote = true;
+                }
+                get_printer_state().set_moonraker_is_remote(moonraker_remote);
             }
 
             // Auto-close Connection Failed modal when connection is restored

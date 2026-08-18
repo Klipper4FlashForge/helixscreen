@@ -14,6 +14,8 @@
 #pragma once
 
 #include <cstdio>      // For snprintf in get_default_test_file_path()
+#include <cstdlib>     // For getenv in should_mock_remote_printer()
+#include <string>      // For std::string in should_mock_remote_printer()
 #include <sys/types.h> // For pid_t
 
 /**
@@ -209,6 +211,22 @@ struct RuntimeConfig {
     }
 
     /**
+     * @brief Check if remote-printer mode should be forced in mock runs
+     *
+     * HELIX_MOCK_REMOTE_PRINTER=1 under --test forces moonraker_is_remote=1 so
+     * remote-gated affordances (print-status camera button, remote playback
+     * paths) are drivable via ctl. The mock connects over loopback, which
+     * otherwise always reads as same-host.
+     * @return true if test mode is on and the env var is set to a non-"0" value
+     */
+    bool should_mock_remote_printer() const {
+        if (!test_mode)
+            return false;
+        const char* env = std::getenv("HELIX_MOCK_REMOTE_PRINTER");
+        return env && env[0] && std::string(env) != "0";
+    }
+
+    /**
      * @brief Check if USB should use mock implementation
      * @return true if test mode is enabled
      */
@@ -245,6 +263,9 @@ struct RuntimeConfig {
         return false;
     }
     constexpr bool should_mock_ams() const {
+        return false;
+    }
+    constexpr bool should_mock_remote_printer() const {
         return false;
     }
     constexpr bool should_mock_usb() const {

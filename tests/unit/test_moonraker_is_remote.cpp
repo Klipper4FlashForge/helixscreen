@@ -15,6 +15,7 @@
 #include "app_globals.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "printer_state.h"
+#include "runtime_config.h"
 
 #include <lvgl.h>
 
@@ -51,4 +52,12 @@ TEST_CASE_METHOD(RemoteSubjectFixture, "moonraker_is_remote flips per connected 
     set_remote_and_drain(false);
     REQUIRE(lv_subject_get_int(subject()) == 0);
     REQUIRE_FALSE(get_printer_state().is_moonraker_remote());
+}
+
+TEST_CASE_METHOD(RemoteSubjectFixture, "HELIX_MOCK_REMOTE_PRINTER is test-mode gated",
+                 "[subjects][network]") {
+    // Accessor contract: production runs never force, regardless of env.
+    // (Direct env manipulation inside the test process would leak across
+    // parallel cases; assert the negative arm only.)
+    REQUIRE_FALSE(get_runtime_config()->should_mock_remote_printer());
 }
