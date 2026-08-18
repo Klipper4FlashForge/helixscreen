@@ -2432,6 +2432,12 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         } else if (data["spool_id"].is_null()) {
             slot.spoolman_id = 0;
         }
+        // Remember firmware's own word separately from the merged slot: the
+        // §5 merge below re-supplies the retained override id, so
+        // slot.spoolman_id alone can no longer tell whether AFC itself still
+        // holds a link. The spool-id re-assert (see
+        // maybe_reassert_retained_spool_link) keys off this, not the merge.
+        lane_firmware_spool_id_[lane_name] = slot.spoolman_id;
     }
 
     // Parse weight.
@@ -2495,6 +2501,11 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     bool has_tool_loaded = data.contains("tool_loaded") && data["tool_loaded"].is_boolean();
     bool has_status = data.contains("status") && data["status"].is_string();
 
+    // Filament presence BEFORE this frame's recompute — the spool-id
+    // re-assert below fires on the empty -> loaded EDGE, so it needs the
+    // lane's prior state, and slot.status is that state until rewritten.
+    const SlotStatus status_at_frame_start = slot.status;
+
     if (has_tool_loaded || has_status || data.contains("prep") || data.contains("load")) {
         bool tool_loaded = has_tool_loaded && data["tool_loaded"].get<bool>();
         std::string status_str = has_status ? data["status"].get<std::string>() : "";
@@ -2527,6 +2538,17 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
             // of slot.status, so the error indicator is preserved.
             slot.status = SlotStatus::EMPTY;
         }
+    }
+
+    // Spool-id re-assert (#1289): fire once on the empty -> loaded edge.
+    // Both LOADED (toolhead) and AVAILABLE (hub) mean filament is present, so
+    // an AVAILABLE -> LOADED promotion within one load is NOT a new edge.
+    const bool filament_present_now =
+        slot.status == SlotStatus::LOADED || slot.status == SlotStatus::AVAILABLE;
+    const bool filament_present_before = status_at_frame_start == SlotStatus::LOADED ||
+                                         status_at_frame_start == SlotStatus::AVAILABLE;
+    if (filament_present_now && !filament_present_before) {
+        maybe_reassert_retained_spool_link(slot_index, lane_name);
     }
 
     // Populate or clear per-slot error based on lane status
@@ -2708,6 +2730,65 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
             slots_.set_backup(slot_index, -1);
             spdlog::trace("[AMS AFC] Lane {} runout backup: disabled", lane_name);
         }
+    }
+}
+
+void AmsBackendAfc::maybe_reassert_retained_spool_link(int slot_index,
+                                                       const std::string& lane_name) {
+    // Callers hold mutex_ (parse_afc_stepper via handle_status_update).
+    //
+    // The #1289 convergence gap: with "Keep Spool Info on Eject" on we keep
+    // a lane's spool identity in our override namespace, but AFC itself —
+    // default remember_spool = false — ran clear_values() on eject. Re-insert
+    // the same spool and HelixScreen paints the retained identity while AFC
+    // (and Mainsail, which renders the plugin's state) shows an unknown
+    // spool. On the empty -> loaded EDGE we push the retained id back into
+    // AFC with the same SET_SPOOL_ID write the editor's re-link uses, so
+    // all three views converge.
+    //
+    // Edge-triggered on purpose: frames while the lane stays loaded never
+    // re-send, and a failed write is not retried — the next physical
+    // eject/re-insert cycle is the retry. That is the whole debounce: a
+    // bouncing spool costs one write per transition, never a stream.
+    //
+    // The write rides record_own_spool_write() like set_slot_info's own
+    // re-link, so the firmware echo of OUR push cannot be misread by the
+    // merge's re-bind rule as another writer's statement.
+    const int override_key = [=]() {
+        // Same key convention as the apply_overrides() call above us.
+        auto* entry = slots_.get_mut(slot_index);
+        return entry && entry->info.global_index >= 0 ? entry->info.global_index : slot_index;
+    }();
+    auto it = overrides_.find(override_key);
+    if (it == overrides_.end() || it->second.spoolman_id <= 0) {
+        return; // nothing retained for this lane — no identity to re-assert
+    }
+    if (!SettingsManager::instance().get_ams_keep_spool_info_on_eject()) {
+        // Retention off: never push, even for a lingering record (the user
+        // asked for lanes to start fresh on eject).
+        return;
+    }
+    auto fw_it = lane_firmware_spool_id_.find(lane_name);
+    const int firmware_id = fw_it != lane_firmware_spool_id_.end() ? fw_it->second : 0;
+    if (firmware_id > 0) {
+        // AFC already holds a link — its own remember_spool repopulated the
+        // lane, or another writer (Mainsail) set one. Their statement wins;
+        // the merge policy renders it.
+        return;
+    }
+
+    const int retained_id = it->second.spoolman_id;
+    spdlog::info("[AMS AFC] Lane {} (slot {}): re-asserting retained spool id {} into AFC",
+                 lane_name, slot_index, retained_id);
+    // Record before dispatching, exactly like set_slot_info's SET_SPOOL_ID
+    // path: firmware_id (0 here) is what firmware last reported.
+    record_own_spool_write(override_key, retained_id, firmware_id);
+    AmsError err =
+        execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID={}", lane_name, retained_id));
+    if (!err) {
+        // No retry loop — wait for the next empty -> loaded transition.
+        spdlog::warn("[AMS AFC] Lane {} (slot {}): spool id re-assert dispatch failed: {}",
+                     lane_name, slot_index, err.technical_msg);
     }
 }
 
