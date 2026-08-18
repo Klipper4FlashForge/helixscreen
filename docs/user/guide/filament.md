@@ -119,6 +119,8 @@ On **AFC** (Box Turtle, OpenAMS):
 - **Swap to a different slot:** Heat nozzle → Cut tip → Unload filament → Feed filament → Purge to bucket → Brush nozzle → Kick away → Load complete
 - **Unload:** Heat nozzle → Cut tip → Retract filament
 
+If AFC's `auto_home` is enabled in AFC.cfg, HelixScreen skips its home-first prompt — AFC homes the printer itself when needed.
+
 On **Happy Hare**:
 
 - **Load into an empty toolhead:** Heat nozzle → Select gate → Load filament → Purge → Load complete

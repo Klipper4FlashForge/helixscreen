@@ -2366,6 +2366,14 @@ gets the dialog with manual **Load** kept prominent, because Resume alone does n
 `supports_per_tool_spool_assignment()` is not overridden either; it falls through to
 `is_tool_changer(get_type())`, which is false for AFC.
 
+**Homing delegation.** With `[AFC] auto_home: True` in AFC.cfg, AFC's
+macros home-if-needed themselves. `AmsBackendAfc` surfaces this via
+`AmsBackend::delegates_homing_to_printer()` (false until AFC.cfg has
+loaded), and all three home-first prompt sites — the AMS sidebar, the
+filament panel, and `ensure_homed_then()` — skip both the prompt and the
+synthesized G28. Distinct from `filament_ops_self_home()`, which governs
+paused-print refusal.
+
 ### AFC Version Reporting
 
 `afc_version_` is **display and diagnostics only. Never gate behavior on it.** AFC has no

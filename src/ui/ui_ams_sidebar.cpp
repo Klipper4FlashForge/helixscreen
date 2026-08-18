@@ -1443,7 +1443,8 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
     // G28 still fires later, inside AmsSubscriptionBackend::ensure_homed_then()
     // right before the tier-1 dispatch (unchanged) -- only the confirmation
     // moves earlier, so a decline never wastes a preheat cycle.
-    if (!helix::toolhead_is_homed(printer_state_)) {
+    if (!helix::toolhead_is_homed(printer_state_) &&
+        !(backend && backend->delegates_homing_to_printer())) {
         spdlog::info("[AmsSidebar] Toolhead not homed -- asking before starting preheat for "
                      "slot {} load",
                      slot_index);

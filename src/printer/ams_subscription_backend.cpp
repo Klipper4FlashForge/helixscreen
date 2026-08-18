@@ -360,14 +360,16 @@ AmsSubscriptionBackend::ensure_homed_then(std::string gcode, std::function<void(
     // toolhead is in the standing objects.subscribe set, so querying it again
     // was a redundant round trip. skip_homing short-circuits the check
     // entirely -- toolhead_homed() is never called -- for firmware macros that
-    // home themselves (CFS Fork variant).
+    // home themselves (CFS Fork variant). delegates_homing_to_printer()
+    // short-circuits the same way when the printer-side system homes (AFC
+    // auto_home) — neither prompt nor G28.
     //
     // home_preconfirmed_ is intentionally NOT consulted here: it must never
     // substitute for the toolhead_homed() answer (that would skip the G28
     // itself, changing what the printer does), only for the PROMPT below. See
     // the std::exchange() consume further down, which only runs once this
     // branch has already proven the toolhead genuinely needs a G28.
-    if (skip_homing || toolhead_homed()) {
+    if (skip_homing || delegates_homing_to_printer() || toolhead_homed()) {
         return dispatch_payload(std::move(gcode), std::move(on_complete), std::move(on_error),
                                 timeout_ms, silent, caller_surfaces_errors);
     }

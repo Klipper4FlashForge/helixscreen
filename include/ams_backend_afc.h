@@ -361,6 +361,13 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// false lanes). See AmsBackend::printer_retains_spool_info().
     [[nodiscard]] bool printer_retains_spool_info() const override;
 
+    /// [AFC] auto_home from AFC.cfg — true only once afc_config_ has landed
+    /// (see AmsBackend::delegates_homing_to_printer()).
+    [[nodiscard]] bool delegates_homing_to_printer() const override {
+        return afc_config_ && afc_config_->is_loaded() &&
+               afc_config_->parser().get_bool("AFC", "auto_home", false);
+    }
+
     /**
      * @brief Whether AFC unloads the toolhead automatically after a print.
      *
@@ -534,6 +541,8 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcSharedExtruderHelper;
     friend class AfcLaneDataToolKeyHelper;
     friend class AfcReassertHelper;
+    friend class AfcDelegatesHomingHelper;
+    friend class AfcDispatchHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
