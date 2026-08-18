@@ -87,6 +87,7 @@ MDI_ICONS+=",0xF018D"    # console
 MDI_ICONS+=",0xF018F"    # content-copy (duplicate)
 MDI_ICONS+=",0xF01A4"    # crosshairs-gps (probe)
 MDI_ICONS+=",0xF01B4"    # delete (trash)
+MDI_ICONS+=",0xF01B7"    # debug-step-over (skip objects)
 MDI_ICONS+=",0xF01BC"    # database
 MDI_ICONS+=",0xF01D9"    # dots-vertical (advanced)
 MDI_ICONS+=",0xF01DA"    # download

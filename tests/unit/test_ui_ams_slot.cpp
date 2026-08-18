@@ -303,7 +303,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: move_label_to_layer reparents lab
 // into the per-slot material subject, from where the widget's own observer paints
 // the label. Together the two tests pin backend -> subject -> label end to end.
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: material label binds to subject",
-                 "[ui][ams_slot][binding][.skip]") {
+                 "[ui][ams_slot][binding]") {
     ui_ams_slot_register();
     // LVGLUITestFixture does not init AmsState subjects. Without this the
     // per-slot material subject is raw memory, sync_from_backend()'s
@@ -366,7 +366,7 @@ static lv_obj_t* find_spool_canvas(lv_obj_t* spool_container) {
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: color subject updates spool",
-                 "[ui][ams_slot][binding][.skip]") {
+                 "[ui][ams_slot][binding]") {
     ui_ams_slot_register();
     // LVGLUITestFixture does not init AmsState subjects; do it here so the
     // per-slot color subjects are live INT subjects (otherwise lv_subject_set_int
@@ -428,7 +428,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: color subject updates spool",
 // ============================================================================
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: status badge visible when not empty",
-                 "[ui][ams_slot][status][.skip]") {
+                 "[ui][ams_slot][status]") {
     ui_ams_slot_register();
     AmsState::instance().init_subjects(true);
 
@@ -456,7 +456,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: status badge visible when not emp
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: status badge visible when empty",
-                 "[ui][ams_slot][status][.skip]") {
+                 "[ui][ams_slot][status]") {
     ui_ams_slot_register();
     AmsState::instance().init_subjects(true);
 
@@ -491,7 +491,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: status badge visible when empty",
 // ============================================================================
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: deletion cleans up observers",
-                 "[ui][ams_slot][cleanup][.skip]") {
+                 "[ui][ams_slot][cleanup]") {
     ui_ams_slot_register();
 
     // Set up mock backend
@@ -526,7 +526,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: deletion cleans up observers",
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: multiple slots cleanup independently",
-                 "[ui][ams_slot][cleanup][.skip]") {
+                 "[ui][ams_slot][cleanup]") {
     ui_ams_slot_register();
 
     // Set up mock backend with enough slots
@@ -574,7 +574,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: multiple slots cleanup independen
 // ============================================================================
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: refresh updates from AmsState",
-                 "[ui][ams_slot][refresh][.skip]") {
+                 "[ui][ams_slot][refresh]") {
     ui_ams_slot_register();
 
     // Set up mock backend
@@ -859,8 +859,8 @@ TEST_CASE("SlotInfo::display_fill_level renders ghost lanes empty, present lanes
           "[ams][slot][1071]") {
     // Ghost lane: EMPTY status, but a Spoolman link + material were RETAINED
     // across an eject (#1071), so has_filament_info() is true. The fill bar must
-    // read empty (0), NOT the 50% metadata fallback — otherwise an ejected lane
-    // renders half full (#1071 BUG-1).
+    // read empty (0), NOT the metadata fallback — otherwise an ejected lane
+    // renders as a full spool (#1071 BUG-1).
     SlotInfo ghost;
     ghost.status = SlotStatus::EMPTY;
     ghost.material = "PLA";
@@ -880,14 +880,14 @@ TEST_CASE("SlotInfo::display_fill_level renders ghost lanes empty, present lanes
     REQUIRE(wfill.has_value());
     CHECK(*wfill == Catch::Approx(0.25f));
 
-    // Present lane, metadata but no remaining weight (e.g. Snapmaker RFID): 50%
-    // (indeterminate half-bar, not misleadingly-full).
+    // Present lane, metadata but no remaining weight (e.g. Snapmaker RFID, or a
+    // lane nobody tracks in Spoolman): full, matching every other printer UI.
     SlotInfo meta;
     meta.status = SlotStatus::AVAILABLE;
     meta.material = "PETG";
     auto mfill = meta.display_fill_level();
     REQUIRE(mfill.has_value());
-    CHECK(*mfill == Catch::Approx(0.50f));
+    CHECK(*mfill == Catch::Approx(1.0f));
 
     // Present lane, no info at all: leave the bar unchanged (nullopt).
     SlotInfo bare;

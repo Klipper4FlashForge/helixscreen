@@ -105,6 +105,8 @@ translations:
   AFC reset complete: Сброс AFC завершён
   AFC reset failed: Ошибка сброса AFC
   AFC retracts filament from the toolhead at end of print: AFC выгружает филамент из печатающей головки по завершении печати
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: ''
+  AI detection: AI-детекция
   ALL DEVICES: ВСЕ УСТРОЙСТВА
   AMS: AMS
   'AMS Active: ': 'AMS активен: '
@@ -147,6 +149,7 @@ translations:
   Adjust until belt appears frozen: Регулируйте, пока ремень не покажется неподвижным
   Adjustments stay active until restart. Save after print completes.: Настройки активны до перезагрузки. Сохраните после завершения печати.
   Adjusts individual characteristics of your heaters for optimal control: Настраивает индивидуальные характеристики нагревателей для оптимального контроля
+  Advanced: Дополнительно
   After running the commands, tap Check Again below.: После выполнения команд нажмите «Проверить снова» ниже.
   Alert: Оповещение
   Alerts: Оповещения
@@ -299,12 +302,16 @@ translations:
   Button taps and navigation sounds: Звуки нажатий и навигации
   Buzz Servo: Дёрнуть сервопривод
   Bypass: Обход
+  Bypass Is Active: ''
   Bypass Mode: Режим обхода
+  Bypass active — this print runs on the external spool, not on the lanes below.: ''
   Bypass controlled by hardware sensor: Обход управляется аппаратным датчиком
   Bypass controlled by sensor: Байпас управляется датчиком
   Bypass disabled: Байпас отключён
   Bypass enabled: Байпас включён
   Bypass failed: Ошибка байпаса
+  ? Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?
+  : ''
   Bypass toggle failed: Не удалось переключить байпас
   C: К
   CALIBRATION: КАЛИБРОВКА
@@ -544,6 +551,7 @@ translations:
   Control power relays and smart outlets: Управление реле и умными розетками
   Controlled by hardware sensor: Управляется аппаратным датчиком
   Controller: Контроллер
+  Controls: Управление
   Cool Down: Охладить
   Cool nozzle after filament ops: Остужать сопло после операций с филаментом
   Cooling: Охлаждение
@@ -603,6 +611,7 @@ translations:
   Custom...: Настроить...
   Customize Macro Button: Настроить кнопку макроса
   Customize preset temperatures: Настройка пресетов температур
+  Customize your home screen: Настройте главный экран
   Cut Distance: Расстояние реза
   Cut filament: Обрезать филамент
   Cut tip: Обрезка кончика
@@ -939,6 +948,8 @@ translations:
   Filament: Филамент
   Filament Detected: Филамент обнаружен
   Filament Environment: Среда хранения филамента
+  Filament Grade Mismatch: ''
+  Filament In The Toolhead: ''
   Filament Mapping: Назначение филамента
   Filament Runout: Окончание филамента
   Filament Sensor: Датчик филамента
@@ -951,6 +962,8 @@ translations:
   Filament diameter sensors for flow compensation: Датчики диаметра филамента для компенсации потока
   Filament is loose: Филамент ослаблен
   Filament is pulling tight: Филамент натянут
+  ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
+  : ''
   'Filament load failed: {}': 'Ошибка загрузки филамента: {}'
   Filament loaded: Филамент загружен
   Filament operation failed: Операция с филаментом не удалась
@@ -960,6 +973,7 @@ translations:
   : Филамент закончился, и CFS не нашла подходящей катушки для замены. Загрузите катушку того же материала и цвета и продолжите печать.
   Filament ran out at the toolhead: Филамент закончился у печатающей головки
   Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: Филамент закончился. Автопополнение выключено, поэтому CFS не сменит катушку сам. Загрузите филамент и продолжите печать.
+  Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume.: ''
   Filament runout: Окончание филамента
   Filament runout and motion detection sensors: Датчики окончания и движения филамента
   Filament saved: Филамент сохранён
@@ -1207,6 +1221,8 @@ translations:
   Keep Navigation Bar: Сохранить панель навигации
   Keep Printing: Продолжить печать
   Keep Required: Оставить обязательным
+  Keep Spool Info on Eject: ''
+  Keep current: ''
   Keep the bypass spool visible when bypass is off: Показывать катушку байпаса, даже когда байпас выключен
   Kick away: Сброс остатка
   Kinematics: Кинематика
@@ -1262,6 +1278,7 @@ translations:
   Length of filament to purge: Длина продуваемого филамента
   Length of the cooling tube section: Длина участка трубки охлаждения
   'Length:': 'Длина:'
+  Let's take a quick tour so you can find things fast.: 'Давайте устроим краткий тур, чтобы вы могли быстро находить всё нужное.'
   Leveling Gantry...: Выравнивание портала...
   Library: Библиотека
   Lifetime Print Stats: Статистика за всё время
@@ -1276,6 +1293,8 @@ translations:
   Load may still be running — response timed out: Загрузка может ещё выполняться — время ожидания истекло
   Load or unload filament.: ''
   Load the required filaments or start anyway?: Загрузить нужные филаменты или начать без них?
+  ? 'Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors.'
+  : 'Загружайте, выгружайте и меняйте катушки. Просматривайте вашу мультифиламентную систему одним взглядом, сопоставляйте цвета со слотами и отслеживайте датчики окончания филамента.'
   Loaded: Загружен
   Loading: Загрузка
   Loading Bed Mesh...: Загрузка сетки стола...
@@ -1303,6 +1322,8 @@ translations:
   Log Level: Уровень журнала
   Logs: Журналы
   Long Press Time: Время долгого нажатия
+  ? 'Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout.'
+  : 'Долгое нажатие на любую плитку переводит в режим редактирования — переставляйте, изменяйте размер, удаляйте или добавляйте виджеты, а также добавляйте дополнительные страницы под свой макет.'
   Long-press the home grid to rearrange widgets (turn off if it triggers by accident): Долгое нажатие на сетку главного экрана переставляет виджеты (отключите, если срабатывает случайно)
   Longest Disconnect: Самое долгое отключение
   Loosen Path A belt.: Ослабьте ремень Пути A.
@@ -1348,6 +1369,7 @@ translations:
   Macro to resume a paused print: Макрос для возобновления приостановленной печати
   Macro to unload filament from extruder: Макрос для выгрузки филамента из экструдера
   Macros: Макросы
+  'Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities.': 'Макросы, консоль G-code, инструменты калибровки (PID, Input Shaper, Z-смещение), обновления прошивки и утилиты для разработчиков.'
   Main LED Strip: Основная LED-лента
   Maintaining: Поддержание
   Maintenance: Обслуживание
@@ -1402,6 +1424,8 @@ translations:
   Minutes: Минуты
   Mode: Режим
   Modified: Изменён
+  Monitor for print abnormalities (K2 Plus camera-based): Отслеживание дефектов печати (на основе камеры K2 Plus)
+  'Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job.': 'Отслеживайте выполняющиеся печати — оставшееся время, текущий слой и прогресс. Нажмите, чтобы приостановить, возобновить или отменить активное задание.'
   Monitoring: Мониторинг
   Month: Месяц
   Moonraker: Moonraker
@@ -1420,6 +1444,7 @@ translations:
   Move paper back and forth while adjusting. Stop when paper catches slightly but still slides.: Перемещайте бумагу вперёд-назад во время регулировки. Остановитесь, когда бумага слегка цепляется, но ещё скользит.
   Move selector: Двигать селектор
   Move speed multipliers: Множители скорости перемещения
+  'Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings.': 'Перемещайте печатающую головку, паркуйте оси, выравнивайте стол и точно настраивайте температуры, вентиляторы и другие параметры движения.'
   ? Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal.
   : Перемещает печатающую головку для измерения частот вибрации по каждой оси. Занимает 2-3 минуты. Принтер будет шуметь — это нормально.
   Moving lane: Перемещение слота
@@ -1453,6 +1478,7 @@ translations:
   Network Test: Тест сети
   Network forgotten: Сеть забыта
   Network name cannot be empty: Имя сети не может быть пустым
+  'Network, display, sound, printer setup, and more. You can replay this tour anytime from Help & About.': 'Сеть, дисплей, звук, настройка принтера и многое другое. Этот тур можно повторить в любой момент из раздела «Справка и о программе».'
   Never: Никогда
   'New Spool: Step 1 of 3': 'Новая катушка: Шаг 1 из 3'
   'New Spool: Step {} of {}': 'Новая катушка: шаг {} из {}'
@@ -1544,6 +1570,7 @@ translations:
   Not Enough Filament: Недостаточно филамента
   Not Now: Не сейчас
   Not available here. Update from a terminal.: Здесь недоступно. Обновите через терминал.
+  Not available on Android: ''
   Not calibrated: Не откалиброван
   Not configured: Не настроено
   Not connected: Не подключен
@@ -1767,6 +1794,7 @@ translations:
   Print server rejected the job — check printer status: Сервер печати отклонил задание — проверьте статус принтера
   Print setup failed: Не удалось подготовить печать
   'Print setup failed: internal error': 'Не удалось подготовить печать: внутренняя ошибка'
+  Print status: Статус печати
   Print timed out waiting for completion: Время ожидания завершения печати истекло
   Printer: Принтер
   Printer Error: Ошибка принтера
@@ -1798,6 +1826,7 @@ translations:
   Printer name: Название принтера
   Printer not ready: Принтер не готов
   Printer ready: Принтер готов
+  Printer type mismatch: ''
   'Printer:': 'Принтер:'
   'Printer: ': 'Принтер: '
   PrinterIdentify: Определить принтер
@@ -1869,6 +1898,7 @@ translations:
   Ramming Volume: Объём рэмминга
   Raspberry Pi: Raspberry Pi
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
+  Re-identify: ''
   Re-probe: Перепроверить
   Re-read spool RFID tags and remaining length: Перечитать RFID-метки катушек и остаток
   Re-syncs Happy Hare's tracked state with the hardware.: Повторно синхронизирует отслеживаемое состояние Happy Hare с оборудованием.
@@ -1891,6 +1921,7 @@ translations:
   Recalibrate or view detailed results anytime in Settings.: Перекалибруйте или просмотрите подробные результаты в любое время в Настройках.
   Recent Prints: Недавние печати
   Recently Printed: Недавно напечатано
+  Reconnect: ''
   Record Timelapse: Записать таймлапс
   Record timelapses of your prints: Записывайте таймлапсы ваших печатей
   Recorded timelapses will appear here: Записанные таймлапсы появятся здесь
@@ -1915,6 +1946,7 @@ translations:
   Remap Tool: Переназначить инструмент
   Remap needs the HelixPrint plugin: Для переназначения нужен плагин HelixPrint
   Remap…: Переназначить…
+  Remember lane spool details across an eject: ''
   Remove: Удалить
   Remove PIN: Удалить PIN
   Remove Spoolman?: Удалить Spoolman?
@@ -2332,6 +2364,7 @@ translations:
   Tap + to add: Нажмите +, чтобы добавить
   Tap again to confirm this orientation: Нажмите ещё раз для подтверждения ориентации
   Tap an object to exclude it | {} objects ({} excluded): Коснитесь объекта, чтобы исключить его | {} объектов ({} исключено)
+  Tap any tile to open its full controls or toggle its state.: 'Нажмите на любую плитку, чтобы открыть её полные элементы управления или переключить состояние.'
   Tap anywhere if this text is right-side up: Нажмите в любом месте, если текст расположен правильно
   Tap anywhere to begin: Нажмите в любом месте для начала
   Tap anywhere to begin calibration: Нажмите в любом месте для начала калибровки
@@ -2382,8 +2415,12 @@ translations:
   The Spoolman spool currently loaded: Текущая катушка Spoolman
   ? The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings > Display.
   : Анимированная заставка была отключена на данном устройстве, чтобы она не мешала печати. Вы можете снова включить её в Настройки > Дисплей.
+  ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
+  : ''
   The filament system reported an error: Система филамента сообщила об ошибке
   The heater will cycle on and off several times.: Нагреватель будет несколько раз включаться и выключаться.
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : ''
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным, затем зафиксируйте показание."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2399,6 +2436,7 @@ translations:
   The runout sensor indicates no filament is loaded. Start print anyway?: Датчик окончания филамента показывает, что филамент не загружен. Всё равно начать печать?
   The speed of one fan you choose: Скорость выбранного вентилятора
   The time, date, and system uptime: Время, дата и время работы системы
+  The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?: ''
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: Датчик печатающей головки показывает, что филамент уже загружен. Всё равно продолжить загрузку?
   The toolhead sensor indicates no filament is present. Proceed with unload anyway?: Датчик печатающей головки показывает, что филамент отсутствует. Всё равно продолжить выгрузку?
   Theme: Тема
@@ -2407,6 +2445,7 @@ translations:
   Theme changes apply after restart.: Изменения темы применяются после перезапуска.
   Theme reset to defaults: Тема сброшена к настройкам по умолчанию
   'Theme: ': 'Тема: '
+  'These tools have a different filament grade loaded:': ''
   'These tools have incompatible materials loaded:': 'В этих инструментах загружены несовместимые материалы:'
   'These tools have no filament loaded:': 'В эти инструменты не загружен филамент:'
   'These tools have no matching filament loaded:': 'В этих инструментах нет подходящего филамента:'
@@ -2421,12 +2460,15 @@ translations:
   : На этом устройстве очень мало ОЗУ. Калибровка резонансов требует много памяти и может вызвать ошибку "Timer Too Close". Всё равно продолжить?
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Это не совпадает с привязанной катушкой Spoolman. Добавить как новую катушку или обновить привязанную?
   This file was sliced for {} but {} is loaded.: Файл нарезан для {}, но загружен {}.
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: Это именно те данные, которые будут отправлены
   This is what data would be sent if enabled: Эти данные были бы отправлены при включении
   This may take up to 30 seconds: Это может занять до 30 секунд
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps.
   : Этот плагин позволяет HelixScreen управлять опциями начала печати, такими как сетка стола и QGL. После установки используйте «Настроить PRINT_START» ниже для включения опциональных шагов.
   This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?: Для этой печати нужно около %.0fг, но на катушке осталось около %.0fг. Всё равно начать?
+  ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
+  : ''
   This tool probes each bed screw and tells you how much to adjust.: Этот инструмент проверяет каждый винт стола и показывает, насколько его нужно отрегулировать.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect.
   : Z-offset будет применён к вашему концевику, и Klipper перезапустится для сохранения конфигурации. Принтер ненадолго отключится.
@@ -2574,6 +2616,7 @@ translations:
   Update your security PIN: Обновите ваш PIN-код
   Updating Configuration...: Обновление конфигурации...
   Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Обновите AFC до версии 1.2.0 или новее, чтобы получить имена филамента и многоцветные катушки.
+  Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.: ''
   Upload: Отправить
   Upload Debug Bundle: Отправить пакет диагностики
   Upload Failed: Ошибка отправки
@@ -2638,6 +2681,7 @@ translations:
   Weekly Print Stats: Статистика за неделю
   ? Weight data is synced from Spoolman to display remaining filament. Changes are also synced when prints start, pause, or complete.
   : Данные о весе синхронизируются из Spoolman для отображения оставшегося филамента. Изменения также синхронизируются при начале, паузе или завершении печати.
+  Welcome to HelixScreen: Добро пожаловать в HelixScreen
   What We Collect: Что мы собираем
   When enabled, only the macro runs. When disabled, temperatures are set first, then the macro runs.: Когда включено, запускается только макрос. Когда выключено, сначала задаются температуры, затем запускается макрос.
   ? When starting a print, you'll be able to choose whether to run %s. This saves time when you've already done it recently or want more control over your print preparation.
@@ -2707,6 +2751,7 @@ translations:
     '
   Your completed prints will appear here: Ваши завершённые печати появятся здесь
   Your print start is already fully configured!: Ваш старт печати уже полностью настроен!
+  Your printer at a glance: Ваш принтер одним взглядом
   Your printer has an automatic filament changer: Ваш принтер оснащён автоматическим сменщиком филамента
   Your printer was offline during setup, so hardware options were skipped. Set them up now?: Принтер был не в сети во время настройки, поэтому параметры оборудования пропущены. Настроить их сейчас?
   Z: Z
@@ -2764,9 +2809,6 @@ translations:
   nozzle: сопло
   of: из
   'off': выкл
-  pre_print_option.ai_detect.description: Отслеживание дефектов печати (на основе камеры K2 Plus)
-  pre_print_option.ai_detect.label: AI-детекция
-  pre_print_option.timelapse.label: Таймлапс
   prints: печатей
   remaining: осталось
   remaining before clog detection triggers: осталось до срабатывания обнаружения засора
@@ -2776,22 +2818,6 @@ translations:
   steppers: шаговые двигатели
   tall: высотой
   tool(s): инструмент(ы)
-  tour.step.advanced.body: Макросы, консоль G-code, инструменты калибровки (PID, Input Shaper, Z-смещение), обновления прошивки и утилиты для разработчиков.
-  tour.step.advanced.title: Дополнительно
-  tour.step.controls.body: Перемещайте печатающую головку, паркуйте оси, выравнивайте стол и точно настраивайте температуры, вентиляторы и другие параметры движения.
-  tour.step.controls.title: Управление
-  tour.step.customize.body: Долгое нажатие на любую плитку переводит в режим редактирования — переставляйте, изменяйте размер, удаляйте или добавляйте виджеты, а также добавляйте дополнительные страницы под свой макет.
-  tour.step.customize.title: Настройте главный экран
-  tour.step.filament.body: Загружайте, выгружайте и меняйте катушки. Просматривайте вашу мультифиламентную систему одним взглядом, сопоставляйте цвета со слотами и отслеживайте датчики окончания филамента.
-  tour.step.filament.title: Филамент
-  tour.step.home_grid.body: Нажмите на любую плитку, чтобы открыть её полные элементы управления или переключить состояние.
-  tour.step.home_grid.title: Ваш принтер одним взглядом
-  tour.step.print.body: Отслеживайте выполняющиеся печати — оставшееся время, текущий слой и прогресс. Нажмите, чтобы приостановить, возобновить или отменить активное задание.
-  tour.step.print.title: Статус печати
-  tour.step.settings.body: Сеть, дисплей, звук, настройка принтера и многое другое. Этот тур можно повторить в любой момент из раздела «Справка и о программе».
-  tour.step.settings.title: Настройки
-  tour.step.welcome.body: Давайте устроим краткий тур, чтобы вы могли быстро находить всё нужное.
-  tour.step.welcome.title: Добро пожаловать в HelixScreen
   used: использ.
   v%s available: Доступна v%s
   v{} installed! Restarting...: v{} установлена! Перезапуск...

@@ -171,9 +171,16 @@ void ALSASoundBackend::shutdown() {
         return;
 
     running_.store(false, std::memory_order_relaxed);
-    // Wake a parked render thread, or the join below never returns.
-    suspended_.store(false, std::memory_order_relaxed);
+    // Wake a parked render thread, or the join below never returns. Same
+    // store-under-mutex discipline as resume(); the ack lock orders running_
+    // for any resume() still waiting on the handoff.
+    {
+        std::lock_guard<std::mutex> lock(suspend_mutex_);
+        suspended_.store(false, std::memory_order_relaxed);
+    }
     suspend_cv_.notify_all();
+    { std::lock_guard<std::mutex> ack_lock(ack_mutex_); }
+    ack_cv_.notify_all();
 
     // Join render thread before closing device
     if (render_thread_.joinable()) {
@@ -271,10 +278,33 @@ void ALSASoundBackend::suspend() {
 }
 
 void ALSASoundBackend::resume() {
-    if (!suspended_.exchange(false))
+    bool was_suspended;
+    {
+        // Store under the mutex: paired with the predicate re-check inside
+        // the render thread's cv wait, this makes the wakeup lost-notify-free
+        // (notify without the mutex can fire in the window between the
+        // predicate evaluating true and the thread blocking).
+        std::lock_guard<std::mutex> lock(suspend_mutex_);
+        was_suspended = suspended_.exchange(false, std::memory_order_relaxed);
+    }
+    if (!was_suspended)
         return;
+
+    // Synchronous handoff (see header): wait until the render thread has
+    // completed a full pass for this resume request before letting the
+    // caller's clock start. The timeout only bites when the render thread is
+    // wedged — falling back to the old asynchronous behavior for that one
+    // sound is better than stalling the sequencer indefinitely.
+    const uint32_t seq = resume_seq_.fetch_add(1, std::memory_order_relaxed) + 1;
     suspend_cv_.notify_all();
-    spdlog::debug("[ALSA] Resuming render thread");
+    if (!running_.load(std::memory_order_relaxed) || pcm_ == nullptr)
+        return; // no live render thread to hand off to
+    std::unique_lock<std::mutex> lock(ack_mutex_);
+    const bool handed_off = ack_cv_.wait_for(lock, std::chrono::milliseconds(100), [&] {
+        return resume_acked_.load(std::memory_order_relaxed) >= seq ||
+               !running_.load(std::memory_order_relaxed);
+    });
+    spdlog::debug("[ALSA] Resuming render thread{}", handed_off ? "" : " (handoff timed out)");
 }
 
 void ALSASoundBackend::render_loop() {
@@ -292,12 +322,22 @@ void ALSASoundBackend::render_loop() {
     }
 
     while (running_.load(std::memory_order_relaxed)) {
-        // Idle park. Drop the device and block rather than writing silence
-        // forever; resume() or shutdown() wakes us. snd_pcm_drop/prepare run
-        // here, on the render thread, never on the caller's.
+        // Idle park. Block rather than writing silence forever; resume() or
+        // shutdown() wakes us. snd_pcm_* calls stay here, on the render
+        // thread, never on the caller's.
         if (suspended_.load(std::memory_order_relaxed)) {
-            if (pcm_)
-                snd_pcm_drop(pcm_);
+            // Drain rather than drop: the sequencer suspends as soon as its
+            // clock says a sound is over, but up to one hardware buffer of
+            // already-rendered audio is still queued (~46 ms at the
+            // negotiated buffer size). snd_pcm_drop discarded that tail
+            // (audible cut-off at the end of sounds); drain lets it play out
+            // before parking. On a stream that never started (PREPARED)
+            // drain returns immediately.
+            if (pcm_) {
+                int err = snd_pcm_drain(pcm_);
+                if (err < 0)
+                    spdlog::debug("[ALSASound] drain on park: {}", snd_strerror(err));
+            }
             {
                 std::unique_lock<std::mutex> lock(suspend_mutex_);
                 suspend_cv_.wait(lock, [this] {
@@ -399,6 +439,19 @@ void ALSASoundBackend::render_loop() {
             if (written < 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
+        }
+
+        // Handoff ack: announce that a full pass (render + write) completed
+        // for the newest resume request. Bottom-of-loop, not after prepare,
+        // so resume() returning means audio is actually flowing. No-op cost
+        // when no resume is pending (single atomic load in the common case).
+        const uint32_t seq = resume_seq_.load(std::memory_order_relaxed);
+        if (resume_acked_.load(std::memory_order_relaxed) != seq) {
+            {
+                std::lock_guard<std::mutex> lock(ack_mutex_);
+                resume_acked_.store(seq, std::memory_order_relaxed);
+            }
+            ack_cv_.notify_all();
         }
     }
 }

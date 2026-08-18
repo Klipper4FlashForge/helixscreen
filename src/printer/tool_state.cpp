@@ -435,7 +435,13 @@ const ToolInfo* ToolState::active_tool() const {
 }
 
 std::string ToolState::nozzle_label() const {
-    if (!is_multi_tool()) {
+    // Gated on physical extruders, not tool count: the label sits beside a
+    // nozzle temperature readout in the controls and filament panels, so it
+    // answers "which nozzle is this". set_ams_topology() expands tools_ to one
+    // entry per filament lane, and every lane on a single-hotend printer feeds
+    // the same nozzle - naming it after the loaded lane says nothing. Matches
+    // the nozzle_icon badge gate in ui_ams_tool_text.
+    if (!has_multiple_extruders()) {
         return lv_tr("Nozzle");
     }
     const auto* tool = active_tool();
@@ -537,6 +543,22 @@ static constexpr const char* SPOOL_JSON_FILENAME = "tool_spools.json";
 static constexpr const char* MOONRAKER_DB_NAMESPACE = "helix-screen";
 static constexpr const char* MOONRAKER_DB_KEY = "tool_spool_assignments";
 
+/**
+ * @brief Whether two spool weights render identically.
+ *
+ * Weights reach the UI as whole grams, so anything finer is noise nothing
+ * downstream can observe. Compares against the LAST STORED value rather than a
+ * running accumulator, so a slow slide still fires exactly once per gram.
+ * The -1.0f "unknown" sentinel and non-finite values compare by exact equality
+ * so they never round into a real weight.
+ */
+static bool same_displayed_weight(float a, float b) {
+    if (!std::isfinite(a) || !std::isfinite(b) || a < 0.0f || b < 0.0f) {
+        return a == b || (!std::isfinite(a) && !std::isfinite(b));
+    }
+    return std::lround(a) == std::lround(b);
+}
+
 void ToolState::assign_spool(int tool_index, int spoolman_id, const std::string& spool_name,
                              float remaining_g, float total_g) {
     if (tool_index < 0 || tool_index >= static_cast<int>(tools_.size())) {
@@ -549,9 +571,22 @@ void ToolState::assign_spool(int tool_index, int spoolman_id, const std::string&
 
     auto& tool = tools_[tool_index];
 
-    // Skip if nothing changed (avoids unnecessary saves from frequent syncs)
-    if (tool.spoolman_id == spoolman_id && tool.spool_name == spool_name &&
-        tool.remaining_weight_g == remaining_g && tool.total_weight_g == total_g) {
+    // Which spool is mounted. This is the durable half of the record: it is what
+    // survives a restart and what tool_spools.json plus the Moonraker DB key
+    // exist to remember.
+    const bool identity_changed = tool.spoolman_id != spoolman_id || tool.spool_name != spool_name;
+
+    // Weights are a cache. Firmware reports them as continuous floats — an AFC
+    // lane sends e.g. 627.685056380799 g and moves by hundredths on every status
+    // update — so an exact compare treats sensor noise as a change. AmsState
+    // calls this from the status path and then saves if dirty, which on bundle
+    // L53W5PKG meant 590 rewrites of tool_spools.json, 590 Moonraker DB POSTs
+    // and 590 filament-panel rebuilds in one session. Compare at whole grams,
+    // the resolution the UI actually renders.
+    const bool weight_changed = !same_displayed_weight(tool.remaining_weight_g, remaining_g) ||
+                                !same_displayed_weight(tool.total_weight_g, total_g);
+
+    if (!identity_changed && !weight_changed) {
         return;
     }
 
@@ -559,10 +594,18 @@ void ToolState::assign_spool(int tool_index, int spoolman_id, const std::string&
     tool.spool_name = spool_name;
     tool.remaining_weight_g = remaining_g;
     tool.total_weight_g = total_g;
-    spool_dirty_ = true;
 
-    spdlog::info("[ToolState] Assigned spool {} ({}) to tool {}", spoolman_id, spool_name,
-                 tool_index);
+    // Persist only for an identity change. A weight refresh is re-fetched from
+    // AFC/Spoolman within seconds of the next connect, so writing flash and
+    // POSTing the DB for each gram consumed during a print buys nothing.
+    if (identity_changed) {
+        spool_dirty_ = true;
+        spdlog::info("[ToolState] Assigned spool {} ({}) to tool {}", spoolman_id, spool_name,
+                     tool_index);
+    } else {
+        spdlog::debug("[ToolState] Spool {} on tool {} now {:.0f}g", spoolman_id, tool_index,
+                      remaining_g);
+    }
 
     // Bump version so UI observers update
     if (subjects_initialized_) {

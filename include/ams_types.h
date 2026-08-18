@@ -979,10 +979,12 @@ struct SlotInfo {
      * EMPTY/UNKNOWN lanes render empty (0.0) — even when a Spoolman link and
      * material were deliberately RETAINED across an eject (#1071), so a ghost
      * lane never shows a phantom fill (#1071 BUG-1). Present lanes use the real
-     * remaining/total ratio when both weights are known; else fall back to 50%
+     * remaining/total ratio when both weights are known; else fall back to full
      * when any filament metadata is present (some backends, e.g. Snapmaker RFID,
-     * report a total but never a remaining) — an indeterminate half-bar, not a
-     * misleadingly-full one; else nullopt (leave unchanged).
+     * report a total but never a remaining, and a lane outside Spoolman has no
+     * weights at all). Full is what every other printer UI shows for an unweighed
+     * spool, and matching them beats a half-bar nobody reads as "unknown". Else
+     * nullopt (leave unchanged).
      */
     [[nodiscard]] std::optional<float> display_fill_level() const {
         if (!is_present()) {
@@ -992,7 +994,7 @@ struct SlotInfo {
             return remaining_weight_g / total_weight_g;
         }
         if (has_filament_info()) {
-            return 0.50f;
+            return 1.0f;
         }
         return std::nullopt;
     }
@@ -1004,7 +1006,7 @@ struct SlotInfo {
      * per-slot fill subjects (AmsState::get_slot_fill_subject): -1 when
      * display_fill_level() is nullopt (no data — leave the render untouched),
      * otherwise the ratio rounded to 0-100 (absent lane -> 0, metadata-only
-     * fallback -> 50, real ratio -> lround(ratio*100)). Implemented in terms of
+     * fallback -> 100, real ratio -> lround(ratio*100)). Implemented in terms of
      * display_fill_level() so the two never drift.
      */
     [[nodiscard]] int display_fill_pct() const {

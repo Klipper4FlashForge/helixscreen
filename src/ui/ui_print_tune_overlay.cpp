@@ -283,9 +283,13 @@ void PrintTuneOverlay::sync_to_state() {
     flow_percent_ = flow;
     update_display();
 
-    // Sync Z offset from PrinterState
-    int z_offset_microns = lv_subject_get_int(printer_state_->get_gcode_z_offset_subject());
+    // Sync Z offset from PrinterState. Firmware that persists the offset itself
+    // (ZMOD) zeroes the live one outside a print, so adjusting from it while idle
+    // would baby-step away from a phantom zero.
+    int z_offset_microns = helix::zoffset::displayed_z_offset_microns(*printer_state_);
     update_z_offset_display(z_offset_microns);
+    // Opening the overlay starts a new tuning session; travel is bounded from here.
+    session_base_z_offset_ = current_z_offset_;
 
     // Sync the visual indicator
     lv_obj_t* indicator = lv_obj_find_by_name(tune_panel_, "z_offset_indicator");
@@ -352,7 +356,10 @@ void PrintTuneOverlay::update_speed_flow_display(int speed_percent, int flow_per
 }
 
 void PrintTuneOverlay::update_z_offset_display(int microns) {
-    // Update display from PrinterState (microns -> mm)
+    // Update display from PrinterState (microns -> mm). Deliberately does NOT
+    // re-baseline the travel guard: PrintStatusPanel calls this from a
+    // gcode_z_offset observer, which our own adjust fires, so re-baselining
+    // here would reset the guard after every single step.
     current_z_offset_ = microns / 1000.0;
 
     if (subjects_initialized_) {
@@ -433,9 +440,10 @@ void PrintTuneOverlay::handle_reset() {
 }
 
 void PrintTuneOverlay::handle_z_offset_changed(double delta) {
-    const auto r = helix::zoffset::adjust(api_, printer_state_, current_z_offset_, delta);
+    const auto r = helix::zoffset::adjust(api_, printer_state_, session_base_z_offset_,
+                                          current_z_offset_, delta);
     if (r.clamped_to_noop) {
-        return; // already at the limit
+        return; // already at the session-travel limit
     }
     current_z_offset_ = r.new_offset_mm;
 

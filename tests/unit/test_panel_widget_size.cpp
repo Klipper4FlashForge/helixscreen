@@ -234,3 +234,23 @@ TEST_CASE("size bands are byte-identical at scale 1.0", "[widget_size][panel_wid
         CHECK(h_taller(bp) == H_TALLER_PX[static_cast<size_t>(i)]);
     }
 }
+
+TEST_CASE("band accessors clamp an out-of-range tier instead of reading off the table",
+          "[widget_size][panel_widget_size]") {
+    // as_breakpoint() clamps, but the accessors also take a raw UiBreakpoint a
+    // caller could have cast from an arbitrary int (the ui_breakpoint subject
+    // is an int). Reading a seven-entry table with it must not walk off either
+    // end.
+    const auto below = static_cast<UiBreakpoint>(-3);
+    const auto above = static_cast<UiBreakpoint>(99);
+
+    CHECK(w_normal(below) == w_normal(UiBreakpoint::Micro));
+    CHECK(w_wide(below) == w_wide(UiBreakpoint::Micro));
+    CHECK(h_tall(below) == h_tall(UiBreakpoint::Micro));
+    CHECK(h_taller(below) == h_taller(UiBreakpoint::Micro));
+
+    CHECK(w_normal(above) == w_normal(UiBreakpoint::XXLarge));
+    CHECK(w_wide(above) == w_wide(UiBreakpoint::XXLarge));
+    CHECK(h_tall(above) == h_tall(UiBreakpoint::XXLarge));
+    CHECK(h_taller(above) == h_taller(UiBreakpoint::XXLarge));
+}

@@ -1010,9 +1010,12 @@ void app_store_argv(int /*argc*/, char** /*argv*/) {
 // but don't need real network/hardware connections.
 
 // Stub for app_globals_init_subjects (creates test notification + edit mode subjects)
+#include "platform_info.h"
+
 static lv_subject_t s_test_notification_subject;
 static lv_subject_t s_test_home_edit_mode_subject;
 static lv_subject_t s_test_wizard_active_subject;
+static lv_subject_t s_test_host_power_supported_subject;
 static bool s_test_notification_subject_initialized = false;
 
 void app_globals_init_subjects() {
@@ -1021,6 +1024,14 @@ void app_globals_init_subjects() {
         lv_subject_init_int(&s_test_home_edit_mode_subject, 0);
         lv_subject_init_int(&s_test_wizard_active_subject, 0);
         s_test_notification_subject_initialized = true;
+        // Mirrors the real seeding in app_globals.cpp — the rule itself lives
+        // in helix::platform_host_power_supported() (real code, linked here).
+        lv_subject_init_int(&s_test_host_power_supported_subject,
+                            helix::platform_host_power_supported() ? 1 : 0);
+        if (!lv_xml_get_subject(nullptr, "platform_host_power_supported")) {
+            lv_xml_register_subject(nullptr, "platform_host_power_supported",
+                                    &s_test_host_power_supported_subject);
+        }
         spdlog::debug("[Test Stub] app_globals_init_subjects: subjects initialized");
     }
 }
@@ -1030,6 +1041,7 @@ void app_globals_deinit_subjects() {
         lv_subject_deinit(&s_test_notification_subject);
         lv_subject_deinit(&s_test_home_edit_mode_subject);
         lv_subject_deinit(&s_test_wizard_active_subject);
+        lv_subject_deinit(&s_test_host_power_supported_subject);
         s_test_notification_subject_initialized = false;
         spdlog::debug("[Test Stub] app_globals_deinit_subjects: subjects deinitialized");
     }

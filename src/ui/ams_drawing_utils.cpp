@@ -72,11 +72,11 @@ SlotError::Severity worst_unit_severity(const AmsUnit& unit) {
 
 int fill_percent_from_slot(const SlotInfo& slot, int min_pct) {
     // Canonical fill semantics (SlotInfo::display_fill_pct): real ratio when
-    // both weights are known, 50% when only metadata is present, 0 for an
+    // both weights are known, 100% when only metadata is present, 0 for an
     // absent/ghost lane, and -1 when there is no data at all. -1 is propagated
-    // so callers can skip/keep-previous instead of rendering a phantom bar —
-    // this replaces the old "unknown weight -> 100 (FULL)" divergence that made
-    // every weightless slot look full (masked only by is_present gating).
+    // so callers can skip/keep-previous instead of rendering a phantom bar; it
+    // is what keeps a lane we know nothing about from being painted, which is a
+    // different case from a known lane whose weight nobody tracks.
     int pct = slot.display_fill_pct();
     if (pct < 0) {
         return -1;
@@ -748,7 +748,7 @@ SpoolVisual create_spool_visual(lv_obj_t* container, int32_t spool_size) {
     }
     sv.spool_size = spool_size;
 
-    int32_t container_size = spool_size + 8; // Extra room for badge
+    int32_t container_size = spool_size + SPOOL_VISUAL_BADGE_MARGIN_PX; // Extra room for badge
     lv_obj_set_size(container, container_size, container_size);
 
     if (sv.use_3d) {

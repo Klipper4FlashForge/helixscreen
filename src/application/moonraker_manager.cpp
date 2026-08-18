@@ -23,6 +23,7 @@
 #include "app_constants.h"
 #include "app_globals.h"
 #include "config.h"
+#include "filament_sensor_manager.h"
 #include "i_moonraker_client.h"
 #include "macro_modification_manager.h"
 #include "moonraker_api.h"
@@ -631,6 +632,9 @@ void MoonrakerManager::create_api(const RuntimeConfig& runtime_config) {
 
     // Set API for AmsState Spoolman integration
     AmsState::instance().set_moonraker_api(m_api.get());
+
+    // Set API for FilamentSensorManager bypass runout arming
+    FilamentSensorManager::instance().set_moonraker_api(m_api.get());
 
     // Set API for SpoolmanManager weight polling
     SpoolmanManager::instance().set_api(m_api.get());

@@ -31,6 +31,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -1141,6 +1142,44 @@ class PrinterState {
         return motion_state_.get_gcode_z_offset_subject();
     }
 
+    /**
+     * @brief Get the firmware-persisted Z-offset subject (microns)
+     *
+     * ZMOD stores the offset the next print will apply in
+     * save_variables.gcode_offsets.z and zeroes gcode_move's live offset outside
+     * a print, so this - not get_gcode_z_offset_subject() - is the truthful
+     * reading while idle. Only meaningful when
+     * get_persisted_z_offset_valid_subject() reads 1.
+     * Delegated to PrinterMotionState component.
+     */
+    lv_subject_t* get_persisted_z_offset_subject() {
+        return motion_state_.get_persisted_z_offset_subject();
+    }
+
+    /**
+     * @brief Get whether a firmware-persisted Z-offset has been reported (0/1)
+     *
+     * Separate from the value because 0 microns is a legitimate stored offset.
+     * Reads 0 on every non-ZMOD printer.
+     * Delegated to PrinterMotionState component.
+     */
+    lv_subject_t* get_persisted_z_offset_valid_subject() {
+        return motion_state_.get_persisted_z_offset_valid_subject();
+    }
+
+    /**
+     * @brief Firmware-persisted Z-offset in microns, or nullopt when unknown
+     *
+     * Convenience wrapper over the two subjects above for the display/adjust
+     * helpers in helix::zoffset.
+     */
+    std::optional<int> get_persisted_z_offset_microns() {
+        if (lv_subject_get_int(motion_state_.get_persisted_z_offset_valid_subject()) == 0) {
+            return std::nullopt;
+        }
+        return lv_subject_get_int(motion_state_.get_persisted_z_offset_subject());
+    }
+
     // ========================================================================
     // PENDING Z-OFFSET DELTA (for tracking adjustments made during print)
     // Delegated to PrinterMotionState component.
@@ -1890,10 +1929,21 @@ class PrinterState {
      *
      * Returns 1 when Klipper's idle_timeout.state == "Printing" (its canonical
      * busy flag — true for the whole duration of any blocking op or file print),
-     * 0 otherwise. Feeds is_blocking_operation_active().
+     * 0 otherwise. This is the literal Klipper state; is_blocking_operation_active()
+     * reads the debounced view below instead.
      */
     lv_subject_t* get_idle_timeout_printing_subject() {
         return calibration_state_.get_idle_timeout_printing_subject();
+    }
+
+    /**
+     * @brief Debounced idle_timeout busy flag backing is_blocking_operation_active()
+     *
+     * Exposed so tests can drive the guard the way the parse path does. See
+     * IdleTimeoutBusy for why the raw subject cannot be used as a gate.
+     */
+    helix::IdleTimeoutBusy& idle_timeout_busy() {
+        return calibration_state_.idle_timeout_busy();
     }
 
     /**

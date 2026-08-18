@@ -1139,6 +1139,7 @@ The remaining AMS settings are **per printer**, so they live under the printer's
       "ams": {
         "force_bypass_controls": false,
         "always_show_bypass_spool": false,
+        "keep_spool_info_on_eject": true,
         "afc_unload_after_print": false
       }
     }
@@ -1146,12 +1147,12 @@ The remaining AMS settings are **per printer**, so they live under the printer's
 }
 ```
 
-All three have UI equivalents in **Settings > Hardware & Devices > Multi-Filament System Management** - edit them there rather than by hand.
+All four have UI equivalents in **Settings > Hardware & Devices > Multi-Filament System Management** - edit them there rather than by hand.
 
 #### `force_bypass_controls`
 **Type:** boolean
 **Default:** `false`
-**Description:** Show the bypass controls and the external spool on the filament path even when the firmware reports no bypass position. Applies to Creality CFS, Anycubic ACE Pro, Snapmaker U1, tool changers, QIDI Box, and Happy Hare configs where `[mmu_machine] has_bypass` is `0`. The matching UI row is hidden whenever the firmware *does* report a bypass.
+**Description:** Show the bypass controls and the external spool on the filament path even when the firmware reports no bypass position. Applies to Anycubic ACE Pro, Snapmaker U1, tool changers, QIDI Box, and Happy Hare configs where `[mmu_machine] has_bypass` is `0`. The matching UI row is hidden whenever the firmware *does* report a bypass - including the Creality CFS, whose bypass always works.
 
 On Happy Hare, `MMU_SELECT_BYPASS` ignores `has_bypass` and works either way, so this setting makes the bypass usable on `mmu_vendor: Other` setups and on uncalibrated type-A selectors. On the other systems there is no bypass command to send: the Bypass toggle reports that the operation is not supported, and the setting controls only whether the external spool is displayed and tracked.
 
@@ -1161,6 +1162,11 @@ See [Filament → When Bypass Doesn't Appear](guide/filament.md#when-bypass-does
 **Type:** boolean
 **Default:** `false`
 **Description:** Keep the external spool visible on the filament path while bypass is disengaged. Applies to AFC systems (Box Turtle, OpenAMS) only, which publish a virtual bypass sensor whether or not one is physically wired; without this, the node is drawn only while bypass is actually engaged.
+
+#### `keep_spool_info_on_eject`
+**Type:** boolean
+**Default:** `true`
+**Description:** Keep a lane's spool details after it empties, so reloading the same spool after maintenance needs no re-selection. Turn it off to start fresh whenever a lane empties. Applies only to spools selected in HelixScreen; a spool assigned elsewhere (such as Mainsail) clears with the lane. To have every assigned spool remembered no matter where it was picked, use the firmware's own retention instead (AFC: `remember_spool` in AFC.cfg) - HelixScreen follows the spool the firmware reports. When that firmware retention covers every lane, it takes precedence and the matching toggle shows as disabled. The toggle (**Keep Spool Info on Eject**, in the AMS Management overlay) is shown only on systems whose firmware tracks spool ids per lane (AFC, Happy Hare); systems that detect spool swaps by tag always refresh on a swap regardless of this setting.
 
 #### `afc_unload_after_print`
 **Type:** boolean
@@ -1222,11 +1228,13 @@ Located under the `panel_widgets` key, grouped by panel ID. The Home panel uses 
 Each widget object has:
 
 - `id` — Widget identifier (see table below)
-- `enabled` — Whether the widget is shown (`true`/`false`)
-- `col` — Grid column position in half cells (0-based, left to right)
-- `row` — Grid row position in half cells (0-based, top to bottom)
+- `enabled` — Whether the widget is shown (`true`/`false`). A widget with `enabled: false` sits in the Widget Catalog waiting for you to add it back
+- `col` — Grid column position in half cells (0-based, left to right). `-1` means "no position yet"
+- `row` — Grid row position in half cells (0-based, top to bottom). `-1` means "no position yet"
 - `colspan` — Width in half cells (`2` = one cell wide)
 - `rowspan` — Height in half cells (`2` = one cell tall)
+> **What `col: -1` / `row: -1` means.** The widget is switched on but has nowhere to sit right now, usually because the grid was full when HelixScreen last laid out the page. It is *not* disabled: as soon as a cell frees up - you remove another widget, unplug the hardware another widget needed, or view the same layout on a screen with a bigger grid - it places itself again automatically. You do not need to re-add it from the catalog.
+
 - `config` — (optional) Per-widget settings object, written by the gear button in Edit Mode. Which keys apply depends on the widget:
 
 | Key | Widgets | Values |

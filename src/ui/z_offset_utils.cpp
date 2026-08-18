@@ -60,6 +60,34 @@ void format_offset_compact(int microns, char* buf, size_t buf_size) {
     }
 }
 
+int displayed_z_offset_microns(int live_microns, std::optional<int> persisted_microns,
+                               bool print_active) {
+    if (print_active || !persisted_microns.has_value()) {
+        return live_microns;
+    }
+    return *persisted_microns;
+}
+
+int displayed_z_offset_microns(helix::PrinterState& state) {
+    return displayed_z_offset_microns(lv_subject_get_int(state.get_gcode_z_offset_subject()),
+                                      state.get_persisted_z_offset_microns(),
+                                      lv_subject_get_int(state.get_print_active_subject()) != 0);
+}
+
+std::string build_z_adjust_gcode(int base_microns, int live_microns, int delta_microns,
+                                 bool all_homed) {
+    // MOVE=1 makes the toolhead take up the new offset immediately, which is what
+    // makes baby stepping usable. Klipper errors on it when an axis is unhomed.
+    const char* move = all_homed ? " MOVE=1" : "";
+
+    if (base_microns == live_microns) {
+        return fmt::format("SET_GCODE_OFFSET Z_ADJUST={:.3f}{}",
+                           static_cast<double>(delta_microns) / 1000.0, move);
+    }
+    return fmt::format("SET_GCODE_OFFSET Z={:.3f}{}",
+                       static_cast<double>(base_microns + delta_microns) / 1000.0, move);
+}
+
 void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
                     std::function<void()> on_success,
                     std::function<void(const std::string& error)> on_error, PrinterState* ps) {
@@ -175,13 +203,24 @@ bool should_extend_save_timeout(bool restart_latched, unsigned extensions_used,
     return restart_latched && extensions_used < max_extensions;
 }
 
-AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_mm,
-                    double delta_mm) {
+AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double session_base_mm,
+                    double current_offset_mm, double delta_mm) {
+    // Bound how far one session may travel from the offset it opened on, so a
+    // stuck button cannot walk the nozzle into the bed. Clamping the absolute
+    // offset instead snapped a legitimately large one down to the limit on the
+    // first tap - a nose dive rather than a guard rail. The window is widened to
+    // always contain the current offset, so should the base ever go stale the
+    // worst outcome is a refused step rather than a jump.
+    const double min_offset =
+        std::min(session_base_mm - kZOffsetMaxSessionTravelMm, current_offset_mm);
+    const double max_offset =
+        std::max(session_base_mm + kZOffsetMaxSessionTravelMm, current_offset_mm);
+
     double new_offset = current_offset_mm + delta_mm;
-    if (new_offset < kZOffsetMinMm || new_offset > kZOffsetMaxMm) {
-        spdlog::warn("[zoffset] {:.3f}mm clamped to [{}, {}]", new_offset, kZOffsetMinMm,
-                     kZOffsetMaxMm);
-        new_offset = std::clamp(new_offset, kZOffsetMinMm, kZOffsetMaxMm);
+    if (new_offset < min_offset || new_offset > max_offset) {
+        spdlog::warn("[zoffset] {:.3f}mm clamped to [{:.3f}, {:.3f}]", new_offset, min_offset,
+                     max_offset);
+        new_offset = std::clamp(new_offset, min_offset, max_offset);
         delta_mm = new_offset - current_offset_mm;
         if (std::abs(delta_mm) < 0.0005) {
             return AdjustResult{0.0, current_offset_mm, false, true};
@@ -191,11 +230,27 @@ AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_
     // Round to the micron so repeated additions cannot drift.
     new_offset = std::round(new_offset * 1000.0) / 1000.0;
 
+    const int delta_microns = static_cast<int>(std::lround(delta_mm * 1000.0));
+    const int new_microns = static_cast<int>(std::lround(new_offset * 1000.0));
+    const int base_microns = new_microns - delta_microns;
+    // Read the live offset before the optimistic write below overwrites it.
+    const int live_microns = ps ? lv_subject_get_int(ps->get_gcode_z_offset_subject()) : 0;
+    const bool adjusting_from_persisted = ps && base_microns != live_microns;
+
     if (ps) {
-        ps->add_pending_z_offset_delta(static_cast<int>(std::lround(delta_mm * 1000.0)));
+        ps->add_pending_z_offset_delta(delta_microns);
         // Publish immediately rather than waiting for Moonraker to broadcast.
         if (auto* subj = ps->get_gcode_z_offset_subject()) {
-            lv_subject_set_int(subj, static_cast<int>(std::lround(new_offset * 1000.0)));
+            lv_subject_set_int(subj, new_microns);
+        }
+        // When the base came from the firmware-persisted value we are about to
+        // send an absolute Z=, which ZMOD's override stores verbatim. Move the
+        // persisted subject with it so the Controls row does not show the stale
+        // number until save_variables is broadcast back.
+        if (adjusting_from_persisted) {
+            if (auto* subj = ps->get_persisted_z_offset_subject()) {
+                lv_subject_set_int(subj, new_microns);
+            }
         }
     }
 
@@ -205,9 +260,10 @@ AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_
 
     const bool all_homed = ps && helix::toolhead_is_homed(*ps);
 
-    char gcode[96];
-    std::snprintf(gcode, sizeof(gcode), "SET_GCODE_OFFSET Z_ADJUST=%.3f%s", delta_mm,
-                  all_homed ? " MOVE=1" : "");
+    // Relative Z_ADJUST resolves against homing_origin, so it is only right when
+    // the base we adjusted from IS the live offset. See build_z_adjust_gcode().
+    const std::string gcode =
+        build_z_adjust_gcode(base_microns, live_microns, delta_microns, all_homed);
     const double sent_delta = delta_mm;
     api->execute_gcode(
         gcode, [sent_delta]() { spdlog::debug("[zoffset] adjusted {:+.3f}mm", sent_delta); },

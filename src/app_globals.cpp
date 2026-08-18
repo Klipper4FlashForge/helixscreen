@@ -30,6 +30,7 @@
 #include "moonraker_client_mock.h"
 #endif
 #include "panel_widget_manager.h"
+#include "platform_info.h"
 #include "printer_state.h"
 #include "static_subject_registry.h"
 #include "system/helix_paths.h"
@@ -77,6 +78,7 @@ static lv_subject_t g_notification_subject;
 static lv_subject_t g_show_beta_features_subject;
 static lv_subject_t g_home_edit_mode_subject;
 static lv_subject_t g_platform_extras_subject;
+static lv_subject_t g_host_power_supported_subject;
 static lv_subject_t g_wizard_active_subject;
 
 // Application quit flag (volatile sig_atomic_t for async-signal-safety)
@@ -228,6 +230,19 @@ void app_globals_init_subjects() {
 #endif
     g_subjects.register_subject(&g_platform_extras_subject);
     lv_xml_register_subject(nullptr, "platform_extras_available", &g_platform_extras_subject);
+
+    // Host power availability. Screen reboot/shutdown has no meaning on Android
+    // (an app cannot call logind/systemctl/busybox), and the host-power RPCs
+    // are gated off there too — see helix::platform_host_power_supported(),
+    // the single home of the rule. Seeded at init (platform identity does not
+    // change mid-run). XML gates via:
+    //   <bind_flag_if_eq subject="platform_host_power_supported" flag="hidden" ref_value="0"/>
+    // and the shutdown home widget's hardware gate reads it by name.
+    lv_subject_init_int(&g_host_power_supported_subject,
+                        helix::platform_host_power_supported() ? 1 : 0);
+    g_subjects.register_subject(&g_host_power_supported_subject);
+    lv_xml_register_subject(nullptr, "platform_host_power_supported",
+                            &g_host_power_supported_subject);
 
     // Initialize wizard-active subject (observable mirror of is_wizard_active()).
     // Seed from the current flag so it is correct even when set_wizard_active()

@@ -285,6 +285,16 @@ To customize:
 
 How many widgets fit depends on your screen - the grid is sized from it, so a bigger screen gives you more cells rather than bigger ones. Widgets that need hardware you don't have still show up in the Widget Catalog, but they are dimmed, can't be tapped, and carry the reason in parentheses - for example "Humidity (No humidity sensor detected)" or "Chamber Temperature (No chamber temperature sensor detected)". They become available on their own once the hardware is detected. See the [Home Panel guide](guide/home-panel.md#available-widgets) for the full widget list.
 
+### Is there a quicker way to shut down the printer?
+
+Yes. Besides the settings menu, you can put a dedicated **Shutdown/Reboot widget** right on your home screen:
+
+1. Enter **Edit Mode** on the Home Panel (long-press an empty area)
+2. Add the **Shutdown/Reboot** widget from the Widget Catalog
+3. Tap it any time — a confirmation dialog appears first, so you can't shut down by accident
+
+See the [Shutdown/Reboot Widget](guide/home-panel.md#shutdownreboot-widget) section of the Home Panel guide for details, or the **Power** widget if you'd rather toggle a PSU or smart plug.
+
 ### Can I customize the colors or layout?
 
 **Yes!** HelixScreen includes a built-in theme editor with 17 preset themes:

@@ -152,6 +152,9 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     AmsError enable_bypass() override;
     AmsError disable_bypass() override;
     [[nodiscard]] bool is_bypass_active() const override;
+    /// mmu.filament "Loaded" while mmu.gate names no gate (-1). Gate -2 is
+    /// bypass — accounted there (the gate layer also silences under bypass).
+    [[nodiscard]] std::optional<bool> toolhead_filament_unaccounted() const override;
     /// Happy Hare users have a console; the screen passes their command through
     /// rather than synthesising a prerequisite operation they never asked for
     /// (#1229).
@@ -213,8 +216,20 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     /// inherited the no-op default, so the button did nothing here.
     void clear_slot_override(int slot_index) override;
 
+    /// Publish the external spool as lane{N+1} in the SHARED lane_data
+    /// namespace — Happy Hare's plugin never publishes its bypass/external
+    /// spool (verified: push_lane_data iterates gates only), and its boot-time
+    /// cleanup deletes records with lane >= num_gates. Our entry is wiped at
+    /// HH boot; the AmsState event triggers (bypass engage, external-spool
+    /// edit) re-publish.
+    void publish_external_spool_lane(const SlotInfo* spool) override;
+
     [[nodiscard]] bool has_firmware_spool_persistence() const override {
         return true; // Happy Hare persists via MMU_GATE_MAP SPOOLID
+    }
+
+    [[nodiscard]] bool printer_reports_spool_ids() const override {
+        return true; // Happy Hare publishes gate spool_id in mmu status
     }
 
     [[nodiscard]] RemapStrategy get_remap_strategy() const override {
@@ -315,6 +330,9 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     // Written blind — no Happy Hare hardware on hand; mirrors AFC exactly.
     static constexpr const char* OVERRIDE_NAMESPACE = "helix-screen-hh-overrides";
     std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
+    /// Store on the SHARED lane_data namespace, used only by
+    /// publish_external_spool_lane. Happy Hare's plugin owns that namespace.
+    std::unique_ptr<helix::ams::FilamentSlotOverrideStore> lane_publish_store_;
     std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
     void apply_overrides(SlotInfo& slot, int slot_index);
     void persist_override(int slot_index, const SlotInfo& info);

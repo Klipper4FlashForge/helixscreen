@@ -14,12 +14,14 @@
 #include "config.h"
 #include "display_settings_manager.h"
 #include "fault_surface_correlation.h"
+#include "filament_slot_override_store.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "panel_widget_manager.h"
 #include "runtime_config.h"
 #include "safety_settings_manager.h"
 #include "system_settings_manager.h"
 #include "test_helpers/config_test_access.h"
+#include "test_helpers/emergency_stop_test_access.h"
 #include "test_helpers/print_control_buttons_test_access.h"
 #include "tool_state.h"
 
@@ -97,6 +99,18 @@ struct ConfigSandbox {
         fs::create_directories(base / "state", ec);
         fs::create_directories(base / "backup", ec);
         dir = base.string();
+
+        // FilamentSlotOverrideStore's on-disk read-cache defaults to
+        // helix::get_user_config_dir() — the RELATIVE "config", i.e. the
+        // repo's own config/ under the test binary's CWD. AMS backend tests
+        // construct real backends whose stores get no per-instance dir (the
+        // per-test TestAccess classes that pin one exist only in the
+        // dedicated store tests), so `make test-run` wrote
+        // config/filament_slot_overrides.json into the repo. Redirect the
+        // process-wide fallback here — static initializer, so before main()
+        // and before any backend thread exists. Per-instance dirs still win.
+        helix::ams::detail::slot_override_cache_dir_ref() = dir;
+
         apply();
     }
 
@@ -174,6 +188,14 @@ void HelixTestFixture::reset_all() {
     // lv_init_safe() is idempotent and also re-arms the UpdateQueue if a prior
     // fixture's destructor shut it down. Safe to call from non-LVGL tests.
     lv_init_safe();
+
+    // BEFORE the drain, not after: EmergencyStopOverlay is a process-wide
+    // singleton holding raw init() pointers to a PrinterState that in tests is a
+    // stack local or fixture member. By the time a fixture destructor reaches
+    // here the test body's locals are already gone, so draining first would run
+    // a queued update_recovery_dialog_content() straight into the freed object.
+    // Nulled, its `if (printer_state_ && ...)` guard makes that callback a no-op.
+    EmergencyStopOverlayTestAccess::reset_dependencies(EmergencyStopOverlay::instance());
 
     // Drain any callbacks queued by a prior test before we touch state they read.
     helix::ui::UpdateQueue::instance().drain();

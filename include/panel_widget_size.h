@@ -32,7 +32,8 @@ namespace helix::widget_size {
 /// where every glyph is 2.3x taller. A flat band promoted a one-cell XXLarge
 /// widget (about 182px wide) to the layout calibrated for 32px-shorter text,
 /// and the text overflowed - FanStackWidget clipped "Part Cooling Fan" where
-/// it should have drawn "P", ActiveSpoolWidget wrapped to a glyph per line.
+/// it should have drawn "P", ams_mini_status wrapped "PLA" to a glyph per
+/// line.
 ///
 /// Scaling by font_body(tier) / font_body(Small) is what makes an authored
 /// span mean one thing everywhere. GridLayout::GRID_CELL grows on roughly the

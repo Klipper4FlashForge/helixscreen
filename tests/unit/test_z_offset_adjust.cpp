@@ -43,8 +43,8 @@ class ZOffsetFixture : public LVGLTestFixture {
 } // namespace
 
 TEST_CASE_METHOD(ZOffsetFixture, "adjust clamps at the safe limit", "[z_offset][adjust][mock]") {
-    // Already at +1.99mm, asking for another +0.05 must stop at +2.0.
-    auto r = helix::zoffset::adjust(api.get(), &state, 1.99, 0.05);
+    // Opened at 0, already at +1.99mm: another +0.05 must stop at +2.0 of travel.
+    auto r = helix::zoffset::adjust(api.get(), &state, 0.0, 1.99, 0.05);
 
     REQUIRE(r.new_offset_mm == Catch::Approx(2.0));
     REQUIRE(r.applied_delta_mm == Catch::Approx(0.01));
@@ -52,11 +52,35 @@ TEST_CASE_METHOD(ZOffsetFixture, "adjust clamps at the safe limit", "[z_offset][
 
 TEST_CASE_METHOD(ZOffsetFixture, "adjust refuses a no-op move at the limit",
                  "[z_offset][adjust][mock]") {
-    auto r = helix::zoffset::adjust(api.get(), &state, 2.0, 0.05);
+    auto r = helix::zoffset::adjust(api.get(), &state, 0.0, 2.0, 0.05);
 
     REQUIRE(r.sent == false);
     REQUIRE(r.clamped_to_noop == true);
     REQUIRE(last_sent().find("Z_ADJUST") == std::string::npos);
+}
+
+TEST_CASE_METHOD(ZOffsetFixture, "the guard bounds travel from the session base, not the offset",
+                 "[z_offset][adjust][mock]") {
+    // A toolhead legitimately parked at -3.5mm. Clamping the *absolute* offset
+    // snapped it to -2.0 on the first tap and drove the nozzle into the print;
+    // the guard bounds how far this session may travel instead.
+    auto r = helix::zoffset::adjust(api.get(), &state, -3.5, -3.5, -0.05);
+
+    REQUIRE(r.sent == true);
+    REQUIRE(r.clamped_to_noop == false);
+    REQUIRE(r.applied_delta_mm == Catch::Approx(-0.05));
+    REQUIRE(r.new_offset_mm == Catch::Approx(-3.55));
+}
+
+TEST_CASE_METHOD(ZOffsetFixture, "travel past the session limit is refused, not snapped",
+                 "[z_offset][adjust][mock]") {
+    // Opened at -3.5 and already walked the full 2mm of travel: the next step
+    // stops at the limit rather than jumping anywhere.
+    auto r = helix::zoffset::adjust(api.get(), &state, -3.5, -5.5, -0.05);
+
+    REQUIRE(r.sent == false);
+    REQUIRE(r.clamped_to_noop == true);
+    REQUIRE(r.new_offset_mm == Catch::Approx(-5.5));
 }
 
 TEST_CASE_METHOD(ZOffsetFixture,
@@ -67,11 +91,11 @@ TEST_CASE_METHOD(ZOffsetFixture,
     // (see AdjustResult in z_offset_utils.h). A caller that used float equality
     // on applied_delta_mm to infer "nothing happened" could not tell these
     // apart without it.
-    auto clamped = helix::zoffset::adjust(api.get(), &state, 2.0, 0.05);
+    auto clamped = helix::zoffset::adjust(api.get(), &state, 0.0, 2.0, 0.05);
     REQUIRE(clamped.sent == false);
     REQUIRE(clamped.clamped_to_noop == true);
 
-    auto null_api = helix::zoffset::adjust(nullptr, &state, 0.0, 0.05);
+    auto null_api = helix::zoffset::adjust(nullptr, &state, 0.0, 0.0, 0.05);
     REQUIRE(null_api.sent == false);
     REQUIRE(null_api.clamped_to_noop == false);
 }
@@ -79,7 +103,7 @@ TEST_CASE_METHOD(ZOffsetFixture,
 TEST_CASE_METHOD(ZOffsetFixture, "adjust rounds to the nearest micron",
                  "[z_offset][adjust][mock]") {
     // Repeated float addition would drift; the result must land on a micron.
-    auto r = helix::zoffset::adjust(api.get(), &state, 0.0, 0.0123456);
+    auto r = helix::zoffset::adjust(api.get(), &state, 0.0, 0.0, 0.0123456);
 
     REQUIRE(r.new_offset_mm == Catch::Approx(0.012));
 }
@@ -88,7 +112,7 @@ TEST_CASE_METHOD(ZOffsetFixture, "adjust omits MOVE=1 when axes are not homed",
                  "[z_offset][adjust][mock]") {
     set_homed("xy"); // Z missing — MOVE=1 would make Klipper error
 
-    helix::zoffset::adjust(api.get(), &state, 0.0, 0.05);
+    helix::zoffset::adjust(api.get(), &state, 0.0, 0.0, 0.05);
 
     REQUIRE(last_sent().find("MOVE=1") == std::string::npos);
     REQUIRE(last_sent().find("SET_GCODE_OFFSET Z_ADJUST=0.050") != std::string::npos);
@@ -98,7 +122,7 @@ TEST_CASE_METHOD(ZOffsetFixture, "adjust appends MOVE=1 when all axes are homed"
                  "[z_offset][adjust][mock]") {
     set_homed("xyz");
 
-    helix::zoffset::adjust(api.get(), &state, 0.0, 0.05);
+    helix::zoffset::adjust(api.get(), &state, 0.0, 0.0, 0.05);
 
     REQUIRE(last_sent() == "SET_GCODE_OFFSET Z_ADJUST=0.050 MOVE=1");
 }
@@ -107,8 +131,8 @@ TEST_CASE_METHOD(ZOffsetFixture, "adjust accumulates the pending delta",
                  "[z_offset][adjust][mock]") {
     set_homed("xyz");
 
-    helix::zoffset::adjust(api.get(), &state, 0.0, 0.05);
-    helix::zoffset::adjust(api.get(), &state, 0.05, -0.01);
+    helix::zoffset::adjust(api.get(), &state, 0.0, 0.0, 0.05);
+    helix::zoffset::adjust(api.get(), &state, 0.0, 0.05, -0.01);
 
     // +50um then -10um = +40um still unsaved.
     REQUIRE(lv_subject_get_int(state.get_pending_z_offset_delta_subject()) == 40);
@@ -117,7 +141,7 @@ TEST_CASE_METHOD(ZOffsetFixture, "adjust accumulates the pending delta",
 TEST_CASE_METHOD(ZOffsetFixture, "a firmware-managed save also clears the pending delta",
                  "[z_offset][adjust][mock]") {
     set_homed("xyz");
-    helix::zoffset::adjust(api.get(), &state, 0.0, 0.05);
+    helix::zoffset::adjust(api.get(), &state, 0.0, 0.0, 0.05);
     REQUIRE(lv_subject_get_int(state.get_pending_z_offset_delta_subject()) == 50);
 
     bool saved = false;
@@ -134,7 +158,7 @@ TEST_CASE_METHOD(ZOffsetFixture,
                  "the pending delta",
                  "[z_offset][adjust][mock]") {
     set_homed("xyz");
-    helix::zoffset::adjust(api.get(), &state, 0.0, 0.05);
+    helix::zoffset::adjust(api.get(), &state, 0.0, 0.0, 0.05);
     REQUIRE(lv_subject_get_int(state.get_pending_z_offset_delta_subject()) == 50);
 
     bool saved = false;

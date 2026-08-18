@@ -89,9 +89,22 @@ class ALSASoundBackend : public SoundBackend {
     /// printer host that shares a CPU with Klipper, idle wakeups are not free —
     /// they are the same class of problem as idle memory.
     ///
-    /// Only the flag is set here. Every snd_pcm_* call stays on the render
-    /// thread, which is what makes this safe to call from the sequencer while
-    /// the render thread may be inside snd_pcm_writei.
+    /// Every snd_pcm_* call stays on the render thread, which is what makes
+    /// suspend() safe to call from the sequencer while the render thread may
+    /// be inside snd_pcm_writei. Parking drains the device rather than
+    /// dropping it, so a sound's tail — still sitting in the hardware buffer
+    /// when the sequencer's clock says the sound is over — plays out instead
+    /// of being discarded.
+    ///
+    /// resume() is a synchronous handoff: it does not return until the render
+    /// thread has completed a full render pass (or the handoff times out /
+    /// the thread is gone). The sequencer starts its step clock the instant
+    /// resume() returns; when resume() was fire-and-forget, notes published
+    /// in the gap before the thread woke were overwritten un-rendered —
+    /// short sounds never played and longer ones lost their beginning
+    /// (v0.99.114 field regression, Raspberry Pi). This mirrors
+    /// SDLSoundBackend::resume(), which opens and unpauses the device on the
+    /// caller's thread for the same reason.
     void suspend() override;
     void resume() override;
 
@@ -105,6 +118,16 @@ class ALSASoundBackend : public SoundBackend {
     std::atomic<bool> suspended_{false};
     std::mutex suspend_mutex_;
     std::condition_variable suspend_cv_;
+
+    // Resume handoff: resume() bumps resume_seq_; the render thread acks the
+    // newest sequence at the bottom of each completed pass. Sequence numbers
+    // rather than a bool because a resume can arrive before the thread even
+    // noticed the suspend — then no wake is needed, and the next completed
+    // pass is the handoff either way.
+    std::atomic<uint32_t> resume_seq_{0};
+    std::atomic<uint32_t> resume_acked_{0};
+    std::mutex ack_mutex_;
+    std::condition_variable ack_cv_;
 
     static constexpr int MAX_VOICES = 4;
 

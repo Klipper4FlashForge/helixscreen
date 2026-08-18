@@ -139,17 +139,18 @@ namespace {
 /// Answers one RPC with a canned payload and remembers what was asked.
 class RootsClient : public MoonrakerClientMock {
   public:
-    helix::RequestId send_jsonrpc(const std::string& method, const json& params,
-                                  std::function<void(const json&)> success_cb,
-                                  std::function<void(const MoonrakerError&)> error_cb,
-                                  uint32_t timeout_ms = 0, bool silent = false) override {
+    helix::RequestId send_jsonrpc(
+        const std::string& method, const json& params, std::function<void(const json&)> success_cb,
+        std::function<void(const MoonrakerError&)> error_cb, uint32_t timeout_ms = 0,
+        bool silent = false,
+        std::optional<helix::rpc_error_policy::CallerIntent> intent = std::nullopt) override {
         last_method = method;
         if (method == "server.files.roots" && success_cb) {
             success_cb(json::parse(K2_ROOTS));
             return 1;
         }
         return MoonrakerClientMock::send_jsonrpc(method, params, success_cb, error_cb, timeout_ms,
-                                                 silent);
+                                                 silent, intent);
     }
 
     std::string last_method;

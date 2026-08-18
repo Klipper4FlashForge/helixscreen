@@ -239,6 +239,10 @@ void FanStackWidget::on_size_changed(int colspan, int rowspan, int width_px, int
     // competes for room along the width axis. Extra height centers the same
     // three rows with more breathing space but never widens one, so height
     // carries no information about whether a resolved name fits.
+    //
+    // The band is per-tier: what has to fit is text, and font_small runs
+    // 10..26px across the tiers, so a width that holds "Part Cooling Fan" at
+    // Small does not hold it at XXLarge.
     bool bigger = (width_px >= widget_size::w_normal());
 
     const char* font_token = bigger ? "font_small" : "font_xs";

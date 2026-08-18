@@ -715,6 +715,29 @@ fi
 
 echo ""
 
+echo "📐 Checking modal chrome budget..."
+
+# #dialog_content_max is sized for ONE chrome shape: header + content + divider
+# + button row. A modal that pins an extra block below the scroll area overruns
+# the 85% card cap, and because the root is height="content" + scrollable=false
+# the overflow falls off the BOTTOM — the button row, leaving a modal the user
+# cannot dismiss (prestonbrown/helixscreen#1277). LVGL cannot rescue this in
+# layout: lv_flex.c has grow but no shrink. Whole-tree: the rule is about a
+# file's own element order, so a staged-only view would miss a modal whose
+# budget was broken by an edit to a component it embeds.
+if [ -f "scripts/check_modal_chrome_budget.py" ]; then
+  if python3 scripts/check_modal_chrome_budget.py >/tmp/modal_chrome_budget.out 2>&1; then
+    echo "✅ Modal chrome budget: every pinned block is accounted for"
+  else
+    cat /tmp/modal_chrome_budget.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_modal_chrome_budget.py not found — skipping"
+fi
+
+echo ""
+
 echo "📜 Checking panel-widget scroll declarations..."
 
 # <lv_obj> keeps LVGL's LV_OBJ_FLAG_SCROLLABLE default, which is ON. Our theme
@@ -940,14 +963,20 @@ VENV_PYTHON=".venv/bin/python"
 if [ -n "$XML_FILES" ]; then
   # Prefer Python formatter with attribute wrapping, fallback to xmllint
   if [ -x "$VENV_PYTHON" ] && $VENV_PYTHON -c "import lxml" 2>/dev/null; then
-    # Use our custom formatter with --check mode
-    if $VENV_PYTHON scripts/format-xml.py --check $XML_FILES 2>/dev/null; then
+    # Use our custom formatter with --check mode.
+    # stderr is NOT swallowed: the formatter reports an unparseable file there, and
+    # `2>/dev/null` meant a file it could never read produced no visible output at all.
+    # That, plus process_file() returning the same value for "parse failed" and "already
+    # clean", is how three LVGL state-selector layouts drifted unnoticed.
+    if $VENV_PYTHON scripts/format-xml.py --check $XML_FILES; then
       echo "✅ All XML files properly formatted"
     else
-      echo "⚠️  XML files need formatting"
+      echo "⚠️  XML files need formatting (or could not be parsed — see above)"
       echo "ℹ️  Fix with: .venv/bin/python scripts/format-xml.py <files>"
       echo "ℹ️  Or run: make format"
-      # Don't fail CI for XML formatting - it's a style preference
+      # Don't fail CI for XML formatting - it's a style preference.
+      # Genuine malformed XML is still a hard failure via the xmllint validation pass
+      # earlier in this script, so staying advisory here does not let broken XML through.
       # EXIT_CODE=1
     fi
   elif command -v xmllint >/dev/null 2>&1; then
@@ -1306,6 +1335,39 @@ fi
 echo ""
 
 SECTION_START=$(date +%s)
+echo -n "⏱️  Checking gcode error ownership..."
+
+if [ -f "scripts/check_gcode_error_ownership.py" ]; then
+  # Hard gate at zero. execute_gcode's caller_surfaces_errors means "my on_error
+  # actually SHOWS a human something". Claiming it falsely makes the request
+  # tracker record the rejection for cross-channel dedup, and GcodeErrorRouter
+  # then suppresses its own report of Klipper's `!!` broadcast — so a failed
+  # macro is reported by NOBODY. It is invisible in review because the call site
+  # looks handled: there IS an error callback, it just writes to a log. Pass
+  # caller_surfaces_errors=false on a log-only callback, or annotate a genuine
+  # exception with // ERROR_OWNERSHIP_OK: <reason>. See include/rpc_error_policy.h.
+  if python3 scripts/check_gcode_error_ownership.py --max-allowed 0 --summary \
+      >/tmp/gcode_err_own.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/gcode_err_own.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/gcode_err_own.out
+    echo "   Run: python3 scripts/check_gcode_error_ownership.py --list"
+    echo "   A log-only error callback must pass caller_surfaces_errors=false."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_gcode_error_ownership.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
 echo -n "⏱️  Checking timer destructor cancels..."
 
 if [ -f "scripts/check_timer_destructor_cancel.py" ]; then
@@ -1611,6 +1673,39 @@ else
   section_time $SECTION_START
   echo ""
   echo "⚠️  check_translation_format_specifiers.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+# Base-locale key identity (raw-key rendering in English UI)
+# ====================================================================
+# English loads no translation pack (see src/system/translation_loader.cpp),
+# so lv_tr() returns the key itself — a key that is not its own English text
+# renders the raw key in the UI (v0.99.114: "pre_print_option.timelapse.label"
+# on the timelapse toggle row, raw tour.step.* strings across the first-run
+# tour). Checked against translations/en.yml, not the generated XML, so it
+# fires even when `make translations` fell back to stale artifacts.
+SECTION_START=$(date +%s)
+echo -n "🌐 Checking base-locale key identity..."
+
+if [ -f "scripts/check_translation_identity.py" ]; then
+  if "$TRANS_FMT_PY" scripts/check_translation_identity.py >/tmp/trans_ident.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    echo "✅ All English translation keys are their own text"
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/trans_ident.out
+    echo "   Fix: rename the key to its English text in ALL translations/*.yml"
+    echo "   and at the C++/XML/JSON reference site, then: make translations"
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_translation_identity.py not found — skipping"
 fi
 
 echo ""

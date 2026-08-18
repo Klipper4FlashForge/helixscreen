@@ -4,22 +4,121 @@ How the CI pipeline ships `helix-screen` to Google Play, and the one-time manual
 
 ## Where to pick up — 2026-08-15
 
-**Waiting on Google.** The `org.helixscreen.app` package-name registration is **In review** (submitted 2026-08-15; Google quoted up to 48h). Nothing to do until it clears.
+**Package-name registration cleared.** `org.helixscreen.app` is verified against the upload
+key's fingerprint `41:B4:26:42:44:FF:90:FA:11:BD:37:56:21:10:C2:E2:66:F4:AB:42:FB:49:87:62:75:49:BF:AF:DE:65:A8:AC`.
+The ownership-challenge stub at `~/.android-keystore/adi-registration/` has done its job and can
+be deleted once Play Console shows the package with `Keys: 1`.
 
-- Check Play Console → **Android developer verification** → **Package names**. Success looks like status `Registered` and `Keys: 1`.
-- The stub APK that was uploaded for the ownership challenge is kept at `~/.android-keystore/adi-registration/` with a README. **If review is rejected, re-upload that same APK** — no rebuild needed. Delete that directory once the package shows Registered.
-- The registered fingerprint is the upload key's: `41:B4:26:42:44:FF:90:FA:11:BD:37:56:21:10:C2:E2:66:F4:AB:42:FB:49:87:62:75:49:BF:AF:DE:65:A8:AC`.
+**Deadline that now governs the sequence: 2026-08-31.** New app submissions and app updates must
+target **API 36** (Android 16) from that date; extensions to 2026-11-01 can be requested. We are
+on `targetSdkVersion 35`, which is accepted only up to 2026-08-30. See "Target API level" below —
+it decides whether the first upload goes in as-is or waits for an SDK bump.
+
+**Pre-flight on the artifact — done 2026-08-15, all green.** `helixscreen-android-v0.99.113.aab`
+is staged at `~/Downloads/` and was checked directly rather than assumed:
+
+| Check | Result |
+|-------|--------|
+| Signer identity | `CN=HelixScreen, OU=356C LLC, O=356C LLC` — the real upload key, not the debug key |
+| SHA-256 fingerprint | matches the registered fingerprint exactly |
+| 16 KB page alignment | all 8 native libs (`libmain`, `libSDL2`, `libc++_shared`, `libturbojpeg` × arm64-v8a/x86_64) report ELF `LOAD align 2**14`. Required for native code since 2025-11-01; NDK r29 gives it by default |
+| versionCode | `99113`. Next tag is `0.99.114` → `99114` |
 
 **Then, in order:**
 
-1. **Create the app record** in Play Console: name "HelixScreen", default language English (US), free, type = App. Complete the declarations (target audience, data safety, content rating, ads, the government/COVID/financial questionnaires) and paste the privacy policy URL.
-2. **Upload the listing assets by hand** from `android/fastlane/metadata/android/en-US/` — the workflow does not sync them.
-3. **First manual AAB upload** to the internal track. Take `helixscreen-android-v<VERSION>.aab` from any GitHub release at v0.99.44 or later; those are correctly signed (v0.99.113's was verified against the fingerprint above on 2026-08-15). Google requires this one upload by hand before the Publishing API will accept anything.
-4. **Accept the Google-generated app signing key** at the Play App Signing prompt. This is a decided question — see the first-manual-upload prerequisite below for the reasoning and for the two-signature consequence it carries.
-5. **Register Google's app signing key** as a second key on the same package (fingerprint from Play Console → Test and release → App integrity → App signing). Check whether Google auto-registered it first. Do not try to complete an ownership challenge for it by hand — we do not hold that private key.
-6. **Service account** in Google Cloud: enable the Google Play Android Developer API, grant "Release manager" scoped to this app only, download the JSON key, paste it verbatim as the `PLAY_SERVICE_ACCOUNT_JSON` GitHub secret. The next release tag then publishes to the internal track automatically.
+1. **Create the app record** in Play Console: name "HelixScreen", default language English (US), free, type = App.
+2. **Complete the declarations** — answers are pre-derived in "Play Console declarations" below so this is transcription, not decision-making.
+3. **Upload the listing assets by hand** from `android/fastlane/metadata/android/en-US/` — the workflow does not sync them.
+4. **First manual AAB upload** to the internal track. Google requires this one upload by hand before the Publishing API will accept anything.
+5. **Accept the Google-generated app signing key** at the Play App Signing prompt. This is a decided question — see the first-manual-upload prerequisite below for the reasoning and for the two-signature consequence it carries.
+6. **Register Google's app signing key** as a second key on the same package (fingerprint from Play Console → Test and release → App integrity → App signing). Check whether Google auto-registered it first. Do not try to complete an ownership challenge for it by hand — we do not hold that private key.
+7. **Service account** in Google Cloud: enable the Google Play Android Developer API, grant "Release manager" scoped to this app only, download the JSON key, paste it verbatim as the `PLAY_SERVICE_ACCOUNT_JSON` GitHub secret. The next release tag then publishes to the internal track automatically.
+
+Steps 1-3 are unaffected by the target-API question and can be done now.
 
 **Not blocking any of this:** regular releases keep working. Every tag produces signed APKs and an AAB on the GitHub release, and `publish-android` skips cleanly while `PLAY_SERVICE_ACCOUNT_JSON` is unset.
+
+### Target API level
+
+`android/app/build.gradle` sets `compileSdkVersion 35` / `targetSdkVersion 35`. Google's annual
+requirement moves to **API 36 on 2026-08-31**, for new submissions *and* for updates to existing
+apps. Two consequences:
+
+- Uploading v0.99.113 on or before 2026-08-30 is accepted as-is. After that date the same file is rejected.
+- Either way, **every update published after 2026-08-31 needs API 36**, so the bump is required soon regardless of when the first upload happens.
+
+The lower-risk sequence is to get the first manual upload in on 35 — its only job is to enroll
+Play App Signing and unblock steps 5-7 — and treat the SDK bump as its own change, so a
+first-submission milestone is not coupled to an untested SDK jump. Android 16 enforces
+edge-to-edge display for apps targeting API 36, which a fullscreen SDL surface needs testing
+against on a real device before it ships.
+
+### Review risk: the app needs hardware a reviewer does not have
+
+HelixScreen is a companion app for a Klipper printer on the same LAN. A Play reviewer opening it
+cold sees the first-run wizard and no printer, and there is no login for the "App access" section
+to explain that with. `--test` (mock printer) is a CLI flag with no path to it from the Android
+launcher. Put the explanation in **App content → App access → Instructions for reviewers**: state
+that the app requires a Klipper/Moonraker printer reachable on the local network, that no account
+or credential exists, and that the setup wizard appearing with no printers found is correct
+behavior rather than a broken build.
+
+### Play Console declarations
+
+Derived from `docs/user/PRIVACY_POLICY.md`. Section references below point back at it.
+
+**Privacy policy URL:** `https://helixscreen.org/legal/privacy/`
+
+**Data safety — top-level answers:**
+
+| Question | Answer | Basis |
+|----------|--------|-------|
+| Does your app collect or share any of the required user data types? | **Yes** | Telemetry, opt-in (§4) |
+| Is all user data encrypted in transit? | **Yes** | HTTPS/TLS to `telemetry.helixscreen.org` (§7.2) |
+| Do you provide a way for users to request data deletion? | **Yes** | In-app Settings → Telemetry → Clear All Events, plus privacy@helixscreen.org (§9.2, §9.3) |
+| Is any data sold or shared with third parties? | **No** | §12 |
+
+**Data safety — data types.** Every row is *collected, not shared*, and **optional** ("users can
+choose whether this data is collected") because telemetry is off by default (§3).
+
+| Category → Type | Purposes | What it is |
+|-----------------|----------|------------|
+| App info and performance → Crash logs | Analytics | Signal, uptime, backtrace addresses (§4.3) |
+| App info and performance → Diagnostics | Analytics | Memory snapshots, frame timing, connection stability (§4.4) |
+| App activity → Other actions | Analytics, App functionality | Panel usage, feature adoption, settings changes, print outcomes (§4.2, §4.4) |
+| Device or other IDs → Device or other IDs | Analytics | The `device_id`. See the note below |
+
+The `device_id` row is a judgment call worth recording rather than re-deriving. It is an
+app-generated random UUID, double-hashed with a local salt that is never transmitted (§6), so it
+identifies nothing off-device — but it *is* a persistent per-install identifier, and Play's
+definition of this category explicitly names the analogous Firebase installation ID. Declare it.
+Over-declaring costs nothing; under-declaring is a policy strike.
+
+Note that §5 rules out the categories that usually cause trouble: no IP addresses, MAC addresses,
+hostnames, SSIDs, serial numbers, location, contacts, files, or credentials.
+
+**Remaining questionnaires:**
+
+| Section | Answer |
+|---------|--------|
+| Target audience | 18 and over. Do **not** claim child appeal — it pulls the app into Families policy for no benefit. §11 states we do not knowingly collect from under-16s |
+| Content rating (IARC) | Category "Utility, Productivity, Communication, or Other"; every content question No. Expect Everyone / PEGI 3 |
+| Ads | No ads |
+| Government app | No |
+| Financial features | None |
+| Health | No |
+| COVID-19 contact tracing / status | No |
+| News app | No |
+| Data deletion URL | Not needed — deletion is in-app (§9.2); use privacy@helixscreen.org if a URL is demanded |
+
+**No sensitive-permission declaration is required.** `android/app/src/main/AndroidManifest.xml`
+declares only `INTERNET`, `ACCESS_NETWORK_STATE`, and `WAKE_LOCK`. None is in Play's
+restricted set, so none of the extra permission-declaration forms (all-files access, package
+visibility, location, SMS/call log, camera/mic, accessibility, exact alarms) applies. Re-check
+this if a permission is ever added — those forms are a review delay, not a checkbox.
+
+The activity is `android:screenOrientation="sensorLandscape"`, so the app is landscape-only and
+the store screenshots are landscape to match.
 
 ## Status snapshot — 2026-04-23
 
@@ -65,7 +164,7 @@ Once the upload lands on the internal track, you promote it to open testing or p
 | `android/fastlane/metadata/android/en-US/images/icon.png` | Store icon (512×512, symlinked to `docs/store/android/icon-512.png`) |
 | `android/fastlane/metadata/android/en-US/images/featureGraphic.png` | Feature graphic (1024×500, symlinked to `docs/store/android/`) |
 | `android/fastlane/metadata/android/en-US/images/phoneScreenshots/*.png` | Phone screenshots (symlinked to `docs/store/android/`) |
-| `android/fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` | "What's new" per release. **Generated, not maintained** — `scripts/generate-whatsnew.sh` writes it from `CHANGELOG.md` at release time and `release.yml` reads it straight back. Nothing is committed here; the source of truth is the `CHANGELOG.md` section for the version. (One stale file, `9943.txt`, was committed under the retired `major*10000` packing and has been removed — it would have read as the naming convention.) |
+| `android/fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` | "What's new" per release. **Generated, not maintained** — `scripts/generate-whatsnew.sh` writes it from `CHANGELOG.md` at release time and `release.yml` reads it straight back. Nothing is committed here; the source of truth is the `CHANGELOG.md` section for the version. (One stale file, 9943.txt, was committed under the retired `major*10000` packing and has been removed — it would have read as the naming convention.) |
 
 The listing text (title / descriptions / screenshots) is **not** synced by the workflow — `r0adkll/upload-google-play` only handles the AAB + whatsnew. Updates to those files are version-controlled here so the Play Console listing can be kept in sync by hand, with this tree as the canonical record. If we ever need full metadata sync, switch to `fastlane supply` (see "Future work").
 
@@ -74,8 +173,10 @@ The listing text (title / descriptions / screenshots) is **not** synced by the w
 Before the first run of `publish-android` can succeed, the following must be done by hand. Tick each item as it completes.
 
 - [x] **Google Play Developer account** — registered 2026-04-23 as `356C LLC`; org verification cleared same day.
+- [x] **Android developer verification / package-name registration** — `org.helixscreen.app` verified 2026-08-15 against the upload key's fingerprint. See "Android developer verification" below for the challenge process that got it there.
 - [ ] **Create the app in Play Console** — name "HelixScreen", default language English (US), free, app type = App.
-- [ ] **Complete Play Console declarations** — target audience, data safety, content rating (expected: Everyone), ads (none), government/COVID/financial questionnaires.
+- [ ] **Complete Play Console declarations** — target audience, data safety, content rating (expected: Everyone), ads (none), government/COVID/financial questionnaires. Answers are pre-derived in "Play Console declarations" above.
+- [ ] **Reviewer instructions** — App content → App access. The app is useless without a Klipper printer on the LAN and a cold reviewer sees only the setup wizard; say so explicitly.
 - [ ] **Upload listing assets manually** — title, short/full description, store icon, feature graphic, and 8 screenshots from `android/fastlane/metadata/android/en-US/`. Use the text in the `.txt` files verbatim so Play Console matches the repo.
 - [x] **Privacy policy URL** — `https://helixscreen.org/legal/privacy/` is live. Paste that URL into Play Console → App content → Privacy policy. The Play Console "Data Safety" questionnaire is separate from the privacy policy URL — fill it out based on what Section 4 of the policy describes (opt-in telemetry; no PII; encrypted in transit; users can request deletion of local queue).
 - [ ] **First manual AAB upload** — Google requires one manual AAB upload before the Publishing API will accept uploads. **Use v0.99.44 or later** — v0.99.43 and earlier are debug-signed and will be rejected. Download `helixscreen-android-v<VERSION>.aab` from the GitHub release and upload it to the internal track via the Play Console UI. This also triggers the **Play App Signing** enrollment prompt.
@@ -114,6 +215,7 @@ A release build now refuses to produce an artifact it cannot sign properly, at t
 
 Google is phasing in a requirement that the developer behind a package name be a verified identity. Where we stand:
 
+- **Status: cleared 2026-08-15.** The upload key is registered against `org.helixscreen.app`. Google's app signing key still is not — it does not exist until Play App Signing enrollment completes on the first manual upload. The rest of this section is the record of how the challenge worked, kept because the same flow applies when registering that second key turns out not to be automatic.
 - **Registration requires an ownership challenge, even though the app has never been on Play.** The docs describe a lighter path for "new" package names, but `org.helixscreen.app` has real installs from sideloaded GitHub-release APKs, so Play Console treats it as existing: adding the fingerprint leaves the package in **Draft** with `Keys: 0` until an APK signed by that key is uploaded. Draft is not registered.
 
   The challenge does **not** want our real app — Google's instruction is to use an empty project matching the package name, so the upload is a ~2 KB stub, not the 117 MB release APK:
@@ -174,7 +276,7 @@ To test the full upload path without touching production, point the action at a 
 - **First upload must be manual.** The Publishing API refuses the very first upload for any new app. This is a Google constraint, not a workflow limitation.
 - **versionCode must strictly increase**, and there is exactly one definition of it: **`scripts/android-version-code.sh`**. It packs `VERSION.txt` as `major*1000000 + minor*1000 + patch`, so `0.99.113` → `99113` and `1.0.0` → `1000000`. Re-releasing the same `VERSION.txt` to the Play Store will be rejected. The lanes are 1000 wide because the field below must never overflow into the one above: under the earlier `major*10000 + minor*100 + patch` packing, `0.99.113` produced `10013` and `1.0.0` produced `10000`, so 1.0 would have been rejected as a downgrade both by the Play Store and by every sideloaded install.
 
-  Three consumers call that script — `android/app/build.gradle` (the versionCode itself), `scripts/generate-whatsnew.sh` (names `changelogs/<code>.txt`), `.github/workflows/release.yml` (reads that same file back). They used to each write the arithmetic out, and they diverged the moment the lanes were widened: release.yml kept the old packing, so it looked for `changelogs/10014.txt` while the script had written `changelogs/99114.txt`. The `if [ -f "$SRC" ]` fell through to a `::warning::`, `if-no-files-found: ignore` skipped the upload, and the whatsnew artifact silently did not exist — invisible only because `publish-android` is inert without the service-account secret. `tests/shell/test_android_version_code.bats` gates against a second copy reappearing. Query the current value with `cd android && ./gradlew -q printVersionCode` or `scripts/android-version-code.sh`.
+  Three consumers call that script — `android/app/build.gradle` (the versionCode itself), `scripts/generate-whatsnew.sh` (names `changelogs/<code>.txt`), `.github/workflows/release.yml` (reads that same file back). They used to each write the arithmetic out, and they diverged the moment the lanes were widened: release.yml kept the old packing, so it looked for changelogs/10014.txt while the script had written changelogs/99114.txt. The `if [ -f "$SRC" ]` fell through to a `::warning::`, `if-no-files-found: ignore` skipped the upload, and the whatsnew artifact silently did not exist — invisible only because `publish-android` is inert without the service-account secret. `tests/shell/test_android_version_code.bats` gates against a second copy reappearing. Query the current value with `cd android && ./gradlew -q printVersionCode` or `scripts/android-version-code.sh`.
 - **Pre-release tags (`v1.0.0-beta`) still upload.** The `publish-android` job does not check for pre-release tags. If we later want to gate pre-releases out of the Play Store, add an `if: !contains(github.ref_name, '-')` at the job level.
 - **Store icon vs launcher icon.** `android/app/src/main/res/mipmap-*/ic_launcher.png` (max 192×192) is what users see on their home screen. Play Console separately requires a **512×512** store icon for the listing, generated from `assets/images/helix-icon.png` onto the launcher's #2D2D2B background and committed at `docs/store/android/icon-512.png`. Upload it manually the first time; after that it persists on the listing until you change it.
 - **Screenshot dimensions.** Current screenshots in `docs/store/android/` are 960×540. Play Store accepts anything ≥320 on each side, so these pass — but re-shooting at 1920×1080 would look crisper on large-screen previews. Not blocking.

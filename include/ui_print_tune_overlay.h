@@ -225,10 +225,13 @@ class PrintTuneOverlay : public OverlayBase {
     // === State ===
     //
 
-    // Z-offset step table and clamp live in helix::zoffset (z_offset_utils.h):
-    // kZStepAmountsMm/kZStepDefaultIndex and kZOffsetMinMm/kZOffsetMaxMm.
+    // Z-offset step table and travel guard live in helix::zoffset
+    // (z_offset_utils.h): kZStepAmountsMm/kZStepDefaultIndex and
+    // kZOffsetMaxSessionTravelMm.
 
     double current_z_offset_ = 0.0;
+    /// Offset the overlay opened on; session travel is measured from here.
+    double session_base_z_offset_ = 0.0;
     int selected_z_step_idx_ = helix::zoffset::kZStepDefaultIndex;
     int speed_percent_ = 100;
     int flow_percent_ = 100;

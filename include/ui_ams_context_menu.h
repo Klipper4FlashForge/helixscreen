@@ -57,6 +57,13 @@ class AmsContextMenu : public ContextMenu {
     /// nothing else.
     using BackupEligibleFn = std::function<bool(int slot, int candidate)>;
 
+    /// Init and publish the two XML subjects this menu's layout binds. Idempotent,
+    /// and called from the constructor, so production never needs it. Public for
+    /// tests that build ams_context_menu.xml without a menu instance: the names
+    /// must resolve before lv_xml_create(), or the state bindings are silently
+    /// dropped.
+    static void init_subjects();
+
     friend class ::AmsContextMenuTestAccess;
 
   public:
@@ -142,9 +149,23 @@ class AmsContextMenu : public ContextMenu {
     void dispatch_ams_action(MenuAction action);
 
     // === Subjects for button enable/disable states ===
-    lv_subject_t slot_is_loaded_subject_; ///< 1 = loaded (Unload enabled), 0 = not loaded
-    lv_subject_t slot_can_load_subject_;  ///< 1 = has filament (Load enabled), 0 = empty
-    bool subject_initialized_ = false;
+    //
+    // Static, like BufferStatusModal's, and for the same two reasons. The XML
+    // registry is keyed by name for the whole process, so per-instance storage
+    // cannot work here: three owners construct an AmsContextMenu (AmsPanel,
+    // AmsOverviewPanel, ExternalSpoolMenu) and all three publish the same two
+    // names, so the last registration wins and the first owner to be destroyed
+    // withdraws — or worse, silently outlives — a name the others still serve.
+    // Before this was static, a destroyed menu left "ams_slot_can_load" pointing
+    // into freed storage, and the next lv_xml_create() binding it wrote an
+    // observer through a reused allocation (nightly ASan, 2026-08-16).
+    //
+    // Sharing the values across the three owners is correct rather than merely
+    // tolerable: only one context menu is on screen at a time, and both values
+    // are set in on_created() immediately before the menu is shown.
+    static lv_subject_t slot_is_loaded_subject_; ///< 1 = loaded (Unload enabled), 0 = not loaded
+    static lv_subject_t slot_can_load_subject_;  ///< 1 = has filament (Load enabled), 0 = empty
+    static bool subjects_initialized_;
 
     // === Backend reference for dropdown operations ===
     AmsBackend* backend_ = nullptr;

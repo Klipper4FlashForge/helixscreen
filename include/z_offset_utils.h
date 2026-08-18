@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 
 class IMoonrakerAPI;
@@ -29,9 +30,50 @@ void format_offset(int microns, char* buf, size_t buf_size);
 /// Compact variant: drops leading zero for |value| < 1.0 → "+.050mm".
 void format_offset_compact(int microns, char* buf, size_t buf_size);
 
-/// Safe clamp for a baby-stepped Z offset, in millimetres.
-inline constexpr double kZOffsetMinMm = -2.0;
-inline constexpr double kZOffsetMaxMm = 2.0;
+/// Pick which z-offset to show the user, in microns.
+///
+/// Firmware that persists the z-offset itself (ZMOD, via its SET_GCODE_OFFSET
+/// override) zeroes Klipper's live gcode_move offset in END_PRINT/CANCEL_PRINT
+/// and re-applies the stored value at START_PRINT. So while idle the live offset
+/// reads 0.000 and lies about what the next print will use; the stored value is
+/// the truth. Mid-print the live offset is authoritative again, because baby
+/// steps land there first.
+///
+/// @param live_microns       gcode_move.homing_origin[2]
+/// @param persisted_microns  firmware-stored offset, or nullopt when unknown
+///                           (every non-ZMOD printer, and ZMOD before its
+///                           save_variables frame has arrived)
+/// @param print_active       a print is currently running
+int displayed_z_offset_microns(int live_microns, std::optional<int> persisted_microns,
+                               bool print_active);
+
+/// Convenience overload resolving all three inputs from PrinterState. Use this
+/// at UI call sites so the selection rule lives in exactly one place.
+int displayed_z_offset_microns(helix::PrinterState& state);
+
+/// Build the SET_GCODE_OFFSET command for a baby-step of @p delta_microns taken
+/// from the offset we showed the user (@p base_microns).
+///
+/// Relative `Z_ADJUST=` is only correct when the base IS Klipper's live offset,
+/// because Klipper resolves it against homing_origin. On ZMOD at idle the live
+/// offset has been zeroed, so a relative nudge would land on just the delta - and
+/// ZMOD's override persists whatever it lands on, silently discarding the stored
+/// offset. Send an absolute `Z=` in that case so the result is what the user saw
+/// plus what they asked for.
+///
+/// @param base_microns  offset the UI displayed and is adjusting from
+/// @param live_microns  Klipper's current gcode_move.homing_origin[2]
+/// @param delta_microns signed baby-step
+/// @param all_homed     x, y and z are all homed (MOVE=1 errors otherwise)
+std::string build_z_adjust_gcode(int base_microns, int live_microns, int delta_microns,
+                                 bool all_homed);
+
+/// How far one tuning session may travel from the offset it opened on, in
+/// either direction, in millimetres. The guard bounds the *travel*, not the
+/// absolute offset: printers with several toolheads or nozzles legitimately run
+/// offsets past this, and clamping the absolute value snapped them toward zero
+/// on the first tap and drove the nozzle into the print.
+inline constexpr double kZOffsetMaxSessionTravelMm = 2.0;
 
 /// Z baby-step increments, largest first. Index 2 (0.01mm) is the default.
 inline constexpr double kZStepAmountsMm[] = {0.05, 0.025, 0.01, 0.005};
@@ -54,16 +96,21 @@ struct AdjustResult {
     double new_offset_mm;    ///< resulting offset, rounded to the micron
     bool sent;               ///< false when clamped to a no-op or api was null
     bool clamped_to_noop;    ///< true when the requested delta was clamped away to
-                             ///< nothing (already at +/-2mm limit) — disambiguates
+                             ///< nothing (already at the session-travel limit) — disambiguates
                              ///< that case from `sent == false` meaning a null api.
                              ///< Only one of the two reasons for `sent == false` can
                              ///< be true at once: a clamped-to-noop call returns
                              ///< before the null-api check ever runs.
 };
 
-/// Apply a Z baby-step: clamp to +/-2mm, round to the micron, accumulate the
-/// pending delta, optimistically publish gcode_z_offset, and send
-/// SET_GCODE_OFFSET Z_ADJUST.
+/// Apply a Z baby-step: bound the travel from @p session_base_mm, round to the
+/// micron, accumulate the pending delta, optimistically publish gcode_z_offset,
+/// and send the SET_GCODE_OFFSET that build_z_adjust_gcode() picks.
+///
+/// @p session_base_mm is the offset the tuning surface opened on; the step is
+/// refused once the result would sit more than kZOffsetMaxSessionTravelMm from
+/// it. The window is widened to always contain @p current_offset_mm, so a stale
+/// base costs a refused step rather than a jump.
 ///
 /// MOVE=1 is appended only when x, y and z are all homed — it makes the toolhead
 /// move immediately, which is the point of baby-stepping during a print, but
@@ -84,8 +131,8 @@ struct AdjustResult {
 /// bug to fix incidentally.
 ///
 /// @warning Main thread only — reads and writes LVGL subjects.
-AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_mm,
-                    double delta_mm);
+AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double session_base_mm,
+                    double current_offset_mm, double delta_mm);
 
 /// Execute strategy-aware save sequence:
 ///   PROBE_CALIBRATE -> Z_OFFSET_APPLY_PROBE -> SAVE_CONFIG

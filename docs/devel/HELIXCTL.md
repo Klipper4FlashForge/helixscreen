@@ -325,6 +325,7 @@ curl -s -X POST http://127.0.0.1:7130/rpc -d '{"jsonrpc":"2.0","id":1,
 | `scroll <target> [dx dy]` | Scroll a widget into view, or by a delta |
 | `focus <target>` | Focus a widget through its input group. Fires the real `LV_EVENT_FOCUSED`, so a registered textarea raises the on-screen keyboard — `click` does not, and leaves it hidden. Fails if the widget is not in an input group |
 | `text <target>` | Read a widget's text: `lv_label`, `lv_textarea`, or `lv_dropdown` (its selected option). Descends into a composite (e.g. a button wrapping a label) the same way `click` descends to a value-control. Raises rather than returning `""` if the widget has no text concept at all — an empty label and "not a text widget" are different facts |
+| `state <target>` | Read a widget's LVGL states and flags: `checked`/`disabled`/`focused`/`pressed` as booleans plus an active-`states` array, and `hidden`/`clickable`/`scrollable` under `flags`. Descends a composite row to its control, matching what `click`/`set_value` act on; when it descends, a `target` subobject carries the named widget's own `path` + `flags` (a hidden row's inner switch carries no flag of its own). A HIDDEN widget still resolves by name (only `ls` filters hidden subtrees), so `bind_flag_if` and `disabled=`-prop contracts are assertable here |
 | `set_text <target> <text>` | Overwrite a **label's** text. Resolves the target the same way `text` reads it, so a composite works. For labels the app sets imperatively — a value that comes from a backend field rather than a subject, so `set` cannot reach it (e.g. the AMS loading-error message). A label driven by `bind_text` is restored the next time its subject changes; set the subject instead when one exists |
 | `geom <target> [depth]` | Measured geometry: position, size, declared-vs-computed size, flex/scroll state |
 | `get_const [scope] <name>` | Resolve an XML `#const` to the value the renderer actually sees |
@@ -597,8 +598,14 @@ reads the resolved value, so it shows which one is really in effect.
 
 `demo` covers screens that only appear on a real printer event or configured
 state, constructed with representative sample data and the real lifecycle:
-`preflight-check`, `runout-modal`, `lock-screen`, `print-status`, `print-tune`,
-`ams`, `camera`, `ams-error-toast`.
+`preflight-check`, `color-mismatch`, `runout-modal`, `lock-screen`,
+`print-status`, `print-tune`, `ams`, `camera`, `ams-error-toast`,
+`action-prompt-worst`, `action-prompt-many`.
+
+`action-prompt-many` raises a Klipper `action:prompt` carrying seven material
+presets, the case where the buttons cannot share one row and must wrap. Both
+`action-prompt-*` demos need a live `action:prompt_begin`, so no sequence of
+clicks reaches them in mock mode.
 
 `ams-error-toast` raises the two-line AMS error toast (message plus
 `AmsError::suggestion`) using the longest suggestion any backend produces. The
@@ -618,7 +625,9 @@ refusal — this is how the toast's layout gets checked on a 480x272 panel.
 `log` reads the same ring buffer the debug bundle's `log_tail` uses — capacity
 scales with the device's RAM and is overridable via `HELIX_LOG_RING_LINES`. It
 means a scripted run can read the app's own log without redirecting stdout to a
-file first.
+file first. The ring is installed by `init_early()`, so on a short-lived instance
+it still holds the Phase 2 config-load trail that runs before the full logger
+exists (`LOGGING.md` § "Ring-Buffer Sink Lifecycle").
 
 #### `reset` — a cheap alternative to rebooting between tests
 

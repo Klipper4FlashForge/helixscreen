@@ -287,7 +287,7 @@ class IAdvancedAPI {
 
     virtual void run_z_tilt_adjust(SuccessCallback on_success, ErrorCallback on_error) = 0;
 
-    virtual void start_resonance_test(char axis, helix::AdvancedProgressCallback on_progress,
+    virtual void start_resonance_test(char axis, helix::ShaperProgressCallback on_progress,
                                       helix::InputShaperCallback on_complete,
                                       ErrorCallback on_error) = 0;
 
@@ -327,6 +327,8 @@ class IAdvancedAPI {
 
     virtual void save_config(SuccessCallback on_success, ErrorCallback on_error) = 0;
 
+    /// @param suppress_auto_toast Maps to helix::rpc_error_policy::CallerIntent::silent
+    ///        — opts out of the tracker's generic fallback toast, nothing more.
     virtual void execute_macro(const std::string& name,
                                const std::map<std::string, std::string>& params,
                                SuccessCallback on_success, ErrorCallback on_error,
@@ -343,8 +345,12 @@ class IAdvancedAPI {
     virtual void excite_belt_at_frequency(const std::string& axis_param, float freq_hz,
                                           SuccessCallback on_complete, ErrorCallback on_error) = 0;
 
+    /// @param caller_surfaces_errors Whether @p on_error actually shows the user
+    ///        something. Forwarded to execute_gcode() — see its contract and
+    ///        include/rpc_error_policy.h. Pass false when the callback only logs.
     virtual void set_strobe_frequency(const std::string& pin_name, float freq_hz,
-                                      SuccessCallback on_success, ErrorCallback on_error) = 0;
+                                      SuccessCallback on_success, ErrorCallback on_error,
+                                      bool caller_surfaces_errors = true) = 0;
 
     virtual void download_accel_csv(const std::string& filename,
                                     std::function<void(const std::string& csv_data)> on_complete,

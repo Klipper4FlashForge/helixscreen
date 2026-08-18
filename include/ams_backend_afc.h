@@ -243,6 +243,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// being blamed on an arbitrary lane.
     [[nodiscard]] bool slot_has_filament_at_toolhead(int slot_index) const override;
 
+    /// Filament at a toolhead sensor while no lane claims the toolhead —
+    /// neither AFC.current (toolhead_lane_) nor any lane's persisted
+    /// tool_loaded. See toolhead_is_free_unlocked() for why these three
+    /// signals and NOT system_info_.filament_loaded.
+    [[nodiscard]] std::optional<bool> toolhead_filament_unaccounted() const override;
+
     /// Status-driven fault, surfaced by AmsErrorBridge on the AmsAction::ERROR
     /// edge. Keyed on AFC's error_state, which upstream sets in lockstep with
     /// current_state = State.ERROR — the same transition that produced the edge.
@@ -310,6 +316,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// Delete this slot's user override ("Clear Spool"). AFC previously
     /// inherited the no-op default, so the button did nothing here.
     void clear_slot_override(int slot_index) override;
+
+    /// Publish the external spool as T{N} (one past the last lane) in the
+    /// SHARED lane_data namespace — AFC's own plugin never publishes its
+    /// extern (verified: AFC_lane.send_lane_data runs only for lanes with a
+    /// tool mapping, and AFC deletes the whole namespace at boot). Our entry
+    /// is wiped by that boot delete; the AmsState event triggers (bypass
+    /// engage, external-spool edit) re-publish.
+    void publish_external_spool_lane(const SlotInfo* spool) override;
     AmsError eject_lane(int slot_index) override;
     [[nodiscard]] bool supports_lane_eject() const override {
         return true;
@@ -347,6 +361,15 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] bool has_firmware_spool_persistence() const override {
         return true; // AFC uses SET_SPOOL_ID gcode for persistence
     }
+
+    [[nodiscard]] bool printer_reports_spool_ids() const override {
+        return true; // AFC publishes a lane spool_id in its status
+    }
+
+    /// Per-lane remember_spool = true on EVERY reporting lane (ALL
+    /// semantics — a mixed config still leaves the toggle governing the
+    /// false lanes). See AmsBackend::printer_retains_spool_info().
+    [[nodiscard]] bool printer_retains_spool_info() const override;
 
     /**
      * @brief Whether AFC unloads the toolhead automatically after a print.
@@ -386,8 +409,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /**
      * @brief Reset all tool mappings to defaults
      *
-     * Uses RESET_AFC_MAPPING RUNOUT=no to reset tool-to-lane mappings
-     * while preserving existing endless spool configuration.
+     * Uses AFC_RESET_MAPPING RUNOUT=no (RESET_AFC_MAPPING before the virtual-
+     * tools firmware, Klipper-Add-On #832, which deregistered the old name) to
+     * reset tool-to-lane mappings while preserving existing endless spool
+     * configuration.
      *
      * @return AmsError with result
      */
@@ -489,8 +514,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Allow test helper access to private members
     friend class AmsBackendAfcTestHelper;
     friend class AfcPerSlotLoadedHelper;
+    friend class AfcHelper;
+    friend class AfcBypassPublishTestAccess;
     friend class AfcCurrentErrorHelper;
+    friend class AfcRetainsHelper;
     friend class AfcLaneDataClearHelper;
+    friend class AfcRebindHelper;
     friend class AfcFaultEventCharHelper;
     friend class AfcFeatureLevelHelper;
     friend class AfcFixtureHelper;
@@ -513,6 +542,8 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcStatusDispatchHelper;
     friend class AfcEjectPrintGateHelper;
     friend class AfcSharedExtruderHelper;
+    friend class AfcLaneDataToolKeyHelper;
+    friend class AfcReassertHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -547,6 +578,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // override re-supplies the identity the user attached.
     static constexpr const char* OVERRIDE_NAMESPACE = "helix-screen-afc-overrides";
     std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
+    /// Store on the SHARED lane_data namespace, used only by
+    /// publish_external_spool_lane. AFC's plugin owns that namespace — our
+    /// private override_store_ is deliberately NOT pointed at it.
+    std::unique_ptr<helix::ams::FilamentSlotOverrideStore> lane_publish_store_;
     std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
     /// Layer the user override over firmware values. Callers hold mutex_.
     void apply_overrides(SlotInfo& slot, int slot_index);
@@ -880,6 +915,29 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
                            const nlohmann::json& data);
 
     /**
+     * @brief Push a retained Spoolman binding back into AFC (#1289)
+     *
+     * Called from parse_afc_stepper on the empty -> loaded EDGE only. With
+     * "Keep Spool Info on Eject" on, AFC's own remember_spool = false means
+     * firmware dropped the lane's link on eject while our override kept the
+     * identity — re-inserting the spool would paint the retained id here
+     * while AFC/Mainsail show an unknown spool. Sends the same
+     * SET_SPOOL_ID write the editor re-link uses, wrapped in
+     * record_own_spool_write() so the echo cannot trip the merge's re-bind
+     * clear.
+     *
+     * Gates: retention setting on, override holds a spool id for the lane,
+     * and firmware's freshest spool_id reading is 0/null (a
+     * remember_spool = true firmware or another writer's link wins by not
+     * firing). Edge-triggered — no re-send while loaded, no retry on a
+     * failed dispatch; the next eject/re-insert cycle is the retry.
+     *
+     * @param slot_index Registry slot index for this lane
+     * @param lane_name Lane identifier (e.g., "lane1") for the gcode
+     */
+    void maybe_reassert_retained_spool_link(int slot_index, const std::string& lane_name);
+
+    /**
      * @brief Parse AFC_hub object for per-hub sensor state
      *
      * @param hub_name Name of the hub (e.g., "Turtle_1")
@@ -890,14 +948,30 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /**
      * @brief Parse AFC_buffer object for buffer health and fault data
      *
-     * Extracts fault_detection_enabled, distance_to_fault, state, and lane mapping
-     * from the buffer status object. Populates buffer_health on mapped slots and
-     * creates WARNING-level SlotError when faults are detected.
+     * Extracts fault_detection_enabled, distance_to_fault, state, the multiplier trio
+     * and the lane list from the buffer status object, accumulating them into
+     * buffer_health_[buffer_name] — Moonraker sends deltas, so absent fields must
+     * leave the previous reading alone. Then re-derives the unit-level view via
+     * apply_buffer_health_to_units(); a buffer sits between hub and toolhead, so its
+     * health belongs to the unit, not to a slot.
      *
      * @param buffer_name Name of the buffer (e.g., "Turtle_1")
      * @param data JSON object from AFC_buffer
      */
     void parse_afc_buffer(const std::string& buffer_name, const nlohmann::json& data);
+
+    /**
+     * @brief Re-attach every known buffer's health to the unit that owns its lanes.
+     *
+     * Derives AmsUnit::buffer_health from buffer_health_ + buffer_lane_names_ rather
+     * than mutating a unit in place, so the reading survives reorganize_slots()
+     * rebuilding the unit vector and lands on the right unit once the multi-unit
+     * layout exists. Buffers whose lanes resolve to no unit yet are simply skipped —
+     * the next call picks them up.
+     *
+     * @pre mutex_ must be held by caller.
+     */
+    void apply_buffer_health_to_units();
 
     /**
      * @brief Parse AFC_extruder object for toolhead sensor states
@@ -1062,6 +1136,28 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // a member of a present "map".
     std::unordered_map<std::string, int> lane_current_tool_;
 
+    // A lane_data payload keyed by T(n) (virtual-tools firmware, #832) that
+    // arrived while no tool mapping could resolve its records. Kept whole and
+    // replayed once parse_afc_stepper() lands a mapping, because
+    // query_lane_data() is one-shot and never retried. Cleared (re-parked) by
+    // the replay itself if records still resolve to nothing.
+    std::optional<nlohmann::json> pending_tool_lane_data_;
+
+    // Slots whose tool mapping the FIRMWARE asserted via a lane "map" field.
+    // initialize_slots() seeds a 1:1 identity placeholder, and a T(n)-keyed
+    // lane_data join that trusted it could paint another lane's spool onto a
+    // slot nothing corrects until a real map arrives. parse_lane_data() only
+    // resolves tool keys through slots in this set; everything else parks.
+    // Reset with the registry in initialize_slots().
+    std::set<int> firmware_mapped_slots_;
+
+    // The virtual-tools firmware renamed RESET_AFC_MAPPING → AFC_RESET_MAPPING
+    // (#832) and deregistered the old name. Detected by key PRESENCE of
+    // multiple_tool_mapping in the AFC status object — the value is the user's
+    // opt-in to virtual tools and defaults false, so only presence is a version
+    // signal.
+    bool afc_reset_mapping_renamed_{false};
+
     // AFC state strings outside our known vocabulary — dedupes the schema-drift
     // warning so it fires once per distinct string, not once per status update.
     std::set<std::string> unknown_state_warned_;
@@ -1173,11 +1269,34 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// firmware or our own override store is the thing preserving identity.
     std::unordered_map<std::string, bool> lane_remember_spool_;
 
+    /// Firmware's own last-reported spool_id per lane, updated only when a
+    /// status delta carries the key. Distinct from SlotInfo::spoolman_id,
+    /// which the §5 override merge re-supplies with the retained id — this
+    /// map preserves "does AFC itself still hold a link?" for
+    /// maybe_reassert_retained_spool_link() (#1289).
+    std::unordered_map<std::string, int> lane_firmware_spool_id_;
+
     /// Lanes last seen on each buffer, keyed by buffer name. AFC's buffer status
     /// arrives as a Moonraker delta, so a frame that changes only `state` omits
     /// `lanes` — without this cache the health update could not be routed to a
     /// unit and would be dropped.
     std::unordered_map<std::string, std::vector<std::string>> buffer_lane_names_;
+
+    /// What AFC last reported for each buffer, keyed by buffer name. This is the
+    /// record; AmsUnit::buffer_health is a derived view of it. Accumulating into
+    /// the unit instead was wrong twice over: reorganize_slots() rebuilds every
+    /// AmsUnit from scratch, so the reading survived only until the next frame
+    /// carrying a unit object, and on a multi-unit rig whose layout was not built
+    /// yet every buffer resolved to unit 0 and read-modify-wrote the previous
+    /// buffer's fields.
+    std::unordered_map<std::string, BufferHealth> buffer_health_;
+
+    /// Unit index each buffer was last attached to (-1 = unresolved), so the
+    /// attribution can be logged when it CHANGES rather than on every
+    /// re-derivation. apply_buffer_health_to_units() runs on every status frame
+    /// that carries a buffer or a unit object; logging unconditionally there put
+    /// 75 extra lines into a five-unit rig's log for one three-frame replay.
+    std::unordered_map<std::string, int> buffer_unit_attribution_;
 
     // Multi-extruder (toolchanger) state
     int num_extruders_{1}; ///< Number of extruders (1 = standard, 2+ = toolchanger)

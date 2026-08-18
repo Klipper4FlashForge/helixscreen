@@ -65,6 +65,7 @@
  */
 
 #include "ui_fonts.h"
+#include "ui_update_queue.h"
 
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/panel_widget_size_harness.h"
@@ -304,4 +305,92 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan_stack carousel mode ignores the pixel s
     process_lvgl(30);
     CHECK(lv_obj_get_style_text_font(speed_label, LV_PART_MAIN) == speed_font_before);
     CHECK(std::string(lv_label_get_text(speed_label)) == speed_text_before);
+}
+
+/**
+ * The threshold assertions above are threshold-relative: they drive the
+ * harness from the band itself (`W_NORMAL - 1`, `W_NORMAL`) and check that the
+ * layout flipped. That proves the predicate is wired to the band. It cannot
+ * prove the band is calibrated, because both sides of the comparison move
+ * together — which is why they stayed green through the defect this case is
+ * about.
+ *
+ * The defect: the band was a flat 135px, measured against the Small tier's
+ * 14px font_body. On the roomier tiers font_body is 18/20/24/32px, so a cell
+ * that clears 135px there buys far fewer glyphs than the same 135px bought at
+ * Small. `bigger` fired anyway, the rows switched to LV_SIZE_CONTENT with
+ * resolved fan names in the tier's larger font, and the resulting row was
+ * WIDER than the cell it was drawn into — "Part Cooling Fan" clipped where the
+ * compact layout would have drawn "P".
+ *
+ * So this case asserts the property that actually matters and that no
+ * threshold-relative check can express: whatever layout the predicate picks,
+ * the row it produces has to fit inside the width the widget was granted.
+ * Each case names a real tier, moves the display there (which is what moves
+ * the font ladder — theme_manager_refresh_layout_constants), and grants a
+ * width inside the window where the flat band promoted and the tier's own
+ * band does not.
+ */
+TEST_CASE_METHOD(LVGLUITestFixture, "fan_stack rows fit the cell they were granted",
+                 "[widget_size][fan_stack]") {
+    require_font_tokens_distinct();
+
+    lv_display_t* disp = lv_display_get_default();
+    REQUIRE(disp != nullptr);
+
+    // Real discovered fans, so the "bigger" branch draws the resolved display
+    // names it draws on a printer rather than the short hardcoded fallbacks.
+    // The bare Klipper `fan` object maps to "Part Cooling Fan"
+    // (device_display_name.cpp DIRECT_MAPPINGS) — the exact string the defect
+    // report showed clipped.
+    state().init_fans({"fan", "heater_fan hotend_fan", "fan_generic chamber_circulation"});
+    helix::ui::UpdateQueue::instance().drain();
+
+    struct FitCase {
+        const char* name;
+        int32_t hor;
+        int32_t ver;
+        int width_px;
+        int height_px;
+    };
+
+    // Widths sit above the flat 135px band and below the tier's own band, the
+    // exact window the flat band got wrong. Heights are a real single-row
+    // extent for the tier so nothing else about the case is artificial.
+    const FitCase cases[] = {
+        {"medium 800x480", 800, 480, 136, 112},
+        {"large 1024x600", 1024, 600, 160, 141},
+        {"xxlarge 1080x1920", 1080, 1920, 211, 200},
+    };
+
+    for (const auto& c : cases) {
+        ScopedResolution res(disp, c.hor, c.ver);
+        theme_manager_refresh_layout_constants(disp);
+
+        PanelWidgetHarness<FanStackWidget> h(test_screen(), "fan_stack", state());
+        lv_obj_t* part_row = h.child("fan_stack_part_row");
+        REQUIRE(part_row != nullptr);
+
+        h.resize(1, 1, c.width_px, c.height_px);
+        process_lvgl(30);
+
+        // on_size_changed levels all three rows to the widest, so any one of
+        // them reports the overflow; check every row rather than assuming
+        // which name resolved longest on this tier.
+        const int cell_w = lv_obj_get_content_width(h.root());
+        for (const char* rn : {"fan_stack_part_row", "fan_stack_hotend_row", "fan_stack_aux_row"}) {
+            lv_obj_t* row = h.child(rn);
+            REQUIRE(row != nullptr);
+            if (lv_obj_has_flag(row, LV_OBJ_FLAG_HIDDEN))
+                continue;
+            INFO(c.name << ": granted " << c.width_px << "px, cell content " << cell_w << "px, "
+                        << rn << " " << lv_obj_get_width(row) << "px, band " << w_normal()
+                        << ", part name '" << lv_label_get_text(h.child("fan_stack_part_name"))
+                        << "'");
+            CHECK(lv_obj_get_width(row) <= cell_w);
+        }
+    }
+
+    // Put the token table back where the rest of the suite expects it.
+    theme_manager_refresh_layout_constants(disp);
 }

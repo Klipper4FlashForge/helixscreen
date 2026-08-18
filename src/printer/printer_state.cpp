@@ -953,7 +953,11 @@ bool PrinterState::is_blocking_operation_active() {
     // idle_timeout.state == "Printing" is Klipper's canonical busy flag. It is
     // also true during a real file print, so exclude PRINTING/PAUSED — mid-print
     // fan/temp changes are legitimate and Klipper queues them between moves.
-    if (lv_subject_get_int(calibration_state_.get_idle_timeout_printing_subject()) == 0) {
+    //
+    // Debounced, not the raw subject: the flag is equally true for a one-shot
+    // housekeeping macro, and a printer with delayed_gcode loops would otherwise
+    // refuse a jog for ~7% of its idle life (bundle L53W5PKG).
+    if (!calibration_state_.idle_timeout_busy().blocking()) {
         return false;
     }
 
@@ -1201,7 +1205,7 @@ void PrinterState::apply_dynamic_options() {
     if (lv_subject_get_int(capabilities_state_.get_printer_has_timelapse_subject()) == 1) {
         PrePrintOption tl;
         tl.id = "timelapse";
-        tl.label_key = "pre_print_option.timelapse.label";
+        tl.label_key = "Timelapse";
         tl.category = PrePrintCategory::Monitoring;
         tl.order = 100;
         // Default reflects the global moonraker-timelapse `enabled` setting

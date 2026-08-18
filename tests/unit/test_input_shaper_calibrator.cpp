@@ -248,7 +248,7 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture,
                  "run_calibration('X') transitions to TESTING_X state",
                  "[calibrator][input_shaper][calibration]") {
     calibrator_.run_calibration(
-        'X', [this](int pct) { on_progress(pct); },
+        'X', [this](int pct, ShaperCalibrationPhase) { on_progress(pct); },
         [this](const InputShaperResult& r) { on_result(r); },
         [this](const std::string& err) { on_error(err); });
 
@@ -263,7 +263,7 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture,
                  "run_calibration('Y') transitions to TESTING_Y state",
                  "[calibrator][input_shaper][calibration]") {
     calibrator_.run_calibration(
-        'Y', [this](int pct) { on_progress(pct); },
+        'Y', [this](int pct, ShaperCalibrationPhase) { on_progress(pct); },
         [this](const InputShaperResult& r) { on_result(r); },
         [this](const std::string& err) { on_error(err); });
 
@@ -278,20 +278,22 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture, "run_calibration accepts only
                  "[calibrator][input_shaper][calibration][validation]") {
     SECTION("X axis is valid") {
         REQUIRE_NOTHROW(calibrator_.run_calibration(
-            'X', [](int) {}, [](const InputShaperResult&) {}, [](const std::string&) {}));
+            'X', [](int, ShaperCalibrationPhase) {}, [](const InputShaperResult&) {},
+            [](const std::string&) {}));
     }
 
     SECTION("Y axis is valid") {
         calibrator_.cancel(); // Reset state
         REQUIRE_NOTHROW(calibrator_.run_calibration(
-            'Y', [](int) {}, [](const InputShaperResult&) {}, [](const std::string&) {}));
+            'Y', [](int, ShaperCalibrationPhase) {}, [](const InputShaperResult&) {},
+            [](const std::string&) {}));
     }
 
     SECTION("lowercase x should work or call error") {
         calibrator_.cancel();
         // Implementation should either normalize or call error callback
         REQUIRE_NOTHROW(calibrator_.run_calibration(
-            'x', [](int) {}, [](const InputShaperResult&) {},
+            'x', [](int, ShaperCalibrationPhase) {}, [](const InputShaperResult&) {},
             [this](const std::string& err) { on_error(err); }));
     }
 
@@ -299,7 +301,7 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture, "run_calibration accepts only
         calibrator_.cancel();
         calibrator_.run_calibration(
             'Z', // Invalid axis
-            [](int) {}, [](const InputShaperResult&) {},
+            [](int, ShaperCalibrationPhase) {}, [](const InputShaperResult&) {},
             [this](const std::string& err) { on_error(err); });
 
         // Should either reject immediately or call error callback
@@ -318,7 +320,7 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture,
                  "run_calibration result is stored in get_results()",
                  "[calibrator][input_shaper][calibration][slow]") {
     calibrator_.run_calibration(
-        'X', [this](int pct) { on_progress(pct); },
+        'X', [this](int pct, ShaperCalibrationPhase) { on_progress(pct); },
         [this](const InputShaperResult& r) { on_result(r); },
         [this](const std::string& err) { on_error(err); });
 
@@ -338,8 +340,8 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture,
                  "[calibrator][input_shaper][calibration][slow]") {
     // Run X calibration first
     calibrator_.run_calibration(
-        'X', [](int) {}, [this](const InputShaperResult& r) { on_result(r); },
-        [](const std::string&) {});
+        'X', [](int, ShaperCalibrationPhase) {},
+        [this](const InputShaperResult& r) { on_result(r); }, [](const std::string&) {});
 
     wait_for(result_received_, 2000);
 
@@ -348,8 +350,8 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture,
 
         // Run Y calibration
         calibrator_.run_calibration(
-            'Y', [](int) {}, [this](const InputShaperResult& r) { on_result(r); },
-            [](const std::string&) {});
+            'Y', [](int, ShaperCalibrationPhase) {},
+            [this](const InputShaperResult& r) { on_result(r); }, [](const std::string&) {});
 
         wait_for(result_received_, 2000);
 
@@ -367,13 +369,14 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture, "cannot start calibration whi
                  "[calibrator][input_shaper][calibration][guard]") {
     // Start first calibration
     calibrator_.run_calibration(
-        'X', [](int) {}, [](const InputShaperResult&) {}, [](const std::string&) {});
+        'X', [](int, ShaperCalibrationPhase) {}, [](const InputShaperResult&) {},
+        [](const std::string&) {});
 
     // Try to start second calibration immediately
     // Should either be rejected or queued
     bool second_error = false;
     calibrator_.run_calibration(
-        'Y', [](int) {}, [](const InputShaperResult&) {},
+        'Y', [](int, ShaperCalibrationPhase) {}, [](const InputShaperResult&) {},
         [&](const std::string& err) {
             second_error = true;
             // Error message should indicate busy
@@ -397,7 +400,7 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture, "cannot start calibration whi
 TEST_CASE_METHOD(InputShaperCalibratorTestFixture, "progress callback is called during calibration",
                  "[calibrator][input_shaper][progress][slow]") {
     calibrator_.run_calibration(
-        'X', [this](int pct) { on_progress(pct); },
+        'X', [this](int pct, ShaperCalibrationPhase) { on_progress(pct); },
         [this](const InputShaperResult& r) { on_result(r); },
         [this](const std::string& err) { on_error(err); });
 
@@ -532,7 +535,7 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture, "error callback receives mean
     // Invalid axis should produce error
     calibrator_.run_calibration(
         'Z', // Invalid
-        [](int) {}, [](const InputShaperResult&) {},
+        [](int, ShaperCalibrationPhase) {}, [](const InputShaperResult&) {},
         [this](const std::string& err) { on_error(err); });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -548,7 +551,7 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture, "state returns to IDLE on err
     // Force an error condition
     calibrator_.run_calibration(
         'Z', // Invalid axis
-        [](int) {}, [](const InputShaperResult&) {},
+        [](int, ShaperCalibrationPhase) {}, [](const InputShaperResult&) {},
         [this](const std::string& err) { on_error(err); });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -638,7 +641,7 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture, "Full calibration workflow sc
 
     SECTION("calibrate X axis") {
         calibrator_.run_calibration(
-            'X', [this](int pct) { on_progress(pct); },
+            'X', [this](int pct, ShaperCalibrationPhase) { on_progress(pct); },
             [this](const InputShaperResult& r) { on_result(r); },
             [this](const std::string& err) { on_error(err); });
 
@@ -652,7 +655,7 @@ TEST_CASE_METHOD(InputShaperCalibratorTestFixture, "Full calibration workflow sc
 
     SECTION("calibrate Y axis") {
         calibrator_.run_calibration(
-            'Y', [this](int pct) { on_progress(pct); },
+            'Y', [this](int pct, ShaperCalibrationPhase) { on_progress(pct); },
             [this](const InputShaperResult& r) { on_result(r); },
             [this](const std::string& err) { on_error(err); });
 

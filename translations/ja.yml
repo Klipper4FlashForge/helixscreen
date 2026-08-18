@@ -105,6 +105,8 @@ translations:
   AFC reset complete: AFCリセット完了
   AFC reset failed: AFCリセット失敗
   AFC retracts filament from the toolhead at end of print: AFCは印刷終了時にツールヘッドからフィラメントを引き戻します
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: ''
+  AI detection: AI 検出
   ALL DEVICES: すべてのデバイス
   AMS: AMS
   'AMS Active: ': 'AMS 有効: '
@@ -147,6 +149,7 @@ translations:
   Adjust until belt appears frozen: ベルトが静止して見えるまで調整
   Adjustments stay active until restart. Save after print completes.: 調整は再起動まで有効です。印刷完了後に保存してください。
   Adjusts individual characteristics of your heaters for optimal control: ヒーターの個別特性を調整して最適な制御を実現します
+  Advanced: 詳細設定
   After running the commands, tap Check Again below.: コマンド実行後、下の「再確認」をタップしてください。
   Alert: アラート
   Alerts: アラート
@@ -299,12 +302,16 @@ translations:
   Button taps and navigation sounds: ボタンタップとナビゲーション音
   Buzz Servo: サーボを小刻みに動かす
   Bypass: バイパス
+  Bypass Is Active: ''
   Bypass Mode: バイパスモード
+  Bypass active — this print runs on the external spool, not on the lanes below.: ''
   Bypass controlled by hardware sensor: ハードウェアセンサーによるバイパス制御
   Bypass controlled by sensor: バイパスはセンサーで制御中
   Bypass disabled: バイパス無効
   Bypass enabled: バイパス有効
   Bypass failed: バイパスに失敗しました
+  ? Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?
+  : ''
   Bypass toggle failed: バイパス切替に失敗しました
   C: C
   CALIBRATION: キャリブレーション
@@ -544,6 +551,7 @@ translations:
   Control power relays and smart outlets: 電源リレーとスマートコンセントを制御
   Controlled by hardware sensor: ハードウェアセンサーで制御
   Controller: コントローラー
+  Controls: コントロール
   Cool Down: 冷却
   Cool nozzle after filament ops: フィラメント操作後にノズルを冷却
   Cooling: 冷却中
@@ -603,6 +611,7 @@ translations:
   Custom...: カスタム...
   Customize Macro Button: マクロボタンをカスタマイズ
   Customize preset temperatures: プリセット温度をカスタマイズ
+  Customize your home screen: ホーム画面をカスタマイズ
   Cut Distance: カット距離
   Cut filament: フィラメントを切断
   Cut tip: 先端をカット
@@ -939,6 +948,8 @@ translations:
   Filament: フィラメント
   Filament Detected: フィラメント検出
   Filament Environment: フィラメント環境
+  Filament Grade Mismatch: ''
+  Filament In The Toolhead: ''
   Filament Mapping: フィラメントマッピング
   Filament Runout: フィラメント切れ
   Filament Sensor: フィラメントセンサー
@@ -951,6 +962,8 @@ translations:
   Filament diameter sensors for flow compensation: フロー補正用フィラメント直径センサー
   Filament is loose: フィラメントが緩んでいます
   Filament is pulling tight: フィラメントが引っ張られています
+  ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
+  : ''
   'Filament load failed: {}': 'フィラメントの装填に失敗しました: {}'
   Filament loaded: フィラメントを装填しました
   Filament operation failed: フィラメント操作に失敗しました
@@ -960,6 +973,7 @@ translations:
   : フィラメントが切れましたが、CFSは切り替え可能な一致するスプールを見つけられませんでした。同じ材料と色のスプールを装填してから再開してください。
   Filament ran out at the toolhead: ツールヘッドでフィラメントが切れました
   Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: フィラメントが切れました。自動補充がオフのため、CFSは自動でスプールを切り替えません。フィラメントを装填してから再開してください。
+  Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume.: ''
   Filament runout: フィラメント切れ
   Filament runout and motion detection sensors: フィラメント切れとモーション検出センサー
   Filament saved: フィラメントを保存しました
@@ -1207,6 +1221,8 @@ translations:
   Keep Navigation Bar: ナビゲーションバーを維持
   Keep Printing: 印刷を続行
   Keep Required: 必須を維持
+  Keep Spool Info on Eject: ''
+  Keep current: ''
   Keep the bypass spool visible when bypass is off: バイパスオフ時もバイパススプールの表示を維持
   Kick away: かき出し
   Kinematics: キネマティクス
@@ -1262,6 +1278,7 @@ translations:
   Length of filament to purge: パージするフィラメントの長さ
   Length of the cooling tube section: 冷却チューブ区間の長さ
   'Length:': '長さ:'
+  Let's take a quick tour so you can find things fast.: 機能をすぐに見つけられるよう、簡単なツアーを始めましょう。
   Leveling Gantry...: ガントリーレベリング中...
   Library: ライブラリ
   Lifetime Print Stats: 累計印刷統計
@@ -1276,6 +1293,8 @@ translations:
   Load may still be running — response timed out: 装填がまだ実行中の可能性があります — 応答タイムアウト
   Load or unload filament.: ''
   Load the required filaments or start anyway?: 必要なフィラメントを装填しますか？それともこのまま開始しますか？
+  ? 'Load, unload, and swap spools. View your multi-filament system at a glance, map colors to slots, and monitor runout sensors.'
+  : スプールのロード、アンロード、交換を行います。マルチフィラメントシステムを一目で確認し、色をスロットにマッピングし、ランアウトセンサーを監視できます。
   Loaded: 装填済み
   Loading: ロード中
   Loading Bed Mesh...: ベッドメッシュ読込中...
@@ -1303,6 +1322,8 @@ translations:
   Log Level: ログレベル
   Logs: ログ
   Long Press Time: 長押しの時間
+  ? 'Long-press any tile to enter edit mode — rearrange, resize, remove, or add widgets, and add extra pages for your preferred layout.'
+  : タイルを長押しして編集モードに入ります — ウィジェットの並べ替え、サイズ変更、削除、追加や、好みのレイアウトに合わせたページの追加ができます。
   Long-press the home grid to rearrange widgets (turn off if it triggers by accident): ホーム画面のグリッドを長押しするとウィジェットを並べ替えできます（誤動作する場合はオフにしてください）
   Longest Disconnect: 最長切断時間
   Loosen Path A belt.: パスAのベルトを緩めてください。
@@ -1348,6 +1369,7 @@ translations:
   Macro to resume a paused print: 一時停止した印刷を再開するマクロ
   Macro to unload filament from extruder: エクストルーダーからフィラメントを排出するマクロ
   Macros: マクロ
+  'Macros, G-code console, calibration tools (PID, input shaper, z-offset), firmware updates, and developer utilities.': マクロ、G-code コンソール、キャリブレーションツール（PID、入力シェイパー、Z オフセット）、ファームウェア更新、開発者向けユーティリティ。
   Main LED Strip: メインLEDストリップ
   Maintaining: 維持中
   Maintenance: メンテナンス
@@ -1402,6 +1424,8 @@ translations:
   Minutes: 分
   Mode: モード
   Modified: 変更日時
+  Monitor for print abnormalities (K2 Plus camera-based): 印刷異常を監視 (K2 Plus カメラベース)
+  'Monitor prints in progress — time remaining, current layer, and progress. Tap to pause, resume, or cancel the active job.': 印刷の進行状況を監視します — 残り時間、現在のレイヤー、進捗。タップすれば進行中のジョブを一時停止、再開、キャンセルできます。
   Monitoring: モニタリング
   Month: 月
   Moonraker: Moonraker
@@ -1420,6 +1444,7 @@ translations:
   Move paper back and forth while adjusting. Stop when paper catches slightly but still slides.: 調整中は紙を前後に動かしてください。紙がわずかに引っかかりながらも滑る状態で止めてください。
   Move selector: セレクターを移動
   Move speed multipliers: 移動速度の倍率
+  'Move the toolhead, home axes, level the bed, and fine-tune temperatures, fans, and other motion settings.': ツールヘッドを動かし、軸をホーミングし、ベッドをレベリングし、温度、ファン、その他のモーション設定を微調整します。
   ? Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal.
   : プリントヘッドを移動させて各軸の振動周波数を測定します。2〜3分かかります。プリンターから音がしますが、これは正常です。
   Moving lane: レーンを移動中
@@ -1453,6 +1478,7 @@ translations:
   Network Test: ネットワークテスト
   Network forgotten: ネットワークを登録解除しました
   Network name cannot be empty: ネットワーク名は空にできません
+  'Network, display, sound, printer setup, and more. You can replay this tour anytime from Help & About.': ネットワーク、ディスプレイ、サウンド、プリンター設定など。このツアーは「ヘルプと情報」からいつでも再生できます。
   Never: なし
   'New Spool: Step 1 of 3': '新しいスプール: ステップ 1 / 3'
   'New Spool: Step {} of {}': '新規スプール: ステップ {} / {}'
@@ -1544,6 +1570,7 @@ translations:
   Not Enough Filament: フィラメントが不足しています
   Not Now: 今はしない
   Not available here. Update from a terminal.: ここでは利用できません。ターミナルから更新してください。
+  Not available on Android: ''
   Not calibrated: キャリブレーション未実施
   Not configured: 未設定
   Not connected: 未接続
@@ -1767,6 +1794,7 @@ translations:
   Print server rejected the job — check printer status: 印刷サーバーがジョブを拒否しました — プリンターの状態を確認してください
   Print setup failed: 印刷のセットアップに失敗しました
   'Print setup failed: internal error': '印刷のセットアップに失敗しました: 内部エラー'
+  Print status: 印刷ステータス
   Print timed out waiting for completion: 印刷の完了待ちでタイムアウトしました
   Printer: プリンター
   Printer Error: プリンターエラー
@@ -1798,6 +1826,7 @@ translations:
   Printer name: プリンター名
   Printer not ready: プリンターの準備ができていません
   Printer ready: プリンター準備完了
+  Printer type mismatch: ''
   'Printer:': 'プリンター:'
   'Printer: ': 'プリンター: '
   PrinterIdentify: プリンターを識別
@@ -1869,6 +1898,7 @@ translations:
   Ramming Volume: ラミング量
   Raspberry Pi: Raspberry Pi
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
+  Re-identify: ''
   Re-probe: 再プローブ
   Re-read spool RFID tags and remaining length: スプールのRFIDタグと残量を再読み込み
   Re-syncs Happy Hare's tracked state with the hardware.: Happy Hare が追跡している状態をハードウェアと再同期します。
@@ -1891,6 +1921,7 @@ translations:
   Recalibrate or view detailed results anytime in Settings.: 設定からいつでも再キャリブレーションや詳細結果の確認ができます。
   Recent Prints: 最近の印刷
   Recently Printed: 最近印刷されたもの
+  Reconnect: ''
   Record Timelapse: タイムラプスを録画
   Record timelapses of your prints: 印刷のタイムラプスを録画
   Recorded timelapses will appear here: 録画済みタイムラプスがここに表示されます
@@ -1915,6 +1946,7 @@ translations:
   Remap Tool: ツールを再割当
   Remap needs the HelixPrint plugin: リマップにはHelixPrintプラグインが必要です
   Remap…: リマップ…
+  Remember lane spool details across an eject: ''
   Remove: 削除
   Remove PIN: PIN を削除
   Remove Spoolman?: Spoolman を削除しますか？
@@ -2335,6 +2367,7 @@ translations:
   Tap + to add: + をタップして追加
   Tap again to confirm this orientation: もう一度タップしてこの向きを確定
   Tap an object to exclude it | {} objects ({} excluded): オブジェクトをタップして除外 | {} 個 ({} 個除外済み)
+  Tap any tile to open its full controls or toggle its state.: タイルをタップすると、全機能のコントロールを開いたり、状態を切り替えたりできます。
   Tap anywhere if this text is right-side up: この文字が正しい向きならどこかをタップ
   Tap anywhere to begin: どこかをタップして開始
   Tap anywhere to begin calibration: どこかをタップしてキャリブレーション開始
@@ -2385,8 +2418,12 @@ translations:
   The Spoolman spool currently loaded: 現在装填中の Spoolman スプール
   ? The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings > Display.
   : アニメーション付きスクリーンセーバーが印刷に干渉しないよう、このデバイスではオフになっています。設定 > ディスプレイで再度有効にできます。
+  ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
+  : ''
   The filament system reported an error: フィラメントシステムがエラーを報告しました
   The heater will cycle on and off several times.: ヒーターは数回オン/オフを繰り返します。
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : ''
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。"
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2402,6 +2439,7 @@ translations:
   The runout sensor indicates no filament is loaded. Start print anyway?: フィラメント切れセンサーがフィラメント未装填を検出しました。それでも印刷を開始しますか？
   The speed of one fan you choose: 選んだファン1つの速度
   The time, date, and system uptime: 時間、日付、稼働時間
+  The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?: ''
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: ツールヘッドセンサーがフィラメント装填済みを検出しました。それでも装填を続行しますか？
   The toolhead sensor indicates no filament is present. Proceed with unload anyway?: ツールヘッドセンサーがフィラメント未検出を報告しました。それでもアンロードを続行しますか？
   Theme: テーマ
@@ -2410,6 +2448,7 @@ translations:
   Theme changes apply after restart.: テーマの変更は再起動後に適用されます。
   Theme reset to defaults: テーマをデフォルトにリセットしました
   'Theme: ': 'テーマ: '
+  'These tools have a different filament grade loaded:': ''
   'These tools have incompatible materials loaded:': 'これらのツールには互換性のない素材がロードされています:'
   'These tools have no filament loaded:': 'これらのツールにフィラメントが装填されていません:'
   'These tools have no matching filament loaded:': 'これらのツールに一致するフィラメントが装填されていません:'
@@ -2424,12 +2463,15 @@ translations:
   : このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、"Timer Too Close" エラーを引き起こす可能性があります。それでも続行しますか？
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: リンクされた Spoolman のスプールと一致しません。新しいスプールとして追加しますか、それともリンク先を一致するよう更新しますか？
   This file was sliced for {} but {} is loaded.: このファイルは {} 用にスライスされていますが、{} がロードされています。
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: これが送信されるデータです
   This is what data would be sent if enabled: これは有効にした場合に送信されるデータです
   This may take up to 30 seconds: 最大30秒かかる場合があります
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps.
   : このプラグインにより、HelixScreen がベッドメッシュや QGL などの印刷開始オプションを制御できます。インストール後、以下の「PRINT_START を設定」を使用してオプションの手順を有効にしてください。
   This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?: この印刷には約 %.0fg 必要ですが、スプールの残量は約 %.0fg です。それでも開始しますか？
+  ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
+  : ''
   This tool probes each bed screw and tells you how much to adjust.: このツールは各ベッドネジをプローブし、どのくらい調整が必要かを教えます。
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect.
   : Z-offset をエンドストップに適用し、設定を保存するために Klipper を再起動します。プリンターは一時的に切断されます。
@@ -2577,6 +2619,7 @@ translations:
   Update your security PIN: セキュリティ PIN を更新
   Updating Configuration...: 設定を更新中...
   Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: フィラメント名とマルチカラースプールに対応するには、AFC 1.2.0以降にアップグレードしてください。
+  Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.: ''
   Upload: アップロード
   Upload Debug Bundle: デバッグバンドルをアップロード
   Upload Failed: アップロード失敗
@@ -2641,6 +2684,7 @@ translations:
   Weekly Print Stats: 週間印刷統計
   ? Weight data is synced from Spoolman to display remaining filament. Changes are also synced when prints start, pause, or complete.
   : 残りのフィラメントを表示するために、重量データが Spoolman から同期されます。印刷の開始、一時停止、完了時にも変更が同期されます。
+  Welcome to HelixScreen: HelixScreen へようこそ
   What We Collect: 収集する情報
   When enabled, only the macro runs. When disabled, temperatures are set first, then the macro runs.: 有効時はマクロのみ実行されます。無効時は先に温度を設定してからマクロが実行されます。
   ? When starting a print, you'll be able to choose whether to run %s. This saves time when you've already done it recently or want more control over your print preparation.
@@ -2710,6 +2754,7 @@ translations:
     '
   Your completed prints will appear here: 完了した印刷がここに表示されます
   Your print start is already fully configured!: 印刷開始設定はすでに完全に構成されています！
+  Your printer at a glance: プリンターを一目で確認
   Your printer has an automatic filament changer: プリンターに自動フィラメントチェンジャーが搭載されています
   Your printer was offline during setup, so hardware options were skipped. Set them up now?: セットアップ中にプリンターがオフラインだったため、ハードウェアオプションはスキップされました。今すぐ設定しますか？
   Z: Z
@@ -2767,9 +2812,6 @@ translations:
   nozzle: ノズル
   of: の
   'off': オフ
-  pre_print_option.ai_detect.description: 印刷異常を監視 (K2 Plus カメラベース)
-  pre_print_option.ai_detect.label: AI 検出
-  pre_print_option.timelapse.label: タイムラプス
   prints: 印刷
   remaining: 残り
   remaining before clog detection triggers: 残りで詰まり検出が作動します
@@ -2779,22 +2821,6 @@ translations:
   steppers: ステッパー
   tall: 高さ
   tool(s): ツール
-  tour.step.advanced.body: マクロ、G-code コンソール、キャリブレーションツール（PID、入力シェイパー、Z オフセット）、ファームウェア更新、開発者向けユーティリティ。
-  tour.step.advanced.title: 詳細設定
-  tour.step.controls.body: ツールヘッドを動かし、軸をホーミングし、ベッドをレベリングし、温度、ファン、その他のモーション設定を微調整します。
-  tour.step.controls.title: コントロール
-  tour.step.customize.body: タイルを長押しして編集モードに入ります — ウィジェットの並べ替え、サイズ変更、削除、追加や、好みのレイアウトに合わせたページの追加ができます。
-  tour.step.customize.title: ホーム画面をカスタマイズ
-  tour.step.filament.body: スプールのロード、アンロード、交換を行います。マルチフィラメントシステムを一目で確認し、色をスロットにマッピングし、ランアウトセンサーを監視できます。
-  tour.step.filament.title: フィラメント
-  tour.step.home_grid.body: タイルをタップすると、全機能のコントロールを開いたり、状態を切り替えたりできます。
-  tour.step.home_grid.title: プリンターを一目で確認
-  tour.step.print.body: 印刷の進行状況を監視します — 残り時間、現在のレイヤー、進捗。タップすれば進行中のジョブを一時停止、再開、キャンセルできます。
-  tour.step.print.title: 印刷ステータス
-  tour.step.settings.body: ネットワーク、ディスプレイ、サウンド、プリンター設定など。このツアーは「ヘルプと情報」からいつでも再生できます。
-  tour.step.settings.title: 設定
-  tour.step.welcome.body: 機能をすぐに見つけられるよう、簡単なツアーを始めましょう。
-  tour.step.welcome.title: HelixScreen へようこそ
   used: 使用
   v%s available: v%s が利用可能です
   v{} installed! Restarting...: v{} をインストールしました！再起動中...

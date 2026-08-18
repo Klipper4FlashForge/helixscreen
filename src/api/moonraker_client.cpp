@@ -1184,7 +1184,8 @@ RequestId MoonrakerClient::send_jsonrpc(const std::string& method, const json& p
 RequestId MoonrakerClient::send_jsonrpc(const std::string& method, const json& params,
                                         std::function<void(const json&)> success_cb,
                                         std::function<void(const MoonrakerError&)> error_cb,
-                                        uint32_t timeout_ms, bool silent) {
+                                        uint32_t timeout_ms, bool silent,
+                                        std::optional<rpc_error_policy::CallerIntent> intent) {
     if (!ready_to_send(method.c_str())) {
         // Invoke error callback synchronously so callers (panels with
         // in_flight flags, etc.) see immediate failure instead of a stuck
@@ -1199,7 +1200,7 @@ RequestId MoonrakerClient::send_jsonrpc(const std::string& method, const json& p
         }
         return INVALID_REQUEST_ID;
     }
-    return tracker_.send(*this, method, params, success_cb, error_cb, timeout_ms, silent);
+    return tracker_.send(*this, method, params, success_cb, error_cb, timeout_ms, silent, intent);
 }
 
 int MoonrakerClient::gcode_script(const std::string& gcode) {
