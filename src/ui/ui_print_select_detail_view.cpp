@@ -21,6 +21,7 @@
 #include "config.h"
 #include "display_settings_manager.h"
 #include "gcode_parser.h"
+#include "http_executor.h"
 #include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
@@ -480,6 +481,82 @@ void PrintSelectDetailView::hide() {
 }
 
 // ============================================================================
+// Shared G-code Download (one file + one download for scan + viewer preview)
+// ============================================================================
+
+std::string PrintSelectDetailView::canonical_gcode_path() const {
+    // Hash the FULL relative path (not just the filename) so same-name files
+    // in different directories never collide on one temp file.
+    const std::string file_path =
+        current_path_.empty() ? current_filename_ : current_path_ + "/" + current_filename_;
+    return get_helix_cache_dir("gcode_temp") + "/detail_" +
+           std::to_string(std::hash<std::string>{}(file_path)) + ".gcode";
+}
+
+void PrintSelectDetailView::ensure_gcode_downloaded(
+    std::function<void(bool ok, const std::string& path)> cb) {
+    if (!api_ || get_helix_cache_dir("gcode_temp").empty()) {
+        spdlog::warn("[DetailView] No API or cache dir for shared G-code download");
+        cb(false, {});
+        return;
+    }
+    const std::string path = canonical_gcode_path();
+
+    // 1. A transfer is already running — join it. Checked BEFORE the disk
+    //    probe: the in-flight file is partially written, and a non-empty
+    //    tellg() on it must not be mistaken for a complete copy.
+    if (gcode_download_in_flight_) {
+        gcode_download_waiters_.push_back(std::move(cb));
+        return;
+    }
+
+    // 2. Already on disk (cached from a previous open of this file).
+    if (std::ifstream f(path, std::ios::binary | std::ios::ate); f && f.tellg() > 0) {
+        cb(true, path);
+        return;
+    }
+
+    // 3. Start the single shared transfer; later callers join via 1.
+    gcode_download_in_flight_ = true;
+    gcode_download_waiters_.push_back(std::move(cb));
+    const std::string file_path =
+        current_path_.empty() ? current_filename_ : current_path_ + "/" + current_filename_;
+    auto tok = lifetime_.token();
+    api_->transfers().download_file_to_path(
+        "gcodes", file_path, path,
+        [this, tok](const std::string& local) {
+            // HTTP thread — marshal member writes + waiter fan-out to the
+            // main thread (no bg-thread `this` access, L081 Mechanism C).
+            tok.defer("DetailView::gcode_shared_download_done", [this, local]() {
+                // Retire the previous file's temp copy (kept from the old
+                // pre-download cleanup) and adopt this one for teardown.
+                if (!temp_gcode_path_.empty() && temp_gcode_path_ != local) {
+                    std::remove(temp_gcode_path_.c_str());
+                }
+                temp_gcode_path_ = local;
+                gcode_download_in_flight_ = false;
+                auto waiters = std::move(gcode_download_waiters_);
+                gcode_download_waiters_.clear();
+                for (auto& w : waiters)
+                    w(true, local);
+            });
+        },
+        [this, tok, path](const MoonrakerError& err) {
+            tok.defer("DetailView::gcode_shared_download_fail", [this, err, path]() {
+                spdlog::warn("[DetailView] Shared G-code download failed: {}", err.message);
+                // Drop any partial file the failed transfer left behind so a
+                // later open doesn't mistake it for a complete cached copy.
+                std::remove(path.c_str());
+                gcode_download_in_flight_ = false;
+                auto waiters = std::move(gcode_download_waiters_);
+                gcode_download_waiters_.clear();
+                for (auto& w : waiters)
+                    w(false, {});
+            });
+        });
+}
+
+// ============================================================================
 // Lifecycle Hooks (called by NavigationManager)
 // ============================================================================
 
@@ -627,6 +704,16 @@ void PrintSelectDetailView::on_ui_destroyed() {
         std::remove(temp_gcode_path_.c_str());
         temp_gcode_path_.clear();
     }
+
+    // A shared download still in flight for the destroyed session can no
+    // longer deliver (its deferred completion was dropped with the token
+    // above) and leaves a partial file behind. Drop the waiters so a fresh
+    // open starts a new transfer instead of joining a dead one, and remove
+    // the canonical file — temp_gcode_path_ above only tracks a COMPLETED
+    // download, so the in-flight partial needs its own removal.
+    gcode_download_in_flight_ = false;
+    gcode_download_waiters_.clear();
+    std::remove(canonical_gcode_path().c_str());
 
     // Null all child widget pointers (widget tree already deleted by base class)
     // Note: parent_screen_ is NOT nulled — it's the parent screen (not a child
@@ -1315,6 +1402,65 @@ void PrintSelectDetailView::fire_on_preflight_ready() {
     }
 }
 
+void PrintSelectDetailView::finish_scan(LifetimeToken tok, std::set<int> tools) {
+    // Marshals the final state back to the main thread (LVGL + member
+    // writes). Callable from any thread — `this` is only dereferenced inside
+    // the deferred body.
+    tok.defer("DetailView::headless_scan_finish", [this, tools = std::move(tools)]() mutable {
+        headless_tools_used_ = std::move(tools);
+        headless_scan_done_ = true;
+        spdlog::debug("[DetailView] Headless tools_used scan complete: {} tools",
+                      headless_tools_used_->size());
+
+        // Render the per-tool color swatches from the REAL used-tool
+        // set recovered by the headless scan. On 2D-only platforms
+        // (Snapmaker U1, AD5M) the gcode viewer never parses, so
+        // try_extract_gcode_colors() — the viewer-parse owner of this
+        // render — never fires and the detail panel would otherwise
+        // show no color info at all (regression 22d37fd47). Mirror its
+        // visibility decision and renderer here, sourcing the tool set
+        // from tools_used_effective() so the swatches reflect the
+        // precise used tools (e.g. {0,2}), not an over-counted palette.
+        //
+        // Guard on !is_gcode_loaded(): when the viewer DID parse (full
+        // platforms) it already owns the render — don't double-fire.
+        if (!is_gcode_loaded()) {
+            const bool mapping_visible = filament_mapping_card_.should_show();
+            const auto tools_used = tools_used_effective();
+            const bool swatches_visible =
+                !mapping_visible && swatches_card_visible_for(tools_used.size());
+            lv_subject_set_int(&color_swatches_visible_, swatches_visible ? 1 : 0);
+            if (swatches_visible) {
+                update_color_swatches(tools_used, current_filament_colors_);
+            }
+            // Refresh the mapping card's DISPLAY from the headless
+            // colors. Still required for editable-card backends that
+            // use the headless path (e.g. CFS on a 2D-only platform):
+            // the card widget renders its own swatches/rows from
+            // tool_info_, so it must be fed here just as the
+            // viewer-parse path does (try_extract_gcode_colors).
+            //
+            // NOTE: this is now redundant for preflight/remap LOGIC —
+            // recompute_preflight() and open_remap_modal() source
+            // per-tool info from current_filament_colors_/materials
+            // directly (get_used_tool_info()), not the card instance —
+            // but it remains correct and necessary for card display.
+            filament_mapping_card_.update(current_filament_colors_, current_filament_materials_);
+        }
+
+        // Refresh pre-flight using the headless set (no-op on full
+        // platforms where the viewer parse already populated it).
+        recompute_preflight();
+
+        // Restrict the mapping card to the tools this file actually uses,
+        // sourced from the headless scan result. Empty/unknown ⇒ show all.
+        filament_mapping_card_.set_used_tools(tools_used_effective());
+
+        // Release any deferred print attempt waiting on readiness.
+        fire_on_preflight_ready();
+    });
+}
+
 void PrintSelectDetailView::kick_off_headless_tools_scan() {
     headless_scan_done_ = false;
     headless_tools_used_.reset();
@@ -1326,101 +1472,35 @@ void PrintSelectDetailView::kick_off_headless_tools_scan() {
         return;
     }
 
-    const std::string file_path =
-        current_path_.empty() ? current_filename_ : current_path_ + "/" + current_filename_;
-
-    std::string cache_dir = get_helix_cache_dir("gcode_temp");
-    if (cache_dir.empty()) {
-        spdlog::warn("[DetailView] No cache dir for headless tools scan — degrading gracefully");
-        headless_scan_done_ = true;
-        return;
-    }
-    const std::string scan_path =
-        cache_dir + "/tools_scan_" + std::to_string(std::hash<std::string>{}(file_path)) + ".gcode";
-
     auto tok = lifetime_.token();
+    const std::string path = canonical_gcode_path();
 
-    // Marshals the final state back to the main thread (LVGL + member writes).
-    auto finish = [this, tok](std::set<int> tools) {
-        tok.defer("DetailView::headless_scan_finish", [this, tools = std::move(tools)]() mutable {
-            headless_tools_used_ = std::move(tools);
-            headless_scan_done_ = true;
-            spdlog::debug("[DetailView] Headless tools_used scan complete: {} tools",
-                          headless_tools_used_->size());
+    // Early-exit stop set (full slicer palette): once every palette tool has
+    // been seen the result can't grow — stop reading. Tools beyond the
+    // palette are dropped by every downstream consumer anyway.
+    std::set<int> stop_set;
+    for (size_t i = 0; i < current_filament_colors_.size(); ++i) {
+        stop_set.insert(static_cast<int>(i));
+    }
 
-            // Render the per-tool color swatches from the REAL used-tool
-            // set recovered by the headless scan. On 2D-only platforms
-            // (Snapmaker U1, AD5M) the gcode viewer never parses, so
-            // try_extract_gcode_colors() — the viewer-parse owner of this
-            // render — never fires and the detail panel would otherwise
-            // show no color info at all (regression 22d37fd47). Mirror its
-            // visibility decision and renderer here, sourcing the tool set
-            // from tools_used_effective() so the swatches reflect the
-            // precise used tools (e.g. {0,2}), not an over-counted palette.
-            //
-            // Guard on !is_gcode_loaded(): when the viewer DID parse (full
-            // platforms) it already owns the render — don't double-fire.
-            if (!is_gcode_loaded()) {
-                const bool mapping_visible = filament_mapping_card_.should_show();
-                const auto tools_used = tools_used_effective();
-                const bool swatches_visible =
-                    !mapping_visible && swatches_card_visible_for(tools_used.size());
-                lv_subject_set_int(&color_swatches_visible_, swatches_visible ? 1 : 0);
-                if (swatches_visible) {
-                    update_color_swatches(tools_used, current_filament_colors_);
-                }
-                // Refresh the mapping card's DISPLAY from the headless
-                // colors. Still required for editable-card backends that
-                // use the headless path (e.g. CFS on a 2D-only platform):
-                // the card widget renders its own swatches/rows from
-                // tool_info_, so it must be fed here just as the
-                // viewer-parse path does (try_extract_gcode_colors).
-                //
-                // NOTE: this is now redundant for preflight/remap LOGIC —
-                // recompute_preflight() and open_remap_modal() source
-                // per-tool info from current_filament_colors_/materials
-                // directly (get_used_tool_info()), not the card instance —
-                // but it remains correct and necessary for card display.
-                filament_mapping_card_.update(current_filament_colors_,
-                                              current_filament_materials_);
-            }
-
-            // Refresh pre-flight using the headless set (no-op on full
-            // platforms where the viewer parse already populated it).
-            recompute_preflight();
-
-            // Restrict the mapping card to the tools this file actually uses,
-            // sourced from the headless scan result. Empty/unknown ⇒ show all.
-            filament_mapping_card_.set_used_tools(tools_used_effective());
-
-            // Release any deferred print attempt waiting on readiness.
-            fire_on_preflight_ready();
+    // ONE shared transfer (the viewer preview joins it — no second download).
+    // Once the file is on disk, scan it line-by-line on the slow HTTP lane:
+    // off the main thread, memory-safe (the scanner never holds the whole
+    // file), result marshaled back by finish_scan via tok.defer. The shared
+    // file is NOT deleted here — the viewer preview reads the same copy until
+    // view teardown.
+    ensure_gcode_downloaded([this, tok, path, stop_set](bool ok, const std::string&) mutable {
+        if (!ok) {
+            // Download failed — degrade gracefully with an empty set.
+            spdlog::debug("[DetailView] Headless tools scan: no G-code file - degrading");
+            finish_scan(tok, {});
+            return;
+        }
+        helix::http::HttpExecutor::slow().submit([this, tok, path, stop_set]() mutable {
+            std::set<int> tools = helix::gcode::scan_tools_used_from_file(path, stop_set);
+            finish_scan(tok, std::move(tools));
         });
-    };
-
-    // Stream the whole file to disk (memory-safe), then scan it line-by-line off
-    // the main thread. The scan retains ONLY the int set — no geometry — so it is
-    // safe on constrained devices. download_file_to_path runs on the HTTP slow
-    // lane internally; the success/error callbacks run on the HTTP thread, so we
-    // do the (bg-only, no `this`) scan there and marshal the result via tok.defer.
-    api_->transfers().download_file_to_path(
-        "gcodes", file_path, scan_path,
-        [scan_path, finish](const std::string& path) mutable {
-            // HTTP thread: parse to a LOCAL set (no `this` access), then delete the
-            // temp file. The scanner streams from disk and never holds the whole
-            // file in memory.
-            std::set<int> tools = helix::gcode::scan_tools_used_from_file(path);
-            std::remove(scan_path.c_str());
-            finish(std::move(tools));
-        },
-        [scan_path, finish](const MoonrakerError& err) mutable {
-            // HTTP thread: download failed — degrade gracefully with an empty set.
-            spdlog::warn("[DetailView] Headless tools scan download failed: {} — proceeding "
-                         "without tools_used",
-                         err.message);
-            std::remove(scan_path.c_str());
-            finish({});
-        });
+    });
 }
 
 bool PrintSelectDetailView::swatches_card_visible_for(size_t tool_count) const {
@@ -1487,93 +1567,58 @@ void PrintSelectDetailView::load_gcode_for_preview() {
         return;
     }
 
-    // Generate temp file path with caching
-    std::string cache_dir = get_helix_cache_dir("gcode_temp");
-    if (cache_dir.empty()) {
-        spdlog::warn("[DetailView] No writable cache directory - skipping G-code preview");
-        lv_subject_set_int(&detail_gcode_loading_, 0);
-        show_gcode_viewer(false);
-        return;
-    }
-    std::string temp_path = cache_dir + "/detail_preview_" +
-                            std::to_string(std::hash<std::string>{}(current_filename_)) + ".gcode";
-
-    // Check if file already exists and is non-empty (cached from previous session)
-    std::ifstream cached_file(temp_path, std::ios::binary | std::ios::ate);
-    if (cached_file && cached_file.tellg() > 0) {
-        size_t cached_size = static_cast<size_t>(cached_file.tellg());
-        cached_file.close();
-
-        if (helix::is_gcode_2d_streaming_safe(cached_size)) {
-            spdlog::info("[DetailView] Using cached G-code file ({} bytes): {}", cached_size,
-                         temp_path);
-            temp_gcode_path_ = temp_path;
-
-            // Set up load callback and load the file
-            ui_gcode_viewer_set_load_callback(
-                gcode_viewer_,
-                [](lv_obj_t* viewer, void* user_data, bool success) {
-                    auto* self = static_cast<PrintSelectDetailView*>(user_data);
-                    if (!success) {
-                        spdlog::warn("[DetailView] G-code load failed from cache");
-                        self->show_gcode_viewer(false);
-                        return;
-                    }
-                    self->gcode_loaded_ = true;
-
-                    // Show all layers, no ghost (preview = full model)
-                    ui_gcode_viewer_set_print_progress(viewer, -1);
-
-                    // Apply preview colors respecting the sliced/actual toggle
-                    // (default actual: AMS/slicer base then mapped overrides).
-                    self->apply_preview_colors();
-
-                    // Extract colors from parsed gcode when metadata lacked them.
-                    // This also computes preflight_result_ — it MUST run before
-                    // fire_on_loaded() so any deferred print-attempt sees fresh checks.
-                    self->try_extract_gcode_colors(viewer);
-
-                    // Parse + pre-flight are now complete: release any deferred
-                    // run_when_loaded() callback (e.g. a print tapped pre-parse).
-                    self->fire_on_loaded();
-                    // The viewer parse also satisfies pre-flight readiness on full
-                    // platforms — release any run_when_preflight_ready() attempt.
-                    self->fire_on_preflight_ready();
-
-                    // Unpause, show, then reset camera (must be visible for layout)
-                    ui_gcode_viewer_set_paused(viewer, false);
-                    self->show_gcode_viewer(true);
-                    lv_obj_update_layout(viewer);
-                    ui_gcode_viewer_reset_camera(viewer);
-
-                    spdlog::debug("[DetailView] G-code preview loaded from cache");
-                },
-                this);
-            ui_gcode_viewer_load_file(gcode_viewer_, temp_path.c_str());
-            return;
-        } else {
-            spdlog::debug("[DetailView] Cached file too large for streaming, removing");
-            std::remove(temp_path.c_str());
-        }
-    }
-
-    // Build full relative path for metadata lookup and download
-    std::string file_path =
-        current_path_.empty() ? current_filename_ : current_path_ + "/" + current_filename_;
-    std::string metadata_filename = file_path;
-
     auto tok = lifetime_.token();
 
+    // Shared download FIRST: when the file is already on disk the viewer
+    // loads immediately — no wait on the metadata round-trip (preserves the
+    // old cached-file fast path). On a cold open this starts the ONE
+    // transfer the headless tools scan joins. The streaming-safety gate
+    // applies to the on-disk bytes either way (same size metadata.size
+    // reports); the metadata gate below re-checks the authoritative size on
+    // cold downloads.
+    ensure_gcode_downloaded([this, tok](bool ok, const std::string& path) {
+        if (!ok) {
+            spdlog::debug("[DetailView] Shared G-code download unavailable - using thumbnail");
+            show_gcode_viewer(false);
+            return;
+        }
+
+        std::ifstream f(path, std::ios::binary | std::ios::ate);
+        const std::streampos end_pos = f ? f.tellg() : std::streampos(0);
+        const size_t local_size = end_pos > 0 ? static_cast<size_t>(end_pos) : 0;
+        if (!helix::is_gcode_2d_streaming_safe(local_size)) {
+            auto mem = helix::get_system_memory_info();
+            spdlog::warn("[DetailView] G-code too large for streaming: file={} bytes, "
+                         "available RAM={}MB - using thumbnail",
+                         local_size, mem.available_mb());
+            show_gcode_viewer(false);
+            return;
+        }
+
+        temp_gcode_path_ = path; // adopted for teardown cleanup, as before
+        spdlog::info("[DetailView] Using G-code file ({} bytes): {}", local_size, path);
+        begin_viewer_load(path);
+    });
+
+    // Metadata fetch (parallel, as today): populates cached_file_metadata_
+    // for PrintStartController's pre-print checks (e.g. filament weight) and
+    // re-checks the streaming-safety gate against the authoritative size.
+    const std::string file_path =
+        current_path_.empty() ? current_filename_ : current_path_ + "/" + current_filename_;
+
     api_->files().get_file_metadata(
-        metadata_filename,
-        [this, tok, temp_path, file_path](const FileMetadata& metadata) {
+        file_path,
+        [this, tok](const FileMetadata& metadata) {
             // L081 Mechanism C: marshal member writes + LVGL/show_gcode_viewer
             // to main thread before touching `this`.
-            tok.defer("DetailView::metadata_apply", [this, tok, metadata, temp_path, file_path]() {
+            tok.defer("DetailView::metadata_apply", [this, metadata]() {
                 // Cache for PrintStartController's pre-print checks (e.g., filament weight)
                 cached_file_metadata_ = metadata;
 
-                // Check if file is safe to render given available RAM
+                // Check if file is safe to render given available RAM. When
+                // the shared file already loaded this same size passed the
+                // local gate above, so this only bites on the paths where the
+                // ensure-callback hadn't resolved yet.
                 if (!helix::is_gcode_2d_streaming_safe(metadata.size)) {
                     auto mem = helix::get_system_memory_info();
                     spdlog::warn("[DetailView] G-code too large for streaming: file={} bytes, "
@@ -1582,82 +1627,7 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                     show_gcode_viewer(false);
                     return;
                 }
-
-                spdlog::debug("[DetailView] G-code size {} bytes - safe to render, downloading...",
-                              metadata.size);
-
-                // Clean up previous temp file if different
-                if (!temp_gcode_path_.empty() && temp_gcode_path_ != temp_path) {
-                    std::remove(temp_gcode_path_.c_str());
-                    temp_gcode_path_.clear();
-                }
-
-                // Stream download to disk
-                api_->transfers().download_file_to_path(
-                    "gcodes", file_path, temp_path,
-                    [this, tok, temp_path](const std::string& path) {
-                        // Runs on HTTP thread — no bg-thread tok.expired() check (L081 Mechanism
-                        // C). tok.defer() marshals the body to the main thread and re-checks the
-                        // generation there, which is what gates the member access below.
-                        tok.defer("DetailView::gcode_downloaded", [this, path]() {
-                            temp_gcode_path_ = path;
-
-                            spdlog::debug("[DetailView] G-code downloaded, loading into viewer: {}",
-                                          path);
-
-                            // Set up load callback
-                            ui_gcode_viewer_set_load_callback(
-                                gcode_viewer_,
-                                [](lv_obj_t* viewer, void* user_data, bool success) {
-                                    auto* self = static_cast<PrintSelectDetailView*>(user_data);
-                                    if (!success) {
-                                        spdlog::warn(
-                                            "[DetailView] G-code load failed after download");
-                                        self->show_gcode_viewer(false);
-                                        return;
-                                    }
-                                    self->gcode_loaded_ = true;
-
-                                    // Show all layers, no ghost (preview = full model)
-                                    ui_gcode_viewer_set_print_progress(viewer, -1);
-
-                                    // Apply preview colors respecting the sliced/actual toggle.
-                                    self->apply_preview_colors();
-
-                                    // Extract colors from parsed gcode when metadata lacked them.
-                                    // Also computes preflight_result_ — MUST run before
-                                    // fire_on_loaded() so a deferred print sees fresh checks.
-                                    self->try_extract_gcode_colors(viewer);
-
-                                    // Parse + pre-flight complete: release any deferred
-                                    // run_when_loaded() callback (e.g. a pre-parse print tap).
-                                    self->fire_on_loaded();
-                                    // Viewer parse also satisfies pre-flight readiness
-                                    // on full platforms.
-                                    self->fire_on_preflight_ready();
-
-                                    // Unpause, show, then reset camera (must be visible for layout)
-                                    ui_gcode_viewer_set_paused(viewer, false);
-                                    self->show_gcode_viewer(true);
-                                    lv_obj_update_layout(viewer);
-                                    ui_gcode_viewer_reset_camera(viewer);
-
-                                    spdlog::debug(
-                                        "[DetailView] G-code preview loaded successfully");
-                                },
-                                this);
-
-                            // Load into viewer
-                            ui_gcode_viewer_load_file(gcode_viewer_, path.c_str());
-                        });
-                    },
-                    [this, tok](const MoonrakerError& err) {
-                        // Runs on HTTP thread — no bg-thread tok.expired() check (L081 Mechanism
-                        // C); tok.defer() re-checks on the main thread instead.
-                        spdlog::warn("[DetailView] Failed to download G-code: {}", err.message);
-                        tok.defer("DetailView::gcode_download_error",
-                                  [this]() { show_gcode_viewer(false); });
-                    });
+                spdlog::debug("[DetailView] G-code size {} bytes - metadata cached", metadata.size);
             });
         },
         [this, tok](const MoonrakerError& err) {
@@ -1670,6 +1640,51 @@ void PrintSelectDetailView::load_gcode_for_preview() {
         },
         true // silent
     );
+}
+
+void PrintSelectDetailView::begin_viewer_load(const std::string& path) {
+    // Set up the (single) load callback, then load the file. The body was
+    // identical in the former cached-file and post-download paths.
+    ui_gcode_viewer_set_load_callback(
+        gcode_viewer_,
+        [](lv_obj_t* viewer, void* user_data, bool success) {
+            auto* self = static_cast<PrintSelectDetailView*>(user_data);
+            if (!success) {
+                spdlog::warn("[DetailView] G-code load failed");
+                self->show_gcode_viewer(false);
+                return;
+            }
+            self->gcode_loaded_ = true;
+
+            // Show all layers, no ghost (preview = full model)
+            ui_gcode_viewer_set_print_progress(viewer, -1);
+
+            // Apply preview colors respecting the sliced/actual toggle
+            // (default actual: AMS/slicer base then mapped overrides).
+            self->apply_preview_colors();
+
+            // Extract colors from parsed gcode when metadata lacked them.
+            // This also computes preflight_result_ — it MUST run before
+            // fire_on_loaded() so any deferred print-attempt sees fresh checks.
+            self->try_extract_gcode_colors(viewer);
+
+            // Parse + pre-flight are now complete: release any deferred
+            // run_when_loaded() callback (e.g. a print tapped pre-parse).
+            self->fire_on_loaded();
+            // The viewer parse also satisfies pre-flight readiness on full
+            // platforms — release any run_when_preflight_ready() attempt.
+            self->fire_on_preflight_ready();
+
+            // Unpause, show, then reset camera (must be visible for layout)
+            ui_gcode_viewer_set_paused(viewer, false);
+            self->show_gcode_viewer(true);
+            lv_obj_update_layout(viewer);
+            ui_gcode_viewer_reset_camera(viewer);
+
+            spdlog::debug("[DetailView] G-code preview loaded successfully");
+        },
+        this);
+    ui_gcode_viewer_load_file(gcode_viewer_, path.c_str());
 }
 
 // ============================================================================

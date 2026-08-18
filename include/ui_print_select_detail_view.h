@@ -554,6 +554,14 @@ class PrintSelectDetailView : public OverlayBase {
     // preflight_result_ is fresh, then cleared. Reset on show().
     std::function<void()> on_loaded_cb_;
 
+    // --- Shared gcode download (ONE file + ONE download per open) ---
+    // The headless tools scan and the viewer preview share a single canonical
+    // file (canonical_gcode_path()) and a single in-flight transfer;
+    // concurrent callers queue in gcode_download_waiters_ and are fanned out
+    // (main thread) when the transfer resolves.
+    bool gcode_download_in_flight_ = false;
+    std::vector<std::function<void(bool, std::string)>> gcode_download_waiters_;
+
     // --- Headless tools_used scan (works on ALL platforms incl. 2D-only) ---
     // The visual gcode viewer does NOT parse on 2D-only platforms (Snapmaker U1,
     // AD5M, small screens), so tools_used and the pre-flight "ready" signal must
@@ -642,6 +650,49 @@ class PrintSelectDetailView : public OverlayBase {
     void load_gcode_for_preview();
 
     /**
+     * @brief Canonical shared download path for the current file's gcode
+     *
+     * `<cache>/gcode_temp/detail_<hash(full relative path)>.gcode` — hashed on
+     * the FULL path (dir + filename), so same-name files in different
+     * directories never collide. The headless tools scan and the viewer
+     * preview load from this ONE file.
+     */
+    [[nodiscard]] std::string canonical_gcode_path() const;
+
+    /**
+     * @brief Invoke @p cb (main thread) once the current file's gcode is on disk
+     *
+     * Single shared download: the in-flight transfer is joined (waiters) before
+     * the disk probe — the mid-write file must not be mistaken for a complete
+     * copy. A disk hit fires cb synchronously; otherwise the first caller
+     * starts ONE transfer and concurrent callers are fanned out when it
+     * resolves (main thread). ok=false on download error / no API / no cache
+     * dir.
+     */
+    void ensure_gcode_downloaded(std::function<void(bool ok, const std::string& path)> cb);
+
+    /**
+     * @brief Point the viewer at @p path and start loading it
+     *
+     * Installs the (single) load callback and kicks off the parse. The
+     * callback body — progress reset, preview colors, color extraction,
+     * preflight readiness, reveal — was identical in the former cached-file
+     * and post-download paths; it lives here once now.
+     */
+    void begin_viewer_load(const std::string& path);
+
+    /**
+     * @brief Apply a finished headless tools-scan result (callable from any thread)
+     *
+     * Marshals via tok.defer — `this` is only touched inside the deferred
+     * body (main thread), where the result is stored, the color swatches are
+     * rendered (2D-only platforms), pre-flight is recomputed, the mapping
+     * card is restricted, and any deferred preflight-ready attempt is
+     * released.
+     */
+    void finish_scan(LifetimeToken tok, std::set<int> tools);
+
+    /**
      * @brief Show or hide the gcode viewer
      *
      * Sets detail_gcode_viewer_mode_ subject to control XML visibility bindings.
@@ -680,14 +731,17 @@ class PrintSelectDetailView : public OverlayBase {
     /**
      * @brief Start the headless tools_used scan for the current file.
      *
-     * Streams the gcode to a temp file via the file-transfer API (off the main
-     * thread, memory-safe — never holds the whole file), runs a lightweight
-     * Tn-only line scan, then marshals the result back to the main thread. On
-     * completion sets headless_tools_used_ + headless_scan_done_ and runs
-     * recompute_preflight() + fire_on_preflight_ready(). Runs on ALL platforms;
-     * it is the readiness signal the gate uses on 2D-only (where the viewer
-     * never parses). Degrades gracefully: a download/scan failure still marks the
-     * scan done (with an empty set) so the print can proceed.
+     * Shares the ONE canonical download with the viewer preview
+     * (ensure_gcode_downloaded); once the file is on disk, runs a lightweight
+     * Tn-only line scan on the slow HTTP lane (off the main thread,
+     * memory-safe — never holds the whole file), early-exiting once every
+     * slicer-palette tool has been seen. finish_scan() then marshals the
+     * result back to the main thread: sets headless_tools_used_ +
+     * headless_scan_done_ and runs recompute_preflight() +
+     * fire_on_preflight_ready(). Runs on ALL platforms; it is the readiness
+     * signal the gate uses on 2D-only (where the viewer never parses).
+     * Degrades gracefully: a download/scan failure still marks the scan done
+     * (with an empty set) so the print can proceed.
      */
     void kick_off_headless_tools_scan();
 
