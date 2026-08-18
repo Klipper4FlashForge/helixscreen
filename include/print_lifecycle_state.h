@@ -25,6 +25,19 @@ enum class PrintState {
 };
 
 /**
+ * @brief Derive the UI-level print state from the printer's job state and phase
+ *
+ * The single definition of this mapping. A live pre-print phase outranks the
+ * job state, which is what makes Preparing reachable while print_stats still
+ * holds a previous job's terminal state (a host-side pre-start block runs
+ * before the printer is handed the job at all).
+ *
+ * @param job_state    Moonraker's print_stats.state
+ * @param start_phase  Pre-print phase, 0 when none is running
+ */
+PrintState derive_print_state(helix::PrintJobState job_state, int start_phase);
+
+/**
  * @brief Result of a state transition attempt
  *
  * Carries all the information the UI layer needs to react to a state change
