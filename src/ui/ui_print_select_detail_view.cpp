@@ -1468,11 +1468,13 @@ void PrintSelectDetailView::publish_mapping_ready() {
     lv_subject_set_int(&detail_mapping_ready_, is_preflight_ready() ? 1 : 0);
 }
 
-void PrintSelectDetailView::finish_scan(LifetimeToken tok, std::set<int> tools) {
+void PrintSelectDetailView::finish_scan(LifetimeToken tok, std::set<int> tools,
+                                        bool authoritative) {
     // Marshals the final state back to the main thread (LVGL + member
     // writes). Callable from any thread — `this` is only dereferenced inside
     // the deferred body.
-    tok.defer("DetailView::headless_scan_finish", [this, tools = std::move(tools)]() mutable {
+    tok.defer("DetailView::headless_scan_finish", [this, tools = std::move(tools),
+                                                   authoritative]() mutable {
         headless_tools_used_ = std::move(tools);
         headless_scan_done_ = true;
         spdlog::debug("[DetailView] Headless tools_used scan complete: {} tools",
@@ -1482,13 +1484,21 @@ void PrintSelectDetailView::finish_scan(LifetimeToken tok, std::set<int> tools) 
         // authoritative render below lands in this same deferred tick).
         publish_mapping_ready();
 
-        // Write-through: the scan just made the used set final for this
+        // Write-through, but ONLY when the scan actually read the file
+        // (authoritative): the scan just made the used set final for this
         // (path, size, mtime) — persist so the next open of this file renders
-        // final chips instantly from the cache. tools_used_effective()
+        // final chips instantly from the cache. A degraded finish (download
+        // failed) carries no result at all — persisting its empty set would
+        // cache "no tools" as final truth, and on 2D-only platforms where no
+        // viewer parse ever repairs it the file would show all-tool pills
+        // forever. A SUCCESSFUL scan that found zero tools is a legitimate
+        // single-extruder answer and IS persisted. tools_used_effective()
         // prefers the viewer's parsed set when it exists (same file, same
         // answer), so this is correct on both paths.
-        tools_used_cache_.store(current_file_key(), current_file_size_bytes_,
-                                current_file_modified_, tools_used_effective());
+        if (authoritative) {
+            tools_used_cache_.store(current_file_key(), current_file_size_bytes_,
+                                    current_file_modified_, tools_used_effective());
+        }
 
         // Render the per-tool color swatches from the REAL used-tool
         // set recovered by the headless scan. On 2D-only platforms
@@ -1578,14 +1588,19 @@ void PrintSelectDetailView::kick_off_headless_tools_scan() {
     // view teardown.
     ensure_gcode_downloaded([this, tok, path, stop_set](bool ok, const std::string&) mutable {
         if (!ok) {
-            // Download failed — degrade gracefully with an empty set.
+            // Download failed — degrade gracefully with an empty set. NOT
+            // authoritative: this empty set carries no information about the
+            // file, so finish_scan must not write it to the persistent cache
+            // (it would freeze "no tools" for this file).
             spdlog::debug("[DetailView] Headless tools scan: no G-code file - degrading");
-            finish_scan(tok, {});
+            finish_scan(tok, {}, /*authoritative=*/false);
             return;
         }
         helix::http::HttpExecutor::slow().submit([this, tok, path, stop_set]() mutable {
             std::set<int> tools = helix::gcode::scan_tools_used_from_file(path, stop_set);
-            finish_scan(tok, std::move(tools));
+            // The scan read the real file — its result (even an empty set:
+            // legitimate single-extruder file) is authoritative and persists.
+            finish_scan(tok, std::move(tools), /*authoritative=*/true);
         });
     });
 }

@@ -715,9 +715,15 @@ class PrintSelectDetailView : public OverlayBase {
      * body (main thread), where the result is stored, the color swatches are
      * rendered (2D-only platforms), pre-flight is recomputed, the mapping
      * card is restricted, and any deferred preflight-ready attempt is
-     * released.
+     * released. When @p authoritative is true (the scan actually read the
+     * downloaded file) the result is also written through to the tools-used
+     * cache — including a legitimate empty set (single-extruder file). A
+     * degraded finish (download failed, authoritative=false) must NOT
+     * persist: its empty set carries no information and, on 2D-only
+     * platforms where no viewer parse ever repairs it, would freeze "no
+     * tools" for the file permanently.
      */
-    void finish_scan(LifetimeToken tok, std::set<int> tools);
+    void finish_scan(LifetimeToken tok, std::set<int> tools, bool authoritative);
 
     /**
      * @brief Show or hide the gcode viewer
