@@ -276,6 +276,10 @@ On a portrait screen the defaults differ: Printer Image and Print Status stack f
 | **Firmware Restart** | Restart the Klipper firmware. Useful when Klipper enters SHUTDOWN state. This widget automatically appears during firmware errors even if disabled. | 1x1 | 1x1 | 1x1 | No | — |
 | **Lock Screen** | Locks the screen immediately with PIN protection. Only appears in the Widget Catalog after setting a PIN in Settings > Security. | 1x1 | 1x1 | 1x1 | No | PIN set in Settings |
 
+#### Shutdown/Reboot Widget
+
+The Shutdown/Reboot widget puts one-tap host shutdown/reboot on your home panel — a faster alternative to the **Settings > Advanced** shutdown entry. A confirmation dialog always appears first, so there's no risk of an accidental shutdown. For switching a PSU or smart plug instead, see the **Power** widget above.
+
 
 ### Hardware-Gated Widgets
 

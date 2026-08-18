@@ -1598,23 +1598,28 @@ max_job_count: 100
 ### Wrong printer model identified
 
 **Symptoms:**
-- HelixScreen shows the wrong printer name (for example, a Voron showing as "FlashForge Adventurer 5M Pro")
-- Changing the printer image in Printer Manager doesn't change the name or behavior
+- HelixScreen identifies the printer as the wrong model/type (for example, a Voron showing as "FlashForge Adventurer 5M Pro")
+- Changing the printer image in Printer Manager changes the picture but not the model — features, calibration dialogs, and the name still follow the wrong type
 
-**Causes:**
-- **Device-specific install package on the wrong machine** (most common for this symptom): preset-mode installs — Creality K1, FlashForge Adventurer 5M, and similar — skip printer identification entirely, so the shown name comes from the install package, not from detection
-- On generic installs, auto-detection picked the wrong model from the database
+**What's going on:**
+- The **printer type** (the model picked during setup) drives the name, image, bed size, probe type, and preset options. The image picker in Printer Manager is cosmetic only — it never changes the type.
+- **Device-specific install packages** (Creality K1, FlashForge Adventurer 5M, and similar) run a preset-mode setup that *skips printer identification entirely*: the type comes from the install package itself, not from detection. No setting can override it.
+- On **generic installs**, auto-detection picked the wrong model from the database.
 
 **Solutions:**
 
-**First, figure out which situation you're in.** What did you install, and what is HelixScreen running on? If you used a printer-specific install package that doesn't match the machine (or its screen), that's the cause — detection was never run.
+**First, figure out which situation you're in.** What did you install, and what is HelixScreen running on? If a device-specific preset package doesn't match the machine (or its screen), that's the cause — detection never ran. Install the HelixScreen package built for your hardware, or use the [remote screen setup](../INSTALL.md#remote-screen-setup-run-on-a-separate-device) on a Pi/PC/tablet pointed at your printer's Moonraker — generic installs run full auto-detection.
 
-**If a device-specific preset is the cause:**
-- No setting in HelixScreen can override the preset. Install the HelixScreen package built for your hardware, or use the [remote screen setup](../INSTALL.md#remote-screen-setup-run-on-a-separate-device) on a Pi/PC/tablet pointed at your printer's Moonraker — generic installs run full auto-detection.
+**If auto-detection guessed wrong (generic install), re-identify without wiping anything:**
 
-**If auto-detection guessed wrong (generic install):**
-- The model pick lives in the setup wizard's **Printer Setup: Identity** step, not in Printer Manager. Re-run the wizard via **Settings > System > Factory Reset** and pick your model by hand. Voron 2.4, Voron 0.2, Voron Trident, and Voron Switchwire are all in the database.
-- If your model isn't in the database, leave it on the detected/generic profile — everything still works; you can rename the printer and set any image from Printer Manager.
+1. Enable the printer switcher: **Settings > Printers > Show printer icon in navigation bar**
+2. Open **Printer Manager > Manage Printers** and tap **+ Add Printer**
+3. The setup wizard runs for the new printer entry — at the **Printer Setup: Identity** step, pick your model by hand (Voron 2.4, Voron 0.2, Voron Trident, and Voron Switchwire are all in the database)
+4. Switch to the new entry, then delete the misidentified one from Manage Printers
+
+**Settings > System > Factory Reset** also re-runs the wizard, but it wipes all HelixScreen settings — use it only if you want a clean start anyway. Prefer the add-printer path above.
+
+If your model isn't in the database, leave it on the detected/generic profile — everything still works; you can rename the printer and set any image from Printer Manager.
 
 ### First-run wizard keeps appearing
 
