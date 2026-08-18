@@ -128,9 +128,30 @@ void register_spy_component() {
         "<component><view extends=\"lv_obj\" width=\"100%\" height=\"100%\"/></component>");
 }
 
+/// The panel geometry every test in this file lays out on, and the track counts
+/// GridLayout quantises it to.
+///
+/// Derived, never pinned. get_cols()/get_rows() return TRACKS - a cell is
+/// GridLayout::TRACKS_PER_CELL of them - and they quantise from the content
+/// rectangle, so GRID_CELL or the quantiser moving changes these numbers. The
+/// bundle's Pi happened to land on 6x4 cells; hard-coding that would make the
+/// "the anchor fills the grid exactly" premise silently false the next time
+/// either moves, and every GridFull assertion below would keep passing while
+/// testing nothing.
+constexpr int kPanelW = 800;
+constexpr int kPanelH = 480;
+
+int grid_cols() {
+    return GridLayout::get_cols(UiBreakpoint::Medium, kPanelW, kPanelH);
+}
+int grid_rows() {
+    return GridLayout::get_rows(UiBreakpoint::Medium, kPanelW, kPanelH);
+}
+
 /// Two-page layout whose page 1 (a secondary page — no registry-default append)
-/// holds a 6x4 `printer_image` anchored at the origin, which occupies every cell
-/// of the landscape grid, plus a 1x1 `shutdown` at the supplied position. The
+/// holds a `printer_image` anchored at the origin and spanning the whole grid,
+/// so it occupies every cell, plus a one-cell `shutdown` at the supplied
+/// position (spans are in tracks, so one cell is TRACKS_PER_CELL of them). The
 /// anchored pass runs in entry order, so `printer_image` claims the grid and
 /// `shutdown` always falls through to auto-place and fails with GridFull.
 nlohmann::json make_full_grid_layout(int shutdown_col, int shutdown_row) {
@@ -139,14 +160,14 @@ nlohmann::json make_full_grid_layout(int shutdown_col, int shutdown_row) {
                        {"enabled", true},
                        {"col", 0},
                        {"row", 0},
-                       {"colspan", 6},
-                       {"rowspan", 4}});
+                       {"colspan", grid_cols()},
+                       {"rowspan", grid_rows()}});
     widgets.push_back({{"id", "shutdown"},
                        {"enabled", true},
                        {"col", shutdown_col},
                        {"row", shutdown_row},
-                       {"colspan", 1},
-                       {"rowspan", 1}});
+                       {"colspan", GridLayout::TRACKS_PER_CELL},
+                       {"rowspan", GridLayout::TRACKS_PER_CELL}});
     return nlohmann::json{{"main_page_index", 0},
                           {"next_page_id", 2},
                           {"pages",
@@ -234,8 +255,12 @@ class GridFullFixture : public XMLTestFixture {
         REQUIRE(bp_subj != nullptr);
         REQUIRE(bp_subj->type == LV_SUBJECT_TYPE_INT);
         lv_subject_set_int(bp_subj, to_int(UiBreakpoint::Medium));
-        REQUIRE(GridLayout::get_cols(UiBreakpoint::Medium) == 6);
-        REQUIRE(GridLayout::get_rows(UiBreakpoint::Medium) == 4);
+        // The premise is an anchor that fills the grid exactly, which
+        // make_full_grid_layout() builds from these same two calls. Assert only
+        // that the grid is big enough to hold a cell at all, so a quantiser
+        // change surfaces here rather than as a mystery placement success.
+        REQUIRE(grid_cols() >= GridLayout::TRACKS_PER_CELL);
+        REQUIRE(grid_rows() >= GridLayout::TRACKS_PER_CELL);
     }
     ~GridFullFixture() override {
         LayoutManagerTestAccess::reset(helix::LayoutManager::instance());
@@ -252,7 +277,13 @@ class GridFullFixture : public XMLTestFixture {
         GridFullSpyWidget::reset();
 
         lv_obj_t* container = lv_obj_create(test_screen());
-        lv_obj_set_size(container, 800, 480);
+        // Zero the chrome so the CONTENT rect is exactly kPanelW x kPanelH: that
+        // is the rectangle grid_cols()/grid_rows() quantise, and the manager
+        // quantises the content rect. Left at the theme's default padding the
+        // two disagree and the anchor no longer spans the grid it is placed on.
+        lv_obj_set_style_pad_all(container, 0, 0);
+        lv_obj_set_style_border_width(container, 0, 0);
+        lv_obj_set_size(container, kPanelW, kPanelH);
         process_lvgl(10);
         auto widgets = mgr.populate_widgets(panel_id, container, /*page_index=*/1);
         (void)widgets;
@@ -306,9 +337,9 @@ TEST_CASE_METHOD(GridFullFixture, "Eviction from a full grid warns once, not on 
     const std::string panel_id = "test_grid_full_evict_once";
     auto* cfg = Config::get_instance();
     const std::string panel_path = cfg->df() + "panel_widgets/" + panel_id;
-    // (5,3) is inside the anchor's 6x4 footprint, so the saved position is taken
-    // by the time the anchored pass reaches it.
-    cfg->set<nlohmann::json>(panel_path, make_full_grid_layout(/*col=*/5, /*row=*/3));
+    // The last track on each axis is inside the anchor's footprint, so the saved
+    // position is already taken by the time the anchored pass reaches it.
+    cfg->set<nlohmann::json>(panel_path, make_full_grid_layout(grid_cols() - 1, grid_rows() - 1));
 
     relaunch(panel_id);
 
@@ -353,13 +384,15 @@ TEST_CASE_METHOD(GridFullFixture, "An evicted widget returns on its own when a c
     const std::string panel_id = "test_grid_full_returns";
     auto* cfg = Config::get_instance();
     const std::string panel_path = cfg->df() + "panel_widgets/" + panel_id;
-    cfg->set<nlohmann::json>(panel_path, make_full_grid_layout(/*col=*/5, /*row=*/3));
+    cfg->set<nlohmann::json>(panel_path, make_full_grid_layout(grid_cols() - 1, grid_rows() - 1));
 
     relaunch(panel_id);
     REQUIRE(GridFullSpyWidget::s_attached == std::vector<std::string>{"printer_image"});
     warnings.take();
 
-    // Shrink the anchor by one row IN PLACE, leaving whatever populate_widgets()
+    // Shrink the anchor by one whole CELL of rows IN PLACE - freeing a single
+    // track would leave no cell for `shutdown` to occupy - leaving whatever
+    // populate_widgets()
     // persisted for `shutdown` untouched — this must run against the real stored
     // state, not a freshly authored layout.
     nlohmann::json layout = cfg->get<nlohmann::json>(panel_path, nlohmann::json());
@@ -367,7 +400,7 @@ TEST_CASE_METHOD(GridFullFixture, "An evicted widget returns on its own when a c
     bool shrank = false;
     for (auto& w : layout["pages"][1]["widgets"]) {
         if (w["id"] == "printer_image") {
-            w["rowspan"] = 3;
+            w["rowspan"] = grid_rows() - GridLayout::TRACKS_PER_CELL;
             shrank = true;
         }
     }

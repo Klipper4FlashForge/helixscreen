@@ -488,18 +488,19 @@ GuardFixture make_guard_fixture(lv_obj_t* parent, const std::string& panel_id) {
     const int gutter = theme_manager_get_spacing("space_xs");
     REQUIRE(gutter > 0); // see the cwd note on the first test
 
-    const int ncols = GridLayout::get_cols(UiBreakpoint::Medium);
-    const int nrows = GridLayout::get_rows(UiBreakpoint::Medium);
-    REQUIRE(ncols >= 2);
-    REQUIRE(nrows >= 2);
-
-    // 80px cells: the 2x2 widget is then ~160px per side, so its vertical
-    // centre sits ~80px from the top and bottom edges — far outside the grab
-    // band, which keeps the right-edge press below unambiguous rather than a
-    // corner that detect_resize_edge() could resolve to Top or Bottom.
-    constexpr int CELL_PX = 80;
-    const int content_w = ncols * CELL_PX + (ncols - 1) * gutter;
-    const int content_h = nrows * CELL_PX + (nrows - 1) * gutter;
+    // Track counts are quantised from the content rectangle
+    // (GridLayout::get_dimensions()), so the rectangle is the input and the
+    // counts fall out of it — there is no per-breakpoint count to ask for.
+    // 960x640 lands tracks near 80px, so the one-cell widget below is ~160px per
+    // side and its vertical centre sits ~80px from the top and bottom edges —
+    // far outside the grab band, which keeps the right-edge press unambiguous
+    // rather than a corner that detect_resize_edge() could resolve to Top.
+    const int content_w = 960;
+    const int content_h = 640;
+    const int ncols = GridLayout::get_cols(UiBreakpoint::Medium, content_w, content_h);
+    const int nrows = GridLayout::get_rows(UiBreakpoint::Medium, content_w, content_h);
+    REQUIRE(ncols >= GridLayout::TRACKS_PER_CELL);
+    REQUIRE(nrows >= GridLayout::TRACKS_PER_CELL);
 
     GuardFixture f;
     f.panel_id = panel_id;
@@ -510,14 +511,14 @@ GuardFixture make_guard_fixture(lv_obj_t* parent, const std::string& panel_id) {
     lv_obj_set_style_border_width(f.container, 0, 0);
     lv_obj_set_size(f.container, content_w, content_h);
 
-    f.col_dsc = GridLayout::make_col_dsc(UiBreakpoint::Medium);
-    f.row_dsc = GridLayout::make_row_dsc(UiBreakpoint::Medium);
+    f.col_dsc = GridLayout::make_col_dsc(ncols);
+    f.row_dsc = GridLayout::make_row_dsc(nrows);
     lv_obj_set_grid_dsc_array(f.container, f.col_dsc.data(), f.row_dsc.data());
     lv_obj_set_style_pad_column(f.container, gutter, 0);
     lv_obj_set_style_pad_row(f.container, gutter, 0);
 
-    constexpr int COLSPAN = 2;
-    constexpr int ROWSPAN = 2;
+    constexpr int COLSPAN = GridLayout::TRACKS_PER_CELL;
+    constexpr int ROWSPAN = GridLayout::TRACKS_PER_CELL;
     f.widget = lv_obj_create(f.container);
     lv_obj_set_name(f.widget, "temperature");
     lv_obj_remove_flag(f.widget, LV_OBJ_FLAG_SCROLLABLE);

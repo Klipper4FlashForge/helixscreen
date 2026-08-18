@@ -8,8 +8,10 @@
 #include "async_lifetime_guard.h"
 #include "calibration_types.h" // For InputShaperResult
 #include "input_shaper_calibrator.h"
+#include "klipper_config_editor.h"
 #include "overlay_base.h"
 #include "platform_capabilities.h"
+#include "shaper_selection.h"
 #include "subject_managed_panel.h"
 
 #include <algorithm>
@@ -23,6 +25,8 @@ namespace helix {
 class IMoonrakerClient;
 }
 class IMoonrakerAPI;
+
+class InputShaperPanelTestAccess; // test-only friend (tests/test_helpers/)
 
 /**
  * @file ui_panel_input_shaper.h
@@ -41,8 +45,13 @@ class IMoonrakerAPI;
  * ## Klipper Commands Used:
  * - MEASURE_AXES_NOISE: Check accelerometer noise level
  * - SHAPER_CALIBRATE AXIS=X/Y: Run resonance test
- * - SET_INPUT_SHAPER: Apply recommended settings
- * - SAVE_CONFIG: Save settings permanently (restarts Klipper)
+ * - SET_INPUT_SHAPER: Apply settings for the current session only
+ *
+ * Saving is NOT SAVE_CONFIG: that would persist whatever SHAPER_CALIBRATE
+ * staged (the firmware's own recommendation) and ignore the chip the user
+ * picked. Save rewrites [input_shaper] in the printer's config via
+ * KlipperConfigEditor::safe_multi_edit(), which backs the file up and reverts
+ * it if Klipper fails to come back.
  *
  * ## Usage:
  * ```cpp
@@ -181,6 +190,8 @@ class InputShaperPanel : public OverlayBase {
     void handle_chip_y_clicked(int index);
 
   private:
+    friend class InputShaperPanelTestAccess;
+
     // Subject manager for RAII cleanup
     SubjectManager subjects_;
 
@@ -203,7 +214,15 @@ class InputShaperPanel : public OverlayBase {
     void on_preflight_complete(float noise_level);
     void on_preflight_error(const std::string& message);
     void continue_calibrate_all_y();
-    void apply_y_after_x();
+
+    /**
+     * @brief Second half of the X-then-Y apply chain
+     *
+     * Takes the resolved Y values by value: they are worked out synchronously in
+     * apply_recommendation(), before the panel can be reset out from under the
+     * X-apply callback (Save closes the panel and clears the results).
+     */
+    void apply_y_after_x(const std::string& shaper_type, float freq);
 
     // Result callbacks (from IMoonrakerAPI)
     void on_calibration_result(const InputShaperResult& result);
@@ -218,6 +237,34 @@ class InputShaperPanel : public OverlayBase {
     static int get_vibration_quality(float vibrations);
     static const char* get_quality_description(float vibrations);
     void populate_axis_result(char axis, const InputShaperResult& result);
+
+    /**
+     * @brief Write the six result-card display subjects for one axis
+     *
+     * Split out of populate_axis_result() so the card can also follow a chip
+     * selection. Deliberately does NOT touch the comparison table or its
+     * recommended-row highlight - that stays pinned to the firmware's pick.
+     */
+    void update_axis_display(char axis, const std::string& shaper_type, float freq,
+                             float vibrations, float max_accel);
+
+    /**
+     * @brief Re-render an axis result card from its currently selected chip
+     *
+     * Resolves the selected CSV curve back to its console entry (which is where
+     * vibrations/max_accel live) and falls back to the firmware recommendation
+     * when nothing is selected.
+     */
+    void refresh_axis_display(char axis);
+
+    /// Shaper the user has chosen for an axis, falling back to the firmware recommendation.
+    /// Returns false when there is nothing valid to apply.
+    bool resolve_shaper_for_apply(char axis, std::string& out_type, float& out_freq) const;
+
+    /// Same resolution as resolve_shaper_for_apply(), keeping the metrics the
+    /// config write does not need but the caller may. Invalid when the axis has
+    /// no result and no selection.
+    [[nodiscard]] helix::calibration::SelectedShaper selected_shaper_for(char axis) const;
 
     // Widget/client references (overlay_root_ inherited from OverlayBase)
     lv_obj_t* parent_screen_ = nullptr;
@@ -288,7 +335,9 @@ class InputShaperPanel : public OverlayBase {
     lv_subject_t is_y_num_shapers_{};
     /// Chart chips actually backed by a curve, per axis. The XML declares a
     /// fixed MAX_SHAPERS of them, so the surplus must be hidden or they render
-    /// as empty outlines.
+    /// as empty outlines. Separate from num_shapers: the chips come from the CSV
+    /// curves, the table from the console output, and those two lists can
+    /// legitimately differ in length and order.
     lv_subject_t is_x_num_chips_{};
     lv_subject_t is_y_num_chips_{};
 
@@ -320,7 +369,8 @@ class InputShaperPanel : public OverlayBase {
 
     // Calibrate All flow tracking
     bool calibrate_all_mode_ = false; ///< True when doing X+Y sequential calibration
-    InputShaperResult x_result_;      ///< Stored X result when doing Calibrate All
+    InputShaperResult x_result_; ///< Last X axis result (also the stored half of Calibrate All)
+    InputShaperResult y_result_; ///< Last Y axis result
     helix::AsyncLifetimeGuard
         calibration_lifetime_; ///< Generation guard to discard stale calibration callbacks
 
@@ -337,7 +387,7 @@ class InputShaperPanel : public OverlayBase {
         ui_frequency_response_chart_t* chart = nullptr;
         int raw_series_id = -1;
         int shaper_series_ids[MAX_SHAPERS]; // initialized to -1 in constructor
-        bool shaper_visible[MAX_SHAPERS] = {};
+        int selected_shaper = -1;           ///< index into shaper_curves, -1 = none selected
 
         AxisChartData() {
             std::fill(shaper_series_ids, shaper_series_ids + MAX_SHAPERS, -1);
@@ -346,6 +396,15 @@ class InputShaperPanel : public OverlayBase {
 
     AxisChartData x_chart_;
     AxisChartData y_chart_;
+
+    /// Writes [input_shaper] into the printer's config, with backup + revert
+    helix::system::KlipperConfigEditor config_editor_;
+
+    /// How long safe_multi_edit() waits for Klipper to come back after the
+    /// FIRMWARE_RESTART it ends with, before reverting the file. 30s is the
+    /// budget a real MCU reset needs; tests shorten it so the health monitor
+    /// reaches its verdict in about a second.
+    uint32_t save_restart_timeout_ms_ = 30000;
 
     // Freq data availability subjects (gating chart visibility in XML)
     lv_subject_t is_x_has_freq_data_{};
@@ -374,7 +433,15 @@ class InputShaperPanel : public OverlayBase {
     // Chart management helpers
     void populate_chart(char axis, const InputShaperResult& result);
     void clear_chart(char axis);
-    void toggle_shaper_overlay(char axis, int index);
+
+    /**
+     * @brief Make one shaper overlay the active selection for an axis
+     *
+     * True radio behaviour: the previously selected curve is hidden, the new one
+     * shown, and the result card follows the selection. Clicking the already
+     * selected chip is a no-op - there is always exactly one shaper chosen.
+     */
+    void select_shaper_overlay(char axis, int index);
     void create_chart_widgets();
     void update_legend(char axis);
 
