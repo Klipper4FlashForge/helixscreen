@@ -3556,10 +3556,23 @@ gate pipeline: `PrintStartController::run_gates_from()` iterates
    pre-flight block above); a single-tool bypass print skips lane truth entirely — its
    mapped lanes describe filament that is not being printed with
 5. `unresolved_tools` — the color-mismatch dialog above
-6. `material_compatibility` — file material vs. loaded spool. Under an engaged bypass on a
-   single-tool file the comparison target is the **external spool**, not the mapped lanes;
-   the comparison itself is `FilamentMapper::materials_match()`, the same one every other
-   path uses, so a same-family grade change (file sliced ASA-GF, spool ASA) does not warn
+6. `material_compatibility` — file material vs. loaded spool, in two passes. First
+   `FilamentMapper::materials_match()` decides whether the **polymer** is right; anything it
+   rejects is a material mismatch and shows the "Material Mismatch" dialog. What it accepts
+   then goes to `filament::grades_match()`, which decides whether the **grade** is right, and
+   a difference there shows the separate "Filament Grade Mismatch" dialog
+   (`MaterialMismatchDetail::grade_only`). Under an engaged bypass on a single-tool file both
+   passes run against the **external spool** rather than the mapped lanes.
+
+   The grade axis is whether the filament carries solid particles, not what the marketing
+   calls it. `VARIANT_AFFIXES[]` in `src/printer/filament_variants.cpp` carries a `filled`
+   column: CF, GF, AERO, LW, Wood, Marble, Metal and Glow are filled (abrasive and/or
+   flow-altering); `+`, Silk, Matte, HS, HF and HT are not. So a file sliced ASA-GF against a
+   loaded ASA spool warns, PLA against PLA+ does not. The dialog wording is directional -
+   filled filament on an unfilled profile names the hardened-nozzle risk, the reverse only
+   notes it will run slower and hotter than needed. Both are click-through warnings, and
+   neither changes what the mapper ROUTES: `materials_match()` still treats the two grades as
+   interchangeable when picking a lane
 
 The two bypass suppressions this section describes are entries in that list: gate 4
 (`required_filament_present`) and gate 5 (`unresolved_tools`, whose `unresolved_tools_in()`

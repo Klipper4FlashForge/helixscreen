@@ -1015,6 +1015,7 @@ translations:
   Filament: Filament
   Filament Detected: Filament Detected
   Filament Environment: Filament Environment
+  Filament Grade Mismatch: Filament Grade Mismatch
   Filament In The Toolhead: Filament In The Toolhead
   Filament Mapping: Filament Mapping
   Filament Runout: Filament Runout
@@ -2601,6 +2602,8 @@ translations:
   The filament system reported an error: The filament system reported an error
   The heater will cycle on and off several times.: The heater will cycle on and off
     several times.
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2628,6 +2631,7 @@ translations:
   Theme changes apply after restart.: Theme changes apply after restart.
   Theme reset to defaults: Theme reset to defaults
   'Theme: ': 'Theme: '
+  'These tools have a different filament grade loaded:': 'These tools have a different filament grade loaded:'
   'These tools have incompatible materials loaded:': 'These tools have incompatible
     materials loaded:'
   'These tools have no filament loaded:': 'These tools have no filament loaded:'
@@ -2646,6 +2650,7 @@ translations:
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?
   This file was sliced for {} but {} is loaded.: This file was sliced for {} but {}
     is loaded.
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.
   This is exactly the data that will be sent: This is exactly the data that will be
     sent
   This is what data would be sent if enabled: This is what data would be sent if enabled
