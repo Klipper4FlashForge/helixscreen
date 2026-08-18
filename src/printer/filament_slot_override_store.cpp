@@ -1799,8 +1799,10 @@ MergeResult merge_override(SlotInfo& slot, const FilamentSlotOverride& o,
     }
     // Rule 2 — eject signal, setting-gated. Only meaningful where firmware
     // reports ids while loaded (AFC, Happy Hare): there, 0/null is the eject
-    // the plugin itself writes. Elsewhere firmware never reports ids and 0 is
-    // the everyday reading — the rule must stay inert.
+    // the plugin itself writes. Elsewhere 0 is the everyday reading — stock
+    // CFS firmware reports no ids at all, and flat-schema CFS parses a
+    // per-slot id without giving 0 an eject meaning — so the rule stays
+    // inert.
     if (options.firmware_reports_spool_ids && slot.spoolman_id <= 0 && o.spoolman_id > 0 &&
         !options.keep_spool_info_on_eject) {
         MergeResult r;

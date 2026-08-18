@@ -488,9 +488,11 @@ Two footguns this area has repeatedly hit (fixed in #1065; keep them fixed):
    two want opposite things for the identity fields, so we don't guess: a lane
    with a deliberate Spoolman binding is left entirely alone (**#1071** retains
    it), and only auto-tracked lanes (no binding) refresh material/color from
-   firmware. The residual case — a genuinely different spool re-inserted into a
-   *bound* lane — keeps the stale binding until the user re-binds, the same
-   tradeoff #1071 already accepts.
+   firmware. A lane whose firmware later reports a *different* spool id drops
+   the binding entirely (`merge_override` re-bind rule, **#1281**) — the
+   residual stale-binding case is now only the no-signal backends. On AFC and
+   Happy Hare the eject signal itself is user-configurable ("Keep Spool Info
+   on Eject", AMS Management overlay; default on).
 
 ### OrcaSlicer compatibility — by backend
 

@@ -252,8 +252,9 @@ struct MergeOptions {
     bool keep_spool_info_on_eject = true;
     /// True only on backends whose firmware reports a spool id while a spool
     /// is loaded (AFC, Happy Hare). There — and only there — a firmware id of
-    /// 0/null means "ejected". Elsewhere firmware never reports ids, so 0 is
-    /// the everyday reading and MUST NOT be treated as eject.
+    /// 0/null means "ejected". Elsewhere 0 is the everyday reading and MUST
+    /// NOT be treated as eject — flat-schema CFS does parse a per-slot spool
+    /// id (arming Rule 1's re-bind) but gives 0 no eject meaning.
     bool firmware_reports_spool_ids = false;
     /// Own-write echo suppression for Rule 1, mirroring
     /// SlotFingerprintTracker::expect() semantics. When HelixScreen itself
