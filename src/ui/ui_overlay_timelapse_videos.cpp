@@ -16,6 +16,7 @@
 #include "app_globals.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "printer_state.h"
 #include "static_panel_registry.h"
 #include "theme_manager.h"
 #include "thumbnail_cache.h"
@@ -651,26 +652,10 @@ void TimelapseVideosOverlay::detect_playback_capability() {
     can_play_ = cached_can_play;
     player_command_ = cached_player;
 
-    // Check if we're running on the same host as Moonraker (may change between connections)
-    if (api_) {
-        std::string ws_url = api_->get_websocket_url();
-        // Extract host from ws://host:port/...
-        std::string host;
-        auto scheme_end = ws_url.find("://");
-        if (scheme_end != std::string::npos) {
-            auto host_start = scheme_end + 3;
-            auto host_end = ws_url.find(':', host_start);
-            if (host_end == std::string::npos) {
-                host_end = ws_url.find('/', host_start);
-            }
-            if (host_end != std::string::npos) {
-                host = ws_url.substr(host_start, host_end - host_start);
-            } else {
-                host = ws_url.substr(host_start);
-            }
-        }
-        is_local_moonraker_ = helix::timelapse::is_local_host(host);
-    }
+    // Remote vs same-host playback path follows the live connection verdict
+    // (moonraker_is_remote subject) — replaces the hand-rolled websocket-URL
+    // parse + loopback-literal check this function used to carry.
+    is_local_moonraker_ = !get_printer_state().is_moonraker_remote();
 
     spdlog::debug("[{}] Playback capability: can_play={} player='{}' local={}", get_name(),
                   can_play_, player_command_, is_local_moonraker_);
