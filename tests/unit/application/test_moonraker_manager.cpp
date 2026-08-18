@@ -104,6 +104,7 @@ TEST_CASE("RuntimeConfig mock_ams_gate_count", "[application][config]") {
 // starts while a print is already in progress.
 
 #include "moonraker_manager.h"
+#include "print_collector_arming.h"
 #include "printer_state.h"
 
 using namespace helix;
@@ -703,4 +704,74 @@ TEST_CASE("should_complete_preprint - completes when the layer-zero sample is ne
             /*printer_reports_layers=*/true, /*current_layer=*/1, /*print_duration=*/0,
             /*seen_layer_zero=*/true, /*layer_advanced=*/false));
     }
+}
+
+// ============================================================================
+// PrintCollectorArming - boot-join arming state
+// ============================================================================
+
+TEST_CASE("PrintCollectorArming re-arms on reset so a printer switch cannot join mid-print",
+          "[application][print_start][regression]") {
+    // init_print_start_collector() re-runs on every printer switch
+    // (application.cpp, inside connect_moonraker()). The arming state must
+    // re-arm with it. When this lived in a function-local static, the
+    // initializer ran once per process and only prev_state was reassigned, so
+    // after the first print the mid-print-join suppression was permanently off:
+    // switching to a printer already partway through a job drew a full
+    // "Preparing..." overlay over a running print.
+    helix::PrintCollectorArming arming;
+
+    SECTION("a fresh instance is armed") {
+        REQUIRE(arming.is_initial_transition());
+    }
+
+    SECTION("consuming the first transition disarms it") {
+        arming.consume_initial_transition();
+        REQUIRE_FALSE(arming.is_initial_transition());
+    }
+
+    SECTION("reset re-arms after the first transition was consumed") {
+        arming.consume_initial_transition();
+        REQUIRE_FALSE(arming.is_initial_transition());
+
+        arming.reset(); // printer switch
+        REQUIRE(arming.is_initial_transition());
+    }
+
+    SECTION("reset also clears the remembered previous state") {
+        arming.note_transition(PrintJobState::PRINTING);
+        REQUIRE(arming.prev_state() == PrintJobState::PRINTING);
+
+        arming.reset();
+        REQUIRE(arming.prev_state() == PrintJobState::STANDBY);
+    }
+}
+
+TEST_CASE("PrintCollectorArming drives the boot-join suppression across a printer switch",
+          "[application][print_start][regression]") {
+    // The end-to-end shape of the bug: connect to printer A, run a print to
+    // completion, then switch to printer B which is already 60% through a job.
+    // After the switch the collector must be suppressed, exactly as it would be
+    // on a cold boot into that same running print.
+    helix::PrintCollectorArming arming;
+
+    // Printer A: a normal print start consumes the initial transition.
+    REQUIRE(MoonrakerManager::should_start_print_collector(
+        arming.prev_state(), PrintJobState::PRINTING,
+        /*current_progress=*/0, arming.is_initial_transition(),
+        /*current_print_duration=*/0));
+    arming.consume_initial_transition();
+    arming.note_transition(PrintJobState::PRINTING);
+    arming.note_transition(PrintJobState::COMPLETE);
+
+    // Printer switch: init_print_start_collector() runs again.
+    arming.reset();
+
+    // Printer B is already 60% in. This presents as STANDBY -> PRINTING with
+    // stale progress, which is the genuine boot-into-running-print case and
+    // must be suppressed.
+    REQUIRE_FALSE(MoonrakerManager::should_start_print_collector(
+        arming.prev_state(), PrintJobState::PRINTING,
+        /*current_progress=*/60, arming.is_initial_transition(),
+        /*current_print_duration=*/4200));
 }
