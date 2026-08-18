@@ -4,19 +4,25 @@
  * @file test_detail_gcode_download_integrity.cpp
  * @brief Cache-poisoning guards for the detail view's shared gcode download
  *
- * Pins the final-review finding on the tools-used cache plumbing:
+ * Pins the final-review findings on the tools-used cache plumbing:
  *
- * A FAILED shared download must NOT persist an authoritative-empty
- * tools-used cache entry (finish_scan(authoritative=false)) — on 2D-only
- * platforms no viewer parse ever repairs it. A SUCCESSFUL scan that finds
- * zero tools (single-extruder file) MUST still persist the empty set.
+ * 1. A FAILED shared download must NOT persist an authoritative-empty
+ *    tools-used cache entry (finish_scan(authoritative=false)) — on 2D-only
+ *    platforms no viewer parse ever repairs it. A SUCCESSFUL scan that finds
+ *    zero tools (single-extruder file) MUST still persist the empty set.
+ * 2. The canonical disk probe must not trust a stale/partial copy when the
+ *    expected file size is known — re-download instead of scanning stale
+ *    bytes under a new (size, mtime) key. And the oversize viewer reject
+ *    must remove the canonical file (bounded by the headless scan still
+ *    needing it) so rejected downloads can't pile up on disk.
  *
  * Determinism notes:
  * - MoonrakerAPIMock resolves downloads synchronously on the calling thread
  *   (asset copy, or immediate on_error for an unknown filename) — no network.
  * - HELIX_FORCE_GCODE_MEMORY_FAIL=1 forces is_gcode_2d_streaming_safe() to
  *   fail, keeping the gcode viewer's load out of these tests: they target
- *   the download/scan plumbing, not the render path.
+ *   the download/scan plumbing, not the render path. This is also the
+ *   deterministic stand-in for the oversize reject gate.
  * - The tools scan itself runs on the real HttpExecutor slow lane; readiness
  *    is joined with wait_until() (which drains the UpdateQueue per pass).
  */
@@ -164,6 +170,13 @@ class DetailDownloadFixture : public LVGLUITestFixture {
         helix::ui::UpdateQueue::instance().drain();
     }
 
+    /// Canonical shared-download path for `key` — mirrors
+    /// PrintSelectDetailView::canonical_gcode_path() (full-path hash).
+    std::filesystem::path canonical_path_for(const std::string& key) const {
+        return std::filesystem::path(::getenv("HELIX_CACHE_DIR")) / "gcode_temp" /
+               ("detail_" + std::to_string(std::hash<std::string>{}(key)) + ".gcode");
+    }
+
     bool ready() const {
         return lv_subject_get_int(ready_) == 1;
     }
@@ -223,6 +236,76 @@ TEST_CASE_METHOD(DetailDownloadFixture,
     // single-extruder file re-scans, and the fix over-corrected.
     REQUIRE(got.has_value());
     REQUIRE(got->empty());
+
+    pop_and_drain();
+}
+
+// ============================================================================
+// Fix 2: canonical disk probe + oversize-reject cleanup
+// ============================================================================
+
+TEST_CASE_METHOD(DetailDownloadFixture,
+                 "stale on-disk copy with a mismatched size is re-downloaded",
+                 "[print_select][detail_view][gcode_cache]") {
+    CacheDirGuard guard;
+    EnvGuard mem_fail("HELIX_FORCE_GCODE_MEMORY_FAIL", "1");
+
+    const std::string asset = find_test_asset("3DBenchy.gcode");
+    REQUIRE_FALSE(asset.empty());
+    const auto benchy_size = static_cast<size_t>(std::filesystem::file_size(asset));
+    constexpr time_t kMtime = 42;
+
+    // Simulate the aftermath of an app kill mid-download: a truncated (or
+    // re-slice-stale) file sits at the canonical path.
+    const auto canonical = canonical_path_for("3DBenchy.gcode");
+    std::filesystem::create_directories(canonical.parent_path());
+    {
+        std::ofstream junk(canonical, std::ios::binary | std::ios::trunc);
+        junk << "T0 ; partial";
+    }
+    REQUIRE(std::filesystem::file_size(canonical) != benchy_size);
+
+    view_.show("3DBenchy.gcode", "", "PLA", {"#FF0000"}, {}, benchy_size, kMtime);
+    drain_queue_chain();
+
+    // The scan finishes on the slow lane; the oversize reject must NOT have
+    // removed the file underneath it (scan was still pending at reject time).
+    REQUIRE(wait_until([this]() { return ready(); }, 15000));
+
+    // Size mismatch => the stale bytes were dropped and the REAL file was
+    // re-downloaded to the canonical path.
+    REQUIRE(std::filesystem::exists(canonical));
+    REQUIRE(std::filesystem::file_size(canonical) == benchy_size);
+
+    pop_and_drain();
+}
+
+TEST_CASE_METHOD(DetailDownloadFixture,
+                 "oversize reject removes the canonical file once the scan no longer needs it",
+                 "[print_select][detail_view][gcode_cache]") {
+    CacheDirGuard guard;
+    EnvGuard mem_fail("HELIX_FORCE_GCODE_MEMORY_FAIL", "1");
+
+    const std::string asset = find_test_asset("3DBenchy.gcode");
+    REQUIRE_FALSE(asset.empty());
+    const auto benchy_size = static_cast<size_t>(std::filesystem::file_size(asset));
+    constexpr time_t kMtime = 42;
+
+    // Warm the tools-used cache: show() seeds the scan answer, so the
+    // download serves the viewer alone — the reprint-of-an-oversize-file
+    // leak scenario (every open re-downloads, viewer rejects, file lingers).
+    {
+        helix::ToolsUsedCache warmer;
+        warmer.store("3DBenchy.gcode", benchy_size, kMtime, {0});
+    }
+
+    view_.show("3DBenchy.gcode", "", "PLA", {"#FF0000"}, {}, benchy_size, kMtime);
+    REQUIRE(ready()); // cache hit seeded readiness before activation
+
+    drain_queue_chain(); // activation → download → oversize reject → cleanup
+
+    const auto canonical = canonical_path_for("3DBenchy.gcode");
+    REQUIRE_FALSE(std::filesystem::exists(canonical));
 
     pop_and_drain();
 }

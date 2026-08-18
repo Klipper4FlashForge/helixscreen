@@ -561,10 +561,24 @@ void PrintSelectDetailView::ensure_gcode_downloaded(
         return;
     }
 
-    // 2. Already on disk (cached from a previous open of this file).
+    // 2. Already on disk (cached from a previous open of this file). When the
+    //    expected size is known, a mismatch means the local copy is stale or
+    //    partial — the server file was re-sliced onto the same path, or the
+    //    app died mid-transfer and left a truncated download behind. Trusting
+    //    those bytes would scan the OLD file and store the wrong tool set
+    //    under the NEW (size, mtime) cache key, so drop the copy and
+    //    re-download instead of scanning stale bytes.
     if (std::ifstream f(path, std::ios::binary | std::ios::ate); f && f.tellg() > 0) {
-        cb(true, path);
-        return;
+        const auto on_disk_bytes = static_cast<size_t>(f.tellg());
+        if (current_file_size_bytes_ == 0 || on_disk_bytes == current_file_size_bytes_) {
+            cb(true, path);
+            return;
+        }
+        spdlog::warn("[DetailView] Cached G-code size mismatch (disk={}, expected={}) - "
+                     "re-downloading",
+                     on_disk_bytes, current_file_size_bytes_);
+        std::remove(path.c_str());
+        // Fall through to a fresh transfer below.
     }
 
     // 3. Start the single shared transfer; later callers join via 1.
@@ -1693,6 +1707,20 @@ void PrintSelectDetailView::load_gcode_for_preview() {
             spdlog::warn("[DetailView] G-code too large for streaming: file={} bytes, "
                          "available RAM={}MB - using thumbnail",
                          local_size, mem.available_mb());
+            // The viewer just rejected the file — remove the canonical copy
+            // so oversize re-downloads can't pile up on disk (SD-card leak).
+            // Gated on the headless tools scan being through with it: the
+            // scan streams this same file on the slow lane and cannot tell a
+            // deleted file from "no tools used", so removing it mid-scan
+            // would persist an authoritative-empty cache entry. While the
+            // scan is still pending, on_ui_destroyed() reclaims the file at
+            // view teardown instead.
+            if (headless_scan_done_) {
+                if (temp_gcode_path_ == path) {
+                    temp_gcode_path_.clear();
+                }
+                std::remove(path.c_str());
+            }
             show_gcode_viewer(false);
             return;
         }
