@@ -24,7 +24,6 @@
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
-#include <cctype>
 #include <lvgl.h>
 
 namespace helix {
@@ -57,22 +56,6 @@ int bypass_print_tool(const PrintStartContext& ctx) {
         return *ctx.tools_used.begin();
     }
     return 0;
-}
-
-/// Case-insensitive exact material equality. Deliberately stricter than
-/// FilamentMapper::materials_match, whose family resolution treats "ASA-GF"
-/// and "ASA" as compatible: for a bypass print the loaded spool is the ONLY
-/// thing feeding the print, and a grade change (GF/CF filler, silk, …)
-/// changes flow, cooling and abrasiveness — worth a heads-up dialog even
-/// though the family matches. The user can still proceed.
-bool materials_equal_exact(const std::string& a, const std::string& b) {
-    if (a.size() != b.size()) {
-        return false;
-    }
-    return std::equal(a.begin(), a.end(), b.begin(), [](char ca, char cb) {
-        return std::tolower(static_cast<unsigned char>(ca)) ==
-               std::tolower(static_cast<unsigned char>(cb));
-    });
 }
 
 /// Warning result with the dialog strings a gate mandates.
@@ -425,7 +408,7 @@ std::vector<MaterialMismatchDetail> material_mismatches_in(const PrintStartConte
             ctx.external_spool->material.empty()) {
             return mismatches;
         }
-        if (!materials_equal_exact(expected, ctx.external_spool->material)) {
+        if (!FilamentMapper::materials_match(expected, ctx.external_spool->material)) {
             mismatches.push_back(
                 external_spool_mismatch(ctx.external_spool.value(), tool, expected));
         }

@@ -3547,9 +3547,9 @@ gate pipeline: `PrintStartController::run_gates_from()` iterates
    mapped lanes describe filament that is not being printed with
 5. `unresolved_tools` — the color-mismatch dialog above
 6. `material_compatibility` — file material vs. loaded spool. Under an engaged bypass on a
-   single-tool file the comparison target is the **external spool**, not the mapped lanes,
-   with exact-match semantics: a same-family grade change (file sliced ASA-GF, spool ASA)
-   still warns, since the spool is the only thing feeding the print
+   single-tool file the comparison target is the **external spool**, not the mapped lanes;
+   the comparison itself is `FilamentMapper::materials_match()`, the same one every other
+   path uses, so a same-family grade change (file sliced ASA-GF, spool ASA) does not warn
 
 The two bypass suppressions this section describes are entries in that list: gate 4
 (`required_filament_present`) and gate 5 (`unresolved_tools`, whose `unresolved_tools_in()`

@@ -240,9 +240,8 @@ TEST_CASE("material_mismatches_in: non-AMS external spool mismatch",
 TEST_CASE("material_mismatches_in: bypass print compares external spool, not lanes",
           "[print-start][gate-pipeline]") {
     // K2 CFS regression: file sliced ASA-GF on lane 2, bypass engaged,
-    // external spool set to Spoolman ASA. The lane mapping is irrelevant —
-    // the dialog must name the external spool's material, and a same-family
-    // grade change (ASA vs ASA-GF) still warns.
+    // external spool set to Spoolman PLA. The lane mapping is irrelevant —
+    // the dialog must name the external spool's material.
     auto make = [](const char* spool_material) {
         return ctx_with([&](PrintStartContext& c) {
             c.has_detail_view = true;
@@ -264,14 +263,19 @@ TEST_CASE("material_mismatches_in: bypass print compares external spool, not lan
             c.external_spool = spool;
         });
     };
-    auto out = material_mismatches_in(make("ASA"));
+    auto out = material_mismatches_in(make("PLA"));
     REQUIRE(out.size() == 1);
     CHECK(out[0].tool_index == 1);
     CHECK(out[0].expected_material == "ASA-GF");
-    CHECK(out[0].loaded_material == "ASA");
+    CHECK(out[0].loaded_material == "PLA");
 
     // Exact same material (case-insensitive) stays silent.
     CHECK(material_mismatches_in(make("asa-gf")).empty());
+
+    // Same comparator as every other path: a same-family grade change
+    // (ASA vs ASA-GF) is compatible, so the bypass print stays silent too.
+    CHECK(material_mismatches_in(make("ASA")).empty());
+    CHECK(material_mismatches_in(make("ASA-CF")).empty());
 
     // Unknown spool material — nothing to compare, stay silent.
     CHECK(material_mismatches_in(make("")).empty());
@@ -288,14 +292,14 @@ TEST_CASE("material_mismatches_in: bypass falls back to palette materials",
         c.tools_used = {2};
         c.filament_materials = {"PLA", "PLA", "ASA-GF", "PLA"};
         SlotInfo spool;
-        spool.material = "ASA";
+        spool.material = "PETG";
         c.external_spool = spool;
     });
     auto out = material_mismatches_in(ctx);
     REQUIRE(out.size() == 1);
     CHECK(out[0].tool_index == 2);
     CHECK(out[0].expected_material == "ASA-GF");
-    CHECK(out[0].loaded_material == "ASA");
+    CHECK(out[0].loaded_material == "PETG");
 }
 
 // ---------------------------------------------------------------------------
