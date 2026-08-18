@@ -8,6 +8,7 @@
 #include "ui_callback_helpers.h"
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
+#include "ui_manual_pull_prompt.h"
 #include "ui_step_progress.h"
 #include "ui_temperature_utils.h"
 
@@ -285,6 +286,17 @@ void AmsOperationSidebar::init_observers() {
             if (self->prev_ams_action_ == AmsAction::LOADING &&
                 (action == AmsAction::IDLE || action == AmsAction::ERROR)) {
                 self->handle_load_complete();
+            }
+
+            // Same UNLOADING -> IDLE/ERROR edge closes out the manual-pull
+            // prompt. No-op unless handle_unload() armed it, and unless the
+            // toolhead sensor already spoke at the earlier, truer moment.
+            if (self->prev_ams_action_ == AmsAction::UNLOADING) {
+                if (action == AmsAction::IDLE) {
+                    helix::ui::manual_pull_unload_finished();
+                } else if (action == AmsAction::ERROR) {
+                    helix::ui::disarm_manual_pull_prompt();
+                }
             }
 
             // Detect UNLOADING -> IDLE or UNLOADING -> ERROR: the pending-bypass
@@ -1147,11 +1159,10 @@ void AmsOperationSidebar::handle_unload(int slot_index) {
     bool loaded = false;
     if (caps.present) {
         AmsBackend* backend = AmsState::instance().get_backend();
-        loaded =
-            target_slot >= 0 && backend &&
-            helix::ui::unload_target_is_loaded(backend->slot_is_actively_loaded(target_slot),
-                                               backend->slot_has_filament_at_toolhead(target_slot),
-                                               info.current_slot == target_slot);
+        loaded = backend && helix::ui::unload_target_is_loaded(
+                                target_slot, backend->slot_is_actively_loaded(target_slot),
+                                backend->slot_has_filament_at_toolhead(target_slot),
+                                info.current_slot == target_slot, info.filament_loaded);
     }
 
     const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
@@ -1185,8 +1196,26 @@ void AmsOperationSidebar::handle_unload(int slot_index) {
     // own Unload button means "the active one" and the IFS backend keys on that
     // -1 to send its current-channel toolhead unload.
     AmsBackend* backend = AmsState::instance().get_backend();
+
+    // Nothing reels a bypass spool back down a lane, so the user finishes by
+    // hand. Armed before dispatch so the toolhead sensor's clear edge is already
+    // watched when the retract starts; the action observer closes it out.
+    //
+    // Deliberately scoped to the tier-1 path: dispatch_unload_outside_backend()
+    // returns above, and that no-AMS case belongs to FilamentPanel, which owns a
+    // real per-tier completion signal. The sidebar has only this action edge, and
+    // with no backend the action never moves.
+    const bool needs_pull =
+        helix::ui::unload_needs_manual_pull(/*backend_present=*/true, target_slot);
+    if (needs_pull) {
+        helix::ui::arm_manual_pull_prompt();
+    }
+
     AmsError error = backend->unload_filament(slot_index);
     if (error.result != AmsResult::SUCCESS) {
+        if (needs_pull) {
+            helix::ui::disarm_manual_pull_prompt();
+        }
         helix::ui::notify_ams_error(error);
     }
 }

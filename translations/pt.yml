@@ -1064,6 +1064,7 @@ translations:
   Filament deleted: Filamento excluído
   Filament diameter sensors for flow compensation: Sensores de diâmetro de filamento
     para compensação de fluxo
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: O filamento está solto
   Filament is pulling tight: O filamento está puxando com tensão
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.

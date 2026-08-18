@@ -106,6 +106,33 @@ TEST_CASE("BoxTurtle AFC: selected tool's lane wins over the loaded current_slot
     CHECK(resolve_op_button_slot(remapped, /*selected_tool=*/0, /*tool_count=*/4) == 3);
 }
 
+TEST_CASE("Bypass: the external spool outranks any tool->slot map", "[filament][op_slot][bypass]") {
+    // K2 / stock CFS with bypass engaged. CFS populates tool_to_slot_map from
+    // the box's own `map` (and falls back to identity on the flat dialect), so
+    // the map resolves T0 -> lane 0 and the buttons gated on an EMPTY BAY while
+    // the external spool was plainly threaded through the nozzle. Bypass is not
+    // a lane; no map entry can describe it, so it has to short-circuit.
+    AmsSystemInfo bypassed = make_sys(/*tool_map=*/{0, 1, 2, 3}, /*current_slot=*/-2);
+    CHECK(resolve_op_button_slot(bypassed, /*selected_tool=*/0, /*tool_count=*/1) ==
+          helix::ui::EXTERNAL_SPOOL_SLOT);
+
+    // AFC/Happy Hare reach the same sentinel by a different road (bypass_state /
+    // the selector position), and a non-identity remap must not rescue a lane.
+    AmsSystemInfo remapped = make_sys(/*tool_map=*/{3, 2, 1, 0}, /*current_slot=*/-2);
+    CHECK(resolve_op_button_slot(remapped, /*selected_tool=*/0, /*tool_count=*/4) ==
+          helix::ui::EXTERNAL_SPOOL_SLOT);
+
+    // The guard rail: with bypass OFF the map still wins, exactly as before.
+    // This is the BoxTurtle contract above and must not become collateral.
+    AmsSystemInfo normal = make_sys(/*tool_map=*/{0, 1, 2, 3}, /*current_slot=*/3);
+    CHECK(resolve_op_button_slot(normal, /*selected_tool=*/0, /*tool_count=*/4) == 0);
+
+    // -1 is "nothing resolved", not a target. It must NOT be swept up by the
+    // sentinel arm and start acting on the external spool.
+    AmsSystemInfo nothing = make_sys(/*tool_map=*/{}, /*current_slot=*/-1);
+    CHECK(resolve_op_button_slot(nothing, /*selected_tool=*/0, /*tool_count=*/1) == -1);
+}
+
 // Snapmaker U1 regression guard (commit 504905a2 "Unload visits T0 first").
 // U1 = 4 virtual tools T0..T3 with an identity tool->slot map
 // (ams_backend_snapmaker.cpp), current_slot == current_tool == the picked-up

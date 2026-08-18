@@ -60,6 +60,17 @@ void set_test_notification_warning_hook(std::function<void(const std::string&)> 
  */
 void set_test_notification_error_hook(std::function<void(const std::string&)> hook);
 
+/**
+ * @brief Install a hook invoked by the test ui_notification_info() stubs.
+ *
+ * Third of the same set. INFO toasts are the ones that GUIDE rather than alarm
+ * ("filament is clear, pull it out"), so a test asserting that the user was told
+ * what to do next has no other observation point: NotificationHistory and
+ * PendingStartupWarnings both sit behind the production ui_notification_info(),
+ * which this file replaces with a log-only no-op. Pass nullptr to clear.
+ */
+void set_test_notification_info_hook(std::function<void(const std::string&)> hook);
+
 } // namespace ui
 } // namespace helix
 

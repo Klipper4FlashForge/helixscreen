@@ -1050,6 +1050,7 @@ translations:
   Filament deleted: Филамент удалён
   Filament diameter sensors for flow compensation: Датчики диаметра филамента для
     компенсации потока
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: Филамент ослаблен
   Filament is pulling tight: Филамент натянут
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.

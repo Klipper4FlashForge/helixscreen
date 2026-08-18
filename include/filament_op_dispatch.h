@@ -134,12 +134,21 @@ struct BackendCaps {
     return {FilamentTier::RawGcode, FilamentRefusal::None, AmsCall::None, target_slot};
 }
 
+/// Slot sentinel meaning "the external / bypass spool", not an AMS lane. Every
+/// backend that supports bypass reports it as current_slot == -2 (AFC from
+/// bypass_state, Happy Hare from its selector, CFS from
+/// derive_stock_bypass_locked), so it is the one negative slot that names a real
+/// physical target rather than "nothing resolved".
+inline constexpr int EXTERNAL_SPOOL_SLOT = -2;
+
 /**
  * @brief Is there anything at `slot` worth unloading?
  *
  * Answers plan_unload()'s `target_is_loaded`. Shared because the two surfaces
  * answered it differently the moment they were wired separately, which is the
- * divergence this whole file exists to end.
+ * divergence this whole file exists to end. Taking `target_slot` here rather
+ * than leaving callers to guard on it is part of that: every surface had open
+ * coded its own `slot >= 0 &&` prefix, and every one of them excluded bypass.
  *
  * The `is_current_slot` arm is not a convenience — it is the recovery case.
  * A runout clears the lane's own sensor while filament is still at the head
@@ -147,11 +156,42 @@ struct BackendCaps {
  * backends that ignore the slot entirely (AD5X sends IFS_REMOVE_CURRENT_PRUTOK)
  * and the sidebar's own Unload button, which asks for "whatever is active" and
  * so has no per-slot sensor to consult.
+ *
+ * Bypass takes the aggregate flag instead, and AFC is why. It is the one backend
+ * with has_per_slot_loaded_authority(), so slot_is_actively_loaded(-2) resolves
+ * through get_slot_info(-2) — a bounds miss yielding an empty SlotInfo — and
+ * answers false with filament plainly at the nozzle. CFS and Happy Hare happen
+ * to answer true via their `slot == current_slot && filament_loaded` default.
+ * One rule for the sentinel, so the three cannot drift.
+ *
+ * @param target_slot         Lane index, or EXTERNAL_SPOOL_SLOT for bypass.
+ * @param any_filament_loaded AmsSystemInfo::filament_loaded — the toolhead-wide
+ *                            answer, consulted for the bypass target only.
  */
-[[nodiscard]] inline bool unload_target_is_loaded(bool slot_actively_loaded,
+[[nodiscard]] inline bool unload_target_is_loaded(int target_slot, bool slot_actively_loaded,
                                                   bool slot_filament_at_toolhead,
-                                                  bool is_current_slot) {
+                                                  bool is_current_slot, bool any_filament_loaded) {
+    if (target_slot == EXTERNAL_SPOOL_SLOT) {
+        return any_filament_loaded;
+    }
+    if (target_slot < 0) {
+        return false;
+    }
     return slot_actively_loaded || slot_filament_at_toolhead || is_current_slot;
+}
+
+/**
+ * @brief Does this unload leave filament dangling for the user to pull by hand?
+ *
+ * An AMS lane unload reels the filament back down into its own lane, so the user
+ * has nothing to do and a prompt would be noise. Two cases have no lane to
+ * retract into: the bypass / external spool, which feeds the toolhead directly,
+ * and a printer with no AMS backend at all, where the spool is on a holder. Both
+ * end with filament parked above the extruder and the rest of it still threaded
+ * through the tube.
+ */
+[[nodiscard]] inline bool unload_needs_manual_pull(bool backend_present, int target_slot) {
+    return !backend_present || target_slot == EXTERNAL_SPOOL_SLOT;
 }
 
 /**
@@ -167,7 +207,14 @@ struct BackendCaps {
 [[nodiscard]] inline FilamentOpPlan plan_unload(const BackendCaps& caps, int target_slot,
                                                 bool target_is_loaded, bool macro_available) {
     if (caps.present) {
-        if (target_slot < 0 || !target_is_loaded) {
+        // EXTERNAL_SPOOL_SLOT is a target, not an absence: the backends all
+        // handle it (CFS ignores the slot and runs its unload script, AFC
+        // resolves the lane name to "" and sends a bare TOOL_UNLOAD, Happy Hare
+        // sends MMU_UNLOAD). Every other negative slot still means "nothing
+        // resolved" and must not dispatch against whatever the firmware last
+        // touched.
+        const bool resolvable = target_slot >= 0 || target_slot == EXTERNAL_SPOOL_SLOT;
+        if (!resolvable || !target_is_loaded) {
             return {FilamentTier::Refused, FilamentRefusal::NothingLoaded, AmsCall::None, -1};
         }
         return {FilamentTier::AmsBackend, FilamentRefusal::None, AmsCall::Unload, target_slot};
