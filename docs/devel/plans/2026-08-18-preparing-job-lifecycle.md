@@ -1,0 +1,570 @@
+# Preparing-job lifecycle: make `Preparing` reachable at commit
+
+Status: plan, not yet implemented
+Branch: `fix/preparing-job-lifecycle`
+Field report: K2 Plus, 2026-08-18
+
+## The bug, stated without naming a vendor
+
+There is a window between *the user commits to printing file X* and *the printer
+reports it is printing file X*. During that window the print status panel renders
+printer-reported job state, which still describes the **previous** job.
+
+The window exists on every printer: upload from USB, gcode rewrite, metadata scan,
+filament remaps, AMS lane changes, heat soak, blocking pre-start macros. On most
+printers it is a few hundred milliseconds and nobody notices. It is not a
+Creality-specific defect; Creality is only where it got long enough to see.
+
+## Field evidence
+
+K2 Plus, helix clock (klippy runs 1h behind on this device):
+
+| Time | Event |
+|---|---|
+| 01:09:30 | Previous job completes. `outcome=COMPLETE`, `layer 0/0`, `elapsed 1389s` |
+| 12:51:38 | User presses Print. `PrintStartController` navigates to the status panel |
+| 12:51:38 | `BED_MESH_CALIBRATE_START_PRINT ... BED_TEMP=105` dispatched as a blocking `printer.gcode.script` |
+| 12:51:43 | Panel fires `Deferred G-code load` for the **previous** filename |
+| 12:51:43-12:59:13 | `Request Tracker` reports the RPC pending, 300174ms -> 455581ms |
+| 12:59:13 | Macro returns (`G29_TIME` 222.354s inside it) |
+| 12:59:17 | `print_state transition: 3 -> 0`, `New print starting - clearing outcome`, `0 -> 1` |
+
+For 7m39s Klipper reported `print_stats=complete` with the old filename while
+`bed_target=105, bed_temp=105.3`. The panel was faithfully rendering the last thing
+the printer said. Temperatures come from `heater_bed`/`extruder`, which carry no
+lifecycle guard, which is why temps were live while job data was frozen.
+
+HelixScreen missed no event: it reacted to the real transition within ~100ms.
+
+## Root cause
+
+`PrintState::Preparing` (`include/print_lifecycle_state.h:17-25`) is a fully built
+state. `is_active()` includes it (`:142`), so progress/layer/duration updates flow
+through it. It has elapsed/remaining tracking, five dedicated handling sites in
+`ui_panel_print_status.cpp`, and existing tests.
+
+It is entered by exactly one thing, `print_lifecycle_state.cpp:176-186`:
+
+```cpp
+bool PrintLifecycleState::on_start_phase_changed(int phase, PrintJobState current_job_state) {
+    bool preparing = (phase != 0);
+    if (preparing) { current_state_ = PrintState::Preparing; ... }
+```
+
+`print_start_phase` is raised only by `PrintStartCollector::start()`, whose only
+caller is the `print_state_enum` observer at `moonraker_manager.cpp:735`.
+
+**So `Preparing` is unreachable until the printer confirms the print.** The state
+that exists to describe "we are getting ready to print" cannot be entered during the
+period when we are getting ready to print.
+
+## Design
+
+`Preparing` becomes enterable at user commit rather than printer confirmation.
+Everything downstream already works, unchanged, on every printer. No new state, no
+printer-database flag, no vendor branch.
+
+### The preparing job
+
+While in `Preparing`, one record identifies the job being prepared:
+`{filename, path, source}`. This promotes
+`ActivePrintMediaManager::thumbnail_source_filename_` from a media-only override,
+applied at Moonraker-confirm, to the panel-wide answer to "which job is this?"
+during the window: preview, thumbnail, gcode viewer, filename label.
+
+It is also the reconciliation key. When `print_stats` reports a filename we compare:
+
+- match -> retire, hand off to `Printing`
+- mismatch -> someone started a different print elsewhere; discard our claim rather
+  than silently adopting theirs
+
+Today nothing can notice that case. This makes the externally-started path strictly
+safer than it is now, not merely unregressed.
+
+### API
+
+```cpp
+begin_preparing(PrintJobRef job);
+retire_preparing(PreparingExit reason);
+const PrintJobRef& preparing_job() const;
+
+enum class PreparingExit { Confirmed, Superseded, Failed, Cancelled, TimedOut };
+```
+
+One entry point, one exit point. Today arming, `reset_for_new_print()`,
+outcome-clearing, thumbnail-setting and navigation are five independent effects
+firing at four different times from three files, which is why this failure mode was
+reachable at all.
+
+**There are two arming paths, and both stay.** An earlier draft of this plan had
+`MoonrakerManager`'s observer stop arming and become pure reconciliation. That is a
+regression: an externally started print (Mainsail / Fluidd / Orca) has no user
+commit, so it would never enter `Preparing` at all. It does today.
+
+- **Commit arming** - user presses Print. Unambiguous.
+- **Printer-edge arming** - `standby -> printing` with no live preparing job.
+  Ambiguous, and keeps every guard it has today (see #1042 below).
+
+`begin_preparing()` is idempotent: whichever path fires first owns the window, the
+other reconciles. That still dissolves the branch-ordering hazard at
+`moonraker_manager.cpp:730-760`, where an already-active collector reaching
+`printing` would skip the authoritative completion branch, and where the
+`complete -> standby` hop would call `collector->stop()` on a phase we raised.
+
+### Fast printers
+
+A sub-second `Preparing` must not flash the overlay. That is a presentation
+concern: withhold the overlay until the phase has persisted past a threshold. It
+does not belong in the state machine and carries no vendor knowledge.
+
+## Why not the alternatives
+
+**Move the mesh inside the job** (inject after `START_PRINT` via the existing gcode
+rewrite). Rejected: two files for one logical print breaks print statistics, and the
+mitigation for that is a Moonraker plugin that is beta-tagged and that most users do
+not have installed.
+
+**Flag the slow pre-start option in `printer_database.json`.** Rejected: encodes
+"the K2 is slow" as data. Fixes two Creality models and leaves the same hole open on
+every other printer.
+
+## The blocking invariant
+
+`Preparing` today is **a sub-state of Moonraker `PRINTING`**, not a state that
+precedes it. Two places hard-code that, and both must be re-scoped before commit
+arming can work at all.
+
+`src/printer/printer_print_state.cpp:1084`:
+
+```cpp
+if (phase != PrintStartPhase::IDLE && lv_subject_get_int(&print_active_) == 0 &&
+    !is_new_print_start) { return; }
+```
+
+`is_new_print_start` is only the IDLE -> non-IDLE edge, so the *first* phase lands
+and **every subsequent phase (HOMING, HEATING, BED_MESH) is silently dropped** while
+`print_active == 0`. Separately, `:447-462` force-resets the phase to IDLE on the
+`print_active -> 0` edge.
+
+A naive "arm at commit" therefore freezes the overlay on phase 1 and then has it
+slammed back to IDLE. This is not optional cleanup; it is the precondition.
+
+## Two things the census found on the way
+
+### A live bug, independent of this work
+
+`src/application/moonraker_manager.cpp:689`:
+
+```cpp
+static bool s_is_initial_transition = true;
+```
+
+`init_print_start_collector()` re-runs on every printer switch
+(`application.cpp:3599`). Line 684 reassigns `s_prev_print_state`; line 689 cannot,
+because a function-local static initializes once per process. After the first print,
+mid-print-join suppression is permanently off: switch to a printer already partway
+through a job and a full "Preparing..." overlay is drawn over a running print.
+
+`print_completion.cpp:373`, `print_start_navigation.cpp:91` and
+`telemetry_manager.cpp:3162` all re-arm correctly at init. This one is the outlier.
+Fixed first, on its own, with its own test.
+
+### The commit hook exists, pointing backwards
+
+`PrintStatusPanel::end_preparing()` has one caller:
+`ui_print_start_controller.cpp:259`, inside the `start_print()` **success callback**.
+That fires when the RPC succeeds, which is when `PRINT_START` begins running. So the
+app calls `end_preparing(true)` at the instant preparation *starts*, forcing the
+lifecycle into `Printing` ahead of Moonraker, consuming the
+`should_reset_progress_bar` edge early, and zeroing `preparing_visible` - after which
+the phase observer puts it back into `Preparing`.
+
+It is deleted and replaced by "enter Preparing".
+
+## One owner for "how long until printing starts?"
+
+Three estimators answer this question today and none of them knows about the others:
+
+| Estimator | Available when | Knows |
+|---|---|---|
+| `PreprintPredictor::predicted_total_from_config()` (history median, 60s cached) | Browsing files | Nothing about this job |
+| `PrintPreparationManager::recalculate_estimate()` (thermal model + homing + per-option phases) | Options picked, not started | Target temps, chosen options |
+| `PrintStartCollector::update_eta_display()` (live composite, mesh-probe extrapolation) | Preparation running | What is actually happening |
+
+They are not competing answers. They are a **fidelity ladder**, each the best answer
+available at its moment. The defect is that they are three separate subjects, split
+across two owners - `preprint_estimate_subject_` on `PrintPreparationManager` (bound
+in `print_file_detail.xml`), `preprint_remaining` / `print_start_time_left` on
+`PrinterState` (bound in the status panel, portrait, and the home widget) - which the
+user compares across one flow and finds inconsistent.
+
+The preparing-window owner owns the question and publishes **one** answer plus a
+source tier. The three estimators become strategies behind it.
+
+Two properties to commit to:
+
+- **Monotonic handoff.** A higher-fidelity estimator taking over must not snap the
+  displayed number. That jump is the user-visible defect, not the existence of three
+  models.
+- **Close the loop.** The gap between predicted and actual is exactly the training
+  signal `PreprintPredictor` wants. Today the three never compare notes, so nothing
+  learns.
+
+## Scope and sequencing
+
+Too large for one commit. Each step is independently reviewable, and each earlier
+step shrinks the next.
+
+| # | Step | Character |
+|---|---|---|
+| 1 | Fix `s_is_initial_transition` re-arming | Live bug. Small, own test. Lands regardless of the rest. |
+| 2 | Pure deletions: `clear_print_info`, `is_in_print_start`, `clear_gcode_loaded`, the duplicate `StateChangeResult` boolean, the ignored `on_job_state_changed` `outcome` param, the `print_completion` layer-string reimplementation (it renders `"1 layers"` and `"0 layers"`, both of which `format_layer_count()` gets right) | No behavior change |
+| 3 | Unify media identity: delete `PrintStatusPanel::set_thumbnail_source`, route through `ActivePrintMediaManager`, remove the three doubled call sites | Subtractive |
+| 4 | Move `PrintLifecycleState` out of `PrintStatusPanel`; consolidate the eight prev-state trackers behind one edge source; settle on one definition of "active"; move `is_active_print_state` to `printer_state.h` | Pure refactor, large |
+| 5 | Re-scope the `print_active == 0` invariant, then `Preparing` at commit with `begin_preparing` / `retire_preparing` | The actual fix, now small |
+| 6 | One owner for the preparation estimate; three estimators demoted to strategies | Structural |
+| 7 | Elapsed/remaining rendered strings into `PrinterPrintState`, following `print_progress_text` (`52b6cef7d`) | Separable; own PR |
+
+Steps 1-6 in this branch. Step 7 split out.
+
+### Consolidation targets
+
+Six independent representations of "we are preparing" collapse to one:
+`print_start_phase` (demoted to "which phase"), `PrintStartCollector::active_`,
+`PrintLifecycleState::current_state_ == Preparing`, `PrintStatusPanel::was_preparing_`,
+`preparing_visible_subject_`, and `print_in_progress`.
+
+Eight prev-state edge trackers collapse to one source with subscribers:
+`moonraker_manager.cpp:683`, `print_completion.cpp:35`,
+`print_start_navigation.cpp:20`, `PrintLifecycleState::current_state_`,
+`telemetry_manager.cpp:2995`, `PrintStatusPanel::was_preparing_`, plus two that stay
+separate for real reasons (`U1StockSource::last_state_` is a vendor-scoped
+`-> PAUSED` edge behind a capability gate; `PrintStartController::print_state_observer_`
+is a self-cancelling one-shot for filament-remap restore).
+
+Three definitions of "active" collapse to one: `PRINTING|PAUSED` (nav, widget,
+exclude manager, filament tracker), `PRINTING|PAUSED|Preparing`
+(`PrintLifecycleState::is_active`), and the JSON-string form
+`status_indicates_active_print` (`printer_print_state.cpp:273`).
+
+Four resets currently fire only on the Moonraker `-> PRINTING` edge, i.e. *after*
+preparation: `end_overlay_dismissed`, `complete_view_mode_`, the view-toggle icon,
+and excluded objects. A reprint started from the end overlay carries the previous
+job's dismissal state and view mode through the entire preparing window. All move to
+the owner's "job begins" edge.
+
+Two auto-navigation owners collapse to one: `PrintStartController`'s optimistic push
+and `print_start_navigation.cpp:43`'s inactive->active push. The `is_panel_in_stack`
+guard at `:46` exists only because the first owner already pushed. The nav module
+keeps the recovery case (already active at init, `:101`).
+
+### Deliberately kept
+
+`print_progress` vs `print_progress_display` (documented at
+`printer_print_state.h:87-97`: the raw value must stay unfrozen because the pre-print
+estimates key off it being zero). `ThumbnailOrigin`'s three values (all produced,
+load-bearing for the recovery ladder). `ActivePrintMediaManager`'s two identity
+fields (override vs current - the duplication is with the panel, not within APMM).
+
+`ActivePrintMediaManager::clear_thumbnail_source()` is listed elsewhere as dead code,
+but this plan gives it its production caller. It stays.
+
+## Constraints from issue history
+
+Ranked by how much they bind. Closed issues encode regressions already paid for.
+
+### #1042 - stuck "Starting Print...", collector restart during AFC recovery
+Fixed `72de7da26`. `PRINTING -> ERROR -> PRINTING` with no reset looked like a fresh
+start; the collector restarted and could never auto-complete. Close comment:
+
+> only the `ERROR` recovery leg is guarded. A recovery routed via `STANDBY` is
+> indistinguishable from a real reprint with stale `print_duration`
+
+Commit arming dissolves this ambiguity, which is the strongest argument for this
+change. But the printer-edge path must keep `should_start_print_collector()` and its
+guards intact. Its regression tests (`tests/unit/application/test_moonraker_manager.cpp:368-400`,
+"the #1042 repro") are **preserved, not retired**. If the predicate moves, the tests
+move with it.
+
+### #546 - stale print screen, Reprint shown instead of Cancel
+Regressed **three times** (`19bec23d` -> `a5684bfd` -> a third fix). Its invariant is
+at the exact site this plan modifies, `printer_print_state.cpp:1080-1104`: the stale
+guard in `set_print_start_state()` must allow `IDLE -> non-IDLE` **even when
+`print_active == 0`**.
+
+Arming at press moves the outcome clear strictly earlier. Required test: badge and
+Cancel/Reprint swap clear on the press, and do **not** un-clear when the deferred
+`reset_for_new_print()` lands.
+
+Reporter's repro, verbatim, is a test case: *start a print from the screen, cancel it
+as it starts, go home, pick a new file - the Cancel button is a Reprint button.*
+
+Second constraint from fix 2 (`a5684bfd`, also #633): PrintStatusPanel is a
+persistent overlay whose lifecycle registration was lost on navbar switches, so
+`on_activate()` never fired on re-push. Anything made `on_activate()`-driven inherits
+that fragility.
+
+### #17 item 6 - preparing overlay never goes away
+Product contract to preserve: `M118 HELIX:READY` at the end of a user's
+`PRINT_START` retires the overlay immediately, with a timeout fallback. Stated
+policy: *"definitely not looking to force people to change theirs."*
+
+Commit-armed `Preparing` is **more** dangerous than today's, because it can arm on a
+printer that never reaches `state=printing` at all (upload failure, rejected
+`PRINT_START`, printer offline). `TimedOut` must be **ungated**.
+
+Counter-constraint from #991: a wall-clock backstop was deleted there because it
+raced slow cold-nozzle resumes and surfaced false modals (15s timer vs a legitimate
+37s `M109`). So `TimedOut` must be generous, and must not pop anything user-visible
+unless a real failure signal accompanies it.
+
+### `should_complete_preprint()` - the async reset race (RESOLVED)
+
+Documented at `include/moonraker_manager.h:220-300`. `reset_for_new_print()` is
+dispatched asynchronously **after** the collector becomes active, so stale
+layer/progress subjects are live while `Preparing` already shows.
+
+An earlier draft assumed commit arming widens that window. It does not - it closes
+it on the new path. The defer exists for one stated reason
+(`printer_print_state.cpp:1070-1072`):
+
+```cpp
+// CRITICAL: Defer to main thread via ui_queue_update to avoid LVGL assertion
+// when subject updates trigger lv_obj_invalidate() during rendering.
+// This is called from WebSocket callbacks (background thread).
+```
+
+That holds for the printer-edge path. It does not hold for a button press, which is
+already on the main thread. So `begin_preparing()` on the commit path runs
+`reset_for_new_print()` and the outcome clear **synchronously**, and the stale-subject
+window is zero. The printer-edge path keeps its defer unchanged.
+
+To verify during implementation: that `reset_for_new_print()`'s observers do not
+delete widgets, since a synchronous call from an LVGL event callback would then meet
+CLAUDE.md threading rule 3. If any do, route those specific effects through
+`safe_delete_deferred()` rather than reintroducing a blanket defer.
+
+Encoded regressions not to disturb:
+- Completion must be **edge**-relative, never a level read: a stale `current_layer`
+  of 250 from the previous print would complete the new pre-print phase instantly.
+- Discriminate on the sticky `printer_reports_layers`, never per-print
+  `has_real_layer_data` (the U1 premature-completion regression).
+- `seen_layer_zero || layer_advanced`, because coalesced `notify_status_update` can
+  make the first observed sample >= 1 and hang the overlay for the whole print.
+
+### #1048 - two commit entry points, not one
+`PrintStartController::execute_print_start` (primary) and `::initiate_reprint`
+(status-panel Reprint, lightweight `job().start_print`, deliberately skips the prep
+manager). Both must arm. Neither may arm before the U1 native pre-print config is
+sent. Hardware-verified ordering: `U1 pre-print config` -> `SET_PRINT_USED_EXTRUDERS`
+-> `Starting print` -> collector started.
+
+### #798 - Pause/Tune/Cancel during Preparing (RESOLVED)
+
+Governing invariant:
+
+> Pause/Tune/Cancel affordance is a function of `PrintState` only. It never depends
+> on whether pre-print work is host-side or firmware-side.
+
+On most printers homing/heating/purge/mesh live inside `PRINT_START` and are under
+Klipper's control. On others (K2 optional bed mesh) that work runs in front of the
+job, under ours. The user must not get different controls because of that split. It
+is the same vendor-neutrality rule as the rest of this plan, applied to the UI.
+
+**Cancel - enabled, always.** Uniform promise ("the print does not happen"),
+different mechanism, mechanism hidden from the user.
+
+- Pre-print inside `PRINT_START`: `print_stats=printing`, `AbortManager`'s normal
+  `CANCEL_PRINT` path already works.
+- Pre-print in front of the job: there is no job to cancel, and routing through
+  `CANCEL_PRINT` is actively wrong. `AbortManager::on_print_state_during_cancel`
+  (`src/abort/abort_manager.cpp:722-729`) treats `STANDBY`/`COMPLETE` as proof the
+  cancel succeeded, so firing it at an idle printer reports instant success while
+  the pending `start_print` is still queued to fire. Instead: retire `Preparing` as
+  `Cancelled`, set the flag so `start_print` never fires when the macro returns, and
+  drop the heaters we requested.
+
+A blocking macro cannot be interrupted - a Klipper limitation, not something to
+design around. So Cancel guarantees the print will not start, *not* that motion stops
+immediately: the printer finishes its current leveling pass. The confirm dialog for
+this case says so rather than implying an instant stop.
+
+**Pause - disabled during `Preparing`.** Uniform, and not merely because there is no
+job in the host-side case. Even where Klipper would accept it, `PAUSE` mid-`PRINT_START`
+is a footgun: the macro keeps running and the pause lands at the next print move,
+which breaks many custom macros. Nothing meaningful to pause in either architecture.
+
+This **narrows** #798, which enabled all three. Deliberate, not a regression.
+
+**Tune - enabled.** `ui_xml/print_tune_panel.xml` carries speed, flow and Z-offset
+babystep only; no temperature, which removes the obvious hazard.
+
+- Speed/flow are `M220`/`M221` multipliers: global, persistent, applied when the
+  print starts. Useful during pre-print and harmless.
+- Z-offset babystep may be wiped by the file's own `PRINT_START` (`G28`, or an
+  explicit `SET_GCODE_OFFSET Z=0`). That is true whether or not a host-side pre-start
+  block ran first, since the file's `PRINT_START` executes in both cases. Same
+  behavior as today for the firmware-side case.
+
+Leave Tune fully enabled. Disabling Z-offset only during `Preparing` would itself
+break the invariant above, by behaving differently depending on architecture.
+
+### #1221 - SIGSEGV on the print-start failure path
+Fixed `f992a0e2c`. `go_back()` only enqueues a pop; the `show_detail()` beside it
+runs synchronously, and the queue drains between a null-check and a use. The `Failed`
+retirement lands in this lambda, so it runs inside `process_pending()`: CLAUDE.md
+threading rule 3 applies, and pointers must be re-checked across any drain.
+
+### #526 - layers 0/0, caused by the thumbnail pre-set
+Fixed `c667f7a2`. A pre-set thumbnail (from `PrintStartController`) skipped the
+metadata fetch, losing `layer_count` and `estimated_time`. The preparing job hands
+media an early identity, so verify the metadata call still always proceeds and only
+the thumbnail *download* is skipped.
+
+### #1099 - power-loss recovery must stay independent
+Fixed `d0ea6aa1a`: the screen now auto-opens for **any active job, including at
+startup**, not only a fresh start. Keep that trigger as its own path, independent of
+commit arming.
+
+### #1044 - preview reconcile gains a new trigger
+`ensure_preview_current()` / `decide_preview_action()` run on every `on_activate()`
+plus print-phase change. Commit -> `Preparing` is a new phase change at a moment when
+the file may not be uploaded or parsed. Idempotent by design, but check
+`decide_preview_action()` handles "preparing job known, file not yet present".
+
+## Testing
+
+Test-first. Existing coverage to extend:
+
+- `tests/unit/test_print_lifecycle_state.cpp` - `Preparing` entry/exit, exit reasons
+- `tests/unit/application/test_moonraker_manager.cpp:440-490` - observer as pure reconciliation
+- `tests/unit/test_layer_tracking.cpp:460-600` - reset/collector race
+- `tests/unit/test_printer_print_char.cpp:1144-1180`, `:1652-1720` - reset semantics
+- `tests/unit/test_preprint_adaptive.cpp` - pre-start emission unchanged
+
+New cases required:
+
+1. Commit -> `Preparing` entered, prior terminal state cleared (badge, progress,
+   layer, elapsed) before any printer transition
+2. Confirm with matching filename -> `Confirmed`, single clean handoff to `Printing`
+3. Confirm with different filename -> `Superseded`, our claim discarded
+4. `complete -> standby -> printing` hop does not retire a live preparing job
+5. Pre-start gcode error -> `Failed`, overlay does not strand
+6. Quiet timeout -> `TimedOut`
+7. Externally started print (no commit) still arms on the `standby -> printing` edge
+   and still enters `Preparing` - the regression this plan nearly introduced
+8. Printer with no pre-start work never observably enters `Preparing`
+9. Cancel during a commit-armed `Preparing`, before any job exists, aborts the
+   pending start and does not send `CANCEL_PRINT` to an idle printer (#798)
+9b. Cancel during a firmware-side `Preparing` still routes through `AbortManager`'s
+    normal `CANCEL_PRINT` path - same affordance, different mechanism
+9c. Pause is disabled for the whole of `Preparing`, in both architectures
+9d. Tune remains enabled for the whole of `Preparing`, in both architectures
+10. Reprint button path (`initiate_reprint`) arms too, and not before the U1 native
+    pre-print config is sent (#1048)
+11. Badge clears on press and does not un-clear when the deferred
+    `reset_for_new_print()` lands (#546)
+12. `M118 HELIX:READY` retires a commit-armed `Preparing` (#17)
+13. `TimedOut` fires when the printer never reaches `state=printing` at all
+14. Pre-set media identity does not suppress the metadata fetch (#526)
+15. `freeze_progress_display()` unfreezes at press, so cancel-then-reprint does not
+    show the previous print's frozen 100% through the preparing window
+
+## Documentation sweep
+
+Required, not optional (L106): a change this size that does not land in the docs
+becomes the next person's archaeology. Targets are named because "update the docs"
+is not a task.
+
+The docs currently carry the same blind spot as the code, which is itself worth
+recording as evidence the diagnosis is right.
+
+### Devel
+
+| Doc | Action |
+|---|---|
+| `docs/devel/PRINT_STATE_MACHINE.md` (149 lines) | **Primary rewrite.** Today it describes `PrintLifecycleState` as *the* print state machine, with no mention that it is a private member of one screen (`include/ui_panel_print_status.h:402`) and no mention that three other components track the same transitions independently. Add the ownership, both arming paths, the retire reasons, and the commit-vs-printer-edge distinction. Delete every claim the change falsifies. |
+| `docs/devel/architecture/05-printer-state.md` (237 lines) | **Zero** current mentions of `PrintLifecycleState` or `Preparing`. The chapter that owns printer state cannot see the print state machine, because it lives in a panel. If the state machine moves, this chapter gains it; if it does not, this chapter at minimum gains the routing. |
+| `docs/devel/architecture/15-known-debt.md` | Its duplication-debt catalogue already holds entries of exactly this shape ("One aspirational abstraction, three parallel wirings"). Consolidating the edge trackers **removes** debt here rather than adding it. If consolidation is partial, record precisely what is left and why. |
+| `docs/devel/PRINT_START_INTEGRATION.md` (318 lines) | The `M118 HELIX:READY` contract and the pre-start mechanism live here. Both gain a commit-armed path. |
+| `docs/devel/PREPRINT_PREDICTION.md` | Note that the overlay-withhold threshold deliberately does **not** consume a prediction, and why (a prediction fails closed). |
+
+### User
+
+The behavior changes are user-visible, so this is not devel-only.
+
+| Doc | Action |
+|---|---|
+| `docs/user/guide/printing.md` | Pause is disabled during pre-print (a narrowing of #798). Cancel during pre-print guarantees the print will not start but does not stop an in-flight leveling pass. |
+| `docs/user/guide/print-monitoring.md` | The print status screen no longer shows the previous job's completion badge and progress while a new print is preparing. |
+
+Run `scripts/check_doc_refs.py` after the sweep.
+
+## Verification
+
+Unit suite, then on hardware:
+
+- CB1/Voron: externally started and screen-started prints, no regression, no flash
+- K2 Plus: the reported case end to end, plus a Mainsail-started print while a
+  screen-started job is preparing (case 3)
+
+## Resolved design questions
+
+### 1. Where `PrintJobRef` lives
+
+New `include/print_job_ref.h`, included by `printer_state.h`.
+
+No new dependency edge is created either way: `ActivePrintMediaManager` already
+includes `printer_state.h` and holds a `PrinterState&`
+(`include/active_print_media_manager.h:11,53`). The separate header exists only so
+`PrintPreparationManager` and `PrintStartController` can name the type without
+pulling in 2491 lines of `printer_state.h`.
+
+Corroboration that this is where the code already expected the concept:
+`ThumbnailOrigin::PreSet` is documented as "an externally supplied path (USB /
+embedded G-code, via PrintStartController)". The media manager already models
+"the controller told me about a job before Moonraker did". We are naming and
+generalising that, not inventing it.
+
+### 2. `retire_preparing(Superseded)` and media reset
+
+No separate media reset is needed. `clear_thumbnail_source()`
+(`src/print/active_print_media_manager.cpp:113-120`) already clears
+`thumbnail_source_filename_`, `last_effective_filename_`,
+`last_loaded_thumbnail_filename_` and cancels pending retries.
+
+Clearing `last_effective_filename_` is the load-bearing part: it defeats the
+idempotence short-circuit at `:184-187`
+
+```cpp
+std::string effective_filename =
+    thumbnail_source_filename_.empty() ? filename : thumbnail_source_filename_;
+if (effective_filename == last_effective_filename_) { return; }
+```
+
+so the next `process_filename()` carrying the printer's real filename re-processes
+instead of returning early. Every retire reason routes through
+`clear_thumbnail_source()`.
+
+Note: that function currently has **no production caller** - only the definition and
+the header declaration. This change gives it the caller it was written for.
+
+### 3. Overlay-withhold threshold
+
+**Flat elapsed-time debounce, not a `PreprintPredictor`-derived value.** This
+reverses the initial lean toward deriving it.
+
+A prediction can fail closed. Predict "fast", reality is slow, and the overlay is
+suppressed through a seven-minute wait - reproducing the exact bug this plan exists
+to fix. A prediction also has no history on first run.
+
+Debouncing on *elapsed* `Preparing` time cannot fail that way: the overlay appears
+once the state has actually persisted past the threshold, so being wrong about
+duration is self-correcting. A sub-second window on a fast printer never renders;
+a long one renders after the threshold. No history required.
+
+Start at 750ms and tune on hardware.
+
+Implementation constraint: this is an `lv_timer_t` in the panel. Per CLAUDE.md
+threading rule 5 it must be cancelled in the destructor as well as in `cleanup()`,
+via a shared `cancel_*_timer()` using `lv_timer_cancel_safe()`.
