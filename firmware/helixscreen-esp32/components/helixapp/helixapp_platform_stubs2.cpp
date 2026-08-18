@@ -230,6 +230,9 @@ void SpoolmanManager::init_subjects() {}
 void SpoolmanManager::set_api(IMoonrakerAPI*) {}
 void SpoolmanManager::start_spoolman_polling() {}
 void SpoolmanManager::stop_spoolman_polling() {}
+// Called by the KEPT ams_state.cpp commit_slot_edit() when an edit drops a
+// spool's identity. No cache exists here, so there is nothing to drop.
+void SpoolmanManager::invalidate_identity(int) {}
 std::optional<helix::SpoolIdentity> SpoolmanManager::find_identity(int) {
     return std::nullopt;
 }
