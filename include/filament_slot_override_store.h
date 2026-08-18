@@ -247,7 +247,7 @@ bool mirror_firmware_to_lane_data(FilamentSlotOverrideStore* store,
 // previously lived as hand-rolled if-chains per backend.
 
 struct MergeOptions {
-    /// From SettingsManager::get_ams_keep_spool_info_on_eject() (Task 2).
+    /// From SettingsManager::get_ams_keep_spool_info_on_eject().
     /// Default true = today's designed retention across eject.
     bool keep_spool_info_on_eject = true;
     /// True only on backends whose firmware reports a spool id while a spool
