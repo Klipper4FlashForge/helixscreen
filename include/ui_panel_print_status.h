@@ -218,7 +218,6 @@ class PrintStatusPanel : public OverlayBase {
      * @brief Set print state
      * @param state New print state
      */
-    void set_state(PrintState state);
 
     /**
      * @brief Get current print state
@@ -239,7 +238,6 @@ class PrintStatusPanel : public OverlayBase {
      *
      * @param success If true, transitions to Printing; if false, transitions to Idle
      */
-    void end_preparing(bool success);
 
     /**
      * @brief Get current progress percentage
