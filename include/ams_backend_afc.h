@@ -542,6 +542,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcLaneDataToolKeyHelper;
     friend class AfcReassertHelper;
     friend class AfcDelegatesHomingHelper;
+    friend class AfcDispatchHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;

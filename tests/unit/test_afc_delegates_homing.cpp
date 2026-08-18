@@ -12,8 +12,12 @@
 #include "afc_config_manager.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
+#include "test_helpers/scoped_home_confirm_prompter.h"
 
+#include <algorithm>
+#include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "../catch_amalgamated.hpp"
@@ -65,4 +69,88 @@ TEST_CASE_METHOD(LVGLTestFixture, "base default: no backend delegates homing",
     // printer_reports_spool_ids pattern in test_ams_firmware_persistence.cpp.
     auto afc = std::make_unique<AmsBackendAfc>(nullptr, nullptr);
     CHECK_FALSE(afc->AmsBackend::delegates_homing_to_printer());
+}
+
+// Drives the REAL ensure_homed_then() path with a captured-gcode API, the
+// same shape AfcReassertHelper uses in test_afc_spool_reassert.cpp.
+// toolhead_homed() is overridden false rather than driving the homed_axes
+// subject: with api_ null the production toolhead_homed() answers "homed"
+// without ever reading the subject, so the override is the only route to
+// the unhomed branch from a null-api fixture -- the same seam
+// HomingProbeBackend uses in test_ams_home_confirmation.cpp.
+class AfcDispatchHelper : public AmsBackendAfc {
+  public:
+    AfcDispatchHelper() : AmsBackendAfc(nullptr, nullptr) {
+        std::vector<std::string> names{"lane1"};
+        initialize_slots(names);
+    }
+
+    void load_config(const char* content) {
+        afc_config_ = std::make_unique<AfcConfigManager>(nullptr);
+        afc_config_->load_from_string(content, "AFC/AFC.cfg");
+    }
+
+    AmsError execute_gcode(const std::string& gcode) override {
+        captured.push_back(gcode);
+        return AmsErrorHelper::success();
+    }
+
+    // Both forms, as in HomingProbeBackend: the test passes on_complete, so
+    // dispatch_payload() reaches THIS 2-arg virtual, not the 1-arg one.
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        captured.push_back(gcode);
+        if (on_complete) {
+            on_complete();
+        }
+        return AmsErrorHelper::success();
+    }
+
+    bool toolhead_homed() const override {
+        return false;
+    }
+
+    bool prompted = false;
+    std::vector<std::string> captured;
+};
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "ensure_homed_then dispatches without G28 or prompt when delegating (#1265)",
+                 "[afc][homing][1265]") {
+    AfcDispatchHelper afc;
+    afc.load_config(CFG_WITH_AUTO_HOME);
+
+    ScopedHomeConfirmPrompter prompter(
+        [&afc](std::function<void()> on_confirm, std::function<void()>) {
+            afc.prompted = true;
+            on_confirm();
+        });
+
+    bool dispatched = false;
+    afc.ensure_homed_then("AFF_LOAD LANE=lane1", [&dispatched]() { dispatched = true; });
+
+    CHECK(dispatched);
+    CHECK_FALSE(afc.prompted);
+    // The payload left, and no G28 was synthesized ahead of it.
+    REQUIRE(std::find(afc.captured.begin(), afc.captured.end(), "AFF_LOAD LANE=lane1") !=
+            afc.captured.end());
+    CHECK(std::none_of(afc.captured.begin(), afc.captured.end(),
+                       [](const std::string& g) { return g == "G28"; }));
+
+    // A delegating dispatch must not consume an armed home_preconfirmed_:
+    // the short-circuit fires before the std::exchange() consume, so the
+    // flag survives for a later NON-delegating dispatch, which then sends
+    // its G28 without asking again.
+    afc.load_config(CFG_WITHOUT_AUTO_HOME);
+    afc.arm_home_preconfirmed();
+    afc.prompted = false;
+    afc.captured.clear();
+
+    bool dispatched2 = false;
+    afc.ensure_homed_then("AFF_LOAD LANE=lane1", [&dispatched2]() { dispatched2 = true; });
+
+    CHECK(dispatched2);
+    CHECK_FALSE(afc.prompted);
+    REQUIRE(afc.captured.size() == 2);
+    CHECK(afc.captured[0] == "G28");
+    CHECK(afc.captured[1] == "AFF_LOAD LANE=lane1");
 }
