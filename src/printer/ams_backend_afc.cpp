@@ -2733,6 +2733,22 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     }
 }
 
+bool AmsBackendAfc::firmware_retains_spool_info() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // ALL semantics: any lane at remember_spool = false still clears on
+    // eject, so the HelixScreen toggle keeps governing those lanes and must
+    // stay enabled. A lane that never reported the key is conservatively
+    // treated as not retaining too, and an empty map (nothing reported —
+    // the everyday default) is not retaining either.
+    if (lane_remember_spool_.empty() ||
+        static_cast<int>(lane_remember_spool_.size()) != slots_.slot_count()) {
+        return false;
+    }
+    return std::all_of(lane_remember_spool_.begin(), lane_remember_spool_.end(),
+                       [](const auto& entry) { return entry.second; });
+}
+
 void AmsBackendAfc::maybe_reassert_retained_spool_link(int slot_index,
                                                        const std::string& lane_name) {
     // Callers hold mutex_ (parse_afc_stepper via handle_status_update).

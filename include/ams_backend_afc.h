@@ -356,6 +356,11 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
         return true; // AFC publishes a lane spool_id in its status
     }
 
+    /// Per-lane remember_spool = true on EVERY reporting lane (ALL
+    /// semantics — a mixed config still leaves the toggle governing the
+    /// false lanes). See AmsBackend::firmware_retains_spool_info().
+    [[nodiscard]] bool firmware_retains_spool_info() const override;
+
     /**
      * @brief Whether AFC unloads the toolhead automatically after a print.
      *
@@ -502,6 +507,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcHelper;
     friend class AfcBypassPublishTestAccess;
     friend class AfcCurrentErrorHelper;
+    friend class AfcRetainsHelper;
     friend class AfcLaneDataClearHelper;
     friend class AfcRebindHelper;
     friend class AfcFaultEventCharHelper;

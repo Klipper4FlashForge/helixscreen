@@ -217,7 +217,11 @@ cross-field rules that can drop the **whole record** instead of merging:
   while the override holds a positive id is the plugin's own eject signal,
   and it clears the record only when the `ams/keep_spool_info_on_eject`
   setting is off (default on — "Keep Spool Info on Eject" toggle in the AMS
-  Management overlay, shown only where the capability is true).
+  Management overlay, shown only where the capability is true). Caveat: with
+  AFC's own retention on (`remember_spool = true` everywhere) firmware never
+  reports the eject zero, so this rule cannot fire and the toggle is a no-op —
+  `firmware_retains_spool_info()` detects that shape and the overlay disables
+  the toggle with a note instead.
 
 Sentinel values that fall through to firmware:
 

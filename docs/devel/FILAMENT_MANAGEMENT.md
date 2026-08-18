@@ -492,13 +492,23 @@ Two footguns this area has repeatedly hit (fixed in #1065; keep them fixed):
    **Why gate on the Spoolman binding.** On insert we can't tell "same spool back
    after maintenance" from "brand-new spool" — there's no identity signal. The
    two want opposite things for the identity fields, so we don't guess: a lane
-   with a deliberate Spoolman binding is left entirely alone (**#1071** retains
-   it), and only auto-tracked lanes (no binding) refresh material/color from
-   firmware. A lane whose firmware later reports a *different* spool id drops
-   the binding entirely (`merge_override` re-bind rule, **#1281**) — the
-   residual stale-binding case is now only the no-signal backends. On AFC and
-   Happy Hare the eject signal itself is user-configurable ("Keep Spool Info
-   on Eject", AMS Management overlay; default on).
+    with a deliberate Spoolman binding is left entirely alone (**#1071** retains
+    it), and only auto-tracked lanes (no binding) refresh material/color from
+    firmware. A lane whose firmware later reports a *different* spool id drops
+    the binding entirely (`merge_override` re-bind rule, **#1281**) — the
+    residual stale-binding case is now only the no-signal backends. On AFC and
+    Happy Hare the eject signal itself is user-configurable ("Keep Spool Info
+    on Eject", AMS Management overlay; default on).
+
+    **Precedence: firmware retention beats the toggle.** With AFC's per-lane
+    `remember_spool = true` on every lane, AFC itself repopulates lanes on
+    eject and keeps reporting the spool id — so neither the merge's eject rule
+    nor the re-assert push ever fires and the toggle has no observable effect
+    in either position. Rather than let it silently lie, the overlay disables
+    it with a note: `AmsBackend::firmware_retains_spool_info()` (ALL-lane
+    semantics; a mixed config leaves the toggle governing the `false` lanes)
+    drives the `ams_device_ops_fw_retains_spool_info` subject, which the row's
+    `disabled` prop and the note bind to (#1281 follow-up).
 
 ### OrcaSlicer compatibility — by backend
 

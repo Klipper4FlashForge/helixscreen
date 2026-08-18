@@ -3104,6 +3104,7 @@ translations:
   of: de
   'off': desligado
   Monitor for print abnormalities (K2 Plus camera-based): Monitorar anomalias de impressão (baseado na câmera do K2 Plus)
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: ''
   AI detection: Detecção por AI
   prints: impressões
   remaining: restante

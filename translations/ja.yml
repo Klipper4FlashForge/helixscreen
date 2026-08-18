@@ -2813,6 +2813,7 @@ translations:
   of: の
   'off': オフ
   Monitor for print abnormalities (K2 Plus camera-based): 印刷異常を監視 (K2 Plus カメラベース)
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: ''
   AI detection: AI 検出
   prints: 印刷
   remaining: 残り

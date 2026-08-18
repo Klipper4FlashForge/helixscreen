@@ -214,6 +214,13 @@ class AmsDeviceOperationsOverlay : public OverlayBase {
     /// Hare); no backend means hidden.
     lv_subject_t reports_spool_ids_subject_;
 
+    /// Subject disabling the keep-spool-info-on-eject toggle (0=enabled,
+    /// 1=firmware retention owns it). Set from
+    /// AmsBackend::firmware_retains_spool_info(): with AFC's per-lane
+    /// remember_spool true everywhere, the toggle has no observable effect,
+    /// so it is shown disabled with a note instead of silently lying.
+    lv_subject_t fw_retains_spool_info_subject_;
+
     /// Subject for QIDI Box backend detection (0=not QIDI, 1=QIDI) — gates the
     /// eject distance/velocity rows, which only apply to QIDI Box systems
     lv_subject_t is_qidi_subject_;

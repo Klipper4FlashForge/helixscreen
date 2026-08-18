@@ -2802,6 +2802,7 @@ translations:
   of: 的
   'off': 关闭
   Monitor for print abnormalities (K2 Plus camera-based): 监测打印异常（基于 K2 Plus 摄像头）
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: ''
   AI detection: AI 检测
   prints: 打印次数
   remaining: 剩余

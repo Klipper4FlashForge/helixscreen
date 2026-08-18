@@ -2060,6 +2060,18 @@ class AmsBackend {
         return false;
     }
 
+    /// Whether the firmware is CURRENTLY retaining spool identity across
+    /// eject on its own (AFC's per-lane remember_spool = true everywhere).
+    /// Dynamic, unlike the capabilities above — it reflects a config
+    /// choice, not a firmware property. When true, "Keep Spool Info on
+    /// Eject" has no observable effect either way: firmware keeps reporting
+    /// the spool id, so neither the eject rule nor the #1289 re-assert push
+    /// ever fires. The AMS Management overlay shows the toggle disabled
+    /// with a note rather than letting it silently lie.
+    [[nodiscard]] virtual bool firmware_retains_spool_info() const {
+        return false;
+    }
+
   protected:
     /// @name Own-write spool-id expectations (Rule-1 echo-race suppression)
     ///
