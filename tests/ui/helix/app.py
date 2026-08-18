@@ -406,6 +406,10 @@ class HelixApp:
         """Read a widget's text. Raises if the widget carries no text at all."""
         return self.ctl("text", target)["text"]
 
+    def state(self, target: str) -> dict:
+        """Read a widget's LVGL states/flags (checked, disabled, hidden, ...)."""
+        return self.ctl("state", target)
+
     def get(self, subject: str) -> Any:
         return self.ctl("get", subject)
 
