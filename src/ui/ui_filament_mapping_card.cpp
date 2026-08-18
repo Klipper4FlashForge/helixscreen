@@ -164,6 +164,9 @@ void FilamentMappingCard::on_ui_destroyed() {
     card_ = nullptr;
     rows_container_ = nullptr;
     warning_container_ = nullptr;
+    // The widgets this fingerprint described are gone — a recycled card must
+    // fully re-render, not early-return against a stale render.
+    last_render_fingerprint_.clear();
 }
 
 // ============================================================================
@@ -190,6 +193,32 @@ void FilamentMappingCard::rebuild_compact_view() {
         spdlog::debug("[FilamentMapping] Container destroyed during drain — skipping rebuild");
         return;
     }
+
+    // Idempotent render: identical (tools, mappings, slot state) + existing
+    // children => nothing visible changed => skip the destroy/recreate. Kills
+    // the late "gray -> real" rebuild when AMS resync data arrives after the
+    // panel opens. MUST stay below the post-drain null check above: a
+    // container destroyed during the drain returns before this, and no render
+    // happened, so no fingerprint is written either.
+    std::string fingerprint;
+    fingerprint.reserve(128);
+    for (const auto& t : tool_info_) {
+        fingerprint += std::to_string(t.tool_index) + ":" + std::to_string(t.color_rgb) + ":" +
+                       t.material + "|";
+    }
+    for (const auto& m : mappings_) {
+        fingerprint += std::to_string(m.tool_index) + ">" + std::to_string(m.mapped_slot) + ":" +
+                       std::to_string(m.mapped_backend) + (m.is_auto ? "a" : "m") + "|";
+    }
+    for (const auto& s : available_slots_) {
+        fingerprint += std::to_string(s.backend_index) + "." + std::to_string(s.slot_index) + "=" +
+                       std::to_string(s.color_rgb) + (s.is_empty ? "e" : "f") + "|";
+    }
+    if (fingerprint == last_render_fingerprint_ && lv_obj_get_child_count(rows_container_) > 0) {
+        return;
+    }
+    last_render_fingerprint_ = std::move(fingerprint);
+
     helix::ui::safe_clean_children(rows_container_);
 
     // Pill layout, sizing, padding, fonts all live in
