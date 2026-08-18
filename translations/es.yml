@@ -1052,6 +1052,7 @@ translations:
   Filament: Filamento
   Filament Detected: Filamento Detectado
   Filament Environment: Entorno del filamento
+  Filament Grade Mismatch: ''
   Filament In The Toolhead: ''
   Filament Mapping: Mapeo de Filamento
   Filament Runout: Filamento Agotado
@@ -2668,6 +2669,8 @@ translations:
   The filament system reported an error: El sistema de filamento informó un error
   The heater will cycle on and off several times.: El calentador se encenderá y apagará
     varias veces.
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : ''
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "El motor hace vibrar la correa mientras una luz estroboscópica parpadea a la misma frecuencia. Cuando la correa parece quedarse quieta (congelada), has encontrado la frecuencia de resonancia.\n\nUsa los botones de frecuencia para recorrer los valores hasta que la correa parezca estar inmóvil, luego bloquea la lectura."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2701,6 +2704,7 @@ translations:
   Theme changes apply after restart.: Los cambios de tema se aplican después de reiniciar.
   Theme reset to defaults: Tema restablecido a valores predeterminados
   'Theme: ': 'Tema: '
+  'These tools have a different filament grade loaded:': ''
   'These tools have incompatible materials loaded:': 'Estas herramientas tienen materiales
     incompatibles cargados:'
   'These tools have no filament loaded:': 'Estas herramientas no tienen filamento
@@ -2720,6 +2724,7 @@ translations:
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Esto no coincide con la bobina de Spoolman vinculada. ¿Añadirla como bobina nueva o actualizar la vinculada para que coincida?
   This file was sliced for {} but {} is loaded.: Este archivo fue laminado para {}
     pero se ha cargado {}.
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: Estos son exactamente los datos que
     se enviarán
   This is what data would be sent if enabled: Estos son los datos que se enviarían

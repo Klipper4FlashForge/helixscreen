@@ -950,6 +950,7 @@ translations:
   Filament: 耗材
   Filament Detected: 检测到耗材
   Filament Environment: 耗材环境
+  Filament Grade Mismatch: ''
   Filament In The Toolhead: ''
   Filament Mapping: 耗材映射
   Filament Runout: 耗材用尽
@@ -2426,6 +2427,8 @@ translations:
   : ''
   The filament system reported an error: 耗材系统报告错误
   The heater will cycle on and off several times.: 加热器将多次开关循环。
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : ''
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2448,6 +2451,7 @@ translations:
   Theme changes apply after restart.: 主题更改在重启后生效。
   Theme reset to defaults: 主题已重置为默认值
   'Theme: ': '主题: '
+  'These tools have a different filament grade loaded:': ''
   'These tools have incompatible materials loaded:': 这些工具加载了不兼容的材料：
   'These tools have no filament loaded:': '以下工具未加载耗材:'
   'These tools have no matching filament loaded:': 以下工具未加载匹配的耗材：
@@ -2463,6 +2467,7 @@ translations:
   : 此设备内存极少。共振校准会占用大量内存，可能导致 "Timer Too Close" 错误。仍要继续吗？
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: 这与关联的 Spoolman 料盘不匹配。是否添加为新料盘，或更新关联料盘以匹配？
   This file was sliced for {} but {} is loaded.: 此文件为 {} 切片，但当前加载的是 {}。
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: 这正是将要发送的数据
   This is what data would be sent if enabled: 这是启用后将发送的数据
   This may take up to 30 seconds: 这可能需要 30 秒

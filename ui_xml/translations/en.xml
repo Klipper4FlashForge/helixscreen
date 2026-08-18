@@ -936,6 +936,7 @@
   <translation tag="Filament" en="Filament"/>
   <translation tag="Filament Detected" en="Filament Detected"/>
   <translation tag="Filament Environment" en="Filament Environment"/>
+  <translation tag="Filament Grade Mismatch" en="Filament Grade Mismatch"/>
   <translation tag="Filament In The Toolhead" en="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" en="Filament Mapping"/>
   <translation tag="Filament Runout" en="Filament Runout"/>
@@ -2362,6 +2363,7 @@
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." en="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again."/>
   <translation tag="The filament system reported an error" en="The filament system reported an error"/>
   <translation tag="The heater will cycle on and off several times." en="The heater will cycle on and off several times."/>
+  <translation tag="The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle." en="The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." en="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." en="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" en="The printer halted this print and cannot resume it. Restart from the beginning?"/>
@@ -2382,6 +2384,7 @@
   <translation tag="Theme changes apply after restart." en="Theme changes apply after restart."/>
   <translation tag="Theme reset to defaults" en="Theme reset to defaults"/>
   <translation tag="Theme: " en="Theme: "/>
+  <translation tag="These tools have a different filament grade loaded:" en="These tools have a different filament grade loaded:"/>
   <translation tag="These tools have incompatible materials loaded:" en="These tools have incompatible materials loaded:"/>
   <translation tag="These tools have no filament loaded:" en="These tools have no filament loaded:"/>
   <translation tag="These tools have no matching filament loaded:" en="These tools have no matching filament loaded:"/>
@@ -2394,6 +2397,7 @@
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" en="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" en="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?"/>
   <translation tag="This file was sliced for {} but {} is loaded." en="This file was sliced for {} but {} is loaded."/>
+  <translation tag="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs." en="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs."/>
   <translation tag="This is exactly the data that will be sent" en="This is exactly the data that will be sent"/>
   <translation tag="This is what data would be sent if enabled" en="This is what data would be sent if enabled"/>
   <translation tag="This may take up to 30 seconds" en="This may take up to 30 seconds"/>
