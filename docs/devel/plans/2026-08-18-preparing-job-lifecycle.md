@@ -563,26 +563,30 @@ generalising that, not inventing it.
 
 ### 2. `retire_preparing(Superseded)` and media reset
 
-No separate media reset is needed. `clear_thumbnail_source()`
-(`src/print/active_print_media_manager.cpp:113-120`) already clears
-`thumbnail_source_filename_`, `last_effective_filename_`,
-`last_loaded_thumbnail_filename_` and cancels pending retries.
-
-Clearing `last_effective_filename_` is the load-bearing part: it defeats the
-idempotence short-circuit at `:184-187`
+**Corrected.** The first answer here was `clear_thumbnail_source()`. That is
+under-specified: `clear_print_info()`
+(`src/print/active_print_media_manager.cpp:817`) is the right reset, because it is
+a strict superset and the extra part is load-bearing:
 
 ```cpp
-std::string effective_filename =
-    thumbnail_source_filename_.empty() ? filename : thumbnail_source_filename_;
-if (effective_filename == last_effective_filename_) { return; }
+thumbnail_retry_count_ = 0;
+thumbnail_origin_ = ThumbnailOrigin::None;
 ```
 
-so the next `process_filename()` carrying the printer's real filename re-processes
-instead of returning early. Every retire reason routes through
-`clear_thumbnail_source()`.
+`ThumbnailOrigin::PreSet` **skips the thumbnail fetch** - that is the documented
+contract of the enum. Leaving a stale `PreSet` across a supersede reproduces #526
+(layers 0/0, because a pre-set thumbnail suppressed the metadata fetch). Clearing
+`last_effective_filename_`, which both functions do, is what defeats the idempotence
+short-circuit at `:184-187` so the next `process_filename()` re-processes rather
+than returning early.
 
-Note: that function currently has **no production caller** - only the definition and
-the header declaration. This change gives it the caller it was written for.
+Both functions currently have **no production caller**. This work gives both the
+callers they were written for.
+
+Note the asymmetry this fixes, which is a live bug in its own right: the panel
+clears its copy of the override on `print_ended`
+(`ui_panel_print_status.cpp:2719`); the media manager never clears its copy, and
+the media manager is the one feeding the shared subjects the HomePanel reads.
 
 ### 3. Overlay-withhold threshold
 

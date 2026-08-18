@@ -4,6 +4,7 @@
 #include "ui_observer_guard.h" // SubjectLifetime
 
 #include "async_lifetime_guard.h"
+#include "print_job_ref.h"
 #include "subject_managed_panel.h"
 
 #if defined(HELIX_PLATFORM_ESP32)
@@ -270,6 +271,30 @@ class PrinterPrintState {
     static constexpr int MAX_EXTRUDER_SCAN = 16;
 
     /// Current PrintStartPhase enum value
+    /**
+     * @brief Begin preparing a job, on the main thread
+     *
+     * The commit path: the user has chosen this job and work has started, but
+     * the printer has not been handed it yet. Clears the previous job's
+     * terminal state and raises the first pre-print phase.
+     *
+     * Synchronous by design. set_print_start_state() defers because it is
+     * called from WebSocket callbacks; a button press is already on the main
+     * thread, so the clear lands before anything can render a Preparing state
+     * next to the finished job's numbers.
+     */
+    void begin_preparing(const PrintJobRef& job);
+
+    /// Stop preparing. Every reason routes through here; see PreparingExit.
+    void retire_preparing(PreparingExit reason);
+
+    [[nodiscard]] bool has_preparing_job() const {
+        return !preparing_job_.empty();
+    }
+    [[nodiscard]] const PrintJobRef& preparing_job() const {
+        return preparing_job_;
+    }
+
     /**
      * @brief The authoritative UI-level print state (PrintState enum)
      *
@@ -736,8 +761,11 @@ class PrinterPrintState {
     void create_extruder_filament_entry(int extruder_idx);
 
     // Print start progress subjects
-    lv_subject_t print_start_phase_{};    // Integer: PrintStartPhase enum
-    lv_subject_t print_lifecycle_{};      // Integer: PrintState enum (derived)
+    lv_subject_t print_start_phase_{}; // Integer: PrintStartPhase enum
+    lv_subject_t print_lifecycle_{};   // Integer: PrintState enum (derived)
+
+    /// The job we are preparing; empty when none. See begin_preparing().
+    PrintJobRef preparing_job_{};
     lv_subject_t print_start_message_{};  // String: phase message
     lv_subject_t print_start_progress_{}; // Integer: 0-100%
 

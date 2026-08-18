@@ -449,7 +449,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
 
                 // Safety: When print becomes inactive, ensure print_start_phase is IDLE
                 // This prevents "Preparing Print" from showing when print is finished
-                if (!is_active) {
+                if (!is_active && !has_preparing_job()) {
                     int phase = lv_subject_get_int(&print_start_phase_);
                     if (phase != static_cast<int>(PrintStartPhase::IDLE)) {
                         spdlog::warn(
@@ -1085,8 +1085,12 @@ void PrinterPrintState::set_print_start_state(PrintStartPhase phase, const char*
         // while still allowing new prints to start from an inactive state.
         int current_phase = lv_subject_get_int(&print_start_phase_);
         bool is_new_print_start = (current_phase == static_cast<int>(PrintStartPhase::IDLE));
+        // A live preparing job means WE started this and the printer has not
+        // caught up yet - print_active is legitimately 0 for the whole
+        // host-side pre-start block, and dropping these updates freezes the
+        // overlay on its first phase.
         if (phase != PrintStartPhase::IDLE && lv_subject_get_int(&print_active_) == 0 &&
-            !is_new_print_start) {
+            !is_new_print_start && !has_preparing_job()) {
             spdlog::debug("[PrinterPrintState] Ignoring stale phase {} (print inactive)",
                           static_cast<int>(phase));
             return;
@@ -1243,6 +1247,62 @@ bool PrinterPrintState::can_start_new_print() const {
 
 bool PrinterPrintState::is_print_in_progress() const {
     return lv_subject_get_int(const_cast<lv_subject_t*>(&print_in_progress_)) != 0;
+}
+
+const char* preparing_exit_name(PreparingExit reason) {
+    switch (reason) {
+    case PreparingExit::Confirmed:
+        return "confirmed";
+    case PreparingExit::Superseded:
+        return "superseded";
+    case PreparingExit::Failed:
+        return "failed";
+    case PreparingExit::Cancelled:
+        return "cancelled";
+    case PreparingExit::TimedOut:
+        return "timed out";
+    }
+    return "?";
+}
+
+void PrinterPrintState::begin_preparing(const PrintJobRef& job) {
+    if (job.empty()) {
+        spdlog::warn("[PrinterPrintState] begin_preparing called with no job");
+        return;
+    }
+    spdlog::info("[PrinterPrintState] Preparing '{}'", job.filename);
+    preparing_job_ = job;
+
+    // Synchronous: see the header. The previous job's terminal state has to be
+    // gone before any observer can paint a Preparing state beside it.
+    reset_for_new_print();
+    unfreeze_progress_display();
+    if (static_cast<PrintOutcome>(lv_subject_get_int(&print_outcome_)) != PrintOutcome::NONE) {
+        lv_subject_set_int(&print_outcome_, static_cast<int>(PrintOutcome::NONE));
+    }
+    lv_subject_set_int(&print_start_phase_, static_cast<int>(PrintStartPhase::INITIALIZING));
+    lv_subject_set_int(&print_start_progress_, 0);
+    publish_lifecycle_state();
+    update_display_message_visible();
+}
+
+void PrinterPrintState::retire_preparing(PreparingExit reason) {
+    if (preparing_job_.empty()) {
+        return;
+    }
+    spdlog::info("[PrinterPrintState] Retiring preparing job '{}': {}", preparing_job_.filename,
+                 preparing_exit_name(reason));
+    preparing_job_ = {};
+
+    // Confirmed hands off to a real print, which owns the phase from here. Every
+    // other reason means no print is coming, so the pre-print UI must come down.
+    if (reason != PreparingExit::Confirmed) {
+        lv_subject_set_int(&print_start_phase_, static_cast<int>(PrintStartPhase::IDLE));
+        lv_subject_copy_string(&print_start_message_, "");
+        lv_subject_set_int(&print_start_progress_, 0);
+        update_display_message_visible();
+    }
+    publish_lifecycle_state();
 }
 
 void PrinterPrintState::publish_lifecycle_state() {

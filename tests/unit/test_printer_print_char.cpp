@@ -1867,3 +1867,81 @@ TEST_CASE("print_lifecycle subject publishes the derived UI state",
         REQUIRE(lifecycle() == PrintState::Printing);
     }
 }
+
+// ============================================================================
+// Preparing-job ownership
+// ============================================================================
+
+TEST_CASE("A live preparing job keeps phase updates flowing while the printer is inactive",
+          "[characterization][print][phase][preparing]") {
+    // Preparing used to be a sub-state of Moonraker PRINTING: every phase update
+    // after the first was dropped while print_active == 0. That is fine when all
+    // pre-print work happens inside PRINT_START, but a host-side pre-start block
+    // runs before the printer is handed the job at all, so print_stats still
+    // holds the previous job's terminal state for its whole duration. Without
+    // this, a commit-armed overlay freezes on the first phase.
+    lv_init_safe();
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    auto phase = [&state]() {
+        return static_cast<PrintStartPhase>(
+            lv_subject_get_int(state.get_print_start_phase_subject()));
+    };
+
+    // The previous job finished; the printer is idle and reports COMPLETE.
+    state.update_from_status(json{{"print_stats", {{"state", "complete"}}}});
+    REQUIRE(lv_subject_get_int(state.get_print_active_subject()) == 0);
+
+    state.begin_preparing(helix::PrintJobRef{"next.gcode", "", ""});
+    helix::ui::UpdateQueue::instance().drain();
+    REQUIRE(state.has_preparing_job());
+    REQUIRE(phase() == PrintStartPhase::INITIALIZING);
+
+    SECTION("subsequent phases still land while the printer is inactive") {
+        state.set_print_start_state(PrintStartPhase::HOMING, "Homing...", 10);
+        helix::ui::UpdateQueue::instance().drain();
+        REQUIRE(phase() == PrintStartPhase::HOMING);
+
+        state.set_print_start_state(PrintStartPhase::HEATING_BED, "Heating bed...", 40);
+        helix::ui::UpdateQueue::instance().drain();
+        REQUIRE(phase() == PrintStartPhase::HEATING_BED);
+    }
+
+    SECTION("retiring the job stops accepting phases again") {
+        state.retire_preparing(helix::PreparingExit::Cancelled);
+        helix::ui::UpdateQueue::instance().drain();
+        REQUIRE_FALSE(state.has_preparing_job());
+        REQUIRE(phase() == PrintStartPhase::IDLE);
+
+        state.set_print_start_state(PrintStartPhase::HOMING, "Homing...", 10);
+        helix::ui::UpdateQueue::instance().drain();
+        REQUIRE(phase() == PrintStartPhase::HOMING); // first phase from IDLE still lands
+    }
+}
+
+TEST_CASE("begin_preparing clears the previous job's terminal state synchronously",
+          "[characterization][print][preparing]") {
+    // The reported symptom: the completion badge and the finished job's frozen
+    // progress stayed on screen for the whole pre-start block. Commit arming
+    // happens on the main thread, so the clear does not wait for a queue drain -
+    // the panel must never render a Preparing state alongside the old job's
+    // numbers.
+    lv_init_safe();
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    state.update_from_status(json{{"print_stats", {{"state", "printing"}}}});
+    state.update_from_status(json{{"print_stats", {{"state", "complete"}}}});
+    REQUIRE(lv_subject_get_int(state.get_print_outcome_subject()) ==
+            static_cast<int>(PrintOutcome::COMPLETE));
+
+    state.begin_preparing(helix::PrintJobRef{"next.gcode", "", ""});
+
+    // No drain: the clear is synchronous on the commit path.
+    REQUIRE(lv_subject_get_int(state.get_print_outcome_subject()) ==
+            static_cast<int>(PrintOutcome::NONE));
+    REQUIRE(lv_subject_get_int(state.get_print_progress_subject()) == 0);
+}

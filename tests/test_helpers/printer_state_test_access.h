@@ -32,6 +32,12 @@ class PrinterPrintStateTestAccess {
         pps.smoothed_remaining_ = 0.0;
         pps.has_smoothed_remaining_ = false;
         pps.sdcard_active_ = false;
+        // The job being prepared is session-scoped: it outlives
+        // reset_for_new_print() by design, since it exists precisely for the
+        // window before the printer reports the job. Leaving it set leaks a
+        // live preparing job into the next test, where it relaxes the
+        // phase-update guard and the print_active safety reset.
+        pps.preparing_job_ = {};
     }
 
     /// Mark the layer counters as coming from real slicer/Moonraker fields
