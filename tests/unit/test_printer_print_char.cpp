@@ -1945,3 +1945,76 @@ TEST_CASE("begin_preparing clears the previous job's terminal state synchronousl
             static_cast<int>(PrintOutcome::NONE));
     REQUIRE(lv_subject_get_int(state.get_print_progress_subject()) == 0);
 }
+
+TEST_CASE("A preparing job reconciles against what the printer eventually reports",
+          "[characterization][print][preparing]") {
+    // The printer is the authority on what is actually printing. When it finally
+    // names a job, either it is ours (hand off) or somebody else started a
+    // different print while ours was preparing (drop our claim). Nothing could
+    // tell those apart before, because there was no recorded identity to compare.
+    lv_init_safe();
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    SECTION("the printer reporting our job confirms it, without ending preparation") {
+        // Confirmed means the printer took OUR job, not that preparation is
+        // over. PRINT_START keeps running its homing/heating/mesh inside the
+        // job, so the phase - and the overlay - legitimately outlive the
+        // handoff. Only a non-Confirmed exit means no print is coming.
+        state.begin_preparing(helix::PrintJobRef{"mine.gcode", "", ""});
+        state.update_from_status(
+            json{{"print_stats", {{"state", "printing"}, {"filename", "mine.gcode"}}}});
+        helix::ui::UpdateQueue::instance().drain();
+
+        REQUIRE_FALSE(state.has_preparing_job()); // claim settled
+        REQUIRE(lv_subject_get_int(state.get_print_start_phase_subject()) !=
+                static_cast<int>(PrintStartPhase::IDLE)); // phase survives
+        REQUIRE(lv_subject_get_int(state.get_print_lifecycle_subject()) ==
+                static_cast<int>(PrintState::Preparing));
+    }
+
+    SECTION("the phase completing after confirmation lands in Printing") {
+        state.begin_preparing(helix::PrintJobRef{"mine.gcode", "", ""});
+        state.update_from_status(
+            json{{"print_stats", {{"state", "printing"}, {"filename", "mine.gcode"}}}});
+        state.reset_print_start_state();
+        helix::ui::UpdateQueue::instance().drain();
+
+        REQUIRE(lv_subject_get_int(state.get_print_lifecycle_subject()) ==
+                static_cast<int>(PrintState::Printing));
+    }
+
+    SECTION("a path-qualified report still matches the bare name we committed") {
+        state.begin_preparing(helix::PrintJobRef{"mine.gcode", "", ""});
+        state.update_from_status(
+            json{{"print_stats", {{"state", "printing"}, {"filename", "subdir/mine.gcode"}}}});
+        helix::ui::UpdateQueue::instance().drain();
+
+        REQUIRE_FALSE(state.has_preparing_job());
+    }
+
+    SECTION("the printer reporting a different job supersedes ours") {
+        state.begin_preparing(helix::PrintJobRef{"mine.gcode", "", ""});
+        state.update_from_status(
+            json{{"print_stats", {{"state", "printing"}, {"filename", "someone_elses.gcode"}}}});
+        helix::ui::UpdateQueue::instance().drain();
+
+        REQUIRE_FALSE(state.has_preparing_job());
+        REQUIRE(lv_subject_get_int(state.get_print_lifecycle_subject()) ==
+                static_cast<int>(PrintState::Printing));
+    }
+
+    SECTION("a terminal state does not confirm a preparing job") {
+        // The previous job going complete while ours prepares is exactly the
+        // reported scenario, and must leave our claim intact.
+        state.begin_preparing(helix::PrintJobRef{"mine.gcode", "", ""});
+        state.update_from_status(
+            json{{"print_stats", {{"state", "complete"}, {"filename", "previous.gcode"}}}});
+        helix::ui::UpdateQueue::instance().drain();
+
+        REQUIRE(state.has_preparing_job());
+        REQUIRE(lv_subject_get_int(state.get_print_lifecycle_subject()) ==
+                static_cast<int>(PrintState::Preparing));
+    }
+}

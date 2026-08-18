@@ -642,6 +642,16 @@ class PrinterPrintState {
     /// Recompute and publish print_lifecycle from job state + pre-print phase.
     void publish_lifecycle_state();
 
+    /**
+     * @brief Settle a live preparing job against what the printer reports
+     *
+     * Idempotent, and called from both the job-state and filename parse points
+     * because either can arrive first. Only a PRINTING report settles anything:
+     * the previous job going terminal while ours prepares is the whole reason
+     * this exists, so it must leave the claim intact.
+     */
+    void reconcile_preparing();
+
   private:
     friend class PrinterPrintStateTestAccess;
 

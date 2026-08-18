@@ -9,6 +9,7 @@
 
 #include "printer_print_state.h"
 
+#include "ui_filename_utils.h"
 #include "ui_update_queue.h"
 
 #include "data_root_resolver.h"
@@ -430,6 +431,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                               static_cast<int>(current_state));
                 lv_subject_set_int(&print_state_enum_, static_cast<int>(new_state));
                 publish_lifecycle_state();
+                reconcile_preparing();
             }
 
             // Update string subject AFTER enum so observers see consistent state
@@ -475,6 +477,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
             if (strcmp(lv_subject_get_string(&print_filename_), filename.c_str()) != 0) {
                 lv_subject_copy_string(&print_filename_, filename.c_str());
             }
+            reconcile_preparing();
         }
 
         // print_stats.message — populated by Klipper to describe pause/error reason
@@ -1263,6 +1266,32 @@ const char* preparing_exit_name(PreparingExit reason) {
         return "timed out";
     }
     return "?";
+}
+
+void PrinterPrintState::reconcile_preparing() {
+    if (preparing_job_.empty()) {
+        return;
+    }
+    const auto job_state = static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
+    if (job_state != PrintJobState::PRINTING) {
+        return; // Only an actually-running print settles this.
+    }
+    const char* reported = lv_subject_get_string(&print_filename_);
+    if (!reported || reported[0] == '\0') {
+        return; // Printing, but not yet named - wait for the name.
+    }
+
+    // Compare on the bare name: the report may be path-qualified, and a
+    // modification rewrite hands the printer a temp file standing in for the
+    // file the user chose.
+    auto bare = [](const std::string& p) {
+        const std::string resolved = gcode::resolve_gcode_filename(p);
+        const size_t slash = resolved.find_last_of('/');
+        return slash == std::string::npos ? resolved : resolved.substr(slash + 1);
+    };
+
+    const bool mine = bare(reported) == bare(preparing_job_.filename);
+    retire_preparing(mine ? PreparingExit::Confirmed : PreparingExit::Superseded);
 }
 
 void PrinterPrintState::begin_preparing(const PrintJobRef& job) {

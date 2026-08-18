@@ -81,6 +81,28 @@ It is also the reconciliation key. When `print_stats` reports a filename we comp
 Today nothing can notice that case. This makes the externally-started path strictly
 safer than it is now, not merely unregressed.
 
+### Reconciliation rules
+
+Only a **PRINTING** report settles a preparing job. The previous job going
+terminal while ours prepares is the entire scenario this exists for, so a
+terminal report must leave the claim intact. A PRINTING report with no filename
+yet also waits.
+
+Matching is on the **bare name**, after `resolve_gcode_filename()`:
+
+- the report may be path-qualified (`subdir/mine.gcode`) while the user committed
+  a bare name
+- a modification rewrite hands the printer a `.helix_temp/modified_*` file
+  standing in for the file the user chose
+
+Match -> `Confirmed`. Mismatch -> `Superseded`: something else started a different
+print while ours was preparing, so our claim is dropped rather than silently
+adopted. Nothing could distinguish those before, because no identity was recorded
+to compare against.
+
+Reconciliation is idempotent and runs from both the job-state and the filename
+parse points, since either can arrive first in a status payload.
+
 ### API
 
 ```cpp
