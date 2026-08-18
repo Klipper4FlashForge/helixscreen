@@ -35,3 +35,16 @@ TEST_CASE("host_identity — clearly remote is not same-host", "[host_identity]"
     REQUIRE_FALSE(helix::is_moonraker_on_same_host("192.0.2.1"));
     REQUIRE_FALSE(helix::is_moonraker_on_same_host("printer.invalid"));
 }
+
+TEST_CASE("extract_host_from_websocket_url parses scheme URLs", "[host_identity]") {
+    REQUIRE(helix::extract_host_from_websocket_url("ws://192.168.1.100:7125/websocket") ==
+            "192.168.1.100");
+    REQUIRE(helix::extract_host_from_websocket_url("wss://printer.local:7125/websocket") ==
+            "printer.local");
+    REQUIRE(helix::extract_host_from_websocket_url("ws://[::1]:7125/websocket") == "::1");
+    REQUIRE(helix::extract_host_from_websocket_url("ws://myhost/websocket") == "myhost");
+    REQUIRE(helix::extract_host_from_websocket_url("ws://10.0.0.5:7125") == "10.0.0.5");
+    REQUIRE(helix::extract_host_from_websocket_url("").empty());
+    REQUIRE(helix::extract_host_from_websocket_url("http://192.168.1.100:8080/")
+                .empty()); // unknown scheme
+}

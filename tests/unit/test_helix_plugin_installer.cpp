@@ -17,6 +17,7 @@
 
 #include "../../include/config.h"
 #include "../../include/helix_plugin_installer.h"
+#include "../../include/host_identity.h"
 
 #include <filesystem>
 #include <string>
@@ -29,20 +30,6 @@ using namespace helix;
 // ============================================================================
 
 TEST_CASE("HelixPluginInstaller URL parsing", "[plugin_installer]") {
-    SECTION("is_local_host correctly identifies localhost URLs") {
-        // These should all be detected as local
-        REQUIRE(helix::is_local_host("localhost") == true);
-        REQUIRE(helix::is_local_host("127.0.0.1") == true);
-        REQUIRE(helix::is_local_host("::1") == true);
-
-        // These should NOT be detected as local
-        REQUIRE(helix::is_local_host("192.168.1.100") == false);
-        REQUIRE(helix::is_local_host("10.0.0.50") == false);
-        REQUIRE(helix::is_local_host("printer.local") == false);
-        REQUIRE(helix::is_local_host("my-printer") == false);
-        REQUIRE(helix::is_local_host("klipper.lan") == false);
-    }
-
     SECTION("extract_host_from_websocket_url parses URLs correctly") {
         // Standard WebSocket URLs (ws://)
         REQUIRE(helix::extract_host_from_websocket_url("ws://localhost:7125/websocket") ==
@@ -357,20 +344,6 @@ TEST_CASE("HelixPluginInstaller URL edge cases", "[plugin_installer]") {
 
     SECTION("extract_host handles URLs with just hostname") {
         REQUIRE(helix::extract_host_from_websocket_url("ws://localhost") == "localhost");
-    }
-
-    SECTION("is_local_host is case sensitive") {
-        // "localhost" variants with different case should NOT match
-        // (this is intentional - DNS is case-insensitive but we match exactly)
-        REQUIRE(helix::is_local_host("LOCALHOST") == false);
-        REQUIRE(helix::is_local_host("LocalHost") == false);
-    }
-
-    SECTION("is_local_host rejects loopback-like strings") {
-        // These look like localhost but aren't
-        REQUIRE(helix::is_local_host("localhost.localdomain") == false);
-        REQUIRE(helix::is_local_host("127.0.0.2") == false); // Different loopback
-        REQUIRE(helix::is_local_host("127.0.0.1.example.com") == false);
     }
 }
 

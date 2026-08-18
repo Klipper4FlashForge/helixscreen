@@ -17,7 +17,7 @@
 #include "display_manager.h"
 #include "display_settings_manager.h"
 #include "filament_sensor_manager.h"
-#include "helix_plugin_installer.h"
+#include "host_identity.h"
 #include "hv/requests.h"
 #include "i_moonraker_api.h"
 #include "json_utils.h"
@@ -304,7 +304,7 @@ TelemetryManager::classify_moonraker_locality(const std::string& websocket_url) 
         return std::nullopt;
     }
 
-    return helix::is_local_host(host);
+    return helix::is_moonraker_on_same_host(host);
 }
 
 TelemetryManager::~TelemetryManager() {
