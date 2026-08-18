@@ -1463,17 +1463,33 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
                 system_info_.supports_bypass = true;
             }
 
-            // Cross-UI drift guard: the box re-arming (enable=1) while a
-            // declaration is latched means someone re-enabled the CFS through
-            // Creality's own screen — the box is an active agent again, so the
-            // declaration is stale. In-memory clear only; this runs on the
-            // libhv thread and the persisted flag is idempotently re-cleared
-            // on the next boot's restore. Only an explicit 1 acts — a missing
-            // or sentinel (-1) enable means "unknown", not "re-armed".
-            if (bypass_declared_ && helix::json_util::safe_int(box, "enable", -1) == 1) {
+            // Cross-UI drift guard: has the CFS taken the feed back? The box
+            // naming an ACTIVE BAY is that signal, and it is the only one that
+            // means it.
+            //
+            // `enable` is not, because the box re-arms itself. Verified on a K2
+            // Plus: bypass was declared (ENABLE=0) and restored cleanly across
+            // one restart with the box still reporting enable=0, but by the next
+            // restart enable had returned to 1 with no host command in between —
+            // no BOX_ENABLE_CFS_PRINT anywhere in klippy.log, no disable_bypass()
+            // in ours, and the prints in that window were plain Moonraker
+            // start_print calls from a third-party client, which runs nothing
+            // vendor-specific. Keying the drop on enable therefore discarded the
+            // declaration on the first full frame after every restart (partial
+            // frames omit the field, so it only ever bit at startup) and took
+            // bypass down with it while the external spool was still feeding the
+            // nozzle.
+            //
+            // current_slot >= 0 keys on the feed instead: an armed box with every
+            // bay empty has taken nothing back, and a stood-down box with a lane
+            // threaded and named active has. In-memory clear only; this runs on
+            // the libhv thread and the persisted flag is re-evaluated by this
+            // same rule after the next boot's restore.
+            if (bypass_declared_ && new_info.current_slot >= 0) {
                 bypass_declared_ = false;
-                spdlog::info("[AMS CFS] Bypass declaration dropped — box reports enable=1 "
-                             "(re-armed outside HelixScreen)");
+                spdlog::info("[AMS CFS] Bypass declaration dropped — bay {} is loaded, the "
+                             "CFS has the feed back",
+                             new_info.current_slot);
             }
 
             // Deliberately do NOT touch filament_loaded here. box.filament is a

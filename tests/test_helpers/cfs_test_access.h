@@ -65,6 +65,19 @@ class CfsTestAccess {
     // Seed only the seated bay (current_slot) for tests that pin the seated
     // lane independently of the nozzle-loaded flag (e.g. the
     // toolhead-unaccounted gate, which reads the pair separately).
+    /// The latched stock-dialect declaration itself, not is_bypass_active() —
+    /// that ORs in `current_slot == -2` and so cannot tell a live derivation
+    /// from the flag that permits one.
+    static bool bypass_declared(const helix::printer::AmsBackendCfs& b) {
+        return b.bypass_declared_;
+    }
+
+    static void set_bypass_declared(helix::printer::AmsBackendCfs& b, bool declared) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.bypass_declared_ = declared;
+        b.system_info_.supports_bypass = true;
+    }
+
     static void set_seated_bay(helix::printer::AmsBackendCfs& b, int slot) {
         std::lock_guard<std::mutex> lock(b.mutex_);
         b.system_info_.current_slot = slot;

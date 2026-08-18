@@ -276,13 +276,23 @@ TEST_CASE("CFS bypass: stock dialect declaration + sensor derivation", "[ams][cf
         SettingsManager::instance().set_bypass_declared(false); // test-env cleanup
     }
 
-    SECTION("box re-armed elsewhere drops the declaration") {
+    SECTION("the box re-arming itself does NOT drop the declaration") {
+        // This section used to assert the opposite, on the premise that enable=1
+        // meant "someone re-enabled the CFS through Creality's own screen". That
+        // premise is false and the frame below is why: it is the literal frame a
+        // K2 Plus sent after re-arming with no host involved — no
+        // BOX_ENABLE_CFS_PRINT in klippy.log, no disable_bypass() in ours (the
+        // only thing that sends ENABLE=1), and the prints in that window were
+        // plain Moonraker start_print calls from a third-party client.
+        //
+        // Because partial frames omit `enable`, the old rule only bit on the
+        // first full frame after a restart — so bypass survived all session and
+        // died on relaunch, while the external spool was still feeding the
+        // nozzle and Unload greyed out.
         SettingsManager::instance().set_bypass_declared(false);
         backend.enable_bypass();
         REQUIRE(backend.is_bypass_active());
 
-        // enable=1 in a full box frame: someone re-armed the CFS through
-        // Creality's own screen. The declaration is stale and must drop.
         CfsTestAccess::handle_status(
             backend, make_cfs_notification(json::parse(
                          R"({"state":"connect","filament":0,"auto_refill":0,"enable":1,
@@ -290,7 +300,9 @@ TEST_CASE("CFS bypass: stock dialect declaration + sensor derivation", "[ams][cf
                 "T1":{"state":"connect","filament":"None","vender":["none"],
                       "remain_len":["-1"],"color_value":["-1"],
                       "material_type":["-1"]}})")));
-        REQUIRE_FALSE(backend.is_bypass_active());
+        REQUIRE(backend.is_bypass_active());
+
+        SettingsManager::instance().set_bypass_declared(false); // test-env cleanup
     }
 
     SECTION("bay filament at the toolhead blocks enable") {
@@ -3258,4 +3270,50 @@ TEST_CASE("CFS endless spool: auto-refill on and off are distinguishable",
 
         CHECK_FALSE(backend.reset_endless_spool().success());
     }
+}
+
+// ===========================================================================
+// Bypass declaration lifetime — what actually means "the CFS took the feed back"
+// ===========================================================================
+//
+// Field evidence, K2 Plus 2026-08-18. Bypass was declared (BOX_ENABLE_CFS_PRINT
+// ENABLE=0) at 23:13 and restored cleanly across a restart at 00:34 with the box
+// still reporting enable=0. By the next restart `enable` had returned to 1 with
+// no host command in between: no BOX_ENABLE_CFS_PRINT anywhere in klippy.log, no
+// disable_bypass() in ours, and the prints in that window were plain Moonraker
+// start_print calls from Fluidd, which runs nothing vendor-specific. The box
+// re-arms itself.
+//
+// Dropping the declaration on `enable` alone therefore threw bypass away on the
+// first full frame after every restart (partial frames omit the field, so it only
+// ever bit at startup) while the external spool was still feeding the nozzle.
+
+TEST_CASE("CFS drops the bypass declaration once a bay is actually loaded", "[ams][cfs][bypass]") {
+    // The real drift case the guard exists for: the CFS is feeding again, so the
+    // declaration is stale and must not permit a later re-derivation.
+    CfsRemapHelper cfs;
+    CfsTestAccess::set_bypass_declared(cfs, true);
+
+    json box = make_single_unit_box({"101001", "-1", "-1", "-1"}, {"01A1A1A", "-1", "-1", "-1"});
+    box["enable"] = 1;
+    box["T1"]["filament"] = "A"; // bay 1 slot A is the active lane
+    CfsTestAccess::handle_status(cfs, make_cfs_notification(box));
+
+    CHECK_FALSE(CfsTestAccess::bypass_declared(cfs));
+}
+
+TEST_CASE("CFS drops the bypass declaration for a loaded bay even while stood down",
+          "[ams][cfs][bypass]") {
+    // enable=0 with a bay loaded: the box is not participating in prints but a
+    // lane is threaded and named active. Gating the drop on enable==1 as well
+    // would leave the declaration latched with the CFS holding the path.
+    CfsRemapHelper cfs;
+    CfsTestAccess::set_bypass_declared(cfs, true);
+
+    json box = make_single_unit_box({"101001", "-1", "-1", "-1"}, {"01A1A1A", "-1", "-1", "-1"});
+    box["enable"] = 0;
+    box["T1"]["filament"] = "A";
+    CfsTestAccess::handle_status(cfs, make_cfs_notification(box));
+
+    CHECK_FALSE(CfsTestAccess::bypass_declared(cfs));
 }
