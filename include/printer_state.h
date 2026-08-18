@@ -1276,6 +1276,11 @@ class PrinterState {
         return network_state_.get_nav_buttons_enabled_subject();
     } // 1=enabled (connected AND klippy ready), 0=disabled
 
+    // Remote-screen verdict - delegated to PrinterNetworkState
+    lv_subject_t* get_moonraker_is_remote_subject() {
+        return network_state_.get_moonraker_is_remote_subject();
+    } // 1=connected Moonraker is not this host, 0=local/unknown
+
     // LED state subjects - delegated to PrinterLedState component
     lv_subject_t* get_led_state_subject() {
         return led_state_component_.get_led_state_subject();
@@ -1432,6 +1437,16 @@ class PrinterState {
      * @note Called via ui_queue_update() from set_printer_connection_state()
      */
     void set_printer_connection_state_internal(int state, const char* message);
+
+    /// Remote-screen verdict from the live websocket endpoint (thread-safe;
+    /// defers the subject write to the main thread). Published by
+    /// MoonrakerManager on CONNECTED edges.
+    void set_moonraker_is_remote(bool remote);
+
+    /// Main-thread read of moonraker_is_remote (true = connected Moonraker is
+    /// not this host). For UI decision points; background code uses
+    /// helix::is_moonraker_on_same_host() directly.
+    bool is_moonraker_remote();
 
     /**
      * @brief Check if printer has ever connected this session

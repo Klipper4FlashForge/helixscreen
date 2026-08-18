@@ -13,6 +13,7 @@
 #include "i_moonraker_client.h"
 #include "lvgl/lvgl.h"
 #include "moonraker_manager.h"
+#include "printer_state.h"
 #include "theme_manager.h"
 #include "utils/network_validation.h"
 
@@ -467,6 +468,10 @@ void show_connection_failed_modal(const std::string& title, const std::string& m
         // the one case where changing the address is exactly the right action,
         // and defaulting to a loopback literal would take that action away from
         // every user who has not set a host yet.
+        // Locality here must read the ATTEMPTED host, not the live endpoint:
+        // this dialog fires exactly when the connection failed, so the
+        // moonraker_is_remote subject is still at its default (local) and
+        // would suppress "Change Address" for every remote host.
         std::string host;
         if (Config* cfg = Config::get_instance()) {
             host = cfg->get<std::string>(cfg->df() + "moonraker_host", "");

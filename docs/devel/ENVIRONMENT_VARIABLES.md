@@ -896,6 +896,22 @@ When set truthy, the mock calls its normal `start_print_internal()` on connect (
 HELIX_MOCK_AUTO_PRINT=1 ./build/bin/helix-screen --test -vv
 ```
 
+### `HELIX_MOCK_REMOTE_PRINTER`
+
+**Remote-screen simulation:** Forces the `moonraker_is_remote` subject to 1 in `--test` runs.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `1` / any non-empty, non-`0` value to enable |
+| **Default** | unset (verdict derived from the live websocket endpoint) |
+| **File** | `include/runtime_config.h` (`should_mock_remote_printer()`); consumed in `src/application/moonraker_manager.cpp` |
+
+The mock client connects over loopback, which always reads as same-host — this flag makes remote-gated UI (print-status camera button, remote video playback paths) appear and behave as if HelixScreen were a remote screen.
+
+```bash
+HELIX_MOCK_REMOTE_PRINTER=1 ./build/bin/helix-screen --test -vv
+```
+
 #### Seeing the Adaptive Bed Mesh toggle
 
 Adaptive bed mesh is a property of the **single** Bed Mesh pre-print option (on a

@@ -1023,6 +1023,10 @@ static lv_subject_t s_test_notification_subject;
 static lv_subject_t s_test_home_edit_mode_subject;
 static lv_subject_t s_test_wizard_active_subject;
 static lv_subject_t s_test_host_power_supported_subject;
+// Mirrors app_globals.cpp's g_platform_extras_subject: 1 on every non-ESP32
+// build, 0 only on the ESP32 v1 cut. Registered into the XML global scope so
+// bindings like btn_camera's platform_extras_available cond resolve in tests.
+static lv_subject_t s_test_platform_extras_subject;
 static bool s_test_notification_subject_initialized = false;
 
 void app_globals_init_subjects() {
@@ -1030,6 +1034,13 @@ void app_globals_init_subjects() {
         lv_subject_init_pointer(&s_test_notification_subject, nullptr);
         lv_subject_init_int(&s_test_home_edit_mode_subject, 0);
         lv_subject_init_int(&s_test_wizard_active_subject, 0);
+#if defined(HELIX_PLATFORM_ESP32)
+        lv_subject_init_int(&s_test_platform_extras_subject, 0);
+#else
+        lv_subject_init_int(&s_test_platform_extras_subject, 1);
+#endif
+        lv_xml_register_subject(nullptr, "platform_extras_available",
+                                &s_test_platform_extras_subject);
         s_test_notification_subject_initialized = true;
         // Mirrors the real seeding in app_globals.cpp — the rule itself lives
         // in helix::platform_host_power_supported() (real code, linked here).
@@ -1049,6 +1060,7 @@ void app_globals_deinit_subjects() {
         lv_subject_deinit(&s_test_home_edit_mode_subject);
         lv_subject_deinit(&s_test_wizard_active_subject);
         lv_subject_deinit(&s_test_host_power_supported_subject);
+        lv_subject_deinit(&s_test_platform_extras_subject);
         s_test_notification_subject_initialized = false;
         spdlog::debug("[Test Stub] app_globals_deinit_subjects: subjects deinitialized");
     }

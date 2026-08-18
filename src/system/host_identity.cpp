@@ -100,4 +100,51 @@ void invalidate_host_identity_cache() {
     g_cache.clear();
 }
 
+std::string extract_host_from_websocket_url(const std::string& url) {
+    // Expected format: ws://host:port/websocket or wss://host:port/websocket
+    // or: ws://[ipv6]:port/websocket
+
+    if (url.empty()) {
+        return "";
+    }
+
+    std::string remainder;
+
+    // Check for ws:// or wss:// prefix
+    const std::string ws_prefix = "ws://";
+    const std::string wss_prefix = "wss://";
+
+    if (url.find(ws_prefix) == 0) {
+        remainder = url.substr(ws_prefix.length());
+    } else if (url.find(wss_prefix) == 0) {
+        remainder = url.substr(wss_prefix.length());
+    } else {
+        return ""; // Unknown scheme
+    }
+
+    // Handle IPv6 addresses in brackets [::1]
+    if (!remainder.empty() && remainder[0] == '[') {
+        auto close_bracket = remainder.find(']');
+        if (close_bracket != std::string::npos) {
+            // Return content between brackets (the IPv6 address)
+            return remainder.substr(1, close_bracket - 1);
+        }
+        return ""; // Malformed IPv6
+    }
+
+    // Find the port separator
+    auto colon_pos = remainder.find(':');
+    if (colon_pos == std::string::npos) {
+        // No port - find the path separator
+        auto slash_pos = remainder.find('/');
+        if (slash_pos != std::string::npos) {
+            return remainder.substr(0, slash_pos);
+        }
+        return remainder; // Just hostname
+    }
+
+    // Return everything before the colon (the host)
+    return remainder.substr(0, colon_pos);
+}
+
 } // namespace helix

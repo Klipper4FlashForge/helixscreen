@@ -629,6 +629,7 @@ class PrintStatusPanel : public OverlayBase {
     static void on_temp_graph_clicked(lv_event_t* e);
     static void on_dismiss_overlay_clicked(lv_event_t* e);
     static void on_tune_clicked(lv_event_t* e);
+    static void on_print_status_camera(lv_event_t* e);
     static void on_reprint_clicked(lv_event_t* e);
     static void on_objects_clicked(lv_event_t* e);
     static void on_view_toggle_clicked(lv_event_t* e);

@@ -74,6 +74,15 @@ using helix::gcode::resolve_gcode_filename;
 #include <sstream>
 #include <vector>
 
+#if HELIX_HAS_CAMERA
+// Defined in src/ui/panel_widgets/camera_widget.cpp; that directory is not on
+// this file's include path, so forward-declare rather than including the
+// header (same pattern as ui_settings_hardware.cpp).
+namespace helix {
+void open_standalone_camera_fullscreen(lv_obj_t* parent_screen);
+}
+#endif
+
 // Global instance for legacy API and resize callback
 static std::unique_ptr<PrintStatusPanel> g_print_status_panel;
 
@@ -674,6 +683,7 @@ void PrintStatusPanel::init_subjects() {
     // (light and timelapse callbacks are registered by light_timelapse_controls_.init_subjects())
     register_xml_callbacks({
         {"on_print_status_tune", on_tune_clicked},
+        {"on_print_status_camera", on_print_status_camera},
         {"on_print_status_reprint", on_reprint_clicked},
         {"on_temp_card_clicked", on_temp_card_clicked},
         {"on_print_status_graph_clicked", on_temp_graph_clicked},
@@ -1888,6 +1898,20 @@ void PrintStatusPanel::on_tune_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusPanel] on_tune_clicked");
     (void)e;
     get_global_print_status_panel().handle_tune_button();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void PrintStatusPanel::on_print_status_camera(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusPanel] on_print_status_camera");
+    (void)e;
+#if HELIX_HAS_CAMERA
+    // No-ops when no webcam is configured or a fullscreen view is already
+    // open; reuses an attached home CameraWidget's stream when one exists
+    // (single-MJPEG-client safe).
+    helix::open_standalone_camera_fullscreen(lv_display_get_screen_active(nullptr));
+#else
+    spdlog::debug("[PrintStatusPanel] Camera support disabled in this build");
+#endif
     LVGL_SAFE_EVENT_CB_END();
 }
 
