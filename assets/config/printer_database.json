@@ -253,8 +253,8 @@
           "type": "led_match",
           "field": "leds",
           "pattern": "chamber_l",
-          "confidence": 100,
-          "reason": "LED chamber light/led (AD5M Pro exclusive)"
+          "confidence": 55,
+          "reason": "Chamber light LED (corroborating only - 'chamber_light' is a generic name custom rigs use too; with max bonus it stays under the 70% high-confidence bar)"
         },
         {
           "type": "sensor_match",
@@ -360,8 +360,8 @@
           "type": "led_match",
           "field": "leds",
           "pattern": "chamber_l",
-          "confidence": 100,
-          "reason": "LED chamber light/led (AD5M Pro exclusive - matches stock 'chamber_light' and ForgeX 'chamber_led')"
+          "confidence": 55,
+          "reason": "Chamber light LED (corroborating only - matches stock 'chamber_light' and ForgeX 'chamber_led', but custom rigs use those names too; with max bonus it stays under the 70% high-confidence bar)"
         },
         {
           "type": "macro_match",
