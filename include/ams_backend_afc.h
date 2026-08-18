@@ -518,6 +518,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcEjectPrintGateHelper;
     friend class AfcSharedExtruderHelper;
     friend class AfcLaneDataToolKeyHelper;
+    friend class AfcReassertHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -885,6 +886,29 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
                            const nlohmann::json& data);
 
     /**
+     * @brief Push a retained Spoolman binding back into AFC (#1289)
+     *
+     * Called from parse_afc_stepper on the empty -> loaded EDGE only. With
+     * "Keep Spool Info on Eject" on, AFC's own remember_spool = false means
+     * firmware dropped the lane's link on eject while our override kept the
+     * identity — re-inserting the spool would paint the retained id here
+     * while AFC/Mainsail show an unknown spool. Sends the same
+     * SET_SPOOL_ID write the editor re-link uses, wrapped in
+     * record_own_spool_write() so the echo cannot trip the merge's re-bind
+     * clear.
+     *
+     * Gates: retention setting on, override holds a spool id for the lane,
+     * and firmware's freshest spool_id reading is 0/null (a
+     * remember_spool = true firmware or another writer's link wins by not
+     * firing). Edge-triggered — no re-send while loaded, no retry on a
+     * failed dispatch; the next eject/re-insert cycle is the retry.
+     *
+     * @param slot_index Registry slot index for this lane
+     * @param lane_name Lane identifier (e.g., "lane1") for the gcode
+     */
+    void maybe_reassert_retained_spool_link(int slot_index, const std::string& lane_name);
+
+    /**
      * @brief Parse AFC_hub object for per-hub sensor state
      *
      * @param hub_name Name of the hub (e.g., "Turtle_1")
@@ -1215,6 +1239,13 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// across an eject instead of running clear_values(). Tells us whether the
     /// firmware or our own override store is the thing preserving identity.
     std::unordered_map<std::string, bool> lane_remember_spool_;
+
+    /// Firmware's own last-reported spool_id per lane, updated only when a
+    /// status delta carries the key. Distinct from SlotInfo::spoolman_id,
+    /// which the §5 override merge re-supplies with the retained id — this
+    /// map preserves "does AFC itself still hold a link?" for
+    /// maybe_reassert_retained_spool_link() (#1289).
+    std::unordered_map<std::string, int> lane_firmware_spool_id_;
 
     /// Lanes last seen on each buffer, keyed by buffer name. AFC's buffer status
     /// arrives as a Moonraker delta, so a frame that changes only `state` omits
