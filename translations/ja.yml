@@ -968,6 +968,7 @@ translations:
   Filament clog/flow detection meter: 'フィラメント詰まり／流量検出メーター'
   Filament deleted: フィラメントを削除しました
   Filament diameter sensors for flow compensation: フロー補正用フィラメント直径センサー
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: フィラメントが緩んでいます
   Filament is pulling tight: フィラメントが引っ張られています
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.

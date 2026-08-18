@@ -20,6 +20,7 @@
 #include "active_material_provider.h"
 #include "ams_types.h"
 #include "filament_database.h"
+#include "filament_op_dispatch.h" // EXTERNAL_SPOOL_SLOT — the bypass sentinel both headers key on
 
 #include <optional>
 #include <string>
@@ -43,10 +44,21 @@ namespace helix::ui {
  * @param sys           Backend system info (tool_to_slot_map, current_slot).
  * @param selected_tool Dropdown/active tool index (>= 0).
  * @param tool_count    Number of tools the printer exposes (>1 == toolchanger).
- * @return Global slot index whose load-state gates the buttons, or -1 if none.
+ * @return Global slot index whose load-state gates the buttons,
+ *         EXTERNAL_SPOOL_SLOT when bypass is engaged, or -1 if none.
  */
 [[nodiscard]] inline int resolve_op_button_slot(const AmsSystemInfo& sys, int selected_tool,
                                                 int tool_count) {
+    // Bypass is not a lane, so no tool->slot map entry can describe it. While
+    // the external spool feeds the toolhead it IS what these buttons act on:
+    // CFS publishes a tool->slot map from the box's own `map` (identity fallback
+    // on the flat dialect), so resolving through it here handed back lane 0 and
+    // gated Unload on an empty bay with filament plainly in the nozzle. AFC and
+    // Happy Hare land on the same sentinel from bypass_state / the selector.
+    if (sys.current_slot == EXTERNAL_SPOOL_SLOT) {
+        return EXTERNAL_SPOOL_SLOT;
+    }
+
     int slot = -1;
     if (selected_tool >= 0 && selected_tool < static_cast<int>(sys.tool_to_slot_map.size())) {
         slot = sys.tool_to_slot_map[selected_tool];
@@ -190,10 +202,6 @@ struct OpButtonState {
 // ---------------------------------------------------------------------------
 // Load preheat
 // ---------------------------------------------------------------------------
-
-/// Slot sentinel meaning "the external / bypass spool", not an AMS lane. The
-/// value AmsOperationSidebar's callers have always passed for the bypass row.
-inline constexpr int EXTERNAL_SPOOL_SLOT = -2;
 
 /// A resolved preheat target. @c material_name is empty when no source named the
 /// material, which is the caller's cue to say "Heating to N°C" without a "for X".

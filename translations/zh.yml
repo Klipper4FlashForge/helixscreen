@@ -962,6 +962,7 @@ translations:
   Filament clog/flow detection meter: '耗材堵塞／流量检测仪表'
   Filament deleted: 耗材已删除
   Filament diameter sensors for flow compensation: 耗材直径传感器用于流量补偿
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: 耗材松弛
   Filament is pulling tight: 耗材拉紧
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
