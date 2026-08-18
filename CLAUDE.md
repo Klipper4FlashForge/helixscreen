@@ -29,7 +29,7 @@ make pi-test                         # Build on thelio + deploy + run
 scripts/setup-worktree.sh feature/my-branch  # Symlinks deps, builds fast
 ```
 
-**XML changes need no rebuild:** `ui_xml/*.xml` is loaded at runtime — edit XML, then **relaunch** the binary to see changes (no `make` needed). For live editing without restarting, set `HELIX_HOT_RELOAD=1` and the running app will re-register components within ~500ms of a save and rebuild the active panel/overlay/modal in place. Invalid XML (mid-write truncation, syntax errors) is silently skipped on the polling thread — the existing UI stays live and the next poll retries.
+**XML changes need no rebuild:** `ui_xml/*.xml` is loaded at runtime — edit XML, then **relaunch** the binary to see changes (no `make` needed). Better: hot reload is **on by default for native dev builds** (cross-compiled release builds default it off) — the running app re-registers components within ~500ms of a save and rebuilds the active panel/overlay/modal in place. `HELIX_HOT_RELOAD=1`/`0` overrides the default either way. Invalid XML (mid-write truncation, syntax errors) is silently skipped on the polling thread — the existing UI stays live and the next poll retries.
 
 **Screenshots:** Press 'S' in UI, or `./scripts/screenshot.sh helix-screen output-name [token]` (drives a fresh instance via `helix-screen ctl`; token = panel/overlay/`demo` screen from `scripts/screenshot-recipes.sh`).
 
@@ -124,7 +124,7 @@ Edit the file under `lib/<sub>/`, then `cd lib/<sub> && git diff -- <the files y
 
 **DATA in C++, APPEARANCE in XML, Subjects connect them.**
 
-**Absolute for new code.** The tree still has 387 sites that break these rules
+**Absolute for new code.** The tree still has 380 sites that break these rules
 (`scripts/check_imperative_ui.py --list`). Some were deliberate pragmatism from when the XML
 engine could not express what was needed; some are plain mistakes that got through review.
 Both are debt, tracked in prestonbrown/helixscreen#1140 and being ported. **Existing imperative

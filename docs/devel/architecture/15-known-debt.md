@@ -65,7 +65,7 @@ Four catalogues: the ledger and its ratchet, the duplication debt, the deliberat
   TOTAL         380
 ```
 
-(verbatim from `python3 scripts/check_imperative_ui.py --summary`; regenerate any number in this section with `--list`). The count is enforced as a ratchet: `scripts/quality-checks.sh:1289` runs the gate with `--max-allowed 380`, so a change that adds even one site fails CI, and a port lowers both the count and the baseline. The debt is tracked in prestonbrown/helixscreen#1140. (The root `AGENTS.md` says 387; chapter 01 explains why — that number counted the report's own header and summary lines. The script's `TOTAL` is authoritative.)
+(verbatim from `python3 scripts/check_imperative_ui.py --summary`; regenerate any number in this section with `--list`). The count is enforced as a ratchet: `scripts/quality-checks.sh:1289` runs the gate with `--max-allowed 380`, so a change that adds even one site fails CI, and a port lowers both the count and the baseline. The debt is tracked in prestonbrown/helixscreen#1140. (An earlier revision of root `AGENTS.md` said 387 — that number counted the report's own header and summary lines. The script's `TOTAL` is authoritative; root now cites it.)
 
 Where the 380 lives, by directory:
 
@@ -168,7 +168,7 @@ Every port verifies the same three ways:
 
 - **Existing imperative code is not precedent.** The 380 sites are bounded debt, not an alternative style. A nearby `lv_label_set_text()` never justifies yours.
 - **No opportunistic refactors.** Do not port an imperative site as a side effect of an unrelated change — the port and the feature get reviewed separately, and the baseline drop lands in the port commit.
-- **The port workflow is two edits.** Port the site, then lower the number in `scripts/quality-checks.sh:1289` (and root `AGENTS.md`, which still carries the stale 387, if you keep it in sync) in the same commit. The gate output tells you the new total.
+- **The port workflow is two edits.** Port the site, then lower the number in `scripts/quality-checks.sh:1289` (and root `AGENTS.md`, if you keep it in sync) in the same commit. The gate output tells you the new total.
 - **A port touches both sides.** XML edits need no rebuild, but a port *removes* C++ and *adds* XML plus registrations — the binary must be rebuilt, or the new bindings silently stay dead (chapter 01's drift trap).
 - **Annotate with a reason or not at all.** `DECLARATIVE_OK` without a real justification is a lint suppressant, and reviewers should treat it that way. If you cannot name the structural reason, it does not qualify.
 - **Duplication review is cheap at commit time.** Each forked helper above cost one question at review — "does a near-fit already exist?" — and costs a refactoring project once merged. `REVIEW_RUBRIC.md` carries this.
