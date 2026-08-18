@@ -220,6 +220,10 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
         return true; // Happy Hare persists via MMU_GATE_MAP SPOOLID
     }
 
+    [[nodiscard]] bool firmware_reports_spool_ids() const override {
+        return true; // Happy Hare publishes gate spool_id in mmu status
+    }
+
     [[nodiscard]] RemapStrategy get_remap_strategy() const override {
         return RemapStrategy::Native;
     }

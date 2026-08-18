@@ -337,6 +337,26 @@ class SettingsManager {
     }
 
     /**
+     * @brief Keep Spoolman spool info on a slot the firmware reports as ejected.
+     *
+     * merge_override() arms its eject rule only on backends whose firmware
+     * reports spool ids (AFC, Happy Hare): there, firmware id 0/null means
+     * the spool was ejected. This setting decides whether the slot keeps its
+     * Spoolman color/material metadata anyway. Default true — retention is
+     * the designed behavior; disabling restores the pre-override strip.
+     * Per-printer setting.
+     */
+    bool get_ams_keep_spool_info_on_eject() const;
+
+    /** @brief Set whether spool info survives a firmware-reported eject */
+    void set_ams_keep_spool_info_on_eject(bool enabled);
+
+    /** @brief Keep-spool-info-on-eject subject (integer: 0=off, 1=on) */
+    lv_subject_t* subject_ams_keep_spool_info_on_eject() {
+        return &ams_keep_spool_info_on_eject_subject_;
+    }
+
+    /**
      * @brief Expose the bypass controls even though the firmware reports none.
      *
      * Distinct from get_ams_always_show_bypass_spool(), which only un-suppresses
@@ -556,6 +576,7 @@ class SettingsManager {
     lv_subject_t auto_color_map_subject_;
     lv_subject_t afc_unload_after_print_subject_;
     lv_subject_t ams_always_show_bypass_spool_subject_;
+    lv_subject_t ams_keep_spool_info_on_eject_subject_;
     lv_subject_t ams_force_bypass_controls_subject_;
     lv_subject_t filament_auto_cooldown_subject_;
     lv_subject_t console_filter_temps_subject_;

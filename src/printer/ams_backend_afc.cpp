@@ -4620,40 +4620,33 @@ AmsError AmsBackendAfc::reset() {
 }
 
 void AmsBackendAfc::apply_overrides(SlotInfo& slot, int slot_index) {
-    // Callers hold mutex_ (the parse path does). Merge policy matches ACE/IFS:
-    // the override wins only where it carries a real value; default sentinels
-    // (empty string, id 0, weight -1, colour unset) fall through to firmware.
+    // Callers hold mutex_. The whole spec §5 policy + the re-bind/eject rules
+    // live in helix::ams::merge_override — the single implementation every
+    // backend shares.
     auto it = overrides_.find(slot_index);
-    if (it == overrides_.end()) {
+    if (it == overrides_.end())
         return;
+    helix::ams::MergeOptions opts;
+    opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
+    opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
+    // Own-write echo suppression (SlotFingerprintTracker::expect()
+    // semantics): if we just re-linked this lane's spool id, in-flight
+    // frames keep reporting the old firmware id for a poll or two — Rule 1
+    // must not read that stale frame as an external re-bind.
+    const auto [own_old_id, own_new_id] = own_write_expectation(slot_index, slot.spoolman_id);
+    opts.suppress_rebind_firmware_old_id = own_old_id;
+    opts.suppress_rebind_firmware_new_id = own_new_id;
+    const auto result = helix::ams::merge_override(slot, it->second, opts);
+    if (result.cleared_rebind || result.cleared_eject) {
+        overrides_.erase(it);
+        if (override_store_) {
+            override_store_->clear_async(slot_index, [slot_index](bool ok, const std::string& err) {
+                if (!ok)
+                    spdlog::warn("[AMS AFC] override clear persist failed for slot {}: {}",
+                                 slot_index, err);
+            });
+        }
     }
-    const auto& o = it->second;
-    if (!o.brand.empty())
-        slot.brand = o.brand;
-    if (!o.spool_name.empty())
-        slot.spool_name = o.spool_name;
-    if (o.spoolman_id > 0)
-        slot.spoolman_id = o.spoolman_id;
-    if (o.spoolman_vendor_id > 0)
-        slot.spoolman_vendor_id = o.spoolman_vendor_id;
-    if (o.remaining_weight_g >= 0.0f)
-        slot.remaining_weight_g = o.remaining_weight_g;
-    if (o.total_weight_g >= 0.0f)
-        slot.total_weight_g = o.total_weight_g;
-    if (o.color_set)
-        slot.color_rgb = o.color_rgb;
-    if (!o.color_name.empty())
-        slot.color_name = o.color_name;
-    if (!o.material.empty())
-        slot.material = o.material;
-    // Catalog product identity — same "override wins only when it carries a
-    // real value" rule as the strings above. Firmware never populates these
-    // (no AMS protocol has a notion of a branded product id), so a non-empty
-    // value here is always a user pick and always wins.
-    if (!o.catalog_id.empty())
-        slot.catalog_id = o.catalog_id;
-    if (!o.product_name.empty())
-        slot.product_name = o.product_name;
 }
 
 void AmsBackendAfc::persist_override(int slot_index, const SlotInfo& info) {
@@ -5219,6 +5212,12 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                 //   empty id  -> AFC runs clear_values() and wipes all of the above
                 // Emitting it last made a single save set the data and then destroy it,
                 // which is why an edit needed two passes to stick.
+                //
+                // Record the write before dispatching: in-flight status frames
+                // keep reporting old_spoolman_id until the echo lands, and
+                // Rule 1 must not read those as an external re-bind. An
+                // unlink (id 0) erases the pending expectation instead.
+                record_own_spool_write(slot_index, info.spoolman_id, old_spoolman_id);
                 if (info.spoolman_id > 0) {
                     execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID={}", lane_name,
                                               info.spoolman_id));

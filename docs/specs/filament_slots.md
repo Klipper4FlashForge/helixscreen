@@ -1,6 +1,6 @@
 # Filament Slot Metadata — `lane_data` Convention
 
-**Status**: Informational, v1.6 (2026-08). See [Changelog](#changelog).
+**Status**: Informational, v1.7 (2026-08). See [Changelog](#changelog).
 
 This document describes HelixScreen's use of the `lane_data` Moonraker database
 namespace to share per-slot filament metadata with OrcaSlicer and other tools.
@@ -260,6 +260,12 @@ The merge rule is **override-wins, field-by-field**:
 - User edits are committed to the override record atomically on save; there is
   no partial-edit state on disk.
 
+**Amendment (v1.7):** when firmware itself reports a per-lane `spool_id` that
+differs from a reader's stored override, the firmware value is authoritative —
+HelixScreen drops its whole override record for that lane rather than shadowing
+the external write. An override survives only an absent/zero firmware id
+(ejection), which HelixScreen makes user-configurable per system (§6).
+
 A tool reading these records does not need to replicate HelixScreen's merge
 rule — it is documented here so third parties understand why we emit only the
 fields we do, and why we omit defaulted fields rather than writing zeros.
@@ -281,10 +287,20 @@ Per backend:
 | Snapmaker U1 | `CARD_UID` change on the RFID tag | Snapmaker tags every spool with a unique UID — the cleanest available fingerprint. |
 | CFS | Per-slot composite `material_type|color_value` fingerprint change | CFS rewrites both fields from a server-side RFID lookup, so their concatenation is a stable spool fingerprint. |
 | ACE | Slot status transition `EMPTY → present` | ACE has no RFID or stable tag; the only reliable "different spool" proxy is an empty-to-loaded transition. |
+| AFC | Per-lane `spool_id` reported by the AFC plugin: a *different positive* id, or `0`/absent | The plugin owns the lane↔spool binding and reports the loaded spool's id. A different positive id is a re-bind, cleared via the §5 amendment; `0`/absent is the plugin's own eject signal. |
+| Happy Hare | Per-gate `spool_id` (SPOOLID) reported by the MMU: same split as AFC | Same authority argument as AFC — the MMU reports the bound spool's id per gate. |
 
 Clearing is a `DELETE` on the slot's `lane_data` key. The first observation
 after startup establishes the baseline fingerprint and is NOT treated as a
 swap — otherwise every app launch would wipe overrides.
+
+Where firmware reports a spool id while a spool is loaded (AFC, Happy Hare),
+the eject half of that signal is user-configurable in HelixScreen: the
+"Keep Spool Info on Eject" setting (default on) retains the record across an
+eject when enabled and clears it when disabled. The re-bind half is not
+configurable — a firmware-reported *different positive* `spool_id` clears via
+the §5 amendment on **any** backend whose firmware reports one, including CFS
+firmware variants that publish a per-slot `spool_id` (flat schema).
 
 Third-party writers do **not** need to implement this behavior. It is
 documented here for transparency so readers understand why HelixScreen-authored
@@ -483,6 +499,15 @@ reader can resolve.
 
 ## Changelog
 
+- **v1.7 (2026-08-17)**: §5 amendment — firmware-authoritative re-bind: when
+  firmware reports a per-lane `spool_id` that differs from a stored override,
+  HelixScreen drops its whole override record for that lane instead of
+  shadowing the external write. The rule fires on any backend whose firmware
+  reports a positive id (AFC, Happy Hare, and flat-schema CFS firmware that
+  publishes a per-slot `spool_id`). §6 gained the AFC and Happy Hare rows —
+  their firmware-reported spool id doubles as the hardware-event signal
+  (different positive id → §5 re-bind clear; `0`/absent → eject, there
+  user-configurable via HelixScreen's "Keep Spool Info on Eject", default on).
 - **v1.6 (2026-08-16)**: AFC's virtual-tools firmware (Klipper-Add-On #832, on
   `DEV`, 1.3 release line) switched its `lane_data` keys from `laneN` to
   `T<n>`, one record per mapped tool, with the inner `lane` field now the tool

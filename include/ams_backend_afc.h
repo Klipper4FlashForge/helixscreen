@@ -344,6 +344,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
         return true; // AFC uses SET_SPOOL_ID gcode for persistence
     }
 
+    [[nodiscard]] bool firmware_reports_spool_ids() const override {
+        return true; // AFC publishes a lane spool_id in its status
+    }
+
     /**
      * @brief Whether AFC unloads the toolhead automatically after a print.
      *
@@ -490,6 +494,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcHelper;
     friend class AfcCurrentErrorHelper;
     friend class AfcLaneDataClearHelper;
+    friend class AfcRebindHelper;
     friend class AfcFaultEventCharHelper;
     friend class AfcFeatureLevelHelper;
     friend class AfcFixtureHelper;

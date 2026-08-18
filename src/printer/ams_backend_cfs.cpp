@@ -1884,6 +1884,12 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
             return AmsErrorHelper::invalid_slot(slot_index, system_info_.total_slots - 1);
         }
 
+        // Firmware's last reported id for this bay, captured BEFORE the
+        // optimistic mirror update below — the fork dialect's _BOX_SLOT_SET
+        // re-writes SPOOLMAN_ID, and record_own_spool_write needs the id
+        // in-flight frames will keep reporting until that echo lands.
+        const int previous_firmware_id = target->spoolman_id;
+
         // Update in-memory slot state so get_slot_info returns the edit
         // immediately — covers every SlotInfo field the caller may have set,
         // including persist=false previews that must survive until the next
@@ -1953,6 +1959,17 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
             helix::ams::populate_temps_from_slot_info(ovr, info);
             // updated_at left default — save_async stamps a fresh value.
             overrides_[slot_index] = ovr;
+        }
+
+        // Record our own SPOOLMAN_ID write for the fork dialect (the only
+        // CFS whose _BOX_SLOT_SET carries it — stock CFS never writes ids
+        // and never reports positive ones, so the record would be inert
+        // there). Gate matches the write's reachability exactly:
+        // push_slot_identity_to_firmware's Fork branch runs only for
+        // persist && override_store_. Rule 1 must not read the in-flight
+        // stale ids as an external re-bind (#1281 on flat-schema CFS).
+        if (persist && override_store_ && macro_variant_ == CfsMacroVariant::Fork) {
+            record_own_spool_write(slot_index, info.spoolman_id, previous_firmware_id);
         }
     }
 
@@ -3375,48 +3392,55 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
     // Every caller of apply_overrides runs under mutex_ (handle_status_update
     // post-parse loop). overrides_ writers also hold mutex_, so the map read
     // here is implicitly lock-protected. Zero-cost hash miss when the slot
-    // has no override — safe in the hot parse path.
+    // has no override — safe in the hot parse path. The whole spec §5 policy
+    // + the re-bind/eject rules live in helix::ams::merge_override — the
+    // single implementation every backend shares. Rule 1 (re-bind) is NOT
+    // gated by firmware_reports_spool_ids(): flat-schema CFS (the community
+    // fork) parses a per-slot spoolman_id, so a firmware id disagreeing with
+    // the override fires Rule 1 there — fork users get the #1281 fix. Rule 2
+    // (eject) IS what the capability gates, and it stays inert here (base
+    // false): on stock CFS firmware never reports ids and 0 is the everyday
+    // reading. Our own fork writes are protected by the own-write
+    // expectation recorded in set_slot_info.
     auto it = overrides_.find(slot_index);
     if (it == overrides_.end())
         return;
+    helix::ams::MergeOptions opts;
+    opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
+    opts.keep_spool_info_on_eject = SettingsManager::instance().get_ams_keep_spool_info_on_eject();
+    // Read the override BEFORE any erase — the CFS presence tail below needs it.
     const auto& o = it->second;
-    // Merge policy matches Snapmaker / ACE. Override wins only when the
-    // override field carries a real value; defaults fall through to firmware.
-    if (!o.brand.empty())
-        slot.brand = o.brand;
-    if (!o.spool_name.empty())
-        slot.spool_name = o.spool_name;
-    if (o.spoolman_id > 0)
-        slot.spoolman_id = o.spoolman_id;
-    if (o.spoolman_vendor_id > 0)
-        slot.spoolman_vendor_id = o.spoolman_vendor_id;
-    if (o.remaining_weight_g >= 0.0f)
-        slot.remaining_weight_g = o.remaining_weight_g;
-    if (o.total_weight_g >= 0.0f)
-        slot.total_weight_g = o.total_weight_g;
-    if (o.color_set)
-        slot.color_rgb = o.color_rgb;
-    if (!o.color_name.empty())
-        slot.color_name = o.color_name;
-    if (!o.material.empty())
-        slot.material = o.material;
-    // Catalog product identity — same "override wins only when it carries a
-    // real value" rule as the strings above. Firmware never populates these
-    // (no AMS protocol has a notion of a branded product id), so a non-empty
-    // value here is always a user pick and always wins.
-    if (!o.catalog_id.empty())
-        slot.catalog_id = o.catalog_id;
-    if (!o.product_name.empty())
-        slot.product_name = o.product_name;
+    // Own-write echo suppression (SlotFingerprintTracker::expect()
+    // semantics): the flat-schema fork re-writes SPOOLMAN_ID via
+    // _BOX_SLOT_SET, and in-flight frames keep reporting the old firmware
+    // id for a poll or two — Rule 1 must not read that as an external
+    // re-bind. Inert on stock CFS (never reports a positive id).
+    const auto [own_old_id, own_new_id] = own_write_expectation(slot_index, slot.spoolman_id);
+    opts.suppress_rebind_firmware_old_id = own_old_id;
+    opts.suppress_rebind_firmware_new_id = own_new_id;
+    const auto result = helix::ams::merge_override(slot, o, opts);
 
     // Trust the user's assignment for presence. Untagged 3rd-party spools
     // always read RFID -1, so firmware reports the bay EMPTY even though a
     // spool is physically present. If the override carries a real assignment,
     // the user has told us a spool is in this bay — promote it to AVAILABLE.
+    // (CFS-specific presence policy, not §5 merge policy — stays here.)
     const bool real_assignment = o.spoolman_id > 0 || !o.material.empty() || !o.brand.empty() ||
                                  !o.spool_name.empty() || o.color_set;
     if (real_assignment && slot.status == SlotStatus::EMPTY) {
         slot.status = SlotStatus::AVAILABLE;
+    }
+
+    if (result.cleared_rebind || result.cleared_eject) {
+        overrides_.erase(it);
+        if (override_store_) {
+            const std::string tag = backend_log_tag();
+            override_store_->clear_async(slot_index, [tag, slot_index](bool ok, std::string err) {
+                if (!ok) {
+                    spdlog::warn("{} clear_async failed for slot {}: {}", tag, slot_index, err);
+                }
+            });
+        }
     }
 }
 

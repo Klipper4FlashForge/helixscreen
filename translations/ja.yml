@@ -1223,6 +1223,7 @@ translations:
   Keep Printing: 印刷を続行
   Keep Required: 必須を維持
   Keep current: ''
+  Keep Spool Info on Eject: ''
   Keep the bypass spool visible when bypass is off: バイパスオフ時もバイパススプールの表示を維持
   Kick away: 'かき出し'
   Kinematics: キネマティクス
@@ -1956,6 +1957,7 @@ translations:
   Remap Tool: ツールを再割当
   Remap needs the HelixPrint plugin: リマップにはHelixPrintプラグインが必要です
   Remap…: リマップ…
+  Remember lane spool details across an eject: ''
   Remove: 削除
   Remove PIN: PIN を削除
   Remove Spoolman?: Spoolman を削除しますか？

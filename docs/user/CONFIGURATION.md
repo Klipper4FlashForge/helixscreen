@@ -1105,6 +1105,7 @@ The remaining AMS settings are **per printer**, so they live under the printer's
       "ams": {
         "force_bypass_controls": false,
         "always_show_bypass_spool": false,
+        "keep_spool_info_on_eject": true,
         "afc_unload_after_print": false
       }
     }
@@ -1112,7 +1113,7 @@ The remaining AMS settings are **per printer**, so they live under the printer's
 }
 ```
 
-All three have UI equivalents in **Settings > Hardware & Devices > Multi-Filament System Management** - edit them there rather than by hand.
+All four have UI equivalents in **Settings > Hardware & Devices > Multi-Filament System Management** - edit them there rather than by hand.
 
 #### `force_bypass_controls`
 **Type:** boolean
@@ -1127,6 +1128,11 @@ See [Filament → When Bypass Doesn't Appear](guide/filament.md#when-bypass-does
 **Type:** boolean
 **Default:** `false`
 **Description:** Keep the external spool visible on the filament path while bypass is disengaged. Applies to AFC systems (Box Turtle, OpenAMS) only, which publish a virtual bypass sensor whether or not one is physically wired; without this, the node is drawn only while bypass is actually engaged.
+
+#### `keep_spool_info_on_eject`
+**Type:** boolean
+**Default:** `true`
+**Description:** Keep a lane's spool details after it empties, so reloading the same spool after maintenance needs no re-selection. Turn it off to start fresh whenever a lane empties. The matching toggle (**Keep Spool Info on Eject**, in the AMS Management overlay) is shown only on systems whose firmware tracks spool ids per lane (AFC, Happy Hare); systems that detect spool swaps by tag always refresh on a swap regardless of this setting.
 
 #### `afc_unload_after_print`
 **Type:** boolean

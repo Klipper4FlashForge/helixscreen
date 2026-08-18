@@ -194,9 +194,32 @@ incomplete during them. AFC/HH overrides go to a private namespace
 
 The merge rule (firmware vs override) is documented in
 [`../specs/filament_slots.md`](../specs/filament_slots.md#5-merge-policy).
-Implementation-side: each backend's `apply_overrides` helper walks the
-override's fields and replaces the firmware-reported `SlotInfo` fields when
-the override has a non-default value. Sentinel values that fall through:
+Implementation-side there is exactly **one** implementation:
+`helix::ams::merge_override()` (`include/filament_slot_override_store.h` +
+`src/printer/filament_slot_override_store.cpp`). All six backends'
+`apply_overrides` delegate to it (CFS keeps only its presence-promotion tail
+locally) — the per-backend hand-rolled field-walk loops are gone. It carries
+spec §5 (override wins field-by-field, sentinels fall through) plus the two
+cross-field rules that can drop the **whole record** instead of merging:
+
+- **Rule 1 — external re-bind.** Firmware reports a positive `spoolman_id`
+  different from the override's → the whole record drops, firmware truth
+  paints. Not gated by any capability or setting; can fire on any backend
+  whose firmware reports a positive spool id (AFC, Happy Hare, and
+  flat-schema CFS, which parses a per-slot id). Our own in-flight writes are
+  exempt: backends record them via `AmsBackend::record_own_spool_write()` and
+  feed `AmsBackend::own_write_expectation()` into `MergeOptions`'
+  `suppress_rebind_firmware_{old,new}_id` — the id firmware last reported
+  before the write and the just-written id don't fire; a third id fires and
+  consumes the expectation.
+- **Rule 2 — eject.** `AmsBackend::firmware_reports_spool_ids()` (true only
+  on AFC and Happy Hare) arms **only** this rule: there a firmware id ≤ 0
+  while the override holds a positive id is the plugin's own eject signal,
+  and it clears the record only when the `ams/keep_spool_info_on_eject`
+  setting is off (default on — "Keep Spool Info on Eject" toggle in the AMS
+  Management overlay, shown only where the capability is true).
+
+Sentinel values that fall through to firmware:
 
 | Field type | "Unset" sentinel |
 |------------|------------------|
@@ -214,7 +237,7 @@ a sentinel that a user could never legitimately enter for that field.
 
 ## 6. Clear semantics
 
-Three distinct clear paths, handled separately:
+Four distinct clear paths, handled separately:
 
 - **User-initiated clear.** The edit modal's "Clear metadata" button calls
   `AmsBackend::clear_slot_override(slot_index)`. This is the public API
@@ -224,6 +247,11 @@ Three distinct clear paths, handled separately:
   "different spool". The baseline is recorded on first observation after
   startup and NEVER triggers a clear on its own — otherwise every app launch
   would wipe overrides.
+- **Merge-rule clears (re-bind / eject).** The two cross-field rules in
+  `merge_override()` (§5) can drop the whole record during `apply_overrides`:
+  an external re-bind (firmware reports a different positive spool id), or —
+  only where `firmware_reports_spool_ids()` is true and the setting is off —
+  a firmware eject signal.
 - **Self-wipe prevention.** When the user edits the color on IFS, the IFS
   backend pre-updates `last_firmware_color_` to the user's new RGB before
   pushing the override. Without this, the next `Adventurer5M.json` read

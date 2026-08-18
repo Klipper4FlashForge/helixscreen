@@ -1187,6 +1187,7 @@
   <translation tag="Keep Navigation Bar" fr="Conserver la barre de navigation"/>
   <translation tag="Keep Printing" fr="Continuer l&apos;impression"/>
   <translation tag="Keep Required" fr="Garder obligatoire"/>
+  <translation tag="Keep Spool Info on Eject"/>
   <translation tag="Keep current"/>
   <translation tag="Keep the bypass spool visible when bypass is off" fr="Garder la bobine de bypass visible lorsque le bypass est désactivé"/>
   <translation tag="Kick away" fr="Éjecter"/>
@@ -1903,6 +1904,7 @@
   <translation tag="Remap Tool" fr="Réassigner l&apos;outil"/>
   <translation tag="Remap needs the HelixPrint plugin" fr="La réaffectation nécessite le plugin HelixPrint"/>
   <translation tag="Remap…" fr="Réaffecter…"/>
+  <translation tag="Remember lane spool details across an eject"/>
   <translation tag="Remove" fr="Supprimer"/>
   <translation tag="Remove PIN" fr="Supprimer le PIN"/>
   <translation tag="Remove Spoolman?" fr="Supprimer Spoolman ?"/>
