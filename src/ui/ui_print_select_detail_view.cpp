@@ -144,6 +144,12 @@ void PrintSelectDetailView::init_subjects() {
     UI_MANAGED_SUBJECT_INT(detail_prefer_sliced_colors_, 0, "detail_prefer_sliced_colors",
                            subjects_);
 
+    // Mapping/swatch readiness (0 = skeleton, 1 = authoritative chips rendered).
+    // Mirrors is_preflight_ready() — the same readiness the print-start gate
+    // waits on. Cache hit => 1 immediately at show(); else flips when the tools
+    // scan or viewer parse completes.
+    UI_MANAGED_SUBJECT_INT(detail_mapping_ready_, 0, "detail_mapping_ready", subjects_);
+
     // Filament mismatch warning (0=hidden, 1=visible)
     UI_MANAGED_SUBJECT_INT(filament_mismatch_, 0, "filament_mismatch", subjects_);
 
@@ -258,6 +264,10 @@ lv_obj_t* PrintSelectDetailView::create(lv_obj_t* parent_screen) {
                 auto* self = static_cast<PrintSelectDetailView*>(ud);
                 self->show_gcode_viewer(false);
                 self->gcode_loaded_ = false;
+                // gcode_loaded_ flipping false can drop readiness (when the
+                // headless scan hasn't finished) — keep the skeleton latch in
+                // sync with is_preflight_ready().
+                self->publish_mapping_ready();
             },
             this);
     }
@@ -359,7 +369,7 @@ void PrintSelectDetailView::show(const std::string& filename, const std::string&
                                  const std::string& filament_type,
                                  const std::vector<std::string>& filament_colors,
                                  const std::vector<std::string>& filament_materials,
-                                 size_t file_size_bytes) {
+                                 size_t file_size_bytes, time_t modified_timestamp) {
     // Lazy re-create widget tree if it was destroyed by destroy-on-close
     if (!overlay_root_ && parent_screen_) {
         spdlog::info("[DetailView] Re-creating widget tree (destroy-on-close recovery)");
@@ -385,6 +395,7 @@ void PrintSelectDetailView::show(const std::string& filename, const std::string&
     current_filament_colors_ = filament_colors;
     current_filament_materials_ = filament_materials;
     current_file_size_bytes_ = file_size_bytes;
+    current_file_modified_ = modified_timestamp;
 
     // Clear cached metadata when file selection changes — the new async fetch will repopulate it
     cached_file_metadata_.reset();
@@ -434,15 +445,48 @@ void PrintSelectDetailView::show(const std::string& filename, const std::string&
     // file so a stale print-attempt can't fire against this file's parse.
     on_loaded_cb_ = nullptr;
 
-    // Reset headless-scan state for the newly-selected file. on_activate() will
-    // (re)kick the scan. Drop any pending preflight-ready attempt + timer so a
-    // stale attempt from a previous file can't fire against this one.
-    headless_tools_used_.reset();
-    headless_scan_done_ = false;
+    // Drop any pending preflight-ready attempt + timer so a stale attempt from
+    // a previous file can't fire against this one. (The headless state itself
+    // is reset in the cache block just below, BEFORE the lookup that may
+    // re-seed it for this file.)
     on_preflight_ready_cb_ = nullptr;
     if (preflight_ready_timeout_timer_) {
         lv_timer_delete(preflight_ready_timeout_timer_);
         preflight_ready_timeout_timer_ = nullptr;
+    }
+
+    // --- Tools-used cache: instant authoritative chip state on re-prints ---
+    // Reset + publish "not ready" FIRST so a miss shows the skeleton (subjects
+    // settle before the first frame renders — LVGL batches within one show()
+    // call). A hit then seeds the used-tool set and marks the scan done, so
+    // on_activate()'s scan kicks nothing and ready=1 publishes before the
+    // first frame.
+    headless_tools_used_.reset();
+    headless_scan_done_ = false;
+    lv_subject_set_int(&detail_mapping_ready_, 0);
+
+    if (auto cached = tools_used_cache_.lookup(current_file_key(), current_file_size_bytes_,
+                                               current_file_modified_)) {
+        headless_tools_used_ = *cached;
+        headless_scan_done_ = true; // readiness now true; the scan below is skipped
+        spdlog::debug("[DetailView] Tools-used cache hit ({} tools)", cached->size());
+
+        // Seed the authoritative render from the cached set — the same shape
+        // as finish_scan()'s !is_gcode_loaded() branch, which the skipped scan
+        // would have run. Without this, a reprint's first frame would show the
+        // full slicer palette (mapping pills) / no swatches at all until the
+        // viewer parse lands — and on Thumbnail-Only / parse-fallback opens,
+        // where the parse never fires, the swatch card would never appear.
+        const bool mapping_visible = filament_mapping_card_.should_show();
+        const auto tools_used = tools_used_effective();
+        const bool swatches_visible =
+            !mapping_visible && swatches_card_visible_for(tools_used.size());
+        lv_subject_set_int(&color_swatches_visible_, swatches_visible ? 1 : 0);
+        if (swatches_visible) {
+            update_color_swatches(tools_used, current_filament_colors_);
+        }
+        filament_mapping_card_.set_used_tools(tools_used);
+        recompute_preflight();
     }
 
     // Register with NavigationManager for lifecycle callbacks
@@ -460,6 +504,11 @@ void PrintSelectDetailView::show(const std::string& filename, const std::string&
     if (visible_subject_) {
         lv_subject_set_int(visible_subject_, 1);
     }
+
+    // Publish readiness last: 1 when the cache seeded the chip state above,
+    // 0 on a miss (skeleton until the scan/parse flips it). Still within this
+    // show() call, so the first frame never sees a stale value.
+    publish_mapping_ready();
 
     spdlog::debug("[DetailView] Showing detail view for: {} ({} colors)", filename,
                   filament_colors.size());
@@ -487,10 +536,12 @@ void PrintSelectDetailView::hide() {
 std::string PrintSelectDetailView::canonical_gcode_path() const {
     // Hash the FULL relative path (not just the filename) so same-name files
     // in different directories never collide on one temp file.
-    const std::string file_path =
-        current_path_.empty() ? current_filename_ : current_path_ + "/" + current_filename_;
     return get_helix_cache_dir("gcode_temp") + "/detail_" +
-           std::to_string(std::hash<std::string>{}(file_path)) + ".gcode";
+           std::to_string(std::hash<std::string>{}(current_file_key())) + ".gcode";
+}
+
+std::string PrintSelectDetailView::current_file_key() const {
+    return current_path_.empty() ? current_filename_ : current_path_ + "/" + current_filename_;
 }
 
 void PrintSelectDetailView::ensure_gcode_downloaded(
@@ -622,6 +673,11 @@ void PrintSelectDetailView::on_deactivate() {
     show_gcode_viewer(false);
     lv_subject_set_int(&detail_viewer_first_frame_, 0);
     gcode_loaded_ = false;
+    // Readiness drops with the view — headless_scan_done_ goes false too, so
+    // the publish below resolves to 0 and the skeleton latch re-arms. show()
+    // re-seeds (cache) / re-runs (scan) it on the next open.
+    headless_scan_done_ = false;
+    publish_mapping_ready();
 
     // Drop any pending run_when_loaded() callback. If the user tapped Print
     // before parse completed (deferring the attempt) and then navigated away,
@@ -1151,6 +1207,12 @@ void PrintSelectDetailView::try_extract_gcode_colors(lv_obj_t* viewer) {
     // was populated from the full slicer palette; now that the viewer has parsed
     // we know the real used set. Empty/unknown ⇒ show all (safe default).
     filament_mapping_card_.set_used_tools(tools_used_effective());
+
+    // Write-through: the parse just made the used set final for this
+    // (path, size, mtime) — persist so the next open of this file renders
+    // final chips instantly from the cache instead of the skeleton.
+    tools_used_cache_.store(current_file_key(), current_file_size_bytes_, current_file_modified_,
+                            tools_used_effective());
 }
 
 std::vector<helix::GcodeToolInfo> PrintSelectDetailView::get_used_tool_info() const {
@@ -1402,6 +1464,10 @@ void PrintSelectDetailView::fire_on_preflight_ready() {
     }
 }
 
+void PrintSelectDetailView::publish_mapping_ready() {
+    lv_subject_set_int(&detail_mapping_ready_, is_preflight_ready() ? 1 : 0);
+}
+
 void PrintSelectDetailView::finish_scan(LifetimeToken tok, std::set<int> tools) {
     // Marshals the final state back to the main thread (LVGL + member
     // writes). Callable from any thread — `this` is only dereferenced inside
@@ -1411,6 +1477,18 @@ void PrintSelectDetailView::finish_scan(LifetimeToken tok, std::set<int> tools) 
         headless_scan_done_ = true;
         spdlog::debug("[DetailView] Headless tools_used scan complete: {} tools",
                       headless_tools_used_->size());
+
+        // Readiness flipped true — publish so the skeleton latch opens (the
+        // authoritative render below lands in this same deferred tick).
+        publish_mapping_ready();
+
+        // Write-through: the scan just made the used set final for this
+        // (path, size, mtime) — persist so the next open of this file renders
+        // final chips instantly from the cache. tools_used_effective()
+        // prefers the viewer's parsed set when it exists (same file, same
+        // answer), so this is correct on both paths.
+        tools_used_cache_.store(current_file_key(), current_file_size_bytes_,
+                                current_file_modified_, tools_used_effective());
 
         // Render the per-tool color swatches from the REAL used-tool
         // set recovered by the headless scan. On 2D-only platforms
@@ -1462,13 +1540,22 @@ void PrintSelectDetailView::finish_scan(LifetimeToken tok, std::set<int> tools) 
 }
 
 void PrintSelectDetailView::kick_off_headless_tools_scan() {
-    headless_scan_done_ = false;
-    headless_tools_used_.reset();
+    // show() owns the headless-state reset (and the cache seed). A cache hit
+    // (or an already-completed viewer parse) has already answered the
+    // tools-used question — nothing to scan.
+    if (headless_scan_done_) {
+        spdlog::debug("[DetailView] Tools-used already known (cache/viewer) — skipping scan");
+        return;
+    }
 
     if (!api_ || current_filename_.empty()) {
         // No way to scan — mark done with no result so the gate degrades to
-        // "proceed without tools_used" instead of hanging.
+        // "proceed without tools_used" instead of hanging, publish readiness
+        // (skeleton resolves immediately), and release any deferred attempt
+        // right away rather than making it wait out the safety timeout.
         headless_scan_done_ = true;
+        publish_mapping_ready();
+        fire_on_preflight_ready();
         return;
     }
 
@@ -1655,6 +1742,10 @@ void PrintSelectDetailView::begin_viewer_load(const std::string& path) {
                 return;
             }
             self->gcode_loaded_ = true;
+            // The viewer parse satisfies pre-flight readiness — publish so the
+            // skeleton latch opens. try_extract_gcode_colors() below finishes
+            // the authoritative chip render in this same callback (one paint).
+            self->publish_mapping_ready();
 
             // Show all layers, no ghost (preview = full model)
             ui_gcode_viewer_set_print_progress(viewer, -1);

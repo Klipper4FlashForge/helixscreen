@@ -13,6 +13,7 @@
 #include "preflight_validator.h"
 #include "print_file_data.h" // For FileHistoryStatus
 #include "subject_managed_panel.h"
+#include "tools_used_cache.h"
 
 #include <functional>
 #include <lvgl.h>
@@ -190,12 +191,15 @@ class PrintSelectDetailView : public OverlayBase {
      * @param current_path Current directory path
      * @param filament_type Filament type from metadata (for dropdown default)
      * @param filament_colors Optional tool colors for multi-color prints
+     * @param filament_materials Optional per-tool materials from metadata
      * @param file_size_bytes File size from Moonraker metadata (for safety checks)
+     * @param modified_timestamp File mtime (tools-used cache validation)
      */
     void show(const std::string& filename, const std::string& current_path,
               const std::string& filament_type,
               const std::vector<std::string>& filament_colors = {},
-              const std::vector<std::string>& filament_materials = {}, size_t file_size_bytes = 0);
+              const std::vector<std::string>& filament_materials = {}, size_t file_size_bytes = 0,
+              time_t modified_timestamp = 0);
 
     /**
      * @brief Hide the detail view overlay
@@ -547,6 +551,13 @@ class PrintSelectDetailView : public OverlayBase {
     // 1 = show slicer-intended colors instead of loaded AMS slot colors.
     // View-local, resets to 0 (actual) on every show().
     lv_subject_t detail_prefer_sliced_colors_{};
+    // 0 = mapping/swatch chips not authoritative yet (XML shows skeletons),
+    // 1 = authoritative chip state rendered. Mirrors is_preflight_ready() —
+    // the same readiness the print-start gate waits on. Flips 0→1 at show()
+    // on a tools-used cache hit, else when the headless scan or the viewer
+    // parse completes; back to 0 in on_deactivate(). Published ONLY via
+    // publish_mapping_ready().
+    lv_subject_t detail_mapping_ready_{};
     std::string temp_gcode_path_; // Cached downloaded gcode file path
     bool gcode_loaded_ = false;   // Whether gcode file has been loaded into viewer
     // Pending print-attempt (or other) callback registered via run_when_loaded()
@@ -625,6 +636,13 @@ class PrintSelectDetailView : public OverlayBase {
     std::vector<std::string> current_filament_colors_;
     std::vector<std::string> current_filament_materials_;
     size_t current_file_size_bytes_ = 0;
+    time_t current_file_modified_ = 0; // mtime of the shown file (cache key part)
+
+    // Persistent tools-used cache (path/size/mtime keyed, JSON in the helix
+    // cache dir). Seeded at show() so re-prints render the final chip state
+    // in one paint; written through when a scan/parse makes the set final.
+    // Main-thread use only (documented on helix::ToolsUsedCache).
+    helix::ToolsUsedCache tools_used_cache_;
 
     // Cached metadata from the async fetch (nullopt until fetch completes or when file changes)
     std::optional<FileMetadata> cached_file_metadata_;
@@ -658,6 +676,15 @@ class PrintSelectDetailView : public OverlayBase {
      * preview load from this ONE file.
      */
     [[nodiscard]] std::string canonical_gcode_path() const;
+
+    /**
+     * @brief Moonraker-relative gcode path of the shown file
+     *
+     * `current_path_ + "/" + current_filename_` (or bare filename at the root).
+     * The tools-used cache key and every server-side file request use this
+     * same expression — one helper, no forked twins.
+     */
+    [[nodiscard]] std::string current_file_key() const;
 
     /**
      * @brief Invoke @p cb (main thread) once the current file's gcode is on disk
@@ -753,6 +780,16 @@ class PrintSelectDetailView : public OverlayBase {
      * exactly once.
      */
     void fire_on_preflight_ready();
+
+    /**
+     * @brief Publish is_preflight_ready() onto the detail_mapping_ready subject.
+     *
+     * Called from every site that flips readiness (show() reset + cache seed,
+     * scan finish, viewer load callback, on_deactivate). The XML skeleton
+     * bindings inside the mapping/swatch cards ride this subject — it must
+     * always equal is_preflight_ready() ? 1 : 0.
+     */
+    void publish_mapping_ready();
 
     /**
      * @brief Tools the print will use, sourced from whichever scan is available.

@@ -2097,7 +2097,7 @@ void PrintSelectPanel::show_detail_view() {
         std::string filename(selected_filename_buffer_);
         detail_view_->show(filename, current_path_, selected_filament_type_,
                            selected_filament_colors_, selected_filament_materials_,
-                           selected_file_size_bytes_);
+                           selected_file_size_bytes_, selected_modified_timestamp_);
         // Update history status display in detail view
         detail_view_->update_history_status(selected_history_status_, selected_success_count_);
     }
@@ -2641,6 +2641,7 @@ void PrintSelectPanel::apply_file_selection(const PrintFileData& file) {
     selected_filament_colors_ = file.filament_colors;
     selected_filament_materials_ = file.filament_types;
     selected_file_size_bytes_ = file.file_size_bytes;
+    selected_modified_timestamp_ = file.modified_timestamp;
     selected_history_status_ = file.history_status;
     selected_success_count_ = file.success_count;
 }
