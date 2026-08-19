@@ -24,6 +24,12 @@ class IMoonrakerClient;
 }
 class IMoonrakerAPI;
 
+namespace helix {
+namespace ui {
+struct InputShaperPanelTestAccess; // test-only friend (tests/test_helpers/)
+} // namespace ui
+} // namespace helix
+
 /**
  * @file ui_panel_input_shaper.h
  * @brief Input Shaper calibration panel for resonance compensation tuning
@@ -53,6 +59,8 @@ class IMoonrakerAPI;
  * ```
  */
 class InputShaperPanel : public OverlayBase {
+    friend struct helix::ui::InputShaperPanelTestAccess;
+
   public:
     /**
      * @brief Panel state machine states

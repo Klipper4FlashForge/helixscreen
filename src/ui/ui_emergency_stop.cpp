@@ -229,14 +229,28 @@ void EmergencyStopOverlay::create() {
             } else if (klippy_state == KlippyState::ERROR) {
                 self->show_recovery_for(RecoveryReason::ERROR);
             } else if (klippy_state == KlippyState::READY) {
-                // Reset restart flag - operation complete
-                self->restart_in_progress_ = false;
-
                 // Auto-dismiss recovery dialog when Klipper is back to READY
                 // NOTE: Must defer to main thread - observer may fire from WebSocket thread
                 helix::ui::async_call(
                     [](void*) {
                         auto& inst = EmergencyStopOverlay::instance();
+
+                        // Sampled before the flag reset below. An expected
+                        // restart (recovery Restart button, a panel's
+                        // SAVE_CONFIG, power/host flows) suppresses the
+                        // recovery dialog by design, so the dialog-dismiss
+                        // path below cannot signal completion for those flows
+                        // - the restart flag and suppression window are the
+                        // record that this READY ends a UI-initiated restart.
+                        // Mutual coverage: if the suppression window expires
+                        // before klippy returns, the recovery dialog shows and
+                        // the dialog path below fires instead. The flag is
+                        // atomic and klippy is READY here, so the extra tick
+                        // of trueness cannot swallow a real SHUTDOWN.
+                        const bool expected_restart = inst.is_expected_restart();
+
+                        // Reset restart flag - operation complete
+                        inst.restart_in_progress_ = false;
 
                         // Klipper is back, so any "Printer Error" alert raised
                         // while it was down describes a condition that no longer
@@ -260,6 +274,17 @@ void EmergencyStopOverlay::create() {
                                 ToastManager::instance().show(ToastSeverity::SUCCESS,
                                                               lv_tr("Printer ready"), 3000);
                             }
+                        } else if (expected_restart) {
+                            // The restart completed with the dialog suppressed
+                            // by its initiating flow, so still say so. Direct
+                            // ToastManager call, deliberately not
+                            // ui_notification_*: every severity there writes a
+                            // history row, and klippy-being-ready is not
+                            // history. A READY with nothing expected (first
+                            // ready at app start) stays silent - the status
+                            // icon already carries it.
+                            ToastManager::instance().show(ToastSeverity::SUCCESS,
+                                                          lv_tr("Printer ready"), 3000);
                         }
                     },
                     nullptr);
@@ -705,3 +730,21 @@ void EmergencyStopOverlay::home_firmware_restart_clicked(lv_event_t* e) {
             nullptr, nullptr);
     }
 }
+
+namespace helix {
+namespace ui {
+
+void begin_expected_klippy_restart(const char* message) {
+    // The suppression writes are atomic deadline stores, safe right here on
+    // any thread; the toast is LVGL-facing so it hops to the main thread.
+    EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::LONG);
+    if (auto* api = get_moonraker_api()) {
+        api->suppress_disconnect_modal(EXPECTED_RESTART_DISCONNECT_MODAL_MS);
+    }
+    queue_update("begin_expected_klippy_restart", [message]() {
+        ToastManager::instance().show(ToastSeverity::INFO, lv_tr(message), 3000);
+    });
+}
+
+} // namespace ui
+} // namespace helix

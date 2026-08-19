@@ -833,11 +833,9 @@ void InputShaperPanel::cancel_calibration() {
     calibrate_all_mode_ = false;
     calibration_lifetime_.invalidate(); // Discard any in-flight async callbacks
 
-    // Suppress shutdown/disconnect modals — E-stop + restart triggers expected reconnect
-    EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::LONG);
-    if (api_) {
-        api_->suppress_disconnect_modal(15000);
-    }
+    // E-stop + firmware restart: klippy comes back, so this is an expected
+    // reconnect, not a fault
+    helix::ui::begin_expected_klippy_restart("Firmware restarting...");
 
     if (calibrator_) {
         calibrator_->emergency_abort();
@@ -965,14 +963,8 @@ void InputShaperPanel::save_configuration() {
 
     spdlog::info("[InputShaper] Saving configuration (SAVE_CONFIG)");
 
-    // Suppress recovery dialog — SAVE_CONFIG triggers an expected Klipper restart
-    EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::LONG);
-    if (api_) {
-        api_->suppress_disconnect_modal(15000);
-    }
-
-    ToastManager::instance().show(ToastSeverity::WARNING,
-                                  lv_tr("Saving config... Klipper will restart."), 3000);
+    // SAVE_CONFIG triggers an expected Klipper restart
+    helix::ui::begin_expected_klippy_restart("Saving config... Klipper will restart.");
 
     auto tok = lifetime_.token();
 
