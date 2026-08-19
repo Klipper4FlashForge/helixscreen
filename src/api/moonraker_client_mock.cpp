@@ -8,6 +8,7 @@
 #include "../tests/mocks/mock_printer_state.h"
 #include "accel_sensor_manager.h"
 #include "app_globals.h"
+#include "chamber_heater_backend.h"
 #include "gcode_parser.h"
 #include "macro_param_cache.h"
 #include "moonraker_client_mock_internal.h"
@@ -77,6 +78,35 @@ constexpr int MAX_MOCK_EXCLUDE_OBJECT_COUNT =
 /// Objects published for a bare `HELIX_MOCK_EXCLUDE_OBJECTS=1`. Enough to fill a
 /// side list past one screen on the short landscape panel without being absurd.
 constexpr int DEFAULT_MOCK_EXCLUDE_OBJECT_COUNT = 5;
+
+/// Registry consult: is this object a chamber HEATER (heater_generic /
+/// temperature_fan whose bare name a chamber-heater backend claims)?
+/// Replaces the old find("chamber") scans — backend-named heaters like
+/// "heater_generic dragonbreath" contain no "chamber" at all.
+bool is_chamber_heater_object(const std::string& obj) {
+    std::string name;
+    if (obj.rfind("heater_generic ", 0) == 0) {
+        name = obj.substr(15);
+    } else if (obj.rfind("temperature_fan ", 0) == 0) {
+        name = obj.substr(16);
+    } else {
+        return false;
+    }
+    return chamber::match(name).confidence > 0;
+}
+
+/// Does any registered backend expose this exact bare object as its
+/// diagnostics status object? Used by the HELIX_MOCK_OBJECTS tokenizer to
+/// recognize a standalone diagnostics token ("dragonbreath") that follows a
+/// completed chamber heater instead of appending to it.
+bool is_registered_diagnostics_object(const std::string& token) {
+    for (const auto* backend : chamber::registry()) {
+        if (!backend->diagnostics_object().empty() && backend->diagnostics_object() == token) {
+            return true;
+        }
+    }
+    return false;
+}
 
 } // namespace
 
@@ -199,10 +229,96 @@ std::string MoonrakerClientMock::chamber_heater_status_key() const {
     return cached_chamber_status_key_;
 }
 
+std::string MoonrakerClientMock::chamber_heater_bare_name() const {
+    const std::string key = chamber_heater_status_key();
+    if (key.rfind("heater_generic ", 0) == 0) {
+        return key.substr(15);
+    }
+    if (key.rfind("temperature_fan ", 0) == 0) {
+        return key.substr(16);
+    }
+    return {};
+}
+
+std::string MoonrakerClientMock::chamber_filter_pin_object() const {
+    const auto hw = discovery_.hardware();
+    const auto* backend = chamber::backend_by_id(hw.chamber_heater_backend_id());
+    if (!backend) {
+        return {};
+    }
+    const std::string pin(backend->filter_fan_pin());
+    if (pin.empty()) {
+        return {};
+    }
+    const auto& objects = hw.printer_objects();
+    if (std::find(objects.begin(), objects.end(), pin) == objects.end()) {
+        return {};
+    }
+    return pin;
+}
+
+void MoonrakerClientMock::append_chamber_backend_status(json& status_obj, double sim_time,
+                                                        const json* requested) const {
+    const auto hw = discovery_.hardware();
+    const auto* backend = chamber::backend_by_id(hw.chamber_heater_backend_id());
+    if (!backend) {
+        return;
+    }
+    const auto& objects = hw.printer_objects();
+    auto present = [&objects, requested](const std::string& key) {
+        return std::find(objects.begin(), objects.end(), key) != objects.end() &&
+               (!requested || requested->contains(key));
+    };
+
+    const std::string diag(backend->diagnostics_object());
+    if (!diag.empty() && present(diag)) {
+        // VENDOR_OK: the mock SIMULATES the vendor's hardware — this payload
+        // mirrors the dragonbreath status schema that
+        // chamber_heater_backend_dragonbreath.cpp parses (verified live on the
+        // U1 rig, issue #1290). Detection stays registry-driven.
+        if (backend->id() == "dragonbreath") {
+            const double chamber_temp = chamber_temp_.load();
+            const double chamber_target = chamber_target_.load();
+            const double filter_value = chamber_filter_value_.load();
+            const bool filter_on = filter_value > 0.0;
+            // Test hook: HELIX_MOCK_DRAGONBREATH_FAULT=1 latches a fault into
+            // every synthesized frame.
+            const char* fault_env = std::getenv("HELIX_MOCK_DRAGONBREATH_FAULT");
+            const bool mock_fault = fault_env && fault_env[0] == '1';
+            // PTC element rides a few degrees above chamber air, drifting
+            // with the same slow sine the other mock sensors use.
+            const double ptc_temp =
+                chamber_temp + 4.0 + 2.0 * std::sin(2.0 * M_PI * sim_time / 75.0);
+            status_obj[diag] = {{"temperature", chamber_temp},
+                                {"target", chamber_target},
+                                {"fault", mock_fault},
+                                {"inhibited", false},
+                                {"fault_reason", mock_fault ? json("ptc_overtemp") : json(nullptr)},
+                                {"ptc_temp", ptc_temp},
+                                {"fan_percent", filter_on ? 100 : 0},
+                                {"fan_reason", filter_on ? "filter" : "off"},
+                                {"mode", chamber_target > 0.0 ? "power_on" : "off"},
+                                {"source", "klipper"},
+                                {"lease_owned", chamber_target > 0.0},
+                                {"connected", true}};
+        }
+    }
+
+    const std::string pin(backend->filter_fan_pin());
+    if (!pin.empty() && present(pin)) {
+        status_obj[pin] = {{"value", chamber_filter_value_.load()}};
+    }
+}
+
 void MoonrakerClientMock::update_cached_chamber_key() {
     cached_chamber_status_key_.clear();
     for (const auto& h : discovery_.heaters()) {
-        if (h.find("chamber") != std::string::npos && h != "heater_bed" && h != "extruder") {
+        if (h == "heater_bed" || h.rfind("extruder", 0) == 0) {
+            continue;
+        }
+        // Registry consult (not find("chamber")) so backend-named heaters
+        // ("heater_generic dragonbreath") win the chamber status key too.
+        if (is_chamber_heater_object(h)) {
             cached_chamber_status_key_ = h;
             return;
         }
@@ -214,10 +330,12 @@ void MoonrakerClientMock::update_cached_chamber_key() {
 // Locking here instead would self-deadlock — discovery_mutex_ is not recursive.
 void MoonrakerClientMock::override_chamber_heater(const std::string& heater_obj) {
     auto& heaters = discovery_.heaters();
-    heaters.erase(
-        std::remove_if(heaters.begin(), heaters.end(),
-                       [](const std::string& h) { return h.find("chamber") != std::string::npos; }),
-        heaters.end());
+    // Registry-matched erase: a later "heater_generic chamber" replaces a
+    // dragonbreath heater and vice versa (find("chamber") would miss the
+    // backend-named ones entirely).
+    heaters.erase(std::remove_if(heaters.begin(), heaters.end(),
+                                 [](const std::string& h) { return is_chamber_heater_object(h); }),
+                  heaters.end());
     heaters.push_back(heater_obj);
 
     // temperature_fan needs to be in sensors list for periodic status updates
@@ -423,6 +541,61 @@ void MoonrakerClientMock::populate_capabilities() {
     // Chamber temperature sensor for UI testing
     mock_objects.push_back("temperature_sensor chamber");
 
+    // HELIX_MOCK_OBJECTS: space-separated list of additional Klipper objects to add
+    // e.g., HELIX_MOCK_OBJECTS="temperature_fan chamber" to test temperature_fan chamber
+    // heaters, or the dragonbreath trio:
+    //   "heater_generic dragonbreath dragonbreath output_pin dragonbreath_filter"
+    // Runs BEFORE the discovery-list snapshot below on purpose: a chamber
+    // heater from the env REPLACES the default-profile one
+    // (override_chamber_heater), and a stale "heater_generic chamber" left in
+    // the snapshot would outscore a backend-named heater in parse_objects
+    // (keyword 100 beats the appliance backends' 95).
+    const char* mock_obj_env = std::getenv("HELIX_MOCK_OBJECTS");
+    if (mock_obj_env && mock_obj_env[0]) {
+        std::istringstream iss(mock_obj_env);
+        std::string token;
+        std::string current_obj;
+        auto flush_object = [&]() {
+            mock_objects.push_back(current_obj);
+            spdlog::info("[MoonrakerClientMock] Added mock object: {}", current_obj);
+            // A chamber heater from the env replaces the default-profile
+            // chamber heater so the registry pick — and the mock's
+            // chamber-status-key cache — resolve to the env-specified one.
+            if (is_chamber_heater_object(current_obj)) {
+                override_chamber_heater(current_obj);
+            }
+        };
+        while (iss >> token) {
+            // Accumulate tokens: "temperature_fan" + "chamber" → "temperature_fan chamber"
+            if (!current_obj.empty()) {
+                // A type prefix always starts a new object...
+                bool is_prefix = (token.rfind("heater_generic", 0) == 0 ||
+                                  token.rfind("temperature_fan", 0) == 0 ||
+                                  token.rfind("temperature_sensor", 0) == 0 ||
+                                  token.rfind("output_pin", 0) == 0);
+                // ...and so does a bare backend diagnostics object
+                // ("dragonbreath") following a COMPLETED chamber heater —
+                // without this the second "dragonbreath" would append to
+                // "heater_generic dragonbreath" instead of standing alone.
+                bool is_standalone_diagnostics = current_obj.find(' ') != std::string::npos &&
+                                                 is_chamber_heater_object(current_obj) &&
+                                                 is_registered_diagnostics_object(token);
+                if (is_prefix || is_standalone_diagnostics) {
+                    // Flush previous object
+                    flush_object();
+                    current_obj = token;
+                } else {
+                    current_obj += " " + token;
+                }
+            } else {
+                current_obj = token;
+            }
+        }
+        if (!current_obj.empty()) {
+            flush_object();
+        }
+    }
+
     // Add hardware objects from populated lists
     for (const auto& heater : discovery_.heaters()) {
         // Skip if already added (heater_bed, extruder)
@@ -448,45 +621,6 @@ void MoonrakerClientMock::populate_capabilities() {
     // Additional objects set via set_additional_objects() for capability testing
     for (const auto& obj : additional_objects_) {
         mock_objects.push_back(obj);
-    }
-
-    // HELIX_MOCK_OBJECTS: space-separated list of additional Klipper objects to add
-    // e.g., HELIX_MOCK_OBJECTS="temperature_fan chamber" to test temperature_fan chamber heaters
-    const char* mock_obj_env = std::getenv("HELIX_MOCK_OBJECTS");
-    if (mock_obj_env && mock_obj_env[0]) {
-        std::istringstream iss(mock_obj_env);
-        std::string token;
-        std::string current_obj;
-        while (iss >> token) {
-            // Accumulate tokens: "temperature_fan" + "chamber" → "temperature_fan chamber"
-            if (!current_obj.empty()) {
-                // Check if this token starts a new object type prefix
-                bool is_prefix = (token.rfind("heater_generic", 0) == 0 ||
-                                  token.rfind("temperature_fan", 0) == 0 ||
-                                  token.rfind("temperature_sensor", 0) == 0);
-                if (is_prefix) {
-                    // Flush previous object
-                    mock_objects.push_back(current_obj);
-                    spdlog::info("[MoonrakerClientMock] Added mock object: {}", current_obj);
-                    current_obj = token;
-                } else {
-                    current_obj += " " + token;
-                }
-            } else {
-                current_obj = token;
-            }
-        }
-        if (!current_obj.empty()) {
-            mock_objects.push_back(current_obj);
-            spdlog::info("[MoonrakerClientMock] Added mock object: {}", current_obj);
-
-            // If a chamber heater override, update the discovery lists
-            if (current_obj.find("chamber") != std::string::npos &&
-                (current_obj.rfind("heater_generic ", 0) == 0 ||
-                 current_obj.rfind("temperature_fan ", 0) == 0)) {
-                override_chamber_heater(current_obj);
-            }
-        }
     }
 
     // Add printer-specific objects
@@ -717,10 +851,10 @@ void MoonrakerClientMock::rebuild_hardware_from_lists() {
     // without adding hardcoded common objects from populate_capabilities().
 
     // Apply additional_objects overrides to discovery lists
-    // (e.g., temperature_fan chamber replacing heater_generic chamber)
+    // (e.g., temperature_fan chamber replacing heater_generic dragonbreath —
+    // registry-matched, so backend-named heaters swap both ways)
     for (const auto& obj : additional_objects_) {
-        if (obj.find("chamber") != std::string::npos &&
-            (obj.rfind("heater_generic ", 0) == 0 || obj.rfind("temperature_fan ", 0) == 0)) {
+        if (is_chamber_heater_object(obj)) {
             override_chamber_heater(obj);
         }
     }
@@ -1481,13 +1615,20 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
                 "[MoonrakerClientMock] Invalid SET_HEATER_TEMPERATURE: HEATER must use bare object "
                 "name (e.g. HEATER=chamber), not prefixed type (HEATER=heater_generic chamber)");
             return 1;
-        } else if (gcode.find("HEATER=chamber") != std::string::npos) {
-            set_chamber_target(target);
-            reset_idle_timeout();
-            spdlog::info("[MoonrakerClientMock] Chamber target set to {}°C", target);
-            auto key = chamber_heater_status_key();
-            if (!key.empty())
-                dispatch_status_update({{key, {{"target", target}}}});
+        } else {
+            // Chamber heater, matched by the BARE object name the resolved
+            // chamber heater uses — "HEATER=chamber" for keyword heaters,
+            // "HEATER=dragonbreath" for backend-named ones (a hard-coded
+            // "chamber" comparison silently ignores those).
+            const std::string bare = chamber_heater_bare_name();
+            if (!bare.empty() && gcode.find("HEATER=" + bare) != std::string::npos) {
+                set_chamber_target(target);
+                reset_idle_timeout();
+                spdlog::info("[MoonrakerClientMock] Chamber target set to {}°C", target);
+                auto key = chamber_heater_status_key();
+                if (!key.empty())
+                    dispatch_status_update({{key, {{"target", target}}}});
+            }
         }
     }
     // Check for SET_TEMPERATURE_FAN_TARGET (temperature_fan chamber heaters)
@@ -1503,6 +1644,25 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
         auto key = chamber_heater_status_key();
         if (!key.empty())
             dispatch_status_update({{key, {{"target", target}}}});
+    }
+    // Check for SET_PIN (chamber filter fan: SET_PIN PIN=dragonbreath_filter VALUE=1)
+    else if (gcode.find("SET_PIN") != std::string::npos) {
+        const std::string pin_obj = chamber_filter_pin_object();
+        if (!pin_obj.empty()) {
+            const std::string bare_pin = pin_obj.substr(11); // strip "output_pin "
+            if (gcode.find("PIN=" + bare_pin) != std::string::npos) {
+                double value = 0.0;
+                size_t value_pos = gcode.find("VALUE=");
+                if (value_pos != std::string::npos) {
+                    value = std::stod(gcode.substr(value_pos + 6));
+                }
+                chamber_filter_value_.store(value);
+                reset_idle_timeout();
+                spdlog::info("[MoonrakerClientMock] Chamber filter pin {} set to {}", bare_pin,
+                             value);
+                dispatch_status_update({{pin_obj, {{"value", value}}}});
+            }
+        }
     }
     // Check for M-code style temperature commands
     else if (gcode.find("M104") != std::string::npos || gcode.find("M109") != std::string::npos) {
@@ -3555,6 +3715,11 @@ void MoonrakerClientMock::dispatch_initial_state() {
         }
     }
 
+    // Chamber backend diagnostics + filter pin (e.g. dragonbreath trio via
+    // HELIX_MOCK_OBJECTS). Runs after the LED merge above so the filter pin's
+    // real value wins over the generic 0.75 output_pin default.
+    append_chamber_backend_status(initial_status, 0.0);
+
     spdlog::debug("[MoonrakerClientMock] Dispatching initial state: extruder={}/{}°C, bed={}/{}°C, "
                   "homed_axes='{}', leds={}, filament_sensors={}",
                   ext_temp, ext_target, bed_temp_val, bed_target_val, homed, led_json.size(),
@@ -4430,6 +4595,10 @@ void MoonrakerClientMock::temperature_simulation_loop() {
             status_obj["htu21d dryer"] = {{"humidity", dryer_humidity},
                                           {"temperature", dryer_temp}};
         }
+
+        // Chamber backend diagnostics + filter pin (e.g. dragonbreath trio via
+        // HELIX_MOCK_OBJECTS) — drifts with the chamber sim like the sensors above.
+        append_chamber_backend_status(status_obj, sim_time);
 
         json notification = {{"method", "notify_status_update"},
                              {"params", json::array({status_obj, tick * base_dt})}};

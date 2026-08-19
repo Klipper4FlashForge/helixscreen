@@ -16,6 +16,21 @@ static bool is_mock_kalico() {
     return env && std::string(env) == "1";
 }
 
+// Configfile sections for the resolved chamber heater, so
+// TemperatureController::ensure_limits sees a real ceiling in --test.
+// VENDOR_OK: the mock simulates a dragonbreath-equipped printer; the 75 C
+// configfile ceiling is part of that vendor simulation (mirror of the schema
+// knowledge in chamber_heater_backend_dragonbreath.cpp). Empty when the
+// resolved chamber heater runs no backend that reports one.
+static json chamber_heater_configfile_sections(const MoonrakerClientMock* self) {
+    json sections = json::object();
+    const auto hw = self->hardware();
+    if (hw.has_chamber_heater() && hw.chamber_heater_backend_id() == "dragonbreath") {
+        sections[hw.chamber_heater_name()] = {{"max_temp", 75.0}};
+    }
+    return sections;
+}
+
 json get_mock_gcode_macro_config() {
     json cfg;
     cfg["gcode_macro clean_nozzle"] = {
@@ -308,6 +323,12 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                         {"pid_ki", 1.132},
                         {"pid_kd", 1194.093}}}}},
                     {"config", config_section}};
+
+                // Chamber heater section (settings + config) — e.g. the
+                // dragonbreath trio's max_temp 75 from HELIX_MOCK_OBJECTS.
+                const json chamber_sections = chamber_heater_configfile_sections(self);
+                status_obj["configfile"]["settings"].merge_patch(chamber_sections);
+                status_obj["configfile"]["config"].merge_patch(chamber_sections);
             }
 
             // toolhead (for get_machine_limits)
@@ -729,7 +750,18 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                          cfg.merge_patch(get_mock_probe_config());
                          return cfg;
                      }()}};
+
+                // Chamber heater section — e.g. the dragonbreath trio's
+                // max_temp 75 from HELIX_MOCK_OBJECTS.
+                const json chamber_sections = chamber_heater_configfile_sections(self);
+                status_obj["configfile"]["settings"].merge_patch(chamber_sections);
+                status_obj["configfile"]["config"].merge_patch(chamber_sections);
             }
+
+            // Chamber backend diagnostics + filter pin initial state (e.g.
+            // dragonbreath trio via HELIX_MOCK_OBJECTS), limited to the
+            // objects this subscription asked for.
+            self->append_chamber_backend_status(status_obj, 0.0, &objects);
         }
 
         if (success_cb) {
