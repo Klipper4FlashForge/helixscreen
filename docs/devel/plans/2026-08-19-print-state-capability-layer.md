@@ -501,6 +501,22 @@ because it touches everything and must not be interleaved with behaviour changes
   (`test_print_start_navigation.cpp`, `test_print_active.cpp`,
   `test_print_control_view.cpp`).
 
+## Not verified on hardware
+
+Neither is a correctness gap - both are behaviour that has only ever been
+exercised by unit tests. Recorded here because they are the difference between
+"green" and "known to work on a printer", and they outlive any one session.
+
+- **The Cancel/Pause affordance change.** The K2 hardware run predates
+  `34cd93e93`, so the change that enables Cancel during a host-side pre-print and
+  disables Pause during a firmware-side one has never been touched by a finger.
+  Verify by reading the widget's `disabled` state flag (`ctl ls`), **not** by
+  `ctl click` - that bypasses the indev layer and fires handlers on disabled
+  widgets, which is how a previous "verification" of this exact path was wrong.
+- **CB1/Voron, the no-pre-start-block case.** The 750ms debounce is supposed to
+  stop an overlay flash on a printer whose preparing window is sub-second. Never
+  run there.
+
 ## Out of scope, tracked separately
 
 **Klippy readiness** is the same defect at larger scale - 3 parse sites, 7
@@ -535,6 +551,7 @@ loaded" has two definitions in one file that disagree exactly where
 | 2026-08-19 | 0 | 91 | Plan written. Baseline for the resume command below. |
 | 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
 | 2026-08-19 | 0b | 91 | `41392dfd2`. Also count-neutral - 0b changes which inputs an existing derivation gets, not how many sites read the wire. Suite 95/95. **Phase 0 complete.** |
+| 2026-08-19 | - | 91 | `d606bd823`. Re-merged main (10 commits, no conflicts). Suite 95/95, and the **full ungated** quality sweep passes (36 gates) - worth re-running before any push, because per-commit gates only ever run `--staged-only` and skip anything you did not stage. |
 
 ### Testing this area: three artifacts that impersonate bugs
 
