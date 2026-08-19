@@ -270,15 +270,74 @@ Two things found while doing it:
   the destructor too, per CLAUDE.md threading rule 5. Test hook:
   `PrinterPrintStateTestAccess::fire_preparing_watchdog()`.
 
-**0b. Collapse the panel's second state machine.** `PrintStatusPanel` owns a
-private `PrintLifecycleState lifecycle_` fed by its own
-`on_job_state_changed(job_state, outcome)` (`ui_panel_print_status.cpp:2683-2690`)
-that never reads the published `print_lifecycle` subject. Until these two agree
-by construction, no consumer is wrong to distrust the subject. The panel becomes
-a *reader*.
+**0b. Make the panel ADOPT the published state instead of deriving its own.**
 
-Panel `PrintState` call sites to re-point: `ui_panel_print_status.cpp:1139-1140`,
-`:1689`, `:2707-2709`, `:2827`, `:2879`, `:3155`, `:3176`, `:3717`.
+> **Scope corrected 2026-08-19.** This step was originally written as "delete the
+> panel's private `PrintLifecycleState` and make the panel a reader". An
+> investigation of what that class actually holds proved that wrong, and the
+> deletion would have broken the Complete screen. Recorded here because the
+> mistake is instructive: *"two state machines over the same inputs" was true of
+> the enum and false of everything else in the object.*
+
+`PrintLifecycleState` is not a duplicate state machine. It is a state machine
+**plus a display-freeze latch store plus panel-local widget state**. Only the
+enum is duplicated:
+
+| Field | Status |
+|---|---|
+| `current_state_` | duplicated - this is the only thing `print_lifecycle` replaces |
+| `elapsed_seconds_`, `remaining_seconds_`, `current_progress_`, `current_layer_`, `total_layers_` | **freeze latches, not mirrors.** Forced to their terminal values at Complete (`print_lifecycle_state.cpp:99-109`) and rejected once `outcome != NONE`. Moonraker zeroes the underlying subjects on STANDBY; these latches are why the Complete screen still reads `100% / 240/240 / 0s`. Deleting them deletes that. |
+| `gcode_loaded_` | **no subject exists.** Written from four viewer-widget events (`:853`, `:1142`, `:1549`, `:1561`) no printer subject can see, and auto-cleared on the ->Idle edge. |
+| `nozzle_*`, `bed_*`, `speed_percent_`, `flow_percent_` | pure unguarded mirrors - genuinely deletable |
+
+`StateChangeResult` - seven booleans plus `old_state` - drives ~150 lines
+(`:2696-2866`) including `runout_handler_->on_print_state_changed(old, new)`.
+
+### The real defect: the two DO disagree, for the whole of PRINT_START
+
+`PrintLifecycleState::on_job_state_changed()` hard-codes the phase
+(`print_lifecycle_state.cpp:53-56`):
+
+```cpp
+PrintState new_state = derive_print_state(job_state, /*start_phase=*/0);
+```
+
+So when Moonraker reports `PRINTING` while a pre-print phase is still live - the
+firmware-side case, the one `derive_print_state` exists for - the panel's copy
+moves `Preparing -> Printing` while `print_lifecycle` correctly stays `Preparing`.
+**They hold different states for the entire remainder of `PRINT_START`.**
+
+### Revised scope: adopt, do not delete
+
+The panel keeps the class, the latches, and `StateChangeResult`. What changes is
+where the **enum** comes from: the panel stops deriving it and adopts the
+published value. One input changes; the freeze semantics are untouched.
+
+**Write the tests first.** There are currently **zero** panel-level tests
+exercising `lifecycle_` - the 40 `[lifecycle]` cases all test the class in
+isolation and would keep passing against a panel that had stopped using it. There
+is no safety net at this seam, so it has to be built before the seam moves.
+
+**Two behaviour changes to make deliberately, not by accident:**
+
+- **Aborted preparation.** `on_start_phase_changed` returns a bare `bool` and
+  produces no `StateChangeResult`, so `Preparing -> Idle` today runs none of the
+  print-ended cleanup at `:2711-2751`. Adopting a published transition makes that
+  a first-class edge.
+- **In-`PRINT_START` display.** With the panel correctly staying `Preparing`, the
+  gcode-load delay flips 500ms -> 5000ms (`:3717`) and the preprint observers keep
+  owning the time display (`:1689`, `:3155`, `:3176`). That is the intended
+  correction, but it is a change.
+
+**Ordering hazard (needs a runtime check).** `observe_int_sync` snapshots the
+value at notify time but runs the handler at drain time. Two lifecycle publishes
+inside one `update_from_status` batch (e.g. `printer_print_state.cpp:436` then
+`:466`) would collapse `print_lifecycle_prev`, so reconstructing `state_changed`
+(`:3049`) from it is not safe without checking. Verify under
+`HELIX_MOCK_AUTO_PRINT=1 --sim-speed 6 -vvv`.
+
+Dead API found on the way: `get_state()` (`ui_panel_print_status.h:227`) and
+`get_progress()` (`:247`) have no callers anywhere. Delete.
 
 **Exit criteria**
 - [x] `set_print_in_progress()` has no callers outside `PrinterPrintState`.
@@ -287,8 +346,13 @@ Panel `PrintState` call sites to re-point: `ui_panel_print_status.cpp:1139-1140`
       reason (Confirmed, Superseded, Failed, Cancelled, TimedOut).
 - [x] A preparing job that never confirms is retired as `TimedOut` rather than
       latching the flag.
-- [ ] `PrintStatusPanel` holds no `PrintLifecycleState` member; its state comes
-      from the `print_lifecycle` subject. **(0b - not started)**
+- [ ] Panel-level tests exist for `lifecycle_` before the seam moves (currently
+      zero). **(0b)**
+- [ ] `PrintLifecycleState::on_job_state_changed()` no longer derives its own
+      enum with a hard-coded `start_phase=0`; the panel adopts `print_lifecycle`.
+      **(0b)**
+- [ ] The Complete-screen freeze still holds after the change - progress, layers
+      and elapsed survive Moonraker zeroing them on STANDBY. **(0b)**
 - [ ] Full suite green (95/95 shards).
 
 **Watch for:** a stuck-true `print_in_progress` is the failure mode being fixed,
