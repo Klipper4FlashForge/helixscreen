@@ -254,7 +254,7 @@ completing SHA.
 | **0a** | `print_in_progress` derived from the preparing job; watchdog for a job that never confirms | 20 setters | **done** | `289d56856` |
 | **0b** | Panel adopts the live phase so it agrees with the authority by construction | 1 + tests | **done** | `41392dfd2` |
 | **1a** | `job_holds_machine` predicate + subject; the 21 XML bindings moved onto it | 21 XML | **done** | `152986987` |
-| **1b** | The guards (11 migrate, 2 stay raw) | 13 sites + 4 helper call sites + 3 observers | **done** | `PENDING` |
+| **1b** | The guards (11 migrate, 2 stay raw) | 13 sites + 4 helper call sites + 3 observers | **done** | `32e516e14` |
 | **2** | Affordance + navigation | 12 + 6 | not started | - |
 | **3** | Display + bookkeeping | 11 + 15 | not started | - |
 | **4** | Delete the helper, add the ratcheting gate | 2 + gate | not started | - |
@@ -633,7 +633,7 @@ loaded" has two definitions in one file that disagree exactly where
 | 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
 | 2026-08-19 | 0b | 91 | `41392dfd2`. Also count-neutral - 0b changes which inputs an existing derivation gets, not how many sites read the wire. Suite 95/95. **Phase 0 complete.** |
 | 2026-08-19 | - | 91 | `d606bd823`. Re-merged main (10 commits, no conflicts). Suite 95/95, and the **full ungated** quality sweep passes (36 gates) - worth re-running before any push, because per-commit gates only ever run `--staged-only` and skip anything you did not stage. |
-| 2026-08-19 | 1b | 72 | `PENDING`. 91 -> 72: the first real drop. `print_occupies_toolhead()` is now **zero-caller** (Phase 4 deletes it). Cost the census did not predict: ~90 assertions across 7 test files failed because every fixture drove `print_state_enum` directly - now routed through `tests/test_helpers/print_state_test_drivers.h`. 96/96 shards, ungated sweep green. |
+| 2026-08-19 | 1b | 72 | `32e516e14`. 91 -> 72: the first real drop. `print_occupies_toolhead()` is now **zero-caller** (Phase 4 deletes it). Cost the census did not predict: ~90 assertions across 7 test files failed because every fixture drove `print_state_enum` directly - now routed through `tests/test_helpers/print_state_test_drivers.h`. 96/96 shards, ungated sweep green. |
 | 2026-08-19 | 1a | 91 | `152986987`. Subject + 21 XML bindings + 13 tests. Count-neutral by design: 1a adds a derived subject and moves XML, it does not remove a C++ wire read. 96/96 shards, ungated sweep green. |
 | 2026-08-19 | - | 91 | `6945d4e98`. Re-merged main again (12 commits, no conflicts, translations auto-merged). Suite 95/95, ungated sweep green. Site counts re-verified unchanged: 21 bindings, 91 raw-state sites. |
 
