@@ -1786,7 +1786,27 @@ AmsError AmsBackendCfs::do_load_filament(int slot_index) {
     auto err = reject_if_flat_schema("Load");
     if (err.result != AmsResult::SUCCESS)
         return err;
-    auto gcode = load_gcode(slot_index, macro_variant_);
+
+    // The bypass sentinel is a target, not a bad slot. load_gcode() resolves
+    // through CfsMaterialDb::slot_to_tnn(), which has no TNN for it, so this
+    // used to fall straight into invalid_slot — there was no way to load an
+    // external spool through the app, which also meant no way to reach a state
+    // where the bypass UNLOAD could be exercised. Fork excluded: its own
+    // T<external> command owns the attended load (see enable_bypass()).
+    const bool bypass =
+        slot_index == helix::ui::EXTERNAL_SPOOL_SLOT && macro_variant_ != CfsMacroVariant::Fork;
+
+    std::string gcode;
+    if (bypass) {
+        const bool has_load_material =
+            helix::MacroParamCache::instance().has_macro("load_material");
+        gcode = bypass_load_gcode(macro_variant_, has_load_material);
+        spdlog::info("[AMS CFS] Bypass load — external spool, via {}",
+                     has_load_material ? "LOAD_MATERIAL" : "fallback feed");
+    } else {
+        gcode = load_gcode(slot_index, macro_variant_);
+    }
+
     if (gcode.empty()) {
         return AmsErrorHelper::invalid_slot(slot_index, 15);
     }
@@ -2745,14 +2765,47 @@ namespace {
 ///
 /// Relative (G91) and restored, so it composes with any caller's positioning
 /// mode. M400 so the caller's park does not overlap the pull.
+std::string feed_gcode(bool retract) {
+    constexpr int FEED_MM = 80;
+    constexpr int FEED_RATE = 600; // [box] tn_retrude_velocity
+    return "G91\nG0 E" + std::string(retract ? "-" : "") + std::to_string(FEED_MM) + " F" +
+           std::to_string(FEED_RATE) + "\nG90\nM400";
+}
+
+/// The unload direction, named for its call sites.
 std::string long_retract_gcode() {
-    constexpr int RETRACT_MM = 80;
-    constexpr int RETRACT_FEED = 600; // [box] tn_retrude_velocity
-    return "G91\nG0 E-" + std::to_string(RETRACT_MM) + " F" + std::to_string(RETRACT_FEED) +
-           "\nG90\nM400";
+    return feed_gcode(/*retract=*/true);
 }
 
 } // namespace
+
+std::string AmsBackendCfs::bypass_load_gcode(CfsMacroVariant variant, bool has_load_material) {
+    if (has_load_material) {
+        // Creality's own external-spool load, verified in the K2 Plus config
+        // dump: SAVE_GCODE_STATE / BOX_GO_TO_EXTRUDE_POS / FILAMENT_RACK_SAVE_FAN
+        // / FILAMENT_RACK_PRE_FLUSH / FILAMENT_RACK_SET_TEMP (guarded on the
+        // toolhead switch) / FILAMENT_RACK_FLUSH (same guard) /
+        // FILAMENT_RACK_RESTORE_FAN / SET_COOL_TEMP / BOX_MOVE_TO_SAFE_POS /
+        // RESTORE_GCODE_STATE. Heat, feed and park all live inside it.
+        return "LOAD_MATERIAL";
+    }
+
+    // Fallback for a CFS printer that does not define LOAD_MATERIAL. The
+    // mirror of the unload fallback, using only primitives this dialect already
+    // emits, and the same 80 mm at 600 mm/min run the other way: the unload
+    // backs the filament out of the toolhead path, so the load pushes it back
+    // down the same path. The panel preheats before dispatching either op, so
+    // temperature is not this script's job.
+    //
+    // No purge: the caller has no material temperature to purge at here, and a
+    // load that leaves the previous colour in the nozzle is recoverable from the
+    // Extrusion panel, while a blind purge at the wrong temperature is not.
+    return std::string("SAVE_GCODE_STATE NAME=helix_cfs_bypass\n"
+                       "BOX_GO_TO_EXTRUDE_POS\n") +
+           feed_gcode(/*retract=*/false) +
+           "\nBOX_MOVE_TO_SAFE_POS\n"
+           "RESTORE_GCODE_STATE NAME=helix_cfs_bypass";
+}
 
 std::string AmsBackendCfs::bypass_unload_gcode(CfsMacroVariant variant, bool has_quit_material) {
     if (has_quit_material) {

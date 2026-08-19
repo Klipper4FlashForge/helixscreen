@@ -1352,6 +1352,29 @@ void AmsState::sync_from_backend() {
         lv_subject_set_int(&ams_type_, new_type);
     }
     int new_action = static_cast<int>(info.action);
+    // One-shot runout grace. An unload ends with the filament deliberately
+    // dragged off the toolhead sensor, and that empty reading is the operation
+    // working, not a runout — but is_filament_operation_active() only covers
+    // the window while the action is still running. Measured on a K2 Plus:
+    // the script completed at 12:03:02 and the sensor cleared at 12:03:12, ten
+    // seconds after the guard had closed, so the idle runout modal fired on a
+    // deliberate unload.
+    //
+    // Tracked across the whole operation rather than off an UNLOADING -> IDLE
+    // edge, because apply_synthesized_action_locked() overwrites the action
+    // with a sub-phase as physical signals arrive: that K2 unload actually
+    // ended CUTTING -> IDLE, which such an edge would have missed entirely.
+    {
+        const auto action = static_cast<AmsAction>(new_action);
+        const auto prev = static_cast<AmsAction>(lv_subject_get_int(&ams_action_));
+        if (action == AmsAction::UNLOADING) {
+            saw_unload_in_op_ = true;
+        }
+        if (action == AmsAction::IDLE && prev != AmsAction::IDLE) {
+            post_unload_runout_grace_ = saw_unload_in_op_;
+            saw_unload_in_op_ = false;
+        }
+    }
     if (lv_subject_get_int(&ams_action_) != new_action) {
         spdlog::debug("[AmsState] sync_from_backend: action changed to {} ({})", new_action,
                       ams_action_to_string(info.action));
@@ -1484,6 +1507,13 @@ void AmsState::sync_from_backend() {
     // unchecked while a tap took the DISABLE path — "turn it on" answered
     // "Bypass disabled", and the pre-print gate meanwhile acted on a bypass the
     // user could not see or clear. Display and action now read one value.
+    // Filament back at the toolhead retires the grace: it was armed for the
+    // removal this unload caused, and anything after a reload is a new event.
+    if (info.filament_loaded && post_unload_runout_grace_) {
+        post_unload_runout_grace_ = false;
+        spdlog::debug("[AmsState] Post-unload runout grace retired — filament loaded again");
+    }
+
     const int new_bypass = backend->is_bypass_active() ? 1 : 0;
     if (lv_subject_get_int(&bypass_active_) != new_bypass) {
         spdlog::debug("[AmsState] bypass -> {}", new_bypass);
@@ -2617,6 +2647,13 @@ void AmsState::set_active_tool_port_present(bool present) {
             lv_subject_set_int(&active_tool_port_present_, v);
         }
     });
+}
+
+bool AmsState::consume_post_unload_runout_grace() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const bool armed = post_unload_runout_grace_;
+    post_unload_runout_grace_ = false;
+    return armed;
 }
 
 bool AmsState::is_filament_operation_active() {

@@ -53,7 +53,9 @@ You can override any of these buttons to run a different macro:
 
 This works whether or not you have an AMS system. If a slot is left empty (no macro detected or configured), the button is disabled.
 
-> **With an AMS system:** The Load and Unload buttons use your AMS backend instead of running a macro — they trigger slot-based load/unload through the AMS panel. The Purge button still uses your configured macro.
+> **With an AMS system:** by default the Load and Unload buttons drive your filament system directly — slot-based load and unload through the AMS — rather than running a macro. Pick a macro yourself and **your choice wins**: the button runs your macro and the filament system's own handling is skipped for that operation. That is the point of the override, and it is worth knowing what it means, because your macro then owns everything the built-in path would have done — on AFC, for example, `TOOL_UNLOAD` no longer runs, so parking the shuttle and marking the lane are up to your macro. Set the slot back to **(Auto)** to hand the operation back to the filament system.
+>
+> The Purge button always uses your configured macro.
 
 ### Manual extrude/retract
 
@@ -135,7 +137,7 @@ Some steps only apply to how your machine is set up. A step your system never re
 
 | Button | Action |
 |--------|--------|
-| **Bypass** (toggle) | Feed filament directly to the extruder, bypassing the AMS. Only shown if your hardware supports bypass - see [When Bypass Doesn't Appear](#when-bypass-doesnt-appear). |
+| **Bypass** (toggle) | Feed filament directly to the extruder, bypassing the AMS. Shown when your hardware supports bypass, or when you turn on **Enable Bypass Controls** - see [When Bypass Doesn't Appear](#when-bypass-doesnt-appear). |
 | **Unload** | Retract the currently loaded filament back to its slot |
 | **Reset** | Reset the AMS system state (useful after jams or errors) |
 | **Settings** | Open the AMS Management overlay for advanced controls |

@@ -2964,6 +2964,78 @@ TEST_CASE("CFS phase verify: a bypass unload is not judged by the toolhead switc
                                               /*bypass_unload=*/true) == V::LoadDidNotReachNozzle);
 }
 
+TEST_CASE("CFS bypass load gcode: LOAD_MATERIAL when the printer defines it",
+          "[ams][cfs][bypass]") {
+    using V = helix::printer::CfsMacroVariant;
+
+    // Creality's own external-spool load, the mirror of QUIT_MATERIAL. Unlike
+    // the unload it needs no tail of ours: its FILAMENT_RACK_FLUSH already
+    // drives the feed, gated on the toolhead switch the user fed to.
+    CHECK(AmsBackendCfs::bypass_load_gcode(V::K2, /*has_load_material=*/true) == "LOAD_MATERIAL");
+    CHECK(AmsBackendCfs::bypass_load_gcode(V::K1, true) == "LOAD_MATERIAL");
+}
+
+TEST_CASE("CFS bypass load gcode: fallback feeds the same path the unload backs out",
+          "[ams][cfs][bypass]") {
+    using V = helix::printer::CfsMacroVariant;
+
+    const std::string load = AmsBackendCfs::bypass_load_gcode(V::K2, /*has_load_material=*/false);
+    const std::string unload = AmsBackendCfs::bypass_unload_gcode(V::K2, false);
+
+    // Same distance and rate, opposite sign — the load pushes back down exactly
+    // the path the unload backs out of.
+    REQUIRE(load.find("G0 E80 F600") != std::string::npos);
+    REQUIRE(load.find("G0 E-") == std::string::npos);
+    REQUIRE(unload.find("G0 E-80 F600") != std::string::npos);
+
+    // Positioning and state bracketing, same as the unload.
+    REQUIRE(load.find("BOX_GO_TO_EXTRUDE_POS") != std::string::npos);
+    REQUIRE(load.find("BOX_MOVE_TO_SAFE_POS") != std::string::npos);
+    REQUIRE(load.find("SAVE_GCODE_STATE") != std::string::npos);
+    REQUIRE(load.find("RESTORE_GCODE_STATE") != std::string::npos);
+
+    // A load must not cut. The unload's cut primitive has no business here.
+    REQUIRE(load.find("CR_BOX_CUT") == std::string::npos);
+    REQUIRE(load.find("BOX_CUT_MATERIAL") == std::string::npos);
+}
+
+TEST_CASE("CFS load routes the bypass sentinel instead of refusing it", "[ams][cfs][bypass]") {
+    helix::MacroParamCache::instance().clear(); // no LOAD_MATERIAL — exercise the fallback
+
+    SECTION("stock K2: -2 dispatches a load instead of invalid_slot") {
+        CfsRemapHelper backend;
+        backend.mark_running();
+
+        // The regression: slot_to_tnn(-2) has no answer, so this refused
+        // outright and an external spool could never be loaded from the app —
+        // which also left no way to reach the state the bypass UNLOAD needs.
+        REQUIRE(backend.load_filament(helix::ui::EXTERNAL_SPOOL_SLOT).result == AmsResult::SUCCESS);
+        REQUIRE(backend.dispatched.size() == 1);
+        CHECK(backend.dispatched[0].find("G0 E80 F600") != std::string::npos);
+    }
+
+    SECTION("stock K2: a real bay still gets the bay script") {
+        CfsRemapHelper backend;
+        backend.mark_running();
+
+        REQUIRE(backend.load_filament(0).result == AmsResult::SUCCESS);
+        REQUIRE(backend.dispatched.size() == 1);
+        CHECK(backend.dispatched[0].find("CR_BOX_EXTRUDE") != std::string::npos);
+    }
+
+    SECTION("Fork keeps its own T<external> attended load") {
+        CfsRemapHelper backend;
+        backend.mark_running();
+        CfsTestAccess::set_macro_variant_fork(backend);
+
+        // Fork resolves the external bay through its own T command, so the
+        // sentinel must NOT be diverted into our stock-dialect script.
+        REQUIRE(backend.load_filament(3).result == AmsResult::SUCCESS);
+        REQUIRE(backend.dispatched.size() == 1);
+        CHECK(backend.dispatched[0] == "T3");
+    }
+}
+
 TEST_CASE("CFS bypass unload gcode: QUIT_MATERIAL when the printer defines it",
           "[ams][cfs][bypass]") {
     using V = helix::printer::CfsMacroVariant;

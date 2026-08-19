@@ -65,8 +65,9 @@ struct PanelOutcome {
 
 /// Mirror of FilamentPanel::execute_load() from the plan onward.
 PanelOutcome panel_execute_load(const AmsSystemInfo& sys, const BackendCaps& caps, int target_slot,
-                                bool macro_available) {
-    const FilamentOpPlan plan = plan_load(sys, caps, target_slot, macro_available);
+                                bool macro_available, bool macro_user_configured = false) {
+    const FilamentOpPlan plan =
+        plan_load(sys, caps, target_slot, macro_available, macro_user_configured);
     PanelOutcome out;
 
     switch (plan.tier) {
@@ -104,8 +105,9 @@ PanelOutcome panel_execute_load(const AmsSystemInfo& sys, const BackendCaps& cap
 
 /// Mirror of FilamentPanel::execute_unload() from the plan onward.
 PanelOutcome panel_execute_unload(const BackendCaps& caps, int target_slot, bool target_is_loaded,
-                                  bool macro_available) {
-    const FilamentOpPlan plan = plan_unload(caps, target_slot, target_is_loaded, macro_available);
+                                  bool macro_available, bool macro_user_configured = false) {
+    const FilamentOpPlan plan =
+        plan_unload(caps, target_slot, target_is_loaded, macro_available, macro_user_configured);
     PanelOutcome out;
 
     // Mirrors the arm site, which sits between the plan and the switch so it

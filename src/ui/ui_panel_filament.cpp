@@ -595,8 +595,9 @@ void FilamentPanel::update_status() {
 
     // First check if nozzle is ready for extrusion (highest priority for filament operations)
     if (helix::ui::temperature::is_extrusion_safe(nozzle_current_, min_extrude_temp_)) {
-        // Hot enough - ready to load
-        status_msg = lv_tr("Ready to load");
+        // Hot enough for any extruder move — load, unload and purge all sit on
+        // this panel, so the wording names the state rather than one of them.
+        status_msg = lv_tr("Ready for filament operations");
         update_status_icon("check", "success");
     } else if (nozzle_target_ >= min_extrude_temp_) {
         // Nozzle heating in progress — show current AND target so the user can
@@ -2647,8 +2648,8 @@ void FilamentPanel::execute_load() {
     }
 
     const auto& info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
-    const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_load(sys, caps, target_slot, !info.is_empty());
+    const helix::ui::FilamentOpPlan plan = helix::ui::plan_load(
+        sys, caps, target_slot, !info.is_empty(), info.get_source() == MacroSource::CONFIGURED);
 
     switch (plan.tier) {
     case helix::ui::FilamentTier::AmsBackend: {
@@ -2783,8 +2784,8 @@ void FilamentPanel::execute_unload() {
     }
 
     const auto& info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
-    const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_unload(caps, slot, loaded, !info.is_empty());
+    const helix::ui::FilamentOpPlan plan = helix::ui::plan_unload(
+        caps, slot, loaded, !info.is_empty(), info.get_source() == MacroSource::CONFIGURED);
 
     // Nothing reels a bypass spool (or a backend-less printer's spool) back down
     // a lane, so the user has to finish the job by hand. Armed before dispatch so
