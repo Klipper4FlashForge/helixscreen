@@ -256,7 +256,10 @@ completing SHA.
 | **1a** | `job_holds_machine` predicate + subject; the 21 XML bindings moved onto it | 21 XML | **done** | `152986987` |
 | **1b** | The guards (11 migrate, 2 stay raw) | 13 sites + 4 helper call sites + 3 observers | **done** | `32e516e14` |
 | **1-fix** | Eight findings from the full-branch review; K2 verification | 8 chunks | **done** | `bebb803a5` |
-| **2** | Affordance + navigation | 12 + 6 | not started | - |
+| **2a** | E-Stop visibility: two observers collapse into one on the lifecycle | 1 + 6 tests | **done** | `e163e42db` |
+| **2b** | `locked_while_printing` covers the preparing window (predicate AND observer) | 3 + 3 tests | **done** | `734f7f4d1` |
+| **2c** | Typed accessors + `check_print_state_cast.py`; 24 hand-casts removed | 24 + gate | **done** | `eb3f94048` |
+| **2d** | job queue modal, PLR offer, AMS panel, power panel, keep-raw markers | 5 | not started | - |
 | **3** | Display + bookkeeping | 11 + 15 | not started | - |
 | **4** | Delete the helper, add the ratcheting gate | 2 + gate | not started | - |
 | **5** | Rename `PrintState` -> `PrintLifecycle` | mechanical | not started | - |
@@ -579,6 +582,21 @@ wholesale.
 
 ### Phase 5 - rename
 
+> **Demoted 2026-08-19, and no longer a safety item.** This phase existed largely
+> because `PrintJobState` and `PrintState` are confusable, and the confusion had
+> teeth: the two enums do NOT share numbering past index 0, so
+> `static_cast<PrintState>(lv_subject_get_int(<the WRONG subject>))` compiles,
+> runs, and answers a different question. That mistake shipped into two commits on
+> this work before tests caught it.
+>
+> `eb3f94048` fixed it properly instead: `get_print_lifecycle()` now sits beside
+> `get_print_job_state()`, each owning its subject/enum pairing, all 24 hand-casts
+> are gone, and `check_print_state_cast.py` holds the count at zero. A rename would
+> have made the mistake *read* wrong; removing the cast makes it unsayable.
+>
+> The rename is still worth doing for clarity. It is no longer urgent.
+
+
 `PrintState` -> `PrintLifecycle`, mechanically, once call sites are stable. Last
 because it touches everything and must not be interleaved with behaviour changes.
 
@@ -677,12 +695,24 @@ loaded" has two definitions in one file that disagree exactly where
 | 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
 | 2026-08-19 | 0b | 91 | `41392dfd2`. Also count-neutral - 0b changes which inputs an existing derivation gets, not how many sites read the wire. Suite 95/95. **Phase 0 complete.** |
 | 2026-08-19 | - | 91 | `d606bd823`. Re-merged main (10 commits, no conflicts). Suite 95/95, and the **full ungated** quality sweep passes (36 gates) - worth re-running before any push, because per-commit gates only ever run `--staged-only` and skip anything you did not stage. |
+| 2026-08-19 | 2c | 68 | `eb3f94048` on `fix/print-state-phase2`. Phase 2a-2c done. Remaining 2d: `ui_job_queue_modal` (real bug - a queue tap during a pre-print block deletes the entry, then the start fails; use `can_start_new_print()`), `ui_plr_offer_controller:86`, `ui_panel_ams:268` (**value comparison only** - see the correction box in Phase 2), `ui_panel_power:233` (near-no-op; the live path is `power_device_state`), and RAW_PRINT_STATE_OK markers on `print_control_buttons`, `print_start_navigation`, `can_start_new_print`. |
 | 2026-08-19 | merged | 72 | `776a6afe1` on main. Phase 1 verified on the K2: job_holds_machine=1 while print_active=0 during a host-side block, controls flip enabled->disabled, Pause refused / Cancel offered, cancel reports as cancelled with no spurious completion, no latch, collector stopped, second start works. A full-branch review first found 1 Blocker + 1 Blocker-coverage + 6 Major, all fixed in 8 chunks - see "What the review caught" below. |
 | 2026-08-19 | 1b | 72 | `32e516e14`. 91 -> 72: the first real drop. `print_occupies_toolhead()` is now **zero-caller** (Phase 4 deletes it). Cost the census did not predict: ~90 assertions across 7 test files failed because every fixture drove `print_state_enum` directly - now routed through `tests/test_helpers/print_state_test_drivers.h`. 96/96 shards, ungated sweep green. |
 | 2026-08-19 | 1a | 91 | `152986987`. Subject + 21 XML bindings + 13 tests. Count-neutral by design: 1a adds a derived subject and moves XML, it does not remove a C++ wire read. 96/96 shards, ungated sweep green. |
 | 2026-08-19 | - | 91 | `6945d4e98`. Re-merged main again (12 commits, no conflicts, translations auto-merged). Suite 95/95, ungated sweep green. Site counts re-verified unchanged: 21 bindings, 91 raw-state sites. |
 
 ## Before you touch anything: state of the branch
+
+**Phase 0 + 1 are MERGED to main** (`776a6afe1`) and verified on the K2. Phase 2
+is in progress on branch `fix/print-state-phase2`, in the same worktree
+(`.worktrees/preprint-arm-on-initiation`) - the old branch was deleted after the
+merge and the worktree reused, so the build cache is warm.
+
+Raw-state metric: **68** (was 91 at the start of Phase 1).
+
+Everything below this line predates the merge and is kept for the reasoning, not
+as current instructions.
+
 
 Branch `fix/preparing-job-lifecycle`, worktree
 `.worktrees/preprint-arm-on-initiation`. Green at three layers as of
