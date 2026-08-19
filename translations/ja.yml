@@ -1011,6 +1011,7 @@ translations:
   Firmware Restart: ファームウェア再起動
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: ファームウェアはバイパスがないと報告しています。フィラメントをエクストルーダーに直接送っている場合は有効にしてください
   Firmware restarting...: ファームウェア再起動中...
+  Firmware saved X = Y's value; the measured X result was discarded: ''
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
@@ -1633,6 +1634,7 @@ translations:
   Objects: オブジェクト
   'Off': オフ
   'Off:': 'オフ:'
+  "Old setting on today's data: {} residual - now: {}": ''
   'On': オン
   On and Off macros must be different: オンとオフのマクロは異なるものにしてください
   On-screen Alerts: '画面上の通知'

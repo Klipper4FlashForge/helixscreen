@@ -1093,6 +1093,7 @@ translations:
   Firmware Restart: Перезапуск прошивки
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: Прошивка не сообщает о байпасе. Включите, если филамент подаётся прямо в экструдер.
   Firmware restarting...: Перезапуск прошивки...
+  Firmware saved X = Y's value; the measured X result was discarded: ''
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
@@ -1763,6 +1764,7 @@ translations:
   Objects: Объекты
   'Off': Выкл
   'Off:': 'Выкл:'
+  "Old setting on today's data: {} residual - now: {}": ''
   'On': Вкл
   On and Off macros must be different: Макросы включения и выключения должны отличаться
   On-screen Alerts: 'Экранные оповещения'

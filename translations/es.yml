@@ -1111,6 +1111,7 @@ translations:
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: El
     firmware no reporta bypass. Actívelo si alimenta el filamento directamente al extrusor.
   Firmware restarting...: Reiniciando firmware...
+  Firmware saved X = Y's value; the measured X result was discarded: ''
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
@@ -1785,6 +1786,7 @@ translations:
   Objects: Objetos
   'Off': Apagado
   'Off:': 'Apagado:'
+  "Old setting on today's data: {} residual - now: {}": ''
   'On': Encendido
   On and Off macros must be different: Los macros de Encendido y Apagado deben ser
     diferentes

@@ -1005,6 +1005,7 @@ translations:
   Firmware Restart: 固件重启
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: 固件报告未配置旁路。如果您将耗材直接送入挤出机，请启用此选项
   Firmware restarting...: 固件重启中...
+  Firmware saved X = Y's value; the measured X result was discarded: ''
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
@@ -1625,6 +1626,7 @@ translations:
   Objects: 对象
   'Off': 关
   'Off:': '关:'
+  "Old setting on today's data: {} residual - now: {}": ''
   'On': 开
   On and Off macros must be different: 开和关的宏必须不同
   On-screen Alerts: '屏幕提醒'

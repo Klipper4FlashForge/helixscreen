@@ -18,11 +18,26 @@
 
 #include "../../include/calibration_types.h"
 #include "../../include/input_shaper_calibrator.h"
+#include "../../include/moonraker_api.h"
+#include "../../include/moonraker_client_mock.h"
+#include "../../include/printer_state.h"
+#include "../../include/ui_panel_input_shaper.h"
+#include "../../include/ui_update_queue.h"
+#include "../../lvgl/lvgl.h"
+#include "../lvgl_test_fixture.h"
+#include "../test_helpers/printer_state_test_access.h"
+#include "../ui_test_utils.h"
+#include "app_globals.h"
 
 #include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <memory>
+#include <regex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "../catch_amalgamated.hpp"
@@ -699,4 +714,174 @@ TEST_CASE("Apply recommendation applies both axes for Calibrate All",
         CHECK(mock.apply_calls[0].config.axis == 'X');
         CHECK(mock.apply_calls[1].config.axis == 'Y');
     }
+}
+
+// ============================================================================
+// Live-before delta display + firmware X-overwrite warning
+// ============================================================================
+//
+// Drives the REAL panel through the mock client's full Calibrate All
+// transcript (preflight -> X sweep/analysis/CSV -> Y sweep/analysis/CSV) with
+// a staged live-before configuration, then asserts the delta/verdict/warning
+// subjects the results cards bind to.
+
+namespace {
+
+class InputShaperDeltaFixture : public LVGLTestFixture {
+  public:
+    InputShaperDeltaFixture() : mock_client_(MoonrakerClientMock::PrinterType::VORON_24) {
+        // A previous test's mock run may have left the calibration CSVs in
+        // /tmp; the marker-line injection below keys off the X file appearing,
+        // so both must start absent.
+        std::remove("/tmp/calibration_data_x_mock.csv");
+        std::remove("/tmp/calibration_data_y_mock.csv");
+
+        // Live-before config staged per-test (mock default is mzv@36.7/ei@47.6;
+        // the staged pair deliberately differs so a leaked default fails loud).
+        mock_client_.set_input_shaper_values("ei", 69.8, "ei", 69.8);
+
+        printer_state_.init_subjects(false);
+        printer_state_.set_klippy_state_sync(KlippyState::READY);
+        api_ = std::make_unique<MoonrakerAPI>(mock_client_, printer_state_);
+
+        PrinterStateTestAccess::reset(get_printer_state());
+        get_printer_state().init_subjects(false);
+        lv_subject_copy_string(get_printer_state().get_homed_axes_subject(), "xyz");
+
+        panel_ = &get_global_input_shaper_panel();
+        panel_->init_subjects();
+        panel_->set_api(&mock_client_, api_.get());
+        panel_->on_activate(); // resets to IDLE, drains the on_activate config query
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    ~InputShaperDeltaFixture() override {
+        panel_->on_deactivate();
+        helix::ui::UpdateQueue::instance().drain();
+        api_.reset();
+    }
+
+    // Pumps the mock transcript (100ms/line), LVGL timers, and the UpdateQueue
+    // until pred() holds. Optionally injects the Creality copy-marker line
+    // when the panel announces the Y run ("Step 2 of 2" is set by
+    // start_calibration('Y') right before the Y collector registers, and
+    // survives until the Y sweep's first progress line one tick later - so it
+    // is observable exactly while the marker has a live collector to land on).
+    bool pump_until(const std::function<bool()>& done, bool inject_copy_marker,
+                    int max_ticks = 600) {
+        bool marker_sent = false;
+        for (int i = 0; i < max_ticks && !done(); ++i) {
+            lv_tick_inc(100);
+            lv_timer_handler_safe();
+            helix::ui::UpdateQueue::instance().drain();
+
+            if (inject_copy_marker && !marker_sent &&
+                subject_string("is_measuring_step_label") == "Step 2 of 2") {
+                marker_sent = true;
+                mock_client_.dispatch_gcode_response(
+                    "copy_TestAxis_y_to_x Recommended shaper_type_x = ei, shaper_freq_x "
+                    "= 71.4 Hz");
+            }
+        }
+        return done();
+    }
+
+    static lv_subject_t* subject(const char* name) {
+        lv_subject_t* s = lv_xml_get_subject(nullptr, name);
+        REQUIRE(s != nullptr);
+        return s;
+    }
+
+    static std::string subject_string(const char* name) {
+        return lv_subject_get_string(subject(name));
+    }
+
+    static int subject_int(const char* name) {
+        return lv_subject_get_int(subject(name));
+    }
+
+    /// Panel state subject: 0=IDLE, 1=MEASURING, 2=RESULTS, 3=ERROR
+    static int panel_state() {
+        return subject_int("input_shaper_state");
+    }
+
+  protected:
+    MoonrakerClientMock mock_client_;
+    PrinterState printer_state_;
+    std::unique_ptr<MoonrakerAPI> api_;
+    InputShaperPanel* panel_ = nullptr;
+};
+
+} // namespace
+
+TEST_CASE_METHOD(InputShaperDeltaFixture,
+                 "Calibrate All results show the live-before delta and residual verdict",
+                 "[input_shaper][panel][delta]") {
+    SECTION("with the firmware copy-marker line") {
+        panel_->handle_calibrate_all_clicked();
+
+        const bool done = pump_until([&] { return panel_state() == 2; },
+                                     /*inject_copy_marker=*/true);
+        REQUIRE(done);
+
+        // Live-before value: staged ei@69.8 (the mock recommends mzv@53.8).
+        CHECK(subject_string("is_x_was_text") == "ei @ 69.8 Hz");
+        CHECK(subject_string("is_y_was_text") == "ei @ 69.8 Hz");
+
+        // Delta line: was -> measured.
+        CHECK(subject_string("is_x_delta_text") == "ei @ 69.8 Hz -> mzv @ 53.8 Hz");
+        CHECK(subject_int("is_x_has_delta") == 1);
+
+        // Verdict: the old setting re-scored on today's PSD must show MORE
+        // residual than the new fit (the old notch at 69.8 Hz sits off the
+        // mock's 53.8 Hz resonance peak).
+        REQUIRE(subject_int("is_x_has_verdict") == 1);
+        const std::string verdict = subject_string("is_x_verdict_text");
+        std::cmatch m;
+        static const std::regex verdict_re(
+            R"(^Old setting on today's data: (\d+\.\d)% residual - now: (\d+\.\d)%$)");
+        INFO("verdict: " << verdict);
+        REQUIRE(std::regex_search(verdict.c_str(), m, verdict_re));
+        const double old_pct = std::atof(m[1].str().c_str());
+        const double new_pct = std::atof(m[2].str().c_str());
+        CHECK(old_pct > new_pct);
+
+        // The Y card gets the same treatment (old Y staged ei@69.8).
+        REQUIRE(subject_int("is_y_has_verdict") == 1);
+
+        // Firmware warning: visible only because the marker line was injected
+        // during the Y run; it belongs on the X card, whose measured value is
+        // the one the fork discarded.
+        CHECK(subject_int("is_x_fw_overwrite_warn") == 1);
+    }
+
+    SECTION("without the marker line the warning stays hidden") {
+        panel_->handle_calibrate_all_clicked();
+
+        const bool done = pump_until([&] { return panel_state() == 2; },
+                                     /*inject_copy_marker=*/false);
+        REQUIRE(done);
+
+        // Delta and verdict still populate from the staged live-before config...
+        CHECK(subject_int("is_x_has_delta") == 1);
+        CHECK(subject_int("is_x_has_verdict") == 1);
+        // ...but no firmware overwrite happened, so no warning.
+        CHECK(subject_int("is_x_fw_overwrite_warn") == 0);
+    }
+}
+
+TEST_CASE_METHOD(InputShaperDeltaFixture, "delta rows stay hidden without a live-before config",
+                 "[input_shaper][panel][delta]") {
+    mock_client_.set_input_shaper_configured(false);
+
+    panel_->handle_calibrate_x_clicked();
+
+    const bool done = pump_until([&] { return panel_state() == 2; },
+                                 /*inject_copy_marker=*/false);
+    REQUIRE(done);
+
+    CHECK(subject_int("is_x_has_delta") == 0);
+    CHECK(subject_int("is_x_has_verdict") == 0);
+    CHECK(subject_string("is_x_delta_text").empty());
+    CHECK(subject_int("is_x_fw_overwrite_warn") == 0);
 }

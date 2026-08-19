@@ -1020,6 +1020,21 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
             return;
         }
 
+        // Firmware copy-marker: at the end of a Y-axis run some klippy forks
+        // (Creality's K1C build) overwrite the staged X result with Y's values,
+        // discarding the measured X recommendation, and announce it with a line
+        // starting "copy_TestAxis_y_to_x Recommended shaper_type_x = ...".
+        // Must be matched BEFORE the recommendation parser: the marker embeds
+        // a real "Recommended shaper_type_x" wording that would otherwise be
+        // parsed as this axis's recommendation and clobber it.
+        if (line.find("copy_TestAxis_y_to_x") != std::string::npos) {
+            x_overwritten_by_firmware_ = true;
+            spdlog::warn("[InputShaperCollector] Firmware overwrote the staged X result with Y's "
+                         "values ({} axis run)",
+                         axis_);
+            return;
+        }
+
         // Parse recommendation line (try new format first, then old)
         // Don't complete yet — CSV path line follows immediately after
         if (line.find("Recommended shaper") != std::string::npos ||
@@ -1287,6 +1302,7 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
             result.shaper_type = recommended_type_;
             result.shaper_freq = recommended_freq_;
             result.csv_path = csv_path_;
+            result.x_overwritten_by_firmware = x_overwritten_by_firmware_;
 
             // Find recommended shaper's details and populate all_shapers
             for (const auto& fit : shaper_fits_) {
@@ -1384,6 +1400,8 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
     std::vector<ShaperFitData> shaper_fits_;
     std::string recommended_type_;
     float recommended_freq_ = 0.0f;
+    /// Set by the copy_TestAxis_y_to_x marker line (see on_gcode_response).
+    bool x_overwritten_by_firmware_ = false;
 };
 
 /**

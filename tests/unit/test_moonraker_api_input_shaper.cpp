@@ -286,6 +286,60 @@ TEST_CASE_METHOD(InputShaperTestFixture,
     REQUIRE_FALSE(captured_result.chart_data_unavailable);
 }
 
+TEST_CASE_METHOD(InputShaperTestFixture,
+                 "start_resonance_test flags the firmware X-overwrite on the Y result",
+                 "[calibration][input_shaper]") {
+    // Creality's klippy fork overwrites the staged X result with Y's values at
+    // the end of a Y-axis run and announces it with a line starting
+    // "copy_TestAxis_y_to_x Recommended shaper_type_x = ...". The collector must
+    // (a) flag it on the Y result and (b) NOT let the embedded "Recommended
+    // shaper_type_x" wording clobber the Y axis's own recommendation.
+    InputShaperResult captured_result;
+
+    SECTION("without the marker line the flag stays clear") {
+        api_->advanced().start_resonance_test(
+            'Y', [](int, ShaperCalibrationPhase) {},
+            [&](const InputShaperResult& result) { captured_result = result; },
+            [&](const MoonrakerError&) { FAIL("Error callback should not be called"); });
+
+        for (int i = 0;
+             i < 200 && !(captured_result.is_valid() && !captured_result.csv_path.empty()); ++i) {
+            lv_tick_inc(100);
+            lv_timer_handler_safe();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+
+        REQUIRE(captured_result.is_valid());
+        REQUIRE_FALSE(captured_result.x_overwritten_by_firmware);
+    }
+
+    SECTION("the marker line flags the result and spares the Y recommendation") {
+        api_->advanced().start_resonance_test(
+            'Y', [](int, ShaperCalibrationPhase) {},
+            [&](const InputShaperResult& result) { captured_result = result; },
+            [&](const MoonrakerError&) { FAIL("Error callback should not be called"); });
+
+        // The collector registers its gcode-response handler synchronously, so
+        // the marker can be injected before the mock's first transcript tick.
+        mock_client_.dispatch_gcode_response(
+            "copy_TestAxis_y_to_x Recommended shaper_type_x = ei, shaper_freq_x = 71.4 Hz");
+
+        for (int i = 0;
+             i < 200 && !(captured_result.is_valid() && !captured_result.csv_path.empty()); ++i) {
+            lv_tick_inc(100);
+            lv_timer_handler_safe();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+
+        REQUIRE(captured_result.is_valid());
+        REQUIRE(captured_result.x_overwritten_by_firmware);
+        // The marker's embedded "shaper_type_x = ei" must not have been parsed
+        // as this axis's recommendation (the mock's Y run recommends mzv).
+        REQUIRE(captured_result.shaper_type == "mzv");
+        REQUIRE(captured_result.shaper_freq == Catch::Approx(53.8f).margin(0.1f));
+    }
+}
+
 // ============================================================================
 // set_input_shaper() Tests
 // ============================================================================

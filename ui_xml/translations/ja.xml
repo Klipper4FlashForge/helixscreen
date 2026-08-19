@@ -988,6 +988,7 @@
   <translation tag="Firmware Restart" ja="ファームウェア再起動"/>
   <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder" ja="ファームウェアはバイパスがないと報告しています。フィラメントをエクストルーダーに直接送っている場合は有効にしてください"/>
   <translation tag="Firmware restarting..." ja="ファームウェア再起動中..."/>
+  <translation tag="Firmware saved X = Y&apos;s value; the measured X result was discarded"/>
   <translation tag="FlashForge Adventurer 5M" ja="FlashForge Adventurer 5M"/>
   <translation tag="FlashForge Adventurer 5X" ja="FlashForge Adventurer 5X"/>
   <translation tag="FlashForge IFS" ja="FlashForge IFS"/>
@@ -1591,6 +1592,7 @@
   <translation tag="Objects" ja="オブジェクト"/>
   <translation tag="Off" ja="オフ"/>
   <translation tag="Off:" ja="オフ:"/>
+  <translation tag="Old setting on today&apos;s data: {} residual - now: {}"/>
   <translation tag="On" ja="オン"/>
   <translation tag="On and Off macros must be different" ja="オンとオフのマクロは異なるものにしてください"/>
   <translation tag="On-screen Alerts" ja="画面上の通知"/>

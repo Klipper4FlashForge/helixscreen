@@ -205,6 +205,15 @@ class InputShaperPanel : public OverlayBase {
     void continue_calibrate_all_y();
     void apply_y_after_x();
 
+    // Live-before snapshot: the config active when the current run began, so
+    // the results cards can show what changed. Queried fresh at run start - the
+    // config may have changed since the panel opened, and what SAVE_CONFIG
+    // later writes can differ from what was live (some forks overwrite the
+    // staged X result with Y's values).
+    void snapshot_config_before();
+    [[nodiscard]] bool get_before_axis(char axis, std::string& type, float& freq) const;
+    [[nodiscard]] double before_damping_ratio(char axis) const;
+
     // Result callbacks (from IMoonrakerAPI)
     void on_calibration_result(const InputShaperResult& result);
     void on_calibration_error(const std::string& message);
@@ -229,6 +238,7 @@ class InputShaperPanel : public OverlayBase {
     static int get_vibration_quality(float vibrations);
     static const char* get_quality_description(float vibrations);
     void populate_axis_result(char axis, const InputShaperResult& result);
+    void populate_axis_delta(char axis, const InputShaperResult& result);
 
     // Widget/client references (overlay_root_ inherited from OverlayBase)
     lv_obj_t* parent_screen_ = nullptr;
@@ -333,6 +343,32 @@ class InputShaperPanel : public OverlayBase {
     lv_subject_t is_result_y_max_accel_{};
     lv_subject_t is_result_y_quality_{};
 
+    // Live-before delta display per axis: the value active when the run began
+    // ("ei @ 69.8 Hz"), the was -> measured line, and the old setting's
+    // residual-vibration verdict against the freshly measured PSD. Each row is
+    // gated by a has-subject so it hides when the inputs are missing (no
+    // before-config, no PSD data, or an unported shaper type).
+    char is_x_was_buf_[32] = {};
+    lv_subject_t is_x_was_text_{};
+    char is_y_was_buf_[32] = {};
+    lv_subject_t is_y_was_text_{};
+    char is_x_delta_buf_[64] = {};
+    lv_subject_t is_x_delta_text_{};
+    char is_y_delta_buf_[64] = {};
+    lv_subject_t is_y_delta_text_{};
+    lv_subject_t is_x_has_delta_{};
+    lv_subject_t is_y_has_delta_{};
+    char is_x_verdict_buf_[96] = {};
+    lv_subject_t is_x_verdict_text_{};
+    char is_y_verdict_buf_[96] = {};
+    lv_subject_t is_y_verdict_text_{};
+    lv_subject_t is_x_has_verdict_{};
+    lv_subject_t is_y_has_verdict_{};
+
+    // Firmware overwrote the staged X result with Y's values during the Y run
+    // (1 = show the warning row on the X results card)
+    lv_subject_t is_x_fw_overwrite_warn_{};
+
     // Low-RAM warning modal before resonance calibration (see memory_utils.h)
     lv_obj_t* low_ram_warn_dialog_ = nullptr;
     char pending_calib_axis_ = 'X';
@@ -340,8 +376,16 @@ class InputShaperPanel : public OverlayBase {
     // Calibrate All flow tracking
     bool calibrate_all_mode_ = false; ///< True when doing X+Y sequential calibration
     InputShaperResult x_result_;      ///< Stored X result when doing Calibrate All
+    /// True when the Y run reported the firmware's copy_TestAxis_y_to_x
+    /// marker: the saved X value is Y's, and the measured X result the X card
+    /// shows was discarded by the firmware.
+    bool x_saved_value_overwritten_ = false;
     helix::AsyncLifetimeGuard
         calibration_lifetime_; ///< Generation guard to discard stale calibration callbacks
+
+    // Live-before configuration snapshot (see snapshot_config_before())
+    InputShaperConfig config_before_{};
+    bool has_config_before_ = false;
 
     // Results data
     char current_axis_ = 'X';
@@ -357,6 +401,7 @@ class InputShaperPanel : public OverlayBase {
         int raw_series_id = -1;
         int shaper_series_ids[MAX_SHAPERS]; // initialized to -1 in constructor
         bool shaper_visible[MAX_SHAPERS] = {};
+        int old_setting_series_id = -1; ///< Muted overlay of the live-before shaper curve
 
         AxisChartData() {
             std::fill(shaper_series_ids, shaper_series_ids + MAX_SHAPERS, -1);

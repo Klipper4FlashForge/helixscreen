@@ -1125,6 +1125,7 @@ translations:
   Firmware Restart: Redémarrage firmware
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: Le firmware ne signale aucun bypass. Activez cette option si vous alimentez l'extrudeur directement en filament
   Firmware restarting...: Redémarrage du firmware...
+  Firmware saved X = Y's value; the measured X result was discarded: ''
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
@@ -1802,6 +1803,7 @@ translations:
   Objects: Objets
   'Off': Éteint
   'Off:': 'Arrêt :'
+  "Old setting on today's data: {} residual - now: {}": ''
   'On': Allumé
   On and Off macros must be different: Les macros On et Off doivent être différentes
   On-screen Alerts: 'Alertes à l''écran'

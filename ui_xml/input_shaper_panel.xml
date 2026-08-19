@@ -181,6 +181,17 @@
               <text_body text="X Axis" translation_tag="X Axis"/>
               <text_small bind_text="is_result_x_shaper" style_text_color="#text_muted"/>
             </lv_obj>
+            <!-- Firmware overwrote the staged X result during the Y run (fork behavior) -->
+            <lv_obj name="fw_overwrite_warn_x"
+                    width="100%" height="content" style_bg_color="#warning" style_bg_opa="25" style_radius="#border_radius"
+                    style_border_width="1" style_border_color="#warning" style_pad_all="#space_sm" flex_flow="row"
+                    style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false">
+              <bind_flag_if_eq subject="is_x_fw_overwrite_warn" flag="hidden" ref_value="0"/>
+              <icon src="alert" size="sm" variant="warning"/>
+              <text_small text="Firmware saved X = Y's value; the measured X result was discarded"
+                          translation_tag="Firmware saved X = Y's value; the measured X result was discarded"
+                          style_text_color="#warning" flex_grow="1"/>
+            </lv_obj>
             <!-- Frequency response chart container (hidden when no freq data) -->
             <lv_obj name="chart_container_x"
                     width="100%" height="180" style_pad_all="0" style_radius="#border_radius"
@@ -509,6 +520,15 @@
               <!-- Explanation -->
               <text_small width="100%"
                           bind_text="is_result_x_explanation" style_text_color="#text_muted" style_pad_top="#space_sm"/>
+              <!-- Live-before -> measured delta (hidden until a before-value exists) -->
+              <text_small width="100%" bind_text="is_x_delta_text" style_text_color="#text_muted"
+                          style_pad_top="#space_sm">
+                <bind_flag_if_eq subject="is_x_has_delta" flag="hidden" ref_value="0"/>
+              </text_small>
+              <!-- Old setting re-scored on today's measured spectrum -->
+              <text_small width="100%" bind_text="is_x_verdict_text" style_text_color="#text_muted">
+                <bind_flag_if_eq subject="is_x_has_verdict" flag="hidden" ref_value="0"/>
+              </text_small>
             </lv_obj>
           </lv_obj>
           <!-- Y Axis Result Card -->
@@ -851,6 +871,15 @@
               <!-- Explanation -->
               <text_small width="100%"
                           bind_text="is_result_y_explanation" style_text_color="#text_muted" style_pad_top="#space_sm"/>
+              <!-- Live-before -> measured delta (hidden until a before-value exists) -->
+              <text_small width="100%" bind_text="is_y_delta_text" style_text_color="#text_muted"
+                          style_pad_top="#space_sm">
+                <bind_flag_if_eq subject="is_y_has_delta" flag="hidden" ref_value="0"/>
+              </text_small>
+              <!-- Old setting re-scored on today's measured spectrum -->
+              <text_small width="100%" bind_text="is_y_verdict_text" style_text_color="#text_muted">
+                <bind_flag_if_eq subject="is_y_has_verdict" flag="hidden" ref_value="0"/>
+              </text_small>
             </lv_obj>
           </lv_obj>
         </lv_obj>

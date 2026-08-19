@@ -21,8 +21,10 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
 #include "platform_capabilities.h"
+#include "shaper_response.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
+#include "theme_manager.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -311,6 +313,21 @@ void InputShaperPanel::init_subjects() {
     UI_MANAGED_SUBJECT_STRING(is_result_y_max_accel_, is_result_y_max_accel_buf_, "",
                               "is_result_y_max_accel", subjects_);
     UI_MANAGED_SUBJECT_INT(is_result_y_quality_, 0, "is_result_y_quality", subjects_);
+
+    // Live-before delta rows
+    UI_MANAGED_SUBJECT_STRING(is_x_was_text_, is_x_was_buf_, "", "is_x_was_text", subjects_);
+    UI_MANAGED_SUBJECT_STRING(is_y_was_text_, is_y_was_buf_, "", "is_y_was_text", subjects_);
+    UI_MANAGED_SUBJECT_STRING(is_x_delta_text_, is_x_delta_buf_, "", "is_x_delta_text", subjects_);
+    UI_MANAGED_SUBJECT_STRING(is_y_delta_text_, is_y_delta_buf_, "", "is_y_delta_text", subjects_);
+    UI_MANAGED_SUBJECT_INT(is_x_has_delta_, 0, "is_x_has_delta", subjects_);
+    UI_MANAGED_SUBJECT_INT(is_y_has_delta_, 0, "is_y_has_delta", subjects_);
+    UI_MANAGED_SUBJECT_STRING(is_x_verdict_text_, is_x_verdict_buf_, "", "is_x_verdict_text",
+                              subjects_);
+    UI_MANAGED_SUBJECT_STRING(is_y_verdict_text_, is_y_verdict_buf_, "", "is_y_verdict_text",
+                              subjects_);
+    UI_MANAGED_SUBJECT_INT(is_x_has_verdict_, 0, "is_x_has_verdict", subjects_);
+    UI_MANAGED_SUBJECT_INT(is_y_has_verdict_, 0, "is_y_has_verdict", subjects_);
+    UI_MANAGED_SUBJECT_INT(is_x_fw_overwrite_warn_, 0, "is_x_fw_overwrite_warn", subjects_);
 
     // Frequency response chart gating
     UI_MANAGED_SUBJECT_INT(is_x_has_freq_data_, 0, "is_x_has_freq_data", subjects_);
@@ -706,7 +723,52 @@ void InputShaperPanel::on_preflight_error(const std::string& message) {
 void InputShaperPanel::calibrate_all() {
     calibrate_all_mode_ = true;
     x_result_ = InputShaperResult{}; // Clear stored X result
+    x_saved_value_overwritten_ = false;
     start_with_preflight('X');
+}
+
+// ============================================================================
+// LIVE-BEFORE CONFIG SNAPSHOT
+// ============================================================================
+
+void InputShaperPanel::snapshot_config_before() {
+    has_config_before_ = false;
+    config_before_ = InputShaperConfig{};
+    if (!api_) {
+        return;
+    }
+    api_->advanced().get_input_shaper_config(
+        lifetime_.bg_cb("InputShaperPanel::config_before",
+                        [this](const InputShaperConfig& config) {
+                            config_before_ = config;
+                            has_config_before_ = true;
+                            spdlog::debug("[InputShaper] Live-before config: X={} @ {:.1f} Hz, "
+                                          "Y={} @ {:.1f} Hz",
+                                          config.shaper_type_x, config.shaper_freq_x,
+                                          config.shaper_type_y, config.shaper_freq_y);
+                        }),
+        lifetime_.bg_cb("InputShaperPanel::config_before_error", [this](const MoonrakerError& err) {
+            // Not fatal: the delta rows just stay hidden. The
+            // run itself does not depend on the snapshot.
+            spdlog::debug("[InputShaper] Live-before config unavailable: {}", err.message);
+        }));
+}
+
+bool InputShaperPanel::get_before_axis(char axis, std::string& type, float& freq) const {
+    if (!has_config_before_) {
+        return false;
+    }
+    type = (axis == 'X') ? config_before_.shaper_type_x : config_before_.shaper_type_y;
+    freq = (axis == 'X') ? config_before_.shaper_freq_x : config_before_.shaper_freq_y;
+    return !type.empty() && freq > 0.0f;
+}
+
+double InputShaperPanel::before_damping_ratio(char axis) const {
+    const float dr =
+        (axis == 'X') ? config_before_.damping_ratio_x : config_before_.damping_ratio_y;
+    // Klipper reports the ratio only when the config sets one; zero means
+    // default (shaper_defs.py DEFAULT_DAMPING_RATIO).
+    return dr > 0.0f ? static_cast<double>(dr) : calibration::SHAPER_DEFAULT_DAMPING_RATIO;
 }
 
 void InputShaperPanel::continue_calibrate_all_y() {
@@ -732,6 +794,16 @@ void InputShaperPanel::start_calibration(char axis) {
     if (!calibrate_all_mode_ || axis == 'X') {
         recommended_type_.clear();
         recommended_freq_ = 0.0f;
+    }
+
+    // Snapshot the live config right before the run starts: the results cards
+    // compare against what was active HERE, not against what was on screen
+    // when the panel opened, and not against what SAVE_CONFIG later writes
+    // (some forks overwrite the staged X result with Y's values). Only the
+    // first axis of a run snapshots - the Y continuation of Calibrate All
+    // must not pick up mid-run state.
+    if (!(calibrate_all_mode_ && axis == 'Y')) {
+        snapshot_config_before();
     }
 
     // Update measuring labels
@@ -1112,6 +1184,14 @@ void InputShaperPanel::on_calibration_result(const InputShaperResult& result) {
         return;
     }
 
+    // The Y result carries the firmware-copy flag (some klippy forks overwrite
+    // the staged X result with Y's values and announce it on the console).
+    // Surface it on the X card, whose measured value is the one discarded.
+    if (result.axis == 'Y' && result.x_overwritten_by_firmware && x_result_.is_valid()) {
+        x_saved_value_overwritten_ = true;
+        spdlog::warn("[InputShaper] Firmware overwrote the saved X result with Y's values");
+    }
+
     // Store recommendation (from latest axis, or Y if Calibrate All)
     recommended_type_ = result.shaper_type;
     recommended_freq_ = result.shaper_freq;
@@ -1215,6 +1295,22 @@ void InputShaperPanel::clear_results() {
     lv_subject_set_int(&is_y_recommended_row_, -1);
     lv_subject_set_int(&is_x_num_shapers_, 0);
     lv_subject_set_int(&is_y_num_shapers_, 0);
+
+    // Clear live-before delta rows and the firmware overwrite warning
+    lv_subject_copy_string(&is_x_was_text_, "");
+    lv_subject_copy_string(&is_y_was_text_, "");
+    lv_subject_copy_string(&is_x_delta_text_, "");
+    lv_subject_copy_string(&is_y_delta_text_, "");
+    lv_subject_set_int(&is_x_has_delta_, 0);
+    lv_subject_set_int(&is_y_has_delta_, 0);
+    lv_subject_copy_string(&is_x_verdict_text_, "");
+    lv_subject_copy_string(&is_y_verdict_text_, "");
+    lv_subject_set_int(&is_x_has_verdict_, 0);
+    lv_subject_set_int(&is_y_has_verdict_, 0);
+    lv_subject_set_int(&is_x_fw_overwrite_warn_, 0);
+    has_config_before_ = false;
+    config_before_ = InputShaperConfig{};
+    x_saved_value_overwritten_ = false;
 
     // Clear comparison table subjects
     for (size_t i = 0; i < MAX_SHAPERS; i++) {
@@ -1335,6 +1431,11 @@ void InputShaperPanel::populate_axis_result(char axis, const InputShaperResult& 
         lv_subject_set_int(&is_result_y_quality_, get_vibration_quality(result.vibrations));
     }
 
+    // The firmware-overwrite warning lives on the X card; the flag is set when
+    // the Y result carrying the copy marker arrives (Calibrate All populates X
+    // just before Y, so the row is already built when this flips it visible).
+    lv_subject_set_int(&is_x_fw_overwrite_warn_, x_saved_value_overwritten_ ? 1 : 0);
+
     // Populate comparison table subjects
     auto& cmp = (axis == 'X') ? x_cmp_ : y_cmp_;
     auto& recommended_row = (axis == 'X') ? is_x_recommended_row_ : is_y_recommended_row_;
@@ -1392,8 +1493,110 @@ void InputShaperPanel::populate_axis_result(char axis, const InputShaperResult& 
     spdlog::debug("[InputShaper] Populated {} axis comparison table with {} shapers", axis,
                   result.all_shapers.size());
 
+    // Live-before delta rows and residual verdict
+    populate_axis_delta(axis, result);
+
     // Populate frequency response chart if data available
     populate_chart(axis, result);
+}
+
+// ============================================================================
+// LIVE-BEFORE DELTA ROWS
+// ============================================================================
+
+void InputShaperPanel::populate_axis_delta(char axis, const InputShaperResult& result) {
+    auto& was_subject = (axis == 'X') ? is_x_was_text_ : is_y_was_text_;
+    auto& was_buf = (axis == 'X') ? is_x_was_buf_ : is_y_was_buf_;
+    auto& delta_subject = (axis == 'X') ? is_x_delta_text_ : is_y_delta_text_;
+    auto& delta_buf = (axis == 'X') ? is_x_delta_buf_ : is_y_delta_buf_;
+    auto& has_delta = (axis == 'X') ? is_x_has_delta_ : is_y_has_delta_;
+    auto& verdict_subject = (axis == 'X') ? is_x_verdict_text_ : is_y_verdict_text_;
+    auto& verdict_buf = (axis == 'X') ? is_x_verdict_buf_ : is_y_verdict_buf_;
+    auto& has_verdict = (axis == 'X') ? is_x_has_verdict_ : is_y_has_verdict_;
+
+    lv_subject_set_int(&has_delta, 0);
+    lv_subject_set_int(&has_verdict, 0);
+    lv_subject_copy_string(&verdict_subject, "");
+
+    std::string old_type;
+    float old_freq = 0.0f;
+    if (!result.is_valid() || !get_before_axis(axis, old_type, old_freq)) {
+        lv_subject_copy_string(&was_subject, "");
+        lv_subject_copy_string(&delta_subject, "");
+        return;
+    }
+
+    // "was" value, lowercase as the firmware reports it
+    snprintf(was_buf, sizeof(was_buf), "%s @ %.1f Hz", old_type.c_str(), old_freq);
+    lv_subject_copy_string(&was_subject, was_buf);
+
+    char new_buf[32];
+    snprintf(new_buf, sizeof(new_buf), "%s @ %.1f Hz", result.shaper_type.c_str(),
+             result.shaper_freq);
+    snprintf(delta_buf, sizeof(delta_buf), "%s -> %s", was_buf, new_buf);
+    lv_subject_copy_string(&delta_subject, delta_buf);
+    lv_subject_set_int(&has_delta, 1);
+
+    // Verdict: the old setting re-scored against the freshly measured PSD next
+    // to the new fit's residual. Needs PSD bins and a computable curve for the
+    // old type (unported shaper types - e.g. Kalico smooth shapers - hide the
+    // row rather than show a half-verdict).
+    if (result.freq_response.empty()) {
+        return;
+    }
+    std::vector<double> bins;
+    std::vector<double> psd;
+    bins.reserve(result.freq_response.size());
+    psd.reserve(result.freq_response.size());
+    for (const auto& [f, a] : result.freq_response) {
+        bins.push_back(f);
+        psd.push_back(a);
+    }
+
+    const std::vector<double> old_curve = calibration::shaper_transfer_curve(
+        old_type, static_cast<double>(old_freq), before_damping_ratio(axis), bins);
+    const double residual_old = calibration::residual_vibration_percent(psd, old_curve);
+    if (residual_old < 0.0) {
+        return;
+    }
+
+    // New fit: prefer the curve the firmware fitted and wrote into the CSV -
+    // it carries the fork's own values. The parser shapes it by the raw PSD
+    // (values = H * psd), so divide that back out bin by bin; a zero-PSD bin
+    // contributes nothing to the verdict either way.
+    std::vector<double> new_curve;
+    for (const auto& curve : result.shaper_curves) {
+        if (curve.name == result.shaper_type && curve.values.size() == psd.size()) {
+            new_curve.reserve(psd.size());
+            for (size_t i = 0; i < psd.size(); i++) {
+                new_curve.push_back(psd[i] > 0.0f ? static_cast<double>(curve.values[i]) / psd[i]
+                                                  : 0.0);
+            }
+            break;
+        }
+    }
+    if (new_curve.empty()) {
+        new_curve = calibration::shaper_transfer_curve(
+            result.shaper_type, static_cast<double>(result.shaper_freq),
+            calibration::SHAPER_DEFAULT_DAMPING_RATIO, bins);
+    }
+    const double residual_new = calibration::residual_vibration_percent(psd, new_curve);
+    if (residual_new < 0.0) {
+        return;
+    }
+
+    char old_pct[16];
+    char new_pct[16];
+    snprintf(old_pct, sizeof(old_pct), "%.1f%%", residual_old);
+    snprintf(new_pct, sizeof(new_pct), "%.1f%%", residual_new);
+    const std::string verdict =
+        fmt::format(lv_tr("Old setting on today's data: {} residual - now: {}"), old_pct, new_pct);
+    snprintf(verdict_buf, sizeof(verdict_buf), "%s", verdict.c_str());
+    lv_subject_copy_string(&verdict_subject, verdict_buf);
+    lv_subject_set_int(&has_verdict, 1);
+
+    spdlog::debug("[InputShaper] {} axis delta: {} -> {} (residual {} -> {})", axis, was_buf,
+                  new_buf, old_pct, new_pct);
 }
 
 // ============================================================================
@@ -1526,6 +1729,45 @@ void InputShaperPanel::populate_chart(char axis, const InputShaperResult& result
     lv_subject_set_int(&num_chips,
                        static_cast<int>(std::min(chart_data.shaper_curves.size(), MAX_SHAPERS)));
 
+    // Overlay the live-before setting as a second shaper curve so the old
+    // notch is comparable against the fresh fit on the same spectrum. Drawn
+    // muted (thin, translucent) so the fitted curves stay dominant; skipped
+    // when the old type has no ported transfer function or no series slot is
+    // free.
+    if (chart_data.old_setting_series_id >= 0) {
+        ui_frequency_response_chart_remove_series(chart_data.chart,
+                                                  chart_data.old_setting_series_id);
+        chart_data.old_setting_series_id = -1;
+    }
+    std::string old_type;
+    float old_freq = 0.0f;
+    if (get_before_axis(axis, old_type, old_freq)) {
+        std::vector<double> bins(freqs.begin(), freqs.end());
+        const std::vector<double> old_curve = calibration::shaper_transfer_curve(
+            old_type, static_cast<double>(old_freq), before_damping_ratio(axis), bins);
+        if (!old_curve.empty()) {
+            std::vector<float> old_shaped;
+            old_shaped.reserve(freqs.size());
+            for (size_t i = 0; i < freqs.size(); i++) {
+                old_shaped.push_back(amps[i] * static_cast<float>(old_curve[i]));
+            }
+            const int old_id = ui_frequency_response_chart_add_series(
+                chart_data.chart, (old_type + " (was)").c_str(),
+                theme_manager_get_color("text_muted"));
+            if (old_id >= 0) {
+                chart_data.old_setting_series_id = old_id;
+                ui_frequency_response_chart_set_series_muted(chart_data.chart, old_id, true);
+                ui_frequency_response_chart_set_data(chart_data.chart, old_id, freqs.data(),
+                                                     old_shaped.data(), freqs.size());
+                ui_frequency_response_chart_show_series(chart_data.chart, old_id, true);
+            }
+        } else {
+            spdlog::debug("[InputShaper] {} axis: live-before type '{}' has no ported transfer "
+                          "curve - chart overlay skipped",
+                          axis, old_type);
+        }
+    }
+
     // Update legend to reflect initially selected shaper
     update_legend(axis);
 
@@ -1556,6 +1798,11 @@ void InputShaperPanel::clear_chart(char axis) {
                 chart_data.shaper_series_ids[i] = -1;
             }
             chart_data.shaper_visible[i] = false;
+        }
+        if (chart_data.old_setting_series_id >= 0) {
+            ui_frequency_response_chart_remove_series(chart_data.chart,
+                                                      chart_data.old_setting_series_id);
+            chart_data.old_setting_series_id = -1;
         }
     }
 
@@ -1700,7 +1947,21 @@ void InputShaperPanel::inject_demo_results() {
         std::mt19937 rng(42 + static_cast<unsigned>(axis));
         std::uniform_real_distribution<float> noise_dist(0.8f, 1.2f);
 
+        // Real transfer curves per shaper (same math the firmware uses), so
+        // the demo's chart overlays and residual verdict look like a real run
+        std::vector<std::vector<double>> transfer(shapers.size());
+        std::vector<double> bins;
         for (float freq = 5.0f; freq <= 200.0f; freq += 4.0f) {
+            bins.push_back(freq);
+        }
+        for (size_t i = 0; i < shapers.size(); i++) {
+            transfer[i] =
+                calibration::shaper_transfer_curve(shapers[i].type, shapers[i].frequency,
+                                                   calibration::SHAPER_DEFAULT_DAMPING_RATIO, bins);
+        }
+
+        for (size_t bin = 0; bin < bins.size(); bin++) {
+            const float freq = static_cast<float>(bins[bin]);
             float df = freq - peak_freq;
             float resonance = peak_amp / (1.0f + (df * df) / (peak_width * peak_width));
             float base_psd = noise_floor * noise_dist(rng) + resonance;
@@ -1717,11 +1978,10 @@ void InputShaperPanel::inject_demo_results() {
             freq_response.push_back({freq, psd_xyz});
 
             for (size_t i = 0; i < shapers.size(); i++) {
-                float shaper_freq_val = shapers[i].frequency;
-                float dist = std::abs(freq - shaper_freq_val);
-                float attenuation =
-                    (dist < 15.0f) ? 0.05f + 0.95f * (dist / 15.0f) * (dist / 15.0f) : 1.0f;
-                shaper_curves[i].values.push_back(psd_xyz * attenuation);
+                // Unported shaper types (Kalico smooth shapers in the demo set)
+                // degrade to a flat passband, never an empty series
+                const double h = (bin < transfer[i].size()) ? transfer[i][bin] : 1.0;
+                shaper_curves[i].values.push_back(psd_xyz * static_cast<float>(h));
             }
         }
 
@@ -1751,6 +2011,16 @@ void InputShaperPanel::inject_demo_results() {
     recommended_type_ = rec.type;
     recommended_freq_ = rec.frequency;
     x_result_ = x_result;
+
+    // Demo live-before config so the delta rows, the residual verdict, and the
+    // muted "was" chart overlay appear in screenshot/demo mode
+    config_before_ = InputShaperConfig{};
+    config_before_.is_configured = true;
+    config_before_.shaper_type_x = "ei";
+    config_before_.shaper_freq_x = 51.2f;
+    config_before_.shaper_type_y = "ei";
+    config_before_.shaper_freq_y = 44.0f;
+    has_config_before_ = true;
 
     // Populate both axes (uses existing private methods)
     lv_subject_set_int(&is_results_has_x_, 0);
