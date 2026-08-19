@@ -214,8 +214,11 @@
         </ui_card>
 
         <!-- Bypass notice: when bypass is engaged the print runs on the
-             external spool, not on the lanes the mapping card below shows.
-             Bound to AmsState's global subject — no per-view C++. -->
+             external spool. The mapping card below hides itself for a
+             single-tool bypass print (the mapping decides nothing there), so
+             this must not promise "the lanes below" — a multi-lane bypass print
+             still shows them. Bound to AmsState's global subject — no
+             per-view C++. -->
         <ui_card name="bypass_source_card"
                  width="100%" style_pad_hor="0" style_pad_ver="#space_xs" style_pad_gap="#space_xs"
                  style_border_width="0" style_bg_color="#elevated_bg" flex_flow="row" style_flex_cross_place="center"
@@ -223,8 +226,8 @@
           <bind_flag_if_eq subject="ams_bypass_active" flag="hidden" ref_value="0"/>
           <icon src="source_branch" size="sm" variant="info" clickable="false"/>
           <text_small name="bypass_source_label"
-                      text="Bypass active — this print runs on the external spool, not on the lanes below."
-                      translation_tag="Bypass active — this print runs on the external spool, not on the lanes below."
+                      text="Bypass active — this print runs on the external spool."
+                      translation_tag="Bypass active — this print runs on the external spool."
                       clickable="false" flex_grow="1"/>
         </ui_card>
 
