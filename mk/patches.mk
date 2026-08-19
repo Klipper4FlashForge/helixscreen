@@ -78,6 +78,7 @@ LIBHV_PATCHED_FILES := \
 	Makefile.in \
 	http/client/requests.h \
 	base/hsocket.c \
+	base/hplatform.h \
 	base/hlog.c \
 	base/dns_resolv.c \
 	base/dns_resolv.h \
