@@ -214,6 +214,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -241,6 +246,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -284,6 +294,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -322,6 +337,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -503,6 +523,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -573,6 +598,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -634,6 +664,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -669,6 +704,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -919,6 +959,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1146,6 +1191,11 @@ if [ "$STAGED_ONLY" = true ]; then
   echo ""
 fi
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1183,6 +1233,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1218,6 +1273,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1241,6 +1301,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1273,6 +1338,11 @@ if [ "$STAGED_ONLY" = true ]; then
   fi
 fi
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1314,6 +1384,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1360,6 +1435,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1403,6 +1483,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1677,6 +1762,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1708,6 +1798,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1761,6 +1856,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1792,6 +1892,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1831,6 +1936,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1869,6 +1979,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
@@ -1990,6 +2105,11 @@ fi
 
 echo ""
 
+# ====================================================================
+# (terminator: tests/shell/*.bats extract a section's body by awk-ing from
+#  its first line to the next '# ====' banner. Wrapping the sections in
+#  functions moved the banners above them, so without this the extraction
+#  ran on past the body and swallowed the return/closing brace.)
   return $EXIT_CODE
 }
 
