@@ -49,7 +49,7 @@ what Phase 4's gate is for.
 
 ### Nine competing definitions of "is a print active"
 
-Exactly one includes `Preparing`, and it is dead code.
+Exactly one includes `Preparing`, and it has a single external consumer.
 
 | # | Predicate | True for | Sees Preparing | Non-test call sites |
 |---|---|---|---|---|
@@ -57,7 +57,7 @@ Exactly one includes `Preparing`, and it is dead code.
 | 2 | `status_indicates_active_print(json)` | PRINTING, PAUSED | no | 3 |
 | 3 | `print_active` subject | PRINTING, PAUSED | no | 2 C++, **21 XML** |
 | 4 | `is_active_print_state(PrintJobState)` | PRINTING, PAUSED | no | 3 |
-| 5 | `PrintLifecycleState::is_active(PrintState)` | Printing, Paused, **Preparing** | **yes** | **0** |
+| 5 | `PrintLifecycleState::is_active(PrintState)` | Printing, Paused, **Preparing** | **yes** | **1** (`ui_panel_print_status.cpp:3227`) |
 | 6 | `PrintLifecycleState::want_viewer()` | everything but Idle | yes | 2 |
 | 7 | `print_in_progress` subject | the preparing window, hand-maintained | **yes** | see below |
 | 8 | `print_blocks_filament_op(printing, paused, self_homes)` | PRINTING; PAUSED only when self-homing | no | 4 |
@@ -66,10 +66,23 @@ Exactly one includes `Preparing`, and it is dead code.
 Plus a fifth ad-hoc state set with no named predicate at
 `spoolman_manager.cpp:99-100` (`PRINTING || COMPLETE || PAUSED`).
 
-Two sites needed `Preparing` badly enough to hand-patch it inline rather than use
-#5: `ui_emergency_stop.cpp:284-288` and `print_control_view.cpp:12-14`. The second
-was written during this work - the correct predicate was in the header the whole
-time and was not found.
+The one consumer of #5 is the panel's Tune/Timelapse gate
+(`ui_panel_print_status.cpp:3227`, `PrintLifecycleState::is_active(state)`); the
+class also uses it internally four times (`print_lifecycle_state.cpp:136`, `:144`,
+`:153`, `:167`). So one site out of roughly sixty that ask "is a print happening"
+asks it of the predicate that can actually answer.
+
+Two others needed `Preparing` badly enough to hand-patch it inline rather than
+reach for #5: `ui_emergency_stop.cpp:284-288` and `print_control_view.cpp:12-14`.
+The second was written during this work - the correct predicate was in the header
+the whole time and was not found. That is the argument for Phase 4's gate in one
+sentence: a correct helper that nobody is *forced* onto gets reinvented at each
+call site.
+
+> **Correction, 2026-08-19.** An earlier draft of this plan said #5 had *zero*
+> call sites and called it dead code. That was taken from a survey and not
+> checked. It has one. The conclusion is unchanged but the number was wrong -
+> verify a census claim before building an argument on it.
 
 ### The safety gap (verified)
 
