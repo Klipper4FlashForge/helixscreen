@@ -260,27 +260,58 @@ The third line is the regression guard: externally started prints still arm.
 
 ## Risks and gaps - read before merging
 
-### 1. No hardware verification (blocking)
+### 1. Hardware: verified in part, one real gap found
 
-Everything above is proven against the mock, whose commit-to-confirm window is
-**35ms**. The reported defect is a **7m39s** window on a K2 Plus. The mechanism is
-verified; the case that actually broke is not. Specifically unverified on hardware:
+Tested on the K2 Plus 2026-08-18 with a host-side `BED_MESH_CALIBRATE_START_PRINT`,
+cancelled before any material was laid.
 
-- badge + frozen progress clearing across a real 455s `BED_MESH_CALIBRATE_START_PRINT`
-- pre-print phases advancing past the first one through that window - the
-  `print_active == 0` guard re-scope is precisely what allows this, and a mock run
-  cannot exercise it because the window closes before a second phase arrives
-- cancel during the mesh
-- CB1/Voron as the no-pre-start baseline: a sub-second window must not flash the
-  overlay (the 750ms debounce is designed but **not yet implemented**)
+Confirmed working on hardware:
 
-### 2. `TimedOut` retires silently
+```
+23:04:01.517  Starting print: 3DBench_PLA_21m47s.gcode (pre-print: mesh=true, ...)
+23:04:01.517  [PrinterPrintState] Preparing '3DBench_PLA_21m47s.gcode'   <- arms at commit
+23:04:01.543  Navigating to print status panel (preparing...)
+23:04:02.052  Executing pre-start gcode: BED_MESH_CALIBRATE_START_PRINT ... BED_TEMP=50
+```
 
-The decision was failed -> failure, cancelled -> cancelled. `Failed` notifies (via
-`PrintStartController`'s error path) and `Cancelled` notifies. **`TimedOut` retires
-the job and says nothing.** A start that dies on a printer that never reaches
-`state=printing` therefore vanishes without telling the user. Gap in the stated
-rule, not a design decision.
+- arming lands **before** navigation and before the blocking macro
+- media adopts the new job (`ActivePrintMediaManager` retried the thumbnail for
+  `3DBench_PLA_21m47s.gcode`, not the previous file)
+- cancel mid-mesh retires the job; when the macro returned, `continue_print_start`
+  abandoned the start - `print_stats` still showed the PREVIOUS job and
+  `start_print` was never called
+- afterwards: phase `IDLE`, `preparing_overlay` hidden, outcome `NONE`
+
+**The gap: the pre-print steps do not advance during a host-side pre-start block.**
+Phase stayed pinned at `INITIALIZING` (1) for the entire mesh, with
+`collector_active=false` and no `PRINT_START collector started` in the log.
+
+Cause: this work arms the *state* at commit but not the **collector**.
+`PrintStartCollector` is still started only from the printer-edge observer
+(`moonraker_manager.cpp`), so during a host-side window nothing parses gcode
+responses into HOMING / HEATING / BED_MESH phases. The overlay appears with the
+right job and a generic "Preparing Print..." message, and then sits there.
+
+That is the second half of the original report - "it never transitioned ... to the
+new pre-print progress steps". The badge and identity half is fixed; **the steps
+half is not**. Arming the collector at commit is the remaining work, and it is
+where the branch-ordering hazard in `moonraker_manager.cpp:730-760` (documented
+under "Design") has to be resolved for real.
+
+Still unverified on hardware: CB1/Voron no-pre-start baseline (overlay flash), and
+a `Superseded` race.
+
+### 2b. Cancelling during pre-print leaves the heaters on
+
+The cancel design says to "drop the heaters we requested". That is **not
+implemented**. `retire_preparing(Cancelled)` clears the job and the phase but sends
+nothing to the printer, so a cancel during a K2 mesh leaves the bed at its print
+temperature (105C for ASA) with no job and no UI indicating why it is hot.
+
+Deliberately not fixed blind: what to send is not obvious. `TURN_OFF_HEATERS` is the
+blunt answer but wrong if the user intends to restart immediately, and on some
+firmwares it interacts with a running macro. Needs a decision, and it is the kind of
+thing to confirm on hardware rather than reason about.
 
 ### 3. The overlay debounce is designed, not built
 
@@ -318,13 +349,17 @@ Done: `PRINT_STATE_MACHINE.md`, `architecture/05-printer-state.md`,
 
 ## Outstanding work, in dependency order
 
-1. **Hardware verification on the K2** - one print-after-print cycle, aborted before
-   material is laid. This is the only test that exercises the real window.
+1. **Arm the collector at commit, not only on the printer edge.** Without it the
+   pre-print steps never advance during a host-side pre-start block - confirmed on
+   the K2. This is the remaining half of the original report and the highest-value
+   item left. Resolving it forces the `moonraker_manager.cpp:730-760` branch
+   ordering to be sorted properly.
 2. **CB1/Voron baseline** - no pre-start block; confirm no overlay flash and no
    regression for externally started prints.
 3. **Implement the 750ms overlay debounce** (risk 3). `lv_timer_t`, so it must be
    cancelled in the destructor as well as `cleanup()` per CLAUDE.md rule 5.
-4. **Notify on `TimedOut`** (risk 2).
+4. **Notify on `TimedOut`** (risk 2), and **decide what cancel does to the heaters**
+   (risk 2b).
 5. **Decide whether a failed pre-print notifies**, then migrate the three remaining
    trackers (risk 4).
 6. **Estimate ladder** (step 6) - one owner for "how long until printing starts?",
