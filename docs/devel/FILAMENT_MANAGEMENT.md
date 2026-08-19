@@ -1077,14 +1077,28 @@ Filament)` inherits that panel's routing instead of forking a fourth answer. Tha
 true while it stays a pure hand-off. The moment it wants to load without leaving the modal,
 it goes through `plan_load()` like the other three.
 
-### The three-tier ladder
+### The dispatch ladder
 
-| Tier | What runs | Chosen when |
-|------|-----------|-------------|
-| 1 `FilamentTier::AmsBackend` | `load_filament()`, `unload_filament()`, or `change_tool()` — carried in `FilamentOpPlan::ams_call` / `ams_arg` | A backend owns the operation (see the two asymmetries below) |
-| 2 `FilamentTier::Macro` | The user's configured `StandardMacroSlot::LoadFilament` / `UnloadFilament`, via `dispatch_filament_macro()` | No tier 1, and the slot is non-empty |
+| Order | What runs | Chosen when |
+|-------|-----------|-------------|
+| 0 `FilamentTier::Macro` (**user override**) | The macro the user assigned in Settings > Macro Buttons, via `dispatch_filament_macro()` | `StandardMacroInfo::get_source() == MacroSource::CONFIGURED`. Outranks everything, on load and unload alike |
+| 1 `FilamentTier::AmsBackend` | `load_filament()`, `unload_filament()`, or `change_tool()` — carried in `FilamentOpPlan::ams_call` / `ams_arg` | A backend owns the operation (see the asymmetry below) |
+| 2 `FilamentTier::Macro` (auto-detected) | The `StandardMacroSlot::LoadFilament` / `UnloadFilament` we pattern-matched, or a `HELIX_*` fallback | No tier 1, and the slot is non-empty |
 | 3 `FilamentTier::RawGcode` | `filament_load_fallback_gcode()` (fast bowden move, then a slow push into the melt zone) or `filament_unload_fallback_gcode()` (tip-shape, then a long retract) | Nothing else is configured |
 | — `FilamentTier::Refused` | Nothing. `FilamentOpPlan::refusal` says why | See the refusal table |
+
+**Order 0 keys on the SOURCE of the macro, not its presence.** `plan_load()` and
+`plan_unload()` take `macro_available` and `macro_user_configured` separately, and only the
+latter jumps the backend. The distinction is load-bearing: the auto-detector matches
+`QUIT_MATERIAL` for `UnloadFilament`, so on a CFS printer a presence-based rule would hand
+every bypass unload to a vendor macro that cannot finish the job (see
+[§ CFS bypass: why the two vendor macros are not symmetric](#cfs-bypass-why-the-two-vendor-macros-are-not-symmetric)).
+
+An override **replaces** the backend call rather than running alongside it, so the backend's
+bookkeeping goes with it — on AFC that means `TOOL_UNLOAD` does not run, and lane state and
+shuttle parking become the macro's responsibility. That is the intended meaning of the
+setting: a user with extra steps to run gets to own the whole operation. It is documented for
+users in `docs/user/guide/filament.md`.
 
 `AmsCall::ChangeTool` carries a **tool number**, not a slot index — it comes from the target
 slot's `mapped_tool`. Every other call takes the slot.
@@ -1095,25 +1109,52 @@ slot's `mapped_tool`. Every other call takes the slot.
 | `AlreadyMounted` | The requested tool is already on the carriage. `SELECT_TOOL` on it is a firmware no-op (9KRXZ62P) | Load only, tool changers only |
 | `NothingLoaded` | No slot resolved, or nothing at that slot worth pulling | Unload only — its *only* refusal |
 
-### Two deliberate asymmetries between load and unload
+### One deliberate asymmetry between load and unload
 
-These are not oversights, and symmetrising them breaks real printers.
-
-**1. Bypass falls through on load and stays on the backend for unload.**
+**Bypass falls through on load and stays on the backend for unload.**
 
 `plan_load()` gates tier 1 on `caps.present && caps.requires_slot_selection_for_load`, not on
 the backend merely existing. `AmsBackend::requires_slot_selection_for_load()` defaults to
-`!is_bypass_active()`, so an active bypass drops straight to the user's `LOAD_FILAMENT`
-macro — that is how a bypass spool loads at all.
+`!is_bypass_active()`, so an active bypass drops past the backend to an auto-detected
+`LOAD_FILAMENT` macro — on a stock Creality printer that is `LOAD_MATERIAL`, and it is how a
+bypass spool loads at all.
 
-`plan_unload()` gates tier 1 on `caps.present` alone. AFC runs the user's unload macro
-itself as part of its own unload, so routing a bypass unload to tier 2 would run that macro
-twice.
+`plan_unload()` gates tier 1 on `caps.present` alone, because the CFS backend has to own the
+bypass unload: the vendor's `QUIT_MATERIAL` does not finish it. See the next section.
+
+There used to be a second reason recorded here — that AFC runs the user's unload macro as part
+of its own unload, so tier 2 would run it twice. That hazard belonged to a design where both
+fired; order 0 above *replaces* the backend call, so an override runs exactly once.
 
 Load/unload dispatch is not the only thing bypass reaches — it also suppresses both pre-print
 filament gates. See [§ Bypass suppresses the pre-print filament gates](#bypass-suppresses-the-pre-print-filament-gates).
 
-**2. Load-vs-swap and already-mounted exist only on the load side.**
+### CFS bypass: why the two vendor macros are not symmetric
+
+Creality ships an external-spool pair alongside the `BOX_*` family, and only half of it is
+self-sufficient. Both verified on a K2 Plus, 2026-08-19, by watching the extruder axis:
+
+| Macro | What it does | Extruder delta measured |
+|-------|--------------|-------------------------|
+| `LOAD_MATERIAL` | `BOX_GO_TO_EXTRUDE_POS` / `FILAMENT_RACK_SAVE_FAN` / `FILAMENT_RACK_PRE_FLUSH` / `FILAMENT_RACK_SET_TEMP` / `FILAMENT_RACK_FLUSH` / park + `SET_COOL_TEMP`. Feed and purge both gated on the toolhead switch | **+370 mm** — a complete load |
+| `QUIT_MATERIAL` | `BOX_GO_TO_EXTRUDE_POS` / `FILAMENT_RACK_SET_TEMP` / `BOX_MOVE_TO_CUT` / `G0 E-10` / park + `SET_COOL_TEMP` | **-13.99 mm** — filament still gripped by the gears |
+
+The asymmetry is in `[box]` itself: `tn_extrude = 140` against `tn_retrude = -10`. A bay unload
+only needs the extruder to break its grip because the box's own feeder motors reel the
+remaining ~130 mm back down the tube. **A bypass spool has no feeder**, so the extruder has to
+cover the whole path alone.
+
+`AmsBackendCfs::bypass_unload_gcode()` therefore emits `QUIT_MATERIAL` plus an 80 mm retract of
+its own; `bypass_load_gcode()` emits `LOAD_MATERIAL` bare, because nothing is missing there.
+80 mm because the release point measured near 64 mm (`QUIT_MATERIAL`'s 14 plus 50 more by hand
+before the filament came free), and it is the length `filament_unload_fallback_gcode()` already
+uses for the same physical job.
+
+This is also why an auto-detected `QUIT_MATERIAL` must not outrank the backend: it is a real
+unload macro, it matches the detector, and on bypass it silently leaves filament in the
+extruder.
+
+### Load-vs-swap and already-mounted exist only on the load side
 
 A machine with filament already seated cannot simply feed another lane, so when
 `needs_unload_before_load(info)` is true and the target slot has a `mapped_tool`, `plan_load()`

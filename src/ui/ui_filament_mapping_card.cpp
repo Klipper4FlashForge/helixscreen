@@ -9,12 +9,14 @@
 #include "ams_state.h"
 #include "color_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "print_start_checks.h"
 #include "settings_manager.h"
 #include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <set>
 
 namespace helix::ui {
 
@@ -88,6 +90,27 @@ void FilamentMappingCard::update(const std::vector<std::string>& gcode_colors,
         }
     }
     if (!any_editable) {
+        should_show_ = false;
+        return;
+    }
+
+    // Same dead-control rule as the check above, extended to the case that
+    // actually bit a user: with bypass engaged a single-tool print takes its
+    // filament from the external spool, and print_start_checks.cpp compares
+    // against that spool instead of the lanes (the `any_bypass_active &&
+    // print_lane_requirement(...) <= 1` short-circuit). Offering a lane mapping
+    // there claims something the print will not do — a K2 Plus user read the
+    // chips as "this maps to lane 2", tapped one to confirm it, and started a
+    // print that ran on the bypass spool. A genuinely multi-lane print still
+    // uses the mapping with bypass on, so this only hides the <= 1 case.
+    //
+    // print_lane_requirement() is shared with the gate rather than reimplemented
+    // here: it prefers the scan's tools_used and falls back to the palette, and
+    // a second copy of that precedence would drift into exactly the mismatch
+    // this hides.
+    if (ams.any_bypass_active() &&
+        helix::print_lane_requirement(used_tools_ ? *used_tools_ : std::set<int>{},
+                                      gcode_colors.size()) <= 1) {
         should_show_ = false;
         return;
     }

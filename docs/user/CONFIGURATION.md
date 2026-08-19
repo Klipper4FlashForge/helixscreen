@@ -1001,6 +1001,27 @@ Located in the `standard_macros` section. These pick which built-in actions appe
 **Values:** `"clean_nozzle"`, `"bed_level"`, `"heat_soak"`, `"purge"`, `"bed_mesh"`, or `""` (empty = hide the button)
 **Description:** Assigns a built-in action to each of the four Controls-panel quick buttons. An empty string hides that button. The action runs the matching macro on your printer (auto-detected from your Klipper config). Configured most easily via **Settings > Printer > Macro Buttons** rather than by editing JSON.
 
+### `load_filament`, `unload_filament`, `purge`, `pause`, `resume`, `cancel`, `bed_mesh`, `bed_level`, `clean_nozzle`, `heat_soak`
+**Type:** string
+**Default:** `""` (empty = use auto-detection)
+**Description:** Overrides which macro HelixScreen runs for each standard action. An empty
+string means "auto-detect from your Klipper config"; a macro name pins that slot to your
+choice. Written by **Settings > Printer > Macro Buttons**, which is the easier way to set them
+because it lists the macros your printer actually defines.
+
+```json
+{
+  "standard_macros": {
+    "unload_filament": "MY_UNLOAD_ROUTINE"
+  }
+}
+```
+
+On a printer with a multi-filament system, `load_filament` and `unload_filament` also decide
+*who* performs the operation. Left empty, the filament system does it. Set to a macro, your
+macro does it instead and the filament system's own handling is skipped for that operation —
+see [Customizing which macro runs](guide/filament.md#customizing-which-macro-runs).
+
 > **Note:** This is separate from `printer.default_macros`, which customizes the Load/Unload/cooldown/custom-macro buttons elsewhere in the UI. See [Printer Settings › default_macros](#printer-settings).
 
 ---
