@@ -6,9 +6,15 @@
 // PrinterTemperatureState, and PrinterCapabilitiesState carries the
 // printer_has_chamber_heater_diagnostics / _filter_fan gates.
 #include "../lvgl_test_fixture.h"
+#include "../test_helpers/printer_state_test_access.h"
+#include "../ui_test_utils.h"
+#include "app_globals.h"
 #include "chamber_heater_backend.h"
 #include "printer_capabilities_state.h"
+#include "printer_discovery.h"
+#include "printer_state.h"
 #include "printer_temperature_state.h"
+#include "settings_manager.h"
 
 #include <lvgl.h>
 #include <string>
@@ -141,7 +147,7 @@ TEST_CASE("chamber diagnostics subjects are XML-registered", "[chamber][xml][str
     caps.deinit_subjects();
 }
 
-TEST_CASE("chamber diagnostics capabilities mirror manual resolution", "[chamber][capabilities]") {
+TEST_CASE("chamber diagnostics capability setters round-trip", "[chamber][capabilities]") {
     LVGLTestFixture fixture;
 
     PrinterCapabilitiesState caps;
@@ -171,4 +177,81 @@ TEST_CASE("chamber required_status_objects lists only non-empty surfaces", "[cha
 
     CHECK(required_status_objects("", "").empty());
     CHECK(required_status_objects("dragonbreath", "").size() == 1);
+}
+
+// PrinterState::set_hardware gating (issue #1290): backend diagnostics attach
+// only while the RESOLVED chamber heater is discovery's own pick — a manual
+// override to a different heater (or "none") detaches the source and clears
+// the capabilities. Pattern per test_printer_state.cpp set_hardware cases.
+TEST_CASE("set_hardware wires diagnostics only when the resolved heater is the discovery pick",
+          "[chamber][subjects][state][hardware]") {
+    lv_init_safe();
+    helix::PrinterState& state = get_printer_state();
+    helix::PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    auto& settings = helix::SettingsManager::instance();
+    settings.init_subjects();
+    settings.set_chamber_sensor_assignment("auto");
+
+    auto& ts = helix::PrinterStateTestAccess::get_temperature_state(state);
+    auto& caps = helix::PrinterStateTestAccess::get_capabilities_state(state);
+
+    helix::PrinterDiscovery hw;
+    nlohmann::json objects = {"heater_generic dragonbreath", "extruder", "heater_bed"};
+    hw.parse_objects(objects);
+    REQUIRE(hw.chamber_heater_name() == "heater_generic dragonbreath");
+    REQUIRE(hw.chamber_heater_backend_id() == "dragonbreath");
+    REQUIRE(hw.chamber_diagnostics_object() == "dragonbreath");
+
+    auto restore_settings = [&settings]() {
+        settings.set_chamber_heater_assignment("auto");
+        settings.set_chamber_sensor_assignment("auto");
+    };
+
+    SECTION("auto mode wires diagnostics for the discovered backend heater") {
+        settings.set_chamber_heater_assignment("auto");
+        state.set_hardware(hw);
+
+        CHECK(ts.chamber_diagnostics_object() == "dragonbreath");
+        CHECK(lv_subject_get_int(caps.get_printer_has_chamber_heater_diagnostics_subject()) == 1);
+        CHECK(lv_subject_get_int(caps.get_printer_has_chamber_filter_fan_subject()) == 1);
+
+        // End-to-end: a diagnostics frame through the full status path lands.
+        state.update_from_status(faulted_diagnostics_status());
+        CHECK(lv_subject_get_int(ts.get_chamber_heater_fault_subject()) == 1);
+        CHECK(lv_subject_get_int(ts.get_chamber_heater_element_temp_subject()) == 1062);
+    }
+
+    SECTION("manual override to a different heater detaches diagnostics") {
+        settings.set_chamber_heater_assignment("heater_generic chamber");
+        state.set_hardware(hw);
+
+        CHECK(ts.chamber_heater_name() == "heater_generic chamber");
+        CHECK(ts.chamber_diagnostics_object().empty());
+        CHECK(lv_subject_get_int(caps.get_printer_has_chamber_heater_diagnostics_subject()) == 0);
+        CHECK(lv_subject_get_int(caps.get_printer_has_chamber_filter_fan_subject()) == 0);
+
+        // The frame is ignored — subjects keep their defaults.
+        state.update_from_status(faulted_diagnostics_status());
+        CHECK(lv_subject_get_int(ts.get_chamber_heater_fault_subject()) == 0);
+        CHECK(lv_subject_get_int(ts.get_chamber_heater_element_temp_subject()) == -1);
+        CHECK(lv_subject_get_int(ts.get_chamber_filter_fan_on_subject()) == -1);
+    }
+
+    SECTION("'none' override detaches diagnostics") {
+        settings.set_chamber_heater_assignment("none");
+        state.set_hardware(hw);
+
+        CHECK(ts.chamber_heater_name().empty());
+        CHECK(ts.chamber_diagnostics_object().empty());
+        CHECK(lv_subject_get_int(caps.get_printer_has_chamber_heater_diagnostics_subject()) == 0);
+        CHECK(lv_subject_get_int(caps.get_printer_has_chamber_filter_fan_subject()) == 0);
+
+        state.update_from_status(faulted_diagnostics_status());
+        CHECK(lv_subject_get_int(ts.get_chamber_heater_fault_subject()) == 0);
+        CHECK(lv_subject_get_int(ts.get_chamber_filter_fan_on_subject()) == -1);
+    }
+
+    restore_settings();
 }
