@@ -362,6 +362,7 @@ translations:
   Calibration timed out. Please try again.: Tiempo agotado. Inténtalo de nuevo.
   Calibration, LED, and system configuration: Calibración, LED y configuración del sistema
   Calibrator not initialized. Try reopening the panel.: Calibrador no inicializado. Intenta reabrir el panel.
+  Cam: ''
   Camera: Cámara
   Can't connect — try forgetting and re-pairing the printer: No se puede conectar — prueba a olvidar y volver a emparejar la impresora
   Cancel: Cancelar

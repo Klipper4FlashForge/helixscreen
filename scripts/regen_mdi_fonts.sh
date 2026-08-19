@@ -169,6 +169,7 @@ MDI_ICONS+=",0xF1B2B"    # thermometer-probe
 MDI_ICONS+=",0xF0566"    # vibrate (input shaper)
 MDI_ICONS+=",0xF0567"    # video (timelapse)
 MDI_ICONS+=",0xF0568"    # video-off (timelapse disabled)
+MDI_ICONS+=",0xF05A0"    # webcam (live camera feed)
 MDI_ICONS+=",0xF056E"    # view-dashboard
 MDI_ICONS+=",0xF0570"    # view-grid
 MDI_ICONS+=",0xF0572"    # view-list

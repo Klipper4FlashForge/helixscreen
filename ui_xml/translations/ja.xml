@@ -361,6 +361,7 @@
   <translation tag="Calibration timed out. Please try again." ja="タイムアウトしました。もう一度お試しください。"/>
   <translation tag="Calibration, LED, and system configuration" ja="キャリブレーション、LED、システム設定"/>
   <translation tag="Calibrator not initialized. Try reopening the panel." ja="キャリブレーターが初期化されていません。パネルを開き直してください。"/>
+  <translation tag="Cam"/>
   <translation tag="Camera" ja="カメラ"/>
   <translation tag="Can&apos;t connect — try forgetting and re-pairing the printer" ja="接続できません — プリンターの登録を解除して再ペアリングしてください"/>
   <translation tag="Cancel" ja="キャンセル"/>

@@ -308,6 +308,7 @@ static const IconMapping ICON_MAP[] = {
     // Water/Weight/WiFi icons
     {"water",              "\xF3\xB0\x96\x8C"},  // F058C water/droplet
     {"waveform",           "\xF3\xB1\x91\xBD"},  // F147D waveform (accelerometers)
+    {"webcam",             "\xF3\xB0\x96\xA0"},  // F05A0 webcam (live camera feed)
     {"weight",             "\xF3\xB0\x96\xA1"},  // F05A1 weight
     {"wifi",               "\xF3\xB0\x96\xA9"},  // F05A9 wifi
     {"wifi_alert",         "\xF3\xB1\x9A\xB5"},  // F16B5 wifi-alert

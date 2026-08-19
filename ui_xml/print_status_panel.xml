@@ -433,9 +433,10 @@
                  configured AND this screen runs remotely from the printer
                  (moonraker_is_remote — on the printer's own screen the print is
                  in front of you) AND the build has camera support compiled in
-                 (platform_extras_available gates the ESP32 v1 cut). -->
+                 (platform_extras_available gates the ESP32 v1 cut). Label is a
+                 subject: "Cam" where Row 2 is tight, "Camera" from LARGE up. -->
             <ui_button name="btn_camera"
-                       height="#button_height" flex_grow="1" icon="video" text="Camera" translation_tag="Camera">
+                       height="#button_height" flex_grow="1" icon="webcam" bind_text="camera_button_label">
               <bind_flag_if cond="printer_has_webcam and moonraker_is_remote and platform_extras_available"
                             flag="hidden" invert="true"/>
               <event_cb trigger="clicked" callback="on_print_status_camera"/>

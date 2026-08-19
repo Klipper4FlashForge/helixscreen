@@ -362,6 +362,7 @@ translations:
   Calibration timed out. Please try again.: Время истекло. Попробуйте снова.
   Calibration, LED, and system configuration: Калибровка, LED и настройка системы
   Calibrator not initialized. Try reopening the panel.: Калибратор не инициализирован. Попробуйте снова открыть панель.
+  Cam: ''
   Camera: Камера
   Can't connect — try forgetting and re-pairing the printer: Не удаётся подключиться — забудьте принтер и выполните сопряжение заново
   Cancel: Отмена

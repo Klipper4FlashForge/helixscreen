@@ -362,6 +362,7 @@ translations:
   Calibration timed out. Please try again.: 校准超时。请重试。
   Calibration, LED, and system configuration: 校准、LED 与系统配置
   Calibrator not initialized. Try reopening the panel.: 校准器未初始化。请尝试重新打开面板。
+  Cam: ''
   Camera: 摄像头
   Can't connect — try forgetting and re-pairing the printer: 无法连接 — 请尝试忘记并重新配对打印机
   Cancel: 取消

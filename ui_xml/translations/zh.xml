@@ -361,6 +361,7 @@
   <translation tag="Calibration timed out. Please try again." zh="校准超时。请重试。"/>
   <translation tag="Calibration, LED, and system configuration" zh="校准、LED 与系统配置"/>
   <translation tag="Calibrator not initialized. Try reopening the panel." zh="校准器未初始化。请尝试重新打开面板。"/>
+  <translation tag="Cam"/>
   <translation tag="Camera" zh="摄像头"/>
   <translation tag="Can&apos;t connect — try forgetting and re-pairing the printer" zh="无法连接 — 请尝试忘记并重新配对打印机"/>
   <translation tag="Cancel" zh="取消"/>

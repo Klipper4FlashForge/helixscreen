@@ -68,6 +68,21 @@ struct CameraButtonFixture : public LVGLUITestFixture {
         return btn;
     }
 
+    /// Text of btn_camera's label child. The icon is also an lv_label (MDI
+    /// glyphs are 4-byte UTF-8, 0xF3 lead byte) — skip it.
+    std::string button_label_text() {
+        lv_obj_t* btn = button();
+        for (uint32_t i = 0; i < lv_obj_get_child_count(btn); ++i) {
+            lv_obj_t* child = lv_obj_get_child(btn, i);
+            if (lv_obj_check_type(child, &lv_label_class)) {
+                const char* t = lv_label_get_text(child);
+                if (t && t[0] != '\0' && static_cast<unsigned char>(t[0]) != 0xF3)
+                    return t;
+            }
+        }
+        return "";
+    }
+
     void set(lv_subject_t* s, int v) {
         lv_subject_set_int(s, v);
         helix::ui::UpdateQueue::instance().drain();
@@ -101,4 +116,28 @@ TEST_CASE_METHOD(CameraButtonFixture, "btn_camera visible only for remote webcam
                 const bool hidden = lv_obj_has_flag(button(), LV_OBJ_FLAG_HIDDEN);
                 CHECK(hidden != visible[w][r][e]);
             }
+}
+
+TEST_CASE_METHOD(CameraButtonFixture, "btn_camera label shortens at tight breakpoints",
+                 "[print_status][camera][ui_integration]") {
+    lv_subject_t* bp = lv_xml_get_subject(nullptr, "ui_breakpoint");
+    REQUIRE(bp != nullptr);
+    const int original_bp = lv_subject_get_int(bp);
+
+    // Medium (800x480): Row 2 is tight — short form.
+    set(bp, 3);
+    CHECK(button_label_text() == "Cam");
+
+    // Large (1024x600) and up: breathing room — full word.
+    set(bp, 4);
+    CHECK(button_label_text() == "Camera");
+    set(bp, 6);
+    CHECK(button_label_text() == "Camera");
+
+    // Back to the cramped tiers, including the Micro row.
+    set(bp, 0);
+    CHECK(button_label_text() == "Cam");
+
+    // ui_breakpoint is a theme global that outlives this fixture — restore.
+    set(bp, original_bp);
 }

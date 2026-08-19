@@ -290,6 +290,7 @@ class PrintStatusPanel : public OverlayBase {
     lv_subject_t flow_subject_;
     lv_subject_t
         view_toggle_icon_subject_; ///< MDI codepoint for btn_view_toggle_icon (cube/layers)
+    lv_subject_t camera_button_label_subject_; ///< "Cam"/"Camera" — short form at Medium and below
 
     // Preparing state subjects
     lv_subject_t preparing_visible_subject_;  // int: 1 if preparing, 0 otherwise
@@ -390,6 +391,7 @@ class PrintStatusPanel : public OverlayBase {
     char flow_buf_[32] = "100%";
     char objects_text_buf_[32] = "";        ///< "X of Y obj" buffer
     char view_toggle_icon_buf_[8] = "";     ///< View toggle icon codepoint (cube/layers)
+    char camera_button_label_buf_[16] = ""; ///< Short/long camera label per ui_breakpoint
     char print_pause_reason_buf_[256] = ""; ///< Reason line shown under "Print Paused"
 
     //
@@ -560,7 +562,10 @@ class PrintStatusPanel : public OverlayBase {
     void
     load_gcode_for_viewing(const std::string& filename); ///< Download and load G-code into viewer
     void update_button_states(); ///< Enable/disable buttons based on current print state
-    void update_objects_text();  ///< Update "X of Y obj" display from exclude state
+
+    /// "Cam"/"Camera" per ui_breakpoint — full word only where Row 2 has room
+    void update_camera_button_label(int breakpoint_value);
+    void update_objects_text(); ///< Update "X of Y obj" display from exclude state
     void
     update_view_toggle_position(bool objects_visible); ///< Shift view toggle when objects btn shown
     void animate_badge_pop_in(lv_obj_t* badge, const char* label); ///< Pop-in animation for badges
@@ -696,6 +701,7 @@ class PrintStatusPanel : public OverlayBase {
     ObserverGuard end_overlay_dismissed_observer_; ///< Ditto; second input to the same recompute
     ObserverGuard print_message_observer_;  ///< Drives pause reason text from print_stats.message
     ObserverGuard pending_action_observer_; ///< observes PrintControlButtons' print_pending_action
+    ObserverGuard camera_label_observer_;   ///< observes ui_breakpoint → camera label length
                                             ///< for the paused overlay
 
     // Per-fan speed observers — each watches a DYNAMIC subject, so a paired

@@ -129,7 +129,7 @@ static std::vector<PanelWidgetDef> s_widget_defs = {
     {"print_stats",      TR_NOOP("Print Stats"),       "printer_3d",       TR_NOOP("Total prints, success rate, and time"),      nullptr,              nullptr,                               CAT_PRINT,    false, 4, 4, 4, 2, 6, 4, false, true, true},
     {"gcode_console",    TR_NOOP("GCode Console"),     "console",          TR_NOOP("Send G-code and read the replies"),    nullptr,              nullptr,                               CAT_CONTROLS, false, 2, 2, 2, 2, 2, 2},
 #if HELIX_HAS_CAMERA
-    {"camera",           TR_NOOP("Camera"),            "video",            TR_NOOP("Live view from your webcam"),           nullptr,              nullptr,                               CAT_PRINT,    false, 4, 4, 2, 2, 8, 6, false, true, true, false},
+    {"camera",           TR_NOOP("Camera"),            "webcam",           TR_NOOP("Live view from your webcam"),           nullptr,              nullptr,                               CAT_PRINT,    false, 4, 4, 2, 2, 8, 6, false, true, true, false},
 #endif
     {"notifications",    TR_NOOP("Notifications"),     "notifications",    TR_NOOP("Alerts and messages waiting for you"),    nullptr,              nullptr,                               CAT_SYSTEM,   true,  2, 2, 2, 2, 4, 2},
 };

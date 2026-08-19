@@ -4,6 +4,7 @@
 #include "ui_panel_print_status.h"
 
 #include "ui_ams_current_tool.h"
+#include "ui_breakpoint.h"
 #include "ui_callback_helpers.h"
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
@@ -461,6 +462,23 @@ void PrintStatusPanel::init_subjects() {
     // Populated lazily at first update (icon_cube const resolves only after globals load).
     UI_MANAGED_SUBJECT_STRING(view_toggle_icon_subject_, view_toggle_icon_buf_, "",
                               "view_toggle_icon", subjects_);
+    // Camera button label: "Camera" only where Row 2 has breathing room (narrow
+    // axis >= LARGE, e.g. 1024x600); "Cam" at MEDIUM and below (800x480 and the
+    // cramped portrait row) where the full word barely fits. The XML expression
+    // engine is int-only, so a string label conditioned on ui_breakpoint needs
+    // this subject — same shape as view_toggle_icon above.
+    UI_MANAGED_SUBJECT_STRING(camera_button_label_subject_, camera_button_label_buf_, lv_tr("Cam"),
+                              "camera_button_label", subjects_);
+    if (lv_subject_t* bp = lv_xml_get_subject(nullptr, "ui_breakpoint")) {
+        update_camera_button_label(lv_subject_get_int(bp));
+        auto token = lifetime_.token();
+        camera_label_observer_ = observe_int_sync<PrintStatusPanel>(
+            bp, this, [token](PrintStatusPanel* self, int value) {
+                if (token.expired())
+                    return;
+                self->update_camera_button_label(value);
+            });
+    }
 
     // Initialize light/timelapse controls (extracted Phase 2)
     light_timelapse_controls_.init_subjects();
@@ -749,6 +767,7 @@ void PrintStatusPanel::deinit_subjects() {
     print_message_observer_.reset();
 
     // Fan-row observers — lifetimes BEFORE observer guards per [L084]
+    camera_label_observer_.reset();
     fans_version_observer_.reset();
     primary_fans_version_observer_.reset();
     animations_enabled_observer_.reset();
@@ -3201,6 +3220,14 @@ void PrintStatusPanel::update_objects_text() {
         objects_text_buf_[0] = '\0';
     }
     lv_subject_copy_string(&objects_text_subject_, objects_text_buf_);
+}
+
+void PrintStatusPanel::update_camera_button_label(int breakpoint_value) {
+    // Full word only from LARGE up (narrow axis >= 551px, e.g. 1024x600); the
+    // 800x480 Row 2 and the cramped portrait row get the short form.
+    const char* label =
+        breakpoint_value >= to_int(UiBreakpoint::Large) ? lv_tr("Camera") : lv_tr("Cam");
+    lv_subject_copy_string(&camera_button_label_subject_, label);
 }
 
 void PrintStatusPanel::update_button_states() {

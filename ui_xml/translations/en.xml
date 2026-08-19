@@ -361,6 +361,7 @@
   <translation tag="Calibration timed out. Please try again." en="Calibration timed out. Please try again."/>
   <translation tag="Calibration, LED, and system configuration" en="Calibration, LED, and system configuration"/>
   <translation tag="Calibrator not initialized. Try reopening the panel." en="Calibrator not initialized. Try reopening the panel."/>
+  <translation tag="Cam" en="Cam"/>
   <translation tag="Camera" en="Camera"/>
   <translation tag="Can&apos;t connect — try forgetting and re-pairing the printer" en="Can&apos;t connect — try forgetting and re-pairing the printer"/>
   <translation tag="Cancel" en="Cancel"/>

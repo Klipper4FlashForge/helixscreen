@@ -362,6 +362,7 @@ translations:
   Calibration timed out. Please try again.: タイムアウトしました。もう一度お試しください。
   Calibration, LED, and system configuration: キャリブレーション、LED、システム設定
   Calibrator not initialized. Try reopening the panel.: キャリブレーターが初期化されていません。パネルを開き直してください。
+  Cam: ''
   Camera: カメラ
   Can't connect — try forgetting and re-pairing the printer: 接続できません — プリンターの登録を解除して再ペアリングしてください
   Cancel: キャンセル
