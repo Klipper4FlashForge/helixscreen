@@ -1003,9 +1003,22 @@ void FilamentSensorManager::update_from_status(const json& status) {
                         }
                     }
                 }
+                // An unload the user asked for ends by dragging filament off the
+                // sensor, and that edge lands seconds AFTER the action returns to
+                // IDLE — so ams_active above is already false by then and cannot
+                // cover it. Warning that filament was removed is noise when the
+                // user is the one who just removed it. Peeked, never consumed:
+                // the idle runout modal owns the one shot.
+                // Only the REMOVAL side is suppressed; an insertion in the same
+                // window is still news, and the manual-pull prompt that fires on
+                // this same edge (ui_manual_pull_prompt.cpp) is a separate,
+                // deliberately-armed INFO and is untouched here.
+                const bool post_unload_removal =
+                    !state.filament_detected &&
+                    AmsState::instance().post_unload_runout_grace_armed();
                 notif.should_toast = !within_grace_period && !is_wizard_active() && !ams_active &&
-                                     !ad5x_idle_unload && master_enabled_ && sensor.enabled &&
-                                     sensor.role != FilamentSensorRole::NONE;
+                                     !ad5x_idle_unload && !post_unload_removal && master_enabled_ &&
+                                     sensor.enabled && sensor.role != FilamentSensorRole::NONE;
                 if (within_grace_period && master_enabled_ && sensor.enabled &&
                     sensor.role != FilamentSensorRole::NONE) {
                     spdlog::debug("[FilamentSensorManager] Suppressing startup toast for {}",

@@ -223,11 +223,21 @@ void FilamentMappingCard::rebuild_compact_view() {
     // panel opens. MUST stay below the post-drain null check above: a
     // container destroyed during the drain returns before this, and no render
     // happened, so no fingerprint is written either.
+    //
+    // material is the only free-form string in the encoding (every other field
+    // is numeric or a single flag char), so it is the only one that can smuggle
+    // the ':'/'|' separators: one tool with material "A|1:0:B" and the two tools
+    // {0,0,"A"},{1,0,"B"} both render "0:0:A|1:0:B|" in the tool section. The
+    // mappings section below happens to break the tie today (it re-encodes the
+    // tool count, and mappings_ is built parallel to tool_info_), so this is
+    // hardening rather than a live skipped rebuild — but nothing enforces that
+    // redundancy. Length-prefixing as <len>':'<bytes> makes the tool section
+    // unambiguous on its own, for any material text.
     std::string fingerprint;
     fingerprint.reserve(128);
     for (const auto& t : tool_info_) {
         fingerprint += std::to_string(t.tool_index) + ":" + std::to_string(t.color_rgb) + ":" +
-                       t.material + "|";
+                       std::to_string(t.material.size()) + ":" + t.material + "|";
     }
     for (const auto& m : mappings_) {
         fingerprint += std::to_string(m.tool_index) + ">" + std::to_string(m.mapped_slot) + ":" +

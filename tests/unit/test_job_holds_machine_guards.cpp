@@ -30,6 +30,7 @@
 #include "ui_update_queue.h"
 
 #include "../lvgl_test_fixture.h"
+#include "../test_helpers/post_unload_grace_test_access.h"
 #include "../ui_test_utils.h"
 #include "ams_backend_ad5x_ifs.h"
 #include "ams_state.h"
@@ -58,26 +59,6 @@ using json = nlohmann::json;
 // Friend shim reaching FilamentSensorManager's private state. Per-TU class (same
 // idiom as BypassArmingTestAccess / RunoutScopeTestAccess) to avoid an ODR clash
 // with the other suites' shims.
-class Ad5xIdleToastTestAccess {
-  public:
-    static void reset(FilamentSensorManager& mgr) {
-        std::lock_guard<std::recursive_mutex> lock(mgr.mutex_);
-        mgr.sensors_.clear();
-        mgr.states_.clear();
-        mgr.bypass_armed_.clear();
-        mgr.master_enabled_ = true;
-        mgr.sync_mode_ = true;
-        mgr.initial_status_received_ = false;
-    }
-
-    /// Push the startup grace period into the past. discover_sensors() anchors
-    /// it to "now" on every call, so without this every toast in the test is
-    /// suppressed as startup noise and the guard under test is unobservable.
-    static void expire_grace_period(FilamentSensorManager& mgr) {
-        std::lock_guard<std::recursive_mutex> lock(mgr.mutex_);
-        mgr.startup_time_ = std::chrono::steady_clock::now() - std::chrono::seconds(60);
-    }
-};
 
 namespace {
 
@@ -121,13 +102,13 @@ class Ad5xToastFixture : public LVGLTestFixture {
         AmsState::instance().init_subjects(false);
         AmsState::instance().set_backend(std::make_unique<AmsBackendAd5xIfs>(nullptr, nullptr));
 
-        Ad5xIdleToastTestAccess::reset(mgr);
+        PostUnloadGraceTestAccess::reset(mgr);
         mgr.discover_sensors({"filament_switch_sensor toolhead_sensor"});
         mgr.set_sensor_role("filament_switch_sensor toolhead_sensor", FilamentSensorRole::RUNOUT);
         // Seed "filament present" so the empty reading below is a real edge.
         mgr.update_from_status(json{{"filament_switch_sensor toolhead_sensor",
                                      {{"filament_detected", true}, {"enabled", true}}}});
-        Ad5xIdleToastTestAccess::expire_grace_period(mgr);
+        PostUnloadGraceTestAccess::clear_startup_grace(mgr);
 
         helix::ui::set_test_notification_warning_hook(
             [this](const std::string& msg) { warnings.push_back(msg); });
@@ -135,7 +116,7 @@ class Ad5xToastFixture : public LVGLTestFixture {
 
     ~Ad5xToastFixture() override {
         helix::ui::set_test_notification_warning_hook(nullptr);
-        Ad5xIdleToastTestAccess::reset(mgr);
+        PostUnloadGraceTestAccess::reset(mgr);
         AmsState::instance().set_backend(nullptr);
         AmsState::instance().deinit_subjects();
         helix::ui::UpdateQueue::instance().drain();
