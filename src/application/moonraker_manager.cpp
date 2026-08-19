@@ -135,6 +135,7 @@ void MoonrakerManager::shutdown() {
     // Using release() avoids double-free of already-removed observers.
     m_print_start_observer.release();
     m_print_start_phase_observer.release();
+    m_preparing_epoch_observer.release();
     m_print_bed_target_fallback_observer.release();
     m_print_ext_target_fallback_observer.release();
     m_print_layer_observer.release();
@@ -758,8 +759,11 @@ void MoonrakerManager::init_print_start_collector() {
                 spdlog::info("[MoonrakerManager] Skipping PRINT_START collector - mid-print ({}%)",
                              current_progress);
                 s_arming.consume_initial_transition();
-            } else if (new_state != PrintJobState::PRINTING && new_state != PrintJobState::PAUSED) {
-                // No longer printing - stop collector if active
+            } else if (should_stop_print_collector(new_state,
+                                                   get_printer_state().has_preparing_job())) {
+                // No longer printing - stop collector if active. A live
+                // preparing job means this is the transient hop INTO a print we
+                // initiated, not the end of one.
                 if (collector->is_active()) {
                     collector->stop();
                     spdlog::info("[MoonrakerManager] PRINT_START collector stopped");
@@ -767,6 +771,31 @@ void MoonrakerManager::init_print_start_collector() {
             }
 
             s_arming.note_transition(new_state);
+        },
+        nullptr);
+
+    // Arm the collector when WE commit to a print, not only when the printer
+    // reports one. A host-side pre-start block runs before the job is handed
+    // over, so waiting for the printer edge leaves the whole window untracked:
+    // the overlay shows a generic "Preparing Print..." and no phase ever
+    // advances, because nothing is parsing gcode responses yet.
+    m_preparing_epoch_observer = ObserverGuard(
+        get_printer_state().get_preparing_epoch_subject(),
+        [](lv_observer_t*, lv_subject_t* subject) {
+            auto collector = s_collector.lock();
+            if (!collector) {
+                return;
+            }
+            if (lv_subject_get_int(subject) <= 0) {
+                return; // retirement is handled by the print-state observer
+            }
+            if (collector->is_active()) {
+                return; // already tracking
+            }
+            collector->reset();
+            collector->start();
+            collector->enable_fallbacks();
+            spdlog::info("[MoonrakerManager] PRINT_START collector started (commit)");
         },
         nullptr);
 

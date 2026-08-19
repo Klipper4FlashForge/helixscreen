@@ -775,3 +775,38 @@ TEST_CASE("PrintCollectorArming drives the boot-join suppression across a printe
         /*current_progress=*/60, arming.is_initial_transition(),
         /*current_print_duration=*/4200));
 }
+
+// ============================================================================
+// Collector teardown vs a live preparing job
+// ============================================================================
+
+TEST_CASE("should_stop_print_collector spares a collector armed at commit",
+          "[application][print_start][preparing]") {
+    // A print we initiated ourselves reaches PRINTING via a transient hop:
+    // Klipper leaves the previous job's terminal state, passes through STANDBY,
+    // and only then reports PRINTING. The observer's teardown branch fires on
+    // any non-printing state, so without this the collector armed at commit is
+    // stopped on the way INTO the print it was armed for.
+    SECTION("standby hop does not stop a collector while a job is being prepared") {
+        REQUIRE_FALSE(MoonrakerManager::should_stop_print_collector(PrintJobState::STANDBY,
+                                                                    /*has_preparing_job=*/true));
+        REQUIRE_FALSE(MoonrakerManager::should_stop_print_collector(PrintJobState::COMPLETE,
+                                                                    /*has_preparing_job=*/true));
+    }
+
+    SECTION("with no preparing job the teardown still fires") {
+        REQUIRE(MoonrakerManager::should_stop_print_collector(PrintJobState::STANDBY,
+                                                              /*has_preparing_job=*/false));
+        REQUIRE(MoonrakerManager::should_stop_print_collector(PrintJobState::CANCELLED,
+                                                              /*has_preparing_job=*/false));
+    }
+
+    SECTION("printing and paused never tear the collector down") {
+        // PRINT_START runs INSIDE the job, so the collector must survive the
+        // handoff and complete on its own phase detection.
+        REQUIRE_FALSE(
+            MoonrakerManager::should_stop_print_collector(PrintJobState::PRINTING, false));
+        REQUIRE_FALSE(MoonrakerManager::should_stop_print_collector(PrintJobState::PAUSED, false));
+        REQUIRE_FALSE(MoonrakerManager::should_stop_print_collector(PrintJobState::PRINTING, true));
+    }
+}

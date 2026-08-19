@@ -215,6 +215,31 @@ class MoonrakerManager {
     }
 
     /**
+     * @brief Decide whether a non-printing state should tear the collector down
+     *
+     * A print we initiated ourselves reaches PRINTING via a transient hop: the
+     * printer leaves the previous job's terminal state, passes through STANDBY,
+     * and only then reports PRINTING. The teardown must not fire on that hop, or
+     * a collector armed at commit is stopped on the way into the very print it
+     * was armed for.
+     *
+     * PRINTING and PAUSED never tear it down: PRINT_START runs inside the job,
+     * so the collector has to survive the handoff and finish on its own phase
+     * detection.
+     *
+     * @param new_state         The state just reported
+     * @param has_preparing_job Whether a job is currently being prepared
+     */
+    static inline bool should_stop_print_collector(helix::PrintJobState new_state,
+                                                   bool has_preparing_job) {
+        if (new_state == helix::PrintJobState::PRINTING ||
+            new_state == helix::PrintJobState::PAUSED) {
+            return false;
+        }
+        return !has_preparing_job;
+    }
+
+    /**
      * @brief Decide whether the pre-print phase should end (hand off to printing)
      *
      * The pre-print → printing hand-off must be gated on the REAL first layer,
@@ -333,6 +358,7 @@ class MoonrakerManager {
 
     // Print start collector (monitors PRINT_START macro progress)
     std::shared_ptr<PrintStartCollector> m_print_start_collector;
+    ObserverGuard m_preparing_epoch_observer;
     ObserverGuard m_print_start_observer;
     ObserverGuard m_print_start_phase_observer;
     SubjectLifetime m_print_bed_target_fallback_lifetime;
