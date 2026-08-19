@@ -346,6 +346,7 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: Bypass-Modus
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: Bypass wird durch Hardware-Sensor gesteuert
   Bypass controlled by sensor: Bypass durch Sensor gesteuert
   Bypass disabled: Bypass deaktiviert
@@ -2170,6 +2171,7 @@ translations:
   Requires Moonraker power device: 'Erfordert ein Moonraker-Stromgerät'
   Requires Moonraker-Timelapse plugin: Erfordert Moonraker-Timelapse-Plugin
   Requires Multi-Filament System or MMU hardware: 'Erfordert ein Multi-Filament-System oder MMU-Hardware'
+  Requires a filament system with bypass: ''
   Requires clog detection hardware: 'Erfordert Hardware zur Verstopfungserkennung'
   Resend write failed at chunk {}: Erneuter Schreibvorgang bei Block {} fehlgeschlagen
   Reset: Zurücksetzen
@@ -2808,6 +2810,7 @@ translations:
   Toggle Auto-Refill: 'Automatisches Nachfüllen umschalten'
   Toggle Moonraker power devices: 'Moonraker-Stromgeräte umschalten'
   Toggle Quiet Mode: 'Leisen Modus umschalten'
+  Toggle external spool bypass: ''
   Toggle toolhead LED for an extruder: 'Werkzeugkopf-LED für einen Extruder umschalten'
   'Toggle:': 'Umschalten:'
   Too humid: Zu feucht

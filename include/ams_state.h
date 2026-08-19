@@ -542,6 +542,17 @@ class AmsState {
     }
 
     /**
+     * @brief Get external spool material subject (string)
+     * @return Subject holding the external spool's material name
+     *         (e.g. "PLA"), "" if no external spool assigned. Pure reflector
+     *         of get_external_spool_info() — updated at every site that
+     *         updates external_spool_color_.
+     */
+    lv_subject_t* get_external_spool_material_subject() {
+        return &external_spool_material_;
+    }
+
+    /**
      * @brief Get supports bypass subject
      * @return Subject holding 1 if backend supports bypass, 0 otherwise
      */
@@ -1553,6 +1564,11 @@ class AmsState {
     bool runout_level_seeded_{false};
     lv_subject_t bypass_active_;
     lv_subject_t external_spool_color_;
+    /// External spool material name — string flavor of external_spool_color_.
+    /// Pure reflector of get_external_spool_info(); mirrors the color subject's
+    /// update sites so XML text bindings stay in lockstep with the color dot.
+    lv_subject_t external_spool_material_;
+    char external_spool_material_buf_[32]; // "PLA", "PETG-CF", ... fits comfortably
     lv_subject_t supports_bypass_;
     lv_subject_t ams_slot_count_;
     lv_subject_t ams_cards_compact_;

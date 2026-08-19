@@ -306,6 +306,7 @@
   <translation tag="Bypass Is Active"/>
   <translation tag="Bypass Mode" it="Modalità bypass"/>
   <translation tag="Bypass active — this print runs on the external spool, not on the lanes below."/>
+  <translation tag="Bypass cannot be changed while printing"/>
   <translation tag="Bypass controlled by hardware sensor" it="Bypass controllato da sensore hardware"/>
   <translation tag="Bypass controlled by sensor" it="Bypass controllato dal sensore"/>
   <translation tag="Bypass disabled" it="Bypass disabilitato"/>
@@ -1931,6 +1932,7 @@
   <translation tag="Requires Moonraker power device" it="Richiede un dispositivo di alimentazione Moonraker"/>
   <translation tag="Requires Moonraker-Timelapse plugin" it="Richiede plugin Moonraker-Timelapse"/>
   <translation tag="Requires Multi-Filament System or MMU hardware" it="Richiede un sistema multi-filamento o hardware MMU"/>
+  <translation tag="Requires a filament system with bypass"/>
   <translation tag="Requires clog detection hardware" it="Richiede hardware per il rilevamento intasamenti"/>
   <translation tag="Resend write failed at chunk {}" it="Reinvio scrittura fallito al chunk {}"/>
   <translation tag="Reset" it="Ripristina"/>
@@ -2450,6 +2452,7 @@
   <translation tag="Toggle Auto-Refill" it="Alterna il rifornimento automatico"/>
   <translation tag="Toggle Moonraker power devices" it="Alterna i dispositivi di alimentazione Moonraker"/>
   <translation tag="Toggle Quiet Mode" it="Alterna la modalità silenziosa"/>
+  <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" it="Alterna il LED della testina per un estrusore"/>
   <translation tag="Toggle:" it="Commuta:"/>
   <translation tag="Too humid" it="Troppo umido"/>

@@ -334,6 +334,7 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: Режим обхода
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: Обход управляется аппаратным датчиком
   Bypass controlled by sensor: Байпас управляется датчиком
   Bypass disabled: Байпас отключён
@@ -2137,6 +2138,7 @@ translations:
   Requires Moonraker power device: 'Требуется устройство питания Moonraker'
   Requires Moonraker-Timelapse plugin: Требуется плагин Moonraker-Timelapse
   Requires Multi-Filament System or MMU hardware: 'Требуется мультифиламентная система или оборудование MMU'
+  Requires a filament system with bypass: ''
   Requires clog detection hardware: 'Требуется оборудование для обнаружения засора'
   Resend write failed at chunk {}: Не удалось повторно отправить запись в блоке {}
   Reset: Сброс
@@ -2763,6 +2765,7 @@ translations:
   Toggle Auto-Refill: 'Переключить автопополнение'
   Toggle Moonraker power devices: 'Переключить устройства питания Moonraker'
   Toggle Quiet Mode: 'Переключить тихий режим'
+  Toggle external spool bypass: ''
   Toggle toolhead LED for an extruder: 'Переключить LED печатающей головки для экструдера'
   'Toggle:': 'Переключить:'
   Too humid: Слишком влажно

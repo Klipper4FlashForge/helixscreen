@@ -44,6 +44,7 @@ void register_temp_graph_widget();
 void register_tool_switcher_widget();
 void register_nozzle_temps_widget();
 void register_active_spool_widget();
+void register_bypass_widget();
 #if HELIX_HAS_CAMERA
 void register_camera_widget();
 #endif
@@ -75,6 +76,7 @@ static std::vector<PanelWidgetDef> s_widget_defs = {
     {"temp_graph",       "Temperature Graph", "chart_line",       "Live temperature graph with configurable sensors", nullptr,         nullptr,                               false, 2, 2, 1, 1, 6, 4, true},
     {"preheat",          "Preheat",           "heat_wave",        "Quick preheat with material selection",            nullptr,            nullptr,                               false, 3, 1, 2, 1, 4, 1},
     {"ams",              "Multi-Filament System Status",        "filament",         "Multi-Filament System spool status and control",       "ams_slot_count",     "Requires Multi-Filament System or MMU hardware",        false, 1, 1, 1, 1, 4, 2},
+    {"bypass",           "Bypass",            "source_branch",    "Toggle external spool bypass",  "ams_supports_bypass", "Requires a filament system with bypass", false, 1, 1, 1, 1, 2, 1},
     {"active_spool",     "Active Spool",      "inventory",  "Currently loaded spool info",     nullptr,                  nullptr,                           false, 1, 1, 1, 1, 4, 2},
     {"filament",         "Filament Sensor",   "filament_alert",   "Filament runout detection status",  "filament_sensor_count", "No filament sensor detected",      true, 1, 1, 1, 1, 2, 1},
     {"humidity",         "Humidity",          "water",            "Enclosure humidity sensor readings",         "humidity_sensor_count", "No humidity sensor detected",       false, 1, 1, 1, 1, 2, 2},
@@ -181,6 +183,7 @@ void init_widget_registrations() {
     register_motion_widget();
     register_preheat_widget();
     register_active_spool_widget();
+    register_bypass_widget();
     register_tool_switcher_widget();
     register_nozzle_temps_widget();
 #if HELIX_HAS_CAMERA

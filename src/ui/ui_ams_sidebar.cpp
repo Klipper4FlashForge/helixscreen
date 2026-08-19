@@ -299,27 +299,10 @@ void AmsOperationSidebar::init_observers() {
                 }
             }
 
-            // Detect UNLOADING -> IDLE or UNLOADING -> ERROR: the pending-bypass
-            // flag is armed by the unload we started, so it must be disarmed by
-            // whichever way that unload ends. Clearing it only on IDLE left a
-            // failed unload's flag set, and the next unrelated unload completion
-            // then enabled bypass out of nowhere. Only IDLE actually chains.
-            if (self->pending_bypass_enable_ && self->prev_ams_action_ == AmsAction::UNLOADING &&
-                (action == AmsAction::IDLE || action == AmsAction::ERROR)) {
-                self->pending_bypass_enable_ = false;
-                AmsBackend* backend = AmsState::instance().get_backend();
-                if (action == AmsAction::ERROR) {
-                    spdlog::warn("[AmsSidebar] Unload failed — cancelling pending bypass enable");
-                } else if (backend) {
-                    spdlog::info("[AmsSidebar] Unload complete — enabling bypass");
-                    AmsError err = backend->enable_bypass();
-                    if (err.result == AmsResult::SUCCESS) {
-                        NOTIFY_INFO(lv_tr("Bypass enabled"));
-                    } else {
-                        helix::ui::notify_ams_error(err, lv_tr("Bypass failed"));
-                    }
-                }
-            }
+            // No bypass feed here: the shared BypassToggleController now
+            // observes the ams_action subject itself (armed only while a
+            // pending unload→enable chain runs), so this sidebar instance
+            // feeding its own controller would process the edge twice.
 
             // Update step progress (BEFORE updating prev_ams_action_)
             self->update_action_display(action);
@@ -490,7 +473,7 @@ void AmsOperationSidebar::cleanup() {
     // but now-abandoned pre-load home prompt (panel closing mid-preheat) so
     // consent doesn't leak into a later, unrelated operation on this backend
     // -- idempotent no-op when nothing was armed.
-    pending_bypass_enable_ = false;
+    bypass_toggle_.cancel_pending();
     pending_load_slot_ = -1;
     pending_load_target_temp_ = 0;
     ui_initiated_heat_ = false;
@@ -1259,60 +1242,7 @@ void AmsOperationSidebar::handle_check_gates() {
 }
 
 void AmsOperationSidebar::handle_bypass_toggle() {
-    spdlog::info("[AmsSidebar] Bypass toggle requested");
-
-    AmsBackend* backend = AmsState::instance().get_backend();
-    if (!backend) {
-        NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
-        return;
-    }
-
-    AmsSystemInfo info = backend->get_system_info();
-    if (info.has_hardware_bypass_sensor) {
-        NOTIFY_WARNING(lv_tr("Bypass controlled by sensor"));
-        spdlog::warn("[AmsSidebar] Bypass toggle blocked — hardware sensor controls bypass");
-        return;
-    }
-
-    bool currently_bypassed = backend->is_bypass_active();
-    AmsError error;
-
-    if (currently_bypassed) {
-        error = backend->disable_bypass();
-        if (error.result == AmsResult::SUCCESS) {
-            NOTIFY_INFO(lv_tr("Bypass disabled"));
-        }
-    } else {
-        // If filament is loaded from an AMS slot, unload first (full animation),
-        // then enable bypass after unload completes via action observer. Only
-        // backends that permit implicit chaining get that courtesy — on AFC and
-        // Happy Hare the toggle sends exactly one command and lets the firmware
-        // refuse it, rather than ejecting filament the user never asked to eject
-        // (#1229).
-        if (should_unload_before_bypass(info, backend->allows_implicit_chaining())) {
-            spdlog::info("[AmsSidebar] Unloading slot {} before enabling bypass",
-                         info.current_slot);
-            pending_bypass_enable_ = true;
-            error = backend->unload_active_filament();
-            if (error.result == AmsResult::SUCCESS) {
-                NOTIFY_INFO(lv_tr("Unloading before bypass..."));
-            } else {
-                pending_bypass_enable_ = false;
-                helix::ui::notify_ams_error(error);
-            }
-            return;
-        }
-
-        // No filament loaded — enable bypass directly
-        error = backend->enable_bypass();
-        if (error.result == AmsResult::SUCCESS) {
-            NOTIFY_INFO(lv_tr("Bypass enabled"));
-        }
-    }
-
-    if (error.result != AmsResult::SUCCESS) {
-        helix::ui::notify_ams_error(error, lv_tr("Bypass toggle failed"));
-    }
+    bypass_toggle_.toggle();
 }
 
 // ============================================================================

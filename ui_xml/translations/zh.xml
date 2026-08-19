@@ -306,6 +306,7 @@
   <translation tag="Bypass Is Active"/>
   <translation tag="Bypass Mode" zh="旁路模式"/>
   <translation tag="Bypass active — this print runs on the external spool, not on the lanes below."/>
+  <translation tag="Bypass cannot be changed while printing"/>
   <translation tag="Bypass controlled by hardware sensor" zh="旁路由硬件传感器控制"/>
   <translation tag="Bypass controlled by sensor" zh="旁通由传感器控制"/>
   <translation tag="Bypass disabled" zh="旁通已禁用"/>
@@ -1931,6 +1932,7 @@
   <translation tag="Requires Moonraker power device" zh="需要 Moonraker 电源设备"/>
   <translation tag="Requires Moonraker-Timelapse plugin" zh="需要 Moonraker-Timelapse 插件"/>
   <translation tag="Requires Multi-Filament System or MMU hardware" zh="需要多耗材系统或 MMU 硬件"/>
+  <translation tag="Requires a filament system with bypass"/>
   <translation tag="Requires clog detection hardware" zh="需要堵塞检测硬件"/>
   <translation tag="Resend write failed at chunk {}" zh="区块 {} 重发写入失败"/>
   <translation tag="Reset" zh="重置"/>
@@ -2450,6 +2452,7 @@
   <translation tag="Toggle Auto-Refill" zh="切换自动续料"/>
   <translation tag="Toggle Moonraker power devices" zh="切换 Moonraker 电源设备"/>
   <translation tag="Toggle Quiet Mode" zh="切换静音模式"/>
+  <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" zh="切换某个挤出机的工具头 LED"/>
   <translation tag="Toggle:" zh="切换:"/>
   <translation tag="Too humid" zh="湿度过高"/>
