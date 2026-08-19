@@ -1155,6 +1155,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
     // Copy filament colors (per-tool hex colors parsed from Moonraker)
     std::vector<std::string> filament_colors = metadata.filament_colors;
     uint32_t layer_count = metadata.layer_count;
+    uint64_t gcode_end_byte = metadata.gcode_end_byte;
     double object_height = metadata.object_height;
     double layer_height = metadata.layer_height;
     std::string uuid = metadata.uuid;
@@ -1207,6 +1208,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
         std::string print_time_str;
         std::string filament_str;
         uint32_t layer_count;
+        uint64_t gcode_end_byte;
         std::string layer_count_str;
         double object_height;
         std::string print_height_str;
@@ -1240,6 +1242,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                                                                        print_time_str,
                                                                        filament_str,
                                                                        layer_count,
+                                                                       gcode_end_byte,
                                                                        layer_count_str,
                                                                        object_height,
                                                                        print_height_str,
@@ -1288,6 +1291,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
             self->file_list_[d->index].print_time_str = d->print_time_str;
             self->file_list_[d->index].filament_str = d->filament_str;
             self->file_list_[d->index].layer_count = d->layer_count;
+            self->file_list_[d->index].gcode_end_byte = d->gcode_end_byte;
             self->file_list_[d->index].layer_count_str = d->layer_count_str;
             self->file_list_[d->index].object_height = d->object_height;
             self->file_list_[d->index].print_height_str = d->print_height_str;
@@ -2097,7 +2101,8 @@ void PrintSelectPanel::show_detail_view() {
         std::string filename(selected_filename_buffer_);
         detail_view_->show(filename, current_path_, selected_filament_type_,
                            selected_filament_colors_, selected_filament_materials_,
-                           selected_file_size_bytes_, selected_modified_timestamp_);
+                           selected_file_size_bytes_, selected_modified_timestamp_,
+                           selected_gcode_end_byte_);
         // Update history status display in detail view
         detail_view_->update_history_status(selected_history_status_, selected_success_count_);
     }
@@ -2642,6 +2647,7 @@ void PrintSelectPanel::apply_file_selection(const PrintFileData& file) {
     selected_filament_materials_ = file.filament_types;
     selected_file_size_bytes_ = file.file_size_bytes;
     selected_modified_timestamp_ = file.modified_timestamp;
+    selected_gcode_end_byte_ = file.gcode_end_byte;
     selected_history_status_ = file.history_status;
     selected_success_count_ = file.success_count;
 }
