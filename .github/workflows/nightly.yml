@@ -41,6 +41,9 @@ jobs:
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
 
+    - name: Prepare apt
+      uses: ./.github/actions/apt-prepare
+
     - name: Install dependencies
       uses: nick-fields/retry@v4
       with:
@@ -140,6 +143,9 @@ jobs:
 
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
+
+    - name: Prepare apt
+      uses: ./.github/actions/apt-prepare
 
     - name: Install runtime deps
       run: |
@@ -252,6 +258,9 @@ jobs:
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
 
+    - name: Prepare apt
+      uses: ./.github/actions/apt-prepare
+
     - name: Install runtime deps
       run: |
         sudo apt-get update
@@ -321,6 +330,9 @@ jobs:
 
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
+
+    - name: Prepare apt
+      uses: ./.github/actions/apt-prepare
 
     - name: Install dependencies
       uses: nick-fields/retry@v4
@@ -407,6 +419,9 @@ jobs:
 
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
+
+    - name: Prepare apt
+      uses: ./.github/actions/apt-prepare
 
     - name: Install dependencies
       uses: nick-fields/retry@v4
@@ -606,6 +621,9 @@ jobs:
 
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
+
+    - name: Prepare apt
+      uses: ./.github/actions/apt-prepare
 
     - name: Install runtime deps
       run: |

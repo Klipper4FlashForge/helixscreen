@@ -25,15 +25,19 @@ jobs:
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
 
+    - name: Prepare apt
+      uses: ./.github/actions/apt-prepare
+
     - name: Install dependencies
       uses: nick-fields/retry@v4
       with:
-        # 20 min, matching nightly.yml: slow apt mirrors can push the download
-        # phase past a shorter cap, and on timeout retry@v4 crashes with
-        # "kill EPERM" (Node 24) instead of retrying — so the window has to be
-        # wide enough that we never reach it. caf6cb2df raised nightly.yml to 20
-        # for exactly this and build.yml was missed, which is why Compile and
-        # the non-LTO link job kept failing on Install dependencies.
+        # The window is a backstop, not the fix. When apt wedges on a bad
+        # mirror, retry@v4 cannot rescue it: apt runs under sudo, so the
+        # timeout's process.kill returns EPERM and the step dies with
+        # "Error: kill EPERM" instead of retrying. Widening the cap only moves
+        # the failure later -- Compile hit the ceiling at 10 minutes and then
+        # again at 20. The Prepare apt step above is what actually prevents the
+        # hang, by dropping the azure mirror and capping apt's own timeouts.
         timeout_minutes: 20
         max_attempts: 3
         command: |
@@ -167,6 +171,9 @@ jobs:
 
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
+
+    - name: Prepare apt
+      uses: ./.github/actions/apt-prepare
 
     # This job only ever gets the -dev-free runtime closure, so every library the
     # compile job picked up transitively via a -dev package has to be named here.
@@ -428,6 +435,9 @@ jobs:
 
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
+
+    - name: Prepare apt
+      uses: ./.github/actions/apt-prepare
 
     - name: Install dependencies
       uses: nick-fields/retry@v4
