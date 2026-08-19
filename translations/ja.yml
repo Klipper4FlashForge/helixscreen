@@ -448,6 +448,8 @@ translations:
   Choose rendering mode for G-code visualization: G-codeの視覚化レンダリングモードを選択
   Choose rendering mode for bed mesh visualization: ベッドメッシュの視覚化レンダリングモードを選択
   Choose sound style: サウンドスタイルを選択
+  ? Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses.
+  : ''
   Choose what to power off or restart.: 電源オフまたは再起動する対象を選択してください。
   Clean Brush: 'ブラシを清掃'
   Clean Nozzle: ノズル清掃
@@ -1819,6 +1821,7 @@ translations:
   Printer Firmware Disconnected: プリンターファームウェア切断
   Printer Image: プリンター画像
   Printer Manager: プリンター管理
+  Printer Model: ''
   Printer Name: プリンター名
   'Printer Setup: Connection': 'プリンター設定: 接続'
   'Printer Setup: Fans': 'プリンター設定: ファン'
@@ -1927,6 +1930,7 @@ translations:
   Re-read spool RFID tags and remaining length: 'スプールのRFIDタグと残量を再読み込み'
   Re-syncs Happy Hare's tracked state with the hardware.: Happy Hare が追跡している状態をハードウェアと再同期します。
   Ready: 準備完了
+  Ready for filament operations: ''
   Ready to Apply: 適用の準備完了
   Ready to load: 読み込み準備完了
   Reason: 理由
@@ -2480,6 +2484,7 @@ translations:
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a "Timer Too Close" error. Continue anyway?
   : このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、"Timer Too Close" エラーを引き起こす可能性があります。それでも続行しますか？
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: リンクされた Spoolman のスプールと一致しません。新しいスプールとして追加しますか、それともリンク先を一致するよう更新しますか？
+  This filament system does not report buffer or flow data.: ''
   This file was sliced for {} but {} is loaded.: このファイルは {} 用にスライスされていますが、{} がロードされています。
   This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: これが送信されるデータです

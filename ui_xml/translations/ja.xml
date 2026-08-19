@@ -441,6 +441,7 @@
   <translation tag="Choose rendering mode for G-code visualization" ja="G-codeの視覚化レンダリングモードを選択"/>
   <translation tag="Choose rendering mode for bed mesh visualization" ja="ベッドメッシュの視覚化レンダリングモードを選択"/>
   <translation tag="Choose sound style" ja="サウンドスタイルを選択"/>
+  <translation tag="Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses."/>
   <translation tag="Choose what to power off or restart." ja="電源オフまたは再起動する対象を選択してください。"/>
   <translation tag="Clean Brush" ja="ブラシを清掃"/>
   <translation tag="Clean Nozzle" ja="ノズル清掃"/>
@@ -1771,6 +1772,7 @@
   <translation tag="Printer Firmware Disconnected" ja="プリンターファームウェア切断"/>
   <translation tag="Printer Image" ja="プリンター画像"/>
   <translation tag="Printer Manager" ja="プリンター管理"/>
+  <translation tag="Printer Model"/>
   <translation tag="Printer Name" ja="プリンター名"/>
   <translation tag="Printer Setup: Connection" ja="プリンター設定: 接続"/>
   <translation tag="Printer Setup: Fans" ja="プリンター設定: ファン"/>
@@ -1876,6 +1878,7 @@
   <translation tag="Re-read spool RFID tags and remaining length" ja="スプールのRFIDタグと残量を再読み込み"/>
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." ja="Happy Hare が追跡している状態をハードウェアと再同期します。"/>
   <translation tag="Ready" ja="準備完了"/>
+  <translation tag="Ready for filament operations"/>
   <translation tag="Ready to Apply" ja="適用の準備完了"/>
   <translation tag="Ready to load" ja="読み込み準備完了"/>
   <translation tag="Reason" ja="理由"/>
@@ -2401,6 +2404,7 @@
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a &quot;Timer Too Close&quot; error or restart mid-test. Continue anyway?" ja="このデバイスの RAM は {} MB しかありません。共振キャリブレーションはメモリを大量に消費し、プリンターのファームウェアが &quot;Timer Too Close&quot; エラーを報告したり、テスト中に再起動したりする可能性があります。それでも続行しますか？"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" ja="このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、&quot;Timer Too Close&quot; エラーを引き起こす可能性があります。それでも続行しますか？"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" ja="リンクされた Spoolman のスプールと一致しません。新しいスプールとして追加しますか、それともリンク先を一致するよう更新しますか？"/>
+  <translation tag="This filament system does not report buffer or flow data."/>
   <translation tag="This file was sliced for {} but {} is loaded." ja="このファイルは {} 用にスライスされていますが、{} がロードされています。"/>
   <translation tag="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs."/>
   <translation tag="This is exactly the data that will be sent" ja="これが送信されるデータです"/>
