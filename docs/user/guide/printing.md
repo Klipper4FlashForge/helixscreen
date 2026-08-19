@@ -108,7 +108,8 @@ While the pre-print steps are showing:
 
 - **Cancel** is available and always stops the print from starting. If the printer
   is mid-way through a leveling pass it will finish that motion first, because a
-  running macro cannot be interrupted - but the print will not begin.
+  running macro cannot be interrupted - but the print will not begin, and the
+  screen reports it as cancelled rather than as a failure.
 - **Pause** is unavailable, since there is no print to pause yet.
 - **Tune** works. Speed and flow adjustments carry into the print. A Z-offset
   change made here may be overwritten by the printer's own start macro, so it is

@@ -234,15 +234,18 @@ Two properties to commit to:
 
 ## Status
 
+Branch `fix/preparing-job-lifecycle`. Suite green (95/95 shards) at every commit.
+
 | # | Step | State |
 |---|---|---|
 | 1 | `s_is_initial_transition` re-arming | **done** - `PrintCollectorArming`, mutation-verified |
 | 2 | Pure deletions | **done, narrowed** - `is_in_print_start` and `clear_print_info` kept (step 5 gives both callers); `clear_gcode_loaded` field removed; layer-count formatter fixed |
 | ~~3~~ | Media identity | folded into 5 |
-| 4 | State-machine consolidation | **partial** - `derive_print_state()` is the single mapping and `print_lifecycle` is the authoritative subject. Migrating `print_completion`, `print_start_navigation` and `telemetry_manager` off their private trackers is outstanding |
-| 5 | `Preparing` at commit | **done** - ownership, reconciliation, both entry points wired, `end_preparing`/`set_state` deleted. Verified at runtime against the mock |
-| 6 | Estimate ladder | not started |
-| 7 | Elapsed/remaining strings | split out |
+| 4 | State-machine consolidation | **partial** - see "Outstanding" |
+| 5 | `Preparing` at commit | **done** - ownership, reconciliation, both entry points, media identity, `end_preparing`/`set_state` deleted |
+| 5b | Cancel during preparing | **done** |
+| 6 | Estimate ladder | **not started** |
+| 7 | Elapsed/remaining strings | split out to its own PR |
 
 Runtime evidence (mock, headless):
 
@@ -254,6 +257,81 @@ Retiring preparing job '...': confirmed         <- reconciled
 ```
 
 The third line is the regression guard: externally started prints still arm.
+
+## Risks and gaps - read before merging
+
+### 1. No hardware verification (blocking)
+
+Everything above is proven against the mock, whose commit-to-confirm window is
+**35ms**. The reported defect is a **7m39s** window on a K2 Plus. The mechanism is
+verified; the case that actually broke is not. Specifically unverified on hardware:
+
+- badge + frozen progress clearing across a real 455s `BED_MESH_CALIBRATE_START_PRINT`
+- pre-print phases advancing past the first one through that window - the
+  `print_active == 0` guard re-scope is precisely what allows this, and a mock run
+  cannot exercise it because the window closes before a second phase arrives
+- cancel during the mesh
+- CB1/Voron as the no-pre-start baseline: a sub-second window must not flash the
+  overlay (the 750ms debounce is designed but **not yet implemented**)
+
+### 2. `TimedOut` retires silently
+
+The decision was failed -> failure, cancelled -> cancelled. `Failed` notifies (via
+`PrintStartController`'s error path) and `Cancelled` notifies. **`TimedOut` retires
+the job and says nothing.** A start that dies on a printer that never reaches
+`state=printing` therefore vanishes without telling the user. Gap in the stated
+rule, not a design decision.
+
+### 3. The overlay debounce is designed, not built
+
+`## Resolved design questions` specifies a 750ms elapsed debounce so a sub-second
+`Preparing` never renders. Nothing implements it yet. On a fast printer the overlay
+will currently flash.
+
+### 4. Consolidation is half-landed
+
+`derive_print_state()` and the `print_lifecycle` subject exist, but
+`print_completion.cpp`, `print_start_navigation.cpp` and `telemetry_manager.cpp`
+still carry their own prev-state trackers. So the tree currently has *both* the new
+authority and the old duplicates - better than before, but not the subtraction that
+was promised. See "Notifying when a start dies before it prints" for why the
+migration is blocked on a product decision rather than on effort.
+
+### 5. Docs sweep incomplete
+
+Done: `PRINT_STATE_MACHINE.md`, `architecture/05-printer-state.md`,
+`docs/user/guide/printing.md`. Not done: `PRINT_START_INTEGRATION.md` (the
+`M118 HELIX:READY` contract gains a commit-armed path) and `PREPRINT_PREDICTION.md`
+(record that the debounce deliberately does not consume a prediction).
+
+### 6. Environmental, not caused by this work
+
+- **One shared `lib/` across all worktrees.** A concurrent session's `git clean` in
+  `lib/libhv` deleted patch-created files and broke every build on the machine
+  mid-session. Repaired by reapplying the `hsocket.c` + `hplatform.h` hunks. Any
+  verification run can hit this again while other agents are active.
+- **The orphaned `layers` translation key survives.** `format_layer_count()` uses
+  `"%u layers"` / `"1 layer"`, so bare `layers` is now dead - but the obsolete-key
+  detector cannot see it, because `ui_xml/*.xml` uses `icon="layers"` and the
+  matcher cannot distinguish an icon name from a translation tag. Left in place;
+  the detector has a false negative worth knowing about.
+
+## Outstanding work, in dependency order
+
+1. **Hardware verification on the K2** - one print-after-print cycle, aborted before
+   material is laid. This is the only test that exercises the real window.
+2. **CB1/Voron baseline** - no pre-start block; confirm no overlay flash and no
+   regression for externally started prints.
+3. **Implement the 750ms overlay debounce** (risk 3). `lv_timer_t`, so it must be
+   cancelled in the destructor as well as `cleanup()` per CLAUDE.md rule 5.
+4. **Notify on `TimedOut`** (risk 2).
+5. **Decide whether a failed pre-print notifies**, then migrate the three remaining
+   trackers (risk 4).
+6. **Estimate ladder** (step 6) - one owner for "how long until printing starts?",
+   three estimators demoted to strategies, monotonic handoff.
+7. **Finish the docs sweep** (risk 5), then `scripts/check_doc_refs.py`.
+8. **Split step 7** (elapsed/remaining rendered strings into `PrinterPrintState`)
+   into its own PR.
 
 ## Scope and sequencing
 
@@ -348,6 +426,33 @@ fields (override vs current - the duplication is with the panel, not within APMM
 
 `ActivePrintMediaManager::clear_thumbnail_source()` is listed elsewhere as dead code,
 but this plan gives it its production caller. It stays.
+
+## Cancel during the preparing window
+
+The preparing job doubles as the go/no-go token for the start, which is why cancel
+needs no separate flag.
+
+`PrintControlButtons::handle_stop_button` branches before `AbortManager`: if a job
+is being prepared and the printer is not `PRINTING`/`PAUSED`, it retires the job as
+`Cancelled` and stops. Routing that through `AbortManager` would send `CANCEL_PRINT`
+to an idle printer, whose own state watcher reads the resulting terminal state as an
+immediate success (`abort_manager.cpp:722-729`) while the queued `start_print` fires
+anyway once the macro returns.
+
+`PrintPreparationManager::continue_print_start()` is the choke point every pre-start
+path funnels through before a job is actually started, so it is where a cancellation
+can be honoured. It abandons the start when the preparing job is gone.
+
+The guard is scoped by `armed_at_start_`, snapshotted in `start_print()`. Without
+that, a caller that never armed a job could never print at all - which is exactly
+what happened: the first version broke
+`tests/unit/test_pre_start_timeout_gate.cpp`, whose fixture drives the manager
+directly. Distinguishing "cancelled" from "never armed" is the difference between a
+guard and a bug.
+
+A running macro still finishes its current motion; Klipper cannot interrupt one. The
+guarantee is that no print begins, and the UI says so rather than implying an
+instant stop.
 
 ## Notifying when a start dies before it prints
 
