@@ -576,6 +576,11 @@ class PrintPreparationManager {
      * completion wait: modifies the file when operations must be stripped,
      * otherwise starts the print directly.
      */
+    /// Whether a preparing job was live when this start began. Only then can
+    /// its disappearance mean "the user cancelled" rather than "this caller
+    /// never armed one".
+    bool armed_at_start_ = false;
+
     void continue_print_start(const std::string& filename,
                               const std::vector<gcode::OperationType>& ops_to_disable,
                               NavigateToStatusCallback on_navigate_to_status,

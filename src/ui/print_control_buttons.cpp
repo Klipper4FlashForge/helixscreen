@@ -13,6 +13,7 @@
 #include "lvgl/src/others/translation/lv_translation.h" // lv_tr
 #include "moonraker_error.h"
 #include "observer_factory.h"
+#include "print_job_ref.h"
 #include "printer_state.h"
 #include "standard_macros.h"
 #include "static_subject_registry.h"
@@ -155,6 +156,31 @@ void PrintControlButtons::handle_stop_button() {
         return;
     }
     cancel_modal_.set_on_confirm([]() {
+        // A job we are still preparing may not exist on the printer yet: a
+        // host-side pre-start block runs before the job is handed over, so
+        // print_stats is idle or still holds the PREVIOUS job. Routing that
+        // through AbortManager would send CANCEL_PRINT to an idle printer,
+        // which its own state watcher reads as an immediate success
+        // (abort_manager.cpp, terminal states complete the abort) while the
+        // queued start_print fires anyway once the macro returns.
+        //
+        // Retiring the preparing job is what actually stops it: the start
+        // choke point in PrintPreparationManager refuses to start a job that
+        // is no longer being prepared. Any running macro still finishes its
+        // current motion - Klipper cannot interrupt one - but no print begins.
+        auto& state = get_printer_state();
+        const auto job_state =
+            static_cast<PrintJobState>(lv_subject_get_int(state.get_print_state_enum_subject()));
+        const bool printer_has_the_job =
+            (job_state == PrintJobState::PRINTING || job_state == PrintJobState::PAUSED);
+
+        if (state.has_preparing_job() && !printer_has_the_job) {
+            spdlog::info("[PrintControl] Stop confirmed while preparing - cancelling the start");
+            state.retire_preparing(helix::PreparingExit::Cancelled);
+            NOTIFY_INFO(lv_tr("Print cancelled"));
+            return;
+        }
+
         spdlog::info("[PrintControl] Stop confirmed - starting AbortManager");
         // AbortManager handles its own UI state (progress modal, button states).
         helix::AbortManager::instance().start_abort();

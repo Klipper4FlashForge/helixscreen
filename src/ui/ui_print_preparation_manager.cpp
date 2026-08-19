@@ -601,6 +601,11 @@ void PrintPreparationManager::start_print(const std::string& filename,
                                           const std::string& current_path,
                                           NavigateToStatusCallback on_navigate_to_status,
                                           PrintCompletionCallback on_completion) {
+    // Snapshot whether this start is under a preparing job. Only then does the
+    // job disappearing later mean the user cancelled; a caller that never armed
+    // one must still be able to start a print.
+    armed_at_start_ = printer_state_ && printer_state_->has_preparing_job();
+
     if (!api_) {
         spdlog::error("[PrintPreparationManager] Cannot start print - not connected to printer");
         NOTIFY_ERROR(lv_tr("Cannot start print: not connected to printer"));
@@ -1196,6 +1201,24 @@ PrintPreparationManager::collect_pre_start_gcode_lines(const std::string& filena
 void PrintPreparationManager::continue_print_start(
     const std::string& filename, const std::vector<gcode::OperationType>& ops_to_disable,
     NavigateToStatusCallback on_navigate_to_status, PrintCompletionCallback on_completion) {
+    // Every pre-start path funnels through here before a job is actually
+    // started, which makes it the one place a cancellation can be honoured.
+    //
+    // PrintStartController arms the preparing job before delegating here, so by
+    // the time this runs there is always one - unless the user cancelled while a
+    // blocking pre-start macro was running, or another print superseded ours.
+    // A pre-start macro can run for ten minutes; starting the job after the user
+    // has already cancelled it is the worst outcome available.
+    if (armed_at_start_ && printer_state_ && !printer_state_->has_preparing_job()) {
+        spdlog::info("[PrintPreparationManager] Start abandoned - '{}' is no longer being "
+                     "prepared ({})",
+                     filename, helix::preparing_exit_name(printer_state_->last_preparing_exit()));
+        if (on_completion) {
+            on_completion(false, "");
+        }
+        return;
+    }
+
     if (!ops_to_disable.empty()) {
         modify_and_print(filename, ops_to_disable, {}, on_navigate_to_status);
     } else {

@@ -1797,6 +1797,7 @@ translations:
   Print Time: 印刷時間
   Print Tuning: 印刷チューニング
   Print Was Terminated: 印刷が中止されました
+  Print cancelled: ''
   Print didn't start — printer may be busy or offline (B3 polls={}, status=0x{:02X}, error=0x{:02X}): 印刷が開始されませんでした
     — プリンターがビジー状態またはオフラインの可能性があります (B3 polls={}, status=0x{:02X}, error=0x{:02X})
   Print error: 印刷エラー
