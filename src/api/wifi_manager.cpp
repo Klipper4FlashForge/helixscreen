@@ -769,10 +769,16 @@ void WiFiManager::set_enabled_async(bool enabled, helix::LifetimeToken token,
             }
 
             {
+                // Notify under the lock, not after it. wait_for_radio_ops() wakes
+                // as soon as the count reaches zero, and ~WiFiManager() destroys
+                // radio_op_cv_ right after it returns -- which would be while this
+                // thread was still inside notify_all(). Holding the mutex across
+                // the notify keeps the waiter blocked on reacquiring it until we
+                // are done touching the condition variable.
                 std::lock_guard<std::mutex> lock(radio_op_mutex_);
                 --radio_ops_inflight_;
+                radio_op_cv_.notify_all();
             }
-            radio_op_cv_.notify_all();
         });
 }
 
