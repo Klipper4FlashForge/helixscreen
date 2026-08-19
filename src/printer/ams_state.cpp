@@ -1477,8 +1477,16 @@ void AmsState::sync_from_backend() {
                       new_runout, info.filament_runout, runout_edge_armed_, paused);
         lv_subject_set_int(&filament_runout_, new_runout);
     }
-    int new_bypass = info.current_slot == -2 ? 1 : 0;
+    // The one bypass truth: the backend's own is_bypass_active(), the same
+    // predicate BypassToggleController branches on when the user taps. This
+    // subject used to be derived independently from current_slot == -2, so with
+    // a declaration latched and the filament pulled the switch rendered
+    // unchecked while a tap took the DISABLE path — "turn it on" answered
+    // "Bypass disabled", and the pre-print gate meanwhile acted on a bypass the
+    // user could not see or clear. Display and action now read one value.
+    const int new_bypass = backend->is_bypass_active() ? 1 : 0;
     if (lv_subject_get_int(&bypass_active_) != new_bypass) {
+        spdlog::debug("[AmsState] bypass -> {}", new_bypass);
         lv_subject_set_int(&bypass_active_, new_bypass);
     }
 
@@ -1489,9 +1497,10 @@ void AmsState::sync_from_backend() {
     // bypass while a file's detail view is already open and the false
     // "T0 has no filament loaded" block still fires on Print.
     //
-    // Tracked off any_bypass_active() rather than the bypass_active_ subject
-    // above — that one is derived from current_slot == -2, which later writes in
-    // the same status frame can clobber.
+    // Still tracked off any_bypass_active() rather than the bypass_active_
+    // subject above, but for a different reason now that both read
+    // is_bypass_active(): the subject reports backend 0 only, while this walks
+    // every backend, and the pre-print check it refreshes is whole-printer.
     const bool bypass_now = any_bypass_active();
     if (bypass_now != last_bypass_active_) {
         last_bypass_active_ = bypass_now;
