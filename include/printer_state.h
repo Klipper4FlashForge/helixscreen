@@ -614,6 +614,13 @@ class PrinterState {
      */
     PrintJobState get_print_job_state() const;
 
+    /// The derived print lifecycle. Prefer this over reading
+    /// get_print_lifecycle_subject() by hand — see
+    /// PrinterPrintState::get_print_lifecycle() for why the hand-cast is a trap.
+    [[nodiscard]] PrintState get_print_lifecycle() const {
+        return print_domain_.get_print_lifecycle();
+    }
+
     /**
      * @brief Check if a new print can be started
      *

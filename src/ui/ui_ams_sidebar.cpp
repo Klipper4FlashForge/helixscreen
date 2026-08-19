@@ -1056,8 +1056,7 @@ helix::ui::OpButtonState AmsOperationSidebar::read_unload_gating_state() const {
     // entire recovery workflow — and the sidebar had no print term at all
     // before, so it went straight from "always tappable" to "correct" only if
     // this asks the same question the backend does.
-    const auto lifecycle =
-        static_cast<PrintState>(lv_subject_get_int(printer_state_.get_print_lifecycle_subject()));
+    const auto lifecycle = printer_state_.get_print_lifecycle();
     state.print_blocks_op = helix::ui::print_blocks_filament_op(
         lifecycle, backend && backend->filament_ops_self_home());
 

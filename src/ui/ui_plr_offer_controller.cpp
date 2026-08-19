@@ -83,8 +83,7 @@ void PlrOfferController::evaluate_offer() {
 
     // idle == not actively printing/paused. Reuse the print-start-navigation
     // classifier so "active" means the same thing everywhere.
-    bool idle = !helix::is_active_print_state(
-        static_cast<PrintJobState>(lv_subject_get_int(ps.get_print_state_enum_subject())));
+    bool idle = !helix::is_active_print_state(ps.get_print_job_state());
 
     PlrOfferSignals signals;
     signals.recovery_available = recovery_available;
@@ -158,7 +157,7 @@ void PlrOfferController::probe_creality_once() {
     // STANDBY, not merely "not active": the Klipper handler itself only arms
     // power_loss when print_stats.state == "standby", and probing out of a
     // terminal state would clear exclude_object_info for no benefit.
-    auto state = static_cast<PrintJobState>(lv_subject_get_int(ps.get_print_state_enum_subject()));
+    auto state = ps.get_print_job_state();
     if (state != PrintJobState::STANDBY) {
         spdlog::debug("[PLR] Creality capable but print state is {} (not standby) — skipping probe",
                       static_cast<int>(state));

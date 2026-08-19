@@ -298,7 +298,8 @@ static void on_print_state_changed_for_notification(lv_observer_t* observer,
     // arming latch; the latch is unnecessary now because the published previous
     // value starts at Idle, so booting straight into a terminal state reads as
     // Idle -> Complete and correctly does not notify.
-    const auto lifecycle = static_cast<PrintState>(lv_subject_get_int(subject));
+    (void)subject; // the lifecycle subject; read through the typed accessor
+    const auto lifecycle = get_printer_state().get_print_lifecycle();
     const auto prev_lifecycle = static_cast<PrintState>(
         lv_subject_get_int(get_printer_state().get_print_lifecycle_prev_subject()));
 

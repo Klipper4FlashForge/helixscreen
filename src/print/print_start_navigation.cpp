@@ -65,6 +65,8 @@ static void queue_push_print_status_overlay() {
 // inconsistent state when deferred observer callbacks tried to update them.
 static void on_print_state_changed_for_navigation(lv_observer_t* observer, lv_subject_t* subject) {
     (void)observer;
+    // PRINT_STATE_CAST_OK: `subject` IS print_state_enum, and this file is a
+    // deliberate keep-raw site - navigation must not fire on Idle -> Preparing.
     auto current = static_cast<PrintJobState>(lv_subject_get_int(subject));
 
     spdlog::trace("[PrintStartNav] State change: {} -> {}", static_cast<int>(prev_print_state),

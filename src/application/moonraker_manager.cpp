@@ -716,6 +716,8 @@ void MoonrakerManager::init_print_start_collector() {
             if (!collector)
                 return;
 
+            // PRINT_STATE_CAST_OK: `subject` IS print_state_enum - LVGL hands the
+            // observer the subject it registered on, so the pairing cannot drift.
             auto new_state = static_cast<PrintJobState>(lv_subject_get_int(subject));
             int current_progress = s_progress_subject ? lv_subject_get_int(s_progress_subject) : 0;
             int current_print_duration =

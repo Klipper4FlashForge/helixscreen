@@ -158,12 +158,8 @@ void PowerDeviceState::update_device_status(const std::string& device, const std
         it->second.raw_status = new_raw;
         int effective = new_raw;
         if (it->second.locked_while_printing && new_raw == 1) {
-            auto* print_subj = get_printer_state().get_print_lifecycle_subject();
-            if (print_subj) {
-                const auto lifecycle = static_cast<PrintState>(lv_subject_get_int(print_subj));
-                if (job_holds_machine(lifecycle)) {
-                    effective = 2;
-                }
+            if (job_holds_machine(get_printer_state().get_print_lifecycle())) {
+                effective = 2;
             }
         }
         if (lv_subject_get_int(it->second.status_subject.get()) != effective) {
@@ -214,9 +210,7 @@ void PowerDeviceState::on_power_changed(const nlohmann::json& msg) {
             // Evaluate effective status (may be locked)
             int effective = new_raw;
             if (it->second.locked_while_printing && new_raw == 1) {
-                const auto lifecycle = static_cast<PrintState>(
-                    lv_subject_get_int(get_printer_state().get_print_lifecycle_subject()));
-                if (job_holds_machine(lifecycle)) {
+                if (job_holds_machine(get_printer_state().get_print_lifecycle())) {
                     effective = 2; // locked
                 }
             }
@@ -240,17 +234,12 @@ void PowerDeviceState::reevaluate_lock_states() {
     // Paused is 3 - so reading one and interpreting it as the other compiles,
     // runs, and answers a different question (a finished print would read as
     // "paused" and hold the lock on).
-    auto* print_subj = ps.get_print_lifecycle_subject();
-    if (!print_subj) {
-        return;
-    }
 
     // A device flagged locked_while_printing is the PSU or a bound relay. During
     // a host-side pre-start block the printer is homing and probing under power,
     // so cutting it there is as destructive as cutting it mid-layer - and the
     // wire cannot say so.
-    const auto lifecycle = static_cast<PrintState>(lv_subject_get_int(print_subj));
-    const bool is_printing = job_holds_machine(lifecycle);
+    const bool is_printing = job_holds_machine(ps.get_print_lifecycle());
 
     for (auto& [name, info] : devices_) {
         if (!info.status_subject) {

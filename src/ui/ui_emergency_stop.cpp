@@ -284,8 +284,7 @@ void EmergencyStopOverlay::update_visibility() {
     // both subjects to catch each half. That is job_holds_machine() spelled out,
     // so it asks the lifecycle once instead - one predicate, one observer, and
     // no second spelling to drift.
-    const auto lifecycle =
-        static_cast<PrintState>(lv_subject_get_int(printer_state_->get_print_lifecycle_subject()));
+    const auto lifecycle = printer_state_->get_print_lifecycle();
 
     int new_value = job_holds_machine(lifecycle) ? 1 : 0;
     int current_value = lv_subject_get_int(&estop_visible_);

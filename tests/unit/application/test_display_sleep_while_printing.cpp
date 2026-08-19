@@ -88,8 +88,7 @@ class SleepWhilePrintingFixture : public LVGLTestFixture {
     }
 
     PrintState lifecycle() const {
-        return static_cast<PrintState>(
-            lv_subject_get_int(printer_state.get_print_lifecycle_subject()));
+        return printer_state.get_print_lifecycle();
     }
 
     /// Park a fresh manager past the sleep timeout with the dim stage disabled,

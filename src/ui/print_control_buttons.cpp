@@ -86,9 +86,8 @@ ControlButtonView PrintControlButtons::current_view() const {
     auto& macros = StandardMacros::instance();
 
     ControlButtonInputs in;
-    in.job_state =
-        static_cast<helix::PrintJobState>(lv_subject_get_int(state.get_print_state_enum_subject()));
-    in.lifecycle = static_cast<PrintState>(lv_subject_get_int(state.get_print_lifecycle_subject()));
+    in.job_state = state.get_print_job_state();
+    in.lifecycle = state.get_print_lifecycle();
     in.has_preparing_job = state.has_preparing_job();
     in.pending = pending_action_;
     in.pause_available = !macros.get(StandardMacroSlot::Pause).is_empty();

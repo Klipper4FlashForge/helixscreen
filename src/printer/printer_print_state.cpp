@@ -1227,6 +1227,11 @@ PrintJobState PrinterPrintState::get_print_job_state() const {
         lv_subject_get_int(const_cast<lv_subject_t*>(&print_state_enum_)));
 }
 
+PrintState PrinterPrintState::get_print_lifecycle() const {
+    return static_cast<PrintState>(
+        lv_subject_get_int(const_cast<lv_subject_t*>(&print_lifecycle_)));
+}
+
 bool PrinterPrintState::can_start_new_print() const {
     // Check if a print workflow is already in progress (UI state)
     // This prevents double-tap issues during long G-code modification workflows

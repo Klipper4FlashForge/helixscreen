@@ -124,9 +124,8 @@ std::string LedAutoState::compute_state_key() const {
     }
 
     // Check print job state
-    auto* print_subj = printer_state_->get_print_state_enum_subject();
-    if (print_subj) {
-        auto print_state = static_cast<PrintJobState>(lv_subject_get_int(print_subj));
+    if (printer_state_->are_subjects_initialized()) {
+        auto print_state = printer_state_->get_print_job_state();
         switch (print_state) {
         case PrintJobState::PRINTING:
             return "printing";

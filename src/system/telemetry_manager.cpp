@@ -3011,6 +3011,8 @@ float s_telemetry_filament_used_mm = 0.0f;
 /// Observer callback for print state transitions (telemetry recording)
 void on_print_state_changed_for_telemetry(lv_observer_t* observer, lv_subject_t* subject) {
     (void)observer;
+    // PRINT_STATE_CAST_OK: `subject` IS print_state_enum. Telemetry's terminal
+    // classification is deliberately on the wire.
     auto current = static_cast<PrintJobState>(lv_subject_get_int(subject));
 
     // Publish to off-main memory_warning context (relaxed: telemetry only).
