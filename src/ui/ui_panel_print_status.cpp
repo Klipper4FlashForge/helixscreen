@@ -2686,8 +2686,12 @@ void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
     auto outcome =
         static_cast<PrintOutcome>(lv_subject_get_int(printer_state_.get_print_outcome_subject()));
 
-    // Delegate state mapping and transition logic to lifecycle
-    auto result = lifecycle_.on_job_state_changed(job_state, outcome);
+    // Delegate state mapping and transition logic to lifecycle. The live phase
+    // goes in too: without it this derives Printing (or Complete) while the
+    // published print_lifecycle correctly says Preparing, and the two disagree
+    // for the whole pre-print window.
+    const int start_phase = lv_subject_get_int(printer_state_.get_print_start_phase_subject());
+    auto result = lifecycle_.on_job_state_changed(job_state, outcome, start_phase);
     if (!result.state_changed) {
         return;
     }

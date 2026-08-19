@@ -79,9 +79,22 @@ class PrintLifecycleState {
      *
      * Maps PrintJobState + PrintOutcome to the internal PrintState enum and
      * computes all transition side-effects.
+     *
+     * @param start_phase The LIVE pre-print phase, so this derives the same
+     *        answer as `PrinterPrintState::publish_lifecycle_state()` does for
+     *        the `print_lifecycle` subject. It used to hard-code 0 on the
+     *        reasoning that `on_start_phase_changed()` owned that axis, which is
+     *        false: a job-state change arriving while a phase is live must still
+     *        let the phase outrank it, exactly as `derive_print_state()` says.
+     *        Hard-coding 0 made this object disagree with the published subject
+     *        for the whole of a pre-print window - `Printing` instead of
+     *        `Preparing` on a firmware-side `PRINT_START`, and `Complete`
+     *        instead of `Preparing` when a host-side block runs after a finished
+     *        job. Defaulted to 0 so the phase-less unit tests, which exercise
+     *        this axis deliberately, keep reading as written.
      */
     StateChangeResult on_job_state_changed(helix::PrintJobState job_state,
-                                           helix::PrintOutcome outcome);
+                                           helix::PrintOutcome outcome, int start_phase = 0);
 
     /**
      * @brief Update print progress percentage

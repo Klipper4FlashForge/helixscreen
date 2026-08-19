@@ -51,9 +51,13 @@ PrintState derive_print_state(helix::PrintJobState job_state, int start_phase) {
 }
 
 StateChangeResult PrintLifecycleState::on_job_state_changed(helix::PrintJobState job_state,
-                                                            helix::PrintOutcome /* outcome */) {
-    // No phase is in play here - on_start_phase_changed() owns that axis.
-    PrintState new_state = derive_print_state(job_state, /*start_phase=*/0);
+                                                            helix::PrintOutcome /* outcome */,
+                                                            int start_phase) {
+    // Same function, same inputs as publish_lifecycle_state() - so this object
+    // and the print_lifecycle subject agree by construction rather than by
+    // coincidence. A live phase outranks the job state; that is the whole point
+    // of derive_print_state() and it applies here too.
+    PrintState new_state = derive_print_state(job_state, start_phase);
 
     if (new_state == current_state_) {
         spdlog::trace("[PrintLifecycleState] state unchanged: {}", print_state_name(new_state));

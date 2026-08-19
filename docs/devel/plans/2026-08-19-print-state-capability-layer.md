@@ -336,8 +336,19 @@ inside one `update_from_status` batch (e.g. `printer_print_state.cpp:436` then
 (`:3049`) from it is not safe without checking. Verify under
 `HELIX_MOCK_AUTO_PRINT=1 --sim-speed 6 -vvv`.
 
-Dead API found on the way: `get_state()` (`ui_panel_print_status.h:227`) and
-`get_progress()` (`:247`) have no callers anywhere. Delete.
+Unused API found on the way: `get_state()` (`ui_panel_print_status.h:227`) and
+`get_progress()` (`:247`) had no callers anywhere.
+
+**`get_state()` is now the test seam** - `tests/unit/test_print_status_lifecycle_seam.cpp`
+uses it to compare the panel's belief against the published subject, which is the
+only way to observe the disagreement. Keep it. `get_progress()` is still unused;
+delete it, or leave it and say why.
+
+The seam tests drive the panel through its **real observer path** - subject
+writes plus a queue drain - rather than calling the private handlers, so they
+exercise the ordering the refactor has to preserve. Drive points:
+`update_from_status()` for the job state, `set_print_start_state()` for the
+phase.
 
 **Exit criteria**
 - [x] `set_print_in_progress()` has no callers outside `PrinterPrintState`.
