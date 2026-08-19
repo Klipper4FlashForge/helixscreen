@@ -212,6 +212,46 @@ TEST_CASE_METHOD(PanelLifecycleFixture, "a completed print keeps its numbers whe
     REQUIRE(panel_->get_progress() == 100);
 }
 
+// ============================================================================
+// The per-job resets — a side effect, not a state value
+//
+// Every other test in this file asserts which STATE the panel holds. That is
+// exactly what missed this: for a print started in-app the panel is already
+// Preparing when Moonraker reports printing, so on_job_state_changed() derives
+// Preparing == current, returns state_changed=false and bails before the resets.
+// Panel and published lifecycle still AGREE the whole way, so an agreement
+// assertion passes while every side effect behind that early return is skipped.
+// ============================================================================
+
+TEST_CASE_METHOD(PanelLifecycleFixture,
+                 "a print started in-app still clears the previous print's end-overlay dismissal",
+                 "[print_status][lifecycle_seam][resets]") {
+    lv_subject_t* dismissed = lv_xml_get_subject(nullptr, "end_overlay_dismissed");
+    REQUIRE(dismissed != nullptr);
+
+    // Print A finishes and the user dismisses its end overlay.
+    report_job_state("printing");
+    report_job_state("complete");
+    lv_subject_set_int(dismissed, 1);
+    drain();
+    REQUIRE(lv_subject_get_int(dismissed) == 1);
+
+    // Print B is started FROM THE PANEL: the phase is raised before the printer
+    // reports anything, which is what makes the job-state edge invisible.
+    set_phase(helix::PrintStartPhase::INITIALIZING);
+    REQUIRE(panel_state() == PrintState::Preparing);
+
+    report_job_state("printing");
+    REQUIRE(panel_state() == PrintState::Preparing); // phase still outranks
+
+    // PRINT_START ends. This is the only edge that sees print B at all.
+    set_phase(helix::PrintStartPhase::IDLE);
+    REQUIRE(panel_state() == PrintState::Printing);
+
+    // Print B must be able to show its own outcome.
+    REQUIRE(lv_subject_get_int(dismissed) == 0);
+}
+
 TEST_CASE_METHOD(PanelLifecycleFixture, "a terminal state does not reset to Idle on its own",
                  "[print_status][lifecycle_seam][freeze]") {
     // Complete must persist so the badge and Reprint button stay reachable; it

@@ -2678,6 +2678,28 @@ void PrintStatusPanel::on_print_progress_changed(int progress) {
     spdlog::trace("[{}] Progress updated: {}%", get_name(), lifecycle_.progress());
 }
 
+void PrintStatusPanel::apply_new_print_resets(bool reset_progress_bar,
+                                              bool clear_excluded_objects) {
+    if (reset_progress_bar) {
+        if (progress_bar_) {
+            lv_bar_set_value(progress_bar_, 0, LV_ANIM_OFF);
+        }
+        complete_view_mode_ = false;
+        // Reset toggle icon to default (progress view)
+        if (const char* icon = lv_xml_get_const(nullptr, "icon_cube")) {
+            lv_subject_copy_string(&view_toggle_icon_subject_, icon);
+        }
+        // Clear any prior end-overlay dismissal so the next outcome surfaces.
+        lv_subject_set_int(&end_overlay_dismissed_subject_, 0);
+        spdlog::debug("[{}] Reset progress bar and view toggle for new print", get_name());
+    }
+
+    if (clear_excluded_objects && exclude_manager_) {
+        exclude_manager_->clear_excluded_objects();
+        spdlog::debug("[{}] Cleared excluded objects for new print", get_name());
+    }
+}
+
 void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
     spdlog::debug("[{}] on_print_state_changed() job_state={} current_state={}", get_name(),
                   static_cast<int>(job_state), static_cast<int>(lifecycle_.state()));
@@ -2808,23 +2830,9 @@ void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
     // covers PRINTING→PAUSED, PAUSED→PRINTING, PAUSED→CANCELLED, mid-print attach.
     recompute_paused_overlay_visibility();
 
-    if (result.should_reset_progress_bar) {
-        if (progress_bar_) {
-            lv_bar_set_value(progress_bar_, 0, LV_ANIM_OFF);
-        }
-        complete_view_mode_ = false;
-        // Reset toggle icon to default (progress view)
-        if (const char* icon = lv_xml_get_const(nullptr, "icon_cube")) {
-            lv_subject_copy_string(&view_toggle_icon_subject_, icon);
-        }
-        // Clear any prior end-overlay dismissal so the next outcome surfaces.
-        lv_subject_set_int(&end_overlay_dismissed_subject_, 0);
-        spdlog::debug("[{}] Reset progress bar and view toggle for new print", get_name());
-    }
-
-    if (result.should_clear_excluded_objects && exclude_manager_) {
-        exclude_manager_->clear_excluded_objects();
-        spdlog::debug("[{}] Cleared excluded objects for new print", get_name());
+    if (result.should_reset_progress_bar || result.should_clear_excluded_objects) {
+        apply_new_print_resets(result.should_reset_progress_bar,
+                               result.should_clear_excluded_objects);
     }
 
     // Transition remaining display from preprint observer back to Moonraker's time_left
@@ -3110,6 +3118,23 @@ void PrintStatusPanel::on_print_start_phase_changed(int phase) {
         }
     } else if (!preparing && state_changed) {
         // Preparation complete - lifecycle restored state from current job state
+
+        // The per-job resets have to fire HERE for a print started in-app. The
+        // panel is already Preparing before Moonraker reports printing, so
+        // on_job_state_changed() derives Preparing == current, reports
+        // state_changed=false and returns early: its should_reset_progress_bar /
+        // should_clear_excluded_objects never become true. Exiting Preparing is
+        // the only edge that sees the new print at all.
+        //
+        // Without this, print B opened in print A's completion view (a dismissed
+        // end overlay stays dismissed, complete_view_mode_ survives a cached
+        // panel) and carried print A's excluded objects. Externally started
+        // prints were unaffected, because those go Idle -> Printing.
+        if (lifecycle_.state() == PrintState::Printing) {
+            apply_new_print_resets(/*reset_progress_bar=*/true,
+                                   /*clear_excluded_objects=*/true);
+        }
+
         update_all_displays();
         update_button_states();
 

@@ -574,8 +574,16 @@ class PrintStatusPanel : public OverlayBase {
 #endif
     void
     load_gcode_for_viewing(const std::string& filename); ///< Download and load G-code into viewer
-    void update_button_states(); ///< Enable/disable buttons based on current print state
-    void update_objects_text();  ///< Update "X of Y obj" display from exclude state
+    void update_button_states();
+
+    /// The two per-job resets, shared by the job-state edge and the
+    /// exit-from-Preparing edge. A print started in-app only ever reaches the
+    /// second one: the panel is Preparing before Moonraker reports printing, so
+    /// the job-state handler derives no transition and returns early.
+    void apply_new_print_resets(
+        bool reset_progress_bar,
+        bool clear_excluded_objects); ///< Enable/disable buttons based on current print state
+    void update_objects_text();       ///< Update "X of Y obj" display from exclude state
     void
     update_view_toggle_position(bool objects_visible); ///< Shift view toggle when objects btn shown
     void animate_badge_pop_in(lv_obj_t* badge, const char* label); ///< Pop-in animation for badges
