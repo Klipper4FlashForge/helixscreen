@@ -573,6 +573,16 @@ class PrintSelectDetailView : public OverlayBase {
     bool gcode_download_in_flight_ = false;
     std::vector<std::function<void(bool, std::string)>> gcode_download_waiters_;
 
+    // Absolute path of Moonraker's `gcodes` root, but ONLY when Moonraker runs
+    // on this machine — "" whenever the file must come over HTTP. Resolved once
+    // per view (server.files.roots), because on the printer itself the file we
+    // were copying was already on local disk: a 13 MB G-code took 26 s to stream
+    // flash -> loopback -> flash before anything could be parsed out of it.
+    std::string local_gcodes_root_;
+    // Set once the resolve has been ATTEMPTED, so a printer with no
+    // server.files.roots (older forks) is asked once, not on every open.
+    bool local_gcodes_root_resolved_ = false;
+
     // --- Headless tools_used scan (works on ALL platforms incl. 2D-only) ---
     // The visual gcode viewer does NOT parse on 2D-only platforms (Snapmaker U1,
     // AD5M, small screens), so tools_used and the pre-flight "ready" signal must
@@ -692,6 +702,36 @@ class PrintSelectDetailView : public OverlayBase {
      * The tools-used cache key and every server-side file request use this
      * same expression — one helper, no forked twins.
      */
+    /**
+     * @brief Delete a G-code file this view downloaded; refuse anything else.
+     *
+     * Every reclaim in the view funnels here, so "is this ours to delete?" has
+     * exactly one home (is_reclaimable_download(), gcode_temp_reclaim.h). The
+     * seven call sites were each safe only while every path they held came from
+     * our own cache; a same-host open can hand them Moonraker's real print file.
+     */
+    /**
+     * @brief Absolute path of this file on local disk, or "" if unreachable.
+     *
+     * Non-empty only when Moonraker runs on this machine AND the file is there
+     * at the size the metadata promised. The returned path is Moonraker's own
+     * print file — it is deliberately never adopted into temp_gcode_path_, and
+     * reclaim_download() refuses it on top of that.
+     */
+    [[nodiscard]] std::string local_gcode_source() const;
+
+    /**
+     * @brief Kick the one-time resolve of Moonraker's gcodes root.
+     *
+     * Fire-and-forget by design. Nothing awaits it: server.files.roots is absent
+     * on older forks and unanswered by our mock client, and a load that waited
+     * for a reply that never comes would hang instead of falling back to HTTP.
+     * Until it lands, local_gcode_source() simply answers "".
+     */
+    void resolve_local_gcodes_root();
+
+    void reclaim_download(const std::string& path);
+
     [[nodiscard]] std::string current_file_key() const;
 
     /**

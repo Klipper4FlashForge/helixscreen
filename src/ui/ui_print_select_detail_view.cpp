@@ -21,10 +21,13 @@
 #include "config.h"
 #include "display_settings_manager.h"
 #include "gcode_parser.h"
+#include "gcode_temp_reclaim.h"
+#include "host_identity.h"
 #include "http_executor.h"
 #include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
+#include "moonraker_types.h"
 #include "observer_factory.h"
 #include "runtime_config.h"
 #include "settings_manager.h"
@@ -69,7 +72,7 @@ PrintSelectDetailView::~PrintSelectDetailView() {
 
     // Clean up temp gcode file
     if (!temp_gcode_path_.empty()) {
-        std::remove(temp_gcode_path_.c_str());
+        reclaim_download(temp_gcode_path_);
         temp_gcode_path_.clear();
     }
 
@@ -353,6 +356,10 @@ void PrintSelectDetailView::set_dependencies(IMoonrakerAPI* api, PrinterState* p
     api_ = api;
     printer_state_ = printer_state;
 
+    // Ask once, well before the user opens a file, and never block on the
+    // answer. A printer that never replies simply leaves us on the HTTP path.
+    resolve_local_gcodes_root();
+
     if (prep_manager_) {
         prep_manager_->set_dependencies(api_, printer_state_);
         // Per-option toggle state flows through the OptionStateProvider that
@@ -542,6 +549,91 @@ std::string PrintSelectDetailView::canonical_gcode_path() const {
            std::to_string(std::hash<std::string>{}(current_file_key())) + ".gcode";
 }
 
+void PrintSelectDetailView::resolve_local_gcodes_root() {
+    if (local_gcodes_root_resolved_ || !api_) {
+        return;
+    }
+
+    // Only worth asking when Moonraker is this machine. A remote printer's
+    // absolute root path names a filesystem we cannot see, and reading a local
+    // path that happens to match would be reading the wrong file entirely.
+    std::string host;
+    if (Config* cfg = Config::get_instance()) {
+        host = cfg->get<std::string>(cfg->df() + "moonraker_host", "localhost");
+    }
+    if (!helix::is_moonraker_on_same_host(host)) {
+        local_gcodes_root_resolved_ = true;
+        spdlog::debug("[DetailView] Moonraker is remote ('{}') — G-code comes over HTTP", host);
+        return;
+    }
+
+    auto token = lifetime_.token();
+    api_->files().get_file_roots(
+        [this, token](const std::vector<FileRoot>& roots) {
+            // === BG THREAD: pure lookup into a local, no `this` access ===
+            const std::string root = helix::readable_root_path(roots, "gcodes");
+            token.defer("DetailView::local_gcodes_root", [this, root]() {
+                local_gcodes_root_ = root;
+                local_gcodes_root_resolved_ = true;
+                spdlog::info("[DetailView] Moonraker is local; gcodes root '{}'", root);
+            });
+        },
+        [this, token](const MoonrakerError& err) {
+            auto msg = err.message;
+            token.defer("DetailView::local_gcodes_root_error", [this, msg]() {
+                // Not fatal — older forks have no server.files.roots. Latch the
+                // attempt so every subsequent open goes straight to HTTP instead
+                // of paying for this round-trip again.
+                local_gcodes_root_.clear();
+                local_gcodes_root_resolved_ = true;
+                spdlog::debug("[DetailView] server.files.roots unavailable ({}); "
+                              "G-code comes over HTTP",
+                              msg);
+            });
+        });
+}
+
+std::string PrintSelectDetailView::local_gcode_source() const {
+    if (local_gcodes_root_.empty()) {
+        return {};
+    }
+    const std::string candidate = local_gcodes_root_ + "/" + current_file_key();
+
+    // Size is the same staleness check the cached-copy path uses. It also
+    // doubles as the existence and readability probe: a file we cannot open is
+    // one we must fetch over HTTP instead.
+    std::ifstream f(candidate, std::ios::binary | std::ios::ate);
+    if (!f) {
+        spdlog::debug("[DetailView] No local G-code at '{}' — falling back to HTTP", candidate);
+        return {};
+    }
+    const auto on_disk_bytes = static_cast<size_t>(f.tellg());
+    if (on_disk_bytes == 0) {
+        return {};
+    }
+    if (current_file_size_bytes_ != 0 && on_disk_bytes != current_file_size_bytes_) {
+        spdlog::warn("[DetailView] Local G-code size mismatch (disk={}, expected={}) — "
+                     "falling back to HTTP",
+                     on_disk_bytes, current_file_size_bytes_);
+        return {};
+    }
+    return candidate;
+}
+
+void PrintSelectDetailView::reclaim_download(const std::string& path) {
+    // Single gate for every reclaim in this file. is_reclaimable_download()
+    // owns the rule; this owns the side effect and the refusal log, so a path
+    // we do not own is a no-op rather than a deleted print file.
+    if (path.empty()) {
+        return;
+    }
+    if (!helix::ui::is_reclaimable_download(path, get_helix_cache_dir("gcode_temp"))) {
+        spdlog::debug("[DetailView] Not reclaiming '{}' — not a file we downloaded", path);
+        return;
+    }
+    std::remove(path.c_str());
+}
+
 std::string PrintSelectDetailView::current_file_key() const {
     return current_path_.empty() ? current_filename_ : current_path_ + "/" + current_filename_;
 }
@@ -553,6 +645,20 @@ void PrintSelectDetailView::ensure_gcode_downloaded(
         cb(false, {});
         return;
     }
+    // 0. Moonraker runs here, so its copy IS the file — no transfer, no second
+    //    copy on the same flash. This only CONSULTS the answer; the resolve is
+    //    kicked once from set_dependencies() and never awaited here. Awaiting it
+    //    would hang this load outright on any Moonraker that does not answer
+    //    server.files.roots — which includes older forks and our own mock
+    //    client, neither of which invokes either callback. The path deliberately
+    //    never becomes temp_gcode_path_: it is the user's print file, not
+    //    something we may delete (reclaim_download() refuses it too).
+    if (const std::string local = local_gcode_source(); !local.empty()) {
+        spdlog::info("[DetailView] Using Moonraker's own G-code in place: {}", local);
+        cb(true, local);
+        return;
+    }
+
     const std::string path = canonical_gcode_path();
 
     // 1. A transfer is already running — join it. Checked BEFORE the disk
@@ -579,7 +685,7 @@ void PrintSelectDetailView::ensure_gcode_downloaded(
         spdlog::warn("[DetailView] Cached G-code size mismatch (disk={}, expected={}) - "
                      "re-downloading",
                      on_disk_bytes, current_file_size_bytes_);
-        std::remove(path.c_str());
+        reclaim_download(path);
         // Fall through to a fresh transfer below.
     }
 
@@ -598,7 +704,7 @@ void PrintSelectDetailView::ensure_gcode_downloaded(
                 // Retire the previous file's temp copy (kept from the old
                 // pre-download cleanup) and adopt this one for teardown.
                 if (!temp_gcode_path_.empty() && temp_gcode_path_ != local) {
-                    std::remove(temp_gcode_path_.c_str());
+                    reclaim_download(temp_gcode_path_);
                 }
                 temp_gcode_path_ = local;
                 gcode_download_in_flight_ = false;
@@ -613,7 +719,7 @@ void PrintSelectDetailView::ensure_gcode_downloaded(
                 spdlog::warn("[DetailView] Shared G-code download failed: {}", err.message);
                 // Drop any partial file the failed transfer left behind so a
                 // later open doesn't mistake it for a complete cached copy.
-                std::remove(path.c_str());
+                reclaim_download(path);
                 gcode_download_in_flight_ = false;
                 auto waiters = std::move(gcode_download_waiters_);
                 gcode_download_waiters_.clear();
@@ -777,7 +883,7 @@ void PrintSelectDetailView::on_ui_destroyed() {
 
     // Clean up temp gcode file so stale cached data doesn't persist
     if (!temp_gcode_path_.empty()) {
-        std::remove(temp_gcode_path_.c_str());
+        reclaim_download(temp_gcode_path_);
         temp_gcode_path_.clear();
     }
 
@@ -789,7 +895,7 @@ void PrintSelectDetailView::on_ui_destroyed() {
     // download, so the in-flight partial needs its own removal.
     gcode_download_in_flight_ = false;
     gcode_download_waiters_.clear();
-    std::remove(canonical_gcode_path().c_str());
+    reclaim_download(canonical_gcode_path());
 
     // Null all child widget pointers (widget tree already deleted by base class)
     // Note: parent_screen_ is NOT nulled — it's the parent screen (not a child
@@ -1738,13 +1844,19 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                 if (temp_gcode_path_ == path) {
                     temp_gcode_path_.clear();
                 }
-                std::remove(path.c_str());
+                reclaim_download(path);
             }
             show_gcode_viewer(false);
             return;
         }
 
-        temp_gcode_path_ = path; // adopted for teardown cleanup, as before
+        // Adopt for teardown cleanup, but only what is ours to delete — the
+        // same rule reclaim_download() enforces at the sink. A same-host open
+        // hands us Moonraker's own print file, and recording that here would be
+        // misleading state even though the sink already refuses it.
+        if (helix::ui::is_reclaimable_download(path, get_helix_cache_dir("gcode_temp"))) {
+            temp_gcode_path_ = path;
+        }
         spdlog::info("[DetailView] Using G-code file ({} bytes): {}", local_size, path);
         begin_viewer_load(path);
     });

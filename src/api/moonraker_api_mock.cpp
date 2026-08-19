@@ -551,6 +551,61 @@ void MoonrakerFileTransferAPIMock::download_file_partial(const std::string& root
     }
 }
 
+void MoonrakerFileTransferAPIMock::download_file_tail(const std::string& root,
+                                                      const std::string& path, size_t max_bytes,
+                                                      StringCallback on_success,
+                                                      ErrorCallback on_error) {
+    std::string filename = path;
+    size_t last_slash = path.rfind('/');
+    if (last_slash != std::string::npos) {
+        filename = path.substr(last_slash + 1);
+    }
+
+    spdlog::debug("[MoonrakerAPIMock] download_file_tail: root='{}', path='{}', max_bytes={}", root,
+                  path, max_bytes);
+
+    std::string local_path = find_test_file(filename);
+    if (local_path.empty()) {
+        spdlog::warn("[MoonrakerAPIMock] File not found in test directories: {}", filename);
+        if (on_error) {
+            on_error(MoonrakerError::file_not_found("download_file_tail",
+                                                    "Mock file not found: " + filename));
+        }
+        return;
+    }
+
+    std::ifstream file(local_path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        spdlog::error("[MoonrakerAPIMock] Failed to read file: {}", local_path);
+        if (on_error) {
+            on_error(MoonrakerError::file_not_found("download_file_tail",
+                                                    "Failed to read test file: " + filename));
+        }
+        return;
+    }
+
+    // Mirror the suffix-range contract: a file shorter than max_bytes yields the
+    // whole file, never a short read from a negative offset.
+    const auto size = static_cast<size_t>(file.tellg());
+    const size_t want = std::min(max_bytes, size);
+    file.seekg(static_cast<std::streamoff>(size - want), std::ios::beg);
+
+    std::string content;
+    content.resize(want);
+    if (want > 0) {
+        file.read(&content[0], static_cast<std::streamsize>(want));
+        content.resize(static_cast<size_t>(file.gcount()));
+    }
+    file.close();
+
+    spdlog::debug("[MoonrakerAPIMock] Tail download {} (last {} of {} bytes)", filename,
+                  content.size(), size);
+
+    if (on_success) {
+        on_success(content);
+    }
+}
+
 void MoonrakerFileTransferAPIMock::download_file_to_path(
     const std::string& root, const std::string& path, const std::string& dest_path,
     StringCallback on_success, ErrorCallback on_error, ProgressCallback on_progress) {
