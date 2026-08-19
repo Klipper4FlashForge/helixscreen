@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu 项更改'
   '%zu events queued': '%zu 个事件已排队'
   '%zu plugins failed to load': '%zu 个插件加载失败'
+  (different grade): ''
   (incompatible): (不兼容)
   (multi-tool): (多工具)
   (none detected): (未检测到)
@@ -305,6 +306,8 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: 旁路模式
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass active — this print runs on the external spool.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: 旁路由硬件传感器控制
   Bypass controlled by sensor: 旁通由传感器控制
   Bypass disabled: 旁通已禁用
@@ -961,6 +964,7 @@ translations:
   Filament controls are unavailable while printing.: ''
   Filament deleted: 耗材已删除
   Filament diameter sensors for flow compensation: 耗材直径传感器用于流量补偿
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: 耗材松弛
   Filament is pulling tight: 耗材拉紧
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
@@ -1961,8 +1965,9 @@ translations:
   Require confirmation before emergency stop: 紧急停止前需要确认
   Requires Moonraker power device: 需要 Moonraker 电源设备
   Requires Moonraker-Timelapse plugin: 需要 Moonraker-Timelapse 插件
-  Requires Multi-Filament System or MMU hardware: 需要多耗材系统或 MMU 硬件
-  Requires clog detection hardware: 需要堵塞检测硬件
+  Requires Multi-Filament System or MMU hardware: '需要多耗材系统或 MMU 硬件'
+  Requires a filament system with bypass: ''
+  Requires clog detection hardware: '需要堵塞检测硬件'
   Resend write failed at chunk {}: 区块 {} 重发写入失败
   Reset: 重置
   Reset Blade Counter: 重置刀片计数器
@@ -2506,10 +2511,12 @@ translations:
   Tips database not found: 未找到提示数据库
   Toggle: 切换
   Toggle (fire-and-forget): 切换（无状态跟踪）
-  Toggle AFC LED strip: 切换 AFC LED 灯带
-  Toggle Auto-Refill: 切换自动续料
-  Toggle Quiet Mode: 切换静音模式
-  Toggle toolhead LED for an extruder: 切换某个挤出机的工具头 LED
+  Toggle AFC LED strip: '切换 AFC LED 灯带'
+  Toggle Auto-Refill: '切换自动续料'
+  Toggle Moonraker power devices: '切换 Moonraker 电源设备'
+  Toggle Quiet Mode: '切换静音模式'
+  Toggle external spool bypass: ''
+  Toggle toolhead LED for an extruder: '切换某个挤出机的工具头 LED'
   'Toggle:': '切换:'
   Too humid: 湿度过高
   Tool: 工具

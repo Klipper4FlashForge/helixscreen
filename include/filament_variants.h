@@ -49,6 +49,24 @@ namespace filament {
 std::string extract_base_material(std::string_view name);
 
 /**
+ * @brief Are these two names the same polymer, for compatibility purposes?
+ *
+ * Exact match, else reduce both through extract_base_material() and compare
+ * their filament-database compat groups. The reduction is the point: comparing
+ * groups on RAW names sends anything that is not literally a MATERIALS[] row
+ * ("PLA SnapSpeed", "HT-PLA-GF", most spool-database names) into
+ * are_materials_compatible()'s unknown-material fallback, which answers
+ * "compatible with everything".
+ *
+ * A name that survives reduction unrecognised still gets that permissive
+ * answer, deliberately: a firmware-only or hand-typed material should not block
+ * the user. The difference is that a name we CAN read is now read.
+ *
+ * @see grades_match() for the finer question this one does not ask.
+ */
+bool materials_compatible(std::string_view a, std::string_view b);
+
+/**
  * @brief Do two names carry the same set of grade-significant fillers?
  *
  * One step finer than extract_base_material(): both "PLA+" and "PLA-CF" reduce

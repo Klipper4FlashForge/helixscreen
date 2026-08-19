@@ -496,7 +496,9 @@ class AmsState {
 
     /**
      * @brief Get toolchange text subject ("2 / 5" formatted)
-     * 1-based display: current_toolchange+1 of number_of_toolchanges.
+     * 1-based display: current_toolchange+1 of number_of_toolchanges, clamped to
+     * the total. The +1 lives in the UI formatter, so every backend must have
+     * already normalized its firmware counter to a 0-based index (-1 = none yet).
      * Empty string when not applicable.
      */
     lv_subject_t* get_toolchange_text_subject() {
@@ -539,6 +541,17 @@ class AmsState {
      */
     lv_subject_t* get_external_spool_color_subject() {
         return &external_spool_color_;
+    }
+
+    /**
+     * @brief Get external spool material subject (string)
+     * @return Subject holding the external spool's material name
+     *         (e.g. "PLA"), "" if no external spool assigned. Pure reflector
+     *         of get_external_spool_info() — updated at every site that
+     *         updates external_spool_color_.
+     */
+    lv_subject_t* get_external_spool_material_subject() {
+        return &external_spool_material_;
     }
 
     /**
@@ -1353,6 +1366,16 @@ class AmsState {
      *
      * @return true if AMS is actively loading, unloading, or performing related ops
      */
+    /**
+     * @brief Take the one-shot "an unload just finished" runout grace.
+     *
+     * True at most once per unload. The companion to
+     * is_filament_operation_active(): that answers "is filament moving right
+     * now", this answers "did the removal we are about to react to come from an
+     * unload the user just asked for". Retired if filament returns first.
+     */
+    [[nodiscard]] bool consume_post_unload_runout_grace();
+
     bool is_filament_operation_active();
 
     /**
@@ -1549,6 +1572,10 @@ class AmsState {
     /// slot-delta scan notices it, and the pre-print filament check would keep
     /// serving a stale result.
     bool last_bypass_active_{false};
+    /// One-shot: an unload completed and its removal edge has not arrived yet.
+    bool post_unload_runout_grace_{false};
+    /// Whether the operation currently in flight has passed through UNLOADING.
+    bool saw_unload_in_op_{false};
     /// prev_backend_runout_ has no meaning yet, so the first sample seeds it
     /// instead of counting as an edge — a flag that was already true when we
     /// connected (or when a backend was swapped in) describes no transition we
@@ -1556,6 +1583,11 @@ class AmsState {
     bool runout_level_seeded_{false};
     lv_subject_t bypass_active_;
     lv_subject_t external_spool_color_;
+    /// External spool material name — string flavor of external_spool_color_.
+    /// Pure reflector of get_external_spool_info(); mirrors the color subject's
+    /// update sites so XML text bindings stay in lockstep with the color dot.
+    lv_subject_t external_spool_material_;
+    char external_spool_material_buf_[32]; // "PLA", "PETG-CF", ... fits comfortably
     lv_subject_t supports_bypass_;
     lv_subject_t ams_slot_count_;
     lv_subject_t ams_cards_compact_;

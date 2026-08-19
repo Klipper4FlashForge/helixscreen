@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu cambios'
   '%zu events queued': '%zu eventos en cola'
   '%zu plugins failed to load': '%zu plugins no se cargaron'
+  (different grade): ''
   (incompatible): (incompatible)
   (multi-tool): (multiherramienta)
   (none detected): (ninguno detectado)
@@ -305,6 +306,8 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: Modo Bypass
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass active — this print runs on the external spool.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: Bypass controlado por sensor de hardware
   Bypass controlled by sensor: Bypass controlado por sensor
   Bypass disabled: Bypass desactivado
@@ -960,7 +963,9 @@ translations:
   Filament by Type: Filamento por Tipo
   Filament controls are unavailable while printing.: ''
   Filament deleted: Filamento eliminado
-  Filament diameter sensors for flow compensation: Sensores de diámetro de filamento para compensación de flujo
+  Filament diameter sensors for flow compensation: Sensores de diámetro de filamento
+    para compensación de flujo
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: El filamento está suelto
   Filament is pulling tight: El filamento está tirando tenso
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
@@ -1968,9 +1973,11 @@ translations:
   Require confirmation before emergency stop: Requerir confirmación antes de parada de emergencia
   Requires Moonraker power device: Requiere un dispositivo de energía de Moonraker
   Requires Moonraker-Timelapse plugin: Requiere plugin Moonraker-Timelapse
-  Requires Multi-Filament System or MMU hardware: Requiere sistema multi-filamento o hardware MMU
-  Requires clog detection hardware: Requiere hardware de detección de atascos
-  Resend write failed at chunk {}: Error al reenviar la escritura en el fragmento {}
+  Requires Multi-Filament System or MMU hardware: 'Requiere sistema multi-filamento o hardware MMU'
+  Requires a filament system with bypass: ''
+  Requires clog detection hardware: 'Requiere hardware de detección de atascos'
+  Resend write failed at chunk {}: Error al reenviar la escritura en el fragmento
+    {}
   Reset: Restablecer
   Reset Blade Counter: Restablecer el contador de cuchilla
   Reset CFS: Restablecer CFS
@@ -2513,10 +2520,12 @@ translations:
   Tips database not found: Base de datos de consejos no encontrada
   Toggle: Alternar
   Toggle (fire-and-forget): Alternar (fire-and-forget)
-  Toggle AFC LED strip: Alternar la tira LED del AFC
-  Toggle Auto-Refill: Alternar el rellenado automático
-  Toggle Quiet Mode: Alternar el modo silencioso
-  Toggle toolhead LED for an extruder: Alternar el LED del cabezal para un extrusor
+  Toggle AFC LED strip: 'Alternar la tira LED del AFC'
+  Toggle Auto-Refill: 'Alternar el rellenado automático'
+  Toggle Moonraker power devices: 'Alternar dispositivos de energía de Moonraker'
+  Toggle Quiet Mode: 'Alternar el modo silencioso'
+  Toggle external spool bypass: ''
+  Toggle toolhead LED for an extruder: 'Alternar el LED del cabezal para un extrusor'
   'Toggle:': 'Conmutar:'
   Too humid: Demasiado húmedo
   Tool: Herramienta

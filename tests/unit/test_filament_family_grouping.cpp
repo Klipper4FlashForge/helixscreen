@@ -306,6 +306,45 @@ TEST_CASE("every filled database material reads as filled", "[filament][family][
 }
 
 // ===========================================================================
+// materials_compatible: one answer to "same polymer?"
+// ===========================================================================
+
+TEST_CASE("materials_compatible reduces before comparing groups", "[filament][family][compat]") {
+    CHECK(filament::materials_compatible("PLA", "PLA-CF"));
+    CHECK(filament::materials_compatible("PLA", "PLA+"));
+    CHECK(filament::materials_compatible("ABS", "ASA")); // one compat group
+    CHECK_FALSE(filament::materials_compatible("PLA", "PETG"));
+    CHECK_FALSE(filament::materials_compatible("PLA", "ABS"));
+}
+
+TEST_CASE("materials_compatible sees through a decorated product name",
+          "[filament][family][compat]") {
+    // The bug this function exists to close: are_materials_compatible() looks a
+    // name up in MATERIALS[] and reads a miss as "unknown, compatible with
+    // everything". A name the family reducer CAN read must never reach that
+    // fallback, or a lane the user labelled from a spool database silently
+    // pairs with any other lane.
+    CHECK_FALSE(filament::materials_compatible("PLA SnapSpeed", "ABS"));
+    CHECK_FALSE(filament::materials_compatible("HT-PLA-GF", "PETG"));
+    CHECK(filament::materials_compatible("PLA SnapSpeed", "PLA"));
+    CHECK(filament::materials_compatible("HT-PLA-GF", "PLA-CF"));
+
+    // Proof the old rule really was permissive here, so this test cannot quietly
+    // stop testing anything if the two implementations are ever re-merged.
+    CHECK(filament::are_materials_compatible("PLA SnapSpeed", "ABS"));
+}
+
+TEST_CASE("materials_compatible stays permissive for genuinely unknown names",
+          "[filament][family][compat]") {
+    // Nothing to reduce and nothing in the database: an unrecognised name is
+    // compatible with anything, which keeps a firmware-only or hand-typed
+    // material from blocking the user. Deliberate, and the reason the previous
+    // case has to name something the reducer CAN read.
+    CHECK(filament::materials_compatible("Unobtainium", "PLA"));
+    CHECK(filament::materials_compatible("Unobtainium", "Unobtainium"));
+}
+
+// ===========================================================================
 // Blast-radius guard: materials_match() must be unchanged
 // ===========================================================================
 

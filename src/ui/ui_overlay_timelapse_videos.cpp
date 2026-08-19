@@ -3,6 +3,9 @@
 
 #include "ui_overlay_timelapse_videos.h"
 
+#include "helix_plugin_installer.h"
+#include "host_identity.h"
+
 #if HELIX_HAS_TIMELAPSE_VIEWER
 
 #include "ui_callback_helpers.h"

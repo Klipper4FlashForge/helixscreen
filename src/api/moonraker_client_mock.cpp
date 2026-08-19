@@ -264,19 +264,24 @@ MoonrakerClientMock::~MoonrakerClientMock() {
     // use-after-free when a subsequent test calls process_lvgl().
     // Timer callbacks self-delete via lv_timer_delete, so some tracked pointers
     // may be stale. Verify each exists in LVGL's timer list before deleting.
+    // The payload deleter runs either way when the timer is still armed: the
+    // callback that would have freed it will never fire.
     if (lv_is_initialized()) {
-        for (auto* tracked : calibration_timers_) {
+        for (auto& tracked : calibration_timers_) {
             bool still_alive = false;
             lv_timer_t* t = lv_timer_get_next(nullptr);
             while (t) {
-                if (t == tracked) {
+                if (t == tracked.timer) {
                     still_alive = true;
                     break;
                 }
                 t = lv_timer_get_next(t);
             }
             if (still_alive) {
-                lv_timer_delete(tracked);
+                if (tracked.free_payload) {
+                    tracked.free_payload();
+                }
+                lv_timer_delete(tracked.timer);
             }
         }
     }
@@ -1995,7 +2000,7 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
             },
             500, sim);                       // 500ms between cycles for quick mock
         lv_timer_set_repeat_count(timer, 6); // 5 progress + 1 result
-        calibration_timers_.push_back(timer);
+        calibration_timers_.push_back({timer, [sim] { delete sim; }});
 
         return 0; // Success - results come asynchronously via gcode_response
     }
@@ -2063,7 +2068,7 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
             },
             500, sim);
         lv_timer_set_repeat_count(timer, total_phases + 1);
-        calibration_timers_.push_back(timer);
+        calibration_timers_.push_back({timer, [sim] { delete sim; }});
 
         return 0; // Success - results come asynchronously via gcode_response
     }
@@ -4776,14 +4781,16 @@ void MoonrakerClientMock::dispatch_shaper_calibrate_response(char axis) {
                 "[MoonrakerClientMock] Dispatched SHAPER_CALIBRATE response for axis {}",
                 static_cast<char>(std::toupper(static_cast<unsigned char>(s->axis_lower))));
             auto& timers = s->mock->calibration_timers_;
-            timers.erase(std::remove(timers.begin(), timers.end(), t), timers.end());
+            timers.erase(std::remove_if(timers.begin(), timers.end(),
+                                        [t](const CalibrationTimer& ct) { return ct.timer == t; }),
+                         timers.end());
             delete s;
             lv_timer_delete(t);
         },
         100, sim); // 100ms between lines for snappy animation
 
     lv_timer_set_repeat_count(timer, total_steps);
-    calibration_timers_.push_back(timer);
+    calibration_timers_.push_back({timer, [sim] { delete sim; }});
 
     spdlog::info("[MoonrakerClientMock] Started SHAPER_CALIBRATE timer for axis {} ({:.0f}-{:.0f} "
                  "Hz sweep)",

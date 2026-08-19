@@ -1093,6 +1093,14 @@ void PrintStatusWidget::check_and_show_idle_runout_modal() {
         return;
     }
 
+    // An unload the user just asked for ends by dragging filament off the
+    // sensor. is_filament_operation_active() above only covers the window while
+    // the action runs, and the removal edge can land seconds after it finishes.
+    if (AmsState::instance().consume_post_unload_runout_grace()) {
+        spdlog::info("[PrintStatusWidget] Skipping runout modal — filament left after an unload");
+        return;
+    }
+
     // Only show modal if not already shown
     if (runout_modal_shown_) {
         spdlog::debug("[PrintStatusWidget] Runout modal already shown - skipping");

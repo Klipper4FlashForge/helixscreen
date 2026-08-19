@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu alterações'
   '%zu events queued': '%zu eventos na fila'
   '%zu plugins failed to load': '%zu plugins falharam ao carregar'
+  (different grade): ''
   (incompatible): (incompatível)
   (multi-tool): (multiferramenta)
   (none detected): (nenhum detectado)
@@ -305,6 +306,8 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: Modo Bypass
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass active — this print runs on the external spool.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: Bypass controlado por sensor de hardware
   Bypass controlled by sensor: Bypass controlado por sensor
   Bypass disabled: Bypass desativado
@@ -960,7 +963,9 @@ translations:
   Filament by Type: Filamento por Tipo
   Filament controls are unavailable while printing.: ''
   Filament deleted: Filamento excluído
-  Filament diameter sensors for flow compensation: Sensores de diâmetro de filamento para compensação de fluxo
+  Filament diameter sensors for flow compensation: Sensores de diâmetro de filamento
+    para compensação de fluxo
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: O filamento está solto
   Filament is pulling tight: O filamento está puxando com tensão
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
@@ -1968,8 +1973,9 @@ translations:
   Require confirmation before emergency stop: Exigir confirmação antes da parada de emergência
   Requires Moonraker power device: Requer um dispositivo de energia do Moonraker
   Requires Moonraker-Timelapse plugin: Requer plugin Moonraker-Timelapse
-  Requires Multi-Filament System or MMU hardware: Requer sistema multi-filamento ou hardware MMU
-  Requires clog detection hardware: Requer hardware de detecção de entupimento
+  Requires Multi-Filament System or MMU hardware: 'Requer sistema multi-filamento ou hardware MMU'
+  Requires a filament system with bypass: ''
+  Requires clog detection hardware: 'Requer hardware de detecção de entupimento'
   Resend write failed at chunk {}: Falha ao reenviar a escrita no fragmento {}
   Reset: Resetar
   Reset Blade Counter: Resetar o contador de lâmina
@@ -2513,10 +2519,12 @@ translations:
   Tips database not found: Banco de dados de dicas não encontrado
   Toggle: Alternar
   Toggle (fire-and-forget): Alternar (sem rastreamento)
-  Toggle AFC LED strip: Alternar a fita LED do AFC
-  Toggle Auto-Refill: Alternar o reabastecimento automático
-  Toggle Quiet Mode: Alternar o modo silencioso
-  Toggle toolhead LED for an extruder: Alternar o LED do cabeçote para um extrusor
+  Toggle AFC LED strip: 'Alternar a fita LED do AFC'
+  Toggle Auto-Refill: 'Alternar o reabastecimento automático'
+  Toggle Moonraker power devices: 'Alternar dispositivos de energia do Moonraker'
+  Toggle Quiet Mode: 'Alternar o modo silencioso'
+  Toggle external spool bypass: ''
+  Toggle toolhead LED for an extruder: 'Alternar o LED do cabeçote para um extrusor'
   'Toggle:': 'Alternar:'
   Too humid: Muito úmido
   Tool: Ferramenta

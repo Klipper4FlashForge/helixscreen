@@ -20,6 +20,7 @@
   <translation tag="%zu changes" en="%zu changes"/>
   <translation tag="%zu events queued" en="%zu events queued"/>
   <translation tag="%zu plugins failed to load" en="%zu plugins failed to load"/>
+  <translation tag="(different grade)" en="(different grade)"/>
   <translation tag="(incompatible)" en="(incompatible)"/>
   <translation tag="(multi-tool)" en="(multi-tool)"/>
   <translation tag="(none detected)" en="(none detected)"/>
@@ -305,6 +306,8 @@
   <translation tag="Bypass Is Active" en="Bypass Is Active"/>
   <translation tag="Bypass Mode" en="Bypass Mode"/>
   <translation tag="Bypass active — this print runs on the external spool, not on the lanes below." en="Bypass active — this print runs on the external spool, not on the lanes below."/>
+  <translation tag="Bypass active — this print runs on the external spool." en="Bypass active — this print runs on the external spool."/>
+  <translation tag="Bypass cannot be changed while printing" en="Bypass cannot be changed while printing"/>
   <translation tag="Bypass controlled by hardware sensor" en="Bypass controlled by hardware sensor"/>
   <translation tag="Bypass controlled by sensor" en="Bypass controlled by sensor"/>
   <translation tag="Bypass disabled" en="Bypass disabled"/>
@@ -952,6 +955,7 @@
   <translation tag="Filament controls are unavailable while printing." en="Filament controls are unavailable while printing."/>
   <translation tag="Filament deleted" en="Filament deleted"/>
   <translation tag="Filament diameter sensors for flow compensation" en="Filament diameter sensors for flow compensation"/>
+  <translation tag="Filament is clear of the toolhead. Pull it out the rest of the way." en="Filament is clear of the toolhead. Pull it out the rest of the way."/>
   <translation tag="Filament is loose" en="Filament is loose"/>
   <translation tag="Filament is pulling tight" en="Filament is pulling tight"/>
   <translation tag="Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool." en="Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool."/>
@@ -1923,6 +1927,7 @@
   <translation tag="Requires Moonraker power device" en="Requires Moonraker power device"/>
   <translation tag="Requires Moonraker-Timelapse plugin" en="Requires Moonraker-Timelapse plugin"/>
   <translation tag="Requires Multi-Filament System or MMU hardware" en="Requires Multi-Filament System or MMU hardware"/>
+  <translation tag="Requires a filament system with bypass" en="Requires a filament system with bypass"/>
   <translation tag="Requires clog detection hardware" en="Requires clog detection hardware"/>
   <translation tag="Resend write failed at chunk {}" en="Resend write failed at chunk {}"/>
   <translation tag="Reset" en="Reset"/>
@@ -2452,6 +2457,7 @@
   <translation tag="Toggle AFC LED strip" en="Toggle AFC LED strip"/>
   <translation tag="Toggle Auto-Refill" en="Toggle Auto-Refill"/>
   <translation tag="Toggle Quiet Mode" en="Toggle Quiet Mode"/>
+  <translation tag="Toggle external spool bypass" en="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" en="Toggle toolhead LED for an extruder"/>
   <translation tag="Toggle:" en="Toggle:"/>
   <translation tag="Too humid" en="Too humid"/>

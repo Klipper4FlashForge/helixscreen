@@ -1824,11 +1824,25 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
         apply_state_string(afc_data["current_state"].get<std::string>(), "current_state");
     }
 
-    // Parse tool change progress (AFC tracks swap count during multi-color prints)
+    // Parse tool change progress (AFC tracks swap count during multi-color prints).
+    //
+    // AFC.current_toolchange on the wire is a 1-BASED count of changes started,
+    // not the 0-based index AmsSystemInfo stores. AFC increments its internal
+    // counter before logging "Change N out of M", and get_status() clamps the
+    // internal -1 sentinel on the way out (`self.current_toolchange if
+    // self.current_toolchange >= 0 else 0`), so what we receive is exactly the
+    // number AFC prints on the console. Subtracting one restores the documented
+    // 0-based index (0 -> -1 "none yet", 1 -> 0 "first change"), which the UI
+    // then adds back for display — without this the UI reads one change ahead
+    // and renders "162 / 161" at the end of a print.
     if (afc_data.contains("current_toolchange") &&
         afc_data["current_toolchange"].is_number_integer()) {
-        system_info_.current_toolchange = afc_data["current_toolchange"].get<int>();
-        spdlog::trace("[AMS AFC] Current toolchange: {}", system_info_.current_toolchange);
+        int afc_toolchange_count = afc_data["current_toolchange"].get<int>();
+        // Floor at -1: the struct documents -1 as the "none yet" sentinel, and a
+        // negative count from a firmware that stops clamping must not go past it.
+        system_info_.current_toolchange = std::max(-1, afc_toolchange_count - 1);
+        spdlog::trace("[AMS AFC] Current toolchange: AFC count {} -> index {}",
+                      afc_toolchange_count, system_info_.current_toolchange);
     }
     if (afc_data.contains("number_of_toolchanges") &&
         afc_data["number_of_toolchanges"].is_number_integer()) {

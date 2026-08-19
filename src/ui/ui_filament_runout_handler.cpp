@@ -330,10 +330,11 @@ void FilamentRunoutHandler::dispatch_unload() {
     // filament is still at the head, and #1199 deliberately keeps Unload
     // reachable in exactly that state (#995).
     bool loaded = false;
-    if (backend && slot >= 0) {
-        loaded = helix::ui::unload_target_is_loaded(backend->slot_is_actively_loaded(slot),
+    if (backend) {
+        loaded = helix::ui::unload_target_is_loaded(slot, backend->slot_is_actively_loaded(slot),
                                                     backend->slot_has_filament_at_toolhead(slot),
-                                                    /*is_current_slot=*/true);
+                                                    /*is_current_slot=*/true,
+                                                    backend->get_system_info().filament_loaded);
     }
 
     helix::ui::execute_filament_unload(backend, slot, loaded, "[FilamentRunoutHandler]");

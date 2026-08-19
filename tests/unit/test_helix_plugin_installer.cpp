@@ -25,6 +25,32 @@
 
 using namespace helix;
 TEST_CASE("HelixPluginInstaller is_local_moonraker WSS handling", "[plugin_installer]") {
+    SECTION("is_local_moonraker answers from the URL the installer was given") {
+        // The predicate itself is tested once, in test_host_identity.cpp. What
+        // belongs here is the wiring: that the installer names the host from its
+        // own URL and refuses to claim locality when it cannot.
+        helix::HelixPluginInstaller installer;
+
+        installer.set_websocket_url("ws://localhost:7125/websocket");
+        REQUIRE(installer.is_local_moonraker());
+        installer.set_websocket_url("ws://127.0.0.1:7125/websocket");
+        REQUIRE(installer.is_local_moonraker());
+        installer.set_websocket_url("ws://[::1]:7125/websocket");
+        REQUIRE(installer.is_local_moonraker());
+
+        // 203.0.113.0/24 is TEST-NET-3 (RFC 5737) — reserved for documentation
+        // and never assigned to a real interface, so this stays remote on any
+        // machine. An RFC1918 literal would not: is_moonraker_on_same_host()
+        // scans local interfaces, and a dev box or CI runner can legitimately
+        // hold 192.168.x.x.
+        installer.set_websocket_url("ws://203.0.113.7:7125/websocket");
+        REQUIRE_FALSE(installer.is_local_moonraker());
+
+        // No URL at all is not evidence of locality — auto-install must not fire.
+        installer.set_websocket_url("");
+        REQUIRE_FALSE(installer.is_local_moonraker());
+    }
+
     SECTION("is_local_moonraker works with WSS URLs") {
         helix::HelixPluginInstaller installer;
 

@@ -673,8 +673,30 @@ class AmsBackend {
      * firmware macro this backend dispatches homes on its own; "not sure" must
      * stay false, because a permanent false refusal is its own broken workflow
      * (bundle JX2FVRB9).
+     *
+     * Distinct from delegates_homing_to_printer() (load/unload homing
+     * delegation); the two must stay separate.
      */
     [[nodiscard]] virtual bool filament_ops_self_home() const {
+        return false;
+    }
+
+    /**
+     * @brief Does the printer-side system arrange its own homing for filament
+     *        load/unload ops, so HelixScreen should neither prompt nor send G28?
+     *
+     * AFC answers true when [AFC] auto_home is set in AFC.cfg: its macros
+     * home-if-needed themselves, so both our confirmation prompt and the G28
+     * that ensure_homed_then() would synthesize are redundant.
+     *
+     * False-until-config-loaded by construction: the AFC override reads
+     * afc_config_, which lands asynchronously, so an early or failed load
+     * answers false — at worst one redundant prompt, never a skipped home.
+     *
+     * NOT the same question as filament_ops_self_home() (which gates
+     * PAUSED-print refusal); the two must stay separate.
+     */
+    [[nodiscard]] virtual bool delegates_homing_to_printer() const {
         return false;
     }
 
@@ -1601,19 +1623,22 @@ class AmsBackend {
     AmsError set_endless_spool_backup(int slot_index, int backup_slot);
 
     /**
-     * @brief Is @p backup_slot an acceptable backup for @p slot_index?
+     * @brief May @p backup_slot stand in for @p slot_index?
      *
-     * Backends own the eligibility rule; the base default is the
-     * material-compatibility test the AMS context menu has always applied
-     * (filament::are_materials_compatible(), with an unknown material on either
-     * side counting as eligible). AD5X IFS overrides with the stricter rule its
-     * firmware actually enforces: exact material AND exact colour AND the port
-     * reporting filament present.
+     * Backends own the eligibility rule. The base default asks two questions in
+     * order: filament::materials_compatible() decides the polymer, and
+     * filament::grades_match() decides the grade, so a filled variant of the
+     * right polymer comes back as GradeDiffers rather than being waved through.
+     * An unlabelled lane on either side stays Eligible - the user simply has
+     * not filled it in yet, and blocking on that helps nobody.
+     *
+     * AD5X IFS overrides with the stricter rule its firmware actually enforces:
+     * exact material AND exact colour AND the port reporting filament present.
      *
      * @note Holds no lock; reads through get_slot_info(), which takes `mutex_`.
      */
-    [[nodiscard]] virtual bool is_endless_spool_backup_eligible(int slot_index,
-                                                                int backup_slot) const;
+    [[nodiscard]] virtual helix::printer::BackupEligibility
+    endless_spool_backup_eligibility(int slot_index, int backup_slot) const;
 
     /**
      * @brief Reset all tool mappings to defaults

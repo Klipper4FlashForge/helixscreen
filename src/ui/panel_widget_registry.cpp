@@ -48,6 +48,7 @@ void register_temp_graph_widget();
 void register_tool_switcher_widget();
 void register_nozzle_temps_widget();
 void register_active_spool_widget();
+void register_bypass_widget();
 #if HELIX_HAS_CAMERA
 void register_camera_widget();
 #endif
@@ -108,6 +109,7 @@ static std::vector<PanelWidgetDef> s_widget_defs = {
     {"temp_graph",       TR_NOOP("Temperature Graph"), "chart_line",       TR_NOOP("Temperatures plotted over time"), nullptr,         nullptr,                               CAT_TEMP,     false, 4, 4, 2, 2, BAND_COLSPAN, 8, true, true, true, false},
     {"preheat",          TR_NOOP("Preheat"),           "heat_wave",        TR_NOOP("Warm up for a material in one tap"),            nullptr,            nullptr,                               CAT_TEMP,     false, 6, 2, 4, 2, 8, 2, false, true, false},
     {"ams",              TR_NOOP("Multi-Filament System Status"),        "filament",         TR_NOOP("Lane colors, materials, and levels"),       "ams_slot_count",     "Requires Multi-Filament System or MMU hardware",        CAT_FILAMENT, false, 2, 2, 2, 2, 8, 4, false, true, true},
+    {"bypass",           TR_NOOP("Bypass"),           "source_branch",    TR_NOOP("Toggle external spool bypass"), "ams_supports_bypass", "Requires a filament system with bypass", CAT_FILAMENT, false, 2, 2, 2, 2, 4, 2, false, true, false},
     {"active_spool",     TR_NOOP("Active Spool"),      "inventory",  TR_NOOP("The Spoolman spool currently loaded"),     nullptr,                  nullptr,                           CAT_FILAMENT, false, 2, 2, 2, 2, 8, 4, false, true, true},
     {"filament",         TR_NOOP("Filament Sensor"),   "filament_alert",   TR_NOOP("Whether filament is loaded"),  "filament_sensor_count", "No filament sensor detected",      CAT_FILAMENT, true, 2, 2, 2, 2, 4, 2},
     {"humidity",         TR_NOOP("Humidity"),          "water",            TR_NOOP("Humidity inside the enclosure"),         "humidity_sensor_count", "No humidity sensor detected",       CAT_FILAMENT, false, 2, 2, 2, 2, 4, 4},
@@ -240,6 +242,7 @@ void init_widget_registrations() {
     register_filament_sensor_widget();
     register_preheat_widget();
     register_active_spool_widget();
+    register_bypass_widget();
     register_tool_switcher_widget();
     register_nozzle_temps_widget();
 #if HELIX_HAS_CAMERA

@@ -543,6 +543,9 @@ class MoonrakerFileTransferAPIMock : public MoonrakerFileTransferAPI {
     void download_file_partial(const std::string& root, const std::string& path, size_t max_bytes,
                                StringCallback on_success, ErrorCallback on_error) override;
 
+    void download_file_tail(const std::string& root, const std::string& path, size_t max_bytes,
+                            StringCallback on_success, ErrorCallback on_error) override;
+
     void download_file_to_path(const std::string& root, const std::string& path,
                                const std::string& dest_path, StringCallback on_success,
                                ErrorCallback on_error,

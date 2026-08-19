@@ -528,6 +528,7 @@ namespace {
 std::function<void(const std::string&)> g_test_warning_hook;
 std::function<void(const std::string&)> g_test_error_hook;
 std::function<void(const std::string&)> g_test_toast_hook;
+std::function<void(const std::string&)> g_test_info_hook;
 } // namespace
 
 namespace helix {
@@ -541,6 +542,10 @@ void set_test_notification_error_hook(std::function<void(const std::string&)> ho
 void set_test_toast_hook(std::function<void(const std::string&)> hook) {
     g_test_toast_hook = std::move(hook);
 }
+
+void set_test_notification_info_hook(std::function<void(const std::string&)> hook) {
+    g_test_info_hook = std::move(hook);
+}
 } // namespace ui
 } // namespace helix
 
@@ -551,11 +556,17 @@ void ui_notification_init() {
 
 void ui_notification_info(const char* message) {
     spdlog::debug("[Test Stub] ui_notification_info: {}", message ? message : "(null)");
+    if (g_test_info_hook) {
+        g_test_info_hook(message ? message : "");
+    }
 }
 
 void ui_notification_info(const char* title, const char* message) {
     spdlog::debug("[Test Stub] ui_notification_info: {} - {}", title ? title : "(null)",
                   message ? message : "(null)");
+    if (g_test_info_hook) {
+        g_test_info_hook(message ? message : "");
+    }
 }
 
 void ui_notification_info_with_action(const char* title, const char* message, const char* action) {

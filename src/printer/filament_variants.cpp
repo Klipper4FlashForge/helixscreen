@@ -454,6 +454,18 @@ std::string extract_base_material(std::string_view name) {
     return std::string(work);
 }
 
+bool materials_compatible(std::string_view a, std::string_view b) {
+    // Empty vs non-empty is always a mismatch. (Callers that want "unlabelled
+    // means do not block me" check for empty themselves, before asking.)
+    if (a.empty() != b.empty()) {
+        return false;
+    }
+    if (iequals(a, b)) {
+        return true;
+    }
+    return are_materials_compatible(extract_base_material(a), extract_base_material(b));
+}
+
 bool grades_match(std::string_view a, std::string_view b) {
     return filled_affixes_of(a) == filled_affixes_of(b);
 }

@@ -28,10 +28,13 @@ jobs:
     - name: Install dependencies
       uses: nick-fields/retry@v4
       with:
-        # Bumped to 10 min: slow apt mirrors can push the download phase past a
-        # 5-min cap, and on timeout retry@v4 crashes with "kill EPERM" (Node 24)
-        # instead of retrying — so the longer window keeps us off that path.
-        timeout_minutes: 10
+        # 20 min, matching nightly.yml: slow apt mirrors can push the download
+        # phase past a shorter cap, and on timeout retry@v4 crashes with
+        # "kill EPERM" (Node 24) instead of retrying — so the window has to be
+        # wide enough that we never reach it. caf6cb2df raised nightly.yml to 20
+        # for exactly this and build.yml was missed, which is why Compile and
+        # the non-LTO link job kept failing on Install dependencies.
+        timeout_minutes: 20
         max_attempts: 3
         command: |
           sudo apt-get update
@@ -429,7 +432,8 @@ jobs:
     - name: Install dependencies
       uses: nick-fields/retry@v4
       with:
-        timeout_minutes: 10
+        # See the note on the first Install dependencies step above.
+        timeout_minutes: 20
         max_attempts: 3
         command: |
           sudo apt-get update

@@ -40,8 +40,8 @@ void execute_filament_load(AmsBackend* backend, int slot, const char* log_tag) {
     }
 
     const auto& load_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
-    const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_load(sys, caps, slot, !load_info.is_empty());
+    const helix::ui::FilamentOpPlan plan = helix::ui::plan_load(
+        sys, caps, slot, !load_info.is_empty(), load_info.get_source() == MacroSource::CONFIGURED);
 
     switch (plan.tier) {
     case helix::ui::FilamentTier::AmsBackend: {
@@ -131,7 +131,8 @@ void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loade
 
     const auto& unload_info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
     const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_unload(caps, slot, target_is_loaded, !unload_info.is_empty());
+        helix::ui::plan_unload(caps, slot, target_is_loaded, !unload_info.is_empty(),
+                               unload_info.get_source() == MacroSource::CONFIGURED);
 
     switch (plan.tier) {
     case helix::ui::FilamentTier::AmsBackend: {

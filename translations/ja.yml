@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu件の変更'
   '%zu events queued': '%zu 件のイベントを待機中'
   '%zu plugins failed to load': '%zu 個のプラグインの読み込みに失敗しました'
+  (different grade): ''
   (incompatible): (非対応)
   (multi-tool): (マルチツール)
   (none detected): (検出なし)
@@ -305,6 +306,8 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: バイパスモード
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass active — this print runs on the external spool.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: ハードウェアセンサーによるバイパス制御
   Bypass controlled by sensor: バイパスはセンサーで制御中
   Bypass disabled: バイパス無効
@@ -961,6 +964,7 @@ translations:
   Filament controls are unavailable while printing.: ''
   Filament deleted: フィラメントを削除しました
   Filament diameter sensors for flow compensation: フロー補正用フィラメント直径センサー
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: フィラメントが緩んでいます
   Filament is pulling tight: フィラメントが引っ張られています
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
@@ -1968,8 +1972,9 @@ translations:
   Require confirmation before emergency stop: 緊急停止前に確認を求める
   Requires Moonraker power device: Moonraker電源デバイスが必要です
   Requires Moonraker-Timelapse plugin: Moonraker-Timelapse プラグインが必要です
-  Requires Multi-Filament System or MMU hardware: マルチフィラメントシステムまたはMMUハードウェアが必要です
-  Requires clog detection hardware: 詰まり検出ハードウェアが必要です
+  Requires Multi-Filament System or MMU hardware: 'マルチフィラメントシステムまたはMMUハードウェアが必要です'
+  Requires a filament system with bypass: ''
+  Requires clog detection hardware: '詰まり検出ハードウェアが必要です'
   Resend write failed at chunk {}: チャンク {} で再送信の書き込みに失敗しました
   Reset: リセット
   Reset Blade Counter: ブレードカウンターをリセット
@@ -2516,10 +2521,12 @@ translations:
   Tips database not found: ヒントデータベースが見つかりません
   Toggle: トグル
   Toggle (fire-and-forget): トグル（状態追跡なし）
-  Toggle AFC LED strip: AFC LEDストリップを切り替え
-  Toggle Auto-Refill: 自動補充を切り替え
-  Toggle Quiet Mode: 静音モードを切り替え
-  Toggle toolhead LED for an extruder: エクストルーダーのツールヘッドLEDを切り替え
+  Toggle AFC LED strip: 'AFC LEDストリップを切り替え'
+  Toggle Auto-Refill: '自動補充を切り替え'
+  Toggle Moonraker power devices: 'Moonraker電源デバイスを切り替え'
+  Toggle Quiet Mode: '静音モードを切り替え'
+  Toggle external spool bypass: ''
+  Toggle toolhead LED for an extruder: 'エクストルーダーのツールヘッドLEDを切り替え'
   'Toggle:': '切り替え:'
   Too humid: 湿度が高すぎます
   Tool: ツール

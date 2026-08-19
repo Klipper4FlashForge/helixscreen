@@ -23,6 +23,7 @@ All developer documentation lives here. When working on features, look up the re
 | `CHANGELOG_1_1_DRAFT.md` | Running release notes for everything on `devel/1.1` that is not on `main`. Kept out of `CHANGELOG.md` so the release tooling owns that file; becomes the `## [1.1]` entry at release, then delete |
 | `CI_CD_GUIDE.md` | CI pipeline, GitHub Actions |
 | `ANDROID_PLAY_STORE.md` | Play Store publishing pipeline, one-time setup, promotion flow |
+| `ANDROID_ASSETS.md` | How `ui_xml/`/`assets/`/`config/` reach the APK. Read before touching anything under `android/app/src/main/assets/` — it is a Gradle build output, not source |
 
 ## UI & XML
 

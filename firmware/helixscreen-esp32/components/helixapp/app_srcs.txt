@@ -224,6 +224,7 @@ src/system/system_power.cpp
 src/system/system_settings_manager.cpp
 src/system/timezone_env.cpp
 src/system/tips_manager.cpp
+src/system/tools_used_cache.cpp
 src/system/translation_loader.cpp
 src/system/wizard_step_logic.cpp
 src/temperature/temperature_history_manager.cpp
@@ -260,6 +261,7 @@ src/ui/clog_meter_geometry.cpp
 src/ui/clog_meter_model.cpp
 src/ui/panel_widget_registry.cpp
 src/ui/panel_widgets/active_spool_widget.cpp
+src/ui/panel_widgets/bypass_widget.cpp
 src/ui/panel_widgets/camera_widget.cpp
 src/ui/panel_widgets/clock_widget.cpp
 src/ui/panel_widgets/clog_detection_widget.cpp
@@ -323,6 +325,7 @@ src/ui/ui_buffer_meter.cpp
 src/ui/ui_busy_overlay.cpp
 src/ui/ui_button.cpp
 src/ui/ui_bypass_spool_widget.cpp
+src/ui/ui_bypass_toggle_controller.cpp
 src/ui/ui_card.cpp
 src/ui/ui_carousel.cpp
 src/ui/ui_change_host_modal.cpp
@@ -373,6 +376,7 @@ src/ui/ui_led_chip_factory.cpp
 src/ui/ui_led_control_overlay.cpp
 src/ui/ui_lock_screen.cpp
 src/ui/ui_macro_enhance_wizard.cpp
+src/ui/ui_manual_pull_prompt.cpp
 src/ui/ui_markdown.cpp
 src/ui/ui_modal.cpp
 src/ui/ui_nav_manager.cpp
@@ -384,6 +388,7 @@ src/ui/ui_overlay_console_settings.cpp
 src/ui/ui_overlay_network_settings.cpp
 src/ui/ui_overlay_performance.cpp
 src/ui/ui_overlay_printer_image.cpp
+src/ui/ui_overlay_printer_type.cpp
 src/ui/ui_overlay_retraction_settings.cpp
 src/ui/ui_overlay_temp_graph.cpp
 src/ui/ui_panel_advanced.cpp

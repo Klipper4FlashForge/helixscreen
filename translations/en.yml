@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu changes'
   '%zu events queued': '%zu events queued'
   '%zu plugins failed to load': '%zu plugins failed to load'
+  (different grade): (different grade)
   (incompatible): (incompatible)
   (multi-tool): (multi-tool)
   (none detected): (none detected)
@@ -305,6 +306,8 @@ translations:
   Bypass Is Active: Bypass Is Active
   Bypass Mode: Bypass Mode
   Bypass active — this print runs on the external spool, not on the lanes below.: Bypass active — this print runs on the external spool, not on the lanes below.
+  Bypass active — this print runs on the external spool.: Bypass active — this print runs on the external spool.
+  Bypass cannot be changed while printing: Bypass cannot be changed while printing
   Bypass controlled by hardware sensor: Bypass controlled by hardware sensor
   Bypass controlled by sensor: Bypass controlled by sensor
   Bypass disabled: Bypass disabled
@@ -960,7 +963,9 @@ translations:
   Filament by Type: Filament by Type
   Filament controls are unavailable while printing.: Filament controls are unavailable while printing.
   Filament deleted: Filament deleted
-  Filament diameter sensors for flow compensation: Filament diameter sensors for flow compensation
+  Filament diameter sensors for flow compensation: Filament diameter sensors for flow
+    compensation
+  Filament is clear of the toolhead. Pull it out the rest of the way.: Filament is clear of the toolhead. Pull it out the rest of the way.
   Filament is loose: Filament is loose
   Filament is pulling tight: Filament is pulling tight
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
@@ -1969,6 +1974,7 @@ translations:
   Requires Moonraker power device: Requires Moonraker power device
   Requires Moonraker-Timelapse plugin: Requires Moonraker-Timelapse plugin
   Requires Multi-Filament System or MMU hardware: Requires Multi-Filament System or MMU hardware
+  Requires a filament system with bypass: Requires a filament system with bypass
   Requires clog detection hardware: Requires clog detection hardware
   Resend write failed at chunk {}: Resend write failed at chunk {}
   Reset: Reset
@@ -2516,6 +2522,7 @@ translations:
   Toggle AFC LED strip: Toggle AFC LED strip
   Toggle Auto-Refill: Toggle Auto-Refill
   Toggle Quiet Mode: Toggle Quiet Mode
+  Toggle external spool bypass: Toggle external spool bypass
   Toggle toolhead LED for an extruder: Toggle toolhead LED for an extruder
   'Toggle:': 'Toggle:'
   Too humid: Too humid

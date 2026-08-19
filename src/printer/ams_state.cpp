@@ -276,6 +276,16 @@ void AmsState::init_subjects(bool register_xml) {
         subjects_.register_subject(&external_spool_color_);
         if (register_xml)
             lv_xml_register_subject(nullptr, "ams_external_spool_color", &external_spool_color_);
+
+        // Material string flavor — same source, string subject idiom as
+        // ams_system_name_ (own buffer, nullptr prev_buf).
+        lv_subject_init_string(&external_spool_material_, external_spool_material_buf_, nullptr,
+                               sizeof(external_spool_material_buf_),
+                               ext_spool.has_value() ? ext_spool->material.c_str() : "");
+        subjects_.register_subject(&external_spool_material_);
+        if (register_xml)
+            lv_xml_register_subject(nullptr, "ams_external_spool_material",
+                                    &external_spool_material_);
     }
 
     lv_subject_init_int(&supports_bypass_, 0);
@@ -1342,6 +1352,29 @@ void AmsState::sync_from_backend() {
         lv_subject_set_int(&ams_type_, new_type);
     }
     int new_action = static_cast<int>(info.action);
+    // One-shot runout grace. An unload ends with the filament deliberately
+    // dragged off the toolhead sensor, and that empty reading is the operation
+    // working, not a runout — but is_filament_operation_active() only covers
+    // the window while the action is still running. Measured on a K2 Plus:
+    // the script completed at 12:03:02 and the sensor cleared at 12:03:12, ten
+    // seconds after the guard had closed, so the idle runout modal fired on a
+    // deliberate unload.
+    //
+    // Tracked across the whole operation rather than off an UNLOADING -> IDLE
+    // edge, because apply_synthesized_action_locked() overwrites the action
+    // with a sub-phase as physical signals arrive: that K2 unload actually
+    // ended CUTTING -> IDLE, which such an edge would have missed entirely.
+    {
+        const auto action = static_cast<AmsAction>(new_action);
+        const auto prev = static_cast<AmsAction>(lv_subject_get_int(&ams_action_));
+        if (action == AmsAction::UNLOADING) {
+            saw_unload_in_op_ = true;
+        }
+        if (action == AmsAction::IDLE && prev != AmsAction::IDLE) {
+            post_unload_runout_grace_ = saw_unload_in_op_;
+            saw_unload_in_op_ = false;
+        }
+    }
     if (lv_subject_get_int(&ams_action_) != new_action) {
         spdlog::debug("[AmsState] sync_from_backend: action changed to {} ({})", new_action,
                       ams_action_to_string(info.action));
@@ -1467,8 +1500,23 @@ void AmsState::sync_from_backend() {
                       new_runout, info.filament_runout, runout_edge_armed_, paused);
         lv_subject_set_int(&filament_runout_, new_runout);
     }
-    int new_bypass = info.current_slot == -2 ? 1 : 0;
+    // The one bypass truth: the backend's own is_bypass_active(), the same
+    // predicate BypassToggleController branches on when the user taps. This
+    // subject used to be derived independently from current_slot == -2, so with
+    // a declaration latched and the filament pulled the switch rendered
+    // unchecked while a tap took the DISABLE path — "turn it on" answered
+    // "Bypass disabled", and the pre-print gate meanwhile acted on a bypass the
+    // user could not see or clear. Display and action now read one value.
+    // Filament back at the toolhead retires the grace: it was armed for the
+    // removal this unload caused, and anything after a reload is a new event.
+    if (info.filament_loaded && post_unload_runout_grace_) {
+        post_unload_runout_grace_ = false;
+        spdlog::debug("[AmsState] Post-unload runout grace retired — filament loaded again");
+    }
+
+    const int new_bypass = backend->is_bypass_active() ? 1 : 0;
     if (lv_subject_get_int(&bypass_active_) != new_bypass) {
+        spdlog::debug("[AmsState] bypass -> {}", new_bypass);
         lv_subject_set_int(&bypass_active_, new_bypass);
     }
 
@@ -1479,9 +1527,10 @@ void AmsState::sync_from_backend() {
     // bypass while a file's detail view is already open and the false
     // "T0 has no filament loaded" block still fires on Print.
     //
-    // Tracked off any_bypass_active() rather than the bypass_active_ subject
-    // above — that one is derived from current_slot == -2, which later writes in
-    // the same status frame can clobber.
+    // Still tracked off any_bypass_active() rather than the bypass_active_
+    // subject above, but for a different reason now that both read
+    // is_bypass_active(): the subject reports backend 0 only, while this walks
+    // every backend, and the pre-print check it refreshes is whole-printer.
     const bool bypass_now = any_bypass_active();
     if (bypass_now != last_bypass_active_) {
         last_bypass_active_ = bypass_now;
@@ -1518,6 +1567,8 @@ void AmsState::sync_from_backend() {
     if (lv_subject_get_int(&external_spool_color_) != new_ext_color) {
         lv_subject_set_int(&external_spool_color_, new_ext_color);
     }
+    lv_subject_copy_string(&external_spool_material_,
+                           ext_spool.has_value() ? ext_spool->material.c_str() : "");
     if (lv_subject_get_int(&ams_slot_count_) != info.total_slots) {
         lv_subject_set_int(&ams_slot_count_, info.total_slots);
     }
@@ -2600,6 +2651,13 @@ void AmsState::set_active_tool_port_present(bool present) {
     });
 }
 
+bool AmsState::consume_post_unload_runout_grace() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const bool armed = post_unload_runout_grace_;
+    post_unload_runout_grace_ = false;
+    return armed;
+}
+
 bool AmsState::is_filament_operation_active() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto action = static_cast<AmsAction>(lv_subject_get_int(&ams_action_));
@@ -2971,6 +3029,9 @@ void AmsState::notify_external_spool_changed(const SlotInfo& info) {
         lv_subject_set_int(&external_spool_color_, new_color ^ 1);
     }
     lv_subject_set_int(&external_spool_color_, new_color);
+    // Material string reflector — copy_string only notifies on change, and
+    // color observers re-read full spool info anyway, so no force-fire needed.
+    lv_subject_copy_string(&external_spool_material_, info.material.c_str());
 }
 
 void AmsState::clear_external_spool_info() {
@@ -2983,6 +3044,7 @@ void AmsState::clear_external_spool_info() {
         lv_subject_set_int(&external_spool_color_, 1);
     }
     lv_subject_set_int(&external_spool_color_, 0);
+    lv_subject_copy_string(&external_spool_material_, "");
 }
 
 // ============================================================================

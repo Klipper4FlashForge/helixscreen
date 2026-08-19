@@ -1155,14 +1155,28 @@ None of the five surfaces navigate away to dispatch anymore. `plan_load()` /
 `plan_unload()` answer the tier decision for all of them; `filament_op_execute.h` runs
 that decision for the three surfaces above that don't own a per-surface execution ladder.
 
-### The three-tier ladder
+### The dispatch ladder
 
-| Tier | What runs | Chosen when |
-|------|-----------|-------------|
-| 1 `FilamentTier::AmsBackend` | `load_filament()`, `unload_filament()`, or `change_tool()` — carried in `FilamentOpPlan::ams_call` / `ams_arg` | A backend owns the operation (see the two asymmetries below) |
-| 2 `FilamentTier::Macro` | The user's configured `StandardMacroSlot::LoadFilament` / `UnloadFilament`, via `dispatch_filament_macro()` | No tier 1, and the slot is non-empty |
+| Order | What runs | Chosen when |
+|-------|-----------|-------------|
+| 0 `FilamentTier::Macro` (**user override**) | The macro the user assigned in Settings > Macro Buttons, via `dispatch_filament_macro()` | `StandardMacroInfo::get_source() == MacroSource::CONFIGURED`. Outranks everything, on load and unload alike |
+| 1 `FilamentTier::AmsBackend` | `load_filament()`, `unload_filament()`, or `change_tool()` — carried in `FilamentOpPlan::ams_call` / `ams_arg` | A backend owns the operation (see the asymmetry below) |
+| 2 `FilamentTier::Macro` (auto-detected) | The `StandardMacroSlot::LoadFilament` / `UnloadFilament` we pattern-matched, or a `HELIX_*` fallback | No tier 1, and the slot is non-empty |
 | 3 `FilamentTier::RawGcode` | `filament_load_fallback_gcode()` (fast bowden move, then a slow push into the melt zone) or `filament_unload_fallback_gcode()` (tip-shape, then a long retract) | Nothing else is configured |
 | — `FilamentTier::Refused` | Nothing. `FilamentOpPlan::refusal` says why | See the refusal table |
+
+**Order 0 keys on the SOURCE of the macro, not its presence.** `plan_load()` and
+`plan_unload()` take `macro_available` and `macro_user_configured` separately, and only the
+latter jumps the backend. The distinction is load-bearing: the auto-detector matches
+`QUIT_MATERIAL` for `UnloadFilament`, so on a CFS printer a presence-based rule would hand
+every bypass unload to a vendor macro that cannot finish the job (see
+[§ CFS bypass: why the two vendor macros are not symmetric](#cfs-bypass-why-the-two-vendor-macros-are-not-symmetric)).
+
+An override **replaces** the backend call rather than running alongside it, so the backend's
+bookkeeping goes with it — on AFC that means `TOOL_UNLOAD` does not run, and lane state and
+shuttle parking become the macro's responsibility. That is the intended meaning of the
+setting: a user with extra steps to run gets to own the whole operation. It is documented for
+users in `docs/user/guide/filament.md`.
 
 `AmsCall::ChangeTool` carries a **tool number**, not a slot index — it comes from the target
 slot's `mapped_tool`. Every other call takes the slot.
@@ -1173,25 +1187,52 @@ slot's `mapped_tool`. Every other call takes the slot.
 | `AlreadyMounted` | The requested tool is already on the carriage. `SELECT_TOOL` on it is a firmware no-op (9KRXZ62P) | Load only, tool changers only |
 | `NothingLoaded` | No slot resolved, or nothing at that slot worth pulling | Unload only — its *only* refusal |
 
-### Two deliberate asymmetries between load and unload
+### One deliberate asymmetry between load and unload
 
-These are not oversights, and symmetrising them breaks real printers.
-
-**1. Bypass falls through on load and stays on the backend for unload.**
+**Bypass falls through on load and stays on the backend for unload.**
 
 `plan_load()` gates tier 1 on `caps.present && caps.requires_slot_selection_for_load`, not on
 the backend merely existing. `AmsBackend::requires_slot_selection_for_load()` defaults to
-`!is_bypass_active()`, so an active bypass drops straight to the user's `LOAD_FILAMENT`
-macro — that is how a bypass spool loads at all.
+`!is_bypass_active()`, so an active bypass drops past the backend to an auto-detected
+`LOAD_FILAMENT` macro — on a stock Creality printer that is `LOAD_MATERIAL`, and it is how a
+bypass spool loads at all.
 
-`plan_unload()` gates tier 1 on `caps.present` alone. AFC runs the user's unload macro
-itself as part of its own unload, so routing a bypass unload to tier 2 would run that macro
-twice.
+`plan_unload()` gates tier 1 on `caps.present` alone, because the CFS backend has to own the
+bypass unload: the vendor's `QUIT_MATERIAL` does not finish it. See the next section.
+
+There used to be a second reason recorded here — that AFC runs the user's unload macro as part
+of its own unload, so tier 2 would run it twice. That hazard belonged to a design where both
+fired; order 0 above *replaces* the backend call, so an override runs exactly once.
 
 Load/unload dispatch is not the only thing bypass reaches — it also suppresses both pre-print
 filament gates. See [§ Bypass suppresses the pre-print filament gates](#bypass-suppresses-the-pre-print-filament-gates).
 
-**2. Load-vs-swap and already-mounted exist only on the load side.**
+### CFS bypass: why the two vendor macros are not symmetric
+
+Creality ships an external-spool pair alongside the `BOX_*` family, and only half of it is
+self-sufficient. Both verified on a K2 Plus, 2026-08-19, by watching the extruder axis:
+
+| Macro | What it does | Extruder delta measured |
+|-------|--------------|-------------------------|
+| `LOAD_MATERIAL` | `BOX_GO_TO_EXTRUDE_POS` / `FILAMENT_RACK_SAVE_FAN` / `FILAMENT_RACK_PRE_FLUSH` / `FILAMENT_RACK_SET_TEMP` / `FILAMENT_RACK_FLUSH` / park + `SET_COOL_TEMP`. Feed and purge both gated on the toolhead switch | **+370 mm** — a complete load |
+| `QUIT_MATERIAL` | `BOX_GO_TO_EXTRUDE_POS` / `FILAMENT_RACK_SET_TEMP` / `BOX_MOVE_TO_CUT` / `G0 E-10` / park + `SET_COOL_TEMP` | **-13.99 mm** — filament still gripped by the gears |
+
+The asymmetry is in `[box]` itself: `tn_extrude = 140` against `tn_retrude = -10`. A bay unload
+only needs the extruder to break its grip because the box's own feeder motors reel the
+remaining ~130 mm back down the tube. **A bypass spool has no feeder**, so the extruder has to
+cover the whole path alone.
+
+`AmsBackendCfs::bypass_unload_gcode()` therefore emits `QUIT_MATERIAL` plus an 80 mm retract of
+its own; `bypass_load_gcode()` emits `LOAD_MATERIAL` bare, because nothing is missing there.
+80 mm because the release point measured near 64 mm (`QUIT_MATERIAL`'s 14 plus 50 more by hand
+before the filament came free), and it is the length `filament_unload_fallback_gcode()` already
+uses for the same physical job.
+
+This is also why an auto-detected `QUIT_MATERIAL` must not outrank the backend: it is a real
+unload macro, it matches the detector, and on bypass it silently leaves filament in the
+extruder.
+
+### Load-vs-swap and already-mounted exist only on the load side
 
 A machine with filament already seated cannot simply feed another lane, so when
 `needs_unload_before_load(info)` is true and the target slot has a `mapped_tool`, `plan_load()`
@@ -1539,7 +1580,7 @@ A backend supplies only these:
 |------|----------------|
 | `apply_endless_spool_backup(slot, backup)` (protected virtual) | Transport only. Reached **after** the base accepted the write, so it must not re-check availability, editability, ranges or self-backup - and must not update a local mirror of the mapping before its transport has accepted the command. |
 | `endless_spool_slot_count()` (protected virtual) | How many slots the relation spans; drives range validation and the reset loop. Default `get_system_info().total_slots`. Override when the transport's slot space differs, or to report 0 while not ready. |
-| `is_endless_spool_backup_eligible(slot, backup)` | Is this pairing acceptable? Base default is the material-compatibility test the AMS context menu has always applied (`filament::are_materials_compatible()`, with an unknown material on either side counting as eligible rather than blocking a slot the user simply has not labelled). AD5X IFS overrides it with the rule its firmware actually enforces - exact material **and** exact colour **and** the port reporting filament present - sharing `backup_eligible_locked()` with `find_backup_slot_locked()` so its runout hint text and its eligibility answer cannot diverge. |
+| `endless_spool_backup_eligibility(slot, backup)` | May this lane stand in for that one? Returns `BackupEligibility` (`Eligible` / `GradeDiffers` / `Incompatible`), not a bool. The base default asks two questions in order: `filament::materials_compatible()` for the polymer, then `filament::grades_match()` for the grade, so a filled variant of the right polymer answers `GradeDiffers` - tagged in the dropdown, still selectable, because a swap that keeps the print alive beats a print that dies at a runout. An unknown material on either side stays `Eligible` rather than blocking a slot the user simply has not labelled. AD5X IFS overrides it with the rule its firmware actually enforces - exact material **and** exact colour **and** the port reporting filament present - sharing `backup_eligible_locked()` with `find_backup_slot_locked()` so its runout hint text and its eligibility answer cannot diverge, and answering only `Eligible`/`Incompatible` because a lane its firmware will not select is not a choice worth offering. |
 
 `reset_endless_spool()` has a real base implementation: walk
 `set_endless_spool_backup(slot, -1)` over every slot, continue past failures so it clears as
@@ -2446,6 +2487,14 @@ gets the dialog with manual **Load** kept prominent, because Resume alone does n
 `supports_per_tool_spool_assignment()` is not overridden either; it falls through to
 `is_tool_changer(get_type())`, which is false for AFC.
 
+**Homing delegation.** With `[AFC] auto_home: True` in AFC.cfg, AFC's
+macros home-if-needed themselves. `AmsBackendAfc` surfaces this via
+`AmsBackend::delegates_homing_to_printer()` (false until AFC.cfg has
+loaded), and all three home-first prompt sites — the AMS sidebar, the
+filament panel, and `ensure_homed_then()` — skip both the prompt and the
+synthesized G28. Distinct from `filament_ops_self_home()`, which governs
+paused-print refusal.
+
 ### AFC Version Reporting
 
 `afc_version_` is **display and diagnostics only. Never gate behavior on it.** AFC has no
@@ -3000,7 +3049,7 @@ never written. The only write path would be `write_ifs_var("backup", …)`, whic
 demotes `has_ifs_vars_` for the session - not something to drive a user-facing toggle from.
 
 There is no per-slot relation either, so no backup dropdown appears. What the plugin *will*
-switch to is answered instead by `is_endless_spool_backup_eligible()`, which IFS overrides
+switch to is answered instead by `endless_spool_backup_eligibility()`, which IFS overrides
 with the rule the firmware enforces: exact material **and** exact colour **and** the port
 reporting filament present. It shares `backup_eligible_locked()` with
 `find_backup_slot_locked()`, so the runout detail text and the eligibility answer cannot
@@ -3508,10 +3557,20 @@ predicate `AmsContextMenu::decide_show_backup_row(caps, has_relation)`:
 - Read-only with no relation - hidden. This is the CFS and AD5X IFS case: the firmware picks
   the backup and publishes no mapping, so a visible dropdown could only ever read "None".
 
-The "(incompatible)" suffix on backup options still comes from
-`filament::are_materials_compatible()` directly in `build_backup_options()`; it does not yet
-route through `AmsBackend::is_endless_spool_backup_eligible()`, so a backend that tightens the
-rule (AD5X IFS) does not yet tighten this label.
+Backup options are tagged from `AmsBackend::endless_spool_backup_eligibility()`, so a backend
+that tightens the rule (AD5X IFS) tightens the label too. The verdict is tri-state and the two
+non-empty answers are tagged differently, because they mean different things to the user:
+
+| Verdict | Suffix | Selectable? |
+|---------|--------|-------------|
+| `Eligible` | none | yes |
+| `GradeDiffers` | `(different grade)` | **yes** - same polymer, filled variant; it will print |
+| `Incompatible` | `(incompatible)` | no - `decide_backup_refused()` bounces it with a toast |
+
+`GradeDiffers` is the only verdict where the label and the refusal deliberately disagree, and
+it is why the enum exists: refusing a PLA-CF backup for a PLA lane would leave a print dead at
+a runout with a usable spool one lane over, while waving it through silently hides that the
+swap brings an abrasive, slower filament mid-print with nobody watching.
 
 ---
 
@@ -3905,7 +3964,7 @@ Create include/ams_backend_mysystem.h and src/printer/ams_backend_mysystem.cpp. 
 - `clear_fault()` -- Clear a latched fault, bookkeeping only (default: forwards to `cancel()`)
 - `recover_lane_position()` -- Physical retract of a stranded lane (default: NOT_SUPPORTED)
 - `get_dryer_info()`, `start_drying()`, `stop_drying()`, `update_drying()` -- Dryer control
-- `get_endless_spool_capabilities()`, `get_endless_spool_config()` -- Endless spool state. `set_endless_spool_backup()` is **not** an override point: it is non-virtual and owns every rejection. Supply `apply_endless_spool_backup()` (protected, transport only), `endless_spool_slot_count()` (protected, only if `total_slots` is wrong for you), and `is_endless_spool_backup_eligible()` (only to tighten the default material-compatibility rule). `reset_endless_spool()` already works for any editable backend by looping the setter with -1 - override it only if your firmware has a real reset primitive. See § [Endless Spool](#endless-spool-shared-model).
+- `get_endless_spool_capabilities()`, `get_endless_spool_config()` -- Endless spool state. `set_endless_spool_backup()` is **not** an override point: it is non-virtual and owns every rejection. Supply `apply_endless_spool_backup()` (protected, transport only), `endless_spool_slot_count()` (protected, only if `total_slots` is wrong for you), and `endless_spool_backup_eligibility()` (only to tighten the default polymer-plus-grade rule; return `Eligible`/`Incompatible` only, unless your firmware genuinely has a soft case). `reset_endless_spool()` already works for any editable backend by looping the setter with -1 - override it only if your firmware has a real reset primitive. See § [Endless Spool](#endless-spool-shared-model).
 - `get_tool_mapping_capabilities()`, `get_tool_mapping()` -- Tool mapping
 - `get_device_sections()`, `get_device_actions()`, `execute_device_action()` -- Device-specific actions
 - `set_discovered_lanes()`, `set_discovered_tools()` -- Discovery configuration

@@ -127,7 +127,16 @@ bool HelixPluginInstaller::is_local_moonraker() const {
     // Canonical predicate (own hostname + interface IPs, not just loopback
     // literals) — installing into a printer whose address resolves to THIS
     // machine is exactly the local case.
-    return is_moonraker_on_same_host(extract_host_from_websocket_url(websocket_url_));
+    //
+    // A URL that fails to parse yields an empty host, and is_loopback_literal()
+    // reads empty as loopback — which would call a remote printer local. A parse
+    // failure is not evidence of locality, so it is rejected here rather than in
+    // the shared predicate, where an unset host does legitimately mean local.
+    const std::string host = extract_host_from_websocket_url(websocket_url_);
+    if (host.empty()) {
+        return false;
+    }
+    return is_moonraker_on_same_host(host);
 }
 
 HelixPluginInstaller::SyncInstallResult
