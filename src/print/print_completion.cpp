@@ -4,8 +4,10 @@
 #include "print_completion.h"
 
 #include "ui_confetti.h"
+#include "ui_error_reporting.h"
 #include "ui_filename_utils.h"
 #include "ui_format_utils.h"
+#include "ui_heater_config.h"
 #include "ui_icon.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
@@ -22,6 +24,7 @@
 #include "printer_state.h"
 #include "sound_manager.h"
 #include "static_subject_registry.h"
+#include "temperature_controller.h"
 
 #include <spdlog/spdlog.h>
 
@@ -141,6 +144,27 @@ static void cleanup_helix_temp_file(const std::string& filename) {
 }
 
 // Helper to show the rich print completion modal
+PreparingExitAction decide_preparing_exit_action(PreparingExit reason) {
+    PreparingExitAction action;
+    switch (reason) {
+    case PreparingExit::Confirmed:
+    case PreparingExit::Superseded:
+        // A print is running - ours, or the one that superseded ours. Say
+        // nothing and leave the heaters alone.
+        break;
+    case PreparingExit::Cancelled:
+        action.notify_cancelled = true;
+        action.cool_down = true;
+        break;
+    case PreparingExit::Failed:
+    case PreparingExit::TimedOut:
+        action.notify_failure = true;
+        action.cool_down = true;
+        break;
+    }
+    return action;
+}
+
 CompletionStats build_completion_stats(int duration_secs, int estimated_secs, int total_layers,
                                        int filament_mm) {
     CompletionStats out;
@@ -385,6 +409,56 @@ ObserverGuard init_print_completion_observer() {
     spdlog::debug("[PrintComplete] Observer registered, awaiting first Moonraker update");
     return ObserverGuard(get_printer_state().get_print_state_enum_subject(),
                          on_print_state_changed_for_notification, nullptr);
+}
+
+namespace {
+
+void apply_preparing_exit(PreparingExit reason) {
+    const PreparingExitAction action = decide_preparing_exit_action(reason);
+
+    if (action.notify_cancelled) {
+        NOTIFY_INFO(lv_tr("Print cancelled"));
+    } else if (action.notify_failure) {
+        NOTIFY_ERROR(lv_tr("Print did not start"));
+    }
+
+    if (!action.cool_down) {
+        return;
+    }
+
+    // A pre-start block heats to print temperature. With no print to own that
+    // heat, drop it. Routed through TemperatureController because it is the
+    // single authority for heater targets (lint-enforced); a raw gcode send
+    // would bypass its bookkeeping. Toast suppressed - the notification above
+    // already told the user what happened.
+    if (auto* temps = get_temperature_controller()) {
+        helix::SendOptions opts;
+        opts.toast = false;
+        temps->set_target(HeaterType::Nozzle, 0.0, opts);
+        temps->set_target(HeaterType::Bed, 0.0, opts);
+        spdlog::info("[PrintComplete] Start ended as {} - heaters dropped",
+                     preparing_exit_name(reason));
+    }
+}
+
+void on_preparing_epoch_changed(lv_observer_t*, lv_subject_t* subject) {
+    static int s_prev_epoch = 0;
+    const int epoch = lv_subject_get_int(subject);
+    const int prev = s_prev_epoch;
+    s_prev_epoch = epoch;
+
+    // Only a fall to 0 is a retirement; a bump is a new job starting.
+    if (epoch != 0 || prev == 0) {
+        return;
+    }
+    apply_preparing_exit(get_printer_state().last_preparing_exit());
+}
+
+} // namespace
+
+ObserverGuard init_preparing_exit_observer() {
+    return ObserverGuard(get_printer_state().get_preparing_epoch_subject(),
+                         on_preparing_epoch_changed, nullptr);
 }
 
 void cleanup_stale_helix_temp_files(IMoonrakerAPI* api) {

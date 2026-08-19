@@ -176,8 +176,10 @@ void PrintControlButtons::handle_stop_button() {
 
         if (state.has_preparing_job() && !printer_has_the_job) {
             spdlog::info("[PrintControl] Stop confirmed while preparing - cancelling the start");
+            // The notification and the heater cooldown belong to the
+            // preparing-exit observer, which sees every retirement rather than
+            // just this one path.
             state.retire_preparing(helix::PreparingExit::Cancelled);
-            NOTIFY_INFO(lv_tr("Print cancelled"));
             return;
         }
 

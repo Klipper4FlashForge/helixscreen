@@ -520,3 +520,63 @@ TEST_CASE("build_completion_stats omits optional fields when unknown",
         REQUIRE_FALSE(stats.duration.empty());
     }
 }
+
+// ============================================================================
+// What happens when a start dies before it prints
+// ============================================================================
+
+TEST_CASE("decide_preparing_exit_action distinguishes cancel from failure",
+          "[print_completion][preparing]") {
+    using helix::decide_preparing_exit_action;
+    using helix::PreparingExit;
+
+    SECTION("a user cancel reads as cancelled, not as a failure") {
+        auto a = decide_preparing_exit_action(PreparingExit::Cancelled);
+        REQUIRE(a.notify_cancelled);
+        REQUIRE_FALSE(a.notify_failure);
+    }
+
+    SECTION("a failed start reads as a failure") {
+        auto a = decide_preparing_exit_action(PreparingExit::Failed);
+        REQUIRE(a.notify_failure);
+        REQUIRE_FALSE(a.notify_cancelled);
+    }
+
+    SECTION("a timeout is a failure, not silence") {
+        // A start can die on a printer that never reaches state=printing at all,
+        // so nothing downstream would ever report it.
+        auto a = decide_preparing_exit_action(PreparingExit::TimedOut);
+        REQUIRE(a.notify_failure);
+    }
+}
+
+TEST_CASE("decide_preparing_exit_action only cools down when no print is running",
+          "[print_completion][preparing]") {
+    using helix::decide_preparing_exit_action;
+    using helix::PreparingExit;
+
+    SECTION("cancel, failure and timeout drop the heaters") {
+        // A pre-start block heats to print temperature. If no print follows,
+        // leaving a bed at 105C is the worst outcome - it was observed on a K2
+        // after cancelling mid-mesh.
+        REQUIRE(decide_preparing_exit_action(PreparingExit::Cancelled).cool_down);
+        REQUIRE(decide_preparing_exit_action(PreparingExit::Failed).cool_down);
+        REQUIRE(decide_preparing_exit_action(PreparingExit::TimedOut).cool_down);
+    }
+
+    SECTION("a confirmed start must not touch the heaters") {
+        auto a = decide_preparing_exit_action(PreparingExit::Confirmed);
+        REQUIRE_FALSE(a.cool_down);
+        REQUIRE_FALSE(a.notify_failure);
+        REQUIRE_FALSE(a.notify_cancelled);
+    }
+
+    SECTION("a superseded start must not touch the heaters") {
+        // Someone else's print is now running and owns the printer. Cooling
+        // down here would sabotage it.
+        auto a = decide_preparing_exit_action(PreparingExit::Superseded);
+        REQUIRE_FALSE(a.cool_down);
+        REQUIRE_FALSE(a.notify_failure);
+        REQUIRE_FALSE(a.notify_cancelled);
+    }
+}

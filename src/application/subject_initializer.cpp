@@ -505,6 +505,7 @@ void SubjectInitializer::init_observers() {
 
     // Print completion notification observer
     m_observers.push_back(helix::init_print_completion_observer());
+    m_observers.push_back(helix::init_preparing_exit_observer());
 
     // Print start navigation observer (auto-navigate to print status)
     m_observers.push_back(helix::init_print_start_navigation_observer());

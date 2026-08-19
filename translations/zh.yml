@@ -1790,6 +1790,7 @@ translations:
   Print Tuning: 打印调优
   Print Was Terminated: 打印已终止
   Print cancelled: ''
+  Print did not start: ''
   Print didn't start — printer may be busy or offline (B3 polls={}, status=0x{:02X}, error=0x{:02X}): 打印未开始
     — 打印机可能繁忙或离线 (B3 polls={}, status=0x{:02X}, error=0x{:02X})
   Print error: 打印错误
