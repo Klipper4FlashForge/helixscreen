@@ -908,8 +908,13 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 const auto* gated_def = find_widget_def(slot.widget_id);
                 const char* type_icon = (gated_def && gated_def->icon) ? gated_def->icon : "cancel";
 
+                // One step down from the badge (lg 48px vs xl 64px). Both glyphs
+                // are round, so at equal size they coincide almost exactly and
+                // the pair reads as one muddy shape rather than "this widget,
+                // unavailable" - the badge has to ring the type icon, not sit on
+                // top of it.
                 const char* type_icon_attrs[] = {
-                    "src",    type_icon,   "size",  "xl",           "variant", "muted", "align",
+                    "src",    type_icon,   "size",  "lg",           "variant", "muted", "align",
                     "center", "clickable", "false", "event_bubble", "true",    nullptr};
                 if (auto* type_overlay =
                         static_cast<lv_obj_t*>(lv_xml_create(widget, "icon", type_icon_attrs))) {
