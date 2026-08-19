@@ -307,6 +307,20 @@ class PrinterPrintState {
         return &preparing_epoch_;
     }
 
+    /**
+     * @brief The UI-level print state as it was before the current one
+     *
+     * Published from the same place that computes the transition, so a consumer
+     * can ask "what just happened?" without keeping a private previous-state
+     * variable. Eight of those existed, and they disagreed at the edges.
+     *
+     * Only rewritten when the state actually changes - otherwise it collapses
+     * to equal the current state and every consumer sees a self-transition.
+     */
+    lv_subject_t* get_print_lifecycle_prev_subject() {
+        return &print_lifecycle_prev_;
+    }
+
     /// Why the last preparing job ended. Meaningful once the epoch reads 0.
     [[nodiscard]] PreparingExit last_preparing_exit() const {
         return last_preparing_exit_;
@@ -788,8 +802,9 @@ class PrinterPrintState {
     void create_extruder_filament_entry(int extruder_idx);
 
     // Print start progress subjects
-    lv_subject_t print_start_phase_{}; // Integer: PrintStartPhase enum
-    lv_subject_t print_lifecycle_{};   // Integer: PrintState enum (derived)
+    lv_subject_t print_start_phase_{};    // Integer: PrintStartPhase enum
+    lv_subject_t print_lifecycle_{};      // Integer: PrintState enum (derived)
+    lv_subject_t print_lifecycle_prev_{}; // Integer: PrintState enum, value before the current
 
     /// The job we are preparing; empty when none. See begin_preparing().
     PrintJobRef preparing_job_{};

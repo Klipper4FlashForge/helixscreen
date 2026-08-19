@@ -877,6 +877,9 @@ class PrinterState {
     lv_subject_t* get_preparing_epoch_subject() {
         return print_domain_.get_preparing_epoch_subject();
     }
+    lv_subject_t* get_print_lifecycle_prev_subject() {
+        return print_domain_.get_print_lifecycle_prev_subject();
+    }
     [[nodiscard]] PreparingExit last_preparing_exit() const {
         return print_domain_.last_preparing_exit();
     }

@@ -2018,3 +2018,40 @@ TEST_CASE("A preparing job reconciles against what the printer eventually report
                 static_cast<int>(PrintState::Preparing));
     }
 }
+
+TEST_CASE("print_lifecycle publishes the previous state alongside the current one",
+          "[characterization][print][lifecycle]") {
+    // Consumers used to each keep a private prev-state variable and re-derive
+    // transitions with slightly different rules - eight of them, disagreeing at
+    // the edges. Publishing the previous value from the one place that already
+    // computes the transition means a consumer can ask "what just happened?"
+    // without keeping state.
+    lv_init_safe();
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    auto cur = [&state]() {
+        return static_cast<PrintState>(lv_subject_get_int(state.get_print_lifecycle_subject()));
+    };
+    auto prev = [&state]() {
+        return static_cast<PrintState>(
+            lv_subject_get_int(state.get_print_lifecycle_prev_subject()));
+    };
+
+    state.update_from_status(json{{"print_stats", {{"state", "printing"}}}});
+    REQUIRE(cur() == PrintState::Printing);
+    REQUIRE(prev() == PrintState::Idle);
+
+    state.update_from_status(json{{"print_stats", {{"state", "complete"}}}});
+    REQUIRE(cur() == PrintState::Complete);
+    REQUIRE(prev() == PrintState::Printing);
+
+    SECTION("an unchanged state does not rewrite the previous value") {
+        // Otherwise prev collapses to equal current and every consumer sees a
+        // self-transition.
+        state.update_from_status(json{{"print_stats", {{"state", "complete"}}}});
+        REQUIRE(cur() == PrintState::Complete);
+        REQUIRE(prev() == PrintState::Printing);
+    }
+}

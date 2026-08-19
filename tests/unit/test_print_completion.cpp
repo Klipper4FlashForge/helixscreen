@@ -580,3 +580,50 @@ TEST_CASE("decide_preparing_exit_action only cools down when no print is running
         REQUIRE_FALSE(a.notify_cancelled);
     }
 }
+
+// ============================================================================
+// When a print ending should notify
+// ============================================================================
+
+TEST_CASE("should_notify_print_ended fires only when an active print reaches a terminal state",
+          "[print_completion][lifecycle]") {
+    using helix::should_notify_print_ended;
+
+    SECTION("printing or paused into a terminal state notifies") {
+        REQUIRE(should_notify_print_ended(PrintState::Printing, PrintState::Complete));
+        REQUIRE(should_notify_print_ended(PrintState::Printing, PrintState::Cancelled));
+        REQUIRE(should_notify_print_ended(PrintState::Printing, PrintState::Error));
+        REQUIRE(should_notify_print_ended(PrintState::Paused, PrintState::Cancelled));
+    }
+
+    SECTION("Preparing into a terminal state does NOT notify") {
+        // PrintLifecycleState::is_active() counts Preparing as active, so
+        // keying off that would fire the completion path - sound, modal,
+        // history entry - for a print that never started. A start that dies
+        // during preparation is reported by the preparing-exit observer
+        // instead, as a failure or a cancellation.
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Preparing, PrintState::Error));
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Preparing, PrintState::Cancelled));
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Preparing, PrintState::Complete));
+    }
+
+    SECTION("booting straight into a terminal state does not notify") {
+        // The app can start while print_stats already reads complete. The
+        // previous state is Idle there, so nothing actually ended on our watch.
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Idle, PrintState::Complete));
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Idle, PrintState::Cancelled));
+    }
+
+    SECTION("non-terminal destinations never notify") {
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Printing, PrintState::Paused));
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Paused, PrintState::Printing));
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Printing, PrintState::Idle));
+    }
+
+    SECTION("a terminal state settling to Idle does not re-notify") {
+        // Moonraker reports standby after a terminal state; that must not
+        // produce a second notification for the same print.
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Complete, PrintState::Idle));
+        REQUIRE_FALSE(should_notify_print_ended(PrintState::Cancelled, PrintState::Idle));
+    }
+}

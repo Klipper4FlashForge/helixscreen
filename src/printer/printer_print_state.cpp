@@ -99,6 +99,7 @@ void PrinterPrintState::init_subjects(bool register_xml) {
                      register_xml);
     INIT_SUBJECT_INT(print_lifecycle, static_cast<int>(PrintState::Idle), subjects_, register_xml);
     INIT_SUBJECT_INT(preparing_epoch, 0, subjects_, false);
+    INIT_SUBJECT_INT(print_lifecycle_prev, static_cast<int>(PrintState::Idle), subjects_, false);
     INIT_SUBJECT_STRING(print_start_message, "", subjects_, register_xml);
     INIT_SUBJECT_INT(print_start_progress, 0, subjects_, register_xml);
 
@@ -1345,7 +1346,11 @@ void PrinterPrintState::publish_lifecycle_state() {
     const auto job_state = static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
     const int phase = lv_subject_get_int(&print_start_phase_);
     const int derived = static_cast<int>(derive_print_state(job_state, phase));
-    if (lv_subject_get_int(&print_lifecycle_) != derived) {
+    const int current = lv_subject_get_int(&print_lifecycle_);
+    if (current != derived) {
+        // Previous first, so an observer of the current value already sees a
+        // consistent pair when it fires.
+        lv_subject_set_int(&print_lifecycle_prev_, current);
         lv_subject_set_int(&print_lifecycle_, derived);
     }
 }

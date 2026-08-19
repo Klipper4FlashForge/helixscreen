@@ -35,12 +35,6 @@ using helix::gcode::resolve_gcode_filename;
 
 namespace helix {
 
-// Track previous state to detect transitions to terminal states
-static PrintJobState prev_print_state = PrintJobState::STANDBY;
-
-// Guard against false completion on startup - first update may have stale initial state
-static bool has_received_first_update = false;
-
 // --- Subjects for declarative XML bindings in print_completion_modal.xml ---
 static bool s_subjects_initialized = false;
 
@@ -144,6 +138,13 @@ static void cleanup_helix_temp_file(const std::string& filename) {
 }
 
 // Helper to show the rich print completion modal
+bool should_notify_print_ended(PrintState prev, PrintState current) {
+    const bool was_active = (prev == PrintState::Printing || prev == PrintState::Paused);
+    const bool is_terminal = (current == PrintState::Complete || current == PrintState::Cancelled ||
+                              current == PrintState::Error);
+    return was_active && is_terminal;
+}
+
 PreparingExitAction decide_preparing_exit_action(PreparingExit reason) {
     PreparingExitAction action;
     switch (reason) {
@@ -272,30 +273,22 @@ static void show_rich_completion_modal(PrintJobState state, const char* filename
 static void on_print_state_changed_for_notification(lv_observer_t* observer,
                                                     lv_subject_t* subject) {
     (void)observer;
-    auto current = static_cast<PrintJobState>(lv_subject_get_int(subject));
+    // Both halves of the transition come from PrinterPrintState, which computes
+    // it once. This module used to keep its own previous-state variable and an
+    // arming latch; the latch is unnecessary now because the published previous
+    // value starts at Idle, so booting straight into a terminal state reads as
+    // Idle -> Complete and correctly does not notify.
+    const auto lifecycle = static_cast<PrintState>(lv_subject_get_int(subject));
+    const auto prev_lifecycle = static_cast<PrintState>(
+        lv_subject_get_int(get_printer_state().get_print_lifecycle_prev_subject()));
 
-    // Skip first callback - state may be stale on startup
-    // (Observer initializes prev_print_state before Moonraker updates arrive)
-    if (!has_received_first_update) {
-        has_received_first_update = true;
-        prev_print_state = current; // Initialize to ACTUAL state from Moonraker
-        spdlog::debug("[PrintComplete] First update received (state={}), armed for notifications",
-                      static_cast<int>(current));
-        return;
-    }
+    spdlog::debug("[PrintComplete] Lifecycle: {} -> {}", static_cast<int>(prev_lifecycle),
+                  static_cast<int>(lifecycle));
 
-    spdlog::debug("[PrintComplete] State change: {} -> {}", static_cast<int>(prev_print_state),
-                  static_cast<int>(current));
-
-    // Check for transitions to terminal states (from active print states)
-    bool was_active =
-        (prev_print_state == PrintJobState::PRINTING || prev_print_state == PrintJobState::PAUSED);
-    bool is_terminal = (current == PrintJobState::COMPLETE || current == PrintJobState::CANCELLED ||
-                        current == PrintJobState::ERROR);
-
-    spdlog::debug("[PrintComplete] was_active={}, is_terminal={}", was_active, is_terminal);
-
-    if (was_active && is_terminal) {
+    if (should_notify_print_ended(prev_lifecycle, lifecycle)) {
+        // The terminal job state still drives which message and sound are used.
+        const auto current = static_cast<PrintJobState>(
+            lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
         // Get filename from PrinterState and format for display
         const char* raw_filename =
             lv_subject_get_string(get_printer_state().get_print_filename_subject());
@@ -354,14 +347,12 @@ static void on_print_state_changed_for_notification(lv_observer_t* observer,
             }
 
             show_rich_completion_modal(current, display_name.c_str());
-            prev_print_state = current;
             return;
         }
 
         // 2. On print status panel - no notification needed (panel shows state)
         if (on_print_status) {
             spdlog::debug("[PrintComplete] On print status panel - skipping notification");
-            prev_print_state = current;
             return;
         }
 
@@ -393,21 +384,14 @@ static void on_print_state_changed_for_notification(lv_observer_t* observer,
             break;
         }
     }
-
-    prev_print_state = current;
 }
 
 ObserverGuard init_print_completion_observer() {
     // Initialize subjects early so XML bindings are available when modal is shown
     init_completion_subjects();
 
-    // Reset state tracking on (re)initialization
-    // prev_print_state will be set to actual state on first callback
-    has_received_first_update = false;
-    prev_print_state = PrintJobState::STANDBY;
-
     spdlog::debug("[PrintComplete] Observer registered, awaiting first Moonraker update");
-    return ObserverGuard(get_printer_state().get_print_state_enum_subject(),
+    return ObserverGuard(get_printer_state().get_print_lifecycle_subject(),
                          on_print_state_changed_for_notification, nullptr);
 }
 

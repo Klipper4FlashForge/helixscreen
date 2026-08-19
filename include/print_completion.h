@@ -5,6 +5,7 @@
 #include "ui_observer_guard.h"
 
 #include "print_job_ref.h"
+#include "print_lifecycle_state.h"
 
 #include <string>
 
@@ -32,6 +33,17 @@ ObserverGuard init_print_completion_observer();
  * terminal transition ever happens and the completion path cannot see it.
  */
 ObserverGuard init_preparing_exit_observer();
+
+/**
+ * @brief Whether a lifecycle transition means a print the user was watching ended
+ *
+ * Deliberately excludes `Preparing` from "was active", even though
+ * `PrintLifecycleState::is_active()` includes it: firing the completion path -
+ * sound, modal, history entry - for a print that never started would be wrong.
+ * A start that dies during preparation is reported by the preparing-exit
+ * observer instead. See decide_preparing_exit_action().
+ */
+bool should_notify_print_ended(PrintState prev, PrintState current);
 
 /**
  * @brief What to do when a job stops being prepared
