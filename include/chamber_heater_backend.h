@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <cmath>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -31,7 +32,8 @@ struct ChamberHeaterDiagnostics {
 class ChamberHeaterBackend {
   public:
     virtual ~ChamberHeaterBackend() = default;
-    /// Stable id ("generic", "dragonbreath", "panda_breath") — logged, never UI-visible.
+    /// Stable backend id (ASCII, logged, never UI-visible). Concrete ids live in the backend .cpp
+    /// files.
     virtual std::string_view id() const = 0;
     /// 0 = not mine. Heuristic keyword score for generic; 95 for appliance names.
     virtual int discovery_confidence(const std::string& object_name) const = 0;
@@ -60,9 +62,8 @@ struct MatchResult {
     int confidence = 0;
 };
 
-/// Fixed-priority registry. Order matters only for logging; match() is by
-/// highest confidence (generic never beats an exact appliance name because
-/// appliance confidence 95 > generic's non-match 0).
+/// Fixed-priority registry. match() picks the highest confidence; ties resolve by registry order
+/// (first wins).
 const std::vector<const ChamberHeaterBackend*>& registry();
 
 /// Best backend for an object name, or nullptr.

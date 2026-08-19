@@ -16,18 +16,22 @@ std::string to_upper_copy(std::string s) {
 }
 
 bool has_standalone_token(const std::string& upper, const char* tok) {
-    const std::string t = tok;
-    size_t pos = upper.find(t);
-    while (pos != std::string::npos) {
-        const bool left_ok = pos == 0 || upper[pos - 1] == '_' || upper[pos - 1] == ' ' ||
-                             upper[pos - 1] == '-' || upper[pos - 1] == '.';
-        const size_t end = pos + t.size();
-        const bool right_ok = end == upper.size() || upper[end] == '_' || upper[end] == ' ' ||
-                              upper[end] == '-' || upper[end] == '.';
-        if (left_ok && right_ok) {
+    const std::string token = tok;
+    auto is_separator = [](char c) {
+        return c == '_' || std::isspace(static_cast<unsigned char>(c));
+    };
+    size_t i = 0;
+    while (i < upper.size()) {
+        while (i < upper.size() && is_separator(upper[i])) {
+            ++i;
+        }
+        size_t start = i;
+        while (i < upper.size() && !is_separator(upper[i])) {
+            ++i;
+        }
+        if (i - start == token.size() && upper.compare(start, token.size(), token) == 0) {
             return true;
         }
-        pos = upper.find(t, end);
     }
     return false;
 }

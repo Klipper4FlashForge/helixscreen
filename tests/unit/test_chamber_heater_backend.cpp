@@ -20,6 +20,9 @@ TEST_CASE("generic backend keeps keyword tiers", "[chamber][backend]") {
     CHECK(generic->discovery_confidence("hotend") == 0);
     CHECK(generic->discovery_confidence("chamber_humidity") ==
           59); // 100 -1 compound -40 air-quality
+    // Original tokenizer splits ONLY on _/whitespace — hyphen is not a separator.
+    CHECK(generic->discovery_confidence("chamber-tvoc") == 99); // no air-quality penalty
+    CHECK(generic->discovery_confidence("my-box") == 0);        // BOX not standalone
 }
 
 TEST_CASE("registry exposes generic as default", "[chamber][backend]") {
