@@ -30,7 +30,7 @@ class IMoonrakerAPI;
 // set_sensor_role() so multi-lane (Snapmaker) runout scenarios can be exercised.
 class RunoutScopeTestAccess;
 class BypassArmingTestAccess;
-// Test-only friend (defined in tests/unit/test_ams_post_unload_runout_grace.cpp)
+// Test-only friend (defined in tests/test_helpers/post_unload_grace_test_access.h)
 // used to put the singleton on a known sensor baseline with the startup grace
 // already expired.
 class PostUnloadGraceTestAccess;
