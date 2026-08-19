@@ -6,7 +6,7 @@ This document is a reference for the environment variables HelixScreen reads at 
 
 | Category | Count | Prefix |
 |----------|-------|--------|
-| [Display & Backend](#display--backend-configuration) | 22 | `HELIX_` |
+| [Display & Backend](#display--backend-configuration) | 23 | `HELIX_` |
 | [Touch Calibration](#touch-calibration) | 11 | `HELIX_TOUCH_*` / `HELIX_SCROLL_*` |
 | [G-Code Viewer](#g-code-viewer) | 4 | `HELIX_` |
 | [Bed Mesh](#bed-mesh) | 1 | `HELIX_` |
@@ -516,6 +516,41 @@ when the accelerated one is unavailable. Audio is silenced automatically too:
 (with `overwrite=0`, so exporting `SDL_AUDIODRIVER` yourself still wins — useful
 when you want to debug audio under a headless window). See `docs/devel/HELIXCTL.md`
 § "Running headless".
+
+### `HELIX_KEY_DEPTH`
+
+Force the on-screen keyboard's key depth treatment instead of picking it from
+the detected hardware tier. Set it on a device that renders slower than its
+RAM/core count suggests, or to check a branch you do not have hardware for.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `skirt` (hard-edged rim under each key), `emboss` (an edge on the key face, no shadow), `flat` (neither) |
+| **Default** | Auto — `emboss` on the `EMBEDDED` tier, `skirt` above it, `flat` on ESP32 builds |
+| **Files** | `include/ui_keycap_style.h`, `src/ui/ui_keycap_style.cpp`, `src/ui/ui_keyboard_manager.cpp` |
+
+```bash
+# A device where 30-plus per-key box shadows cost more than its tier implies
+HELIX_KEY_DEPTH=emboss ./build/bin/helix-screen -vv
+
+# Check the constrained-hardware look on a desktop
+HELIX_KEY_DEPTH=emboss ./build/bin/helix-screen --test -vv
+```
+
+The depth is resolved once per process, so this cannot be changed while running.
+`skirt` costs one box shadow per key at blur width 1; `emboss` draws the key's own
+edge as a border and costs no shadow at all, which is why constrained hardware
+falls back to it rather than to `flat`. How deep the skirt sits comes from the
+active theme's `shadow_intensity` (0, which is what 16 of the 18 shipped themes
+use, means default depth rather than off).
+
+Which way that edge faces depends on the mode, not on taste: a light theme shades
+the underside of the key, a dark theme lights the top. A shadow needs the
+background to contrast against, and a dark theme's keyboard background is darker
+than the keys themselves — measured on a stock dark theme the rim landed within
+four values of the background, i.e. invisible — so there the depth comes from a lit
+top edge drawn inside the key face instead. `skirt` on a dark theme draws both.
+Holding a key flips the edge to the opposite corner.
 
 ---
 
