@@ -260,46 +260,50 @@ The third line is the regression guard: externally started prints still arm.
 
 ## Risks and gaps - read before merging
 
-### 1. Hardware: verified in part, one real gap found
+### 1. Hardware: verified on the K2, including the steps
 
-Tested on the K2 Plus 2026-08-18 with a host-side `BED_MESH_CALIBRATE_START_PRINT`,
-cancelled before any material was laid.
+Tested twice on the K2 Plus 2026-08-18 with a host-side
+`BED_MESH_CALIBRATE_START_PRINT`, cancelled mid-mesh both times so no material was
+laid.
 
-Confirmed working on hardware:
+**Run 1** (before the collector arming) confirmed arming, identity and cancel, and
+exposed the gap: the phase stayed pinned at `INITIALIZING` for the whole window with
+`collector_active=false`. The overlay came up with the right job and a generic
+"Preparing Print..." and never advanced - the second half of the original report,
+still broken.
+
+**Run 2** (after arming the collector at commit):
 
 ```
-23:04:01.517  Starting print: 3DBench_PLA_21m47s.gcode (pre-print: mesh=true, ...)
-23:04:01.517  [PrinterPrintState] Preparing '3DBench_PLA_21m47s.gcode'   <- arms at commit
-23:04:01.543  Navigating to print status panel (preparing...)
-23:04:02.052  Executing pre-start gcode: BED_MESH_CALIBRATE_START_PRINT ... BED_TEMP=50
+23:36:49.043  Starting print: 3DBench_PLA_21m47s.gcode (pre-print: mesh=true, ...)
+23:36:49.044  [PrinterPrintState] Preparing '3DBench_PLA_21m47s.gcode'
+23:36:49.137  [MoonrakerManager] PRINT_START collector started (commit)
 ```
 
-- arming lands **before** navigation and before the blocking macro
-- media adopts the new job (`ActivePrintMediaManager` retried the thumbnail for
-  `3DBench_PLA_21m47s.gcode`, not the previous file)
-- cancel mid-mesh retires the job; when the macro returned, `continue_print_start`
-  abandoned the start - `print_stats` still showed the PREVIOUS job and
-  `start_print` was never called
-- afterwards: phase `IDLE`, `preparing_overlay` hidden, outcome `NONE`
+Phase progression through the host-side mesh, while Klipper still reported the
+PREVIOUS job as `complete`:
 
-**The gap: the pre-print steps do not advance during a host-side pre-start block.**
-Phase stayed pinned at `INITIALIZING` (1) for the entire mesh, with
-`collector_active=false` and no `PRINT_START collector started` in the log.
+```
+t+35s   phase=2
+t+70s   phase=6
+t+105s  phase=7
+```
 
-Cause: this work arms the *state* at commit but not the **collector**.
-`PrintStartCollector` is still started only from the printer-edge observer
-(`moonraker_manager.cpp`), so during a host-side window nothing parses gcode
-responses into HOMING / HEATING / BED_MESH phases. The overlay appears with the
-right job and a generic "Preparing Print..." message, and then sits there.
+Cancel mid-mesh, both runs: `Retiring preparing job '...': cancelled`, phase back to
+`IDLE`, and when the macro returned `continue_print_start` abandoned the start -
+`print_stats` still showed the previous job (`SpeedTestStructure_ASA`, 1618s) and
+`start_print` was never called.
 
-That is the second half of the original report - "it never transitioned ... to the
-new pre-print progress steps". The badge and identity half is fixed; **the steps
-half is not**. Arming the collector at commit is the remaining work, and it is
-where the branch-ordering hazard in `moonraker_manager.cpp:730-760` (documented
-under "Design") has to be resolved for real.
+Confirmed fixed on hardware: badge/identity cleared at commit, media resolves the new
+job, pre-print steps advance during a host-side block, cancel stops the start.
 
-Still unverified on hardware: CB1/Voron no-pre-start baseline (overlay flash), and
-a `Superseded` race.
+Still unverified on hardware: CB1/Voron no-pre-print baseline (overlay flash), and a
+`Superseded` race.
+
+Incidental finding worth keeping: **a restart cannot reproduce the stale badge.**
+`print_outcome` is set on the *edge* into a terminal state, so an app that boots
+while `print_stats` already reads `complete` never sets it. Staging this bug
+requires either a real completion or a cancel while the app is running.
 
 ### 2b. Cancelling during pre-print leaves the heaters on
 
@@ -349,11 +353,10 @@ Done: `PRINT_STATE_MACHINE.md`, `architecture/05-printer-state.md`,
 
 ## Outstanding work, in dependency order
 
-1. **Arm the collector at commit, not only on the printer edge.** Without it the
-   pre-print steps never advance during a host-side pre-start block - confirmed on
-   the K2. This is the remaining half of the original report and the highest-value
-   item left. Resolving it forces the `moonraker_manager.cpp:730-760` branch
-   ordering to be sorted properly.
+1. ~~Arm the collector at commit~~ **done** - verified on the K2; phases advance
+   through a host-side mesh. Teardown routes through
+   `should_stop_print_collector()` so the transient `complete -> standby` hop into
+   our own print no longer stops it.
 2. **CB1/Voron baseline** - no pre-start block; confirm no overlay flash and no
    regression for externally started prints.
 3. **Implement the 750ms overlay debounce** (risk 3). `lv_timer_t`, so it must be
