@@ -180,7 +180,9 @@ translations:
     > バージョン情報 からデバッグバンドルを送信してください。
   An unexpected printer error occurred.: 予期しないプリンターエラーが発生しました。
   An update is available: 更新があります
+  Analyzing data...: ''
   Analyzing data... {}%: 'データを解析中... {}%'
+  Analyzing data... {}s: ''
   Android logcat: Android logcat
   Animations: アニメーション
   Anonymous data to help improve HelixScreen: HelixScreen改善のための匿名データ

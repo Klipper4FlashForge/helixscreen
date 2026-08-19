@@ -204,7 +204,9 @@ translations:
   An unexpected printer error occurred.: Une erreur inattendue de l'imprimante s'est
     produite.
   An update is available: Une mise à jour est disponible
+  Analyzing data...: ''
   Analyzing data... {}%: 'Analyse des données... {}%'
+  Analyzing data... {}s: ''
   Android logcat: Logcat Android
   Animations: Animations
   Anonymous data to help improve HelixScreen: Données anonymes pour améliorer HelixScreen

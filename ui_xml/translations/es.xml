@@ -179,7 +179,9 @@
   <translation tag="An internal error occurred. The app continues running — please send a debug bundle from Settings &gt; About if it repeats." es="Ocurrió un error interno. La aplicación sigue funcionando — envíe un paquete de depuración desde Ajustes &gt; Acerca de si se repite."/>
   <translation tag="An unexpected printer error occurred." es="Ocurrió un error inesperado en la impresora."/>
   <translation tag="An update is available" es="Hay una actualización disponible"/>
+  <translation tag="Analyzing data..."/>
   <translation tag="Analyzing data... {}%" es="Analizando datos... {}%"/>
+  <translation tag="Analyzing data... {}s"/>
   <translation tag="Android logcat" es="Android logcat"/>
   <translation tag="Animations" es="Animaciones"/>
   <translation tag="Anonymous data to help improve HelixScreen" es="Datos anónimos para mejorar HelixScreen"/>

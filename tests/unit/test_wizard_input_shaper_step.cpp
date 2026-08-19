@@ -387,6 +387,40 @@ TEST_CASE_METHOD(WizardInputShaperStepTestFixture, "WizardInputShaperStep - life
 }
 
 // ============================================================================
+// Combined Progress Bar Mapping Tests
+// ============================================================================
+
+TEST_CASE_METHOD(WizardInputShaperStepTestFixture, "WizardInputShaperStep - combined bar mapping",
+                 "[wizard][input-shaper][progress]") {
+    using Phase = ShaperCalibrationPhase;
+
+    SECTION("Sweep reports map onto the first half of the bar for X") {
+        CHECK(WizardInputShaperStep::combined_bar_value(0, Phase::Sweeping, false) == 0);
+        CHECK(WizardInputShaperStep::combined_bar_value(80, Phase::Sweeping, false) == 40);
+        CHECK(WizardInputShaperStep::combined_bar_value(100, Phase::Sweeping, false) == 50);
+    }
+
+    SECTION("Sweep reports map onto the second half of the bar for Y") {
+        CHECK(WizardInputShaperStep::combined_bar_value(0, Phase::Sweeping, true) == 50);
+        CHECK(WizardInputShaperStep::combined_bar_value(80, Phase::Sweeping, true) == 90);
+        CHECK(WizardInputShaperStep::combined_bar_value(100, Phase::Sweeping, true) == 100);
+    }
+
+    SECTION("Completion maps like a sweep report") {
+        CHECK(WizardInputShaperStep::combined_bar_value(100, Phase::Complete, false) == 50);
+        CHECK(WizardInputShaperStep::combined_bar_value(100, Phase::Complete, true) == 100);
+    }
+
+    SECTION("Analysis reports never move the bar") {
+        // The analysis phase reports no percent (0 is the phase-change signal
+        // only), so the bar holds its last sweep value; -1 tells the callback
+        // to update the status label instead of the bar.
+        CHECK(WizardInputShaperStep::combined_bar_value(0, Phase::Analyzing, false) == -1);
+        CHECK(WizardInputShaperStep::combined_bar_value(0, Phase::Analyzing, true) == -1);
+    }
+}
+
+// ============================================================================
 // Subject Initialization Tests
 // ============================================================================
 

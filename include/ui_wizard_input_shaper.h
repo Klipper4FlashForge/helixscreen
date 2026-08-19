@@ -219,6 +219,28 @@ class WizardInputShaperStep : public helix::wizard::Step {
     }
 
     /**
+     * @brief Bar value for a calibration progress report on the combined
+     *        X-then-Y bar, or -1 when the report must not move the bar
+     *
+     * The wizard shows one bar for both axes: X maps onto its first half
+     * (percent/2), Y onto its second (50 + percent/2). Analysis-phase reports
+     * carry no meaningful percent - the collector emits 0 purely as the
+     * phase-change signal - so they return -1 and the caller updates the
+     * status label instead, leaving the bar at its last sweep value.
+     *
+     * @param percent Sweep/completion percent (0-100) from the collector
+     * @param phase Phase the report was tagged with
+     * @param second_axis True for the Y-axis run, false for X
+     * @return Bar value 0-100, or -1 for analysis-phase reports
+     */
+    static int combined_bar_value(int percent, ShaperCalibrationPhase phase, bool second_axis) {
+        if (phase == ShaperCalibrationPhase::Analyzing) {
+            return -1;
+        }
+        return second_axis ? 50 + percent / 2 : percent / 2;
+    }
+
+    /**
      * @brief Low-RAM warning modal shown before calibration (see memory_utils.h).
      *
      * Public because the file-static LVGL trampolines in ui_wizard_input_shaper.cpp

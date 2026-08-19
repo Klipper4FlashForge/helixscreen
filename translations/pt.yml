@@ -200,7 +200,9 @@ translations:
     em Configurações > Sobre se isso se repetir.
   An unexpected printer error occurred.: Ocorreu um erro inesperado na impressora.
   An update is available: Uma atualização está disponível
+  Analyzing data...: ''
   Analyzing data... {}%: 'Analisando dados... {}%'
+  Analyzing data... {}s: ''
   Android logcat: Logcat do Android
   Animations: Animações
   Anonymous data to help improve HelixScreen: Dados anônimos para melhorar o HelixScreen

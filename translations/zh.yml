@@ -179,7 +179,9 @@ translations:
     — 如果反复出现，请从设置 > 关于发送调试捆绑包。
   An unexpected printer error occurred.: 发生了意外的打印机错误。
   An update is available: 有可用更新
+  Analyzing data...: ''
   Analyzing data... {}%: '正在分析数据... {}%'
+  Analyzing data... {}s: ''
   Android logcat: Android logcat
   Animations: 动画
   Anonymous data to help improve HelixScreen: 匿名数据以帮助改进 HelixScreen

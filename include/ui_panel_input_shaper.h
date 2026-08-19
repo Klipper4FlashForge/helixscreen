@@ -213,6 +213,17 @@ class InputShaperPanel : public OverlayBase {
     void populate_current_config(const InputShaperConfig& config);
     void clear_results();
 
+    // Analysis-phase display: spinner + elapsed-seconds step label. Shared
+    // cancel_analysis_timer() runs from every path that stops showing the
+    // analysis (phase transitions out of Analyzing, state changes away from
+    // MEASURING, cleanup/deactivate, destructor) so the timer is never left
+    // armed on a stale label.
+    void begin_analysis_display();
+    void format_analysis_label(uint32_t elapsed_seconds);
+    [[nodiscard]] uint32_t elapsed_analysis_seconds() const;
+    void cancel_analysis_timer();
+    static void analysis_elapsed_timer_cb(lv_timer_t* timer);
+
     // Per-axis result helpers
     static const char* get_shaper_explanation(const std::string& type);
     static int get_vibration_quality(float vibrations);
@@ -271,6 +282,14 @@ class InputShaperPanel : public OverlayBase {
     lv_subject_t is_measuring_progress_{};
     lv_subject_t
         is_measuring_has_progress_{}; // 0=indeterminate (spinner), 1=determinate (progress bar)
+
+    // Analysis-phase elapsed label. The analysis reports no percent, so while
+    // its spinner is shown a 1 Hz timer refreshes the step label
+    // ("Analyzing data... Ns") from the tick stored when the phase began.
+    // lv_tick_get() (not a wall clock) so the label tracks the same clock the
+    // timer fires on.
+    lv_timer_t* analysis_elapsed_timer_ = nullptr;
+    uint32_t analysis_start_tick_ = 0;
 
     // Per-axis result subjects
     lv_subject_t is_results_has_x_{};
@@ -407,6 +426,19 @@ class InputShaperPanel : public OverlayBase {
      */
     [[nodiscard]] helix::calibration::InputShaperCalibrator* get_calibrator() const {
         return calibrator_.get();
+    }
+
+    /**
+     * @brief Test seam: raw handle of the analysis elapsed timer
+     *
+     * The unit-test harness (lv_timer_handler_safe) only executes timers with
+     * a finite repeat count, so the 1 Hz elapsed timer - periodic by design -
+     * never fires there. Tests use this handle to lend the timer a temporary
+     * finite repeat count so the harness can run it, restoring -1 afterwards.
+     * Mirrors PIDCalibrationPanel::eta_timer_for_test().
+     */
+    [[nodiscard]] lv_timer_t* analysis_elapsed_timer_for_test() const {
+        return analysis_elapsed_timer_;
     }
 };
 

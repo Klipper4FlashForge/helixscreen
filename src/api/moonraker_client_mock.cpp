@@ -4704,7 +4704,16 @@ void MoonrakerClientMock::dispatch_shaper_calibrate_response(char axis) {
         lines.emplace_back(buf);
     }
 
-    // Phase 2: the sweep-finished marker, then one fit + max_accel per shaper.
+    // Phase 2: analysis heartbeats, the sweep-finished marker, then one fit +
+    // max_accel per shaper. Creality's K1C build prints "Wait for calculations.."
+    // every ~5s through its (compressed here) analysis window before the
+    // "Calculating the best" line; the collector treats the repeats as liveness
+    // heartbeats, not new events. Ten lines give the phase ~1s of transcript on
+    // its own so the panel's spinner + elapsed-seconds label has a window to
+    // be observed in.
+    for (int i = 0; i < 10; ++i) {
+        lines.emplace_back("Wait for calculations..");
+    }
     snprintf(buf, sizeof(buf), "Calculating the best input shaper parameters for %c axis",
              axis_lower);
     lines.emplace_back(buf);

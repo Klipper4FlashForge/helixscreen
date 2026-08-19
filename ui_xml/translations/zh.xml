@@ -179,7 +179,9 @@
   <translation tag="An internal error occurred. The app continues running — please send a debug bundle from Settings &gt; About if it repeats." zh="发生了内部错误。应用程序继续运行 — 如果反复出现，请从设置 &gt; 关于发送调试捆绑包。"/>
   <translation tag="An unexpected printer error occurred." zh="发生了意外的打印机错误。"/>
   <translation tag="An update is available" zh="有可用更新"/>
+  <translation tag="Analyzing data..."/>
   <translation tag="Analyzing data... {}%" zh="正在分析数据... {}%"/>
+  <translation tag="Analyzing data... {}s"/>
   <translation tag="Android logcat" zh="Android logcat"/>
   <translation tag="Animations" zh="动画"/>
   <translation tag="Anonymous data to help improve HelixScreen" zh="匿名数据以帮助改进 HelixScreen"/>

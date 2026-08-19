@@ -191,7 +191,9 @@ translations:
     from Settings > About if it repeats.
   An unexpected printer error occurred.: An unexpected printer error occurred.
   An update is available: An update is available
+  Analyzing data...: Analyzing data...
   Analyzing data... {}%: Analyzing data... {}%
+  Analyzing data... {}s: Analyzing data... {}s
   Android logcat: Android logcat
   Animations: Animations
   Anonymous data to help improve HelixScreen: Anonymous data to help improve HelixScreen

@@ -215,8 +215,16 @@ static void begin_is_calibration_flow(WizardInputShaperStep* step) {
                 if (cal) {
                     cal->run_calibration(
                         'X',
-                        [token](int percent, ShaperCalibrationPhase) {
-                            safe_update_progress(token, percent / 2);
+                        [token](int percent, ShaperCalibrationPhase phase) {
+                            const int bar =
+                                WizardInputShaperStep::combined_bar_value(percent, phase, false);
+                            if (bar < 0) {
+                                // Analysis reports no percent; say what is
+                                // happening and let the bar hold its last value.
+                                safe_update_status(token, lv_tr("Analyzing data..."));
+                                return;
+                            }
+                            safe_update_progress(token, bar);
                         },
                         [token](const InputShaperResult& result) {
                             (void)result;
@@ -237,8 +245,14 @@ static void begin_is_calibration_flow(WizardInputShaperStep* step) {
                             if (cal2) {
                                 cal2->run_calibration(
                                     'Y',
-                                    [token](int percent, ShaperCalibrationPhase) {
-                                        safe_update_progress(token, 50 + percent / 2);
+                                    [token](int percent, ShaperCalibrationPhase phase) {
+                                        const int bar = WizardInputShaperStep::combined_bar_value(
+                                            percent, phase, true);
+                                        if (bar < 0) {
+                                            safe_update_status(token, lv_tr("Analyzing data..."));
+                                            return;
+                                        }
+                                        safe_update_progress(token, bar);
                                     },
                                     [token](const InputShaperResult& result) {
                                         (void)result;

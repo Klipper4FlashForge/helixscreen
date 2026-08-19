@@ -9,6 +9,7 @@
 #include "ui_frequency_response_chart.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
+#include "ui_timer_guard.h"
 #include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
@@ -74,6 +75,9 @@ InputShaperPanel& get_global_input_shaper_panel() {
 }
 
 InputShaperPanel::~InputShaperPanel() {
+    // Stop the analysis elapsed timer before anything it could touch goes away.
+    cancel_analysis_timer();
+
     // Share one implementation with the registry path. Normally the registry has
     // already run this and deinit_subjects_base() no-ops on subjects_initialized_;
     // this call covers the teardown that destroys the panel without it. The
@@ -355,6 +359,10 @@ void InputShaperPanel::deinit_subjects() {
     lifetime_.invalidate();
     calibration_lifetime_.invalidate();
 
+    // Same for the analysis elapsed timer: it writes the step label subject on
+    // every tick, so it must not survive the subjects it refreshes.
+    cancel_analysis_timer();
+
     deinit_subjects_base(subjects_);
 }
 
@@ -493,6 +501,10 @@ void InputShaperPanel::on_activate() {
 void InputShaperPanel::on_deactivate() {
     spdlog::debug("[InputShaper] on_deactivate()");
 
+    // Stop the analysis elapsed timer even when the state check below does not
+    // run; the label it refreshes is going off screen either way.
+    cancel_analysis_timer();
+
     // Cancel any in-progress calibration
     if (state_ == State::MEASURING && calibrator_) {
         spdlog::info("[InputShaper] Cancelling calibration on deactivate");
@@ -519,6 +531,11 @@ void InputShaperPanel::cleanup() {
     // Expire all outstanding async tokens
     lifetime_.invalidate();
     calibration_lifetime_.invalidate();
+
+    // Stop the analysis elapsed timer; StaticPanelRegistry::destroy_all() runs
+    // before lv_deinit(), so teardown that skips this leaves it armed on a
+    // freed panel (#1173).
+    cancel_analysis_timer();
 
     // Destroy chart widgets
     if (x_chart_.chart) {
@@ -563,6 +580,11 @@ void InputShaperPanel::on_ui_destroyed() {
 void InputShaperPanel::set_state(State new_state) {
     spdlog::debug("[InputShaper] State change: {} -> {}", static_cast<int>(state_),
                   static_cast<int>(new_state));
+    if (new_state != State::MEASURING) {
+        // The analysis elapsed timer only makes sense while its spinner is on
+        // screen; every exit from MEASURING stops it.
+        cancel_analysis_timer();
+    }
     state_ = new_state;
 
     // Update subject - XML bindings handle visibility automatically
@@ -727,6 +749,7 @@ void InputShaperPanel::start_calibration(char axis) {
 
     lv_subject_set_int(&is_measuring_progress_, 0);
     lv_subject_set_int(&is_measuring_has_progress_, 0);
+    cancel_analysis_timer(); // no elapsed label from a previous run
     set_state(State::MEASURING);
     spdlog::info("[InputShaper] Starting calibration for axis {}", axis);
 
@@ -743,25 +766,30 @@ void InputShaperPanel::start_calibration(char axis) {
                     return;
                 }
                 lv_subject_set_int(&is_measuring_progress_, percent);
-                lv_subject_set_int(&is_measuring_has_progress_, 1);
                 // The phase comes from the collector — the percentage cannot be
                 // used to infer it, because a sweep whose range we guessed short
                 // would sit at its ceiling and look like analysis had started.
+                // During analysis the percent is meaningless (0 is emitted only
+                // as the phase-change signal), so the bar is swapped for the
+                // spinner and the label counts elapsed seconds instead.
                 switch (phase) {
                 case ShaperCalibrationPhase::Sweeping: {
+                    lv_subject_set_int(&is_measuring_has_progress_, 1);
+                    cancel_analysis_timer();
                     const std::string step =
                         fmt::format(lv_tr("Measuring vibrations... {}%"), percent);
                     snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_),
                              "%s", step.c_str());
                     break;
                 }
-                case ShaperCalibrationPhase::Analyzing: {
-                    const std::string step = fmt::format(lv_tr("Analyzing data... {}%"), percent);
-                    snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_),
-                             "%s", step.c_str());
+                case ShaperCalibrationPhase::Analyzing:
+                    // The XML swaps the bar for a spinner while this is 0.
+                    lv_subject_set_int(&is_measuring_has_progress_, 0);
+                    begin_analysis_display();
                     break;
-                }
                 case ShaperCalibrationPhase::Complete:
+                    lv_subject_set_int(&is_measuring_has_progress_, 1);
+                    cancel_analysis_timer();
                     if (calibrate_all_mode_ && current_axis_ == 'X') {
                         snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_),
                                  "%s", lv_tr("X axis done, starting Y..."));
@@ -789,6 +817,50 @@ void InputShaperPanel::start_calibration(char axis) {
                             }
                             on_calibration_error(err);
                         }));
+}
+
+// ============================================================================
+// ANALYSIS-PHASE DISPLAY (spinner + elapsed-seconds label)
+// ============================================================================
+
+void InputShaperPanel::begin_analysis_display() {
+    lv_subject_set_int(&is_measuring_has_progress_, 0);
+    if (!analysis_elapsed_timer_) {
+        // First Analyzing report fixes the timestamp the label counts from.
+        analysis_start_tick_ = lv_tick_get();
+        analysis_elapsed_timer_ = lv_timer_create(analysis_elapsed_timer_cb, 1000, this);
+    }
+    format_analysis_label(elapsed_analysis_seconds());
+}
+
+void InputShaperPanel::analysis_elapsed_timer_cb(lv_timer_t* timer) {
+    auto* self = static_cast<InputShaperPanel*>(lv_timer_get_user_data(timer));
+    if (!self) {
+        return;
+    }
+    self->format_analysis_label(self->elapsed_analysis_seconds());
+}
+
+uint32_t InputShaperPanel::elapsed_analysis_seconds() const {
+    return (lv_tick_get() - analysis_start_tick_) / 1000;
+}
+
+void InputShaperPanel::format_analysis_label(uint32_t elapsed_seconds) {
+    const std::string step = fmt::format(lv_tr("Analyzing data... {}s"), elapsed_seconds);
+    snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_), "%s",
+             step.c_str());
+    lv_subject_copy_string(&is_measuring_step_label_, is_measuring_step_label_buf_);
+}
+
+void InputShaperPanel::cancel_analysis_timer() {
+    if (!analysis_elapsed_timer_) {
+        return;
+    }
+    // Neuter rather than delete: this runs from contexts (queued callbacks,
+    // destructor) where unlinking from the timer list mid-batch corrupts it.
+    // lv_timer_handler collects the neutered timer on its next pass.
+    helix::ui::lv_timer_cancel_safe(analysis_elapsed_timer_);
+    analysis_elapsed_timer_ = nullptr;
 }
 
 void InputShaperPanel::measure_noise() {

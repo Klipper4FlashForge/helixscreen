@@ -195,7 +195,9 @@ translations:
     из «Настройки > О программе», если она повторится.
   An unexpected printer error occurred.: Произошла непредвиденная ошибка принтера.
   An update is available: Доступно обновление
+  Analyzing data...: ''
   Analyzing data... {}%: 'Анализ данных... {}%'
+  Analyzing data... {}s: ''
   Android logcat: Android logcat
   Animations: Анимации
   Anonymous data to help improve HelixScreen: Анонимные данные для улучшения HelixScreen
