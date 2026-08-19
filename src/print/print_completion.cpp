@@ -138,11 +138,31 @@ static void cleanup_helix_temp_file(const std::string& filename) {
 }
 
 // Helper to show the rich print completion modal
-bool should_notify_print_ended(PrintState prev, PrintState current) {
-    const bool was_active = (prev == PrintState::Printing || prev == PrintState::Paused);
+bool should_notify_print_ended(PrintState prev, PrintState current, PrintOutcome outcome) {
     const bool is_terminal = (current == PrintState::Complete || current == PrintState::Cancelled ||
                               current == PrintState::Error);
-    return was_active && is_terminal;
+    if (!is_terminal) {
+        return false;
+    }
+    if (prev == PrintState::Printing || prev == PrintState::Paused) {
+        return true;
+    }
+
+    // A print that dies INSIDE PRINT_START never passes through Printing: a live
+    // pre-print phase outranks the job state, so the lifecycle holds at Preparing
+    // while print_stats already reads printing, and when the phase clears it goes
+    // straight Preparing -> terminal. Nothing reported those - not here, and not
+    // the preparing-exit observer either, because the preparing job was retired
+    // as Confirmed the moment the printer took it.
+    //
+    // The outcome is what makes this safe to accept. It is recorded on the
+    // job-state transition into a terminal value and cleared by
+    // begin_preparing(), so during a HOST-side block - where print_stats still
+    // holds the previous job's terminal state and clearing the phase would also
+    // derive Preparing -> Complete - it reads NONE. Without that term this arm
+    // would announce "Print Complete!" for a print that ended minutes ago, which
+    // is the stale-badge report this whole branch started from.
+    return prev == PrintState::Preparing && outcome != PrintOutcome::NONE;
 }
 
 PreparingExitAction decide_preparing_exit_action(PreparingExit reason) {
@@ -285,7 +305,10 @@ static void on_print_state_changed_for_notification(lv_observer_t* observer,
     spdlog::debug("[PrintComplete] Lifecycle: {} -> {}", static_cast<int>(prev_lifecycle),
                   static_cast<int>(lifecycle));
 
-    if (should_notify_print_ended(prev_lifecycle, lifecycle)) {
+    const auto outcome = static_cast<PrintOutcome>(
+        lv_subject_get_int(get_printer_state().get_print_outcome_subject()));
+
+    if (should_notify_print_ended(prev_lifecycle, lifecycle, outcome)) {
         // The terminal job state still drives which message and sound are used.
         const auto current = static_cast<PrintJobState>(
             lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));

@@ -37,13 +37,28 @@ ObserverGuard init_preparing_exit_observer();
 /**
  * @brief Whether a lifecycle transition means a print the user was watching ended
  *
- * Deliberately excludes `Preparing` from "was active", even though
- * `PrintLifecycleState::is_active()` includes it: firing the completion path -
- * sound, modal, history entry - for a print that never started would be wrong.
- * A start that dies during preparation is reported by the preparing-exit
- * observer instead. See decide_preparing_exit_action().
+ * `Printing`/`Paused` -> terminal is the ordinary case. `Preparing` -> terminal
+ * is accepted only when @p outcome is not NONE, and the distinction is the whole
+ * point of the third parameter:
+ *
+ *  - A print that dies INSIDE `PRINT_START` never passes through `Printing`. A
+ *    live phase outranks the job state, so the lifecycle holds at `Preparing`
+ *    while print_stats already says printing, then jumps straight to the
+ *    terminal value when the phase clears. The preparing-exit observer cannot
+ *    cover it either: the preparing job was retired as `Confirmed` the moment
+ *    the printer took the job. Without this, a Klipper fault in `PRINT_START` or
+ *    a cancel during a long bed mesh was reported by nothing at all.
+ *
+ *  - A HOST-side block that is abandoned also derives `Preparing` -> terminal,
+ *    but from the PREVIOUS job's stale `print_stats` value. `begin_preparing()`
+ *    clears `print_outcome`, so that case reads NONE and is correctly silent -
+ *    otherwise abandoning a start would announce the last print's completion.
+ *    That is the stale-badge report this module's branch began with.
+ *
+ * @param outcome PrinterState's `print_outcome`, i.e. whether a terminal state
+ *                was actually recorded for THIS attempt.
  */
-bool should_notify_print_ended(PrintState prev, PrintState current);
+bool should_notify_print_ended(PrintState prev, PrintState current, PrintOutcome outcome);
 
 /**
  * @brief What to do when a job stops being prepared
