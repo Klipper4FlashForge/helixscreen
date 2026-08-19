@@ -240,7 +240,6 @@ class EmergencyStopOverlay {
 
     // State observers
     ObserverGuard print_state_observer_;
-    ObserverGuard print_start_phase_observer_;
     ObserverGuard klippy_state_observer_;
 
     // Event handlers
