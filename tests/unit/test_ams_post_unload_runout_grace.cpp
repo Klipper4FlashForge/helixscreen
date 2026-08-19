@@ -35,6 +35,7 @@
 
 #include "../lvgl_test_fixture.h"
 #include "../test_helpers/ams_state_test_access.h"
+#include "../test_helpers/post_unload_grace_test_access.h"
 #include "../test_helpers/print_status_widget_test_access.h"
 #include "ams_backend_mock.h"
 #include "ams_state.h"
@@ -348,29 +349,6 @@ TEST_CASE_METHOD(LVGLTestFixture, "Teardown mid-unload leaves nothing to arm lat
 // ============================================================================
 // 4. PrintStatusWidget consumes it last
 // ============================================================================
-
-/// Friend shim (declared in filament_sensor_manager.h). The manager is a
-/// process singleton, so a test that asserts on has_real_runout() has to start
-/// from a known sensor set with the startup grace already expired — otherwise
-/// whichever test ran first in the shard decides the answer.
-class PostUnloadGraceTestAccess {
-  public:
-    static void reset(helix::FilamentSensorManager& mgr) {
-        std::lock_guard<std::recursive_mutex> lock(mgr.mutex_);
-        mgr.sensors_.clear();
-        mgr.states_.clear();
-        mgr.master_enabled_ = true;
-        mgr.sync_mode_ = true;
-        mgr.initial_status_received_ = false;
-        clear_startup_grace(mgr);
-    }
-
-    /// discover_sensors() re-anchors the grace to "Moonraker just connected", so
-    /// this has to run AFTER the sensors are installed, not before.
-    static void clear_startup_grace(helix::FilamentSensorManager& mgr) {
-        mgr.startup_time_ = std::chrono::steady_clock::now() - std::chrono::minutes(1);
-    }
-};
 
 namespace {
 
