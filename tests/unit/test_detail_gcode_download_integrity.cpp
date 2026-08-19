@@ -152,7 +152,25 @@ class DelayedFileTransfers : public MoonrakerFileTransferAPIMock {
         });
     }
 
+    /// When set, every footer read reports failure. The detail view then
+    /// falls back to the whole-file download + Tn scan — the path these
+    /// cache-poisoning tests were written against, and the one a slicer that
+    /// writes no per-tool usage line still takes in production.
+    void download_file_tail(const std::string& root, const std::string& path, size_t max_bytes,
+                            StringCallback on_success, ErrorCallback on_error) override {
+        if (fail_tail_reads) {
+            if (on_error) {
+                on_error(MoonrakerError::file_not_found("download_file_tail",
+                                                        "footer read disabled by test"));
+            }
+            return;
+        }
+        MoonrakerFileTransferAPIMock::download_file_tail(
+            root, path, max_bytes, std::move(on_success), std::move(on_error));
+    }
+
     bool hold_transfers = false;
+    bool fail_tail_reads = false;
 
     /// Resolve every held transfer (copies the real asset, fires callbacks
     /// synchronously — same as an unheld call).
@@ -291,6 +309,10 @@ TEST_CASE_METHOD(DetailDownloadFixture,
     const auto benchy_size = static_cast<size_t>(std::filesystem::file_size(asset));
     constexpr time_t kMtime = 42;
 
+    // Pins the whole-file scan path: 3DBenchy's footer WOULD answer {0}, so
+    // without this the scan under test never runs.
+    transfers_.fail_tail_reads = true;
+
     // 3DBenchy.gcode has no tool-change lines: a successful scan of it
     // returns an empty set — the legitimate single-extruder answer.
     view_.show("3DBenchy.gcode", "", "PLA", {"#FF0000"}, {}, benchy_size, kMtime);
@@ -333,6 +355,11 @@ TEST_CASE_METHOD(DetailDownloadFixture,
         junk << "T0 ; partial";
     }
     REQUIRE(std::filesystem::file_size(canonical) != benchy_size);
+
+    // The stale-copy probe under test lives in the whole-file download path;
+    // a footer read would answer the scan without ever reaching it (and the
+    // then-unreferenced file would be reclaimed right after the re-download).
+    transfers_.fail_tail_reads = true;
 
     view_.show("3DBenchy.gcode", "", "PLA", {"#FF0000"}, {}, benchy_size, kMtime);
     drain_queue_chain();
@@ -406,6 +433,9 @@ TEST_CASE_METHOD(DetailDownloadFixture,
     //   4. download finally completes → scan submits + viewer rejects oversize
     //   5. the reject must keep the file: the scanner is still reading it
     transfers_.hold_transfers = true;
+    // The held whole-file transfer IS the mechanism here; a footer read would
+    // settle the scan instantly and there would be no race left to test.
+    transfers_.fail_tail_reads = true;
 
     // 1–2. Cold cache: activation queues BOTH waiters on the held transfer.
     view_.show(key, "", "PLA", {"#FF0000", "#00FF00", "#0000FF", "#FFFF00"}, {}, file_size, kMtime);
@@ -445,6 +475,134 @@ TEST_CASE_METHOD(DetailDownloadFixture,
     const auto got = fresh.lookup(key, file_size, kMtime);
     REQUIRE(got.has_value());
     REQUIRE(*got == std::set<int>{0, 1, 2, 3});
+
+    pop_and_drain();
+}
+
+// ============================================================================
+// Footer read: the chips' answer without the whole-file download + parse
+// ============================================================================
+
+TEST_CASE_METHOD(DetailDownloadFixture,
+                 "footer read answers tools_used without downloading the whole file",
+                 "[print_select][detail_view][gcode_footer]") {
+    CacheDirGuard guard;
+    EnvGuard mem_fail("HELIX_FORCE_GCODE_MEMORY_FAIL", "1");
+
+    // ssr_heat_sink_orca's footer says `filament used [g] = 0.00, 0.00, 0.00,
+    // 0.00, 10.16` — only T4 prints, out of a 5-slot palette.
+    const std::string asset = find_test_asset("ssr_heat_sink_orca.gcode");
+    REQUIRE_FALSE(asset.empty());
+    const auto size = static_cast<size_t>(std::filesystem::file_size(asset));
+    constexpr time_t kMtime = 4242;
+    const std::string key = "ssr_heat_sink_orca.gcode";
+
+    // Hold every whole-file transfer: if the footer read cannot answer on its
+    // own, nothing below ever resolves. That is the point — this pins that
+    // the chips no longer wait on the 4.5 MB download.
+    transfers_.hold_transfers = true;
+
+    view_.show(key, "", "PLA", {"#FFFFFF", "#000000", "#00FFFF", "#DFDFDF", "#363636"}, {}, size,
+               kMtime);
+    drain_queue_chain();
+
+    REQUIRE(ready());
+    REQUIRE(view_.get_tools_used() == std::set<int>{4});
+    REQUIRE_FALSE(std::filesystem::exists(canonical_path_for(key)));
+
+    // Authoritative: the next open of this file renders final chips instantly.
+    helix::ToolsUsedCache fresh;
+    const auto cached = fresh.lookup(key, size, kMtime);
+    REQUIRE(cached.has_value());
+    REQUIRE(*cached == std::set<int>{4});
+
+    transfers_.release_held();
+    pop_and_drain();
+}
+
+TEST_CASE_METHOD(DetailDownloadFixture, "footer read sizes its window from gcode_end_byte",
+                 "[print_select][detail_view][gcode_footer]") {
+    CacheDirGuard guard;
+    EnvGuard mem_fail("HELIX_FORCE_GCODE_MEMORY_FAIL", "1");
+
+    // u1_4color_ring's usage line sits 26 KB from EOF — past a 20 KB guess,
+    // inside both the exact gcode_end_byte window and the 64 KB default.
+    const std::string asset = find_test_asset("u1_4color_ring.gcode");
+    REQUIRE_FALSE(asset.empty());
+    const auto size = static_cast<size_t>(std::filesystem::file_size(asset));
+    constexpr time_t kMtime = 4242;
+    const std::string key = "u1_4color_ring.gcode";
+
+    transfers_.hold_transfers = true;
+
+    // gcode_end_byte just ahead of the footer, as Moonraker reports it.
+    view_.show(key, "", "PLA", {"#E2DEDB", "#080A0D", "#F4C032", "#E72F1D"}, {}, size, kMtime,
+               /*gcode_end_byte=*/size - 30'000);
+    drain_queue_chain();
+
+    REQUIRE(ready());
+    REQUIRE(view_.get_tools_used() == std::set<int>{0, 1, 2, 3});
+
+    transfers_.release_held();
+    pop_and_drain();
+}
+
+TEST_CASE_METHOD(DetailDownloadFixture,
+                 "footer read backfills the palette when metadata carried none",
+                 "[print_select][detail_view][gcode_footer]") {
+    CacheDirGuard guard;
+    EnvGuard mem_fail("HELIX_FORCE_GCODE_MEMORY_FAIL", "1");
+
+    // calicat_calico: `filament used [g] = 6.34, 0.00, 0.00, 0.00` and
+    // `filament_colour = #E7BD00;#00C502;#F4E2C1;#ED1C24`.
+    const std::string asset = find_test_asset("calicat_calico.gcode");
+    REQUIRE_FALSE(asset.empty());
+    const auto size = static_cast<size_t>(std::filesystem::file_size(asset));
+    constexpr time_t kMtime = 4242;
+
+    transfers_.hold_transfers = true;
+
+    // Empty colors: the Moonraker forks that don't return filament_colors
+    // (Snapmaker and friends) — today the palette only arrives with the full
+    // viewer parse, which 2D-only platforms never run.
+    view_.show("calicat_calico.gcode", "", "PLA", {}, {}, size, kMtime);
+    drain_queue_chain();
+
+    REQUIRE(ready());
+    REQUIRE(view_.get_tools_used() == std::set<int>{0});
+
+    const auto tools = view_.get_used_tool_info();
+    REQUIRE(tools.size() == 1);
+    REQUIRE(tools[0].tool_index == 0);
+    REQUIRE(tools[0].color_rgb == 0xE7BD00u); // straight out of the footer
+
+    transfers_.release_held();
+    pop_and_drain();
+}
+
+TEST_CASE_METHOD(DetailDownloadFixture,
+                 "a footer read that cannot answer falls back to the full scan",
+                 "[print_select][detail_view][gcode_footer]") {
+    CacheDirGuard guard;
+    EnvGuard mem_fail("HELIX_FORCE_GCODE_MEMORY_FAIL", "1");
+
+    const std::string asset = find_test_asset("u1_4color_ring.gcode");
+    REQUIRE_FALSE(asset.empty());
+    const auto size = static_cast<size_t>(std::filesystem::file_size(asset));
+    constexpr time_t kMtime = 4243;
+    const std::string key = "u1_4color_ring.gcode";
+
+    // Transport failure — same shape as a Moonraker that rejects the range
+    // request, or a slicer whose footer says nothing about filament use.
+    transfers_.fail_tail_reads = true;
+
+    view_.show(key, "", "PLA", {"#E2DEDB", "#080A0D", "#F4C032", "#E72F1D"}, {}, size, kMtime);
+    drain_queue_chain();
+
+    // The whole-file scan still produces the answer — never worse than before.
+    REQUIRE(wait_until([this]() { return ready(); }, 15000));
+    REQUIRE(view_.get_tools_used() == std::set<int>{0, 1, 2, 3});
+    REQUIRE(std::filesystem::exists(canonical_path_for(key)));
 
     pop_and_drain();
 }

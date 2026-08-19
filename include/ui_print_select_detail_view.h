@@ -194,12 +194,14 @@ class PrintSelectDetailView : public OverlayBase {
      * @param filament_materials Optional per-tool materials from metadata
      * @param file_size_bytes File size from Moonraker metadata (for safety checks)
      * @param modified_timestamp File mtime (tools-used cache validation)
+     * @param gcode_end_byte Offset where the G-code body ends (Moonraker
+     *        metadata); 0 when unknown. Sizes the footer read.
      */
     void show(const std::string& filename, const std::string& current_path,
               const std::string& filament_type,
               const std::vector<std::string>& filament_colors = {},
               const std::vector<std::string>& filament_materials = {}, size_t file_size_bytes = 0,
-              time_t modified_timestamp = 0);
+              time_t modified_timestamp = 0, uint64_t gcode_end_byte = 0);
 
     /**
      * @brief Hide the detail view overlay
@@ -655,6 +657,10 @@ class PrintSelectDetailView : public OverlayBase {
     std::vector<std::string> current_filament_materials_;
     size_t current_file_size_bytes_ = 0;
     time_t current_file_modified_ = 0; // mtime of the shown file (cache key part)
+    // Offset where the G-code body ends (Moonraker metadata). Everything after
+    // it is the slicer's footer, so it sizes the footer read exactly. 0 = the
+    // server didn't report it; the tail read falls back to a fixed window.
+    uint64_t current_gcode_end_byte_ = 0;
 
     // Persistent tools-used cache (path/size/mtime keyed, JSON in the helix
     // cache dir). Seeded at show() so re-prints render the final chip state
@@ -774,6 +780,39 @@ class PrintSelectDetailView : public OverlayBase {
     void finish_scan(LifetimeToken tok, std::set<int> tools, bool authoritative);
 
     /**
+     * @brief Main-thread body of finish_scan() (see there for the contract).
+     *
+     * Split out so the footer-read path can adopt the file's palette and
+     * publish the used-tool set in ONE deferred tick, instead of chaining a
+     * second defer behind the colour update.
+     */
+    void apply_scan_result(std::set<int> tools, bool authoritative);
+
+    /**
+     * @brief Fast path: answer tools_used (and colors) from the file's footer.
+     *
+     * Slicers write `filament used [g]` and `filament_colour` after the last
+     * move, so one HTTP suffix range over the last few tens of KB answers both
+     * — no whole-file download, no geometry parse (~16s for an 870 KB file on
+     * a K2). Sized from gcode_end_byte when Moonraker reported it.
+     *
+     * Parsing happens on the HTTP thread (pure, no `this`); the result is
+     * marshaled by apply_scan_result() via tok.defer. ANY failure — transport
+     * error, a slicer that writes neither key, an all-zero usage vector —
+     * falls through to start_full_tools_scan(), so the footer read can only
+     * ever be faster than today, never worse.
+     */
+    void start_tail_summary_scan(LifetimeToken tok, std::set<int> stop_set);
+
+    /**
+     * @brief Fallback: download the whole file and scan it for Tn commands.
+     *
+     * The pre-footer-read behavior, unchanged. Shares the ONE canonical
+     * download with the viewer preview (ensure_gcode_downloaded).
+     */
+    void start_full_tools_scan(LifetimeToken tok, std::set<int> stop_set);
+
+    /**
      * @brief Show or hide the gcode viewer
      *
      * Sets detail_gcode_viewer_mode_ subject to control XML visibility bindings.
@@ -812,7 +851,10 @@ class PrintSelectDetailView : public OverlayBase {
     /**
      * @brief Start the headless tools_used scan for the current file.
      *
-     * Shares the ONE canonical download with the viewer preview
+     * Tries the footer read first (start_tail_summary_scan) — a small suffix
+     * range that usually answers outright. Only when that cannot answer does
+     * it fall back to start_full_tools_scan(), which shares the ONE canonical
+     * download with the viewer preview
      * (ensure_gcode_downloaded); once the file is on disk, runs a lightweight
      * Tn-only line scan on the slow HTTP lane (off the main thread,
      * memory-safe — never holds the whole file), early-exiting once every

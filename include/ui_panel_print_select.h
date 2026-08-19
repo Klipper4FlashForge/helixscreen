@@ -652,6 +652,7 @@ class PrintSelectPanel : public PanelBase {
         selected_filament_materials_;        ///< Per-tool material types of selected file
     size_t selected_file_size_bytes_ = 0;    ///< File size of selected file (for safety checks)
     time_t selected_modified_timestamp_ = 0; ///< mtime of selected file (tools-used cache key)
+    uint64_t selected_gcode_end_byte_ = 0;   ///< G-code body end offset (sizes the footer read)
     FileHistoryStatus selected_history_status_ =
         FileHistoryStatus::NEVER_PRINTED; ///< History status of selected file
     int selected_success_count_ = 0;      ///< Success count of selected file
