@@ -46,12 +46,24 @@ class PrinterPrintStateTestAccess {
     /// The real bound is half an hour - longer than the slowest legitimate
     /// pre-print - so no test can wait for it. Mirrors
     /// ActivePrintMediaManagerTestAccess::fire_pending_retry().
+    ///
+    /// Invokes the PRODUCTION callback rather than reproducing what it does. An
+    /// earlier version open-coded `cancel(); retire(TimedOut);` here, which made
+    /// every watchdog assertion a tautology - the test asserted the exit reason
+    /// the helper itself had just supplied, and `preparing_watchdog_cb` was
+    /// reachable from no test at all. Changing the real callback's exit reason,
+    /// or dropping its `preparing_watchdog_ = nullptr` (a double-free setup,
+    /// since LVGL frees the one-shot on return), left the suite green.
+    ///
+    /// Deletes the timer afterwards because LVGL's one-shot repeat count is what
+    /// would normally free it, and nothing here runs lv_timer_handler.
     static bool fire_preparing_watchdog(PrinterPrintState& pps) {
-        if (!pps.preparing_watchdog_) {
+        lv_timer_t* timer = pps.preparing_watchdog_;
+        if (!timer) {
             return false;
         }
-        pps.cancel_preparing_watchdog();
-        pps.retire_preparing(PreparingExit::TimedOut);
+        PrinterPrintState::preparing_watchdog_cb(timer);
+        lv_timer_delete(timer);
         return true;
     }
 

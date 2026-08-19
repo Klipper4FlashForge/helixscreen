@@ -174,9 +174,11 @@ TEST_CASE_METHOD(PanelLifecycleFixture, "a completed print keeps its numbers whe
     state_.update_from_status(json{{"print_stats",
                                     {{"state", "printing"},
                                      {"print_duration", 600.0},
-                                     {"info", {{"current_layer", 240}, {"total_layer", 240}}}}}});
+                                     {"info", {{"current_layer", 240}, {"total_layer", 240}}}}},
+                                   {"display_status", {{"progress", 0.73}}}});
     drain();
     REQUIRE(panel_state() == PrintState::Printing);
+    REQUIRE(panel_->get_progress() == 73);
 
     state_.update_from_status(json{{"print_stats", {{"state", "complete"}}}});
     drain();
@@ -186,13 +188,28 @@ TEST_CASE_METHOD(PanelLifecycleFixture, "a completed print keeps its numbers whe
     state_.update_from_status(json{{"print_stats",
                                     {{"state", "standby"},
                                      {"print_duration", 0.0},
-                                     {"info", {{"current_layer", 0}, {"total_layer", 0}}}}}});
+                                     {"info", {{"current_layer", 0}, {"total_layer", 0}}}}},
+                                   {"display_status", {{"progress", 0.0}}}});
     drain();
 
-    // The panel must not have adopted the zeroes for its completed print.
-    const int layer_total = lv_subject_get_int(state_.get_print_layer_total_subject());
-    INFO("published layer total after STANDBY: " << layer_total);
-    REQUIRE(panel_state() != PrintState::Printing);
+    // The freeze, asserted positively on the value it actually protects.
+    //
+    // An earlier version asserted only `panel_state() != PrintState::Printing`,
+    // which is a tautology: derive_print_state(STANDBY, 0) is Idle under every
+    // possible implementation, so six of the seven enum values satisfied it and
+    // deleting every latch in the panel left it green.
+    //
+    // The lifecycle DOES go Complete -> Idle here, by design - that is the
+    // `print_ended` edge (print_lifecycle_state.cpp), which is what releases the
+    // thumbnail, gcode and viewer. The Complete SCREEN outlives it via
+    // print_outcome, not via this enum. What must not move is the latched
+    // progress. Note the expected value is 100, not the 73 last reported:
+    // should_freeze_complete forces the terminal values on the ->Complete edge,
+    // which is why a finished print reads 100% / 240 of 240 / 0s rather than
+    // whatever the final sample happened to catch. Moonraker has since reported
+    // 0 and the panel must still say 100.
+    REQUIRE(panel_state() == PrintState::Idle);
+    REQUIRE(panel_->get_progress() == 100);
 }
 
 TEST_CASE_METHOD(PanelLifecycleFixture, "a terminal state does not reset to Idle on its own",
