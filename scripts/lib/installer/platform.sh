@@ -694,11 +694,27 @@ detect_tmp_dir() {
     # gets deleted/relocated out from under the extracted tree. So we use the
     # install dir's PARENT, never INSTALL_DIR itself. Dot-prefixed to stay
     # hidden and out of the way.
+    # A platform may declare where its bulk storage actually is. On the K2 both
+    # /opt (INSTALL_DIR's parent) and /usr/data live on a 240MB overlay while
+    # the 27.5GB user partition is at /mnt/UDISK, so the generic "sibling of
+    # INSTALL_DIR" rule below picks the small filesystem and a 60MB archive
+    # fills it. Declared roots are probed first; they still go through the same
+    # space/writability checks, so a unit that lacks the mount falls through.
     local candidates=""
+    if [ -n "${TMP_DIR_PREFERRED:-}" ]; then
+        # Name-guard it like any other TMP_DIR: whatever wins here is rm -rf'd
+        # on exit, so a declared root that is a bare mountpoint (the /mnt/UDISK
+        # incident shape) must be dropped rather than staged into.
+        if _user_dir_name_ok "$TMP_DIR_PREFERRED" '*helixscreen-install*' '.helix-update-staging'; then
+            candidates="$TMP_DIR_PREFERRED"
+        else
+            log_warn "Ignoring TMP_DIR_PREFERRED='$TMP_DIR_PREFERRED' (not an installer scratch dir name)"
+        fi
+    fi
     if [ -n "${INSTALL_DIR:-}" ]; then
         local install_parent
         install_parent=$(dirname "$INSTALL_DIR")
-        candidates="$install_parent/.helixscreen-install"
+        candidates="$candidates $install_parent/.helixscreen-install"
     fi
     if [ -n "${HOME:-}" ]; then
         candidates="$candidates $HOME/.helixscreen-install"
@@ -837,6 +853,13 @@ set_install_paths() {
         KLIPPER_USER="root"
         KLIPPER_GROUP="root"
         KLIPPER_HOME="/mnt/UDISK"
+        # /opt and /usr/data are both on the 240MB overlay; /mnt/UDISK is the
+        # 27.5GB user partition. Staging the download anywhere else fills the
+        # overlay (a unit was found with a leaked 60MB archive on it).
+        TMP_DIR_PREFERRED="/mnt/UDISK/helixscreen-install"
+        # Older builds cached thumbnails/gcode on the overlay via /usr/data;
+        # the app now caches on /mnt/UDISK, so reclaim the old location.
+        STALE_CACHE_DIRS="/usr/data/helixscreen/cache"
         log_info "Platform: Creality K2 series"
         log_info "Install directory: ${INSTALL_DIR}"
     elif [ "$platform" = "cc1" ]; then

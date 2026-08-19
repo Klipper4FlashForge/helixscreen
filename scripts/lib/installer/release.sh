@@ -1233,12 +1233,23 @@ extract_release() {
             fi
             ;;
         *)
+            # `-o` means "don't restore user:group". Without it a root extract
+            # restores the numeric uid/gid the archive was built with (1001 on
+            # the CI runner), leaving the install owned by a user that does not
+            # exist on the printer. It is needed here as well as at packaging
+            # time because archives already published still carry those ids.
+            #
+            # `-o` is the ONLY portable spelling: BusyBox tar (1.33.2 on the K2)
+            # documents `-o` but has no --no-same-owner long option, so passing
+            # the long form fails extraction outright on every Creality box.
+            # GNU tar accepts -o as an alias for --no-same-owner when extracting.
+            #
             # BusyBox tar doesn't support -z; use gunzip pipe on embedded platforms
             case "$platform" in
                 ad5m|ad5x|k1|k2)
-                    gunzip -c "$archive" | tar xf - && extract_ok=true ;;
+                    gunzip -c "$archive" | tar xof - && extract_ok=true ;;
                 *)
-                    tar -xzf "$archive" && extract_ok=true ;;
+                    tar -xzof "$archive" && extract_ok=true ;;
             esac
             ;;
     esac
@@ -1734,6 +1745,43 @@ extract_release() {
 }
 
 # Remove backup of previous installation (call after service starts successfully)
+# Reclaim cache directories a previous version wrote to the wrong filesystem.
+#
+# The K2 cached thumbnails and modified gcode under /usr/data, which is the
+# ~240MB root overlay rather than the 27.5GB user partition at /mnt/UDISK.
+# The app now caches on /mnt/UDISK, so the old location is dead weight on the
+# smallest filesystem on the box. Platforms declare what to reclaim in
+# STALE_CACHE_DIRS; this is a no-op everywhere else.
+#
+# SAFETY: same guard shape as the off-partition rollback cleanup below — only
+# ever remove a path whose final component is exactly "cache", and never a
+# top-level directory. A past incident wiped a K2's /mnt/UDISK mount root via
+# an unguarded rm -rf.
+cleanup_stale_cache_dirs() {
+    [ -n "${STALE_CACHE_DIRS:-}" ] || return 0
+
+    local _stale
+    for _stale in $STALE_CACHE_DIRS; do
+        case "$_stale" in
+            /*/*/cache)
+                ;;
+            *)
+                log_warn "Refusing to remove unexpected cache path: $_stale"
+                continue
+                ;;
+        esac
+
+        [ -d "$_stale" ] || continue
+
+        rm -rf "$_stale" 2>/dev/null || $SUDO rm -rf "$_stale" 2>/dev/null || true
+        log_info "Reclaimed stale cache directory: $_stale"
+
+        # Drop the now-empty parent too, but only if nothing else lives there.
+        rmdir "$(dirname "$_stale")" 2>/dev/null || true
+    done
+    return 0
+}
+
 cleanup_old_install() {
     # Keep .old as a last-resort recovery path if config wasn't restored.
     # Without this guard, a failed Phase 6 + cleanup = permanent config loss.
