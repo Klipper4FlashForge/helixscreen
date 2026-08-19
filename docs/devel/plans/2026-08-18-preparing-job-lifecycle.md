@@ -396,12 +396,38 @@ Still genuinely outstanding: `PrintStatusPanel::was_preparing_` and
 `PrintLifecycleState` still lives inside the panel rather than being the app-wide
 authority - the subject took over that role instead.
 
-### 5. Docs sweep incomplete
+### 5. Docs sweep
 
 Done: `PRINT_STATE_MACHINE.md`, `architecture/05-printer-state.md`,
-`docs/user/guide/printing.md`. Not done: `PRINT_START_INTEGRATION.md` (the
-`M118 HELIX:READY` contract gains a commit-armed path) and `PREPRINT_PREDICTION.md`
-(record that the debounce deliberately does not consume a prediction).
+`docs/user/guide/printing.md`, `PRINT_START_INTEGRATION.md`, `PREPRINT_PREDICTION.md`.
+
+`PRINT_START_INTEGRATION.md` gained the two arming paths, and three stale timeout
+claims were corrected: it documented a flat "45 seconds in PRINTING state", while the
+code has used an adaptive ladder (1.5x predicted, 300s without history, 1800s absolute
+ceiling) plus a 90s quiet requirement for some time.
+
+`PREPRINT_PREDICTION.md` had four provably stale claims, one of them hazardous:
+
+| Claim | Reality |
+|---|---|
+| "the last 3 timing entries" | `MAX_ENTRIES = 10` |
+| Per-count weight table (40/60, 20/30/50) | Exponential time decay, `lambda = 0.23` |
+| "Entries over 900s are silently rejected by `add_entry()`" | No cap exists; rejection is per-phase MAD |
+| Schema omits `temp_bucket` | It has been persisted for some time |
+
+The 900s claim is the hazardous one. Reinstating it - which the doc invites - would
+discard every K2 commit-armed entry, since those run ~1140s. The doc now says so
+explicitly.
+
+**Not changed: `docs/user/guide/print-monitoring.md`.** The plan listed it, but its
+scope is filament checks and camera failure detection. The user-visible change (the
+previous job's badge no longer persists into a new print's preparation) belongs to
+`printing.md`, where it now lives. Listing a doc is not a reason to edit it.
+
+Note `docs/user/guide/printing.md` currently describes the **target** affordances
+("Cancel is available", "Pause is unavailable"). Per audit A1/A2 the code does the
+opposite in each half, so until that lands the doc is aspirational. It is the spec;
+the code is what moves.
 
 ### 6. Environmental, not caused by this work
 
@@ -414,6 +440,82 @@ Done: `PRINT_STATE_MACHINE.md`, `architecture/05-printer-state.md`,
   detector cannot see it, because `ui_xml/*.xml` uses `icon="layers"` and the
   matcher cannot distinguish an icon name from a translation tag. Left in place;
   the detector has a false negative worth knowing about.
+
+## Audit findings: parity and regressions (2026-08-19)
+
+Two audits of the surfaces commit arming newly touches. Everything below is proven
+from code with file:line evidence unless marked otherwise.
+
+### Verification correction: `ctl click` cannot prove reachability
+
+`ctl click` calls `lv_obj_send_event(widget, LV_EVENT_CLICKED, nullptr)`
+(`src/remote/remote_control_server.cpp:426`), bypassing the input-device layer that
+suppresses clicks for `LV_STATE_DISABLED` (`lib/lvgl/src/indev/lv_indev.c:1391`).
+
+So the earlier K2 result "cancel during pre-print works" proved the *handler* runs and
+the heaters cool down. It did **not** prove a user can reach it - and per B1 below,
+they cannot. Affordance must be verified from the widget's `disabled` state flag
+(`remote_control_server.cpp:2061` exposes it), never by sending a synthetic click.
+
+### A. Button affordances - the #798 contract is not met
+
+The contract: Pause/Tune/Cancel affordance is a function of `PrintState` only, never
+of whether pre-print work is host-side or firmware-side.
+
+`compute_control_button_view()` (`include/print_control_view.h:31`) takes only
+`PrintJobState`. It cannot express the contract, and `PrintControlButtons`' sole
+observer is `print_state_enum` (`src/ui/print_control_buttons.cpp:48-59`) - nothing
+re-runs `recompute()` when the lifecycle changes.
+
+| Gap | Evidence | Effect |
+|---|---|---|
+| **A1. Cancel is disabled during host-side preparing** | `stop_enabled = active && cancel_available`, `active` = `PRINTING\|PAUSED` (`print_control_view.cpp:15-19`) | The `retire_preparing(Cancelled)` branch added in 5b is **unreachable by touch** from both the status panel and the home widget |
+| **A2. Pause is enabled during firmware-side preparing** | same `active`, true throughout Klipper's `PRINT_START` | A live Pause button for the whole window; pressing it sends `PAUSE` mid-macro, then a 25s "Pausing..." spinner and a timeout toast |
+| **A3. Two authorities gate one button row** | Pause/Cancel from `PrintJobState` in a singleton; Tune/Timelapse from `PrintState` in the panel (`ui_panel_print_status.cpp:3216-3231`) | They can and do disagree |
+| **A4. Tune's preparing enablement is order-dependent** | `update_button_states()` is never called on the Idle->Preparing edge (`ui_panel_print_status.cpp:3037-3115`) | Works on a normal start only because `on_activate()` happens to follow `begin_preparing()`; after **Reprint** the panel is already active, so Tune stays greyed for the whole window |
+| **A5. One confirmation dialog for both cases** | `ui_xml/print_cancel_confirm_modal.xml:18-28` | During host-side preparing it says "All progress will be lost" about a print that never started, and "Stop" implies an instant halt a blocking macro cannot honor |
+
+A2 and A1 are the same root cause: the row is wired to the printer's axis, not the
+UI lifecycle axis.
+
+### B. Media identity - two regressions introduced by commit arming
+
+The #526 fix itself is **intact**: `skip_thumbnail` gates only the thumbnail
+*download*, never the metadata fetch (`active_print_media_manager.cpp:276-294`,
+`:411`). But moving identity adoption to commit moves the metadata fetch to a moment
+when the file may not be uploaded or scanned.
+
+| Defect | Mechanism | Effect |
+|---|---|---|
+| **B1. The metadata retry budget is spent during preparation** | Commit fires `process_filename` -> `load_thumbnail_for_file` -> metadata RPC. Failures burn the 10-attempt ladder (~217s total, `active_print_media_manager.cpp:634-670`). When the printer confirms, `process_filename` early-returns on the unchanged effective filename (`:223`), and `thumbnail_retry_count_` is never reset on print start | `layer_total` and `estimated_print_time` stay 0 for the whole job - the #526 symptom by a new route. Worst case is exactly this branch's target scenario: a host-side block longer than the 217s ladder |
+| **B2. Mid-scan metadata silently forfeits `layer_count`** | A commit-time fetch that *succeeds* while Moonraker is mid-scan returns `layer_count == 0`, falls to the 16KB header scan, whose error handler only logs (`:397-400`). Nothing re-arms | Same symptom, no retry at all. Fetching earlier makes partial metadata materially more likely |
+| **B3. Reprint of a modified print poisons the display name** | `initiate_reprint` passes the raw Moonraker name, which for a modified print is `.helix_temp/modified_<ts>_orig.gcode`. Setting it as the thumbnail source disables the auto-resolve at `:211` (guarded on `thumbnail_source_filename_.empty()`) | The panel shows `modified_1748..._orig`. Could not happen pre-branch, because reprint did not re-run `process_filename` |
+| **B4. gcode load-complete stamps the wrong identity** | The success callback records `gcode_displayed_file_` from the panel's filename *at completion*, not the one requested (`ui_panel_print_status.cpp:1544-1568`) | Previous print's geometry pinned as current. Pre-existing; this branch widens the window from ~5s to minutes |
+| **B5. A dead preparing job leaves the placeholder** | Commit publishes `no_thumbnail_placeholder()` for the new file (`:251-256`); `release_identity()` deliberately republishes nothing | Home-panel widget shows the placeholder until the next filename change. Cosmetic |
+
+`decide_preview_action()` itself is sound: it is pure, has no "clear" outcome in its
+vocabulary, and cannot blank a good preview. The premise that commit->Preparing calls
+`ensure_preview_current()` was **wrong** - it is reached only via the pre-existing
+optimistic navigation. What changed is the *inputs*, not the trigger.
+
+### C. Prediction history is now two populations in one bucket
+
+The collector's measurement window starts at `start()`
+(`print_start_collector.cpp:105`). Commit arming therefore puts any host-side
+pre-start block inside the measured total, while an externally started print still
+measures from the printer edge. Both land in the same history bucket, which is keyed
+only on cold/warm (`:1974`).
+
+With `MAX_ENTRIES = 10` and exponential recency weighting, a K2 mixing ~1140s
+screen-started samples with ~300s Mainsail-started ones produces an estimate wrong
+for both. Worse, `predicted_total` feeds the collector's own adaptive timeout
+(`elapsed > predicted_total * 1.5`), so a history skewed short can complete the
+pre-print *while it is still running* - the precise failure this branch exists to
+prevent.
+
+Fixed by bucketing entries on which window they measured (`PreprintWindow`). Legacy
+entries map to `PrinterEdge`, which is a fact about the data rather than a guess:
+commit arming did not exist when they were recorded.
 
 ## Outstanding work, in dependency order
 
@@ -429,11 +531,16 @@ Done: `PRINT_STATE_MACHINE.md`, `architecture/05-printer-state.md`,
    hardware-verified**.
 5. ~~Migrate the remaining trackers~~ **done for the one that was duplication**;
    the other two are legitimately separate and must stay (risk 4).
-6. **Estimate ladder** (step 6) - one owner for "how long until printing starts?",
+6. **Button contract (A1-A5)** - move the row onto the lifecycle axis. Blocks the
+   5b cancel work, which is currently unreachable by touch.
+7. **Media regressions (B1-B3)** - re-arm the metadata retry budget when the print
+   actually starts; stop reprint poisoning the display name with the temp filename.
+8. **Prediction window bucketing (C)** - in progress.
+9. **Estimate ladder** (step 6) - one owner for "how long until printing starts?",
    three estimators demoted to strategies, monotonic handoff.
-7. **Finish the docs sweep** (risk 5), then `scripts/check_doc_refs.py`.
-8. **Split step 7** (elapsed/remaining rendered strings into `PrinterPrintState`)
-   into its own PR.
+10. **Finish the docs sweep** (risk 5), then `scripts/check_doc_refs.py`.
+11. **Split step 7** (elapsed/remaining rendered strings into `PrinterPrintState`)
+    into its own PR.
 
 ## Scope and sequencing
 
