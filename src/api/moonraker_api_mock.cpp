@@ -119,8 +119,10 @@ bool MoonrakerAPIMock::unregister_method_callback(const std::string& /*method*/,
     return true;
 }
 
-void MoonrakerAPIMock::suppress_disconnect_modal(uint32_t /*duration_ms*/) {
-    // No-op in mock
+void MoonrakerAPIMock::suppress_disconnect_modal(uint32_t duration_ms) {
+    // No behaviour in the mock; recorded so tests can assert the arm.
+    ++suppress_disconnect_modal_calls_;
+    last_suppress_disconnect_modal_ms_ = duration_ms;
 }
 
 void MoonrakerAPIMock::get_gcode_store(
