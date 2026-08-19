@@ -28,10 +28,13 @@
  * the warning must STILL fire. A suppression that also blinds the genuine runout
  * has not fixed anything.
  *
- * Toasts are observed through the "[USER]" log line every NOTIFY_* macro emits
- * before it dispatches (same approach as test_jog_error_toast_e2e.cpp). The UI
- * sinks are not usable here: ToastManager is never initialized in a unit test,
- * so nothing reaches NotificationHistory.
+ * Toasts are observed through the notification hooks in tests/ui_test_utils.h.
+ * The production notification layer is REPLACED by log-only stubs in the test
+ * binary, so NotificationHistory and PendingStartupWarnings are both unreachable
+ * from a unit test and would silently capture nothing — which would make every
+ * suppression assertion below vacuously true. The hooks are the supported
+ * observation point, and they separate WARNING from INFO for us, so "I
+ * suppressed the wrong toast" fails on severity as well as on text.
  */
 
 #include "ui_manual_pull_prompt.h"
@@ -40,6 +43,7 @@
 #include "../lvgl_test_fixture.h"
 #include "../test_helpers/ams_state_test_access.h"
 #include "../test_helpers/post_unload_grace_test_access.h"
+#include "../ui_test_utils.h"
 #include "ams_state.h"
 #include "ams_types.h"
 #include "app_globals.h"
@@ -47,10 +51,7 @@
 #include "filament_sensor_types.h"
 #include "printer_state.h"
 
-#include <spdlog/sinks/ringbuffer_sink.h>
-#include <spdlog/spdlog.h>
-
-#include <memory>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -76,49 +77,48 @@ nlohmann::json toolhead_status(bool detected) {
     return nlohmann::json{{TOOLHEAD_SENSOR, {{"filament_detected", detected}, {"enabled", true}}}};
 }
 
-/// RAII spdlog capture: collects formatted lines so a test can count the toasts
-/// the user would actually have seen.
-class ToastLog {
+/// RAII capture of the two toast severities in play, through the hooks the
+/// notification stubs call (tests/ui_test_utils.h). Severity is kept separate on
+/// purpose: the warning and the hint fire on the same sensor edge, so proving
+/// the right one survived means proving WHICH one did.
+class ToastCapture {
   public:
-    ToastLog() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(512)) {
-        logger_ = spdlog::default_logger();
-        prev_level_ = logger_->level();
-        sink_->set_level(spdlog::level::trace);
-        logger_->sinks().push_back(sink_);
-        logger_->set_level(spdlog::level::trace);
+    ToastCapture() {
+        helix::ui::set_test_notification_warning_hook(
+            [this](const std::string& msg) { warnings_.push_back(msg); });
+        helix::ui::set_test_notification_info_hook(
+            [this](const std::string& msg) { infos_.push_back(msg); });
     }
 
-    ~ToastLog() {
-        auto& sinks = logger_->sinks();
-        for (auto it = sinks.begin(); it != sinks.end(); ++it) {
-            if (*it == sink_) {
-                sinks.erase(it);
-                break;
-            }
-        }
-        logger_->set_level(prev_level_);
+    ~ToastCapture() {
+        helix::ui::set_test_notification_warning_hook(nullptr);
+        helix::ui::set_test_notification_info_hook(nullptr);
     }
 
-    ToastLog(const ToastLog&) = delete;
-    ToastLog& operator=(const ToastLog&) = delete;
+    ToastCapture(const ToastCapture&) = delete;
+    ToastCapture& operator=(const ToastCapture&) = delete;
 
-    /// Count only lines the NOTIFY_* macros produced — "[USER] ..." — so an
-    /// unrelated debug line that happens to quote the same words cannot pass.
-    [[nodiscard]] int toasts_containing(const std::string& needle) const {
+    [[nodiscard]] int warnings_containing(const std::string& needle) const {
+        return count(warnings_, needle);
+    }
+
+    [[nodiscard]] int infos_containing(const std::string& needle) const {
+        return count(infos_, needle);
+    }
+
+  private:
+    static int count(const std::vector<std::string>& msgs, const std::string& needle) {
         int n = 0;
-        for (const auto& line : sink_->last_formatted(512)) {
-            if (line.find("[USER]") != std::string::npos &&
-                line.find(needle) != std::string::npos) {
+        for (const auto& m : msgs) {
+            if (m.find(needle) != std::string::npos) {
                 ++n;
             }
         }
         return n;
     }
 
-  private:
-    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
-    std::shared_ptr<spdlog::logger> logger_;
-    spdlog::level::level_enum prev_level_;
+    std::vector<std::string> warnings_;
+    std::vector<std::string> infos_;
 };
 
 /// A real sensor edge on a real manager, with the manual-pull prompt armed the
@@ -178,10 +178,10 @@ TEST_CASE_METHOD(UnloadToastFixture, "A genuine runout still raises the Filament
     // the warning exists to report, and it must survive the suppression.
     REQUIRE_FALSE(AmsState::instance().post_unload_runout_grace_armed());
 
-    ToastLog log;
+    ToastCapture toasts;
     pull_filament();
 
-    CHECK(log.toasts_containing(REMOVED_WARNING) == 1);
+    CHECK(toasts.warnings_containing(REMOVED_WARNING) == 1);
 }
 
 TEST_CASE_METHOD(UnloadToastFixture,
@@ -196,14 +196,14 @@ TEST_CASE_METHOD(UnloadToastFixture,
     AmsStateTestAccess::arm_post_unload_runout_grace(ams);
     REQUIRE(ams.post_unload_runout_grace_armed());
 
-    ToastLog log;
+    ToastCapture toasts;
     pull_filament();
 
     // The warning is the noise — gone.
-    CHECK(log.toasts_containing(REMOVED_WARNING) == 0);
+    CHECK(toasts.warnings_containing(REMOVED_WARNING) == 0);
     // The hint is the point — still there, exactly once. Both fire on the SAME
     // edge, so a suppression that caught the wrong one fails right here.
-    CHECK(log.toasts_containing(MANUAL_PULL_HINT) == 1);
+    CHECK(toasts.infos_containing(MANUAL_PULL_HINT) == 1);
 
     // And the toast only PEEKED: the idle runout modal is the sole consumer and
     // its one shot is still unspent.
@@ -220,10 +220,10 @@ TEST_CASE_METHOD(UnloadToastFixture, "An expired grace stops suppressing the war
     AmsStateTestAccess::age_post_unload_runout_grace(ams, AmsStateTestAccess::grace_window() +
                                                               std::chrono::seconds(1));
 
-    ToastLog log;
+    ToastCapture toasts;
     pull_filament();
 
-    CHECK(log.toasts_containing(REMOVED_WARNING) == 1);
+    CHECK(toasts.warnings_containing(REMOVED_WARNING) == 1);
 }
 
 TEST_CASE_METHOD(UnloadToastFixture, "Filament INSERTED is still announced during the grace",
@@ -236,9 +236,9 @@ TEST_CASE_METHOD(UnloadToastFixture, "Filament INSERTED is still announced durin
     // removal edge would have swallowed it.
     pull_filament();
 
-    ToastLog log;
+    ToastCapture toasts;
     FilamentSensorManager::instance().update_from_status(toolhead_status(true));
     helix::ui::UpdateQueue::instance().drain();
 
-    CHECK(log.toasts_containing("Filament inserted") == 1);
+    CHECK(toasts.infos_containing("Filament inserted") == 1);
 }
