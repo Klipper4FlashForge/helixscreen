@@ -123,3 +123,89 @@ setup() {
     run cleanup_stale_cache_dirs
     [ "$status" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# Reclaiming scratch dirs leaked before cleanup was armed on EXIT
+# ---------------------------------------------------------------------------
+
+@test "cleanup removes a leaked installer scratch dir" {
+    local stale="$BATS_TEST_TMPDIR/usr/data/helixscreen-install"
+    mkdir -p "$stale"
+    dd if=/dev/zero of="$stale/helixscreen.zip" bs=1024 count=8 2>/dev/null
+
+    STALE_CACHE_DIRS="$stale"
+    TMP_DIR=""
+    cleanup_stale_cache_dirs
+
+    [ ! -d "$stale" ]
+}
+
+@test "cleanup removes a dot-prefixed scratch dir" {
+    local stale="$BATS_TEST_TMPDIR/opt/.helixscreen-install"
+    mkdir -p "$stale"
+
+    STALE_CACHE_DIRS="$stale"
+    TMP_DIR=""
+    cleanup_stale_cache_dirs
+
+    [ ! -d "$stale" ]
+}
+
+@test "cleanup NEVER removes the scratch dir this run is staging into" {
+    # The declared list can name the very dir detect_tmp_dir just picked; wiping
+    # it mid-install would delete the tree we are about to swap in.
+    local active="$BATS_TEST_TMPDIR/mnt/UDISK/helixscreen-install"
+    mkdir -p "$active/helixscreen/bin"
+    echo binary > "$active/helixscreen/bin/helix-screen"
+
+    STALE_CACHE_DIRS="$active"
+    TMP_DIR="$active"
+    cleanup_stale_cache_dirs
+
+    [ -d "$active" ]
+    [ -f "$active/helixscreen/bin/helix-screen" ]
+}
+
+@test "cleanup tolerates a trailing slash on the active TMP_DIR" {
+    local active="$BATS_TEST_TMPDIR/mnt/UDISK/helixscreen-install"
+    mkdir -p "$active"
+
+    STALE_CACHE_DIRS="$active"
+    TMP_DIR="$active/"
+    cleanup_stale_cache_dirs
+
+    [ -d "$active" ]
+}
+
+@test "cleanup still refuses a non-cache non-scratch path" {
+    local victim="$BATS_TEST_TMPDIR/mnt/UDISK/printer_data"
+    mkdir -p "$victim"
+    echo cfg > "$victim/printer.cfg"
+
+    STALE_CACHE_DIRS="$victim"
+    TMP_DIR=""
+    run cleanup_stale_cache_dirs
+
+    [ -d "$victim" ]
+    [ -f "$victim/printer.cfg" ]
+    echo "$output" | grep -qi 'refus'
+}
+
+@test "k2 declares the leaked scratch dirs for cleanup" {
+    run bash -c "grep -A 28 '\"k2\"' '$PLATFORM_SH' | grep STALE_CACHE_DIRS"
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q 'helixscreen-install'
+}
+
+@test "cleanup mixes cache and scratch entries in one declaration" {
+    local c="$BATS_TEST_TMPDIR/usr/data/helixscreen/cache"
+    local s="$BATS_TEST_TMPDIR/usr/data/helixscreen-install"
+    mkdir -p "$c" "$s"
+
+    STALE_CACHE_DIRS="$c $s"
+    TMP_DIR=""
+    cleanup_stale_cache_dirs
+
+    [ ! -d "$c" ]
+    [ ! -d "$s" ]
+}

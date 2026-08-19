@@ -1745,36 +1745,45 @@ extract_release() {
 }
 
 # Remove backup of previous installation (call after service starts successfully)
-# Reclaim cache directories a previous version wrote to the wrong filesystem.
+# Reclaim directories a previous version left on the wrong filesystem.
 #
-# The K2 cached thumbnails and modified gcode under /usr/data, which is the
-# ~240MB root overlay rather than the 27.5GB user partition at /mnt/UDISK.
-# The app now caches on /mnt/UDISK, so the old location is dead weight on the
-# smallest filesystem on the box. Platforms declare what to reclaim in
-# STALE_CACHE_DIRS; this is a no-op everywhere else.
+# Two kinds, both measured on a K2 whose root overlay is ~240MB while its user
+# partition at /mnt/UDISK is 27.5GB:
+#   - caches: the app used to cache thumbnails and modified gcode under
+#     /usr/data, i.e. on the overlay. It now caches on /mnt/UDISK.
+#   - scratch dirs: before cleanup was armed on EXIT (it hung off a bash-only
+#     ERR trap that never fired under ash/dash), an interrupted install left the
+#     whole download behind. One unit held a 60MB archive for two months.
 #
-# SAFETY: same guard shape as the off-partition rollback cleanup below — only
-# ever remove a path whose final component is exactly "cache", and never a
-# top-level directory. A past incident wiped a K2's /mnt/UDISK mount root via
-# an unguarded rm -rf.
+# Platforms declare what to reclaim in STALE_CACHE_DIRS; a no-op elsewhere.
+#
+# SAFETY: same guard shape as the off-partition rollback cleanup below — the
+# final path component must be exactly "cache" or name itself an installer
+# scratch dir, and never a top-level directory. A past incident wiped a K2's
+# /mnt/UDISK mount root via an unguarded rm -rf.
 cleanup_stale_cache_dirs() {
     [ -n "${STALE_CACHE_DIRS:-}" ] || return 0
 
-    local _stale
+    local _stale _kind
     for _stale in $STALE_CACHE_DIRS; do
         case "$_stale" in
-            /*/*/cache)
-                ;;
+            /*/*/cache)                 _kind="cache" ;;
+            /*/*helixscreen-install*)   _kind="scratch" ;;
             *)
-                log_warn "Refusing to remove unexpected cache path: $_stale"
+                log_warn "Refusing to remove unexpected reclaim path: $_stale"
                 continue
                 ;;
         esac
 
+        # Never remove the scratch dir this run is actively staging into.
+        if [ -n "${TMP_DIR:-}" ] && [ "$_stale" = "${TMP_DIR%/}" ]; then
+            continue
+        fi
+
         [ -d "$_stale" ] || continue
 
         rm -rf "$_stale" 2>/dev/null || $SUDO rm -rf "$_stale" 2>/dev/null || true
-        log_info "Reclaimed stale cache directory: $_stale"
+        log_info "Reclaimed stale ${_kind} directory: $_stale"
 
         # Drop the now-empty parent too, but only if nothing else lives there.
         rmdir "$(dirname "$_stale")" 2>/dev/null || true

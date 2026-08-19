@@ -1386,7 +1386,9 @@ set_install_paths() {
         TMP_DIR_PREFERRED="/mnt/UDISK/helixscreen-install"
         # Older builds cached thumbnails/gcode on the overlay via /usr/data;
         # the app now caches on /mnt/UDISK, so reclaim the old location.
-        STALE_CACHE_DIRS="/usr/data/helixscreen/cache"
+        # Also reclaim scratch dirs leaked by pre-EXIT-trap installers: one
+        # unit held a 60MB archive at /usr/data/helixscreen-install for months.
+        STALE_CACHE_DIRS="/usr/data/helixscreen/cache /usr/data/helixscreen-install /opt/.helixscreen-install"
         log_info "Platform: Creality K2 series"
         log_info "Install directory: ${INSTALL_DIR}"
     elif [ "$platform" = "cc1" ]; then
