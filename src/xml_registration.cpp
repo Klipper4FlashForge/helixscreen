@@ -718,6 +718,7 @@ void register_xml_components() {
     register_xml("touch_calibration_overlay.xml");
     register_xml("printer_image_list_item.xml");
     register_xml("printer_image_overlay.xml");
+    register_xml("printer_type_overlay.xml");
     register_xml("hidden_network_modal.xml");
     register_xml("network_test_modal.xml");
     register_xml("wifi_network_item.xml");

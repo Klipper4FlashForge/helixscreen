@@ -1700,6 +1700,31 @@ PrinterDetectionResult PrinterDetector::auto_detect(const helix::PrinterDiscover
     return detect(hw_data);
 }
 
+std::string PrinterDetector::apply_type_choice(Config* config, const std::string& type_name,
+                                               const helix::PrinterDiscovery& discovery) {
+    if (!config || type_name.empty()) {
+        spdlog::warn("[PrinterDetector] apply_type_choice called with no config or empty type");
+        return {};
+    }
+
+    config->set<std::string>(config->df() + helix::wizard::PRINTER_TYPE, type_name);
+
+    std::string applied;
+    const std::string preset = get_preset_for_name(type_name);
+    if (!preset.empty()) {
+        applied = apply_preset_with_variants(config, preset, discovery);
+        if (!applied.empty()) {
+            spdlog::info("[PrinterDetector] Applied preset '{}' for user-chosen printer '{}'",
+                         applied, type_name);
+        }
+    }
+
+    config->save();
+    get_printer_state().set_printer_type_sync(type_name);
+    spdlog::info("[PrinterDetector] Printer type set by user: '{}'", type_name);
+    return applied;
+}
+
 bool PrinterDetector::auto_detect_and_save(const helix::PrinterDiscovery& discovery,
                                            Config* config) {
     if (!config) {
@@ -1732,36 +1757,43 @@ bool PrinterDetector::auto_detect_and_save(const helix::PrinterDiscovery& discov
     // Run detection
     PrinterDetectionResult result = auto_detect(discovery);
 
-    if (result.confidence > 0) {
-        spdlog::info("[PrinterDetector] Auto-detected printer: '{}' ({}% confidence, reason: {})",
-                     result.type_name, result.confidence, result.reason);
-
-        // Save to config
-        config->set<std::string>(config->df() + helix::wizard::PRINTER_TYPE, result.type_name);
-        if (!result.preset.empty()) {
-            std::string applied = apply_preset_with_variants(config, result.preset, discovery);
-            if (!applied.empty()) {
-                spdlog::info("[PrinterDetector] Applied preset '{}' for printer '{}'", applied,
-                             result.type_name);
-            }
-        }
-        config->save();
-
-        // Update PrinterState so home panel gets correct image and capabilities
-        get_printer_state().set_printer_type_sync(result.type_name);
-
-        // Strip heuristics to reclaim memory — detection is a one-time operation
-        compact_database();
-
-        return true;
+    if (!meets_autosave_threshold(result)) {
+        // Ambiguous. Persist nothing: PRINTER_TYPE stays empty so the wizard's
+        // identify step offers its Custom/Other default for the user to correct,
+        // and a later reconnect with a fuller discovery snapshot gets another
+        // chance instead of being locked out by a non-empty saved type.
+        spdlog::info("[PrinterDetector] Detection below auto-save bar (best '{}' at {}%, "
+                     "runner-up '{}' at {}%, need >={}%) - leaving printer type unset "
+                     "for the user to choose",
+                     result.type_name, result.confidence, result.runner_up_type_name,
+                     result.runner_up_confidence, AUTOSAVE_MIN_CONFIDENCE);
+        // Deliberately NOT compacting: compact_database() strips the heuristics,
+        // and without them a later attempt could never match anything. Holding
+        // them is the cost of staying open to a better answer.
+        return false;
     }
 
-    spdlog::info("[PrinterDetector] No printer type detected from hardware fingerprints");
+    spdlog::info("[PrinterDetector] Auto-detected printer: '{}' ({}% confidence, reason: {})",
+                 result.type_name, result.confidence, result.reason);
 
-    // Strip heuristics to reclaim memory — detection is a one-time operation
+    // Save to config
+    config->set<std::string>(config->df() + helix::wizard::PRINTER_TYPE, result.type_name);
+    if (!result.preset.empty()) {
+        std::string applied = apply_preset_with_variants(config, result.preset, discovery);
+        if (!applied.empty()) {
+            spdlog::info("[PrinterDetector] Applied preset '{}' for printer '{}'", applied,
+                         result.type_name);
+        }
+    }
+    config->save();
+
+    // Update PrinterState so home panel gets correct image and capabilities
+    get_printer_state().set_printer_type_sync(result.type_name);
+
+    // Strip heuristics to reclaim memory — the type is settled now.
     compact_database();
 
-    return false;
+    return true;
 }
 
 /// Case-insensitive check whether the configured printer type contains @p needle.
@@ -1848,6 +1880,12 @@ std::string PrinterDetector::screws_tilt_direction_override() {
         }
     }
     return "";
+}
+
+bool PrinterDetector::meets_autosave_threshold(const PrinterDetectionResult& result) {
+    if (result.type_name.empty() || !result.detected())
+        return false;
+    return result.confidence >= AUTOSAVE_MIN_CONFIDENCE;
 }
 
 bool PrinterDetector::should_warn_type_mismatch(const std::string& saved_type,
