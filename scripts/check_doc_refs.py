@@ -44,9 +44,26 @@ import sys
 SKIP_DIRS = {'.git', '.worktrees', 'build', 'node_modules', '.venv', 'venv'}
 
 # Paths that are intentionally absent from a clean checkout.
+# NOTE: a developer machine has a built, patched tree, so these all resolve
+# locally and only ever fail in CI - which checks out clean and does not build.
+# That asymmetry is why main went red here for a day and a half without anyone
+# reproducing it. Add to this list rather than rewording a doc: the citations
+# are correct, the files simply do not exist yet at check time.
 EXEMPT_SUBSTRINGS = (
     'superpowers/',        # docs/superpowers/ specs are gitignored, local-only
-    'settings-test.json',  # generated at runtime by --test, gitignored
+    # Written at runtime.
+    'settings-test.json',  # seeded by --test
+    'config/settings.json',
+    # Created by `make apply-patches` (patches/libhv-dns-resolver-fallback.patch).
+    'dns_resolv.',
+    # Build outputs.
+    'compile_commands.json',
+    'build/generated/',    # helix_git_hash.h and friends
+    'MANIFEST.txt',        # written by genPackagingManifest at assets-build time
+    # libhv installs its public headers into include/hv/ during its own build.
+    'libhv/include/',
+    'hv/requests.h',
+    'hv/hlog.h',
 )
 
 # Tokens that are obviously placeholders rather than real paths.
