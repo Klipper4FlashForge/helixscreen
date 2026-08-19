@@ -332,17 +332,19 @@ void AmsOperationSidebar::init_observers() {
     // used to bind on its own; print state is the one whose absence let Unload
     // dispatch mid-print and eat a backend refusal.
     //
-    // print_state_enum, not print_active: PRINTING -> PAUSED is a gating edge
-    // (a pause UNGATES Unload on every backend but AD5X) and print_active reads
-    // 1 across both, so it never fires on that transition. PrinterState is a
-    // separate singleton whose subjects tests deinit between cases, so its
-    // observer takes the lifetime token (#705); AmsState's does not.
+    // print_lifecycle: PRINTING -> PAUSED is a gating edge (a pause UNGATES Unload
+    // on every backend but AD5X, and print_active reads 1 across both so it never
+    // fires there), and Idle -> Preparing is one too — read_unload_gating_state()
+    // now refuses during a host-side pre-print block, which the raw enum does not
+    // move on at all. PrinterState is a separate singleton whose subjects tests
+    // deinit between cases, so its observer takes the lifetime token (#705);
+    // AmsState's does not.
     filament_loaded_observer_ = observe_int_sync<AmsOperationSidebar>(
         AmsState::instance().get_filament_loaded_subject(), this,
         [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); },
         AmsState::instance().get_subjects_lifetime());
     print_state_observer_ = observe_int_sync<AmsOperationSidebar>(
-        printer_state_.get_print_state_enum_subject(), this,
+        printer_state_.get_print_lifecycle_subject(), this,
         [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); },
         printer_state_.get_static_print_subjects_lifetime());
 
@@ -1054,11 +1056,10 @@ helix::ui::OpButtonState AmsOperationSidebar::read_unload_gating_state() const {
     // entire recovery workflow — and the sidebar had no print term at all
     // before, so it went straight from "always tappable" to "correct" only if
     // this asks the same question the backend does.
-    const auto job_state = static_cast<helix::PrintJobState>(
-        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+    const auto lifecycle =
+        static_cast<PrintState>(lv_subject_get_int(printer_state_.get_print_lifecycle_subject()));
     state.print_blocks_op = helix::ui::print_blocks_filament_op(
-        job_state == helix::PrintJobState::PRINTING, job_state == helix::PrintJobState::PAUSED,
-        backend && backend->filament_ops_self_home());
+        lifecycle, backend && backend->filament_ops_self_home());
 
     if (backend) {
         // AmsSystemInfo::is_busy() — the same predicate check_preconditions()

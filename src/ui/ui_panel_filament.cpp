@@ -218,13 +218,15 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     // panel is already open, so without this the buttons keep the pre-pause
     // enablement until some unrelated AMS signal happens to fire.
     //
-    // print_state_enum, not print_active: PRINTING -> PAUSED is now a gating edge
-    // (a pause UNGATES the buttons on every backend but AD5X) and print_active is
-    // 1 across both, so it never fires on that transition. The lifetime token is
-    // mandatory — PrinterState is a separate singleton whose subjects tests tear
-    // down while this guard is alive (#705).
+    // print_lifecycle, not print_active and no longer print_state_enum. It has to
+    // distinguish PRINTING -> PAUSED (a pause UNGATES the buttons on every backend
+    // but AD5X, and print_active is 1 across both so it never fires there) AND see
+    // Idle -> Preparing, which the raw enum does not move on at all — the gate now
+    // refuses during a host-side pre-print block. The lifetime token is mandatory —
+    // PrinterState is a separate singleton whose subjects tests tear down while
+    // this guard is alive (#705).
     print_active_observer_ = observe_int_sync<FilamentPanel>(
-        printer_state_.get_print_state_enum_subject(), this,
+        printer_state_.get_print_lifecycle_subject(), this,
         [](FilamentPanel* self, int) { self->update_filament_op_buttons(); },
         printer_state_.get_static_print_subjects_lifetime());
 
@@ -1871,11 +1873,10 @@ void FilamentPanel::update_filament_op_buttons() {
     // IFS). Reading the raw print_active subject here would grey the buttons
     // through every runout pause on every other backend — i.e. exactly when the
     // user needs them.
-    const auto job_state = static_cast<helix::PrintJobState>(
-        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
-    const bool print_blocks_op = helix::ui::print_blocks_filament_op(
-        job_state == helix::PrintJobState::PRINTING, job_state == helix::PrintJobState::PAUSED,
-        backend->filament_ops_self_home());
+    const auto lifecycle =
+        static_cast<PrintState>(lv_subject_get_int(printer_state_.get_print_lifecycle_subject()));
+    const bool print_blocks_op =
+        helix::ui::print_blocks_filament_op(lifecycle, backend->filament_ops_self_home());
 
     // check_preconditions() refuses on a busy AMS *before* it even looks at the
     // print state, and an op can be started from the AMS panel or by the printer
@@ -1911,11 +1912,11 @@ void FilamentPanel::update_filament_op_buttons() {
     lv_subject_set_int(&load_disabled_subject_, gating.load_disabled ? 1 : 0);
     lv_subject_set_int(&unload_disabled_subject_, gating.unload_disabled ? 1 : 0);
     spdlog::debug("[FilamentPanel] Op buttons: slot={} loaded={} has_filament={} busy={} "
-                  "print_blocks={} (state={}, self_homes={}) "
+                  "print_blocks={} (lifecycle={}, self_homes={}) "
                   "(load_disabled={}, unload_disabled={})",
                   slot, state.slot_is_loaded,
                   state.slot_has_filament ? (*state.slot_has_filament ? "yes" : "no") : "unknown",
-                  state.system_busy, print_blocks_op, static_cast<int>(job_state),
+                  state.system_busy, print_blocks_op, static_cast<int>(lifecycle),
                   backend->filament_ops_self_home(), gating.load_disabled, gating.unload_disabled);
 }
 
@@ -2594,11 +2595,13 @@ void FilamentPanel::restore_heater_after_preheat() {
     // never cooled — so after a swap the nozzle held the material temp indefinitely
     // (AFC's auto-heat on load makes this the common case). A real print re-heats or
     // cancels the pending cooldown, so cooling 120s after an idle swap is safe.
-    auto state = static_cast<helix::PrintJobState>(
-        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
-    bool printing =
-        (state == helix::PrintJobState::PRINTING || state == helix::PrintJobState::PAUSED);
-    if (!printing) {
+    // The lifecycle, so a job that is starting also suppresses the cooldown —
+    // the pre-start block is about to heat the nozzle, and the comment above
+    // already gives "a real print re-heats or cancels the pending cooldown" as
+    // the reason this is safe. Preparing is that case, one step earlier.
+    const auto lifecycle =
+        static_cast<PrintState>(lv_subject_get_int(printer_state_.get_print_lifecycle_subject()));
+    if (!job_holds_machine(lifecycle)) {
         PostOpCooldownManager::instance().schedule();
     }
     prior_nozzle_target_ = 0;

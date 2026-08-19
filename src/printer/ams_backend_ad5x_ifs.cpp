@@ -18,6 +18,7 @@
 #include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "post_op_cooldown_manager.h"
+#include "print_lifecycle_state.h"
 #include "printer_state.h"
 #include "settings_manager.h"
 #include "static_subject_registry.h"
@@ -48,12 +49,20 @@ namespace {
 /// non-LVGL unit tests) the accessor returns nullptr and we answer "not paused",
 /// which keeps the runout detector inert rather than guessing.
 [[nodiscard]] bool print_is_paused() {
-    auto* subj = get_printer_state().get_print_state_enum_subject();
+    // The LIFECYCLE subject, because the comparison below is against PrintState.
+    // These two enums do NOT share numbering — PrintJobState::PAUSED is 2 while
+    // PrintState::Paused is 3 — so reading one and casting to the other silently
+    // answers "paused" for a COMPLETE job and "not paused" for a real pause.
+    auto* subj = get_printer_state().get_print_lifecycle_subject();
     if (!subj) {
         return false;
     }
-    return static_cast<helix::PrintJobState>(lv_subject_get_int(subj)) ==
-           helix::PrintJobState::PAUSED;
+    // PrintState::Paused, not job_holds_machine(): this asks specifically
+    // whether the job is PAUSED, which is what makes a head-empty a real runout.
+    // Equivalent to the old raw comparison — derive_print_state() excepts PAUSED
+    // from the "a live phase outranks the job state" rule, so the two can never
+    // disagree — but expressed on the one axis everything else now reads.
+    return static_cast<PrintState>(lv_subject_get_int(subj)) == PrintState::Paused;
 }
 
 /// Fallback purge for a runout recovery: 50 mm of fresh filament at 10 mm/s.

@@ -30,6 +30,10 @@ class IMoonrakerAPI;
 // set_sensor_role() so multi-lane (Snapmaker) runout scenarios can be exercised.
 class RunoutScopeTestAccess;
 class BypassArmingTestAccess;
+// Test-only friend (defined in tests/unit/test_job_holds_machine_guards.cpp).
+// discover_sensors() re-anchors the startup grace period to "now", so a test
+// that needs a toast to actually be emitted has to back-date it afterwards.
+class Ad5xIdleToastTestAccess;
 
 class AmsBackend;
 
@@ -528,6 +532,7 @@ class FilamentSensorManager : public helix::sensors::ISensorManager {
     friend class FilamentSensorManagerTestAccess;
     friend class ::RunoutScopeTestAccess;
     friend class ::BypassArmingTestAccess;
+    friend class ::Ad5xIdleToastTestAccess;
 
     FilamentSensorManager();
     ~FilamentSensorManager();

@@ -2,6 +2,7 @@
 
 #include "ui_ams_context_menu.h"
 
+#include "../test_helpers/print_state_test_drivers.h"
 #include "ams_backend_mock.h"
 #include "ams_types.h"
 #include "filament_database.h"
@@ -303,7 +304,8 @@ TEST_CASE("AmsContextMenu::decide_can_load agrees with the backend print guard",
     auto can_load = [](bool printing, bool paused, bool self_homes) {
         return AmsContextMenuTestAccess::decide_can_load(
             /*system_busy=*/false, /*toolhead_unload=*/false, /*slot_has_filament=*/true,
-            print_blocks_filament_op(printing, paused, self_homes));
+            print_blocks_filament_op(helix::test::lifecycle_from_bools(printing, paused),
+                                     self_homes));
     };
 
     SECTION("Load is offered for a filled, non-seated lane when no print is running") {
@@ -314,6 +316,20 @@ TEST_CASE("AmsContextMenu::decide_can_load agrees with the backend print guard",
     SECTION("Load is refused while PRINTING, on every backend") {
         CHECK_FALSE(can_load(/*printing=*/true, /*paused=*/false, /*self_homes=*/false));
         CHECK_FALSE(can_load(/*printing=*/true, /*paused=*/false, /*self_homes=*/true));
+    }
+
+    SECTION("Load is refused while PREPARING, on every backend") {
+        // The window the bool pair could not express: a host-side pre-start
+        // block reads (printing=false, paused=false) off print_stats, which is
+        // indistinguishable from idle, so Load was offered while the pre-start
+        // G-code homed and probed. Reached by naming the enum, not through the
+        // bool shim, which deliberately cannot produce Preparing.
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_can_load(
+            /*system_busy=*/false, /*toolhead_unload=*/false, /*slot_has_filament=*/true,
+            print_blocks_filament_op(PrintState::Preparing, /*self_homes=*/false)));
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_can_load(
+            /*system_busy=*/false, /*toolhead_unload=*/false, /*slot_has_filament=*/true,
+            print_blocks_filament_op(PrintState::Preparing, /*self_homes=*/true)));
     }
 
     SECTION("Load is OFFERED on a paused print when the backend does not self-home") {
@@ -363,7 +379,9 @@ TEST_CASE("AmsContextMenu::decide_unload_enabled blocks only the toolhead unload
     auto unload_enabled = [](UnloadMode mode, bool printing, bool paused, bool self_homes,
                              bool cold_ops_print_gated = false) {
         return AmsContextMenuTestAccess::decide_unload_enabled(
-            /*system_busy=*/false, mode, print_blocks_filament_op(printing, paused, self_homes),
+            /*system_busy=*/false, mode,
+            print_blocks_filament_op(helix::test::lifecycle_from_bools(printing, paused),
+                                     self_homes),
             cold_ops_print_gated);
     };
 
@@ -377,6 +395,13 @@ TEST_CASE("AmsContextMenu::decide_unload_enabled blocks only the toolhead unload
         CHECK(unload_enabled(UnloadMode::Unload, false, /*paused=*/true, /*self_homes=*/false));
         CHECK_FALSE(
             unload_enabled(UnloadMode::Unload, false, /*paused=*/true, /*self_homes=*/true));
+    }
+
+    SECTION("Toolhead unload is refused while PREPARING") {
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_unload_enabled(
+            /*system_busy=*/false, UnloadMode::Unload,
+            print_blocks_filament_op(PrintState::Preparing, /*self_homes=*/false),
+            /*cold_ops_print_gated=*/false));
     }
 
     SECTION("Cold lane ops stay available mid-print, even on a self-homing backend") {

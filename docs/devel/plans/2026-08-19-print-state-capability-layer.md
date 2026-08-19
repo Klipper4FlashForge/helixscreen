@@ -41,11 +41,33 @@ rather than taken from the survey.
 ### The existing helper was never adopted
 
 `print_occupies_toolhead` (`include/printer_state.h:113`) has **2 call sites**
-(`ams_subscription_backend.cpp:317`, `ui_bypass_toggle_controller.cpp:28`), while
+(`ams_subscription_backend.cpp:318`, `ui_bypass_toggle_controller.cpp:28`), while
 **~60 sites open-code `PRINTING || PAUSED` inline**. It was introduced as a single
 source of truth and nothing migrated onto it. Worth remembering before we build
 another one: *a helper nobody is forced onto does not become the answer.* That is
 what Phase 4's gate is for.
+
+**But adoption is only half of why it stalled, and the other half is the more
+useful half.** It was introduced by `df22cf6f2` (2026-07-29, bundle JX2FVRB9) to
+fix a real defect: a runout-paused user followed Klipper's own *"load it and
+press RESUME"* prompt into a guaranteed refusal, because the AMS menu and
+filament panel gated on load state while the backend refused on
+`PRINTING || PAUSED`. One shared definition, so the affordance and the refusal
+could not drift.
+
+Nine days later `efab3a6b5` (2026-08-07) relaxed PAUSED *per backend* - allowed
+unless the backend's macro homes itself. That answer needs a second input,
+`filament_ops_self_home()`, and a function taking only `PrintJobState`
+structurally cannot accept one. `print_blocks_filament_op()` was written and took
+over the very sites `print_occupies_toolhead` had been created for, leaving it
+with two residual callers and no constituency.
+
+So **"does a print own the toolhead" has now proved unanswerable from the job
+state alone twice** - once because the answer depends on a backend capability,
+once because it depends on a window the wire cannot represent. Both times the fix
+was an input the original signature could not take. Treat `job_holds_machine()`
+as provisional on the same grounds: the rule that it is *a convenience over the
+lifecycle, never a replacement for switching on it* is what stops a third round.
 
 ### Nine competing definitions of "is a print active"
 
@@ -232,7 +254,7 @@ completing SHA.
 | **0a** | `print_in_progress` derived from the preparing job; watchdog for a job that never confirms | 20 setters | **done** | `289d56856` |
 | **0b** | Panel adopts the live phase so it agrees with the authority by construction | 1 + tests | **done** | `41392dfd2` |
 | **1a** | `job_holds_machine` predicate + subject; the 21 XML bindings moved onto it | 21 XML | **done** | `152986987` |
-| **1b** | The guards (see the corrected table below - 11 migrate, 2 stay raw) | 13 sites + 4 helper call sites + 2 observers | not started | - |
+| **1b** | The guards (11 migrate, 2 stay raw) | 13 sites + 4 helper call sites + 3 observers | **done** | `PENDING` |
 | **2** | Affordance + navigation | 12 + 6 | not started | - |
 | **3** | Display + bookkeeping | 11 + 15 | not started | - |
 | **4** | Delete the helper, add the ratcheting gate | 2 + gate | not started | - |
@@ -611,6 +633,7 @@ loaded" has two definitions in one file that disagree exactly where
 | 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
 | 2026-08-19 | 0b | 91 | `41392dfd2`. Also count-neutral - 0b changes which inputs an existing derivation gets, not how many sites read the wire. Suite 95/95. **Phase 0 complete.** |
 | 2026-08-19 | - | 91 | `d606bd823`. Re-merged main (10 commits, no conflicts). Suite 95/95, and the **full ungated** quality sweep passes (36 gates) - worth re-running before any push, because per-commit gates only ever run `--staged-only` and skip anything you did not stage. |
+| 2026-08-19 | 1b | 72 | `PENDING`. 91 -> 72: the first real drop. `print_occupies_toolhead()` is now **zero-caller** (Phase 4 deletes it). Cost the census did not predict: ~90 assertions across 7 test files failed because every fixture drove `print_state_enum` directly - now routed through `tests/test_helpers/print_state_test_drivers.h`. 96/96 shards, ungated sweep green. |
 | 2026-08-19 | 1a | 91 | `152986987`. Subject + 21 XML bindings + 13 tests. Count-neutral by design: 1a adds a derived subject and moves XML, it does not remove a C++ wire read. 96/96 shards, ungated sweep green. |
 | 2026-08-19 | - | 91 | `6945d4e98`. Re-merged main again (12 commits, no conflicts, translations auto-merged). Suite 95/95, ungated sweep green. Site counts re-verified unchanged: 21 bindings, 91 raw-state sites. |
 
@@ -666,6 +689,31 @@ hunted. Budget for them.
    `observe_int_sync`; a handler running during a drain queues more work that is
    still pending when `drain()` returns, leaving the panel exactly one transition
    behind. Drain until quiescent.
+
+4. **A test that writes `print_state_enum` by hand stops driving anything once
+   the consumer moves to `print_lifecycle`.** The subject still changes, the
+   observer is on a different subject, and the panel simply never re-gates - so
+   the assertion fails as if the production guard were missing. Verified during
+   Phase 1b: production has exactly ONE writer of `print_state_enum_`
+   (`printer_print_state.cpp:436`) and `publish_lifecycle_state()` is the next
+   statement, so the two cannot desync outside a test. Drive
+   `update_from_status()` instead, and raise the phase with
+   `set_print_start_state()` when you want `Preparing`. Expect this in every
+   later phase: it is the single most likely way a green suite turns red for a
+   reason that is not a bug.
+
+5. **`PrintJobState` and `PrintState` do NOT share numbering, and a wrong cast
+   is silent.** `PrintJobState` is STANDBY=0, PRINTING=1, PAUSED=2, COMPLETE=3,
+   CANCELLED=4, ERROR=5. `PrintState` is Idle=0, Preparing=1, Printing=2,
+   Paused=3, Complete=4, Cancelled=5, Error=6 - offset by one from PRINTING on.
+   Changing a comparison to `PrintState::X` while leaving the read on
+   `get_print_state_enum_subject()` compiles, runs, and answers a *different
+   question*: it was hit in Phase 1b on `ams_backend_ad5x_ifs.cpp`, where
+   `print_is_paused()` would have returned true for a COMPLETE job and false for
+   a real pause, inverting the runout detector. **Whenever you change the cast,
+   change the subject in the same edit**, and grep
+   `get_print_state_enum_subject` afterwards for readers whose comparison type no
+   longer matches. This is the single strongest argument for Phase 5's rename.
 
 **The discriminator is whether the failure moves when you change production
 code.** In 0b the firmware-side assertion moved and the other two did not - that

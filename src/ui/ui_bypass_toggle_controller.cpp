@@ -9,6 +9,7 @@
 #include "app_globals.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
+#include "print_lifecycle_state.h"
 #include "printer_state.h"
 
 #include <spdlog/spdlog.h>
@@ -22,10 +23,13 @@ BypassToggleController::~BypassToggleController() {
 void BypassToggleController::toggle() {
     spdlog::info("[BypassToggle] Toggle requested");
 
-    // Print guard — fully disabled while a job owns the toolhead (PRINTING
-    // or PAUSED; a paused print still has filament staged mid-path).
-    const int state = lv_subject_get_int(get_printer_state().get_print_state_enum_subject());
-    if (print_occupies_toolhead(static_cast<PrintJobState>(state))) {
+    // Print guard — fully disabled while a job owns the toolhead. Asked of the
+    // lifecycle, not print_stats.state: Preparing counts (a paused print still
+    // has filament staged mid-path, and a host-side pre-start block is actively
+    // homing and probing). The tile's own binding in panel_widget_bypass.xml
+    // greys it on the same subject; this is the handler half of the same guard.
+    const int state = lv_subject_get_int(get_printer_state().get_print_lifecycle_subject());
+    if (job_holds_machine(static_cast<PrintState>(state))) {
         NOTIFY_WARNING(lv_tr("Bypass cannot be changed while printing"));
         spdlog::info("[BypassToggle] Refused — print active ({})", state);
         return;

@@ -36,6 +36,7 @@
  */
 
 #include "../lvgl_test_fixture.h"
+#include "../test_helpers/print_state_test_drivers.h"
 // AD5X IFS is feature-gated (HELIX_HAS_IFS=0 on the space-constrained cross
 // builds, mk/cross.mk), so every self-homing assertion below is guarded. The
 // non-self-homing half of the table is unconditional.
@@ -87,7 +88,13 @@ struct PausedGateFixture : public LVGLTestFixture {
     }
 
     void set_print_state(helix::PrintJobState s) {
-        lv_subject_set_int(state.get_print_state_enum_subject(), static_cast<int>(s));
+        helix::test::set_wire_state(state, s);
+    }
+
+    /// A host-side pre-print block: the wire still reads standby.
+    void set_preprint_phase(helix::PrintStartPhase phase) {
+        state.set_print_start_state(phase, "", 0);
+        helix::ui::UpdateQueue::instance().drain();
     }
 
     template <typename Backend> std::unique_ptr<PausedGateDouble<Backend>> make() {
