@@ -1395,21 +1395,28 @@ void PrinterPrintState::publish_lifecycle_state() {
     const int phase = lv_subject_get_int(&print_start_phase_);
     const int derived = static_cast<int>(derive_print_state(job_state, phase));
     const int current = lv_subject_get_int(&print_lifecycle_);
+
+    // Written BEFORE print_lifecycle, not after, and not from an observer on it.
+    //
+    // lv_subject_set_int() notifies synchronously, so any consumer reached by
+    // print_lifecycle's observers runs before a later write here would land -
+    // publishing the boolean second would let a widget built inside such an
+    // observer see the stale value. Ordering it first closes that, and is safe
+    // in the other direction because job_holds_machine has only XML consumers
+    // (bind_state_if_eq), none of which reads print_lifecycle back.
+    //
+    // Written only-if-changed for the same reason print_lifecycle is: several
+    // lifecycle values map to the same boolean.
+    const int holds = job_holds_machine(static_cast<PrintState>(derived)) ? 1 : 0;
+    if (lv_subject_get_int(&job_holds_machine_) != holds) {
+        lv_subject_set_int(&job_holds_machine_, holds);
+    }
+
     if (current != derived) {
         // Previous first, so an observer of the current value already sees a
         // consistent pair when it fires.
         lv_subject_set_int(&print_lifecycle_prev_, current);
         lv_subject_set_int(&print_lifecycle_, derived);
-    }
-
-    // Published from here rather than from an observer on print_lifecycle: the
-    // two must never be seen disagreeing, and an observer would fire after
-    // print_lifecycle's own observers had already run against the stale
-    // boolean. Written unconditionally-if-changed for the same reason
-    // print_lifecycle is - several lifecycle values map to the same boolean.
-    const int holds = job_holds_machine(static_cast<PrintState>(derived)) ? 1 : 0;
-    if (lv_subject_get_int(&job_holds_machine_) != holds) {
-        lv_subject_set_int(&job_holds_machine_, holds);
     }
 }
 

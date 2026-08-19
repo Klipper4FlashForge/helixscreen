@@ -1044,7 +1044,28 @@ static void drive_lifecycle(PrinterState& ps, const char* wire_state, PrintStart
     }
 }
 
-TEST_CASE_METHOD(HelixTestFixture, "UpdateChecker refuses to download while a job owns the machine",
+namespace {
+
+/// These two drive the PROCESS-WIDE PrinterState, which HelixTestFixture does not
+/// reset. A REQUIRE that fires before a trailing restore would throw and leave
+/// print_lifecycle stuck at Preparing for every later test in the shard, which
+/// then fails for a reason unrelated to its own subject. The destructor runs on
+/// the throw path too.
+struct GlobalPrintStateFixture : public HelixTestFixture {
+    ~GlobalPrintStateFixture() override {
+        auto& ps = get_printer_state();
+        ps.reset_print_start_state();
+        ps.update_from_status(nlohmann::json{{"print_stats", {{"state", "standby"}}}});
+        for (int i = 0; i < 8; ++i) {
+            helix::ui::UpdateQueue::instance().drain();
+        }
+    }
+};
+
+} // namespace
+
+TEST_CASE_METHOD(GlobalPrintStateFixture,
+                 "UpdateChecker refuses to download while a job owns the machine",
                  "[update_checker][job-holds-machine]") {
     // update_install_suppressed() returns BEFORE the print guard and touches no
     // download state, so on a firmware-managed or read-only install tree the
@@ -1080,7 +1101,8 @@ TEST_CASE_METHOD(HelixTestFixture, "UpdateChecker refuses to download while a jo
     drive_lifecycle(state, "standby", PrintStartPhase::IDLE);
 }
 
-TEST_CASE_METHOD(HelixTestFixture, "UpdateChecker allows a download when no job owns the machine",
+TEST_CASE_METHOD(GlobalPrintStateFixture,
+                 "UpdateChecker allows a download when no job owns the machine",
                  "[update_checker][job-holds-machine]") {
     // Negative control for the test above: with the printer idle the print guard
     // must not fire, so the refusal comes from the missing cache instead. Without

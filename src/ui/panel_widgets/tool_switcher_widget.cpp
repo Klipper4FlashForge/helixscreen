@@ -122,15 +122,21 @@ void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     // carrying the previous screen's gating. print_lifecycle rather than
     // print_state_enum: the gate now refuses during Preparing, and the raw enum
     // does not move on the Idle -> Preparing edge, so the pills would stay lit
-    // through a host-side pre-print block even with the guard fixed. Static
-    // global subject — no SubjectLifetime needed.
+    // through a host-side pre-print block even with the guard fixed.
+    //
+    // Takes the lifetime token. print_lifecycle is one of PrinterPrintState's
+    // static subjects, torn down by deinit_subjects() between test cases, and an
+    // ObserverGuard that outlives that cycle calls lv_observer_remove() on freed
+    // memory (#705). The comment here used to claim none was needed; its two
+    // sibling call sites (ui_panel_filament, ui_ams_sidebar) both pass it.
     print_state_observer_ = helix::ui::observe_int_sync<ToolSwitcherWidget>(
         printer_state_.get_print_lifecycle_subject(), this,
         [token](ToolSwitcherWidget* self, int /*state*/) {
             if (token.expired())
                 return;
             self->refresh_print_gating();
-        });
+        },
+        printer_state_.get_static_print_subjects_lifetime());
 
     // Initial build deferred to on_size_changed() which fires after
     // the widget is fully attached to the screen tree.

@@ -270,8 +270,13 @@ TEST_CASE("no toolhead-guarding XML binding is left on the raw print_active subj
         REQUIRE(xml.find("<bind_state_if_eq subject=\"print_active\" state=\"disabled\"") ==
                 std::string::npos);
 
+        // The full form, including the direction. Counting only the subject name
+        // would let ref_value="0" through - controls disabled when idle and live
+        // while printing, the exact inversion - and the census would still read
+        // 21. Only the bypass tile has its direction pinned behaviourally.
         size_t pos = 0;
-        const std::string needle = "<bind_state_if_eq subject=\"job_holds_machine\"";
+        const std::string needle =
+            "<bind_state_if_eq subject=\"job_holds_machine\" state=\"disabled\" ref_value=\"1\"/>";
         while ((pos = xml.find(needle, pos)) != std::string::npos) {
             ++derived_bindings;
             pos += needle.size();
