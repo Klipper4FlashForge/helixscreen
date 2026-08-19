@@ -4703,3 +4703,81 @@ TEST_CASE_METHOD(PrinterDetectorFixture, "PrinterDetector: unambiguous Voron 2.4
     CAPTURE(result.confidence, result.runner_up_type_name, result.runner_up_confidence);
     REQUIRE(PrinterDetector::meets_autosave_threshold(result));
 }
+
+// ============================================================================
+// Reported Voron 2.4 misdetection (debug bundle QS846GMM)
+// ============================================================================
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: reported Voron 2.4 rig outscores FlashForge",
+                 "[printer][autosave][1284]") {
+    // Fingerprint taken from a user's debug bundle: a Voron 2.4 that shipped
+    // labelled "FlashForge Adventurer 5M Pro". Two things make it hostile.
+    // The Klipper hostname is the printer's NAME, "White", so every Voron
+    // hostname heuristic (voron 75, v2.4 90, v2-4 90) misses. And the rig runs
+    // klipper-led_effect with 56 LED sections, several of which contain the
+    // AD5M Pro database pattern 'chamber_l' - 'neopixel chamber_leds',
+    // 'led_effect chamber_leveling', 'led_effect chamber_loading'.
+    PrinterHardwareData hardware{
+        .heaters = {"extruder", "heater_bed"},
+        .sensors = {"temperature_sensor chamber", "temperature_sensor Octopus",
+                    "temperature_sensor EBB36", "temperature_sensor Cartographer",
+                    "temperature_sensor RaspberryPi"},
+        .fans = {"fan", "fan_generic Nevermore", "fan_generic part_cooling_fan_secondary",
+                 "heater_fan exhaust_fan", "heater_fan hotend_fan"},
+        .leds = {"neopixel chamber_leds", "neopixel toolhead_leds", "led_effect chamber_leveling",
+                 "led_effect chamber_loading", "led_effect chamber_cleaning",
+                 "led_effect chamber_off", "led_effect toolhead_logo_homing"},
+        .hostname = "White",
+        .printer_objects = {"quad_gantry_level", "neopixel chamber_leds", "neopixel toolhead_leds",
+                            "led_effect chamber_leveling", "bed_mesh", "exclude_object"},
+        .steppers = {"stepper_x", "stepper_y", "stepper_z", "stepper_z1", "stepper_z2",
+                     "stepper_z3"},
+        .kinematics = "corexy",
+        .mcu = "stm32f429"};
+
+    auto result = PrinterDetector::detect(hardware);
+
+    CAPTURE(result.confidence, result.runner_up_type_name, result.runner_up_confidence,
+            result.reason);
+    REQUIRE(result.type_name == "Voron 2.4");
+}
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: a genuine FlashForge survives having its saved type cleared",
+                 "[printer][autosave][clearsafety]") {
+    // Safety assumption for a targeted "clear the poisoned type" migration:
+    // the false positives were all labelled FlashForge, so a migration would
+    // clear that label. A GENUINE FlashForge must therefore re-detect itself
+    // from hardware, not end up stranded or renamed to a foreign brand.
+    SECTION("with its chamber light, a real AD5M Pro comes back as the Pro") {
+        // Host renamed, which is the realistic worst case - users rename hosts.
+        PrinterHardwareData hardware{.heaters = {"extruder", "heater_bed"},
+                                     .sensors = {"tvocValue", "weightValue"},
+                                     .fans = {"fan", "heater_fan hotend_fan"},
+                                     .leds = {"led chamber_light"},
+                                     .hostname = "my-printer",
+                                     .kinematics = "corexy"};
+        auto result = PrinterDetector::detect(hardware);
+        CAPTURE(result.type_name, result.confidence);
+        REQUIRE(result.type_name == "FlashForge Adventurer 5M Pro");
+        REQUIRE(PrinterDetector::meets_autosave_threshold(result));
+    }
+
+    SECTION("without it, the family still holds - it degrades to the non-Pro sibling") {
+        // The chamber LED is what breaks the Pro-vs-5M tie, so a Pro that has
+        // lost it reads as a plain 5M. Worth pinning: the migration's downside
+        // is bounded at the adjacent sibling (one row away in the picker), not
+        // at a foreign brand or an empty type.
+        PrinterHardwareData hardware{.heaters = {"extruder", "heater_bed"},
+                                     .sensors = {"tvocValue", "weightValue"},
+                                     .fans = {"fan", "heater_fan hotend_fan"},
+                                     .leds = {},
+                                     .hostname = "my-printer",
+                                     .kinematics = "corexy"};
+        auto result = PrinterDetector::detect(hardware);
+        CAPTURE(result.type_name, result.confidence);
+        REQUIRE(result.type_name == "FlashForge Adventurer 5M");
+        REQUIRE(PrinterDetector::meets_autosave_threshold(result));
+    }
+}

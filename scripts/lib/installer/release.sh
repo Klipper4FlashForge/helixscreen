@@ -1233,12 +1233,23 @@ extract_release() {
             fi
             ;;
         *)
+            # `-o` means "don't restore user:group". Without it a root extract
+            # restores the numeric uid/gid the archive was built with (1001 on
+            # the CI runner), leaving the install owned by a user that does not
+            # exist on the printer. It is needed here as well as at packaging
+            # time because archives already published still carry those ids.
+            #
+            # `-o` is the ONLY portable spelling: BusyBox tar (1.33.2 on the K2)
+            # documents `-o` but has no --no-same-owner long option, so passing
+            # the long form fails extraction outright on every Creality box.
+            # GNU tar accepts -o as an alias for --no-same-owner when extracting.
+            #
             # BusyBox tar doesn't support -z; use gunzip pipe on embedded platforms
             case "$platform" in
                 ad5m|ad5x|k1|k2)
-                    gunzip -c "$archive" | tar xf - && extract_ok=true ;;
+                    gunzip -c "$archive" | tar xof - && extract_ok=true ;;
                 *)
-                    tar -xzf "$archive" && extract_ok=true ;;
+                    tar -xzof "$archive" && extract_ok=true ;;
             esac
             ;;
     esac
@@ -1734,6 +1745,52 @@ extract_release() {
 }
 
 # Remove backup of previous installation (call after service starts successfully)
+# Reclaim directories a previous version left on the wrong filesystem.
+#
+# Two kinds, both measured on a K2 whose root overlay is ~240MB while its user
+# partition at /mnt/UDISK is 27.5GB:
+#   - caches: the app used to cache thumbnails and modified gcode under
+#     /usr/data, i.e. on the overlay. It now caches on /mnt/UDISK.
+#   - scratch dirs: before cleanup was armed on EXIT (it hung off a bash-only
+#     ERR trap that never fired under ash/dash), an interrupted install left the
+#     whole download behind. One unit held a 60MB archive for two months.
+#
+# Platforms declare what to reclaim in STALE_CACHE_DIRS; a no-op elsewhere.
+#
+# SAFETY: same guard shape as the off-partition rollback cleanup below — the
+# final path component must be exactly "cache" or name itself an installer
+# scratch dir, and never a top-level directory. A past incident wiped a K2's
+# /mnt/UDISK mount root via an unguarded rm -rf.
+cleanup_stale_cache_dirs() {
+    [ -n "${STALE_CACHE_DIRS:-}" ] || return 0
+
+    local _stale _kind
+    for _stale in $STALE_CACHE_DIRS; do
+        case "$_stale" in
+            /*/*/cache)                 _kind="cache" ;;
+            /*/*helixscreen-install*)   _kind="scratch" ;;
+            *)
+                log_warn "Refusing to remove unexpected reclaim path: $_stale"
+                continue
+                ;;
+        esac
+
+        # Never remove the scratch dir this run is actively staging into.
+        if [ -n "${TMP_DIR:-}" ] && [ "$_stale" = "${TMP_DIR%/}" ]; then
+            continue
+        fi
+
+        [ -d "$_stale" ] || continue
+
+        rm -rf "$_stale" 2>/dev/null || $SUDO rm -rf "$_stale" 2>/dev/null || true
+        log_info "Reclaimed stale ${_kind} directory: $_stale"
+
+        # Drop the now-empty parent too, but only if nothing else lives there.
+        rmdir "$(dirname "$_stale")" 2>/dev/null || true
+    done
+    return 0
+}
+
 cleanup_old_install() {
     # Keep .old as a last-resort recovery path if config wasn't restored.
     # Without this guard, a failed Phase 6 + cleanup = permanent config loss.
