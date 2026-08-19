@@ -300,6 +300,14 @@ static void register_xml(const char* filename) {
 void register_xml_components() {
     spdlog::trace("[XML Registration] Registering XML components...");
 
+    // Shared cross-file styles (ui_xml/styles.xml), referenced from any XML as
+    // <style name="styles.<name>"/>. Must live here, not in init_theme() with
+    // globals.xml: this function runs AFTER theme_manager_init() registered the
+    // theme constants, and a style's #const values resolve at registration time
+    // (globals.xml is parsed before theme init, so a theme-token style there
+    // registers empty). Registered first so every component below can use it.
+    register_xml("styles.xml");
+
     // Register responsive constants (AFTER globals, BEFORE components that use them)
     ui_switch_register_responsive_constants();
     register_color_picker_responsive_constants();
