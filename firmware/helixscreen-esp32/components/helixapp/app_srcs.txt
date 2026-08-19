@@ -254,6 +254,7 @@ src/ui/page_scroll_controller.cpp
 src/ui/panel_widget_manager.cpp
 src/ui/panel_widget_registry.cpp
 src/ui/panel_widgets/active_spool_widget.cpp
+src/ui/panel_widgets/bypass_widget.cpp
 src/ui/panel_widgets/camera_widget.cpp
 src/ui/panel_widgets/clock_widget.cpp
 src/ui/panel_widgets/clog_detection_widget.cpp
@@ -315,6 +316,7 @@ src/ui/ui_buffer_meter.cpp
 src/ui/ui_busy_overlay.cpp
 src/ui/ui_button.cpp
 src/ui/ui_bypass_spool_widget.cpp
+src/ui/ui_bypass_toggle_controller.cpp
 src/ui/ui_card.cpp
 src/ui/ui_carousel.cpp
 src/ui/ui_change_host_modal.cpp

@@ -308,6 +308,7 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: 旁路模式
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: 旁路由硬件传感器控制
   Bypass controlled by sensor: 旁通由传感器控制
   Bypass disabled: 旁通已禁用
@@ -1974,6 +1975,7 @@ translations:
   Requires Moonraker power device: '需要 Moonraker 电源设备'
   Requires Moonraker-Timelapse plugin: 需要 Moonraker-Timelapse 插件
   Requires Multi-Filament System or MMU hardware: '需要多耗材系统或 MMU 硬件'
+  Requires a filament system with bypass: ''
   Requires clog detection hardware: '需要堵塞检测硬件'
   Resend write failed at chunk {}: 区块 {} 重发写入失败
   Reset: 重置
@@ -2531,6 +2533,7 @@ translations:
   Toggle Auto-Refill: '切换自动续料'
   Toggle Moonraker power devices: '切换 Moonraker 电源设备'
   Toggle Quiet Mode: '切换静音模式'
+  Toggle external spool bypass: ''
   Toggle toolhead LED for an extruder: '切换某个挤出机的工具头 LED'
   'Toggle:': '切换:'
   Too humid: 湿度过高

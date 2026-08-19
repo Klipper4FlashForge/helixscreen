@@ -317,6 +317,27 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     static std::string load_gcode(int global_slot_index,
                                   CfsMacroVariant variant = CfsMacroVariant::K2);
     static std::string unload_gcode(CfsMacroVariant variant = CfsMacroVariant::K2);
+
+    /// Unload the external / bypass spool on the stock (K1/K2) dialect.
+    ///
+    /// Not a variant of unload_gcode(). That script ends in the box's own
+    /// retract primitive — `CR_BOX_RETRUDE` / `BOX_RETRUDE_MATERIAL` — which is
+    /// keyed on a bay: `box_wrapper.cpython-39.so` carries the literal
+    /// `[box] retrude, no tnn`. A bypass spool is hand-fed straight into the
+    /// toolhead with the box stood down (`BOX_ENABLE_CFS_PRINT ENABLE=0`), so
+    /// there is no bay to reel into and the retract silently no-ops. Observed on
+    /// a K2 Plus 2026-08-18: the cut ran (`[box] cut to return OK`), nothing
+    /// else did, and the filament stayed in the extruder.
+    ///
+    /// Creality's own answer is the `QUIT_MATERIAL` macro — the non-CFS spool
+    /// holder unload that ships in the same config as the `BOX_*` family:
+    /// go to the extrude position, heat if filament is present, cut, retract
+    /// 10 mm with the extruder, park. Preferred whenever the printer defines it.
+    ///
+    /// @param variant           Macro dialect; Fork never reaches here (its
+    ///                          `BOX_UNLOAD` picks the external branch itself).
+    /// @param has_quit_material `QUIT_MATERIAL` is defined on this printer.
+    static std::string bypass_unload_gcode(CfsMacroVariant variant, bool has_quit_material);
     static std::string swap_gcode(int global_slot_index,
                                   CfsMacroVariant variant = CfsMacroVariant::K2);
     static std::string reset_gcode();
@@ -355,8 +376,17 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// evidence. Without a sensor reading it answers `Unverifiable`, because a
     /// false "load failed" modal on a printer that loaded fine is worse than
     /// staying quiet.
+    /// `bypass_unload` exempts the external-spool unload from the
+    /// filament-must-be-gone rule. That unload ends with filament still at the
+    /// toolhead switch by design: nothing reels a bypass spool back down a lane,
+    /// so both QUIT_MATERIAL and our fallback retract clear of the melt zone and
+    /// stop, leaving the user to pull the rest out (ui_manual_pull_prompt says
+    /// so). Judging it by the bay rule turned every bypass unload into
+    /// UnloadLeftFilament, which then disarmed the very prompt that was supposed
+    /// to fire.
     [[nodiscard]] static PhaseVerdict verify_phase_outcome(AmsAction op, bool sensor_ever_read,
-                                                           bool filament_at_end);
+                                                           bool filament_at_end,
+                                                           bool bypass_unload = false);
 
     /// Human-facing sentence for a non-Ok verdict, or empty for `Ok` /
     /// `Unverifiable`. Separate from the rule so the wording can move without
@@ -658,7 +688,10 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
         // on_complete it no longer says LOADING or UNLOADING.
         AmsAction intent = AmsAction::IDLE;
         bool started_with_filament = false; // filament_detected at op start
-        bool seen_filament_drop = false;    // true→false transition (cut completed)
+        // Latched alongside intent: this UNLOADING is the external/bypass spool,
+        // whose end state legitimately still shows filament at the toolhead.
+        bool bypass_unload = false;
+        bool seen_filament_drop = false;  // true→false transition (cut completed)
         bool seen_filament_rise = false;  // false→true transition after a drop (new filament fed)
         bool reached_target_once = false; // current_temp ever within 5°C of target this op
         bool pending_purge_target = false; // target rose >10°C above baseline (waits for rise)
