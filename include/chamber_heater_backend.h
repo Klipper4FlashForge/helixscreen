@@ -72,4 +72,16 @@ MatchResult match(const std::string& object_name);
 /// Lookup by id (nullptr if unknown).
 const ChamberHeaterBackend* backend_by_id(std::string_view id);
 
+/// Objects to subscribe for the matched backend's surfaces (diagnostics +
+/// filter pin). Inputs come from PrinterDiscovery; empty vector = nothing.
+inline std::vector<std::string> required_status_objects(std::string_view diagnostics_object,
+                                                        std::string_view filter_fan_pin) {
+    std::vector<std::string> out;
+    if (!diagnostics_object.empty())
+        out.emplace_back(diagnostics_object);
+    if (!filter_fan_pin.empty())
+        out.emplace_back(filter_fan_pin);
+    return out;
+}
+
 } // namespace helix::chamber

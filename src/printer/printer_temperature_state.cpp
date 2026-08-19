@@ -12,6 +12,7 @@
 
 #include "ui_temperature_utils.h"
 
+#include "chamber_heater_backend.h"
 #include "klipper_extruder_naming.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "state/subject_macros.h"
@@ -64,6 +65,25 @@ void PrinterTemperatureState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(chamber_mode, helix::ChamberMode::Off, subjects_, register_xml);
     chamber_mode_lifetime_ = std::make_shared<bool>(true);
 
+    // Chamber-heater diagnostics subjects (backend-provided; ints that can be
+    // legitimately absent default to -1 "unknown", flags to 0, strings to "").
+    INIT_SUBJECT_INT(chamber_heater_fault, 0, subjects_, register_xml);
+    chamber_heater_fault_lifetime_ = std::make_shared<bool>(true);
+    INIT_SUBJECT_INT(chamber_heater_inhibited, 0, subjects_, register_xml);
+    chamber_heater_inhibited_lifetime_ = std::make_shared<bool>(true);
+    INIT_SUBJECT_STRING(chamber_heater_fault_reason, "", subjects_, register_xml);
+    chamber_heater_fault_reason_lifetime_ = std::make_shared<bool>(true);
+    INIT_SUBJECT_INT(chamber_heater_externally_controlled, 0, subjects_, register_xml);
+    chamber_heater_externally_controlled_lifetime_ = std::make_shared<bool>(true);
+    INIT_SUBJECT_INT(chamber_heater_element_temp, -1, subjects_, register_xml);
+    chamber_heater_element_temp_lifetime_ = std::make_shared<bool>(true);
+    INIT_SUBJECT_INT(chamber_filter_fan_percent, -1, subjects_, register_xml);
+    chamber_filter_fan_percent_lifetime_ = std::make_shared<bool>(true);
+    INIT_SUBJECT_STRING(chamber_filter_fan_reason, "", subjects_, register_xml);
+    chamber_filter_fan_reason_lifetime_ = std::make_shared<bool>(true);
+    INIT_SUBJECT_INT(chamber_filter_fan_on, -1, subjects_, register_xml);
+    chamber_filter_fan_on_lifetime_ = std::make_shared<bool>(true);
+
     // Extruder version subject (bumped when extruder list changes)
     INIT_SUBJECT_INT(extruder_version, 0, subjects_, register_xml);
 
@@ -102,6 +122,30 @@ void PrinterTemperatureState::deinit_subjects() {
     if (chamber_mode_lifetime_)
         *chamber_mode_lifetime_ = false;
     chamber_mode_lifetime_.reset();
+    if (chamber_heater_fault_lifetime_)
+        *chamber_heater_fault_lifetime_ = false;
+    chamber_heater_fault_lifetime_.reset();
+    if (chamber_heater_inhibited_lifetime_)
+        *chamber_heater_inhibited_lifetime_ = false;
+    chamber_heater_inhibited_lifetime_.reset();
+    if (chamber_heater_fault_reason_lifetime_)
+        *chamber_heater_fault_reason_lifetime_ = false;
+    chamber_heater_fault_reason_lifetime_.reset();
+    if (chamber_heater_externally_controlled_lifetime_)
+        *chamber_heater_externally_controlled_lifetime_ = false;
+    chamber_heater_externally_controlled_lifetime_.reset();
+    if (chamber_heater_element_temp_lifetime_)
+        *chamber_heater_element_temp_lifetime_ = false;
+    chamber_heater_element_temp_lifetime_.reset();
+    if (chamber_filter_fan_percent_lifetime_)
+        *chamber_filter_fan_percent_lifetime_ = false;
+    chamber_filter_fan_percent_lifetime_.reset();
+    if (chamber_filter_fan_reason_lifetime_)
+        *chamber_filter_fan_reason_lifetime_ = false;
+    chamber_filter_fan_reason_lifetime_.reset();
+    if (chamber_filter_fan_on_lifetime_)
+        *chamber_filter_fan_on_lifetime_ = false;
+    chamber_filter_fan_on_lifetime_.reset();
     for (auto& [name, info] : extruders_) {
         if (info.temp_lifetime)
             *info.temp_lifetime = false;
@@ -144,6 +188,15 @@ void PrinterTemperatureState::register_xml_subjects() {
     // chamber_target / chamber_fan_target intentionally omitted — internal inputs only.
     lv_xml_register_subject(nullptr, "chamber_effective_target", &chamber_effective_target_);
     lv_xml_register_subject(nullptr, "chamber_mode", &chamber_mode_);
+    lv_xml_register_subject(nullptr, "chamber_heater_fault", &chamber_heater_fault_);
+    lv_xml_register_subject(nullptr, "chamber_heater_inhibited", &chamber_heater_inhibited_);
+    lv_xml_register_subject(nullptr, "chamber_heater_fault_reason", &chamber_heater_fault_reason_);
+    lv_xml_register_subject(nullptr, "chamber_heater_externally_controlled",
+                            &chamber_heater_externally_controlled_);
+    lv_xml_register_subject(nullptr, "chamber_heater_element_temp", &chamber_heater_element_temp_);
+    lv_xml_register_subject(nullptr, "chamber_filter_fan_percent", &chamber_filter_fan_percent_);
+    lv_xml_register_subject(nullptr, "chamber_filter_fan_reason", &chamber_filter_fan_reason_);
+    lv_xml_register_subject(nullptr, "chamber_filter_fan_on", &chamber_filter_fan_on_);
     lv_xml_register_subject(nullptr, "extruder_version", &extruder_version_);
 }
 
@@ -445,6 +498,34 @@ void PrinterTemperatureState::update_from_status(const nlohmann::json& status) {
                 spdlog::trace("[PrinterTemperatureState] Chamber cooling-fan target: {}.{}C",
                               target_deci / 10, target_deci % 10);
             }
+        }
+    }
+
+    // Chamber-heater diagnostics (backend-provided, capability-gated). Absent
+    // object in a delta frame = no news: subjects keep their last value.
+    // Vendor schema translation lives in the backend (chamber_heater_backend.h).
+    if (!chamber_diagnostics_object_.empty() && status.contains(chamber_diagnostics_object_)) {
+        const auto* backend = chamber::backend_by_id(chamber_backend_id_);
+        if (backend) {
+            if (auto d = backend->parse_diagnostics(status[chamber_diagnostics_object_])) {
+                lv_subject_set_int(&chamber_heater_fault_, d->fault ? 1 : 0);
+                lv_subject_set_int(&chamber_heater_inhibited_, d->inhibited ? 1 : 0);
+                lv_subject_copy_string(&chamber_heater_fault_reason_, d->fault_reason.c_str());
+                lv_subject_set_int(&chamber_heater_externally_controlled_,
+                                   d->externally_controlled ? 1 : 0);
+                lv_subject_set_int(&chamber_heater_element_temp_,
+                                   std::isnan(d->element_temp_c)
+                                       ? -1
+                                       : helix::units::to_decidegrees(d->element_temp_c));
+                lv_subject_set_int(&chamber_filter_fan_percent_, d->filter_fan_percent);
+                lv_subject_copy_string(&chamber_filter_fan_reason_, d->filter_fan_reason.c_str());
+            }
+        }
+    }
+    if (!chamber_filter_fan_pin_.empty() && status.contains(chamber_filter_fan_pin_)) {
+        const auto& pin = status[chamber_filter_fan_pin_];
+        if (pin.contains("value") && pin["value"].is_number()) {
+            lv_subject_set_int(&chamber_filter_fan_on_, pin["value"].get<double>() > 0.5 ? 1 : 0);
         }
     }
 

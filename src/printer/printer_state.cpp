@@ -816,10 +816,29 @@ void PrinterState::set_hardware(helix::PrinterDiscovery hardware) {
     // than a deliberate "Maintaining" set.
     temperature_state_.set_chamber_fan_resting(discovery_.chamber_fan_resting_deci());
 
+    // Chamber-heater diagnostics backend (issue #1290). The backend matched the
+    // DISCOVERED chamber heater during parse_objects; its diagnostics surfaces
+    // only apply while the RESOLVED heater is that same discovery pick — a
+    // manual override to another heater (or "none") detaches them and clears
+    // the capabilities. See include/chamber_heater_backend.h.
+    const bool chamber_diagnostics_apply =
+        !chamber_heater.empty() && chamber_heater == discovery_.chamber_heater_name();
+    if (chamber_diagnostics_apply) {
+        temperature_state_.set_chamber_diagnostics_source(discovery_.chamber_heater_backend_id(),
+                                                          discovery_.chamber_diagnostics_object(),
+                                                          discovery_.chamber_filter_fan_pin());
+    } else {
+        temperature_state_.set_chamber_diagnostics_source("", "", "");
+    }
+
     // Update capability flags based on resolved chamber assignments
     // (set_hardware above used discovery flags which miss manual overrides)
     capabilities_state_.set_has_chamber_sensor(!chamber_sensor.empty());
     capabilities_state_.set_has_chamber_heater(!chamber_heater.empty());
+    capabilities_state_.set_has_chamber_heater_diagnostics(
+        chamber_diagnostics_apply && !discovery_.chamber_diagnostics_object().empty());
+    capabilities_state_.set_has_chamber_filter_fan(chamber_diagnostics_apply &&
+                                                   !discovery_.chamber_filter_fan_pin().empty());
 
     // Promote the resolved chamber sensor to CHAMBER role in the sensor
     // manager. Required for vendors whose chamber sensor name doesn't match
