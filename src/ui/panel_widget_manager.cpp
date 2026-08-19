@@ -895,6 +895,15 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             if (slot.hardware_gated) {
                 lv_obj_set_style_opa(widget, LV_OPA_40, 0);
                 lv_obj_add_state(widget, LV_STATE_DISABLED);
+                // LV_STATE_DISABLED alone is not enough. A tile's tap handler is
+                // usually declared as an <event_cb> on its XML component root, so
+                // it is bound when the tile is PLACED - independent of gating -
+                // and a gated tile could still open a panel describing hardware
+                // that is not there. Clearing CLICKABLE takes it out of the
+                // indev hit test entirely, so the press walks up to the parent
+                // instead. Safe without a restore path: an un-gate rebuilds the
+                // tile from scratch (see the gate observers' rebuild).
+                lv_obj_remove_flag(widget, LV_OBJ_FLAG_CLICKABLE);
 
                 const auto* gated_def = find_widget_def(slot.widget_id);
                 const char* type_icon = (gated_def && gated_def->icon) ? gated_def->icon : "cancel";

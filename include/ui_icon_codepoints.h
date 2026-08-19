@@ -136,6 +136,7 @@ static const IconMapping ICON_MAP[] = {
     {"fridge_industrial",  "\xF3\xB1\x97\xAE"},  // F15EE fridge-industrial (chamber)
 
     // Grid icons
+    {"gauge",              "\xF3\xB0\x8A\x9A"},  // F029A gauge
     {"grid_large",         "\xF3\xB0\x9D\x98"},  // F0758 grid-large
     {"grid_off",           "\xF3\xB0\x8B\x82"},  // F02C2 grid-off
     {"grid_view",          "\xF3\xB0\x95\xB0"},  // F0570 view-grid

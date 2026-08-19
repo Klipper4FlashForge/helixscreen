@@ -509,6 +509,8 @@ translations:
   Choose rendering mode for bed mesh visualization: Escolha o modo de renderização
     para visualização da malha da mesa
   Choose sound style: Escolher estilo de som
+  ? Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses.
+  : ''
   Choose what to power off or restart.: Escolha o que desligar ou reiniciar.
   Clean Brush: 'Limpar escova'
   Clean Nozzle: Limpar Bico
@@ -1987,6 +1989,7 @@ translations:
   Printer Firmware Disconnected: Firmware da Impressora Desconectado
   Printer Image: Imagem da Impressora
   Printer Manager: Gerenciador de Impressora
+  Printer Model: ''
   Printer Name: Nome da Impressora
   'Printer Setup: Connection': 'Config. Impressora: Conexão'
   'Printer Setup: Fans': 'Config. Impressora: Ventoinhas'
@@ -2104,6 +2107,7 @@ translations:
   Re-syncs Happy Hare's tracked state with the hardware.: Ressincroniza o estado rastreado
     do Happy Hare com o hardware.
   Ready: Pronto
+  Ready for filament operations: ''
   Ready to Apply: Pronto para Aplicar
   Ready to load: Pronto para carregar
   Reason: Motivo
@@ -2732,6 +2736,7 @@ translations:
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a "Timer Too Close" error. Continue anyway?
   : Este dispositivo tem muito pouca RAM. A calibração de ressonância consome muita memória e pode causar um erro "Timer Too Close". Continuar mesmo assim?
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Isto não corresponde ao carretel do Spoolman vinculado. Adicionar como um novo carretel ou atualizar o vinculado para corresponder?
+  This filament system does not report buffer or flow data.: ''
   This file was sliced for {} but {} is loaded.: Este arquivo foi fatiado para {}
     mas {} está carregado.
   This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
