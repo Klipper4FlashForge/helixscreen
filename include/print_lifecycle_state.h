@@ -38,6 +38,33 @@ enum class PrintState {
 PrintState derive_print_state(helix::PrintJobState job_state, int start_phase);
 
 /**
+ * @brief Does a job own the machine right now?
+ *
+ * True for `Preparing`, `Printing` and `Paused`: the states in which a print job
+ * is entitled to move the toolhead, and therefore the states in which nothing
+ * else may. This is the question the ~60 open-coded `PRINTING || PAUSED`
+ * comparisons are all trying to ask, and the reason they get it wrong is that
+ * `PrintJobState` cannot express `Preparing` - a job the app has committed to
+ * but the printer has not reported yet.
+ *
+ * Ask this instead of comparing the raw job state whenever the decision is
+ * "would acting now fight the printer for the toolhead": motion and extrusion
+ * guards, filament operations, tool changes, cooldowns, anything that emits
+ * G-code of its own.
+ *
+ * @warning Not a substitute for switching on the lifecycle when a caller must
+ *          distinguish `Paused`. `ams_subscription_backend.cpp` deliberately
+ *          ALLOWS a filament op on a paused print when the backend does not
+ *          self-home, because then no firmware macro can hide a `G28`. This
+ *          predicate is a convenience over the lifecycle, never a replacement
+ *          for it.
+ */
+constexpr bool job_holds_machine(PrintState state) {
+    return state == PrintState::Preparing || state == PrintState::Printing ||
+           state == PrintState::Paused;
+}
+
+/**
  * @brief Result of a state transition attempt
  *
  * Carries all the information the UI layer needs to react to a state change

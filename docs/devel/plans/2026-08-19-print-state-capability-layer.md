@@ -86,7 +86,23 @@ call site.
 
 ### The safety gap (verified)
 
-21 XML bindings disable jog, motion and extrude controls:
+21 XML bindings disable the controls that would fight a running job for the
+toolhead:
+
+| What | Count |
+|---|---|
+| Bed-levelling calibration - QGL, Z-Tilt, bed screws | 8 |
+| Z calibration + Save Z-Offset | 4 |
+| User macro buttons 1-4 | 8 |
+| The home bypass tile | 1 |
+
+> **Correction, 2026-08-19.** An earlier draft called these "jog, motion and
+> extrude" controls. They are not - the jog arrows and extrude buttons carry no
+> `print_active` binding at all. The conclusion is unchanged and if anything
+> sharper: every one of these 21 emits G-code that homes, probes, or rewrites the
+> Z offset, which is precisely what a host-side pre-print block is already doing.
+
+All 21 use the identical form:
 
 ```
 <bind_state_if_eq subject="print_active" state="disabled" ref_value="1"/>
@@ -215,7 +231,8 @@ completing SHA.
 |---|---|---|---|---|
 | **0a** | `print_in_progress` derived from the preparing job; watchdog for a job that never confirms | 20 setters | **done** | `289d56856` |
 | **0b** | Panel adopts the live phase so it agrees with the authority by construction | 1 + tests | **done** | `41392dfd2` |
-| **1** | Safety guards + a lifecycle-derived XML subject | 15 + 21 XML | not started | - |
+| **1a** | `job_holds_machine` predicate + subject; the 21 XML bindings moved onto it | 21 XML | **done** | `45df86df1` |
+| **1b** | The guards (see the corrected table below - 11 migrate, 2 stay raw) | 13 sites + 4 helper call sites + 2 observers | not started | - |
 | **2** | Affordance + navigation | 12 + 6 | not started | - |
 | **3** | Display + bookkeeping | 11 + 15 | not started | - |
 | **4** | Delete the helper, add the ratcheting gate | 2 + gate | not started | - |
@@ -385,22 +402,64 @@ XML sites: the 21 enumerated in "The safety gap" above. Note
 bypass tile's affordance and `ui_bypass_toggle_controller.cpp:28` fixes its
 handler - both are needed, neither is sufficient alone.
 
-**1b. The 15 guards:**
+**1b. The guards.** Surveyed site by site 2026-08-19; the paths and line
+numbers in the first draft of this table were mostly wrong and three of the
+sites turned out not to be `PRINTING || PAUSED` at all. Corrected list:
 
-| Site | Gates |
-|---|---|
-| `moonraker_gcode_guards.cpp:20` | Layer-1 refusal of app-emitted homing |
-| `ams_subscription_backend.cpp:317,320` | AMS filament-op refusal (keep the PAUSED relaxation) |
-| `ui_bypass_toggle_controller.cpp:28` | Bypass toggle |
-| `printer_state.cpp:965` | `is_blocking_operation_active()` |
-| `tool_switcher_widget.cpp:580-581,670` | Tool change refusal + paused confirmation |
-| `ams_backend_ad5x_ifs.cpp:56` | AD5X runout-recovery paths |
-| `post_op_cooldown_manager.cpp:73-74` | Post-op nozzle cooldown |
-| `ui_panel_filament.cpp:2599` | Cooldown scheduling after a filament op |
-| `filament_sensor_manager.cpp:995-996` | Head-sensor-empty noise suppression |
-| `update_checker.cpp:1246,2892` | Update download + notification |
-| `upgrade_nudge.cpp:82` | Upgrade nudge (**PRINTING only today** - inconsistent with neighbours; decide deliberately) |
-| `display_manager.cpp:1023` | Display sleep inhibit |
+| Site | Gates | Action |
+|---|---|---|
+| `src/api/moonraker_gcode_guards.cpp:20` | Layer-1 refusal of app-emitted homing | **KEEP RAW** - see below |
+| `src/printer/ams_subscription_backend.cpp:318,321` | AMS filament-op refusal | via `print_blocks_filament_op` |
+| `src/ui/ui_bypass_toggle_controller.cpp:28` | Bypass toggle | `job_holds_machine` |
+| `src/printer/printer_state.cpp:968` | `is_blocking_operation_active()` | **KEEP RAW** - see below |
+| `src/ui/panel_widgets/tool_switcher_widget.cpp:588` | Tool-change refusal | via `print_blocks_filament_op` |
+| `src/ui/panel_widgets/tool_switcher_widget.cpp:670` | Paused confirmation modal | `lifecycle == Paused` |
+| `src/printer/ams_backend_ad5x_ifs.cpp:56` | AD5X runout gate - **PAUSED-only, not a "holds machine" question** | `lifecycle == Paused` |
+| `src/system/post_op_cooldown_manager.cpp:73` | Post-op nozzle cooldown | `job_holds_machine` |
+| `src/ui/ui_panel_filament.cpp:2599` | Cooldown scheduling after a filament op | `job_holds_machine` |
+| `src/print/filament_sensor_manager.cpp:994` | Head-sensor-empty noise suppression | `job_holds_machine` |
+| `src/system/update_checker.cpp:1245,2891` | Update download + notification | `job_holds_machine` |
+| `src/system/upgrade_nudge.cpp:83` | Upgrade nudge - **PRINTING-only, no PAUSED arm** | `job_holds_machine` |
+| `src/application/display_manager.cpp:1021` | Display sleep inhibit | `job_holds_machine` |
+
+Three follow-on edits the survey turned up that are not in the census:
+
+- `print_blocks_filament_op(bool printing, bool paused, bool self_homes)`
+  (`include/filament_op_slot_resolver.h:156`) becomes
+  `(PrintState lifecycle, bool self_homes)`. Four call sites, three of them
+  outside the 15: `ui_ams_sidebar.cpp:1059`, `ui_ams_context_menu.cpp:218`,
+  `ui_panel_filament.cpp:1876`.
+- Two observers still watch `print_state_enum` and would not fire on the
+  `Idle -> Preparing` edge, so the affordance would not grey even with the guard
+  fixed: `tool_switcher_widget.cpp:125`, `ui_panel_filament.cpp:227`.
+
+#### Two sites that must NOT be widened
+
+**`moonraker_gcode_guards.cpp` - widening it breaks print start.**
+`PrintPreparationManager` sends the user's configured pre-start block through
+`api_->execute_gcode()` *inside* the preparing window
+(`ui_print_preparation_manager.cpp:732`), and `is_homing_gcode()` matches any
+line whose first token is `G28` (`include/gcode_homing.h:45`). On the K2 that
+block is the forced bed mesh. Widening the guard to `job_holds_machine()` makes
+it refuse the app's own pre-start G-code on every printer whose pre-start block
+homes. This is the Phase 0a hazard exactly - **a guard that reads a flag its own
+caller sets** - and it is the second time this refactor has produced one.
+
+The window is not left unguarded: during a *firmware-side* `PRINT_START` the job
+state is already `PRINTING`, so the guard fires. During a *host-side* block the
+app is the only thing driving the toolhead, and the affordances that could send
+a competing `G28` (all 21 XML bindings, the AMS ops, the bypass tile) are
+disabled by the rest of Phase 1.
+
+**`is_blocking_operation_active()` - it is inverted, and already correct.**
+It returns true when `idle_timeout` says busy AND that busy-ness is *not*
+explained by a print. During a host-side pre-print block `idle_timeout` reads
+`Printing` (the host is running G-code) while `print_stats` reads `standby`, so
+today the function correctly answers "blocked". Swapping the raw state for
+`job_holds_machine()` would make it answer "not blocked" and *admit* jogs during
+the bed mesh - the opposite of this phase's purpose. Leave it, and say why.
+
+That is 25 keep-raw sites now, not 24.
 
 **Exit criteria**
 - [ ] All 21 XML bindings reference the lifecycle-derived subject.
@@ -552,6 +611,7 @@ loaded" has two definitions in one file that disagree exactly where
 | 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
 | 2026-08-19 | 0b | 91 | `41392dfd2`. Also count-neutral - 0b changes which inputs an existing derivation gets, not how many sites read the wire. Suite 95/95. **Phase 0 complete.** |
 | 2026-08-19 | - | 91 | `d606bd823`. Re-merged main (10 commits, no conflicts). Suite 95/95, and the **full ungated** quality sweep passes (36 gates) - worth re-running before any push, because per-commit gates only ever run `--staged-only` and skip anything you did not stage. |
+| 2026-08-19 | 1a | 91 | `45df86df1`. Subject + 21 XML bindings + 13 tests. Count-neutral by design: 1a adds a derived subject and moves XML, it does not remove a C++ wire read. 96/96 shards, ungated sweep green. |
 | 2026-08-19 | - | 91 | `6945d4e98`. Re-merged main again (12 commits, no conflicts, translations auto-merged). Suite 95/95, ungated sweep green. Site counts re-verified unchanged: 21 bindings, 91 raw-state sites. |
 
 ## Before you touch anything: state of the branch

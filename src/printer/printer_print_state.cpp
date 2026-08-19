@@ -99,6 +99,7 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(print_start_phase, static_cast<int>(PrintStartPhase::IDLE), subjects_,
                      register_xml);
     INIT_SUBJECT_INT(print_lifecycle, static_cast<int>(PrintState::Idle), subjects_, register_xml);
+    INIT_SUBJECT_INT(job_holds_machine, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(preparing_epoch, 0, subjects_, false);
     INIT_SUBJECT_INT(print_lifecycle_prev, static_cast<int>(PrintState::Idle), subjects_, false);
     INIT_SUBJECT_STRING(print_start_message, "", subjects_, register_xml);
@@ -1399,6 +1400,16 @@ void PrinterPrintState::publish_lifecycle_state() {
         // consistent pair when it fires.
         lv_subject_set_int(&print_lifecycle_prev_, current);
         lv_subject_set_int(&print_lifecycle_, derived);
+    }
+
+    // Published from here rather than from an observer on print_lifecycle: the
+    // two must never be seen disagreeing, and an observer would fire after
+    // print_lifecycle's own observers had already run against the stale
+    // boolean. Written unconditionally-if-changed for the same reason
+    // print_lifecycle is - several lifecycle values map to the same boolean.
+    const int holds = job_holds_machine(static_cast<PrintState>(derived)) ? 1 : 0;
+    if (lv_subject_get_int(&job_holds_machine_) != holds) {
+        lv_subject_set_int(&job_holds_machine_, holds);
     }
 }
 

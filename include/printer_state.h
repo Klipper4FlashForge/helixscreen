@@ -888,6 +888,12 @@ class PrinterState {
         return print_domain_.get_print_lifecycle_subject();
     }
 
+    /// Boolean form of job_holds_machine(print_lifecycle). See
+    /// PrinterPrintState::get_job_holds_machine_subject().
+    lv_subject_t* get_job_holds_machine_subject() {
+        return print_domain_.get_job_holds_machine_subject();
+    }
+
     lv_subject_t* get_print_start_phase_subject() {
         return print_domain_.get_print_start_phase_subject();
     }

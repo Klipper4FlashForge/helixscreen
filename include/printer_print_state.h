@@ -341,6 +341,21 @@ class PrinterPrintState {
         return &print_lifecycle_;
     }
 
+    /**
+     * @brief Boolean form of job_holds_machine(), for XML bindings
+     *
+     * 1 whenever the lifecycle is Preparing, Printing or Paused. This is what
+     * motion, jog and extrude controls bind to; `print_active` is the same
+     * question asked of the wire, so it reads 0 for the whole of a host-side
+     * pre-print block while the toolhead is homing and probing.
+     *
+     * C++ callers should prefer `job_holds_machine(lifecycle)` on the value they
+     * already hold. The subject exists because XML cannot call a predicate.
+     */
+    lv_subject_t* get_job_holds_machine_subject() {
+        return &job_holds_machine_;
+    }
+
     lv_subject_t* get_print_start_phase_subject() {
         return &print_start_phase_;
     }
@@ -809,6 +824,7 @@ class PrinterPrintState {
     lv_subject_t print_start_phase_{};    // Integer: PrintStartPhase enum
     lv_subject_t print_lifecycle_{};      // Integer: PrintState enum (derived)
     lv_subject_t print_lifecycle_prev_{}; // Integer: PrintState enum, value before the current
+    lv_subject_t job_holds_machine_{};    // Integer 0/1: job_holds_machine(print_lifecycle)
 
     /// The job we are preparing; empty when none. See begin_preparing().
     PrintJobRef preparing_job_{};

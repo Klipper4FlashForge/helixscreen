@@ -157,6 +157,33 @@ modification rewrite substitutes a temp file.
 Consumers that must adopt the job's identity - `ActivePrintMediaManager` above all -
 observe it rather than relying on each start path remembering to tell them.
 
+## Asking whether a job owns the machine
+
+`job_holds_machine(PrintState)` (`include/print_lifecycle_state.h`) is the answer
+to *"would acting now fight the printer for the toolhead?"*. True for
+`Preparing`, `Printing` and `Paused`.
+
+Ask it before anything that emits G-code of its own -- motion, calibration,
+filament operations, tool changes, cooldowns, macro buttons. The subject-shaped
+form for XML bindings is `job_holds_machine`, published from
+`PrinterPrintState::publish_lifecycle_state()` alongside `print_lifecycle` so the
+two can never be seen disagreeing.
+
+**Do not use `print_active` for this.** `print_active` is `PRINTING || PAUSED`
+read off `print_stats.state`, so it is 0 for the entire duration of a *host-side*
+pre-print block -- the K2's forced bed mesh being the motivating case -- while the
+toolhead is homing and probing. It remains correct for its own question ("is
+Moonraker running a job right now"), and card visibility and the discovery-time
+idle gate still want exactly that.
+
+**It is a convenience over the lifecycle, not a replacement for it.** A caller
+that must distinguish `Paused` still switches on `PrintState`.
+`ams_subscription_backend.cpp` is the standing example: it deliberately *allows*
+a filament operation on a paused print when the backend does **not** self-home,
+because then no firmware macro can hide a `G28`.
+
+---
+
 ## Guards
 
 The state machine rejects stale updates that Moonraker sends after a print ends.
