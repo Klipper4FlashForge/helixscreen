@@ -38,17 +38,10 @@ CheckResult pass_result() {
     return r;
 }
 
-/// Does this print need AMS lanes? True when more than one tool is actually
-/// used. tools_used comes from the gcode scan and is authoritative; the
-/// filament-color palette is the fallback because slicers emit a full-profile
-/// palette (e.g. PLA;ASA-GF;ASA-GF;PLA) even for a file that extrudes from a
-/// single tool — counting the palette would misread every single-tool file
-/// sliced on a multi-tool profile as a lane print.
+/// Context-shaped wrapper over the exported rule (print_start_checks.h), which
+/// the filament mapping card shares so the two cannot drift.
 size_t print_lane_requirement(const PrintStartContext& ctx) {
-    if (!ctx.tools_used.empty()) {
-        return ctx.tools_used.size();
-    }
-    return ctx.filament_color_count;
+    return helix::print_lane_requirement(ctx.tools_used, ctx.filament_color_count);
 }
 
 /// The one tool a bypass print runs on: the (single) used tool when the scan
@@ -379,6 +372,13 @@ MaterialMismatchDetail external_spool_mismatch(const SlotInfo& spool, int tool_i
 }
 
 } // namespace
+
+size_t print_lane_requirement(const std::set<int>& tools_used, size_t filament_color_count) {
+    if (!tools_used.empty()) {
+        return tools_used.size();
+    }
+    return filament_color_count;
+}
 
 std::vector<int> unresolved_tools_in(const PrintStartContext& ctx) {
     // Single-color prints need no mapping.

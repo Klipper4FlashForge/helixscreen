@@ -85,7 +85,29 @@ struct BackendCaps {
  * @param macro_available StandardMacros LoadFilament slot is non-empty.
  */
 [[nodiscard]] inline FilamentOpPlan plan_load(const AmsSystemInfo& sys, const BackendCaps& caps,
-                                              int target_slot, bool macro_available) {
+                                              int target_slot, bool macro_available,
+                                              bool macro_user_configured) {
+    // A macro the USER assigned in Settings > Macro Buttons outranks everything,
+    // including a filament system that would otherwise own this op. That is the
+    // entire point of the setting: someone with extra steps to run — a purge
+    // routine, a chamber move, a lane bookkeeping call of their own — gets to
+    // put them there. It applies to load and unload identically.
+    //
+    // Deliberately NOT `macro_available`: an auto-DETECTED macro must never
+    // outrank the backend. On a CFS printer the detector matches the vendor's
+    // QUIT_MATERIAL for unload, which is incomplete for an external spool
+    // (tn_retrude = -10 against tn_extrude = 140 — the box's feeder normally
+    // reels the rest), so letting detection win would quietly break bypass
+    // unload. Only an explicit human choice is allowed to take the wheel.
+    //
+    // Note what an override COSTS on a backend printer: the backend call does
+    // not run at all, so its state tracking goes with it (AFC's TOOL_UNLOAD
+    // parks the shuttle and marks the lane). That is what overriding means, and
+    // it is documented for users in docs/user/guide/filament.md.
+    if (macro_user_configured) {
+        return {FilamentTier::Macro, FilamentRefusal::None, AmsCall::None, target_slot};
+    }
+
     if (caps.present && caps.requires_slot_selection_for_load) {
         if (target_slot < 0) {
             return {FilamentTier::Refused, FilamentRefusal::SelectSlot, AmsCall::None, -1};
@@ -205,7 +227,18 @@ inline constexpr int EXTERNAL_SPOOL_SLOT = -2;
  * @param target_is_loaded  slot_is_actively_loaded(slot) || slot_has_filament_at_toolhead(slot)
  */
 [[nodiscard]] inline FilamentOpPlan plan_unload(const BackendCaps& caps, int target_slot,
-                                                bool target_is_loaded, bool macro_available) {
+                                                bool target_is_loaded, bool macro_available,
+                                                bool macro_user_configured) {
+    // Same first rule as plan_load(), and the reason this parameter exists: the
+    // two planners used to disagree here. plan_load() let bypass fall through to
+    // the macro tier while plan_unload() gated tier 1 on the backend merely
+    // existing, so a user could assign an Unload macro in Settings and have it
+    // silently discarded on every AMS printer — a live control whose effect was
+    // thrown away. See plan_load() for why DETECTED macros still lose.
+    if (macro_user_configured) {
+        return {FilamentTier::Macro, FilamentRefusal::None, AmsCall::None, target_slot};
+    }
+
     if (caps.present) {
         // EXTERNAL_SPOOL_SLOT is a target, not an absence: the backends all
         // handle it (CFS ignores the slot and runs its unload script, AFC

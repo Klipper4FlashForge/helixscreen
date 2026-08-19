@@ -1150,7 +1150,8 @@ void AmsOperationSidebar::handle_unload(int slot_index) {
 
     const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
     const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_unload(caps, target_slot, loaded, !macro_info.is_empty());
+        helix::ui::plan_unload(caps, target_slot, loaded, !macro_info.is_empty(),
+                               macro_info.get_source() == MacroSource::CONFIGURED);
 
     if (plan.tier == helix::ui::FilamentTier::Refused) {
         // NothingLoaded is plan_unload's only refusal.
@@ -1282,7 +1283,8 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
 
     const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
     const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_load(info, caps, slot_index, !macro_info.is_empty());
+        helix::ui::plan_load(info, caps, slot_index, !macro_info.is_empty(),
+                             macro_info.get_source() == MacroSource::CONFIGURED);
 
     if (plan.tier == helix::ui::FilamentTier::Refused) {
         // Silent on THIS surface. The AMS panel already highlights the mounted
@@ -1430,7 +1432,8 @@ void AmsOperationSidebar::check_pending_load() {
         const helix::ui::BackendCaps caps = read_backend_caps(preheat_info, slot);
         const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
         const helix::ui::FilamentOpPlan plan =
-            helix::ui::plan_load(preheat_info, caps, slot, !macro_info.is_empty());
+            helix::ui::plan_load(preheat_info, caps, slot, !macro_info.is_empty(),
+                                 macro_info.get_source() == MacroSource::CONFIGURED);
 
         if (plan.tier != helix::ui::FilamentTier::AmsBackend) {
             // The preheat only ever starts on the tier-1 path, so anything else

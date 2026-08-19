@@ -6,3 +6,27 @@
 # but pthread_mutex_init completes before the mutex is usable, so this is safe.
 race:lv_thread_sync_init
 race:lv_thread_sync_signal
+
+# libhv event-loop teardown: do NOT try to suppress this one - it cannot work.
+#
+# hloop_free() -> hio_free() -> hio_close() closes fds other loop threads have
+# touched. TSan starts to report it and then trips an assertion inside itself:
+#
+#   ThreadSanitizer: CHECK failed: sanitizer_common.h:494 "((i)) < ((size_))"
+#     (0xffffffff, ...)
+#     __tsan::ScopedReportBase::AddLocation -> ReportRace -> FdClose -> close
+#     hio_close -> hio_free -> hloop_free -> hv::EventLoop::run
+#
+# That aborts the process before Catch2 prints a summary, so the job fails with
+# no result at all - 3 of 5 runs, and both runs of the merged tree.
+#
+# `race:hio_close` / `race:hio_free` / `race:hloop_free` were tried here and had
+# ZERO effect: byte-identical output, same abort point. AddLocation runs while
+# TSan is CONSTRUCTING the report, before suppression matching, so no race: entry
+# can head it off. The failing index is 0xffffffff, i.e. kInvalidTid - TSan
+# looking up the thread that created an fd and getting an invalid one. That is a
+# sanitizer bug (clang 14, jammy's default), not something this file can reach.
+#
+# Real options, in order of preference: fix libhv's teardown so the loop is fully
+# stopped and its fds closed on the owning thread before hloop_free; or move the
+# sanitizer jobs to a newer clang. See prestonbrown/helixscreen#1293.

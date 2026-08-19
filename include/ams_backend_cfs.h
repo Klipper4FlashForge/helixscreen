@@ -338,6 +338,27 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     ///                          `BOX_UNLOAD` picks the external branch itself).
     /// @param has_quit_material `QUIT_MATERIAL` is defined on this printer.
     static std::string bypass_unload_gcode(CfsMacroVariant variant, bool has_quit_material);
+
+    /// Load the external / bypass spool on the stock (K1/K2) dialect.
+    ///
+    /// The mirror of bypass_unload_gcode(), and broken for the same reason
+    /// before it existed: load_gcode() resolves a slot through
+    /// CfsMaterialDb::slot_to_tnn(), which has no answer for the bypass
+    /// sentinel, so do_load_filament() refused with invalid_slot and there was
+    /// no way to load an external spool through the app at all.
+    ///
+    /// Creality's own answer is `LOAD_MATERIAL`, the non-CFS spool-holder load
+    /// that ships beside QUIT_MATERIAL: go to the extrude position, save the
+    /// fan, pre-flush, then heat and flush — both flush steps gated on the
+    /// toolhead switch, so the vendor's workflow is exactly "the user feeds to
+    /// the sensor and the macro pulls it in from there". That gating is also the
+    /// trap: with nothing at the sensor the macro moves, cools and parks without
+    /// touching the extruder, so it reports success having loaded nothing.
+    ///
+    /// @param variant           Macro dialect; Fork never reaches here (its own
+    ///                          T<external> command owns the attended load).
+    /// @param has_load_material `LOAD_MATERIAL` is defined on this printer.
+    static std::string bypass_load_gcode(CfsMacroVariant variant, bool has_load_material);
     static std::string swap_gcode(int global_slot_index,
                                   CfsMacroVariant variant = CfsMacroVariant::K2);
     static std::string reset_gcode();

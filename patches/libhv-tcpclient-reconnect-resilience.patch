@@ -1,5 +1,4 @@
 diff --git a/evpp/TcpClient.h b/evpp/TcpClient.h
-index e355b61..a468ca8 100644
 --- a/evpp/TcpClient.h
 +++ b/evpp/TcpClient.h
 @@ -1,6 +1,9 @@
@@ -12,7 +11,7 @@ index e355b61..a468ca8 100644
  #include "hsocket.h"
  #include "hssl.h"
  #include "hlog.h"
-@@ -17,6 +20,7 @@ public:
+@@ -17,6 +20,7 @@
  
      TcpClientEventLoopTmpl(EventLoopPtr loop = NULL) {
          loop_ = loop ? loop : std::make_shared<EventLoop>();
@@ -20,7 +19,7 @@ index e355b61..a468ca8 100644
          remote_port = 0;
          connect_timeout = HIO_DEFAULT_CONNECT_TIMEOUT;
          tls = false;
-@@ -26,8 +30,11 @@ public:
+@@ -26,8 +30,11 @@
      }
  
      virtual ~TcpClientEventLoopTmpl() {
@@ -33,7 +32,7 @@ index e355b61..a468ca8 100644
          HV_FREE(unpack_setting);
      }
  
-@@ -56,6 +63,17 @@ public:
+@@ -56,6 +63,17 @@
      }
  
      int createsocket(struct sockaddr* remote_addr) {
@@ -51,7 +50,7 @@ index e355b61..a468ca8 100644
          int connfd = ::socket(remote_addr->sa_family, SOCK_STREAM, 0);
          // SOCKADDR_PRINT(remote_addr);
          if (connfd < 0) {
-@@ -63,7 +81,7 @@ public:
+@@ -63,10 +81,38 @@
              return -2;
          }
  
@@ -59,8 +58,39 @@ index e355b61..a468ca8 100644
 +        hio_t* io = hio_get(hl, connfd);
          assert(io != NULL);
          hio_set_peeraddr(io, remote_addr, SOCKADDR_LEN(remote_addr));
++        // Hand the previous channel to the loop thread to destroy.
++        //
++        // This runs on the CALLER's thread (connect(), or a reconnect retry)
++        // while the loop thread may be inside that same channel's onclose:
++        // hio_close() invokes a std::function that LIVES IN the channel object,
++        // so dropping the last reference here frees the functor out from under
++        // the call. ASan caught it as an 8-byte read of the captured `this` in
++        // startConnect()'s onclose lambda, reached via __connect_timeout_cb ->
++        // hio_close (nightly, test_moonraker_connection_retry). runInLoop() is
++        // queueInLoop, NOT runInLoop: the dangerous case is re-entrant, and
++        // runInLoop() executes inline when it is already on the loop thread
++        // (`if (isRunning() && isInLoopThread()) fn();`), which is precisely when
++        // this happens. onclose calls back into user code synchronously, that
++        // code reconnects, and connect() lands here with the old channel's
++        // onclose still on the stack:
++        //
++        //   hio_close -> channel A onclose -> MoonrakerClient::on_ws_close ->
++        //   connect() -> WebSocketClient::open -> createsocket -> frees A
++        //
++        // and then control returns into A's onclose, which reads its captured
++        // `this` out of freed storage. queueInLoop always defers to the next
++        // loop iteration, so the release cannot land before the stack unwinds.
++        // Same caller-thread-versus-loop-thread family as reconn_setting above,
++        // different member.
++        TSocketChannelPtr prev = channel;
          channel = std::make_shared<TSocketChannel>(io);
-@@ -103,13 +121,55 @@ public:
++        if (prev) {
++            loop_->queueInLoop([prev]() mutable { prev.reset(); });
++        }
+         return connfd;
+     }
+ 
+@@ -103,13 +149,55 @@
          }
      }
  
@@ -120,7 +150,7 @@ index e355b61..a468ca8 100644
          }
          if (channel == NULL || channel->status >= SocketChannel::CONNECTING) {
              return -1;
-@@ -139,6 +199,7 @@ public:
+@@ -139,6 +227,7 @@
              if (onConnection) {
                  onConnection(channel);
              }
@@ -128,7 +158,7 @@ index e355b61..a468ca8 100644
              if (reconn_setting) {
                  reconn_setting_reset(reconn_setting);
              }
-@@ -154,7 +215,11 @@ public:
+@@ -154,7 +243,11 @@
              }
          };
          channel->onclose = [this]() {
@@ -141,7 +171,7 @@ index e355b61..a468ca8 100644
              if (onConnection) {
                  onConnection(channel);
              }
-@@ -166,12 +231,24 @@ public:
+@@ -166,12 +259,24 @@
      }
  
      int startReconnect() {
@@ -167,7 +197,7 @@ index e355b61..a468ca8 100644
              startConnect();
          });
          return 0;
-@@ -216,7 +293,17 @@ public:
+@@ -216,7 +321,17 @@
      }
  
      void setReconnect(reconn_setting_t* setting) {
@@ -185,7 +215,7 @@ index e355b61..a468ca8 100644
              HV_FREE(reconn_setting);
              return;
          }
-@@ -226,6 +313,7 @@ public:
+@@ -226,6 +341,7 @@
          *reconn_setting = *setting;
      }
      bool isReconnect() {
@@ -193,7 +223,7 @@ index e355b61..a468ca8 100644
          return reconn_setting && reconn_setting->cur_retry_cnt > 0;
      }
  
-@@ -251,6 +339,20 @@ public:
+@@ -251,6 +367,20 @@
      hssl_ctx_opt_t*         tls_setting;
      reconn_setting_t*       reconn_setting;
      unpack_setting_t*       unpack_setting;

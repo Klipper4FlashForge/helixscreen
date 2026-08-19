@@ -1033,6 +1033,14 @@ void PrintStatusWidget::check_and_show_idle_runout_modal() {
         return;
     }
 
+    // An unload the user just asked for ends by dragging filament off the
+    // sensor. is_filament_operation_active() above only covers the window while
+    // the action runs, and the removal edge can land seconds after it finishes.
+    if (AmsState::instance().consume_post_unload_runout_grace()) {
+        spdlog::info("[PrintStatusWidget] Skipping runout modal — filament left after an unload");
+        return;
+    }
+
     // Only show modal if not already shown
     if (runout_modal_shown_) {
         spdlog::debug("[PrintStatusWidget] Runout modal already shown - skipping");
@@ -1118,8 +1126,8 @@ void PrintStatusWidget::dispatch_load() {
     }
 
     const auto& load_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
-    const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_load(sys, caps, slot, !load_info.is_empty());
+    const helix::ui::FilamentOpPlan plan = helix::ui::plan_load(
+        sys, caps, slot, !load_info.is_empty(), load_info.get_source() == MacroSource::CONFIGURED);
 
     switch (plan.tier) {
     case helix::ui::FilamentTier::AmsBackend: {

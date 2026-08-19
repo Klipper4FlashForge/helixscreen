@@ -1363,6 +1363,16 @@ class AmsState {
      *
      * @return true if AMS is actively loading, unloading, or performing related ops
      */
+    /**
+     * @brief Take the one-shot "an unload just finished" runout grace.
+     *
+     * True at most once per unload. The companion to
+     * is_filament_operation_active(): that answers "is filament moving right
+     * now", this answers "did the removal we are about to react to come from an
+     * unload the user just asked for". Retired if filament returns first.
+     */
+    [[nodiscard]] bool consume_post_unload_runout_grace();
+
     bool is_filament_operation_active();
 
     /**
@@ -1559,6 +1569,10 @@ class AmsState {
     /// slot-delta scan notices it, and the pre-print filament check would keep
     /// serving a stale result.
     bool last_bypass_active_{false};
+    /// One-shot: an unload completed and its removal edge has not arrived yet.
+    bool post_unload_runout_grace_{false};
+    /// Whether the operation currently in flight has passed through UNLOADING.
+    bool saw_unload_in_op_{false};
     /// prev_backend_runout_ has no meaning yet, so the first sample seeds it
     /// instead of counting as an edge — a flag that was already true when we
     /// connected (or when a backend was swapped in) describes no transition we
