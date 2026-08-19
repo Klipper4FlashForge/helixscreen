@@ -903,6 +903,27 @@ class PrintSelectDetailView : public OverlayBase {
      * AND-ing with `!filament_mapping_card_.should_show()`.
      */
     [[nodiscard]] bool swatches_card_visible_for(size_t tool_count) const;
+
+    /**
+     * @brief Render the authoritative chip state for a known used-tool set.
+     *
+     * The single implementation of the "we now know which tools this file
+     * really uses" render, shared by the three sites that learn that set:
+     * show()'s tools-used cache seed, the viewer parse
+     * (try_extract_gcode_colors) and the headless scan (finish_scan). Decides
+     * swatch-card visibility from @p tools_used (never the slicer palette
+     * size, which over-counts), renders the swatches, re-runs the pre-flight
+     * gate, and restricts the mapping card to @p tools_used.
+     *
+     * @param tools_used              The precise tool indices the file uses,
+     *                                normally tools_used_effective().
+     * @param refresh_card_from_palette Also rebuild the mapping card's display
+     *                                state from the full palette. Only the
+     *                                headless path needs this — see
+     *                                finish_scan().
+     */
+    void render_authoritative_chips(const std::set<int>& tools_used,
+                                    bool refresh_card_from_palette = false);
 };
 
 } // namespace helix::ui
