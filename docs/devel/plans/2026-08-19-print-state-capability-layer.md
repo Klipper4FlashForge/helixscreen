@@ -178,7 +178,8 @@ completing SHA.
 
 | Phase | Scope | Sites | State | Commit |
 |---|---|---|---|---|
-| **0** | Consolidate the two preparing-window mechanisms; collapse the panel's private lifecycle | - | **in progress** | - |
+| **0a** | `print_in_progress` derived from the preparing job; watchdog for a job that never confirms | 20 setters | **done** | `289d56856` |
+| **0b** | Collapse `PrintStatusPanel`'s private `PrintLifecycleState` onto the published subject | 8 | **in progress** | - |
 | **1** | Safety guards + a lifecycle-derived XML subject | 15 + 21 XML | not started | - |
 | **2** | Affordance + navigation | 12 + 6 | not started | - |
 | **3** | Display + bookkeeping | 11 + 15 | not started | - |
@@ -415,4 +416,11 @@ loaded" has two definitions in one file that disagree exactly where
 
 | Date | Phase | Raw-state sites remaining | Note |
 |---|---|---|---|
-| 2026-08-19 | 0 | 88 (baseline census) | Plan written |
+| 2026-08-19 | 0 | 91 | Plan written. Baseline for the resume command below. |
+| 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
+
+**Note on units.** The census counts **88 distinct decision sites**; the resume
+command counts **91 matching lines**. They are different measures and both are
+right - a `switch` arm and a two-line condition are one site but two lines. Track
+the grep number here, because that is the one a future session can reproduce in a
+second without redoing the census.
