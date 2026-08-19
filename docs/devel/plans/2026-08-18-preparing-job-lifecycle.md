@@ -356,14 +356,45 @@ Verified against the mock that a real preparation still shows the overlay
 (`preparing_visible=1` at phase 3), so the debounce delays without suppressing.
 The sub-second case still wants the CB1/Voron baseline run.
 
-### 4. Consolidation is half-landed
+### 4. Consolidation: done, and smaller than the census claimed
 
-`derive_print_state()` and the `print_lifecycle` subject exist, but
-`print_completion.cpp`, `print_start_navigation.cpp` and `telemetry_manager.cpp`
-still carry their own prev-state trackers. So the tree currently has *both* the new
-authority and the old duplicates - better than before, but not the subtraction that
-was promised. See "Notifying when a start dies before it prints" for why the
-migration is blocked on a product decision rather than on effort.
+The census counted eight prev-state trackers and read them as duplication. That was
+partly wrong, and the correction matters more than the count.
+
+**They do not all ask the same question.** Two questions look alike:
+
+1. *"What just happened to the UI-level print lifecycle?"* - one authority,
+   `print_lifecycle` + `print_lifecycle_prev`, published from the single place that
+   computes the transition.
+2. *"Did a print become active on the printer?"* - a **printer-state** question,
+   correctly asked against the raw `print_state_enum`.
+
+Only `print_completion` was asking (1) while keeping its own copy. It now reads both
+halves from the authority, and its file-static `prev_print_state` plus arming latch
+are gone. The rule lives in `should_notify_print_ended()`, which deliberately
+excludes `Preparing`.
+
+The other two are asking (2), and repointing them at the lifecycle would **break**
+them:
+
+- **`telemetry_manager.cpp`** tracks the highest pre-print phase reached and resets
+  it on "transition to PRINTING from non-PAUSED". On the raw job state that is
+  `STANDBY -> PRINTING`: one reset, at the real start. On the lifecycle it becomes
+  `Idle -> Preparing -> Printing`, so the reset would fire on `Preparing -> Printing`
+  and wipe the max-phase at exactly the moment preparation ends - destroying the data
+  it exists to collect.
+- **`print_start_navigation.cpp`** fires on inactive -> active to open the status
+  panel. On a lifecycle that now includes a host-side `Preparing`, it would navigate
+  for a job the printer has not accepted, duplicating `PrintStartController`'s own
+  optimistic push - the double-push the `is_panel_in_stack` guard exists to absorb.
+
+Both are (c): separate for a real reason. Recorded so the next reader does not
+"finish the consolidation" and regress them.
+
+Still genuinely outstanding: `PrintStatusPanel::was_preparing_` and
+`preparing_visible_subject_` remain panel-local mirrors of the phase, and
+`PrintLifecycleState` still lives inside the panel rather than being the app-wide
+authority - the subject took over that role instead.
 
 ### 5. Docs sweep incomplete
 
@@ -396,8 +427,8 @@ Done: `PRINT_STATE_MACHINE.md`, `architecture/05-printer-state.md`,
    still wanted for the genuinely sub-second case.
 4. ~~Notify on `TimedOut`, decide what cancel does to the heaters~~ **done and
    hardware-verified**.
-5. **Decide whether a failed pre-print notifies**, then migrate the three remaining
-   trackers (risk 4).
+5. ~~Migrate the remaining trackers~~ **done for the one that was duplication**;
+   the other two are legitimately separate and must stay (risk 4).
 6. **Estimate ladder** (step 6) - one owner for "how long until printing starts?",
    three estimators demoted to strategies, monotonic handoff.
 7. **Finish the docs sweep** (risk 5), then `scripts/check_doc_refs.py`.
