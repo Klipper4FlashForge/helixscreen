@@ -158,11 +158,23 @@ Three parts:
 
 ### Do not over-collapse
 
-`ams_subscription_backend.cpp:320` deliberately **relaxes** PAUSED for filament
-ops when the backend self-homes, and `print_blocks_filament_op()` encodes that.
-These are considered exceptions, not sloppiness. Callers that need to distinguish
-`Paused` must still be able to; the predicates are conveniences over the
-lifecycle, not a replacement for switching on it.
+`ams_subscription_backend.cpp:320-326` deliberately **allows** a filament op on a
+PAUSED print **when the backend does NOT self-home** - because then no firmware
+macro can hide a `G28`, and Layer 1
+(`reject_homing_during_active_print`) still refuses any the app emits itself.
+`print_blocks_filament_op()` encodes the same rule: `paused && backend_self_homes`
+(`filament_op_slot_resolver.h:156`).
+
+> **Get the direction right.** An earlier draft of this plan had it inverted -
+> "relaxes PAUSED when the backend self-homes". That is exactly the dangerous
+> reading: it would permit filament ops in the one case where a hidden G28 can
+> fire mid-print. Verified against the source 2026-08-19.
+
+So this site needs **both** axes: the lifecycle *and* a backend capability. It is
+the concrete proof that `job_holds_machine()` cannot be the only predicate -
+callers that must distinguish `Paused` have to keep being able to. The named
+predicates are conveniences over the lifecycle, never a replacement for switching
+on it.
 
 ### Sites that must KEEP raw `PrintJobState` (24)
 
