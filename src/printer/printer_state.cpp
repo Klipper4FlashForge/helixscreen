@@ -16,8 +16,10 @@
 #include "ui_update_queue.h"
 
 #include "accel_sensor_manager.h"
+#include "app_globals.h"
 #include "async_helpers.h"
 #include "capability_overrides.h"
+#include "chamber_heater_backend.h"
 #include "color_sensor_manager.h"
 #include "connection_state.h" // For ConnectionState enum
 #include "device_display_name.h"
@@ -36,6 +38,7 @@
 #include "settings_manager.h"
 #include "static_subject_registry.h"
 #include "system/crash_handler.h"
+#include "temperature_controller.h"
 #include "temperature_sensor_manager.h"
 #include "timelapse_state.h"
 #include "unit_conversions.h"
@@ -829,6 +832,22 @@ void PrinterState::set_hardware(helix::PrinterDiscovery hardware) {
                                                           discovery_.chamber_filter_fan_pin());
     } else {
         temperature_state_.set_chamber_diagnostics_source("", "", "");
+    }
+
+    // Backend action surface (issue #1290): fault-reset gcode, filter-fan pin
+    // and the conservative ceiling come from the matched backend — same gate
+    // as the diagnostics source above, so a manual override to another heater
+    // (or "none") clears them and the actions revert to no-ops.
+    if (auto* tc = get_temperature_controller()) {
+        if (chamber_diagnostics_apply) {
+            const auto* backend = chamber::backend_by_id(discovery_.chamber_heater_backend_id());
+            tc->set_chamber_actions(backend ? std::string(backend->fault_reset_gcode())
+                                            : std::string(),
+                                    discovery_.chamber_filter_fan_pin(),
+                                    backend ? backend->conservative_max_temp() : 0.0);
+        } else {
+            tc->set_chamber_actions(std::string(), std::string(), 0.0);
+        }
     }
 
     // Update capability flags based on resolved chamber assignments
