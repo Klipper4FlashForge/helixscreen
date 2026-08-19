@@ -12,7 +12,6 @@
 #include "runtime_config.h"
 
 #include <atomic>
-#include <chrono>
 #include <memory>
 #include <queue>
 
@@ -62,6 +61,10 @@ class MacroModificationManager;
  */
 class MoonrakerManager {
   public:
+    // Out-of-line on purpose: the class holds unique_ptr members of
+    // forward-declared types (e.g. MacroModificationManager), and a defaulted
+    // constructor here would instantiate in every TU that constructs the
+    // manager, requiring those types to be complete there.
     MoonrakerManager();
     ~MoonrakerManager();
 
@@ -375,9 +378,6 @@ class MoonrakerManager {
     // libhv event-loop thread (#1219). Invalidated in shutdown() alongside
     // m_alive.
     helix::AsyncLifetimeGuard lifetime_;
-
-    // Startup time for suppressing initial notifications (Klipper ready toast)
-    std::chrono::steady_clock::time_point m_startup_time;
 
     bool m_initialized = false;
 };

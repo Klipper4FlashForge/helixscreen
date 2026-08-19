@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "ui_toast_manager.h"
+
 #include "lvgl/lvgl.h"
 
 #include <functional>
@@ -70,6 +72,18 @@ void set_test_notification_error_hook(std::function<void(const std::string&)> ho
  * which this file replaces with a log-only no-op. Pass nullptr to clear.
  */
 void set_test_notification_info_hook(std::function<void(const std::string&)> hook);
+
+/**
+ * @brief Install a hook invoked by the test ToastManager stub's show paths.
+ *
+ * Same purpose as the notification hooks, one layer down: code that calls
+ * ToastManager::show() directly (deliberately bypassing ui_notification_* and
+ * its history row) has no other observation point in the test binary — the
+ * real ToastManager is excluded from the link. Carries the severity so a
+ * wrong-severity toast fails on severity, not just wording. Pass nullptr to
+ * clear.
+ */
+void set_test_toast_hook(std::function<void(ToastSeverity, const std::string&)> hook);
 
 } // namespace ui
 } // namespace helix

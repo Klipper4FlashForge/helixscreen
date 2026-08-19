@@ -54,7 +54,7 @@
 
 using namespace helix;
 
-MoonrakerManager::MoonrakerManager() : m_startup_time(std::chrono::steady_clock::now()) {}
+MoonrakerManager::MoonrakerManager() {}
 
 MoonrakerManager::~MoonrakerManager() {
     shutdown();
@@ -484,12 +484,8 @@ void MoonrakerManager::configure_timeouts(Config* config) {
 void MoonrakerManager::present_event(const MoonrakerEvent& evt) {
     // MAIN THREAD ONLY — reached through lifetime_.bg_cb() in register_callbacks().
     // Every lv_tr() below depends on that.
-    const bool within_grace_period = (std::chrono::steady_clock::now() - m_startup_time) <
-                                     AppConstants::Startup::NOTIFICATION_GRACE_PERIOD;
-
-    const auto decision =
-        helix::decide_moonraker_event(evt.type, evt.is_error, within_grace_period,
-                                      is_wizard_active(), !ModalStack::instance().empty());
+    const auto decision = helix::decide_moonraker_event(evt.type, evt.is_error, is_wizard_active(),
+                                                        !ModalStack::instance().empty());
 
     switch (decision.route) {
     case helix::MoonrakerEventRoute::Ignore:
@@ -500,8 +496,10 @@ void MoonrakerManager::present_event(const MoonrakerEvent& evt) {
         case helix::MoonrakerEventSuppression::Wizard:
             spdlog::debug("[MoonrakerManager] Suppressing '{}' toast during wizard", evt.message);
             break;
-        case helix::MoonrakerEventSuppression::StartupGrace:
-            spdlog::info("[MoonrakerManager] Suppressing startup Klipper ready notification");
+        case helix::MoonrakerEventSuppression::KlippyReady:
+            spdlog::debug(
+                "[MoonrakerManager] Suppressing Klipper ready notification (recovery UI owns the "
+                "signal)");
             break;
         case helix::MoonrakerEventSuppression::None:
             break;
@@ -562,11 +560,6 @@ void MoonrakerManager::register_callbacks() {
     // which is what makes present_event()'s lv_tr() safe. It also decays the
     // MoonrakerEvent& into a value, so the body never sees a reference that died
     // with the raising thread's stack frame.
-    //
-    // The startup grace period is therefore evaluated one tick later than it used
-    // to be. NOTIFICATION_GRACE_PERIOD is 10 s and a tick is <= ~33 ms, so the
-    // only events this can reclassify are ones landing within a frame of the
-    // boundary, where either answer is equally correct.
     m_client->register_event_handler(lifetime_.bg_cb(
         "MoonrakerManager::event", [this](const MoonrakerEvent& evt) { present_event(evt); }));
 
