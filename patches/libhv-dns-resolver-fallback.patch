@@ -288,6 +288,23 @@ index 0000000..e4403a1
 +END_EXTERN_C
 +
 +#endif // DNS_RESOLV_H_
+diff --git a/base/hplatform.h b/base/hplatform.h
+index e75f006..f48969c 100644
+--- a/base/hplatform.h
++++ b/base/hplatform.h
+@@ -209,6 +209,12 @@
+ #else
+     #include <unistd.h>
+     #include <dirent.h>     // for mkdir,rmdir,chdir,getcwd
++    // Not pulled in transitively by every glibc (jammy's include web is
++    // leaner than newer releases): fcntl/F_SETFL for blocking(), struct stat
++    // for the hv_exists/hv_isdir family. Fresh clang builds on ubuntu 22.04
++    // failed compiling base/ without these.
++    #include <fcntl.h>
++    #include <sys/stat.h>
+ 
+     // socket
+     #include <sys/socket.h>
 diff --git a/base/hsocket.c b/base/hsocket.c
 index ed87a8c..5d29024 100644
 --- a/base/hsocket.c
@@ -334,21 +351,3 @@ index ed87a8c..5d29024 100644
      struct addrinfo* ais = NULL;
      int ret = getaddrinfo(host, NULL, NULL, &ais);
      if (ret != 0 || ais == NULL || ais->ai_addr == NULL || ais->ai_addrlen == 0) {
-diff --git a/base/hsocket.h b/base/hsocket.h
-index 4e3c287..2d702b7 100644
---- a/base/hsocket.h
-+++ b/base/hsocket.h
-@@ -3,6 +3,13 @@
- 
- #include "hexport.h"
- #include "hplatform.h"
-+// fcntl.h is not pulled in transitively on every glibc (jammy's sys/select.h
-+// doesn't provide it), and blocking()/nonblocking() below use F_GETFL/F_SETFL/
-+// O_NONBLOCK directly. Fresh builds with clang on ubuntu 22.04 failed here;
-+// existing builds only worked via a warmer include web.
-+#ifndef OS_WIN
-+#include <fcntl.h>
-+#endif
- 
- #ifdef ENABLE_UDS
- #ifdef OS_WIN
