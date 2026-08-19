@@ -79,8 +79,18 @@ time and was not found.
 <bind_state_if_eq subject="print_active" state="disabled" ref_value="1"/>
 ```
 
-`ui_xml/motion_panel.xml` (2), `ui_xml/controls_panel.xml` (10),
-`ui_xml/micro/controls_panel.xml` (9).
+| File | Lines |
+|---|---|
+| `ui_xml/controls_panel.xml` | 108, 336, 345, 355, 370, 489, 496, 507, 514 |
+| `ui_xml/micro/controls_panel.xml` | 95, 282, 296, 415, 424, 431, 441, 447, 453 |
+| `ui_xml/motion_panel.xml` | 143, 150 |
+| `ui_xml/components/panel_widget_bypass.xml` | 15 |
+
+That last one matters: the home **bypass tile** binds `print_active`, and
+`BypassToggleController::toggle()` guards on `print_occupies_toolhead()`. So the
+bypass feature carries the blind spot in *both* its affordance and its handler -
+during a host-side pre-print window the tile is enabled and the handler agrees to
+run, driving filament through a toolhead that is homing or probing.
 
 `print_active` is `PRINTING || PAUSED`. **During a host-side pre-print window
 every one of these controls is enabled while the toolhead is homing and
@@ -272,9 +282,10 @@ gain `Preparing` without changing meaning for its C++ readers, so publish a new
 boolean (working name `job_holds_machine`) from the lifecycle and move the 21
 bindings onto it. Both subjects coexist until Phase 3 retires `print_active`.
 
-XML sites: `ui_xml/motion_panel.xml:143,150`;
-`ui_xml/controls_panel.xml:108,336,345,355,370,489,496,507,514`;
-`ui_xml/micro/controls_panel.xml:95,282,296,415` and the remainder in that file.
+XML sites: the 21 enumerated in "The safety gap" above. Note
+`components/panel_widget_bypass.xml:15` is one of them, so Phase 1 fixes the
+bypass tile's affordance and `ui_bypass_toggle_controller.cpp:28` fixes its
+handler - both are needed, neither is sufficient alone.
 
 **1b. The 15 guards:**
 
