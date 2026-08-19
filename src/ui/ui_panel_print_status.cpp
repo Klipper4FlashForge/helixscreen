@@ -21,6 +21,7 @@
 #include "ui_print_start_controller.h"
 #include "ui_subject_registry.h"
 #include "ui_temperature_utils.h"
+#include "ui_timer_guard.h"
 #include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
@@ -389,6 +390,7 @@ PrintStatusPanel::~PrintStatusPanel() {
         lv_timer_delete(gcode_load_timer_);
         gcode_load_timer_ = nullptr;
     }
+    cancel_preparing_show_timer();
 
     // ObserverGuard handles observer cleanup automatically
     resize_registered_ = false;
@@ -1165,6 +1167,7 @@ void PrintStatusPanel::cleanup() {
         lv_timer_delete(gcode_load_timer_);
         gcode_load_timer_ = nullptr;
     }
+    cancel_preparing_show_timer();
 
     OverlayBase::cleanup(); // Sets cleanup_called_ = true
 }
@@ -3024,6 +3027,13 @@ void PrintStatusPanel::on_print_time_left_changed(int seconds) {
     spdlog::trace("[{}] Time remaining updated: {}s, ETA: {}", get_name(), seconds, eta_buf_);
 }
 
+void PrintStatusPanel::cancel_preparing_show_timer() {
+    if (preparing_show_timer_) {
+        helix::ui::lv_timer_cancel_safe(preparing_show_timer_);
+        preparing_show_timer_ = nullptr;
+    }
+}
+
 void PrintStatusPanel::on_print_start_phase_changed(int phase) {
     // Phase 0 = IDLE (not preparing), non-zero = preparing
     bool preparing = (phase != 0);
@@ -3038,8 +3048,25 @@ void PrintStatusPanel::on_print_start_phase_changed(int phase) {
         lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
     bool state_changed = lifecycle_.on_start_phase_changed(phase, current_job_state);
 
-    // Update preparing visibility subject
-    lv_subject_set_int(&preparing_visible_subject_, preparing ? 1 : 0);
+    // Update preparing visibility, debounced on the way UP only. Hiding is
+    // immediate: once preparation is over the overlay must go at once.
+    if (!preparing) {
+        cancel_preparing_show_timer();
+        lv_subject_set_int(&preparing_visible_subject_, 0);
+    } else if (lv_subject_get_int(&preparing_visible_subject_) == 0 && !preparing_show_timer_) {
+        preparing_show_timer_ = lv_timer_create(
+            [](lv_timer_t* t) {
+                auto* self = static_cast<PrintStatusPanel*>(lv_timer_get_user_data(t));
+                self->preparing_show_timer_ = nullptr;
+                lv_timer_delete(t);
+                // Re-check: preparation may have ended while we waited.
+                if (lv_subject_get_int(self->printer_state_.get_print_start_phase_subject()) != 0) {
+                    lv_subject_set_int(&self->preparing_visible_subject_, 1);
+                }
+            },
+            PREPARING_SHOW_DELAY_MS, this);
+        lv_timer_set_repeat_count(preparing_show_timer_, 1);
+    }
 
     if (preparing && !was_preparing_) {
         // Idle→Preparing edge ONLY. The pre-print phase number changes many

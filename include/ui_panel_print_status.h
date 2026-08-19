@@ -448,6 +448,23 @@ class PrintStatusPanel : public OverlayBase {
     // One-shot timer for deferred G-code loading (5s delay after print start)
     // Prevents memory spike during homing/heating phase
     lv_timer_t* gcode_load_timer_ = nullptr;
+
+    /**
+     * @brief Withholds the preparing overlay until preparation is worth showing
+     *
+     * A print with no host-side pre-start block can pass through Preparing in
+     * well under a second, and flashing the overlay for that is worse than not
+     * showing it. Debouncing on ELAPSED time rather than a predicted duration is
+     * deliberate: a prediction can fail closed - predict "fast", reality is a
+     * ten-minute mesh, and the overlay never appears at all.
+     */
+    lv_timer_t* preparing_show_timer_ = nullptr;
+
+    /// Shared by cleanup() and the destructor - see CLAUDE.md threading rule 5.
+    void cancel_preparing_show_timer();
+
+    /// How long Preparing must persist before the overlay is shown.
+    static constexpr uint32_t PREPARING_SHOW_DELAY_MS = 750;
     void schedule_deferred_gcode_load();
 
     // Reconcile the preview widgets against the current print state. Reads the
