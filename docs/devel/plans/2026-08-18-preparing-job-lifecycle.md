@@ -517,6 +517,69 @@ Fixed by bucketing entries on which window they measured (`PreprintWindow`). Leg
 entries map to `PrinterEdge`, which is a fact about the data rather than a guess:
 commit arming did not exist when they were recorded.
 
+## Merge from main, 2026-08-19
+
+63 commits. **No source conflicts, and main touched none of this branch's core
+files** - `ui_print_start_controller.cpp`, `printer_print_state.cpp`,
+`print_completion.cpp`, `moonraker_manager.cpp`, `ui_panel_print_status.cpp`,
+`print_start_collector.cpp`, `ui_print_preparation_manager.cpp` all had zero
+commits on main since the merge base. The only file both sides touched is
+`include/state/subject_macros.h`, and that one helps.
+
+### What helps
+
+`c7cc96670` - `INIT_SUBJECT_INT/STRING` never handed the XML name to
+`register_subject()`, so `SubjectManager::deinit_all()`'s withdrawal loop was
+inert. Any owner that does not outlive the process left its subject names
+resolving to freed storage, and the next `lv_subject_add_observer()` walked a
+garbage `subs_ll`. That is the nightly TSan SIGSEGV.
+
+This matters here specifically. `print_lifecycle` is declared with
+`INIT_SUBJECT_INT(..., register_xml)` (`printer_print_state.cpp:100`), and this
+branch adds two new observers against per-instance `PrinterState` subjects - one
+in `PrintControlButtons`, one in `ActivePrintMediaManager`. More
+`add_observer()` calls against a fixture-owned `PrinterState` is exactly the
+shape that trips the dangling-name bug, which is the leading hypothesis for the
+media test abort described below.
+
+`43367bbf9` is the same family: `MoonrakerClientMock`'s forced teardown deleted
+its calibration `lv_timer`s but leaked their payloads, and `PanelWidgetManager`
+freed grid descriptors LVGL still held raw pointers to. Both were surfaced by
+unmasking the sanitizer gates.
+
+### A failure the merge resolved
+
+Before the merge, `"A confirmed print re-arms media that failed to load while
+preparing"` aborted in **fixture teardown** - not in its assertions, all 9 of
+which passed. The abort was `std::system_error: Owner died` inside
+`MoonrakerClient::~MoonrakerClient` taking `state_callback_mutex_`
+(`moonraker_client.cpp:186`): a poisoned mutex, so memory corruption from
+earlier.
+
+Deferring the re-arm out of the subject-observer dispatch changed nothing, and
+that speculative change was reverted rather than kept.
+
+**The merge fixed it.** All 27 `[preparing]` cases pass, 104 assertions. The
+cause was `c7cc96670`: this branch adds observers against a fixture-owned
+`PrinterState`, and a previous test's dead `PrinterState` had left
+`print_lifecycle` resolving to freed storage, so `lv_subject_add_observer()`
+walked a garbage list. Worth recording as a general hazard: a test abort in an
+unrelated destructor, in a suite where fixtures own their own `PrinterState`,
+should send you to subject-name teardown before you start bisecting your own
+change.
+
+### What to watch
+
+Main's new `BypassToggleController` guards on
+`print_occupies_toolhead(PrintJobState)` (`ui_bypass_toggle_controller.cpp:28`),
+which is `PRINTING || PAUSED` - **the same axis that produced A1/A2**. During a
+host-side pre-start window the raw job state is STANDBY or COMPLETE, so the
+guard passes and the toggle drives filament through a toolhead that is homing,
+meshing or purging for a print the user has already committed to. The helper is
+correct for what it asks; the question "does a job own the toolhead right now?"
+simply cannot be answered from `PrintJobState` alone once `Preparing` is
+reachable before the printer accepts the job.
+
 ## Outstanding work, in dependency order
 
 1. ~~Arm the collector at commit~~ **done** - verified on the K2; phases advance
