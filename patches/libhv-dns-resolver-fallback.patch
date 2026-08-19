@@ -334,3 +334,21 @@ index ed87a8c..5d29024 100644
      struct addrinfo* ais = NULL;
      int ret = getaddrinfo(host, NULL, NULL, &ais);
      if (ret != 0 || ais == NULL || ais->ai_addr == NULL || ais->ai_addrlen == 0) {
+diff --git a/base/hsocket.h b/base/hsocket.h
+index 4e3c287..2d702b7 100644
+--- a/base/hsocket.h
++++ b/base/hsocket.h
+@@ -3,6 +3,13 @@
+ 
+ #include "hexport.h"
+ #include "hplatform.h"
++// fcntl.h is not pulled in transitively on every glibc (jammy's sys/select.h
++// doesn't provide it), and blocking()/nonblocking() below use F_GETFL/F_SETFL/
++// O_NONBLOCK directly. Fresh builds with clang on ubuntu 22.04 failed here;
++// existing builds only worked via a warmer include web.
++#ifndef OS_WIN
++#include <fcntl.h>
++#endif
+ 
+ #ifdef ENABLE_UDS
+ #ifdef OS_WIN
