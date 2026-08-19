@@ -787,7 +787,20 @@ void MoonrakerManager::init_print_start_collector() {
                 return;
             }
             if (lv_subject_get_int(subject) <= 0) {
-                return; // retirement is handled by the print-state observer
+                // Retirement. The print-state observer cannot cover this: it
+                // only fires when print_state_enum CHANGES, and a job that dies
+                // before the printer accepts it never moves the wire off
+                // standby. Leaving the collector armed means the next G-code the
+                // user runs by hand is parsed as a pre-print phase, re-raising
+                // the "Preparing Print" overlay over whatever they are doing.
+                const auto job_state = static_cast<helix::PrintJobState>(
+                    lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
+                if (collector->is_active() && should_stop_collector_on_retirement(job_state)) {
+                    collector->stop();
+                    spdlog::info("[MoonrakerManager] PRINT_START collector stopped (retired "
+                                 "without a print)");
+                }
+                return;
             }
             if (collector->is_active()) {
                 return; // already tracking

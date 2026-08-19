@@ -251,6 +251,27 @@ class MoonrakerManager {
     }
 
     /**
+     * @brief Decide whether retiring a preparing job should stop the collector
+     *
+     * The collector is armed at COMMIT, so every way a preparing job can end has
+     * to answer this. `Confirmed` is the one that must NOT stop it: the printer
+     * took the job and PRINT_START runs inside it, so the collector has to
+     * survive the handoff and finish on its own phase detection. Every other
+     * exit - Failed, Cancelled, TimedOut, Superseded - means no print is coming.
+     *
+     * Reading the job state is what separates them without needing the reason:
+     * only a Confirmed retirement leaves the printer PRINTING or PAUSED.
+     *
+     * This is not merely tidy-up. A collector left armed keeps parsing gcode
+     * responses, so the next command the user runs by hand - a home from the
+     * Motion panel - is read as a pre-print phase, which re-raises the
+     * "Preparing Print" overlay and greys the controls they are using.
+     */
+    static inline bool should_stop_collector_on_retirement(helix::PrintJobState job_state) {
+        return should_stop_print_collector(job_state, /*has_preparing_job=*/false);
+    }
+
+    /**
      * @brief Decide whether the pre-print phase should end (hand off to printing)
      *
      * The pre-print → printing hand-off must be gated on the REAL first layer,

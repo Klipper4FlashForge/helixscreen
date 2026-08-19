@@ -810,3 +810,39 @@ TEST_CASE("should_stop_print_collector spares a collector armed at commit",
         REQUIRE_FALSE(MoonrakerManager::should_stop_print_collector(PrintJobState::PRINTING, true));
     }
 }
+
+// ============================================================================
+// Retiring a preparing job that never became a print
+//
+// The collector is armed at COMMIT, so every exit from the preparing window has
+// to answer whether it stops. The epoch observer used to punt this to the
+// print-state observer, which cannot see it: that one fires only when
+// print_state_enum CHANGES, and a job that dies before the printer accepts it
+// never moves the wire off standby.
+//
+// Left armed, the collector keeps parsing gcode responses, so the next command
+// the user runs by hand - homing from the Motion panel after cancelling a start
+// - is read as a pre-print phase and re-raises the "Preparing Print" overlay
+// over the controls they are using.
+//
+// NOTE: this covers the DECISION. The dispatch that calls it lives in an
+// ObserverGuard inside MoonrakerManager, which has heavy dependencies and is not
+// constructible here (see the header note at the top of this file).
+// ============================================================================
+
+TEST_CASE("should_stop_collector_on_retirement stops unless the printer took the job",
+          "[application][print_start_collector]") {
+    SECTION("Confirmed - the printer is printing, PRINT_START runs inside the job") {
+        REQUIRE_FALSE(
+            MoonrakerManager::should_stop_collector_on_retirement(PrintJobState::PRINTING));
+        REQUIRE_FALSE(MoonrakerManager::should_stop_collector_on_retirement(PrintJobState::PAUSED));
+    }
+
+    SECTION("every other exit means no print is coming") {
+        // Cancelled / Failed / TimedOut / Superseded all leave the wire here.
+        REQUIRE(MoonrakerManager::should_stop_collector_on_retirement(PrintJobState::STANDBY));
+        REQUIRE(MoonrakerManager::should_stop_collector_on_retirement(PrintJobState::COMPLETE));
+        REQUIRE(MoonrakerManager::should_stop_collector_on_retirement(PrintJobState::CANCELLED));
+        REQUIRE(MoonrakerManager::should_stop_collector_on_retirement(PrintJobState::ERROR));
+    }
+}
