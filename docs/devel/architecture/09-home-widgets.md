@@ -8,7 +8,7 @@ Counts, recounted 2026-08-17 (method included so you can re-run it):
 |------|-------|--------|
 | Widget defs in the registry | 38 (37 + `camera` behind `HELIX_HAS_CAMERA`) | rows of `s_widget_defs` (`src/ui/panel_widget_registry.cpp:55`) |
 | `PanelWidget` subclasses | 31 | `rg -l 'public PanelWidget' include src -g '*.h'` — 28 in `src/ui/panel_widgets/`, plus `favorite_macro`, `power_device`, `preheat` headers in `include/` |
-| XML components | 40 | `ls ui_xml/components/panel_widget_*.xml \| wc -l` |
+| XML components | 41 | `ls ui_xml/components/panel_widget_*.xml \| wc -l` |
 | Factory-less (pure XML) defs | 4 | `ams`, `filament`, `notifications`, `firmware_restart` — no `register_*` call in `init_widget_registrations()` |
 | Hardware-gated defs | 11 (10 distinct gate subjects) | defs with a non-null `hardware_gate_subject` in the table below |
 | Multi-instance defs (`base_id:N`) | 6 | `power_device`, `fan_stack`, `fan`, `thermistor`, `temp_graph`, `favorite_macro` (`multi_instance = true`) |

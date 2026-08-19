@@ -151,6 +151,48 @@ TEST_CASE("bypass toggle chain: unload ERROR disarms (regression)", "[ams][bypas
     CHECK_FALSE(fx.backend->is_bypass_active());
 }
 
+TEST_CASE("bypass toggle chain: controller self-observes the ams_action subject",
+          "[ams][bypass-home]") {
+    BypassToggleFixture fx;
+    seed_print_state(PrintJobState::STANDBY);
+
+    // Lane loaded so toggle() takes the unload-first path (arms the chain and
+    // the controller's own ams_action observer).
+    REQUIRE(fx.backend->load_filament(0).result == AmsResult::SUCCESS);
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+
+    fx.controller.toggle();
+    REQUIRE(fx.controller.pending_enable());
+    CHECK_FALSE(fx.backend->is_bypass_active());
+
+    // Let the real mock unload settle on its operation thread so the eventual
+    // enable_bypass() is not refused for a busy backend.
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+    REQUIRE(fx.controller.pending_enable());
+
+    // The production feed: nobody hand-drives on_ams_action_changed() — the
+    // controller's own observer computes the edges from the subject, the way
+    // sync_from_backend() publishes them. observe_int_sync defers the handler
+    // through UpdateQueue, hence the drain between edges.
+    lv_subject_t* action = AmsState::instance().get_ams_action_subject();
+    lv_subject_set_int(action, static_cast<int>(AmsAction::UNLOADING));
+    UpdateQueue::instance().drain(); // IDLE -> UNLOADING: arming edge, no settle
+    CHECK(fx.controller.pending_enable());
+    CHECK_FALSE(fx.backend->is_bypass_active());
+
+    lv_subject_set_int(action, static_cast<int>(AmsAction::IDLE));
+    UpdateQueue::instance().drain(); // UNLOADING -> IDLE: the settling edge
+    CHECK(fx.backend->is_bypass_active());
+    CHECK_FALSE(fx.controller.pending_enable());
+
+    // Settled exactly once: the observer detached on settle, so a replayed
+    // edge neither re-enables nor re-arms anything.
+    CHECK_FALSE(fx.controller.on_ams_action_changed(AmsAction::UNLOADING, AmsAction::IDLE));
+    CHECK(fx.backend->is_bypass_active());
+}
+
 TEST_CASE("bypass toggle chain: event not ours is ignored", "[ams][bypass-home]") {
     BypassToggleFixture fx;
     seed_print_state(PrintJobState::STANDBY);

@@ -27,8 +27,8 @@ BypassWidget::~BypassWidget() {
 }
 
 void BypassWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
+    (void)parent_screen; // unused override param (lock_widget idiom)
     widget_obj_ = widget_obj;
-    parent_screen_ = parent_screen;
     if (!widget_obj_) {
         return;
     }
@@ -62,11 +62,14 @@ void BypassWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
 
 void BypassWidget::detach() {
     spool_color_observer_.reset();
+    // Abort any pending unload→enable chain: the tile is going away (widget
+    // recycled or screen torn down) and the controller's self-observer must
+    // not fire the enable for a chain nobody is waiting on.
+    toggle_.cancel_pending();
     if (widget_obj_) {
         lv_obj_set_user_data(widget_obj_, nullptr);
     }
     widget_obj_ = nullptr;
-    parent_screen_ = nullptr;
 }
 
 void BypassWidget::handle_click() {

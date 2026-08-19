@@ -30,7 +30,6 @@ class BypassWidget : public PanelWidget {
 
   private:
     lv_obj_t* widget_obj_ = nullptr;
-    lv_obj_t* parent_screen_ = nullptr;
     helix::ui::BypassToggleController toggle_;
     // External-spool color observer guard (reset in detach()).
     ObserverGuard spool_color_observer_;

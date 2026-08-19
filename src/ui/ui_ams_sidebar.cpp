@@ -287,10 +287,10 @@ void AmsOperationSidebar::init_observers() {
                 self->handle_load_complete();
             }
 
-            // Detect UNLOADING -> IDLE or UNLOADING -> ERROR: the pending-bypass
-            // chain (armed by the unload the toggle started) is settled by the
-            // shared controller — enable on IDLE, disarm on ERROR.
-            self->bypass_toggle_.on_ams_action_changed(self->prev_ams_action_, action);
+            // No bypass feed here: the shared BypassToggleController now
+            // observes the ams_action subject itself (armed only while a
+            // pending unload→enable chain runs), so this sidebar instance
+            // feeding its own controller would process the edge twice.
 
             // Update step progress (BEFORE updating prev_ams_action_)
             self->update_action_display(action);

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "ui_observer_guard.h"
+
 #include "ams_types.h"
 
 class AmsBackend;
@@ -12,6 +14,13 @@ namespace helix::ui {
 /// Widgets-free bypass toggle policy shared by the AMS sidebar and the home
 /// BypassWidget. Owns the pending-enable state machine (unload-first
 /// chaining, #1229 discipline) and the print-active refusal.
+///
+/// The controller observes the ams_action subject ITSELF while a pending
+/// unload->enable chain is armed (the sidebar used to be the only feeder, so
+/// a chain started from the home BypassWidget tile never saw UNLOADING->IDLE
+/// and bypass never enabled). The observer is armed when toggle() starts the
+/// unload and torn down when the chain settles (IDLE enables, ERROR disarms)
+/// or is cancelled — a settled controller stays detached.
 class BypassToggleController {
   public:
     BypassToggleController() = default;
@@ -25,7 +34,10 @@ class BypassToggleController {
     void toggle();
 
     /// Feed an ams_action subject change (UNLOADING→IDLE/ERROR chain step).
-    /// Returns true if the event was consumed for the pending chain.
+    /// Still public for direct unit-driving; production feed is the
+    /// controller's own ams_action observer, which computes prev from
+    /// prev_action_. Returns true if the event was consumed for the pending
+    /// chain.
     bool on_ams_action_changed(AmsAction prev, AmsAction next);
 
     /// Abort any pending chain (owner is going away / context reset).
@@ -37,7 +49,17 @@ class BypassToggleController {
 
   private:
     void enable_now(AmsBackend* backend);
+    /// Subscribe to the ams_action subject for the pending chain (idempotent).
+    void arm_action_observer();
+    /// Detach the ams_action observer (chain settled or cancelled).
+    void disarm_action_observer();
+
     bool pending_bypass_enable_ = false;
+    /// Last action seen by our own ams_action observer; re-seeded from the
+    /// live subject each time the observer arms so a mid-action subscribe
+    /// still computes the right edge.
+    AmsAction prev_action_ = AmsAction::IDLE;
+    ObserverGuard action_observer_;
 };
 
 } // namespace helix::ui
