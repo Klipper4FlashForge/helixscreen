@@ -336,11 +336,25 @@ the user", and sees every retirement rather than only the cancel-button path.
 advancing (3), cancel mid-mesh, and both targets fell to 0 with no manual
 intervention. `print_stats` still showed the previous job, so nothing printed.
 
-### 3. The overlay debounce is designed, not built
+### 3. ~~The overlay debounce is designed, not built~~ BUILT
 
-`## Resolved design questions` specifies a 750ms elapsed debounce so a sub-second
-`Preparing` never renders. Nothing implements it yet. On a fast printer the overlay
-will currently flash.
+`PrintStatusPanel` now withholds the preparing overlay until `Preparing` has
+persisted `PREPARING_SHOW_DELAY_MS` (750ms). Hiding stays immediate - once
+preparation ends the overlay must go at once - and the timer re-checks the phase
+when it fires, since preparation can end while it waits.
+
+Debounced on **elapsed** time, not on a predicted duration. A prediction fails
+closed: predict "fast" against a ten-minute mesh and the overlay never appears at
+all, which is the very bug this plan exists to fix. Elapsed time cannot fail that
+way and needs no history on first run.
+
+Cancelled from both `cleanup()` and the destructor via one shared
+`cancel_preparing_show_timer()` using `lv_timer_cancel_safe()`, per CLAUDE.md
+threading rule 5. `scripts/check_timer_destructor_cancel.py` passes at baseline.
+
+Verified against the mock that a real preparation still shows the overlay
+(`preparing_visible=1` at phase 3), so the debounce delays without suppressing.
+The sub-second case still wants the CB1/Voron baseline run.
 
 ### 4. Consolidation is half-landed
 
@@ -378,8 +392,8 @@ Done: `PRINT_STATE_MACHINE.md`, `architecture/05-printer-state.md`,
    our own print no longer stops it.
 2. **CB1/Voron baseline** - no pre-start block; confirm no overlay flash and no
    regression for externally started prints.
-3. **Implement the 750ms overlay debounce** (risk 3). `lv_timer_t`, so it must be
-   cancelled in the destructor as well as `cleanup()` per CLAUDE.md rule 5.
+3. ~~Implement the 750ms overlay debounce~~ **done** - gate passes; CB1 baseline
+   still wanted for the genuinely sub-second case.
 4. ~~Notify on `TimedOut`, decide what cancel does to the heaters~~ **done and
    hardware-verified**.
 5. **Decide whether a failed pre-print notifies**, then migrate the three remaining
