@@ -441,6 +441,7 @@
   <translation tag="Choose rendering mode for G-code visualization" ru="Выберите режим рендеринга для визуализации G-code"/>
   <translation tag="Choose rendering mode for bed mesh visualization" ru="Выберите режим рендеринга для визуализации сетки стола"/>
   <translation tag="Choose sound style" ru="Выберите стиль звука"/>
+  <translation tag="Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses."/>
   <translation tag="Choose what to power off or restart." ru="Выберите, что выключить или перезагрузить."/>
   <translation tag="Clean Brush" ru="Очистить щётку"/>
   <translation tag="Clean Nozzle" ru="Очистить сопло"/>
@@ -1773,6 +1774,7 @@
   <translation tag="Printer Firmware Disconnected" ru="Прошивка принтера отключена"/>
   <translation tag="Printer Image" ru="Изображение принтера"/>
   <translation tag="Printer Manager" ru="Менеджер принтеров"/>
+  <translation tag="Printer Model"/>
   <translation tag="Printer Name" ru="Название принтера"/>
   <translation tag="Printer Setup: Connection" ru="Настройка принтера: Подключение"/>
   <translation tag="Printer Setup: Fans" ru="Настройка принтера: Вентиляторы"/>
@@ -1878,6 +1880,7 @@
   <translation tag="Re-read spool RFID tags and remaining length" ru="Перечитать RFID-метки катушек и остаток"/>
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." ru="Повторно синхронизирует отслеживаемое состояние Happy Hare с оборудованием."/>
   <translation tag="Ready" ru="Готов"/>
+  <translation tag="Ready for filament operations"/>
   <translation tag="Ready to Apply" ru="Готово к применению"/>
   <translation tag="Ready to load" ru="Готов к загрузке"/>
   <translation tag="Reason" ru="Причина"/>
@@ -2403,6 +2406,7 @@
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a &quot;Timer Too Close&quot; error or restart mid-test. Continue anyway?" ru="На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может привести к тому, что прошивка принтера сообщит об ошибке &quot;Timer Too Close&quot; или перезапустится во время теста. Всё равно продолжить?"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" ru="На этом устройстве очень мало ОЗУ. Калибровка резонансов требует много памяти и может вызвать ошибку &quot;Timer Too Close&quot;. Всё равно продолжить?"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" ru="Это не совпадает с привязанной катушкой Spoolman. Добавить как новую катушку или обновить привязанную?"/>
+  <translation tag="This filament system does not report buffer or flow data."/>
   <translation tag="This file was sliced for {} but {} is loaded." ru="Файл нарезан для {}, но загружен {}."/>
   <translation tag="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs."/>
   <translation tag="This is exactly the data that will be sent" ru="Это именно те данные, которые будут отправлены"/>

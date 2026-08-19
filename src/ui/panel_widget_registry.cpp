@@ -89,7 +89,7 @@ static std::vector<PanelWidgetDef> s_widget_defs = {
     {"job_queue",        "Job Queue",         "progress_clock",   "Queued print jobs",        nullptr,              nullptr,                               false, 2, 2, 2, 1, 4, 3},
     //                                                                                                        gate_subject          gate_hint                              default col row min_c min_r max_c max_r  multi  half_c half_r
     {"tips",             "Tips",              "help_circle",      "Rotating tips and helpful information",             nullptr,              nullptr,                               true,  4, 2, 2, 1, 6, 2},
-    {"clog_detection",   "Clog Detection",    "water",            "Filament clog/flow detection meter",   "clog_meter_mode",    "Requires clog detection hardware",    false, 1, 1, 1, 1, 2, 2},
+    {"clog_detection",   "Clog Detection",    "gauge",            "Filament clog/flow detection meter",   "clog_meter_mode",    "Requires clog detection hardware",    false, 1, 1, 1, 1, 2, 2},
     {"print_stats",      "Print Stats",       "printer_3d",       "Print history statistics",      nullptr,              nullptr,                               false, 2, 2, 2, 1, 3, 2},
     {"gcode_console",    "GCode Console",     "console",          "Open G-code command console",    nullptr,              nullptr,                               false, 1, 1, 1, 1, 1, 1},
 #if HELIX_HAS_CAMERA

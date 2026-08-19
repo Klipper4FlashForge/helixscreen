@@ -441,6 +441,7 @@
   <translation tag="Choose rendering mode for G-code visualization" fr="Choisir le mode de rendu pour la visualisation du G-code"/>
   <translation tag="Choose rendering mode for bed mesh visualization" fr="Choisir le mode de rendu pour la visualisation du maillage du plateau"/>
   <translation tag="Choose sound style" fr="Choisir le style de son"/>
+  <translation tag="Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses."/>
   <translation tag="Choose what to power off or restart." fr="Choisissez ce qu&apos;il faut éteindre ou redémarrer."/>
   <translation tag="Clean Brush" fr="Nettoyer la brosse"/>
   <translation tag="Clean Nozzle" fr="Nettoyer la buse"/>
@@ -1773,6 +1774,7 @@
   <translation tag="Printer Firmware Disconnected" fr="Firmware imprimante déconnecté"/>
   <translation tag="Printer Image" fr="Image de l&apos;imprimante"/>
   <translation tag="Printer Manager" fr="Gestionnaire d&apos;imprimante"/>
+  <translation tag="Printer Model"/>
   <translation tag="Printer Name" fr="Nom de l&apos;imprimante"/>
   <translation tag="Printer Setup: Connection" fr="Config. imprimante : Connexion"/>
   <translation tag="Printer Setup: Fans" fr="Config. imprimante : Ventilateurs"/>
@@ -1878,6 +1880,7 @@
   <translation tag="Re-read spool RFID tags and remaining length" fr="Relire les étiquettes RFID des bobines et la longueur restante"/>
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." fr="Resynchronise l&apos;état suivi par Happy Hare avec le matériel."/>
   <translation tag="Ready" fr="Prêt"/>
+  <translation tag="Ready for filament operations"/>
   <translation tag="Ready to Apply" fr="Prêt à appliquer"/>
   <translation tag="Ready to load" fr="Prêt à charger"/>
   <translation tag="Reason" fr="Raison"/>
@@ -2403,6 +2406,7 @@
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a &quot;Timer Too Close&quot; error or restart mid-test. Continue anyway?" fr="Cet appareil ne dispose que de {} Mo de RAM. La calibration de résonance est gourmande en mémoire et peut amener le firmware de l&apos;imprimante à signaler une erreur &quot;Timer Too Close&quot; ou à redémarrer en cours de test. Continuer quand même ?"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" fr="Cet appareil dispose de très peu de RAM. La calibration de résonance est gourmande en mémoire et peut provoquer une erreur &quot;Timer Too Close&quot;. Continuer quand même ?"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" fr="Cela ne correspond pas à la bobine Spoolman liée. L&apos;ajouter comme nouvelle bobine, ou mettre à jour la bobine liée pour correspondre ?"/>
+  <translation tag="This filament system does not report buffer or flow data."/>
   <translation tag="This file was sliced for {} but {} is loaded." fr="Ce fichier a été tranché pour {} mais {} est chargé."/>
   <translation tag="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs."/>
   <translation tag="This is exactly the data that will be sent" fr="Voici exactement les données qui seront envoyées"/>
