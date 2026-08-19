@@ -1251,9 +1251,14 @@ void WiFiManager::notify_state_observers() {
     std::vector<StateObserver> snapshot;
     {
         std::lock_guard<std::mutex> lock(state_observers_mutex_);
+        // L081_OK: sweeping *observers'* tokens to drop dead entries, not
+        // gating our own `this` access — structurally not Mechanism C, and
+        // the backend fires READY from its init worker on nearly every
+        // launch, which made this the single largest bg_tok_expired_check
+        // emitter in the field.
         state_observers_.erase(
             std::remove_if(state_observers_.begin(), state_observers_.end(),
-                           [](const StateObserver& obs) { return obs.token.expired(); }),
+                           [](const StateObserver& obs) { return obs.token.expired_no_lvgl(); }),
             state_observers_.end());
         snapshot = state_observers_;
     }
