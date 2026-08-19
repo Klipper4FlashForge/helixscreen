@@ -20,6 +20,7 @@
 #include "moonraker_manager.h"
 #include "observer_factory.h"
 #include "operation_registry.h"
+#include "print_start_collector.h"
 #include "system/telemetry_manager.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -728,6 +729,17 @@ void PrintPreparationManager::start_print(const std::string& filename,
     if (!combined.empty()) {
         spdlog::info("[PrintPreparationManager] Executing pre-start gcode ({} line(s)): {}",
                      (emit_printer_setup ? 1 : 0) + pre_start_lines.size(), combined);
+
+        // This block runs in front of the job, so it sits inside the pre-print
+        // measurement window. Tell the collector, or its timings get averaged
+        // with printer-edge measurements that never included one - which both
+        // skews the displayed estimate and feeds a too-small predicted total
+        // into the collector's own adaptive timeout.
+        if (auto* mgr = get_moonraker_manager()) {
+            if (auto collector = mgr->print_start_collector()) {
+                collector->note_host_side_pre_start();
+            }
+        }
 
         auto token = lifetime_.token();
         api_->execute_gcode(

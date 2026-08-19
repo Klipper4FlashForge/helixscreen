@@ -143,6 +143,17 @@ class MoonrakerManager {
     void init_print_start_collector();
 
     /**
+     * @brief The pre-print detection collector, if one exists yet
+     *
+     * Exposed so the code that dispatches a host-side pre-start block can tell
+     * the collector that the block is part of the measured window. Returns null
+     * before init or after shutdown; callers must check.
+     */
+    [[nodiscard]] std::shared_ptr<PrintStartCollector> print_start_collector() const {
+        return m_print_start_collector;
+    }
+
+    /**
      * @brief Determine if print start collector should be started
      *
      * Helper function for testing mid-print detection logic.
