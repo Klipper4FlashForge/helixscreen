@@ -46,6 +46,7 @@ SKIP_DIRS = {'.git', '.worktrees', 'build', 'node_modules', '.venv', 'venv'}
 # Paths that are intentionally absent from a clean checkout.
 EXEMPT_SUBSTRINGS = (
     'superpowers/',        # docs/superpowers/ specs are gitignored, local-only
+    'settings-test.json',  # generated at runtime by --test, gitignored
 )
 
 # Tokens that are obviously placeholders rather than real paths.
