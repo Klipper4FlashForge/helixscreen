@@ -27,6 +27,34 @@ race:lv_thread_sync_signal
 # looking up the thread that created an fd and getting an invalid one. That is a
 # sanitizer bug (clang 14, jammy's default), not something this file can reach.
 #
-# Real options, in order of preference: fix libhv's teardown so the loop is fully
-# stopped and its fds closed on the owning thread before hloop_free; or move the
-# sanitizer jobs to a newer clang. See prestonbrown/helixscreen#1293.
+# Newer clang was tried and does NOT help: clang-15 reproduces it identically,
+# same kInvalidTid, only the assert's line number moves (494 -> 511). Blinding
+# TSan for the teardown with __tsan_ignore_thread_begin/end around
+# hloop_cleanup() does not gate the fd path either (1 clean run in 4), and
+# having our mocks let libhv bind its own listen fd instead of handing one over
+# changed nothing.
+#
+# What does work is sharding, so `make test-tsan` now runs Catch2 shards: the
+# abort needs a loop from an earlier test to tear down during a later one, and
+# separate processes break that pairing. Measured 0 aborts across 32 shards
+# against 3 in 4 unsharded runs. See prestonbrown/helixscreen#1293.
+
+# spdlog default-logger swap while background threads log.
+#
+# Several tests swap the process-global default logger mid-run to capture output:
+# test_keyboard_password_logging.cpp via helix::logging::init() for a clean ring
+# buffer, and test_split_button.cpp's SplitButtonLogCapture via
+# spdlog::set_default_logger() directly. Meanwhile the shared HttpExecutor pool
+# logs from its own threads, and spdlog::default_logger_raw() reads that pointer
+# without the registry mutex by design - it is the documented fast path - so
+# swapping the default logger while other threads log races by construction.
+#
+# Suppressed rather than fixed because production never does it: logging is
+# initialised once during startup before any thread exists (Application's
+# init_early), and the watchdog does the same in its own process.
+#
+# Scoped to the registry setter rather than to any one caller: the first attempt
+# named helix::logging::init and silenced only that test, leaving the identical
+# race from SplitButtonLogCapture reporting. Races elsewhere in spdlog still
+# report.
+race:spdlog::details::registry::set_default_logger
