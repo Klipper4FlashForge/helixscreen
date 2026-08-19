@@ -1236,11 +1236,27 @@ detect_tmp_dir() {
     # gets deleted/relocated out from under the extracted tree. So we use the
     # install dir's PARENT, never INSTALL_DIR itself. Dot-prefixed to stay
     # hidden and out of the way.
+    # A platform may declare where its bulk storage actually is. On the K2 both
+    # /opt (INSTALL_DIR's parent) and /usr/data live on a 240MB overlay while
+    # the 27.5GB user partition is at /mnt/UDISK, so the generic "sibling of
+    # INSTALL_DIR" rule below picks the small filesystem and a 60MB archive
+    # fills it. Declared roots are probed first; they still go through the same
+    # space/writability checks, so a unit that lacks the mount falls through.
     local candidates=""
+    if [ -n "${TMP_DIR_PREFERRED:-}" ]; then
+        # Name-guard it like any other TMP_DIR: whatever wins here is rm -rf'd
+        # on exit, so a declared root that is a bare mountpoint (the /mnt/UDISK
+        # incident shape) must be dropped rather than staged into.
+        if _user_dir_name_ok "$TMP_DIR_PREFERRED" '*helixscreen-install*' '.helix-update-staging'; then
+            candidates="$TMP_DIR_PREFERRED"
+        else
+            log_warn "Ignoring TMP_DIR_PREFERRED='$TMP_DIR_PREFERRED' (not an installer scratch dir name)"
+        fi
+    fi
     if [ -n "${INSTALL_DIR:-}" ]; then
         local install_parent
         install_parent=$(dirname "$INSTALL_DIR")
-        candidates="$install_parent/.helixscreen-install"
+        candidates="$candidates $install_parent/.helixscreen-install"
     fi
     if [ -n "${HOME:-}" ]; then
         candidates="$candidates $HOME/.helixscreen-install"
@@ -1379,6 +1395,15 @@ set_install_paths() {
         KLIPPER_USER="root"
         KLIPPER_GROUP="root"
         KLIPPER_HOME="/mnt/UDISK"
+        # /opt and /usr/data are both on the 240MB overlay; /mnt/UDISK is the
+        # 27.5GB user partition. Staging the download anywhere else fills the
+        # overlay (a unit was found with a leaked 60MB archive on it).
+        TMP_DIR_PREFERRED="/mnt/UDISK/helixscreen-install"
+        # Older builds cached thumbnails/gcode on the overlay via /usr/data;
+        # the app now caches on /mnt/UDISK, so reclaim the old location.
+        # Also reclaim scratch dirs leaked by pre-EXIT-trap installers: one
+        # unit held a 60MB archive at /usr/data/helixscreen-install for months.
+        STALE_CACHE_DIRS="/usr/data/helixscreen/cache /usr/data/helixscreen-install /opt/.helixscreen-install"
         log_info "Platform: Creality K2 series"
         log_info "Install directory: ${INSTALL_DIR}"
     elif [ "$platform" = "cc1" ]; then
@@ -5202,12 +5227,23 @@ extract_release() {
             fi
             ;;
         *)
+            # `-o` means "don't restore user:group". Without it a root extract
+            # restores the numeric uid/gid the archive was built with (1001 on
+            # the CI runner), leaving the install owned by a user that does not
+            # exist on the printer. It is needed here as well as at packaging
+            # time because archives already published still carry those ids.
+            #
+            # `-o` is the ONLY portable spelling: BusyBox tar (1.33.2 on the K2)
+            # documents `-o` but has no --no-same-owner long option, so passing
+            # the long form fails extraction outright on every Creality box.
+            # GNU tar accepts -o as an alias for --no-same-owner when extracting.
+            #
             # BusyBox tar doesn't support -z; use gunzip pipe on embedded platforms
             case "$platform" in
                 ad5m|ad5x|k1|k2)
-                    gunzip -c "$archive" | tar xf - && extract_ok=true ;;
+                    gunzip -c "$archive" | tar xof - && extract_ok=true ;;
                 *)
-                    tar -xzf "$archive" && extract_ok=true ;;
+                    tar -xzof "$archive" && extract_ok=true ;;
             esac
             ;;
     esac
@@ -5703,6 +5739,52 @@ extract_release() {
 }
 
 # Remove backup of previous installation (call after service starts successfully)
+# Reclaim directories a previous version left on the wrong filesystem.
+#
+# Two kinds, both measured on a K2 whose root overlay is ~240MB while its user
+# partition at /mnt/UDISK is 27.5GB:
+#   - caches: the app used to cache thumbnails and modified gcode under
+#     /usr/data, i.e. on the overlay. It now caches on /mnt/UDISK.
+#   - scratch dirs: before cleanup was armed on EXIT (it hung off a bash-only
+#     ERR trap that never fired under ash/dash), an interrupted install left the
+#     whole download behind. One unit held a 60MB archive for two months.
+#
+# Platforms declare what to reclaim in STALE_CACHE_DIRS; a no-op elsewhere.
+#
+# SAFETY: same guard shape as the off-partition rollback cleanup below — the
+# final path component must be exactly "cache" or name itself an installer
+# scratch dir, and never a top-level directory. A past incident wiped a K2's
+# /mnt/UDISK mount root via an unguarded rm -rf.
+cleanup_stale_cache_dirs() {
+    [ -n "${STALE_CACHE_DIRS:-}" ] || return 0
+
+    local _stale _kind
+    for _stale in $STALE_CACHE_DIRS; do
+        case "$_stale" in
+            /*/*/cache)                 _kind="cache" ;;
+            /*/*helixscreen-install*)   _kind="scratch" ;;
+            *)
+                log_warn "Refusing to remove unexpected reclaim path: $_stale"
+                continue
+                ;;
+        esac
+
+        # Never remove the scratch dir this run is actively staging into.
+        if [ -n "${TMP_DIR:-}" ] && [ "$_stale" = "${TMP_DIR%/}" ]; then
+            continue
+        fi
+
+        [ -d "$_stale" ] || continue
+
+        rm -rf "$_stale" 2>/dev/null || $SUDO rm -rf "$_stale" 2>/dev/null || true
+        log_info "Reclaimed stale ${_kind} directory: $_stale"
+
+        # Drop the now-empty parent too, but only if nothing else lives there.
+        rmdir "$(dirname "$_stale")" 2>/dev/null || true
+    done
+    return 0
+}
+
 cleanup_old_install() {
     # Keep .old as a last-resort recovery path if config wasn't restored.
     # Without this guard, a failed Phase 6 + cleanup = permanent config loss.
@@ -6300,15 +6382,24 @@ deploy_platform_hooks() {
 fix_install_ownership() {
     local user="${KLIPPER_USER:-}"
     local group="${KLIPPER_GROUP:-$user}"
-    if [ -n "$user" ] && [ "$user" != "root" ] && [ -d "$INSTALL_DIR" ]; then
-        log_info "Setting ownership to ${user}:${group}..."
-        # Try without sudo first: during self-update under NoNewPrivileges,
-        # sudo is blocked but files are already user-owned so chown succeeds
-        # without it (or is a no-op).  Fall back to sudo for fresh installs
-        # where root may own the directory.
-        chown -Rh "${user}:${group}" "${INSTALL_DIR}" 2>/dev/null || \
-            $SUDO chown -Rh "${user}:${group}" "${INSTALL_DIR}" 2>/dev/null || true
-    fi
+
+    [ -n "$user" ] || return 0
+    [ -d "$INSTALL_DIR" ] || return 0
+
+    # Root-run platforms (ad5m/ad5x/k1/k2/cc1/u1) still need normalising, and
+    # used to be skipped entirely.  Root's tar extract restores the uid/gid
+    # baked into the release archive, so the tree ends up owned by the build
+    # machine's numeric ids — a measured K2 had 890 of 915 files owned by uid
+    # 1001, which has no /etc/passwd entry there.  The extract now passes -o so
+    # fresh installs land as root, and this repairs installs made before that.
+    log_info "Setting ownership to ${user}:${group}..."
+
+    # Try without sudo first: during self-update under NoNewPrivileges,
+    # sudo is blocked but files are already user-owned so chown succeeds
+    # without it (or is a no-op).  Fall back to sudo for fresh installs
+    # where root may own the directory.
+    chown -Rh "${user}:${group}" "${INSTALL_DIR}" 2>/dev/null || \
+        $SUDO chown -Rh "${user}:${group}" "${INSTALL_DIR}" 2>/dev/null || true
 }
 
 # Stop service for update
@@ -8438,7 +8529,10 @@ uninstall() {
     # stop_service and rm -rf.  Swept at the end by clean_helix_state_dirs;
     # the trap covers the abort case so a stuck sentinel can't silently block
     # future update.service firings.
-    trap '_sweep_uninstalling_sentinel' EXIT INT TERM
+    # Chained with the scratch-dir cleanup main.sh arms: a trap REPLACES the
+    # previous handler for a signal, and install.sh bundles both modules, so
+    # setting only the sweep here would disarm cleanup on the --uninstall path.
+    trap '_sweep_uninstalling_sentinel; type cleanup_on_success >/dev/null 2>&1 && cleanup_on_success' EXIT INT TERM
     _drop_uninstalling_sentinel
 
     # Remove the [update_manager helixscreen] section FIRST, before any files
@@ -8903,6 +8997,18 @@ clean_old_installation() {
 # shellcheck disable=SC3047
 trap 'error_handler $LINENO' ERR 2>/dev/null || true
 
+# Remove the scratch dir however the installer ends.
+#
+# The ERR trap above is a bash extension and is silently discarded on the
+# ash/dash shells every embedded platform runs, so an interrupted or failing
+# install used to leak the whole download: a K2 was found holding a 60MB
+# helixscreen.zip from four months earlier, on a 240MB overlay partition.
+#
+# cleanup_on_success is idempotent (it tests for the directory first) so the
+# explicit call on the success path is unaffected, and it routes through
+# _safe_remove_tmp_dir, which is what refuses to rm -rf a mountpoint.
+trap 'cleanup_on_success' EXIT INT TERM
+
 # Print usage
 usage() {
     echo "HelixScreen Installer"
@@ -9351,6 +9457,7 @@ main() {
     # Start service
     start_service "$platform"
     cleanup_old_install
+    cleanup_stale_cache_dirs
 
     # Cleanup on success
     cleanup_on_success
