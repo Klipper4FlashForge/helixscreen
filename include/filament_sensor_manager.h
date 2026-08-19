@@ -30,6 +30,10 @@ class IMoonrakerAPI;
 // set_sensor_role() so multi-lane (Snapmaker) runout scenarios can be exercised.
 class RunoutScopeTestAccess;
 class BypassArmingTestAccess;
+// Test-only friend (defined in tests/unit/test_ams_post_unload_runout_grace.cpp)
+// used to put the singleton on a known sensor baseline with the startup grace
+// already expired.
+class PostUnloadGraceTestAccess;
 
 class AmsBackend;
 
@@ -528,6 +532,7 @@ class FilamentSensorManager : public helix::sensors::ISensorManager {
     friend class FilamentSensorManagerTestAccess;
     friend class ::RunoutScopeTestAccess;
     friend class ::BypassArmingTestAccess;
+    friend class ::PostUnloadGraceTestAccess;
 
     FilamentSensorManager();
     ~FilamentSensorManager();

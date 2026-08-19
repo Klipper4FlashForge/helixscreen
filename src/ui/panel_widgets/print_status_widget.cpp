@@ -1033,14 +1033,6 @@ void PrintStatusWidget::check_and_show_idle_runout_modal() {
         return;
     }
 
-    // An unload the user just asked for ends by dragging filament off the
-    // sensor. is_filament_operation_active() above only covers the window while
-    // the action runs, and the removal edge can land seconds after it finishes.
-    if (AmsState::instance().consume_post_unload_runout_grace()) {
-        spdlog::info("[PrintStatusWidget] Skipping runout modal — filament left after an unload");
-        return;
-    }
-
     // Only show modal if not already shown
     if (runout_modal_shown_) {
         spdlog::debug("[PrintStatusWidget] Runout modal already shown - skipping");
@@ -1065,6 +1057,18 @@ void PrintStatusWidget::check_and_show_idle_runout_modal() {
     if (auto* backend = AmsState::instance().get_backend(0);
         backend && backend->should_suppress_idle_runout_modal()) {
         spdlog::debug("[PrintStatusWidget] AMS idle - suppressing runout modal");
+        return;
+    }
+
+    // An unload the user just asked for ends by dragging filament off the
+    // sensor. is_filament_operation_active() above only covers the window while
+    // the action runs, and the removal edge can land seconds after it finishes.
+    // Taken last, immediately before the modal: it is one-shot, so consuming it
+    // above a gate that returns anyway burns it on a call that could never have
+    // shown anything, and the deliberate unload it was armed for pops the modal
+    // unsuppressed.
+    if (AmsState::instance().consume_post_unload_runout_grace()) {
+        spdlog::info("[PrintStatusWidget] Skipping runout modal — filament left after an unload");
         return;
     }
 
