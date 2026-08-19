@@ -1141,8 +1141,18 @@ struct AmsSystemInfo {
     /// Tool number on the carriage when mount_state == MOUNTED, else -1.
     int mounted_tool = -1;
 
-    int pending_target_slot = -1;  ///< Target slot during tool change (-1=none)
-    int current_toolchange = -1;   ///< Current tool change number (-1=none yet, 0-based)
+    int pending_target_slot = -1; ///< Target slot during tool change (-1=none)
+    /// Current tool change number: 0-based index, -1 = none yet. Backends
+    /// normalize their firmware's own counter into this form (AFC publishes a
+    /// 1-based "changes started" count; Happy Hare a completed-change count);
+    /// the UI adds one back when it formats "N / total".
+    ///
+    /// The arithmetic is unified; the MEANING is not. Index 0 is "the first
+    /// change is under way" on AFC and "the first change has finished" on Happy
+    /// Hare, so identical rendered text describes states half a toolchange
+    /// apart. Do not build logic that treats this as a completion count without
+    /// checking which backend produced it.
+    int current_toolchange = -1;
     int number_of_toolchanges = 0; ///< Total expected tool changes this print
     bool filament_loaded = false;  ///< Filament at extruder
 

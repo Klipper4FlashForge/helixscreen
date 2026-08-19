@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <climits>
 #include <cstdio>
 
 static ObserverGuard s_tool_text_observer;
@@ -22,7 +23,32 @@ static void update_toolchange_text(AmsState* a) {
     int total = lv_subject_get_int(a->get_ams_number_of_toolchanges_subject());
     if (total > 0) {
         int current = lv_subject_get_int(a->get_ams_current_toolchange_subject());
-        int display_current = std::max(0, current + 1); // 1-based
+        // Backends store a 0-based index (-1 = none yet); display is 1-based.
+        // Clamped to the total so a backend that over-reports cannot render a
+        // nonsensical "162 / 161".
+        int raw_display = current + 1;
+        int display_current = std::clamp(raw_display, 0, total);
+        // The clamp is a display guard, not a correction: it turns an obviously
+        // wrong "162 / 161" into a plausible "161 / 161" that then sits there for
+        // the whole tail of the print, so the symptom that led us to the 1-based
+        // vs 0-based mismatch in the first place would not be visible a second
+        // time. Say so in the log instead. Rate-limited to the transition because
+        // this runs on every toolchange status frame.
+        //
+        // Over-reporting is not necessarily a backend bug: number_of_toolchanges
+        // comes from Moonraker file metadata, so a stale or re-sliced total can
+        // legitimately sit below a correct current.
+        static int s_last_warned = INT_MIN;
+        if (raw_display > total) {
+            if (raw_display != s_last_warned) {
+                s_last_warned = raw_display;
+                spdlog::warn("[AmsToolText] Toolchange {} exceeds total {} — clamping display. "
+                             "Backend over-reported, or the sliced total is stale.",
+                             raw_display, total);
+            }
+        } else {
+            s_last_warned = INT_MIN;
+        }
         char buf[32];
         snprintf(buf, sizeof(buf), "%d / %d", display_current, total);
         lv_subject_copy_string(a->get_toolchange_text_subject(), buf);
