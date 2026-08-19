@@ -137,6 +137,14 @@ class CfsTestAccess {
         b.begin_phase_tracking();
     }
 
+    /// Read back the bypass flag do_unload_filament latched on the phase
+    /// tracker. The verdict for a bypass unload hangs off this, and nothing on
+    /// the public surface reports which script actually went out.
+    static bool phase_bypass_unload(const helix::printer::AmsBackendCfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.phase_tracker_.bypass_unload;
+    }
+
     /// Seed the toolhead filament switch. `seen` distinguishes "the sensor has
     /// published a real boolean" from "we have only the default", which is the
     /// difference between a verdict and Unverifiable.

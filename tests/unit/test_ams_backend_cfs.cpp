@@ -5,8 +5,10 @@
 #include "config.h"
 #include "filament_catalog.h"
 #include "filament_database.h"
+#include "filament_op_dispatch.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
+#include "macro_param_cache.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_discovery.h"
@@ -2939,6 +2941,144 @@ TEST_CASE("CFS phase verify: unload that left filament behind is caught", "[ams]
     CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::UNLOADING, true, /*filament_at_end=*/
                                               true) == V::UnloadLeftFilament);
     CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::UNLOADING, true, false) == V::Ok);
+}
+
+TEST_CASE("CFS phase verify: a bypass unload is not judged by the toolhead switch",
+          "[ams][cfs][bypass]") {
+    using V = AmsBackendCfs::PhaseVerdict;
+
+    // A bay unload reels filament back down its lane, so filament still at the
+    // switch means the cut or retract failed. A bypass unload has no lane: both
+    // QUIT_MATERIAL and our fallback pull ~10 mm to clear the melt zone and
+    // stop, leaving the user to pull the rest. Judging it by the bay rule marked
+    // every bypass unload failed and disarmed the manual-pull prompt with it.
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::UNLOADING, /*sensor_ever_read=*/true,
+                                              /*filament_at_end=*/true,
+                                              /*bypass_unload=*/true) == V::Ok);
+    // The bay rule is untouched: same inputs, bypass off, still a failure.
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::UNLOADING, true, true,
+                                              /*bypass_unload=*/false) == V::UnloadLeftFilament);
+    // The exemption is scoped to unload. A bypass flag must not launder a load
+    // that never reached the nozzle.
+    CHECK(AmsBackendCfs::verify_phase_outcome(AmsAction::LOADING, true, /*filament_at_end=*/false,
+                                              /*bypass_unload=*/true) == V::LoadDidNotReachNozzle);
+}
+
+TEST_CASE("CFS bypass unload gcode: QUIT_MATERIAL when the printer defines it",
+          "[ams][cfs][bypass]") {
+    using V = helix::printer::CfsMacroVariant;
+
+    // Creality's own external-spool unload owns the heat, the cut and the park.
+    const std::string k2 = AmsBackendCfs::bypass_unload_gcode(V::K2, /*has_quit_material=*/true);
+    REQUIRE(k2.rfind("QUIT_MATERIAL", 0) == 0);
+    CHECK(AmsBackendCfs::bypass_unload_gcode(V::K1, true) == k2);
+
+    // But QUIT_MATERIAL does not finish the pull. Its built-in retract is [box]
+    // tn_retrude = -10 against tn_extrude = 140: the extruder only breaks the
+    // grip and the box's feeder reels the rest back down the tube. A bypass
+    // spool has no feeder. Measured on a K2 Plus 2026-08-18 — QUIT_MATERIAL
+    // alone moved E by -13.99 mm, and another 50 mm by hand freed it.
+    CHECK(k2.find("G0 E-80 F600") != std::string::npos);
+    CHECK(k2.find("G91") != std::string::npos);
+    CHECK(k2.find("G90") != std::string::npos);
+}
+
+TEST_CASE("CFS bypass unload gcode: fallback cuts and retracts with the extruder",
+          "[ams][cfs][bypass]") {
+    using V = helix::printer::CfsMacroVariant;
+
+    const std::string k2 = AmsBackendCfs::bypass_unload_gcode(V::K2, /*has_quit_material=*/false);
+    const std::string k1 = AmsBackendCfs::bypass_unload_gcode(V::K1, false);
+
+    for (const std::string& g : {k2, k1}) {
+        // The retract is the whole point: the box primitive is TNN-keyed and
+        // no-ops under bypass, so the extruder has to do it.
+        REQUIRE(g.find("G91") != std::string::npos);
+        REQUIRE(g.find("G0 E-80 F600") != std::string::npos);
+        REQUIRE(g.find("G90") != std::string::npos);
+        REQUIRE(g.find("CR_BOX_RETRUDE") == std::string::npos);
+        REQUIRE(g.find("BOX_RETRUDE_MATERIAL") == std::string::npos);
+
+        // No bay handshake: a stood-down box cannot answer any of these.
+        REQUIRE(g.find("BOX_MODE_WAIT") == std::string::npos);
+        REQUIRE(g.find("CR_BOX_PRE_OPT") == std::string::npos);
+        REQUIRE(g.find("CR_BOX_END_OPT") == std::string::npos);
+        REQUIRE(g.find("BOX_CHECK_MATERIAL") == std::string::npos);
+
+        // Positioning and state bracketing still happen.
+        REQUIRE(g.find("BOX_GO_TO_EXTRUDE_POS") != std::string::npos);
+        REQUIRE(g.find("BOX_MOVE_TO_SAFE_POS") != std::string::npos);
+        REQUIRE(g.find("SAVE_GCODE_STATE") != std::string::npos);
+        REQUIRE(g.find("RESTORE_GCODE_STATE") != std::string::npos);
+    }
+
+    // Each dialect cuts with the primitive its own unload already emits.
+    REQUIRE(k2.find("CR_BOX_CUT") != std::string::npos);
+    REQUIRE(k1.find("BOX_CUT_MATERIAL") != std::string::npos);
+    REQUIRE(k1.find("CR_BOX_CUT") == std::string::npos);
+}
+
+TEST_CASE("CFS unload routes the bypass sentinel away from the bay script", "[ams][cfs][bypass]") {
+    helix::MacroParamCache::instance().clear(); // no QUIT_MATERIAL — exercise the fallback
+
+    SECTION("stock K2: -2 gets the bypass script, a real bay still gets the bay script") {
+        CfsRemapHelper backend;
+        backend.mark_running();
+        CfsTestAccess::set_loaded_state(backend, /*filament_loaded=*/true, /*current_slot=*/-2);
+
+        REQUIRE(backend.unload_filament(helix::ui::EXTERNAL_SPOOL_SLOT).result ==
+                AmsResult::SUCCESS);
+        REQUIRE(backend.dispatched.size() == 1);
+        // The regression: CR_BOX_RETRUDE is keyed on a TNN and silently no-ops
+        // with the box stood down, so the cut ran and nothing came out.
+        CHECK(backend.dispatched[0].find("CR_BOX_RETRUDE") == std::string::npos);
+        CHECK(backend.dispatched[0].find("G0 E-80 F600") != std::string::npos);
+        CHECK(CfsTestAccess::phase_bypass_unload(backend));
+    }
+
+    SECTION("stock K2: a real bay keeps the box retract") {
+        CfsRemapHelper backend;
+        backend.mark_running();
+        CfsTestAccess::set_loaded_state(backend, true, /*current_slot=*/0);
+
+        REQUIRE(backend.unload_filament(0).result == AmsResult::SUCCESS);
+        REQUIRE(backend.dispatched.size() == 1);
+        CHECK(backend.dispatched[0].find("CR_BOX_RETRUDE") != std::string::npos);
+        CHECK_FALSE(CfsTestAccess::phase_bypass_unload(backend));
+    }
+
+    SECTION("Fork keeps BOX_UNLOAD — its own external branch handles the holder") {
+        CfsRemapHelper backend;
+        backend.mark_running();
+        CfsTestAccess::set_macro_variant_fork(backend);
+        CfsTestAccess::set_loaded_state(backend, true, -2);
+
+        REQUIRE(backend.unload_filament(helix::ui::EXTERNAL_SPOOL_SLOT).result ==
+                AmsResult::SUCCESS);
+        REQUIRE(backend.dispatched.size() == 1);
+        CHECK(backend.dispatched[0] == "BOX_UNLOAD");
+        CHECK_FALSE(CfsTestAccess::phase_bypass_unload(backend));
+    }
+}
+
+TEST_CASE("CFS bypass unload completes instead of erroring with filament still detected",
+          "[ams][cfs][bypass]") {
+    helix::MacroParamCache::instance().clear();
+
+    CfsRemapHelper backend;
+    backend.mark_running();
+    CfsTestAccess::set_loaded_state(backend, /*filament_loaded=*/true, /*current_slot=*/-2);
+    REQUIRE(backend.unload_filament(helix::ui::EXTERNAL_SPOOL_SLOT).result == AmsResult::SUCCESS);
+
+    // The end state a bypass unload actually leaves: tip clear of the melt zone,
+    // filament still across the toolhead switch, waiting on the user's hand.
+    CfsTestAccess::set_filament_sensor(backend, /*seen=*/true, /*detected=*/true);
+    CfsTestAccess::complete_action(backend);
+
+    // ERROR here is what killed the manual-pull prompt on the K2: op_failed()
+    // runs disarm_manual_pull_prompt().
+    CHECK(backend.get_system_info().action == AmsAction::IDLE);
+    CHECK(backend.get_system_info().operation_detail.empty());
 }
 
 TEST_CASE("CFS phase verify: stays silent without a sensor reading", "[ams][cfs][968]") {
