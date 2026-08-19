@@ -497,6 +497,30 @@ That is 25 keep-raw sites now, not 24.
 
 ### Phase 2 - affordance and navigation
 
+> **Re-surveyed 2026-08-19 against the post-merge tree. Three claims below were
+> wrong and are corrected here; the original text follows for context.**
+>
+> | Site | Verdict |
+> |---|---|
+> | `print_control_buttons.cpp` | **Already migrated.** Its two raw reads are correct BY DESIGN - `printer_has_the_job` must exclude Preparing, or Pause re-enables and Stop sends `CANCEL_PRINT` to a printer holding no job. Wants a `RAW_PRINT_STATE_OK` marker, not a change. |
+> | `ui_panel_power.cpp:233` | Move, but note it has **no observer at all** - the lock is snapshotted into `DeviceRow::locked` at row build. Migrating the read alone changes nothing live. |
+> | `power_device_state.cpp:156,211,236` | **Highest value.** Also **re-point the observer at `:88`** from `print_state_enum` to `print_lifecycle`, or the new predicate never evaluates during a host-side block. (That observer also carries no lifetime token - separate issue.) |
+> | `ui_emergency_stop.cpp:284-287` | **Lowest risk**, behaviour-neutral: the hand-OR is already `job_holds_machine` spelled out. Lets **two** ObserverGuards (`:188` enum + `:197` phase) collapse into one on the lifecycle. |
+> | `ui_job_queue_modal.cpp:388` | Real bug: the guard reads the wire, so a queue tap during a host-side block deletes the entry and then fails the start. Use `can_start_new_print()`, which also covers the `print_in_progress` axis. |
+> | `ui_panel_ams.cpp:268` | **The plan was wrong to list this as moving to an "active" predicate.** The comment at `:246-251` requires an edge into PRINTING *specifically* - a fault pauses the print, so `PAUSED -> PRINTING` IS the signal (#1185). It may only become `== PrintState::Printing`. |
+> | `ui_plr_offer_controller.cpp:86` | Move. Offering power-loss recovery on top of an in-flight start is a modal ambush. (`:161` is keep-raw - it mirrors a Klipper condition on `standby`.) |
+> | `print_start_navigation.cpp` | **Keep raw - re-verified.** The duplication is real, but the optimistic push lives in `ui_panel_print_select.cpp:2595,2907`, not `PrintStartController` as this plan said. |
+> | `printer_print_state.cpp:1240-1252` | **No longer a Phase 2 site.** `can_start_new_print()`'s `is_print_in_progress()` early-return already covers the whole Preparing window. A migration there is cosmetic. |
+>
+> **The exit criterion below is unachievable as written.** "`is_active_print_state()`
+> deleted or re-typed" cannot happen: `ui_plr_offer_controller` must move and
+> `print_start_navigation` must not, and they share the helper. Split them - leave
+> the helper for navigation, and have the PLR controller read the lifecycle direct.
+>
+> **Testing gap:** sites 2, 3, 4, 5 and 7 have NO test asserting Preparing-window
+> behaviour. `power_device_state` has no coverage of `effective == 2` at all.
+
+
 12 affordance sites (`print_control_view.cpp` - already partly done -
 `print_control_buttons.cpp:128,146`, `ui_ams_context_menu.cpp:219`,
 `ui_ams_sidebar.cpp:1060`, `ui_panel_filament.cpp:1876`, `ui_panel_power.cpp:233`,
