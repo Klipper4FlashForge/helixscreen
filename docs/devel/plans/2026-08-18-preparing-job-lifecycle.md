@@ -305,17 +305,36 @@ Incidental finding worth keeping: **a restart cannot reproduce the stale badge.*
 while `print_stats` already reads `complete` never sets it. Staging this bug
 requires either a real completion or a cancel while the app is running.
 
-### 2b. Cancelling during pre-print leaves the heaters on
+### 2. ~~Heaters left on, and `TimedOut` retiring silently~~ FIXED
 
-The cancel design says to "drop the heaters we requested". That is **not
-implemented**. `retire_preparing(Cancelled)` clears the job and the phase but sends
-nothing to the printer, so a cancel during a K2 mesh leaves the bed at its print
-temperature (105C for ASA) with no job and no UI indicating why it is hot.
+A pre-start block heats to print temperature, so cancelling a K2 mesh left the bed
+at its target with no job and nothing on screen explaining the heat. Observed twice
+on hardware; cleared manually both times.
 
-Deliberately not fixed blind: what to send is not obvious. `TURN_OFF_HEATERS` is the
-blunt answer but wrong if the user intends to restart immediately, and on some
-firmwares it interacts with a running macro. Needs a decision, and it is the kind of
-thing to confirm on hardware rather than reason about.
+The retirement reason now drives one decision,
+`decide_preparing_exit_action(PreparingExit)`:
+
+| Reason | Notify | Cool down |
+|---|---|---|
+| `Cancelled` | cancelled | yes |
+| `Failed`, `TimedOut` | failure | yes |
+| `Confirmed`, `Superseded` | no | **no** |
+
+`Superseded` not cooling down is the load-bearing case: another print is running and
+owns the printer, so dropping its heaters would sabotage it.
+
+Targets go through `TemperatureController` rather than a raw `TURN_OFF_HEATERS`,
+since it is the single authority for heater targets (lint-enforced). Klipper queues
+gcode behind a running macro, so the cooldown lands when the macro finishes - which
+is the correct moment anyway.
+
+This also closes the separate gap where `TimedOut` retired without telling anyone.
+The observer lives in `print_completion`, which already owns "the print ended, tell
+the user", and sees every retirement rather than only the cancel-button path.
+
+**Verified on the K2** 2026-08-19: heaters up at bed 50 / nozzle 140 with the phase
+advancing (3), cancel mid-mesh, and both targets fell to 0 with no manual
+intervention. `print_stats` still showed the previous job, so nothing printed.
 
 ### 3. The overlay debounce is designed, not built
 
@@ -361,8 +380,8 @@ Done: `PRINT_STATE_MACHINE.md`, `architecture/05-printer-state.md`,
    regression for externally started prints.
 3. **Implement the 750ms overlay debounce** (risk 3). `lv_timer_t`, so it must be
    cancelled in the destructor as well as `cleanup()` per CLAUDE.md rule 5.
-4. **Notify on `TimedOut`** (risk 2), and **decide what cancel does to the heaters**
-   (risk 2b).
+4. ~~Notify on `TimedOut`, decide what cancel does to the heaters~~ **done and
+   hardware-verified**.
 5. **Decide whether a failed pre-print notifies**, then migrate the three remaining
    trackers (risk 4).
 6. **Estimate ladder** (step 6) - one owner for "how long until printing starts?",
