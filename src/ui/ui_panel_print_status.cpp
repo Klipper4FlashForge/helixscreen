@@ -3069,6 +3069,13 @@ void PrintStatusPanel::on_print_start_phase_changed(int phase) {
     }
 
     if (preparing && !was_preparing_) {
+        // Tune/Timelapse enablement follows PrintState, so it has to be
+        // republished on the way IN to Preparing as well as on the way out.
+        // Without this it only happened to be right because a normal start
+        // navigates, and on_activate() republishes; Reprint leaves the panel
+        // already active, so Tune stayed greyed for the whole window.
+        update_button_states();
+
         // Idle→Preparing edge ONLY. The pre-print phase number changes many
         // times during one preparation, so these one-time resets must not
         // re-run on every sub-phase or the progress bar / elapsed flicker back
