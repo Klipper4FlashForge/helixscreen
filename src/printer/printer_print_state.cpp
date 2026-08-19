@@ -10,6 +10,7 @@
 #include "printer_print_state.h"
 
 #include "ui_filename_utils.h"
+#include "ui_timer_guard.h" // lv_timer_cancel_safe
 #include "ui_update_queue.h"
 
 #include "data_root_resolver.h"
@@ -1316,9 +1317,53 @@ void PrinterPrintState::begin_preparing(const PrintJobRef& job) {
     publish_lifecycle_state();
     update_display_message_visible();
 
+    // The preparing window IS what print_in_progress documents itself as - true
+    // from the start request until the print actually starts or fails. It used
+    // to be set by hand and cleared on eighteen separate exit paths in
+    // PrintPreparationManager; a missed path latched it true and
+    // can_start_new_print() then refused every later print for the session.
+    set_print_in_progress_internal(true);
+    arm_preparing_watchdog();
+
     // Published last: observers of the epoch read preparing_job() and the
     // cleared state, so everything they can see is already consistent.
     lv_subject_set_int(&preparing_epoch_, ++preparing_epoch_counter_);
+}
+
+PrinterPrintState::~PrinterPrintState() {
+    cancel_preparing_watchdog();
+}
+
+void PrinterPrintState::arm_preparing_watchdog() {
+    cancel_preparing_watchdog();
+    preparing_watchdog_ = lv_timer_create(preparing_watchdog_cb, PREPARING_WATCHDOG_MS, this);
+    if (preparing_watchdog_) {
+        lv_timer_set_repeat_count(preparing_watchdog_, 1); // one-shot
+    }
+}
+
+void PrinterPrintState::cancel_preparing_watchdog() {
+    if (!preparing_watchdog_) {
+        return;
+    }
+    // lv_timer_cancel_safe self-guards on lv_is_initialized() and neuters
+    // instead of unlinking, so this is safe from a destructor and from inside
+    // lv_timer_handler (#750/#751).
+    helix::ui::lv_timer_cancel_safe(preparing_watchdog_);
+    preparing_watchdog_ = nullptr;
+}
+
+void PrinterPrintState::preparing_watchdog_cb(lv_timer_t* timer) {
+    auto* self = static_cast<PrinterPrintState*>(lv_timer_get_user_data(timer));
+    if (!self) {
+        return;
+    }
+    // One-shot: LVGL deletes the timer after this returns, so drop our handle
+    // first rather than cancelling an object about to be freed.
+    self->preparing_watchdog_ = nullptr;
+    spdlog::warn("[PrinterPrintState] Preparing job '{}' never confirmed - timing out",
+                 self->preparing_job_.filename);
+    self->retire_preparing(PreparingExit::TimedOut);
 }
 
 void PrinterPrintState::retire_preparing(PreparingExit reason) {
@@ -1329,6 +1374,8 @@ void PrinterPrintState::retire_preparing(PreparingExit reason) {
                  preparing_exit_name(reason));
     preparing_job_ = {};
     last_preparing_exit_ = reason;
+    cancel_preparing_watchdog();
+    set_print_in_progress_internal(false);
 
     // Confirmed hands off to a real print, which owns the phase from here. Every
     // other reason means no print is coming, so the pre-print UI must come down.

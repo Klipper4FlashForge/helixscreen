@@ -46,7 +46,11 @@ namespace helix {
 class PrinterPrintState {
   public:
     PrinterPrintState();
-    ~PrinterPrintState() = default;
+    /// Defined in the .cpp so it cancels the preparing watchdog. CLAUDE.md
+    /// threading rule 5: a raw lv_timer_t cancelled in a teardown path must also
+    /// be cancelled in the destructor, or the timer stays armed on freed `this`
+    /// when StaticPanelRegistry::destroy_all() runs before lv_deinit().
+    ~PrinterPrintState();
 
     // Non-copyable
     PrinterPrintState(const PrinterPrintState&) = delete;
@@ -816,6 +820,23 @@ class PrinterPrintState {
 
     // Print workflow in-progress subject
     lv_subject_t print_in_progress_{};
+
+    /// Backstop for a preparing job the printer never acknowledges.
+    ///
+    /// `print_in_progress` is published from the preparing job, and
+    /// `can_start_new_print()` refuses while it is set - so without a bound, a
+    /// job that never confirms would lock out every later print for the rest of
+    /// the session. Armed by begin_preparing(), disarmed by retire_preparing().
+    lv_timer_t* preparing_watchdog_ = nullptr;
+
+    /// Half an hour. Must sit above the slowest legitimate pre-print: the K2
+    /// Plus runs ~1140s with a forced mesh, and PrintStartCollector uses the
+    /// same 1800s as its own "definitely stuck" ceiling.
+    static constexpr uint32_t PREPARING_WATCHDOG_MS = 1800U * 1000U;
+
+    void arm_preparing_watchdog();
+    void cancel_preparing_watchdog();
+    static void preparing_watchdog_cb(lv_timer_t* timer);
 
     // Pre-print duration prediction subjects
     lv_subject_t print_start_time_left_{};

@@ -619,29 +619,16 @@ void PrintPreparationManager::start_print(const std::string& filename,
     // Mark this as an in-app print for telemetry source tracking
     TelemetryManager::instance().notify_print_started_in_app();
 
-    // Prevent double-tap: reject if a print is already being started
-    // This uses PrinterState's flag which is also checked by can_start_new_print()
-    if (printer_state_ && printer_state_->is_print_in_progress()) {
-        spdlog::warn(
-            "[PrintPreparationManager] Ignoring duplicate print request - already in progress");
-        return;
-    }
-    if (printer_state_) {
-        printer_state_->set_print_in_progress(true);
-    }
+    // No double-tap guard here any more. The flag it used to read is now
+    // published by PrinterPrintState from the preparing job, and the caller arms
+    // that job immediately before calling us - so this check would only ever see
+    // the job it was just handed and would reject every print. The guard belongs
+    // at the arming site, and PrintStartController::start_now() already runs it
+    // (can_start_new_print(), before begin_preparing()).
 
-    // Wrap the completion callback to always clear the in-progress flag
-    // This ensures the flag is cleared whether print succeeds or fails
-    PrinterState* state_ptr = printer_state_;
-    PrintCompletionCallback wrapped_completion =
-        [state_ptr, on_completion](bool success, const std::string& error) {
-            if (state_ptr) {
-                state_ptr->set_print_in_progress(false);
-            }
-            if (on_completion) {
-                on_completion(success, error);
-            }
-        };
+    // The in-progress flag is published by PrinterPrintState from the preparing
+    // job itself, so there is no longer a wrapper clearing it on every exit.
+    PrintCompletionCallback wrapped_completion = on_completion;
 
     // Build full path for print
     std::string filename_to_print = current_path.empty() ? filename : current_path + "/" + filename;
@@ -1346,16 +1333,12 @@ void PrintPreparationManager::modify_and_print(
     NavigateToStatusCallback on_navigate_to_status) {
     if (!api_) {
         NOTIFY_ERROR(lv_tr("Cannot start print: not connected to printer"));
-        if (printer_state_)
-            printer_state_->set_print_in_progress(false);
         return;
     }
 
     if (!cached_scan_result_.has_value()) {
         spdlog::error("[PrintPreparationManager] modify_and_print called without scan result");
         NOTIFY_ERROR(lv_tr("Internal error: no scan result"));
-        if (printer_state_)
-            printer_state_->set_print_in_progress(false);
         return;
     }
 
@@ -1406,8 +1389,6 @@ void PrintPreparationManager::modify_and_print_streaming(
     // Validate scan_result before proceeding (SERIOUS-3 fix)
     if (!scan_result.has_value()) {
         NOTIFY_ERROR(lv_tr("Cannot modify G-code: scan result not available"));
-        if (printer_state_)
-            printer_state_->set_print_in_progress(false);
         return;
     }
 
@@ -1415,8 +1396,6 @@ void PrintPreparationManager::modify_and_print_streaming(
     std::string temp_dir = get_temp_directory();
     if (temp_dir.empty()) {
         NOTIFY_ERROR(lv_tr("Cannot modify G-code: no temp directory available"));
-        if (printer_state_)
-            printer_state_->set_print_in_progress(false);
         return;
     }
 
@@ -1488,10 +1467,7 @@ void PrintPreparationManager::modify_and_print_streaming(
             if (!result.success) {
                 NOTIFY_ERROR(lv_tr("Failed to modify G-code: {}"), result.error_message);
                 // Defer this-> access to main thread.
-                token.defer("PrintPreparationManager::modify_fail_clear_progress", [this]() {
-                    if (printer_state_)
-                        printer_state_->set_print_in_progress(false);
-                });
+                token.defer("PrintPreparationManager::modify_fail_clear_progress", [this]() {});
                 return;
             }
 
@@ -1554,11 +1530,7 @@ void PrintPreparationManager::modify_and_print_streaming(
                                     // start_print success cb fires on HTTP bg.
                                     token.defer(
                                         "PrintPreparationManager::print_success_clear_progress",
-                                        [this]() {
-                                            if (printer_state_) {
-                                                printer_state_->set_print_in_progress(false);
-                                            }
-                                        });
+                                        [this]() {});
 
                                     // Defer LVGL operations to main thread
                                     struct PrintStartedData {
@@ -1606,9 +1578,6 @@ void PrintPreparationManager::modify_and_print_streaming(
                                     token.defer(
                                         "PrintPreparationManager::start_print_error_cleanup",
                                         [this, remote_temp_path]() {
-                                            if (printer_state_) {
-                                                printer_state_->set_print_in_progress(false);
-                                            }
                                             // Clean up remote temp file on failure
                                             // Moonraker's delete_file requires full path
                                             // including root
@@ -1664,10 +1633,7 @@ void PrintPreparationManager::modify_and_print_streaming(
                                            error.message);
                         // L081 Mechanism C: printer_state_ is a this->member.
                         token.defer("PrintPreparationManager::upload_fail_clear_progress",
-                                    [this]() {
-                                        if (printer_state_)
-                                            printer_state_->set_print_in_progress(false);
-                                    });
+                                    [this]() {});
                     },
                     // Upload progress callback
                     [](size_t sent, size_t total) {
@@ -1698,10 +1664,7 @@ void PrintPreparationManager::modify_and_print_streaming(
             LOG_ERROR_INTERNAL("[PrintPreparationManager] Download failed for {}: {}", file_path,
                                error.message);
             // L081 Mechanism C: printer_state_ is a this->member.
-            token.defer("PrintPreparationManager::download_fail_clear_progress", [this]() {
-                if (printer_state_)
-                    printer_state_->set_print_in_progress(false);
-            });
+            token.defer("PrintPreparationManager::download_fail_clear_progress", [this]() {});
         },
         // Download progress callback
         download_progress);
@@ -1721,16 +1684,11 @@ void PrintPreparationManager::modify_and_print_with_remap(
     std::string display_filename =
         (last_slash != std::string::npos) ? file_path.substr(last_slash + 1) : file_path;
 
-    if (printer_state_)
-        printer_state_->set_print_in_progress(true);
-
     auto token = lifetime_.token();
 
     std::string temp_dir = get_temp_directory();
     if (temp_dir.empty()) {
         NOTIFY_ERROR(lv_tr("Cannot remap G-code: no temp directory available"));
-        if (printer_state_)
-            printer_state_->set_print_in_progress(false);
         return;
     }
 
@@ -1780,11 +1738,8 @@ void PrintPreparationManager::modify_and_print_with_remap(
             if (content.empty()) {
                 std::filesystem::remove(local_download_path, ec);
                 NOTIFY_ERROR(lv_tr("Failed to read G-code for remap"));
-                token.defer("PrintPreparationManager::remap_read_fail", [this]() {
-                    BusyOverlay::hide();
-                    if (printer_state_)
-                        printer_state_->set_print_in_progress(false);
-                });
+                token.defer("PrintPreparationManager::remap_read_fail",
+                            [this]() { BusyOverlay::hide(); });
                 return;
             }
 
@@ -1801,12 +1756,11 @@ void PrintPreparationManager::modify_and_print_with_remap(
                 token.defer("PrintPreparationManager::remap_identity_start",
                             [this, file_path, on_navigate_to_status]() {
                                 BusyOverlay::hide();
-                                start_print_directly(
-                                    file_path, on_navigate_to_status,
-                                    [this](bool success, const std::string& /*error*/) {
-                                        if (!success && printer_state_)
-                                            printer_state_->set_print_in_progress(false);
-                                    });
+                                // No completion callback: its only job was to
+                                // clear print_in_progress on failure, and that
+                                // flag is now published by PrinterPrintState
+                                // from the preparing job itself.
+                                start_print_directly(file_path, on_navigate_to_status, nullptr);
                             });
                 return;
             }
@@ -1826,11 +1780,8 @@ void PrintPreparationManager::modify_and_print_with_remap(
 
             if (!result.success) {
                 NOTIFY_ERROR(lv_tr("Failed to remap G-code: {}"), result.error_message);
-                token.defer("PrintPreparationManager::remap_apply_fail", [this]() {
-                    BusyOverlay::hide();
-                    if (printer_state_)
-                        printer_state_->set_print_in_progress(false);
-                });
+                token.defer("PrintPreparationManager::remap_apply_fail",
+                            [this]() { BusyOverlay::hide(); });
                 return;
             }
 
@@ -1873,11 +1824,8 @@ void PrintPreparationManager::modify_and_print_with_remap(
                                     spdlog::info("[PrintPreparationManager] Remapped print "
                                                  "started (original: {})",
                                                  display_filename);
-                                    token.defer(
-                                        "PrintPreparationManager::remap_success_clear", [this]() {
-                                            if (printer_state_)
-                                                printer_state_->set_print_in_progress(false);
-                                        });
+                                    token.defer("PrintPreparationManager::remap_success_clear",
+                                                [this]() {});
 
                                     struct PrintStartedData {
                                         std::string display_filename;
@@ -1910,8 +1858,6 @@ void PrintPreparationManager::modify_and_print_with_remap(
                                     token.defer(
                                         "PrintPreparationManager::remap_start_error_cleanup",
                                         [this, remote_temp_path]() {
-                                            if (printer_state_)
-                                                printer_state_->set_print_in_progress(false);
                                             std::string full_path = "gcodes/" + remote_temp_path;
                                             api_->files().delete_file(
                                                 full_path, []() {},
@@ -1943,10 +1889,8 @@ void PrintPreparationManager::modify_and_print_with_remap(
                         NOTIFY_ERROR(lv_tr("Failed to upload remapped G-code: {}"), error.message);
                         LOG_ERROR_INTERNAL("[PrintPreparationManager] Remap upload failed: {}",
                                            error.message);
-                        token.defer("PrintPreparationManager::remap_upload_fail_clear", [this]() {
-                            if (printer_state_)
-                                printer_state_->set_print_in_progress(false);
-                        });
+                        token.defer("PrintPreparationManager::remap_upload_fail_clear",
+                                    [this]() {});
                     },
                     // Upload progress callback
                     [](size_t sent, size_t total) {
@@ -1972,10 +1916,7 @@ void PrintPreparationManager::modify_and_print_with_remap(
             NOTIFY_ERROR(lv_tr("Failed to download G-code for remap: {}"), error.message);
             LOG_ERROR_INTERNAL("[PrintPreparationManager] Remap download failed for {}: {}",
                                file_path, error.message);
-            token.defer("PrintPreparationManager::remap_download_fail_clear", [this]() {
-                if (printer_state_)
-                    printer_state_->set_print_in_progress(false);
-            });
+            token.defer("PrintPreparationManager::remap_download_fail_clear", [this]() {});
         },
         download_progress);
 }

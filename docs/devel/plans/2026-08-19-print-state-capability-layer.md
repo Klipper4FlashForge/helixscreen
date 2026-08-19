@@ -196,12 +196,43 @@ scope, and Phases 1-4 depend on the published subject being trustworthy.
 
 Two jobs:
 
-**0a. `print_in_progress` becomes derived.** Today `PrintPreparationManager` sets
-it true once and clears it on ten-plus exit paths; a missed path leaves it stuck
-true. Publish it from the preparing job instead - `begin_preparing()` raises it,
-`retire_preparing()` lowers it, no matter which exit reason. Delete the manual
-`set_print_in_progress()` calls. Keep the subject and its accessor: readers and
+**0a. `print_in_progress` becomes derived.** `PrintPreparationManager` set it
+true at two entry points and cleared it on **eighteen** exit paths; a missed path
+left it stuck true and `can_start_new_print()` then refused every later print for
+the rest of the session. It is now published from the preparing job -
+`begin_preparing()` raises it, `retire_preparing()` lowers it whatever the exit
+reason. All 20 manual calls deleted. The subject and accessor stay: readers and
 XML depend on the boolean existing.
+
+Two things found while doing it:
+
+- **This closes a double-tap hole.** The old clear ran from a `wrapped_completion`
+  that fired when the start RPC was *accepted*, which is before `print_stats`
+  reports the job. In that gap `print_in_progress` was already false while the
+  job state was still STANDBY, so `can_start_new_print()` returned true and a
+  second tap could start another print. Deriving it holds the flag until the
+  printer confirms.
+
+- **The double-tap guard was in the wrong layer.** `start_print()` opened with
+  *"reject if a print is already being started"*, reading the very flag the
+  caller had just set - `PrintStartController::start_now()` arms the preparing
+  job and then calls `start_print()` eleven lines later. Once the flag became
+  derived, that guard rejected **every** print as a duplicate.
+  `test_pre_start_timeout_gate.cpp:234` caught it. The guard is deleted: the
+  controller already runs `can_start_new_print()` *before* arming, which is the
+  correct place for it. Worth remembering as a general hazard of this refactor -
+  **a guard that reads a flag its own caller sets is invisible until the flag
+  changes owner.**
+
+- **`PreparingExit::TimedOut` was dead.** It is handled everywhere - cooldown,
+  notification, `decide_preparing_exit_action()` - but *nothing ever produced
+  it*. That was survivable while the flag cleared on RPC-accept; once the flag is
+  derived, a job the printer never acknowledges would latch it true forever.
+  `begin_preparing()` now arms a one-shot watchdog (`PREPARING_WATCHDOG_MS`,
+  1800s - above the K2's ~1140s worst case, matching `PrintStartCollector`'s own
+  "definitely stuck" ceiling) and `retire_preparing()` disarms it. Cancelled in
+  the destructor too, per CLAUDE.md threading rule 5. Test hook:
+  `PrinterPrintStateTestAccess::fire_preparing_watchdog()`.
 
 **0b. Collapse the panel's second state machine.** `PrintStatusPanel` owns a
 private `PrintLifecycleState lifecycle_` fed by its own
@@ -214,12 +245,14 @@ Panel `PrintState` call sites to re-point: `ui_panel_print_status.cpp:1139-1140`
 `:1689`, `:2707-2709`, `:2827`, `:2879`, `:3155`, `:3176`, `:3717`.
 
 **Exit criteria**
-- [ ] `set_print_in_progress()` has no callers outside `PrinterPrintState`.
-- [ ] `print_in_progress` is true for exactly the interval
+- [x] `set_print_in_progress()` has no callers outside `PrinterPrintState`.
+- [x] `print_in_progress` is true for exactly the interval
       `begin_preparing()` -> `retire_preparing()`, proven by a test per exit
       reason (Confirmed, Superseded, Failed, Cancelled, TimedOut).
+- [x] A preparing job that never confirms is retired as `TimedOut` rather than
+      latching the flag.
 - [ ] `PrintStatusPanel` holds no `PrintLifecycleState` member; its state comes
-      from the `print_lifecycle` subject.
+      from the `print_lifecycle` subject. **(0b - not started)**
 - [ ] Full suite green (95/95 shards).
 
 **Watch for:** a stuck-true `print_in_progress` is the failure mode being fixed,

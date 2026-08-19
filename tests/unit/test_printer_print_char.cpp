@@ -2055,3 +2055,109 @@ TEST_CASE("print_lifecycle publishes the previous state alongside the current on
         REQUIRE(prev() == PrintState::Printing);
     }
 }
+
+// ============================================================================
+// The preparing window has one owner
+//
+// `print_in_progress` documents itself as "true from when start_print() is
+// called until the print actually starts or fails" - the preparing window,
+// exactly. It used to be set by hand from PrintPreparationManager and cleared on
+// eighteen separate exit paths, so a missed path left it stuck true and
+// can_start_new_print() refused every subsequent print for the rest of the
+// session. It is now published from the preparing job itself.
+// ============================================================================
+
+namespace {
+
+/// Fresh PrinterState with subjects up, matching this file's convention.
+PrinterState& fresh_state() {
+    lv_init_safe();
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+    return state;
+}
+
+} // namespace
+
+TEST_CASE("print_in_progress follows the preparing job", "[print][preparing]") {
+    PrinterState& state = fresh_state();
+    lv_subject_t* subj = state.get_print_in_progress_subject();
+
+    REQUIRE(lv_subject_get_int(subj) == 0);
+
+    state.begin_preparing(helix::PrintJobRef{"job.gcode", "", ""});
+    REQUIRE(lv_subject_get_int(subj) == 1);
+    REQUIRE(state.is_print_in_progress());
+
+    state.retire_preparing(helix::PreparingExit::Confirmed);
+    REQUIRE(lv_subject_get_int(subj) == 0);
+    REQUIRE_FALSE(state.is_print_in_progress());
+}
+
+TEST_CASE("every preparing exit reason clears print_in_progress", "[print][preparing]") {
+    // The stuck-true failure mode is what this replaces, so assert the FALSE
+    // edge on every reason rather than just the happy path.
+    PrinterState& state = fresh_state();
+    lv_subject_t* subj = state.get_print_in_progress_subject();
+
+    for (auto reason : {helix::PreparingExit::Confirmed, helix::PreparingExit::Superseded,
+                        helix::PreparingExit::Failed, helix::PreparingExit::Cancelled,
+                        helix::PreparingExit::TimedOut}) {
+        state.begin_preparing(helix::PrintJobRef{"job.gcode", "", ""});
+        REQUIRE(lv_subject_get_int(subj) == 1);
+        state.retire_preparing(reason);
+        INFO("exit reason: " << helix::preparing_exit_name(reason));
+        REQUIRE(lv_subject_get_int(subj) == 0);
+    }
+}
+
+TEST_CASE("a preparing job blocks a second start until it retires", "[print][preparing]") {
+    // Deriving the flag closes a real gap. It used to clear when the start RPC
+    // was ACCEPTED, which is before print_stats reports the job - so for that
+    // window can_start_new_print() said yes while a print was already committed,
+    // and a double tap could start a second one.
+    PrinterState& state = fresh_state();
+    auto& pps = PrinterStateTestAccess::get_print_state(state);
+
+    REQUIRE(pps.can_start_new_print());
+
+    state.begin_preparing(helix::PrintJobRef{"job.gcode", "", ""});
+    REQUIRE_FALSE(pps.can_start_new_print());
+
+    state.retire_preparing(helix::PreparingExit::Failed);
+    REQUIRE(pps.can_start_new_print());
+}
+
+TEST_CASE("a preparing job that never confirms times out", "[print][preparing]") {
+    // Without this the derived flag would be a one-way latch: a job the printer
+    // never acknowledges would leave print_in_progress true forever and the user
+    // could not start another print until the app restarted. PreparingExit::
+    // TimedOut existed and was handled everywhere, but nothing ever produced it.
+    PrinterState& state = fresh_state();
+    auto& pps = PrinterStateTestAccess::get_print_state(state);
+
+    state.begin_preparing(helix::PrintJobRef{"job.gcode", "", ""});
+    REQUIRE(helix::PrinterPrintStateTestAccess::has_preparing_watchdog(pps));
+
+    REQUIRE(helix::PrinterPrintStateTestAccess::fire_preparing_watchdog(pps));
+
+    REQUIRE_FALSE(pps.has_preparing_job());
+    REQUIRE(pps.last_preparing_exit() == helix::PreparingExit::TimedOut);
+    REQUIRE(lv_subject_get_int(state.get_print_in_progress_subject()) == 0);
+    REQUIRE(pps.can_start_new_print());
+}
+
+TEST_CASE("retiring a preparing job disarms its watchdog", "[print][preparing]") {
+    // Otherwise a confirmed print would be retired a second time, half an hour
+    // in, as a timeout - cooling the heaters mid-print.
+    PrinterState& state = fresh_state();
+    auto& pps = PrinterStateTestAccess::get_print_state(state);
+
+    state.begin_preparing(helix::PrintJobRef{"job.gcode", "", ""});
+    state.retire_preparing(helix::PreparingExit::Confirmed);
+
+    REQUIRE_FALSE(helix::PrinterPrintStateTestAccess::has_preparing_watchdog(pps));
+    REQUIRE_FALSE(helix::PrinterPrintStateTestAccess::fire_preparing_watchdog(pps));
+    REQUIRE(pps.last_preparing_exit() == helix::PreparingExit::Confirmed);
+}

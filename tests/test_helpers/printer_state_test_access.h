@@ -38,6 +38,25 @@ class PrinterPrintStateTestAccess {
         // live preparing job into the next test, where it relaxes the
         // phase-update guard and the print_active safety reset.
         pps.preparing_job_ = {};
+        pps.cancel_preparing_watchdog();
+    }
+
+    /// Fire the preparing-job watchdog as if its timer had elapsed.
+    ///
+    /// The real bound is half an hour - longer than the slowest legitimate
+    /// pre-print - so no test can wait for it. Mirrors
+    /// ActivePrintMediaManagerTestAccess::fire_pending_retry().
+    static bool fire_preparing_watchdog(PrinterPrintState& pps) {
+        if (!pps.preparing_watchdog_) {
+            return false;
+        }
+        pps.cancel_preparing_watchdog();
+        pps.retire_preparing(PreparingExit::TimedOut);
+        return true;
+    }
+
+    static bool has_preparing_watchdog(const PrinterPrintState& pps) {
+        return pps.preparing_watchdog_ != nullptr;
     }
 
     /// Mark the layer counters as coming from real slicer/Moonraker fields
