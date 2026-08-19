@@ -451,7 +451,20 @@ void PrintStartController::initiate_reprint(const std::string& filename, const s
     // spurious-feed fix. On native-send error the modal is shown and on_error runs.
     AmsBackend* backend = AmsState::instance().get_backend();
     if (backend && backend->requires_preprint_send()) {
-        send_snapmaker_preprint_then(tools_used, /*remap=*/{}, start, on_error);
+        // The abort path has to retire the job this function armed above.
+        // execute_print_start() avoids the problem by arming INSIDE its
+        // success-only lambda; reprint arms before the pre-send because the
+        // pre-send is itself part of the window. Handing on_error straight
+        // through would leave the job armed on a rejected pre-send, and
+        // print_in_progress is published from it - so can_start_new_print()
+        // would refuse every later print until the watchdog fired.
+        auto abort = [this, on_error]() {
+            printer_state_.retire_preparing(helix::PreparingExit::Failed);
+            if (on_error) {
+                on_error();
+            }
+        };
+        send_snapmaker_preprint_then(tools_used, /*remap=*/{}, start, abort);
         return; // start fires from the send continuation — do NOT also start here
     }
 
