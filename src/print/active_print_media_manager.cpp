@@ -109,7 +109,14 @@ ActivePrintMediaManager::ActivePrintMediaManager(PrinterState& printer_state)
                 // after the incoming filename had already been resolved and
                 // wipe it. Whatever the printer reports next repopulates them.
                 self->release_identity();
+                return;
             }
+            // Confirmed. The commit-time load may have run before Moonraker had
+            // the file - the longer the pre-start block, the likelier - and
+            // nothing else refunds its retry budget: process_filename() will
+            // early-return from here on, because the effective filename has not
+            // changed. Give it one fresh ladder now that the file must exist.
+            self->rearm_media_if_incomplete();
         },
         printer_state_.get_subjects_lifetime());
 
@@ -135,9 +142,18 @@ void ActivePrintMediaManager::set_api(IMoonrakerAPI* api) {
 }
 
 void ActivePrintMediaManager::set_thumbnail_source(const std::string& original_filename) {
-    thumbnail_source_filename_ = original_filename;
+    // Resolve first. The override exists to display the ORIGINAL name rather
+    // than the rewritten one Moonraker reports, and a caller can hand us the
+    // rewritten name directly - Reprint does, because it replays whatever
+    // print_stats last said, which for a modified print is
+    // `.helix_temp/modified_<ts>_orig.gcode`. Storing that raw would also
+    // suppress process_filename()'s own auto-resolve, which is guarded on this
+    // field being empty, and the panel would show `modified_1748..._orig`.
+    // Resolving is identity for a name that is already clean.
+    thumbnail_source_filename_ =
+        original_filename.empty() ? original_filename : resolve_gcode_filename(original_filename);
     spdlog::debug("[ActivePrintMediaManager] Thumbnail source set to: {}",
-                  original_filename.empty() ? "(cleared)" : original_filename);
+                  thumbnail_source_filename_.empty() ? "(cleared)" : thumbnail_source_filename_);
 
     // If we have a current print filename, re-process it with the new source
     const char* current = lv_subject_get_string(printer_state_.get_print_filename_subject());
@@ -393,9 +409,23 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                                           }
                                       });
                         },
-                        [](const MoonrakerError& err) {
-                            spdlog::debug("[ActivePrintMediaManager] Gcode header fetch failed: {}",
-                                          err.message);
+                        [this, tok = lifetime_.token(), ctx, filename](const MoonrakerError& err) {
+                            // Reaching here means metadata came back without a
+                            // layer count and the header scan also failed, so
+                            // nothing has set layer_total. Without a retry this
+                            // print shows layers 0/0 for its entire duration.
+                            std::string message = err.message;
+                            tok.defer("ActivePrintMediaManager::on_gcode_header_error",
+                                      [this, ctx, filename, message = std::move(message)]() {
+                                          if (!ctx.is_valid()) {
+                                              return; // superseded by a newer load
+                                          }
+                                          spdlog::warn(
+                                              "[ActivePrintMediaManager] Gcode header fetch "
+                                              "failed for '{}': {}",
+                                              filename, message);
+                                          schedule_thumbnail_retry(filename);
+                                      });
                         });
                 }
 
@@ -659,6 +689,25 @@ void ActivePrintMediaManager::schedule_thumbnail_retry(const std::string& filena
     spdlog::info("[ActivePrintMediaManager] Scheduling thumbnail retry for '{}' in {} ms "
                  "(attempt {}/{})",
                  filename, delay, thumbnail_retry_count_ + 1, max_retries + 1);
+}
+
+void ActivePrintMediaManager::rearm_media_if_incomplete() {
+    if (last_effective_filename_.empty() || !api_) {
+        return;
+    }
+    const bool have_layers = lv_subject_get_int(printer_state_.get_print_layer_total_subject()) > 0;
+    const bool have_thumbnail = thumbnail_origin_ == ThumbnailOrigin::Fetched ||
+                                thumbnail_origin_ == ThumbnailOrigin::PreSet;
+    if (have_layers && have_thumbnail) {
+        return; // nothing missing
+    }
+
+    spdlog::info("[ActivePrintMediaManager] Print confirmed with incomplete media "
+                 "(layers={}, thumbnail={}) - re-arming load for '{}'",
+                 have_layers, have_thumbnail, last_effective_filename_);
+    cancel_thumbnail_retry();
+    thumbnail_retry_count_ = 0;
+    load_thumbnail_for_file(last_effective_filename_);
 }
 
 void ActivePrintMediaManager::cancel_thumbnail_retry() {

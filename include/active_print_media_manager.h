@@ -157,6 +157,16 @@ class ActivePrintMediaManager {
                                   int max_retries = MAX_THUMBNAIL_ATTEMPTS - 1);
     /// Cancel any pending retry timer and clear retry bookkeeping filename.
     void cancel_thumbnail_retry();
+
+    /**
+     * @brief Give the media load a fresh retry budget when the print starts
+     *
+     * The commit-time attempt can run before Moonraker has scanned the file.
+     * Its failures consume the bounded retry ladder, and no other path refunds
+     * it, so without this a job whose pre-start block outlasts the ladder shows
+     * layers 0/0 for its entire duration.
+     */
+    void rearm_media_if_incomplete();
     /// Body of the retry timer: re-validates filename + generation, then reloads.
     void on_retry_timer_fired();
     static void retry_timer_cb(lv_timer_t* timer);
