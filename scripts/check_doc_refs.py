@@ -44,8 +44,26 @@ import sys
 SKIP_DIRS = {'.git', '.worktrees', 'build', 'node_modules', '.venv', 'venv'}
 
 # Paths that are intentionally absent from a clean checkout.
+# NOTE: a developer machine has a built, patched tree, so these all resolve
+# locally and only ever fail in CI - which checks out clean and does not build.
+# That asymmetry is why main went red here for a day and a half without anyone
+# reproducing it. Add to this list rather than rewording a doc: the citations
+# are correct, the files simply do not exist yet at check time.
 EXEMPT_SUBSTRINGS = (
     'superpowers/',        # docs/superpowers/ specs are gitignored, local-only
+    # Written at runtime.
+    'settings-test.json',  # seeded by --test
+    'config/settings.json',
+    # Created by `make apply-patches` (patches/libhv-dns-resolver-fallback.patch).
+    'dns_resolv.',
+    # Build outputs.
+    'compile_commands.json',
+    'build/generated/',    # helix_git_hash.h and friends
+    'MANIFEST.txt',        # written by genPackagingManifest at assets-build time
+    # libhv installs its public headers into include/hv/ during its own build.
+    'libhv/include/',
+    'hv/requests.h',
+    'hv/hlog.h',
 )
 
 # Tokens that are obviously placeholders rather than real paths.
@@ -293,32 +311,64 @@ def main():
         problems = check_refs(targets, repo_files(), devel=devel)
         link_problems = check_links(targets)
         skipped = uninitialized_submodules()
-        if (problems or link_problems) and skipped:
-            # Cannot distinguish "stale reference" from "lives in a submodule that is not
-            # checked out", so do not fail the build on a guess. Developer pre-commit runs
-            # have submodules populated and enforce strictly.
+
+        def under_missing_submodule(ref):
+            return any(ref == s or ref.startswith(s.rstrip('/') + '/') for s in skipped)
+
+        def unverifiable(ref):
+            """True when a missing submodule could plausibly explain this ref.
+
+            This used to be all-or-nothing: one unpopulated submodule suppressed
+            every problem in the run, so in CI - where the shell-test job checks
+            out no submodules - the gate could not fail at all, and
+            tests/shell/test_doc_refs_gate.bats asserting exit 1 failed instead.
+            Attribute per ref: a path under a missing submodule is genuinely
+            unverifiable, and so is a bare basename (CLAUDE.md's patch workflow
+            cites lv_sdl_window.c with no directory, and we cannot know where it
+            lives without the checkout). Anything else names a directory we do
+            have, so a miss there is a real stale reference.
+            """
+            if not skipped:
+                return False
+            if '/' not in ref:
+                return True
+            return under_missing_submodule(ref)
+
+        # Markdown links resolve against the citing doc's own directory, so a
+        # missing submodule cannot explain a bare `nope.md` the way it can
+        # explain a bare `lv_sdl_window.c`. Links only get the path-prefix
+        # allowance - otherwise the gate would go quiet on genuinely dead links
+        # in exactly the CI job that has no submodules.
+        def link_unverifiable(ref):
+            return bool(skipped) and under_missing_submodule(ref)
+
+        unverified = ([x for x in problems if unverifiable(x[2])]
+                      + [x for x in link_problems if link_unverifiable(x[2])])
+        problems = [x for x in problems if not unverifiable(x[2])]
+        link_problems = [x for x in link_problems if not link_unverifiable(x[2])]
+
+        if unverified:
             print('⚠️  Doc references unverifiable — submodule(s) not checked out: %s'
                   % ', '.join(skipped))
-            for target, line, ref in problems + link_problems:
+            for target, line, ref in unverified:
                 print('   %s:%d: `%s`' % (target, line, ref))
             print('   Run locally with submodules populated to check these strictly.')
+        if problems:
+            print('❌ Doc references that do not resolve:')
+            for target, line, ref in problems:
+                print('   %s:%d: `%s`' % (target, line, ref))
+            print('   Fix the path, or use a <placeholder> if it is illustrative.')
+            exit_code = 1
         else:
-            if problems:
-                print('❌ Doc references that do not resolve:')
-                for target, line, ref in problems:
-                    print('   %s:%d: `%s`' % (target, line, ref))
-                print('   Fix the path, or use a <placeholder> if it is illustrative.')
-                exit_code = 1
-            else:
-                print('✅ Doc references: all resolve (%d files scanned)' % len(targets))
-            if link_problems:
-                print('❌ Doc links that do not resolve:')
-                for target, line, ref in link_problems:
-                    print('   %s:%d: `%s`' % (target, line, ref))
-                print('   Fix the target, or use a full URL if it is not in-tree.')
-                exit_code = 1
-            else:
-                print('✅ Doc links: all resolve (%d files scanned)' % len(targets))
+            print('✅ Doc references: all resolve (%d files scanned)' % len(targets))
+        if link_problems:
+            print('❌ Doc links that do not resolve:')
+            for target, line, ref in link_problems:
+                print('   %s:%d: `%s`' % (target, line, ref))
+            print('   Fix the target, or use a full URL if it is not in-tree.')
+            exit_code = 1
+        else:
+            print('✅ Doc links: all resolve (%d files scanned)' % len(targets))
 
     if do_index:
         unindexed, present = check_index()

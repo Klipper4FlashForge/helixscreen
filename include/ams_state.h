@@ -496,7 +496,9 @@ class AmsState {
 
     /**
      * @brief Get toolchange text subject ("2 / 5" formatted)
-     * 1-based display: current_toolchange+1 of number_of_toolchanges.
+     * 1-based display: current_toolchange+1 of number_of_toolchanges, clamped to
+     * the total. The +1 lives in the UI formatter, so every backend must have
+     * already normalized its firmware counter to a 0-based index (-1 = none yet).
      * Empty string when not applicable.
      */
     lv_subject_t* get_toolchange_text_subject() {
