@@ -9,6 +9,7 @@
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
 #include "ui_icon.h"
+#include "ui_manual_pull_prompt.h"
 #include "ui_nav_manager.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_ams.h"
@@ -1159,7 +1160,16 @@ void FilamentPanel::op_succeeded(FilamentOp op) {
     // checkmark lands on top of the error toast.
     if (op_aborted_ && *op_aborted_ == op) {
         op_aborted_.reset();
+        if (op == FilamentOp::Unload) {
+            helix::ui::disarm_manual_pull_prompt();
+        }
         return;
+    }
+    if (op == FilamentOp::Unload) {
+        // No-op unless execute_unload armed it, and unless the toolhead sensor
+        // stayed silent — a printer with one has already prompted, at the earlier
+        // and truer moment the filament actually cleared the gears.
+        helix::ui::manual_pull_unload_finished();
     }
     op_showing_busy_.reset();
     // Instant-completing ops (mock gcode fires success synchronously; fast real
@@ -1179,6 +1189,11 @@ void FilamentPanel::op_succeeded(FilamentOp op) {
 }
 
 void FilamentPanel::op_failed(FilamentOp op) {
+    if (op == FilamentOp::Unload) {
+        // A refused or timed-out unload must not leave the prompt armed to fire
+        // on some later unrelated sensor edge.
+        helix::ui::disarm_manual_pull_prompt();
+    }
     op_showing_busy_.reset();
     cancel_op_revert_timer(); // also clears any pending min-spinner delay
     set_op_state(op, 0);      // back to idle; the error/timeout toast still fires
@@ -1254,7 +1269,9 @@ void FilamentPanel::handle_load_button() {
         // AmsSubscriptionBackend::ensure_homed_then() right before the tier-1
         // dispatch (unchanged) -- only the confirmation moves earlier, so a
         // decline never wastes a preheat cycle (#1235-adjacent).
-        if (!helix::toolhead_is_homed(printer_state_)) {
+        AmsBackend* delegating_backend = AmsState::instance().get_backend();
+        if (!helix::toolhead_is_homed(printer_state_) &&
+            !(delegating_backend && delegating_backend->delegates_homing_to_printer())) {
             spdlog::info("[{}] Toolhead not homed -- asking before starting preheat for load",
                          get_name());
             // FilamentPanel is an immortal singleton [L012] -- capturing
@@ -1869,9 +1886,18 @@ void FilamentPanel::update_filament_op_buttons() {
     helix::ui::OpButtonState state;
     state.print_blocks_op = print_blocks_op;
     state.system_busy = sys.is_busy();
+    // unload_target_is_loaded() with is_current_slot=false keeps the narrow
+    // per-slot rule this gating has always used for lanes (the recovery arm
+    // belongs to the runout dialog, not to a resting panel) while routing the
+    // bypass sentinel to the toolhead-wide flag — the only signal that can
+    // answer for a spool with no lane behind it.
+    state.slot_is_loaded = helix::ui::unload_target_is_loaded(
+        slot, backend->slot_is_actively_loaded(slot), backend->slot_has_filament_at_toolhead(slot),
+        /*is_current_slot=*/false, sys.filament_loaded);
     if (slot >= 0) {
-        state.slot_is_loaded =
-            backend->slot_is_actively_loaded(slot) || backend->slot_has_filament_at_toolhead(slot);
+        // Bypass deliberately skipped: there is no lane whose presence sensor
+        // could answer, and slot_presence()'s nullopt ("unanswerable") is what
+        // keeps Load reachable so the user can feed the next external spool.
         state.slot_has_filament = helix::ui::slot_presence(backend->get_slot_info(slot));
     }
     // Unload/Purge act on whatever is at the toolhead for this slot, and the
@@ -2750,15 +2776,24 @@ void FilamentPanel::execute_unload() {
         // Only `present` matters to plan_unload; the remaining caps answer the
         // load-vs-swap question, which unload does not ask.
         caps.present = true;
-        loaded = slot >= 0 && helix::ui::unload_target_is_loaded(
-                                  backend->slot_is_actively_loaded(slot),
-                                  backend->slot_has_filament_at_toolhead(slot),
-                                  backend->get_system_info().current_slot == slot);
+        const AmsSystemInfo sys = backend->get_system_info();
+        loaded = helix::ui::unload_target_is_loaded(slot, backend->slot_is_actively_loaded(slot),
+                                                    backend->slot_has_filament_at_toolhead(slot),
+                                                    sys.current_slot == slot, sys.filament_loaded);
     }
 
     const auto& info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
     const helix::ui::FilamentOpPlan plan =
         helix::ui::plan_unload(caps, slot, loaded, !info.is_empty());
+
+    // Nothing reels a bypass spool (or a backend-less printer's spool) back down
+    // a lane, so the user has to finish the job by hand. Armed before dispatch so
+    // the toolhead sensor's clear edge is already being watched when the retract
+    // starts; op_succeeded/op_failed close it out for every tier below.
+    if (plan.tier != helix::ui::FilamentTier::Refused &&
+        helix::ui::unload_needs_manual_pull(backend != nullptr, slot)) {
+        helix::ui::arm_manual_pull_prompt();
+    }
 
     switch (plan.tier) {
     case helix::ui::FilamentTier::AmsBackend: {

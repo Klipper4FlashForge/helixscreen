@@ -21,6 +21,7 @@ translations:
   '%zu changes': '%zu изменений'
   '%zu events queued': '%zu событий в очереди'
   '%zu plugins failed to load': Не удалось загрузить %zu плагинов
+  (different grade): ''
   (incompatible): (несовместимо)
   (multi-tool): (мультиинструмент)
   (none detected): (не обнаружено)
@@ -333,6 +334,7 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: Режим обхода
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: Обход управляется аппаратным датчиком
   Bypass controlled by sensor: Байпас управляется датчиком
   Bypass disabled: Байпас отключён
@@ -1036,6 +1038,7 @@ translations:
   Filament: Филамент
   Filament Detected: Филамент обнаружен
   Filament Environment: Среда хранения филамента
+  Filament Grade Mismatch: ''
   Filament In The Toolhead: ''
   Filament Mapping: Назначение филамента
   Filament Runout: Окончание филамента
@@ -1048,6 +1051,7 @@ translations:
   Filament deleted: Филамент удалён
   Filament diameter sensors for flow compensation: Датчики диаметра филамента для
     компенсации потока
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: Филамент ослаблен
   Filament is pulling tight: Филамент натянут
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
@@ -2136,6 +2140,7 @@ translations:
   Requires Moonraker power device: 'Требуется устройство питания Moonraker'
   Requires Moonraker-Timelapse plugin: Требуется плагин Moonraker-Timelapse
   Requires Multi-Filament System or MMU hardware: 'Требуется мультифиламентная система или оборудование MMU'
+  Requires a filament system with bypass: ''
   Requires clog detection hardware: 'Требуется оборудование для обнаружения засора'
   Resend write failed at chunk {}: Не удалось повторно отправить запись в блоке {}
   Reset: Сброс
@@ -2638,6 +2643,8 @@ translations:
   The filament system reported an error: Система филамента сообщила об ошибке
   The heater will cycle on and off several times.: Нагреватель будет несколько раз
     включаться и выключаться.
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : ''
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным, затем зафиксируйте показание."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2667,6 +2674,7 @@ translations:
   Theme changes apply after restart.: Изменения темы применяются после перезапуска.
   Theme reset to defaults: Тема сброшена к настройкам по умолчанию
   'Theme: ': 'Тема: '
+  'These tools have a different filament grade loaded:': ''
   'These tools have incompatible materials loaded:': 'В этих инструментах загружены
     несовместимые материалы:'
   'These tools have no filament loaded:': 'В эти инструменты не загружен филамент:'
@@ -2685,6 +2693,7 @@ translations:
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Это не совпадает с привязанной катушкой Spoolman. Добавить как новую катушку или обновить привязанную?
   This file was sliced for {} but {} is loaded.: Файл нарезан для {}, но загружен
     {}.
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: Это именно те данные, которые будут
     отправлены
   This is what data would be sent if enabled: Эти данные были бы отправлены при включении
@@ -2758,6 +2767,7 @@ translations:
   Toggle Auto-Refill: 'Переключить автопополнение'
   Toggle Moonraker power devices: 'Переключить устройства питания Moonraker'
   Toggle Quiet Mode: 'Переключить тихий режим'
+  Toggle external spool bypass: ''
   Toggle toolhead LED for an extruder: 'Переключить LED печатающей головки для экструдера'
   'Toggle:': 'Переключить:'
   Too humid: Слишком влажно
@@ -3055,6 +3065,7 @@ translations:
   of: из
   'off': выкл
   Monitor for print abnormalities (K2 Plus camera-based): Отслеживание дефектов печати (на основе камеры K2 Plus)
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: ''
   AI detection: AI-детекция
   prints: печатей
   remaining: осталось

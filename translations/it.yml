@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu modifiche'
   '%zu events queued': '%zu eventi in coda'
   '%zu plugins failed to load': Caricamento di %zu plugin non riuscito
+  (different grade): ''
   (incompatible): (incompatibile)
   (multi-tool): (multi-utensile)
   (none detected): (nessuno rilevato)
@@ -339,6 +340,7 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: Modalità bypass
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: Bypass controllato da sensore hardware
   Bypass controlled by sensor: Bypass controllato dal sensore
   Bypass disabled: Bypass disabilitato
@@ -1048,6 +1050,7 @@ translations:
   Filament: Filamento
   Filament Detected: Filamento rilevato
   Filament Environment: Ambiente filamento
+  Filament Grade Mismatch: ''
   Filament In The Toolhead: ''
   Filament Mapping: Mappatura filamento
   Filament Runout: Esaurimento filamento
@@ -1060,6 +1063,7 @@ translations:
   Filament deleted: Filamento eliminato
   Filament diameter sensors for flow compensation: Sensori diametro filamento per
     compensazione flusso
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: Il filamento è allentato
   Filament is pulling tight: Il filamento è in tensione
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
@@ -2158,6 +2162,7 @@ translations:
   Requires Moonraker power device: 'Richiede un dispositivo di alimentazione Moonraker'
   Requires Moonraker-Timelapse plugin: Richiede plugin Moonraker-Timelapse
   Requires Multi-Filament System or MMU hardware: 'Richiede un sistema multi-filamento o hardware MMU'
+  Requires a filament system with bypass: ''
   Requires clog detection hardware: 'Richiede hardware per il rilevamento intasamenti'
   Resend write failed at chunk {}: Reinvio scrittura fallito al chunk {}
   Reset: Ripristina
@@ -2665,6 +2670,8 @@ translations:
   The filament system reported an error: Il sistema filamento ha segnalato un errore
   The heater will cycle on and off several times.: Il riscaldatore si accenderà e
     spegnerà diverse volte.
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : ''
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "Il motore fa vibrare la cinghia mentre una luce stroboscopica lampeggia alla stessa frequenza. Quando la cinghia sembra ferma (immobile), hai trovato la frequenza di risonanza.\n\nUsa i pulsanti della frequenza per scorrere i valori finché la cinghia non appare ferma, poi blocca la lettura."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2698,6 +2705,7 @@ translations:
   Theme changes apply after restart.: Le modifiche al tema si applicano dopo il riavvio.
   Theme reset to defaults: Tema ripristinato ai valori predefiniti
   'Theme: ': 'Tema: '
+  'These tools have a different filament grade loaded:': ''
   'These tools have incompatible materials loaded:': 'Questi strumenti hanno caricati
     materiali incompatibili:'
   'These tools have no filament loaded:': 'Questi strumenti non hanno filamento caricato:'
@@ -2716,6 +2724,7 @@ translations:
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Non corrisponde alla bobina Spoolman collegata. Aggiungerla come nuova bobina o aggiornare quella collegata?
   This file was sliced for {} but {} is loaded.: Questo file è stato sezionato per
     {} ma è caricato {}.
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: Questi sono esattamente i dati che verranno
     inviati
   This is what data would be sent if enabled: Questi sono i dati che verrebbero inviati
@@ -2795,6 +2804,7 @@ translations:
   Toggle Auto-Refill: 'Alterna il rifornimento automatico'
   Toggle Moonraker power devices: 'Alterna i dispositivi di alimentazione Moonraker'
   Toggle Quiet Mode: 'Alterna la modalità silenziosa'
+  Toggle external spool bypass: ''
   Toggle toolhead LED for an extruder: 'Alterna il LED della testina per un estrusore'
   'Toggle:': 'Commuta:'
   Too humid: Troppo umido
@@ -3098,6 +3108,7 @@ translations:
   of: di
   'off': spento
   Monitor for print abnormalities (K2 Plus camera-based): Monitora le anomalie di stampa (basato sulla camera del K2 Plus)
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: ''
   AI detection: Rilevamento AI
   prints: stampe
   remaining: rimanente

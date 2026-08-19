@@ -496,7 +496,9 @@ class AmsState {
 
     /**
      * @brief Get toolchange text subject ("2 / 5" formatted)
-     * 1-based display: current_toolchange+1 of number_of_toolchanges.
+     * 1-based display: current_toolchange+1 of number_of_toolchanges, clamped to
+     * the total. The +1 lives in the UI formatter, so every backend must have
+     * already normalized its firmware counter to a 0-based index (-1 = none yet).
      * Empty string when not applicable.
      */
     lv_subject_t* get_toolchange_text_subject() {
@@ -539,6 +541,17 @@ class AmsState {
      */
     lv_subject_t* get_external_spool_color_subject() {
         return &external_spool_color_;
+    }
+
+    /**
+     * @brief Get external spool material subject (string)
+     * @return Subject holding the external spool's material name
+     *         (e.g. "PLA"), "" if no external spool assigned. Pure reflector
+     *         of get_external_spool_info() — updated at every site that
+     *         updates external_spool_color_.
+     */
+    lv_subject_t* get_external_spool_material_subject() {
+        return &external_spool_material_;
     }
 
     /**
@@ -1553,6 +1566,11 @@ class AmsState {
     bool runout_level_seeded_{false};
     lv_subject_t bypass_active_;
     lv_subject_t external_spool_color_;
+    /// External spool material name — string flavor of external_spool_color_.
+    /// Pure reflector of get_external_spool_info(); mirrors the color subject's
+    /// update sites so XML text bindings stay in lockstep with the color dot.
+    lv_subject_t external_spool_material_;
+    char external_spool_material_buf_[32]; // "PLA", "PETG-CF", ... fits comfortably
     lv_subject_t supports_bypass_;
     lv_subject_t ams_slot_count_;
     lv_subject_t ams_cards_compact_;

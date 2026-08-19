@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu changes'
   '%zu events queued': '%zu events queued'
   '%zu plugins failed to load': '%zu plugins failed to load'
+  (different grade): (different grade)
   (incompatible): (incompatible)
   (multi-tool): (multi-tool)
   (none detected): (none detected)
@@ -326,6 +327,7 @@ translations:
   Bypass Is Active: Bypass Is Active
   Bypass Mode: Bypass Mode
   Bypass active — this print runs on the external spool, not on the lanes below.: Bypass active — this print runs on the external spool, not on the lanes below.
+  Bypass cannot be changed while printing: Bypass cannot be changed while printing
   Bypass controlled by hardware sensor: Bypass controlled by hardware sensor
   Bypass controlled by sensor: Bypass controlled by sensor
   Bypass disabled: Bypass disabled
@@ -1015,6 +1017,7 @@ translations:
   Filament: Filament
   Filament Detected: Filament Detected
   Filament Environment: Filament Environment
+  Filament Grade Mismatch: Filament Grade Mismatch
   Filament In The Toolhead: Filament In The Toolhead
   Filament Mapping: Filament Mapping
   Filament Runout: Filament Runout
@@ -1027,6 +1030,7 @@ translations:
   Filament deleted: Filament deleted
   Filament diameter sensors for flow compensation: Filament diameter sensors for flow
     compensation
+  Filament is clear of the toolhead. Pull it out the rest of the way.: Filament is clear of the toolhead. Pull it out the rest of the way.
   Filament is loose: Filament is loose
   Filament is pulling tight: Filament is pulling tight
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
@@ -2107,6 +2111,7 @@ translations:
   Requires Moonraker power device: Requires Moonraker power device
   Requires Moonraker-Timelapse plugin: Requires Moonraker-Timelapse plugin
   Requires Multi-Filament System or MMU hardware: Requires Multi-Filament System or MMU hardware
+  Requires a filament system with bypass: Requires a filament system with bypass
   Requires clog detection hardware: Requires clog detection hardware
   Resend write failed at chunk {}: Resend write failed at chunk {}
   Reset: Reset
@@ -2603,6 +2608,8 @@ translations:
   The filament system reported an error: The filament system reported an error
   The heater will cycle on and off several times.: The heater will cycle on and off
     several times.
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2630,6 +2637,7 @@ translations:
   Theme changes apply after restart.: Theme changes apply after restart.
   Theme reset to defaults: Theme reset to defaults
   'Theme: ': 'Theme: '
+  'These tools have a different filament grade loaded:': 'These tools have a different filament grade loaded:'
   'These tools have incompatible materials loaded:': 'These tools have incompatible
     materials loaded:'
   'These tools have no filament loaded:': 'These tools have no filament loaded:'
@@ -2648,6 +2656,7 @@ translations:
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?
   This file was sliced for {} but {} is loaded.: This file was sliced for {} but {}
     is loaded.
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.
   This is exactly the data that will be sent: This is exactly the data that will be
     sent
   This is what data would be sent if enabled: This is what data would be sent if enabled
@@ -2722,6 +2731,7 @@ translations:
   Toggle Auto-Refill: Toggle Auto-Refill
   Toggle Moonraker power devices: Toggle Moonraker power devices
   Toggle Quiet Mode: Toggle Quiet Mode
+  Toggle external spool bypass: Toggle external spool bypass
   Toggle toolhead LED for an extruder: Toggle toolhead LED for an extruder
   'Toggle:': 'Toggle:'
   Too humid: Too humid
@@ -3020,6 +3030,7 @@ translations:
   of: of
   'off': 'off'
   Monitor for print abnormalities (K2 Plus camera-based): Monitor for print abnormalities (K2 Plus camera-based)
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle
   AI detection: AI detection
   prints: prints
   remaining: remaining

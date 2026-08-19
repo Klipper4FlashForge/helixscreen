@@ -976,14 +976,14 @@ void AmsBackendAd5xIfs::apply_overrides(SlotInfo& slot, int slot_index) {
     // flat-schema CFS). IFS firmware never reports one, so Rule 1 cannot
     // fire here today — but that is a fact about this firmware, not what
     // the capability gates. Rule 2 (eject) IS what
-    // firmware_reports_spool_ids() gates (base false here: 0 is IFS's
+    // printer_reports_spool_ids() gates (base false here: 0 is IFS's
     // everyday reading, never an eject), and the erase branch is correct
     // tomorrow if a firmware ever starts reporting ids.
     auto it = overrides_.find(slot_index);
     if (it == overrides_.end())
         return;
     helix::ams::MergeOptions opts;
-    opts.firmware_reports_spool_ids = firmware_reports_spool_ids();
+    opts.printer_reports_spool_ids = printer_reports_spool_ids();
     opts.keep_spool_info_on_eject =
         helix::SettingsManager::instance().get_ams_keep_spool_info_on_eject();
     // Own-write echo suppression (SlotFingerprintTracker::expect()
@@ -5593,9 +5593,15 @@ int AmsBackendAd5xIfs::find_backup_slot_locked(int runout_slot) const {
     return -1;
 }
 
-bool AmsBackendAd5xIfs::is_endless_spool_backup_eligible(int slot_index, int backup_slot) const {
+helix::printer::BackupEligibility
+AmsBackendAd5xIfs::endless_spool_backup_eligibility(int slot_index, int backup_slot) const {
+    using helix::printer::BackupEligibility;
     std::lock_guard<std::mutex> lock(mutex_);
-    return backup_eligible_locked(slot_index, backup_slot);
+    // Binary on purpose. The firmware matches ffmType and ffmColor exactly, so
+    // a lane it will not select is not a choice to offer with a caveat - it is
+    // a choice that would silently never fire. No GradeDiffers here.
+    return backup_eligible_locked(slot_index, backup_slot) ? BackupEligibility::Eligible
+                                                           : BackupEligibility::Incompatible;
 }
 
 helix::printer::EndlessSpoolCapabilities AmsBackendAd5xIfs::get_endless_spool_capabilities() const {

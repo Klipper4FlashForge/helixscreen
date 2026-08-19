@@ -276,6 +276,16 @@ void AmsState::init_subjects(bool register_xml) {
         subjects_.register_subject(&external_spool_color_);
         if (register_xml)
             lv_xml_register_subject(nullptr, "ams_external_spool_color", &external_spool_color_);
+
+        // Material string flavor — same source, string subject idiom as
+        // ams_system_name_ (own buffer, nullptr prev_buf).
+        lv_subject_init_string(&external_spool_material_, external_spool_material_buf_, nullptr,
+                               sizeof(external_spool_material_buf_),
+                               ext_spool.has_value() ? ext_spool->material.c_str() : "");
+        subjects_.register_subject(&external_spool_material_);
+        if (register_xml)
+            lv_xml_register_subject(nullptr, "ams_external_spool_material",
+                                    &external_spool_material_);
     }
 
     lv_subject_init_int(&supports_bypass_, 0);
@@ -1518,6 +1528,8 @@ void AmsState::sync_from_backend() {
     if (lv_subject_get_int(&external_spool_color_) != new_ext_color) {
         lv_subject_set_int(&external_spool_color_, new_ext_color);
     }
+    lv_subject_copy_string(&external_spool_material_,
+                           ext_spool.has_value() ? ext_spool->material.c_str() : "");
     if (lv_subject_get_int(&ams_slot_count_) != info.total_slots) {
         lv_subject_set_int(&ams_slot_count_, info.total_slots);
     }
@@ -2969,6 +2981,9 @@ void AmsState::notify_external_spool_changed(const SlotInfo& info) {
         lv_subject_set_int(&external_spool_color_, new_color ^ 1);
     }
     lv_subject_set_int(&external_spool_color_, new_color);
+    // Material string reflector — copy_string only notifies on change, and
+    // color observers re-read full spool info anyway, so no force-fire needed.
+    lv_subject_copy_string(&external_spool_material_, info.material.c_str());
 }
 
 void AmsState::clear_external_spool_info() {
@@ -2981,6 +2996,7 @@ void AmsState::clear_external_spool_info() {
         lv_subject_set_int(&external_spool_color_, 1);
     }
     lv_subject_set_int(&external_spool_color_, 0);
+    lv_subject_copy_string(&external_spool_material_, "");
 }
 
 // ============================================================================

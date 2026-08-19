@@ -20,6 +20,7 @@ translations:
   '%zu changes': '%zu件の変更'
   '%zu events queued': '%zu 件のイベントを待機中'
   '%zu plugins failed to load': '%zu 個のプラグインの読み込みに失敗しました'
+  (different grade): ''
   (incompatible): (非対応)
   (multi-tool): (マルチツール)
   (none detected): (検出なし)
@@ -308,6 +309,7 @@ translations:
   Bypass Is Active: ''
   Bypass Mode: バイパスモード
   Bypass active — this print runs on the external spool, not on the lanes below.: ''
+  Bypass cannot be changed while printing: ''
   Bypass controlled by hardware sensor: ハードウェアセンサーによるバイパス制御
   Bypass controlled by sensor: バイパスはセンサーで制御中
   Bypass disabled: バイパス無効
@@ -956,6 +958,7 @@ translations:
   Filament: フィラメント
   Filament Detected: フィラメント検出
   Filament Environment: フィラメント環境
+  Filament Grade Mismatch: ''
   Filament In The Toolhead: ''
   Filament Mapping: フィラメントマッピング
   Filament Runout: フィラメント切れ
@@ -967,6 +970,7 @@ translations:
   Filament clog/flow detection meter: 'フィラメント詰まり／流量検出メーター'
   Filament deleted: フィラメントを削除しました
   Filament diameter sensors for flow compensation: フロー補正用フィラメント直径センサー
+  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
   Filament is loose: フィラメントが緩んでいます
   Filament is pulling tight: フィラメントが引っ張られています
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
@@ -1982,6 +1986,7 @@ translations:
   Requires Moonraker power device: 'Moonraker電源デバイスが必要です'
   Requires Moonraker-Timelapse plugin: Moonraker-Timelapse プラグインが必要です
   Requires Multi-Filament System or MMU hardware: 'マルチフィラメントシステムまたはMMUハードウェアが必要です'
+  Requires a filament system with bypass: ''
   Requires clog detection hardware: '詰まり検出ハードウェアが必要です'
   Resend write failed at chunk {}: チャンク {} で再送信の書き込みに失敗しました
   Reset: リセット
@@ -2437,6 +2442,8 @@ translations:
   : ''
   The filament system reported an error: フィラメントシステムがエラーを報告しました
   The heater will cycle on and off several times.: ヒーターは数回オン/オフを繰り返します。
+  ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
+  : ''
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。"
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2459,6 +2466,7 @@ translations:
   Theme changes apply after restart.: テーマの変更は再起動後に適用されます。
   Theme reset to defaults: テーマをデフォルトにリセットしました
   'Theme: ': 'テーマ: '
+  'These tools have a different filament grade loaded:': ''
   'These tools have incompatible materials loaded:': 'これらのツールには互換性のない素材がロードされています:'
   'These tools have no filament loaded:': 'これらのツールにフィラメントが装填されていません:'
   'These tools have no matching filament loaded:': 'これらのツールに一致するフィラメントが装填されていません:'
@@ -2474,6 +2482,7 @@ translations:
   : このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、"Timer Too Close" エラーを引き起こす可能性があります。それでも続行しますか？
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: リンクされた Spoolman のスプールと一致しません。新しいスプールとして追加しますか、それともリンク先を一致するよう更新しますか？
   This file was sliced for {} but {} is loaded.: このファイルは {} 用にスライスされていますが、{} がロードされています。
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
   This is exactly the data that will be sent: これが送信されるデータです
   This is what data would be sent if enabled: これは有効にした場合に送信されるデータです
   This may take up to 30 seconds: 最大30秒かかる場合があります
@@ -2536,6 +2545,7 @@ translations:
   Toggle Auto-Refill: '自動補充を切り替え'
   Toggle Moonraker power devices: 'Moonraker電源デバイスを切り替え'
   Toggle Quiet Mode: '静音モードを切り替え'
+  Toggle external spool bypass: ''
   Toggle toolhead LED for an extruder: 'エクストルーダーのツールヘッドLEDを切り替え'
   'Toggle:': '切り替え:'
   Too humid: 湿度が高すぎます
@@ -2815,6 +2825,7 @@ translations:
   of: の
   'off': オフ
   Monitor for print abnormalities (K2 Plus camera-based): 印刷異常を監視 (K2 Plus カメラベース)
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: ''
   AI detection: AI 検出
   prints: 印刷
   remaining: 残り

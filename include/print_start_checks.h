@@ -80,6 +80,12 @@ struct PrintStartGate {
 /// PrintStartController::MaterialMismatchDetail).
 struct MaterialMismatchDetail {
     int tool_index = 0;
+    /// Same polymer, different filler: the file wants PLA-CF and the lane
+    /// holds PLA, or the reverse. FilamentMapper::materials_match() passes
+    /// these (one compat group), so they are found by a second pass over
+    /// filament::grades_match() and get their own dialog. A hard mismatch
+    /// leaves this false.
+    bool grade_only = false;
     std::string expected_material;
     std::string loaded_material;
     int expected_nozzle_min = 0;

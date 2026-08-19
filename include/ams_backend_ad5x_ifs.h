@@ -346,7 +346,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
      * get_endless_spool_config() is deliberately NOT overridden either: the
      * firmware computes the match at runout time (find_backup_slot_locked) and
      * stores no per-slot relation, so the base's empty relation is the honest
-     * answer. is_endless_spool_backup_eligible() is where the rule is exposed.
+     * answer. endless_spool_backup_eligibility() is where the rule is exposed.
      *
      * @note Takes `mutex_`; callers must NOT hold it.
      */
@@ -362,8 +362,8 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
      *
      * @note Takes `mutex_`; callers must NOT hold it.
      */
-    [[nodiscard]] bool is_endless_spool_backup_eligible(int slot_index,
-                                                        int backup_slot) const override;
+    [[nodiscard]] helix::printer::BackupEligibility
+    endless_spool_backup_eligibility(int slot_index, int backup_slot) const override;
 
   protected:
     /// The recovery buttons for whichever fault is currently latched.
@@ -840,7 +840,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
     /// The single-pair form of find_backup_slot_locked()'s rule: could
     /// @p candidate stand in for @p slot? Both that scan and the public
-    /// is_endless_spool_backup_eligible() run through here, so what the UI would
+    /// endless_spool_backup_eligibility() run through here, so what the UI would
     /// offer and what the firmware would pick cannot diverge. Caller holds mutex_.
     [[nodiscard]] bool backup_eligible_locked(int slot, int candidate) const;
 

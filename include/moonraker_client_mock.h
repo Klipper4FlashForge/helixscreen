@@ -1403,8 +1403,16 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
 
     // Calibration simulation timers (PID, MPC, shaper) — must be cleaned up
     // in destructor to prevent use-after-free when mock is destroyed before
-    // LVGL timers fire in a subsequent test's process_lvgl().
-    std::vector<lv_timer_t*> calibration_timers_;
+    // LVGL timers fire in a subsequent test's process_lvgl(). Each entry also
+    // owns its heap payload: the timer callbacks self-delete at natural
+    // completion, but a forced teardown that only lv_timer_delete()s the timer
+    // leaks the payload (the 80-byte ShaperSimState the 2026-08-18 nightly's
+    // leak report showed surviving the suite).
+    struct CalibrationTimer {
+        lv_timer_t* timer = nullptr;
+        std::function<void()> free_payload;
+    };
+    std::vector<CalibrationTimer> calibration_timers_;
 };
 
 // ============================================================================

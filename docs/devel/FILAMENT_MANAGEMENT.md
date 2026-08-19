@@ -492,13 +492,23 @@ Two footguns this area has repeatedly hit (fixed in #1065; keep them fixed):
    **Why gate on the Spoolman binding.** On insert we can't tell "same spool back
    after maintenance" from "brand-new spool" — there's no identity signal. The
    two want opposite things for the identity fields, so we don't guess: a lane
-   with a deliberate Spoolman binding is left entirely alone (**#1071** retains
-   it), and only auto-tracked lanes (no binding) refresh material/color from
-   firmware. A lane whose firmware later reports a *different* spool id drops
-   the binding entirely (`merge_override` re-bind rule, **#1281**) — the
-   residual stale-binding case is now only the no-signal backends. On AFC and
-   Happy Hare the eject signal itself is user-configurable ("Keep Spool Info
-   on Eject", AMS Management overlay; default on).
+    with a deliberate Spoolman binding is left entirely alone (**#1071** retains
+    it), and only auto-tracked lanes (no binding) refresh material/color from
+    firmware. A lane whose firmware later reports a *different* spool id drops
+    the binding entirely (`merge_override` re-bind rule, **#1281**) — the
+    residual stale-binding case is now only the no-signal backends. On AFC and
+    Happy Hare the eject signal itself is user-configurable ("Keep Spool Info
+    on Eject", AMS Management overlay; default on).
+
+    **Precedence: firmware retention beats the toggle.** With AFC's per-lane
+    `remember_spool = true` on every lane, AFC itself repopulates lanes on
+    eject and keeps reporting the spool id — so neither the merge's eject rule
+    nor the re-assert push ever fires and the toggle has no observable effect
+    in either position. Rather than let it silently lie, the overlay disables
+    it with a note: `AmsBackend::printer_retains_spool_info()` (ALL-lane
+    semantics; a mixed config leaves the toggle governing the `false` lanes)
+    drives the `ams_device_ops_printer_retains_spool_info` subject, which the row's
+    `disabled` prop and the note bind to (#1281 follow-up).
 
 ### OrcaSlicer compatibility — by backend
 
@@ -1449,7 +1459,7 @@ A backend supplies only these:
 |------|----------------|
 | `apply_endless_spool_backup(slot, backup)` (protected virtual) | Transport only. Reached **after** the base accepted the write, so it must not re-check availability, editability, ranges or self-backup - and must not update a local mirror of the mapping before its transport has accepted the command. |
 | `endless_spool_slot_count()` (protected virtual) | How many slots the relation spans; drives range validation and the reset loop. Default `get_system_info().total_slots`. Override when the transport's slot space differs, or to report 0 while not ready. |
-| `is_endless_spool_backup_eligible(slot, backup)` | Is this pairing acceptable? Base default is the material-compatibility test the AMS context menu has always applied (`filament::are_materials_compatible()`, with an unknown material on either side counting as eligible rather than blocking a slot the user simply has not labelled). AD5X IFS overrides it with the rule its firmware actually enforces - exact material **and** exact colour **and** the port reporting filament present - sharing `backup_eligible_locked()` with `find_backup_slot_locked()` so its runout hint text and its eligibility answer cannot diverge. |
+| `endless_spool_backup_eligibility(slot, backup)` | May this lane stand in for that one? Returns `BackupEligibility` (`Eligible` / `GradeDiffers` / `Incompatible`), not a bool. The base default asks two questions in order: `filament::materials_compatible()` for the polymer, then `filament::grades_match()` for the grade, so a filled variant of the right polymer answers `GradeDiffers` - tagged in the dropdown, still selectable, because a swap that keeps the print alive beats a print that dies at a runout. An unknown material on either side stays `Eligible` rather than blocking a slot the user simply has not labelled. AD5X IFS overrides it with the rule its firmware actually enforces - exact material **and** exact colour **and** the port reporting filament present - sharing `backup_eligible_locked()` with `find_backup_slot_locked()` so its runout hint text and its eligibility answer cannot diverge, and answering only `Eligible`/`Incompatible` because a lane its firmware will not select is not a choice worth offering. |
 
 `reset_endless_spool()` has a real base implementation: walk
 `set_endless_spool_backup(slot, -1)` over every slot, continue past failures so it clears as
@@ -2356,6 +2366,14 @@ gets the dialog with manual **Load** kept prominent, because Resume alone does n
 `supports_per_tool_spool_assignment()` is not overridden either; it falls through to
 `is_tool_changer(get_type())`, which is false for AFC.
 
+**Homing delegation.** With `[AFC] auto_home: True` in AFC.cfg, AFC's
+macros home-if-needed themselves. `AmsBackendAfc` surfaces this via
+`AmsBackend::delegates_homing_to_printer()` (false until AFC.cfg has
+loaded), and all three home-first prompt sites — the AMS sidebar, the
+filament panel, and `ensure_homed_then()` — skip both the prompt and the
+synthesized G28. Distinct from `filament_ops_self_home()`, which governs
+paused-print refusal.
+
 ### AFC Version Reporting
 
 `afc_version_` is **display and diagnostics only. Never gate behavior on it.** AFC has no
@@ -2910,7 +2928,7 @@ never written. The only write path would be `write_ifs_var("backup", …)`, whic
 demotes `has_ifs_vars_` for the session - not something to drive a user-facing toggle from.
 
 There is no per-slot relation either, so no backup dropdown appears. What the plugin *will*
-switch to is answered instead by `is_endless_spool_backup_eligible()`, which IFS overrides
+switch to is answered instead by `endless_spool_backup_eligibility()`, which IFS overrides
 with the rule the firmware enforces: exact material **and** exact colour **and** the port
 reporting filament present. It shares `backup_eligible_locked()` with
 `find_backup_slot_locked()`, so the runout detail text and the eligibility answer cannot
@@ -3418,10 +3436,20 @@ predicate `AmsContextMenu::decide_show_backup_row(caps, has_relation)`:
 - Read-only with no relation - hidden. This is the CFS and AD5X IFS case: the firmware picks
   the backup and publishes no mapping, so a visible dropdown could only ever read "None".
 
-The "(incompatible)" suffix on backup options still comes from
-`filament::are_materials_compatible()` directly in `build_backup_options()`; it does not yet
-route through `AmsBackend::is_endless_spool_backup_eligible()`, so a backend that tightens the
-rule (AD5X IFS) does not yet tighten this label.
+Backup options are tagged from `AmsBackend::endless_spool_backup_eligibility()`, so a backend
+that tightens the rule (AD5X IFS) tightens the label too. The verdict is tri-state and the two
+non-empty answers are tagged differently, because they mean different things to the user:
+
+| Verdict | Suffix | Selectable? |
+|---------|--------|-------------|
+| `Eligible` | none | yes |
+| `GradeDiffers` | `(different grade)` | **yes** - same polymer, filled variant; it will print |
+| `Incompatible` | `(incompatible)` | no - `decide_backup_refused()` bounces it with a toast |
+
+`GradeDiffers` is the only verdict where the label and the refusal deliberately disagree, and
+it is why the enum exists: refusing a PLA-CF backup for a PLA lane would leave a print dead at
+a runout with a usable spool one lane over, while waving it through silently hides that the
+swap brings an abrasive, slower filament mid-print with nobody watching.
 
 ---
 
@@ -3546,10 +3574,23 @@ gate pipeline: `PrintStartController::run_gates_from()` iterates
    pre-flight block above); a single-tool bypass print skips lane truth entirely — its
    mapped lanes describe filament that is not being printed with
 5. `unresolved_tools` — the color-mismatch dialog above
-6. `material_compatibility` — file material vs. loaded spool. Under an engaged bypass on a
-   single-tool file the comparison target is the **external spool**, not the mapped lanes;
-   the comparison itself is `FilamentMapper::materials_match()`, the same one every other
-   path uses, so a same-family grade change (file sliced ASA-GF, spool ASA) does not warn
+6. `material_compatibility` — file material vs. loaded spool, in two passes. First
+   `FilamentMapper::materials_match()` decides whether the **polymer** is right; anything it
+   rejects is a material mismatch and shows the "Material Mismatch" dialog. What it accepts
+   then goes to `filament::grades_match()`, which decides whether the **grade** is right, and
+   a difference there shows the separate "Filament Grade Mismatch" dialog
+   (`MaterialMismatchDetail::grade_only`). Under an engaged bypass on a single-tool file both
+   passes run against the **external spool** rather than the mapped lanes.
+
+   The grade axis is whether the filament carries solid particles, not what the marketing
+   calls it. `VARIANT_AFFIXES[]` in `src/printer/filament_variants.cpp` carries a `filled`
+   column: CF, GF, AERO, LW, Wood, Marble, Metal and Glow are filled (abrasive and/or
+   flow-altering); `+`, Silk, Matte, HS, HF and HT are not. So a file sliced ASA-GF against a
+   loaded ASA spool warns, PLA against PLA+ does not. The dialog wording is directional -
+   filled filament on an unfilled profile names the hardened-nozzle risk, the reverse only
+   notes it will run slower and hotter than needed. Both are click-through warnings, and
+   neither changes what the mapper ROUTES: `materials_match()` still treats the two grades as
+   interchangeable when picking a lane
 
 The two bypass suppressions this section describes are entries in that list: gate 4
 (`required_filament_present`) and gate 5 (`unresolved_tools`, whose `unresolved_tools_in()`
@@ -3802,7 +3843,7 @@ Create include/ams_backend_mysystem.h and src/printer/ams_backend_mysystem.cpp. 
 - `clear_fault()` -- Clear a latched fault, bookkeeping only (default: forwards to `cancel()`)
 - `recover_lane_position()` -- Physical retract of a stranded lane (default: NOT_SUPPORTED)
 - `get_dryer_info()`, `start_drying()`, `stop_drying()`, `update_drying()` -- Dryer control
-- `get_endless_spool_capabilities()`, `get_endless_spool_config()` -- Endless spool state. `set_endless_spool_backup()` is **not** an override point: it is non-virtual and owns every rejection. Supply `apply_endless_spool_backup()` (protected, transport only), `endless_spool_slot_count()` (protected, only if `total_slots` is wrong for you), and `is_endless_spool_backup_eligible()` (only to tighten the default material-compatibility rule). `reset_endless_spool()` already works for any editable backend by looping the setter with -1 - override it only if your firmware has a real reset primitive. See § [Endless Spool](#endless-spool-shared-model).
+- `get_endless_spool_capabilities()`, `get_endless_spool_config()` -- Endless spool state. `set_endless_spool_backup()` is **not** an override point: it is non-virtual and owns every rejection. Supply `apply_endless_spool_backup()` (protected, transport only), `endless_spool_slot_count()` (protected, only if `total_slots` is wrong for you), and `endless_spool_backup_eligibility()` (only to tighten the default polymer-plus-grade rule; return `Eligible`/`Incompatible` only, unless your firmware genuinely has a soft case). `reset_endless_spool()` already works for any editable backend by looping the setter with -1 - override it only if your firmware has a real reset primitive. See § [Endless Spool](#endless-spool-shared-model).
 - `get_tool_mapping_capabilities()`, `get_tool_mapping()` -- Tool mapping
 - `get_device_sections()`, `get_device_actions()`, `execute_device_action()` -- Device-specific actions
 - `set_discovered_lanes()`, `set_discovered_tools()` -- Discovery configuration

@@ -20,6 +20,7 @@
   <translation tag="%zu changes" ja="%zu件の変更"/>
   <translation tag="%zu events queued" ja="%zu 件のイベントを待機中"/>
   <translation tag="%zu plugins failed to load" ja="%zu 個のプラグインの読み込みに失敗しました"/>
+  <translation tag="(different grade)"/>
   <translation tag="(incompatible)" ja="(非対応)"/>
   <translation tag="(multi-tool)" ja="(マルチツール)"/>
   <translation tag="(none detected)" ja="(検出なし)"/>
@@ -105,6 +106,7 @@
   <translation tag="AFC reset complete" ja="AFCリセット完了"/>
   <translation tag="AFC reset failed" ja="AFCリセット失敗"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" ja="AFCは印刷終了時にツールヘッドからフィラメントを引き戻します"/>
+  <translation tag="AFC&apos;s remember_spool is retaining spool info in firmware; that takes precedence over this toggle"/>
   <translation tag="AI detection" ja="AI 検出"/>
   <translation tag="ALL DEVICES" ja="すべてのデバイス"/>
   <translation tag="AMS" ja="AMS"/>
@@ -304,6 +306,7 @@
   <translation tag="Bypass Is Active"/>
   <translation tag="Bypass Mode" ja="バイパスモード"/>
   <translation tag="Bypass active — this print runs on the external spool, not on the lanes below."/>
+  <translation tag="Bypass cannot be changed while printing"/>
   <translation tag="Bypass controlled by hardware sensor" ja="ハードウェアセンサーによるバイパス制御"/>
   <translation tag="Bypass controlled by sensor" ja="バイパスはセンサーで制御中"/>
   <translation tag="Bypass disabled" ja="バイパス無効"/>
@@ -935,6 +938,7 @@
   <translation tag="Filament" ja="フィラメント"/>
   <translation tag="Filament Detected" ja="フィラメント検出"/>
   <translation tag="Filament Environment" ja="フィラメント環境"/>
+  <translation tag="Filament Grade Mismatch"/>
   <translation tag="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" ja="フィラメントマッピング"/>
   <translation tag="Filament Runout" ja="フィラメント切れ"/>
@@ -946,6 +950,7 @@
   <translation tag="Filament clog/flow detection meter" ja="フィラメント詰まり／流量検出メーター"/>
   <translation tag="Filament deleted" ja="フィラメントを削除しました"/>
   <translation tag="Filament diameter sensors for flow compensation" ja="フロー補正用フィラメント直径センサー"/>
+  <translation tag="Filament is clear of the toolhead. Pull it out the rest of the way."/>
   <translation tag="Filament is loose" ja="フィラメントが緩んでいます"/>
   <translation tag="Filament is pulling tight" ja="フィラメントが引っ張られています"/>
   <translation tag="Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool."/>
@@ -1929,6 +1934,7 @@
   <translation tag="Requires Moonraker power device" ja="Moonraker電源デバイスが必要です"/>
   <translation tag="Requires Moonraker-Timelapse plugin" ja="Moonraker-Timelapse プラグインが必要です"/>
   <translation tag="Requires Multi-Filament System or MMU hardware" ja="マルチフィラメントシステムまたはMMUハードウェアが必要です"/>
+  <translation tag="Requires a filament system with bypass"/>
   <translation tag="Requires clog detection hardware" ja="詰まり検出ハードウェアが必要です"/>
   <translation tag="Resend write failed at chunk {}" ja="チャンク {} で再送信の書き込みに失敗しました"/>
   <translation tag="Reset" ja="リセット"/>
@@ -2363,6 +2369,7 @@
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again."/>
   <translation tag="The filament system reported an error" ja="フィラメントシステムがエラーを報告しました"/>
   <translation tag="The heater will cycle on and off several times." ja="ヒーターは数回オン/オフを繰り返します。"/>
+  <translation tag="The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." ja="モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。&#10;&#10;周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。"/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." ja="印刷は一時停止中です。ここでツールを交換すると、ツールヘッドが移動してノズルのフィラメントが入れ替わります。交換が完了したら印刷を再開してください。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" ja="プリンターはこの印刷を停止し、再開できません。最初からやり直しますか？"/>
@@ -2383,6 +2390,7 @@
   <translation tag="Theme changes apply after restart." ja="テーマの変更は再起動後に適用されます。"/>
   <translation tag="Theme reset to defaults" ja="テーマをデフォルトにリセットしました"/>
   <translation tag="Theme: " ja="テーマ: "/>
+  <translation tag="These tools have a different filament grade loaded:"/>
   <translation tag="These tools have incompatible materials loaded:" ja="これらのツールには互換性のない素材がロードされています:"/>
   <translation tag="These tools have no filament loaded:" ja="これらのツールにフィラメントが装填されていません:"/>
   <translation tag="These tools have no matching filament loaded:" ja="これらのツールに一致するフィラメントが装填されていません:"/>
@@ -2395,6 +2403,7 @@
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" ja="このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、&quot;Timer Too Close&quot; エラーを引き起こす可能性があります。それでも続行しますか？"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" ja="リンクされた Spoolman のスプールと一致しません。新しいスプールとして追加しますか、それともリンク先を一致するよう更新しますか？"/>
   <translation tag="This file was sliced for {} but {} is loaded." ja="このファイルは {} 用にスライスされていますが、{} がロードされています。"/>
+  <translation tag="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs."/>
   <translation tag="This is exactly the data that will be sent" ja="これが送信されるデータです"/>
   <translation tag="This is what data would be sent if enabled" ja="これは有効にした場合に送信されるデータです"/>
   <translation tag="This may take up to 30 seconds" ja="最大30秒かかる場合があります"/>
@@ -2445,6 +2454,7 @@
   <translation tag="Toggle Auto-Refill" ja="自動補充を切り替え"/>
   <translation tag="Toggle Moonraker power devices" ja="Moonraker電源デバイスを切り替え"/>
   <translation tag="Toggle Quiet Mode" ja="静音モードを切り替え"/>
+  <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" ja="エクストルーダーのツールヘッドLEDを切り替え"/>
   <translation tag="Toggle:" ja="切り替え:"/>
   <translation tag="Too humid" ja="湿度が高すぎます"/>

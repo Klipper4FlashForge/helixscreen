@@ -38,10 +38,13 @@
 
 using helix::ui::AmsCall;
 using helix::ui::BackendCaps;
+using helix::ui::EXTERNAL_SPOOL_SLOT;
 using helix::ui::FilamentRefusal;
 using helix::ui::FilamentTier;
 using helix::ui::plan_load;
 using helix::ui::plan_unload;
+using helix::ui::unload_needs_manual_pull;
+using helix::ui::unload_target_is_loaded;
 
 namespace {
 
@@ -262,4 +265,91 @@ TEST_CASE("plan_unload: no backend falls through to macro then raw gcode",
     auto without = plan_unload(none, /*target_slot=*/-1, /*target_is_loaded=*/false,
                                /*macro_available=*/false);
     CHECK(without.tier == FilamentTier::RawGcode);
+}
+
+// =============================================================================
+// Bypass / external spool — the -2 sentinel is a TARGET, not "no slot"
+// =============================================================================
+
+TEST_CASE("unload_target_is_loaded: bypass reads the aggregate, not per-slot sensors",
+          "[filament][dispatch][bypass]") {
+    // The AFC case, and the whole reason this arm exists. AFC is the one backend
+    // with has_per_slot_loaded_authority(), so slot_is_actively_loaded(-2) looks
+    // up get_slot_info(-2) — a bounds-miss that yields an empty SlotInfo — and
+    // answers false while filament is demonstrably at the nozzle. CFS and Happy
+    // Hare accidentally answer true via `slot == current_slot && loaded`, which
+    // is exactly the kind of per-backend divergence this header exists to end.
+    CHECK(unload_target_is_loaded(EXTERNAL_SPOOL_SLOT, /*slot_actively_loaded=*/false,
+                                  /*slot_filament_at_toolhead=*/false, /*is_current_slot=*/true,
+                                  /*any_filament_loaded=*/true));
+
+    // Bypass engaged with nothing fed yet — AFC's bypass_state is independent of
+    // filament presence, so "bypass is on" must not be read as "something to pull".
+    CHECK_FALSE(unload_target_is_loaded(EXTERNAL_SPOOL_SLOT, false, false, /*is_current_slot=*/true,
+                                        /*any_filament_loaded=*/false));
+}
+
+TEST_CASE("unload_target_is_loaded: each lane arm still stands alone",
+          "[filament][dispatch][regression]") {
+    // The recovery cases from #995 / #1199. Any one of the three is sufficient,
+    // and the aggregate flag must NOT be able to veto them.
+    CHECK(unload_target_is_loaded(2, /*actively_loaded=*/true, false, false,
+                                  /*any_filament_loaded=*/false));
+    CHECK(unload_target_is_loaded(2, false, /*at_toolhead=*/true, false, false));
+    CHECK(unload_target_is_loaded(2, false, false, /*is_current_slot=*/true, false));
+    CHECK_FALSE(unload_target_is_loaded(2, false, false, false, /*any_filament_loaded=*/true));
+}
+
+TEST_CASE("unload_target_is_loaded: -1 is still nothing, whatever the sensors say",
+          "[filament][dispatch][regression]") {
+    // Pins the sentinel as the ONLY negative slot that unloads. Without this,
+    // relaxing plan_unload's `target_slot < 0` guard quietly makes "no slot
+    // resolved" dispatch an unload against whatever the firmware last touched.
+    CHECK_FALSE(unload_target_is_loaded(-1, true, true, true, true));
+    CHECK_FALSE(unload_target_is_loaded(-3, true, true, true, true));
+}
+
+TEST_CASE("plan_unload: the bypass spool dispatches to the backend",
+          "[filament][dispatch][bypass]") {
+    // Every backend already handles -2 correctly: CFS ignores the slot and sends
+    // its unload script, AFC resolves the lane name to "" and sends a bare
+    // TOOL_UNLOAD, Happy Hare sends MMU_UNLOAD. Only this decision layer refused.
+    auto plan = plan_unload(fresh_ams(), EXTERNAL_SPOOL_SLOT, /*target_is_loaded=*/true,
+                            /*macro_available=*/true);
+    CHECK(plan.tier == FilamentTier::AmsBackend);
+    CHECK(plan.ams_call == AmsCall::Unload);
+    CHECK(plan.ams_arg == EXTERNAL_SPOOL_SLOT);
+}
+
+TEST_CASE("plan_unload: bypass with an empty toolhead still refuses",
+          "[filament][dispatch][bypass][refusal]") {
+    auto plan = plan_unload(fresh_ams(), EXTERNAL_SPOOL_SLOT, /*target_is_loaded=*/false,
+                            /*macro_available=*/true);
+    CHECK(plan.tier == FilamentTier::Refused);
+    CHECK(plan.refusal == FilamentRefusal::NothingLoaded);
+}
+
+TEST_CASE("plan_unload: an unresolved slot is still refused, sentinel or not",
+          "[filament][dispatch][regression]") {
+    // The guard rail on the change above. -1 means "nothing resolved" and must
+    // never dispatch, even when the caller insists something is loaded.
+    auto plan = plan_unload(fresh_ams(), -1, /*target_is_loaded=*/true, /*macro_available=*/true);
+    CHECK(plan.tier == FilamentTier::Refused);
+    CHECK(plan.refusal == FilamentRefusal::NothingLoaded);
+}
+
+// =============================================================================
+// Manual pull — which unloads leave filament for the user to remove by hand
+// =============================================================================
+
+TEST_CASE("unload_needs_manual_pull: only unloads with no lane to retract into",
+          "[filament][dispatch][bypass]") {
+    // An AMS lane unload reels the filament back into its own lane; prompting
+    // the user to pull it would be noise. The bypass spool and a backend-less
+    // printer both leave it dangling out of the toolhead.
+    CHECK(unload_needs_manual_pull(/*backend_present=*/true, EXTERNAL_SPOOL_SLOT));
+    CHECK(unload_needs_manual_pull(/*backend_present=*/false, /*target_slot=*/0));
+    CHECK(unload_needs_manual_pull(/*backend_present=*/false, EXTERNAL_SPOOL_SLOT));
+    CHECK_FALSE(unload_needs_manual_pull(/*backend_present=*/true, /*target_slot=*/0));
+    CHECK_FALSE(unload_needs_manual_pull(/*backend_present=*/true, /*target_slot=*/3));
 }

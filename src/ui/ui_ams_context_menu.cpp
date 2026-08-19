@@ -14,6 +14,7 @@
 #include "app_globals.h"
 #include "filament_database.h"
 #include "filament_op_slot_resolver.h"
+#include "filament_variants.h"
 #include "printer_state.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -729,7 +730,7 @@ void AmsContextMenu::handle_backup_changed() {
         // "PLA cannot use PLA as backup" would be nonsense.
         std::string msg;
         if (!current_material.empty() && !backup_material.empty() &&
-            !filament::are_materials_compatible(current_material, backup_material)) {
+            !filament::materials_compatible(current_material, backup_material)) {
             msg = fmt::format(lv_tr("Incompatible materials: {} cannot use {} as backup"),
                               current_material, backup_material);
         } else {
@@ -890,10 +891,10 @@ AmsContextMenu::BackupEligibleFn AmsContextMenu::backend_eligible_fn() const {
     if (backend == nullptr) {
         // No backend: tag nothing and refuse nothing. Matches the old code, which
         // skipped every compatibility check when backend_ was null.
-        return [](int, int) { return true; };
+        return [](int, int) { return helix::printer::BackupEligibility::Eligible; };
     }
     return [backend](int slot, int candidate) {
-        return backend->is_endless_spool_backup_eligible(slot, candidate);
+        return backend->endless_spool_backup_eligibility(slot, candidate);
     };
 }
 
@@ -912,11 +913,20 @@ std::string AmsContextMenu::build_backup_options_for(int total_slots, int item_i
             continue;
         }
         options += "\n" + fmt::format(lv_tr("Slot {}"), i + 1);
-        // The base virtual is the old are_materials_compatible() rule, with an
-        // unknown material on either side counting as eligible, so nothing is
-        // tagged that was not tagged before on AFC / Happy Hare / CFS.
-        if (item_index >= 0 && eligible && !eligible(item_index, i)) {
-            options += std::string(" ") + lv_tr("(incompatible)");
+        if (item_index >= 0 && eligible) {
+            switch (eligible(item_index, i)) {
+            case helix::printer::BackupEligibility::Incompatible:
+                options += std::string(" ") + lv_tr("(incompatible)");
+                break;
+            case helix::printer::BackupEligibility::GradeDiffers:
+                // Selectable, and labelled so the choice is an informed one:
+                // same polymer, but a filled grade that prints slower and wears
+                // a brass nozzle.
+                options += std::string(" ") + lv_tr("(different grade)");
+                break;
+            case helix::printer::BackupEligibility::Eligible:
+                break;
+            }
         }
     }
     return options;
@@ -927,7 +937,11 @@ bool AmsContextMenu::decide_backup_refused(int item_index, int backup_slot,
     if (backup_slot < 0 || item_index < 0) {
         return false; // "None" clears a backup; nothing to be compatible with.
     }
-    return eligible && !eligible(item_index, backup_slot);
+    // Only the hard verdict refuses. A grade difference is tagged in the option
+    // list and then allowed: the print surviving its runout is worth more than
+    // the grade being exact, and the user has been told which lane it is.
+    return eligible &&
+           eligible(item_index, backup_slot) == helix::printer::BackupEligibility::Incompatible;
 }
 
 int AmsContextMenu::get_current_tool_for_slot() const {

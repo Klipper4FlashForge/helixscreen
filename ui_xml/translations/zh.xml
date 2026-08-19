@@ -20,6 +20,7 @@
   <translation tag="%zu changes" zh="%zu 项更改"/>
   <translation tag="%zu events queued" zh="%zu 个事件已排队"/>
   <translation tag="%zu plugins failed to load" zh="%zu 个插件加载失败"/>
+  <translation tag="(different grade)"/>
   <translation tag="(incompatible)" zh="(不兼容)"/>
   <translation tag="(multi-tool)" zh="(多工具)"/>
   <translation tag="(none detected)" zh="(未检测到)"/>
@@ -105,6 +106,7 @@
   <translation tag="AFC reset complete" zh="AFC重置完成"/>
   <translation tag="AFC reset failed" zh="AFC重置失败"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" zh="AFC 在打印结束时将耗材从工具头退出"/>
+  <translation tag="AFC&apos;s remember_spool is retaining spool info in firmware; that takes precedence over this toggle"/>
   <translation tag="AI detection" zh="AI 检测"/>
   <translation tag="ALL DEVICES" zh="所有设备"/>
   <translation tag="AMS" zh="AMS"/>
@@ -304,6 +306,7 @@
   <translation tag="Bypass Is Active"/>
   <translation tag="Bypass Mode" zh="旁路模式"/>
   <translation tag="Bypass active — this print runs on the external spool, not on the lanes below."/>
+  <translation tag="Bypass cannot be changed while printing"/>
   <translation tag="Bypass controlled by hardware sensor" zh="旁路由硬件传感器控制"/>
   <translation tag="Bypass controlled by sensor" zh="旁通由传感器控制"/>
   <translation tag="Bypass disabled" zh="旁通已禁用"/>
@@ -935,6 +938,7 @@
   <translation tag="Filament" zh="耗材"/>
   <translation tag="Filament Detected" zh="检测到耗材"/>
   <translation tag="Filament Environment" zh="耗材环境"/>
+  <translation tag="Filament Grade Mismatch"/>
   <translation tag="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" zh="耗材映射"/>
   <translation tag="Filament Runout" zh="耗材用尽"/>
@@ -946,6 +950,7 @@
   <translation tag="Filament clog/flow detection meter" zh="耗材堵塞／流量检测仪表"/>
   <translation tag="Filament deleted" zh="耗材已删除"/>
   <translation tag="Filament diameter sensors for flow compensation" zh="耗材直径传感器用于流量补偿"/>
+  <translation tag="Filament is clear of the toolhead. Pull it out the rest of the way."/>
   <translation tag="Filament is loose" zh="耗材松弛"/>
   <translation tag="Filament is pulling tight" zh="耗材拉紧"/>
   <translation tag="Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool."/>
@@ -1929,6 +1934,7 @@
   <translation tag="Requires Moonraker power device" zh="需要 Moonraker 电源设备"/>
   <translation tag="Requires Moonraker-Timelapse plugin" zh="需要 Moonraker-Timelapse 插件"/>
   <translation tag="Requires Multi-Filament System or MMU hardware" zh="需要多耗材系统或 MMU 硬件"/>
+  <translation tag="Requires a filament system with bypass"/>
   <translation tag="Requires clog detection hardware" zh="需要堵塞检测硬件"/>
   <translation tag="Resend write failed at chunk {}" zh="区块 {} 重发写入失败"/>
   <translation tag="Reset" zh="重置"/>
@@ -2363,6 +2369,7 @@
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again."/>
   <translation tag="The filament system reported an error" zh="耗材系统报告错误"/>
   <translation tag="The heater will cycle on and off several times." zh="加热器将多次开关循环。"/>
+  <translation tag="The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." zh="电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。&#10;&#10;使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." zh="打印已暂停。现在切换工具会移动工具头并更换喷嘴处的耗材。切换完成后请恢复打印。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" zh="打印机已停止此打印且无法恢复。从头重新开始？"/>
@@ -2383,6 +2390,7 @@
   <translation tag="Theme changes apply after restart." zh="主题更改在重启后生效。"/>
   <translation tag="Theme reset to defaults" zh="主题已重置为默认值"/>
   <translation tag="Theme: " zh="主题: "/>
+  <translation tag="These tools have a different filament grade loaded:"/>
   <translation tag="These tools have incompatible materials loaded:" zh="这些工具加载了不兼容的材料："/>
   <translation tag="These tools have no filament loaded:" zh="以下工具未加载耗材:"/>
   <translation tag="These tools have no matching filament loaded:" zh="以下工具未加载匹配的耗材："/>
@@ -2395,6 +2403,7 @@
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" zh="此设备内存极少。共振校准会占用大量内存，可能导致 &quot;Timer Too Close&quot; 错误。仍要继续吗？"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" zh="这与关联的 Spoolman 料盘不匹配。是否添加为新料盘，或更新关联料盘以匹配？"/>
   <translation tag="This file was sliced for {} but {} is loaded." zh="此文件为 {} 切片，但当前加载的是 {}。"/>
+  <translation tag="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs."/>
   <translation tag="This is exactly the data that will be sent" zh="这正是将要发送的数据"/>
   <translation tag="This is what data would be sent if enabled" zh="这是启用后将发送的数据"/>
   <translation tag="This may take up to 30 seconds" zh="这可能需要 30 秒"/>
@@ -2445,6 +2454,7 @@
   <translation tag="Toggle Auto-Refill" zh="切换自动续料"/>
   <translation tag="Toggle Moonraker power devices" zh="切换 Moonraker 电源设备"/>
   <translation tag="Toggle Quiet Mode" zh="切换静音模式"/>
+  <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" zh="切换某个挤出机的工具头 LED"/>
   <translation tag="Toggle:" zh="切换:"/>
   <translation tag="Too humid" zh="湿度过高"/>

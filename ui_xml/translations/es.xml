@@ -20,6 +20,7 @@
   <translation tag="%zu changes" es="%zu cambios"/>
   <translation tag="%zu events queued" es="%zu eventos en cola"/>
   <translation tag="%zu plugins failed to load" es="%zu plugins no se cargaron"/>
+  <translation tag="(different grade)"/>
   <translation tag="(incompatible)" es="(incompatible)"/>
   <translation tag="(multi-tool)" es="(multiherramienta)"/>
   <translation tag="(none detected)" es="(ninguno detectado)"/>
@@ -105,6 +106,7 @@
   <translation tag="AFC reset complete" es="Reinicio AFC completado"/>
   <translation tag="AFC reset failed" es="Error en reinicio AFC"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" es="AFC retrae el filamento del cabezal al finalizar la impresión"/>
+  <translation tag="AFC&apos;s remember_spool is retaining spool info in firmware; that takes precedence over this toggle"/>
   <translation tag="AI detection" es="Detección AI"/>
   <translation tag="ALL DEVICES" es="TODOS LOS DISPOSITIVOS"/>
   <translation tag="AMS" es="AMS"/>
@@ -304,6 +306,7 @@
   <translation tag="Bypass Is Active"/>
   <translation tag="Bypass Mode" es="Modo Bypass"/>
   <translation tag="Bypass active — this print runs on the external spool, not on the lanes below."/>
+  <translation tag="Bypass cannot be changed while printing"/>
   <translation tag="Bypass controlled by hardware sensor" es="Bypass controlado por sensor de hardware"/>
   <translation tag="Bypass controlled by sensor" es="Bypass controlado por sensor"/>
   <translation tag="Bypass disabled" es="Bypass desactivado"/>
@@ -935,6 +938,7 @@
   <translation tag="Filament" es="Filamento"/>
   <translation tag="Filament Detected" es="Filamento Detectado"/>
   <translation tag="Filament Environment" es="Entorno del filamento"/>
+  <translation tag="Filament Grade Mismatch"/>
   <translation tag="Filament In The Toolhead"/>
   <translation tag="Filament Mapping" es="Mapeo de Filamento"/>
   <translation tag="Filament Runout" es="Filamento Agotado"/>
@@ -946,6 +950,7 @@
   <translation tag="Filament clog/flow detection meter" es="Medidor de detección de atasco/flujo de filamento"/>
   <translation tag="Filament deleted" es="Filamento eliminado"/>
   <translation tag="Filament diameter sensors for flow compensation" es="Sensores de diámetro de filamento para compensación de flujo"/>
+  <translation tag="Filament is clear of the toolhead. Pull it out the rest of the way."/>
   <translation tag="Filament is loose" es="El filamento está suelto"/>
   <translation tag="Filament is pulling tight" es="El filamento está tirando tenso"/>
   <translation tag="Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool."/>
@@ -1929,6 +1934,7 @@
   <translation tag="Requires Moonraker power device" es="Requiere un dispositivo de energía de Moonraker"/>
   <translation tag="Requires Moonraker-Timelapse plugin" es="Requiere plugin Moonraker-Timelapse"/>
   <translation tag="Requires Multi-Filament System or MMU hardware" es="Requiere sistema multi-filamento o hardware MMU"/>
+  <translation tag="Requires a filament system with bypass"/>
   <translation tag="Requires clog detection hardware" es="Requiere hardware de detección de atascos"/>
   <translation tag="Resend write failed at chunk {}" es="Error al reenviar la escritura en el fragmento {}"/>
   <translation tag="Reset" es="Restablecer"/>
@@ -2363,6 +2369,7 @@
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again."/>
   <translation tag="The filament system reported an error" es="El sistema de filamento informó un error"/>
   <translation tag="The heater will cycle on and off several times." es="El calentador se encenderá y apagará varias veces."/>
+  <translation tag="The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." es="El motor hace vibrar la correa mientras una luz estroboscópica parpadea a la misma frecuencia. Cuando la correa parece quedarse quieta (congelada), has encontrado la frecuencia de resonancia.&#10;&#10;Usa los botones de frecuencia para recorrer los valores hasta que la correa parezca estar inmóvil, luego bloquea la lectura."/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." es="La impresión está pausada. Cambiar de herramienta ahora mueve el cabezal y cambia el filamento en la boquilla. Reanude la impresión una vez que el cambio termine."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" es="La impresora detuvo esta impresión y no puede reanudarla. ¿Reiniciar desde el principio?"/>
@@ -2383,6 +2390,7 @@
   <translation tag="Theme changes apply after restart." es="Los cambios de tema se aplican después de reiniciar."/>
   <translation tag="Theme reset to defaults" es="Tema restablecido a valores predeterminados"/>
   <translation tag="Theme: " es="Tema: "/>
+  <translation tag="These tools have a different filament grade loaded:"/>
   <translation tag="These tools have incompatible materials loaded:" es="Estas herramientas tienen materiales incompatibles cargados:"/>
   <translation tag="These tools have no filament loaded:" es="Estas herramientas no tienen filamento cargado:"/>
   <translation tag="These tools have no matching filament loaded:" es="Estas herramientas no tienen filamento compatible cargado:"/>
@@ -2395,6 +2403,7 @@
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a &quot;Timer Too Close&quot; error. Continue anyway?" es="Este dispositivo tiene muy poca RAM. La calibración de resonancia consume mucha memoria y puede causar un error &quot;Timer Too Close&quot;. ¿Continuar de todos modos?"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" es="Esto no coincide con la bobina de Spoolman vinculada. ¿Añadirla como bobina nueva o actualizar la vinculada para que coincida?"/>
   <translation tag="This file was sliced for {} but {} is loaded." es="Este archivo fue laminado para {} pero se ha cargado {}."/>
+  <translation tag="This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs."/>
   <translation tag="This is exactly the data that will be sent" es="Estos son exactamente los datos que se enviarán"/>
   <translation tag="This is what data would be sent if enabled" es="Estos son los datos que se enviarían si se activa"/>
   <translation tag="This may take up to 30 seconds" es="Esto puede tardar hasta 30 segundos"/>
@@ -2445,6 +2454,7 @@
   <translation tag="Toggle Auto-Refill" es="Alternar el rellenado automático"/>
   <translation tag="Toggle Moonraker power devices" es="Alternar dispositivos de energía de Moonraker"/>
   <translation tag="Toggle Quiet Mode" es="Alternar el modo silencioso"/>
+  <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" es="Alternar el LED del cabezal para un extrusor"/>
   <translation tag="Toggle:" es="Conmutar:"/>
   <translation tag="Too humid" es="Demasiado húmedo"/>

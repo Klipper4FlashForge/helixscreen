@@ -6,6 +6,7 @@
 #include "ams_types.h"
 #include "filament_database.h"
 #include "filament_op_slot_resolver.h"
+#include "filament_variants.h"
 
 #include <optional>
 #include <string>
@@ -14,6 +15,7 @@
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
+using namespace helix::printer;
 using namespace helix::ui;
 
 // Forwards the private static predicates (friend access).
@@ -417,7 +419,7 @@ TEST_CASE("AmsContextMenu::decide_unload_enabled blocks only the toolhead unload
 // Backup eligibility now flows through the BACKEND virtual
 //
 // build_backup_options() used to call filament::are_materials_compatible()
-// directly, so AmsBackend::is_endless_spool_backup_eligible() had no production
+// directly, so AmsBackend::endless_spool_backup_eligibility() had no production
 // caller at all: AD5X IFS's stricter firmware rule could never reach the
 // "(incompatible)" label, and no backend could tighten or loosen it.
 // =============================================================================
@@ -428,19 +430,23 @@ TEST_CASE("Backup options are tagged by the backend's eligibility rule",
 
     // The base-class default, replicated here so the "unchanged for AFC/HH"
     // claim is checked against the rule itself and not against a mock of it.
-    // AmsBackend::is_endless_spool_backup_eligible() is this function over
+    // AmsBackend::endless_spool_backup_eligibility() is this function over
     // get_slot_info(slot).material.
     const std::vector<std::string> materials = {"PLA", "PLA", "ABS", ""};
     const auto default_rule = [&materials](int slot, int candidate) {
         if (slot < 0 || candidate < 0 || slot == candidate) {
-            return false;
+            return BackupEligibility::Incompatible;
         }
         const std::string& a = materials[static_cast<size_t>(slot)];
         const std::string& b = materials[static_cast<size_t>(candidate)];
         if (a.empty() || b.empty()) {
-            return true;
+            return BackupEligibility::Eligible;
         }
-        return filament::are_materials_compatible(a, b);
+        if (!filament::materials_compatible(a, b)) {
+            return BackupEligibility::Incompatible;
+        }
+        return filament::grades_match(a, b) ? BackupEligibility::Eligible
+                                            : BackupEligibility::GradeDiffers;
     };
 
     SECTION("the current slot is skipped and None leads") {
@@ -480,22 +486,27 @@ TEST_CASE("Backup options are tagged by the backend's eligibility rule",
         const std::vector<bool> present = {true, true, true, false};
         const auto strict = [&](int slot, int candidate) {
             if (slot < 0 || candidate < 0 || slot == candidate) {
-                return false;
+                return BackupEligibility::Incompatible;
             }
             const auto s = static_cast<size_t>(slot);
             const auto c = static_cast<size_t>(candidate);
             if (ifs_materials[s].empty() || colors[s].empty()) {
-                return false;
+                return BackupEligibility::Incompatible;
             }
-            return present[c] && ifs_materials[c] == ifs_materials[s] && colors[c] == colors[s];
+            const bool ok =
+                present[c] && ifs_materials[c] == ifs_materials[s] && colors[c] == colors[s];
+            // A firmware rule has no soft verdict: it either performs the swap
+            // or it does not. GradeDiffers is the base rule's to hand out.
+            return ok ? BackupEligibility::Eligible : BackupEligibility::Incompatible;
         };
         const auto lenient = [&ifs_materials](int slot, int candidate) {
             if (slot < 0 || candidate < 0 || slot == candidate) {
-                return false;
+                return BackupEligibility::Incompatible;
             }
-            return filament::are_materials_compatible(
-                ifs_materials[static_cast<size_t>(slot)],
-                ifs_materials[static_cast<size_t>(candidate)]);
+            return filament::materials_compatible(ifs_materials[static_cast<size_t>(slot)],
+                                                  ifs_materials[static_cast<size_t>(candidate)])
+                       ? BackupEligibility::Eligible
+                       : BackupEligibility::Incompatible;
         };
 
         const auto strict_opts = Access::build_backup_options_for(4, 0, strict);
@@ -518,9 +529,49 @@ TEST_CASE("Backup options are tagged by the backend's eligibility rule",
         CHECK(strict_opts.substr(s4).find("(incompatible)") != std::string::npos);
     }
 
+    SECTION("a grade difference gets its own tag, not the incompatible one") {
+        // Slot 0 is PLA. Slot 1 is PLA-CF: same polymer, filled, so the swap
+        // will work but is worth naming. Slot 2 is ABS and is refused outright.
+        const std::vector<std::string> graded = {"PLA", "PLA-CF", "ABS", "PLA"};
+        const auto rule = [&graded](int slot, int candidate) {
+            if (slot < 0 || candidate < 0 || slot == candidate) {
+                return BackupEligibility::Incompatible;
+            }
+            const std::string& a = graded[static_cast<size_t>(slot)];
+            const std::string& b = graded[static_cast<size_t>(candidate)];
+            if (!filament::materials_compatible(a, b)) {
+                return BackupEligibility::Incompatible;
+            }
+            return filament::grades_match(a, b) ? BackupEligibility::Eligible
+                                                : BackupEligibility::GradeDiffers;
+        };
+
+        const auto opts = Access::build_backup_options_for(4, 0, rule);
+        const auto s2 = opts.find("Slot 2");
+        const auto s3 = opts.find("Slot 3");
+        const auto s4 = opts.find("Slot 4");
+        REQUIRE(s2 != std::string::npos);
+        REQUIRE(s3 != std::string::npos);
+        REQUIRE(s4 != std::string::npos);
+
+        const std::string entry2 = opts.substr(s2, s3 - s2);
+        const std::string entry3 = opts.substr(s3, s4 - s3);
+        const std::string entry4 = opts.substr(s4);
+
+        // PLA-CF: tagged as a grade difference and NOT as incompatible. Both
+        // halves matter - the whole point is that this lane stays choosable.
+        CHECK(entry2.find("(different grade)") != std::string::npos);
+        CHECK(entry2.find("(incompatible)") == std::string::npos);
+        // ABS: the hard tag, and not the soft one.
+        CHECK(entry3.find("(incompatible)") != std::string::npos);
+        CHECK(entry3.find("(different grade)") == std::string::npos);
+        // PLA: untagged.
+        CHECK(entry4.find("(") == std::string::npos);
+    }
+
     SECTION("no backend: nothing is tagged") {
         // Matches the old code, which skipped every check when backend_ was null.
-        const auto always = [](int, int) { return true; };
+        const auto always = [](int, int) { return BackupEligibility::Eligible; };
         const auto opts = Access::build_backup_options_for(4, 0, always);
         CHECK(opts.find("(incompatible)") == std::string::npos);
     }
@@ -529,7 +580,7 @@ TEST_CASE("Backup options are tagged by the backend's eligibility rule",
         bool called = false;
         const auto spy = [&called](int, int) {
             called = true;
-            return false;
+            return BackupEligibility::Incompatible;
         };
         const auto opts = Access::build_backup_options_for(4, -1, spy);
         CHECK_FALSE(called);
@@ -541,8 +592,8 @@ TEST_CASE("The change handler refuses exactly what the option list tagged",
           "[ams][context_menu][endless_spool][1250]") {
     using Access = AmsContextMenuTestAccess;
 
-    const auto refuse_all = [](int, int) { return false; };
-    const auto allow_all = [](int, int) { return true; };
+    const auto refuse_all = [](int, int) { return BackupEligibility::Incompatible; };
+    const auto allow_all = [](int, int) { return BackupEligibility::Eligible; };
 
     SECTION("clearing a backup is always allowed") {
         // "None" needs nothing to be compatible with, so the rule is not even
@@ -562,16 +613,27 @@ TEST_CASE("The change handler refuses exactly what the option list tagged",
         CHECK_FALSE(Access::decide_backup_refused(-1, 2, refuse_all));
     }
 
+    SECTION("a grade difference is tagged but NOT refused") {
+        // The one asymmetry between the label and the refusal, and the reason
+        // the verdict is tri-state at all: the user is told, then allowed to go
+        // ahead. A refusal here would leave a print dying at a runout with a
+        // usable spool sitting in the next lane.
+        const auto grade_differs = [](int, int) { return BackupEligibility::GradeDiffers; };
+        CHECK_FALSE(Access::decide_backup_refused(0, 2, grade_differs));
+    }
+
     SECTION("label and refusal agree for every pairing under one rule") {
         // The invariant that matters: a slot tagged "(incompatible)" must be the
         // slot the handler bounces, for the same rule, with no third opinion.
         const std::vector<std::string> materials = {"PLA", "ABS", "PETG", "PLA"};
         const auto rule = [&materials](int slot, int candidate) {
             if (slot < 0 || candidate < 0 || slot == candidate) {
-                return false;
+                return BackupEligibility::Incompatible;
             }
-            return filament::are_materials_compatible(materials[static_cast<size_t>(slot)],
-                                                      materials[static_cast<size_t>(candidate)]);
+            return filament::materials_compatible(materials[static_cast<size_t>(slot)],
+                                                  materials[static_cast<size_t>(candidate)])
+                       ? BackupEligibility::Eligible
+                       : BackupEligibility::Incompatible;
         };
 
         for (int item = 0; item < 4; ++item) {
@@ -587,6 +649,9 @@ TEST_CASE("The change handler refuses exactly what the option list tagged",
                 const std::string entry = opts.substr(pos, end - pos);
                 const bool tagged = entry.find("(incompatible)") != std::string::npos;
                 CHECK(tagged == Access::decide_backup_refused(item, cand, rule));
+                // The soft tag never appears under a rule that only ever
+                // answers Eligible or Incompatible.
+                CHECK(entry.find("(different grade)") == std::string::npos);
             }
         }
     }
@@ -596,7 +661,7 @@ TEST_CASE("The option list is built from the live backend virtual, not a local r
           "[ams][context_menu][endless_spool][integration][1250]") {
     // A pure function is only as good as whether its inputs are the ones it gets
     // at runtime. Production binds `eligible` to
-    // AmsBackend::is_endless_spool_backup_eligible() on the live backend
+    // AmsBackend::endless_spool_backup_eligibility() on the live backend
     // (AmsContextMenu::backend_eligible_fn()); this binds the same thing, so the
     // assertions below are about real slot data going through the real virtual.
     AmsBackendMock backend(4);
@@ -615,7 +680,7 @@ TEST_CASE("The option list is built from the live backend virtual, not a local r
     set_material(3, "");
 
     const AmsContextMenuTestAccess::BackupEligibleFn live = [&backend](int slot, int candidate) {
-        return backend.is_endless_spool_backup_eligible(slot, candidate);
+        return backend.endless_spool_backup_eligibility(slot, candidate);
     };
 
     SECTION("the virtual holds the values the call site actually passes") {
@@ -625,17 +690,21 @@ TEST_CASE("The option list is built from the live backend virtual, not a local r
         CHECK(backend.get_slot_info(2).material == "ABS");
         CHECK(backend.get_slot_info(3).material.empty());
 
-        CHECK(live(0, 1));        // PLA / PLA
-        CHECK_FALSE(live(0, 2));  // PLA / ABS
-        CHECK(live(0, 3));        // PLA / unlabelled counts as eligible
-        CHECK_FALSE(live(0, 0));  // a slot is never its own backup
-        CHECK_FALSE(live(-1, 1)); // no open slot
+        CHECK(live(0, 1) == BackupEligibility::Eligible);     // PLA / PLA
+        CHECK(live(0, 2) == BackupEligibility::Incompatible); // PLA / ABS
+        // PLA / unlabelled counts as eligible.
+        CHECK(live(0, 3) == BackupEligibility::Eligible);
+        // A slot is never its own backup, and there is no open slot at -1.
+        CHECK(live(0, 0) == BackupEligibility::Incompatible);
+        CHECK(live(-1, 1) == BackupEligibility::Incompatible);
     }
 
     SECTION("the default backend rule tags exactly the incompatible slot") {
-        // "Unchanged for AFC/HH": the base virtual IS the old
-        // are_materials_compatible() rule, so this option list is byte-identical
-        // to the one the pre-Phase-2 code produced for the same slot data.
+        // "Unchanged for AFC/HH" on same-grade slot data: the polymer half of
+        // the base virtual is the rule it always was, so this option list is
+        // byte-identical to the one the pre-Phase-2 code produced here. The
+        // grade half only speaks when a filler differs, which these four lanes
+        // do not exercise - the grade case has its own section above.
         const auto opts = AmsContextMenuTestAccess::build_backup_options_for(4, 0, live);
         const auto s2 = opts.find("Slot 2");
         const auto s3 = opts.find("Slot 3");

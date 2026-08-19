@@ -57,7 +57,7 @@ Most of what's inside varies by hardware, but four toggles appear here regardles
 | Toggle | When it appears | What it does |
 |--------|-----------------|--------------|
 | **Unloads After Print** | AFC systems only | Retract filament back to its lane when a print finishes |
-| **Keep Spool Info on Eject** | Systems whose firmware tracks spool ids per lane (AFC, Happy Hare) | Remember lane spool details across an eject, so reloading the same spool after maintenance needs no re-selection (on by default) |
+| **Keep Spool Info on Eject** | Systems whose firmware tracks spool ids per lane (AFC, Happy Hare) | Remember lane spool details across an eject, so reloading the same spool after maintenance needs no re-selection (on by default). Applies only to spools selected in HelixScreen; spools assigned elsewhere clear with the lane (for those, use the firmware's own retention, e.g. AFC's `remember_spool`). When that firmware retention covers every lane, it takes precedence and the toggle shows as disabled |
 | **Always Show Bypass Spool** | AFC systems only | Keep the external spool visible on the filament path even while bypass is disengaged. AFC reports a bypass sensor whether or not one is wired, so it's hidden by default until bypass is actually engaged |
 | **Enable Bypass Controls** | Only when your firmware reports **no** bypass | Show the bypass controls and the external spool anyway, for machines where you feed filament straight to the extruder. Applies to Anycubic ACE Pro, Snapmaker U1, tool changers, QIDI Box, and any Happy Hare config with `has_bypass: 0` |
 

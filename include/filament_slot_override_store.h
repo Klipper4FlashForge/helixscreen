@@ -292,7 +292,7 @@ struct MergeOptions {
     /// 0/null means "ejected". Elsewhere 0 is the everyday reading and MUST
     /// NOT be treated as eject — flat-schema CFS does parse a per-slot spool
     /// id (arming Rule 1's re-bind) but gives 0 no eject meaning.
-    bool firmware_reports_spool_ids = false;
+    bool printer_reports_spool_ids = false;
     /// Own-write echo suppression for Rule 1, mirroring
     /// SlotFingerprintTracker::expect() semantics. When HelixScreen itself
     /// just (re)linked a spool id on this slot, in-flight status frames keep
