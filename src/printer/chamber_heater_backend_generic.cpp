@@ -109,10 +109,16 @@ const GenericChamberHeaterBackend kGeneric;
 
 } // namespace
 
+// Declared at helix::chamber scope (NOT the anonymous namespace) so they link
+// against the external definitions in the vendor backend files.
+const ChamberHeaterBackend* dragonbreath_backend_instance();
+const ChamberHeaterBackend* panda_breath_backend_instance();
+
 const std::vector<const ChamberHeaterBackend*>& registry() {
     static const std::vector<const ChamberHeaterBackend*> REG = {
         &kGeneric,
-        // dragonbreath / panda_breath appended in Task 2
+        dragonbreath_backend_instance(),
+        panda_breath_backend_instance(),
     };
     return REG;
 }
