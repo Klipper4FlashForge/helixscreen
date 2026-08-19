@@ -214,7 +214,7 @@ completing SHA.
 | Phase | Scope | Sites | State | Commit |
 |---|---|---|---|---|
 | **0a** | `print_in_progress` derived from the preparing job; watchdog for a job that never confirms | 20 setters | **done** | `289d56856` |
-| **0b** | Collapse `PrintStatusPanel`'s private `PrintLifecycleState` onto the published subject | 8 | **in progress** | - |
+| **0b** | Panel adopts the live phase so it agrees with the authority by construction | 1 + tests | **done** | `41392dfd2` |
 | **1** | Safety guards + a lifecycle-derived XML subject | 15 + 21 XML | not started | - |
 | **2** | Affordance + navigation | 12 + 6 | not started | - |
 | **3** | Display + bookkeeping | 11 + 15 | not started | - |
@@ -357,14 +357,12 @@ phase.
       reason (Confirmed, Superseded, Failed, Cancelled, TimedOut).
 - [x] A preparing job that never confirms is retired as `TimedOut` rather than
       latching the flag.
-- [ ] Panel-level tests exist for `lifecycle_` before the seam moves (currently
-      zero). **(0b)**
-- [ ] `PrintLifecycleState::on_job_state_changed()` no longer derives its own
-      enum with a hard-coded `start_phase=0`; the panel adopts `print_lifecycle`.
-      **(0b)**
-- [ ] The Complete-screen freeze still holds after the change - progress, layers
-      and elapsed survive Moonraker zeroing them on STANDBY. **(0b)**
-- [ ] Full suite green (95/95 shards).
+- [x] Panel-level tests exist for `lifecycle_` before the seam moves - was zero,
+      now `tests/unit/test_print_status_lifecycle_seam.cpp`. **(0b)**
+- [x] `PrintLifecycleState::on_job_state_changed()` no longer derives its own
+      enum with a hard-coded `start_phase=0`. **(0b)**
+- [x] The Complete-screen freeze still holds. **(0b)**
+- [x] Full suite green (95/95 shards).
 
 **Watch for:** a stuck-true `print_in_progress` is the failure mode being fixed,
 so the test must assert the *false* edge on every exit reason, not just the happy
@@ -536,6 +534,28 @@ loaded" has two definitions in one file that disagree exactly where
 |---|---|---|---|
 | 2026-08-19 | 0 | 91 | Plan written. Baseline for the resume command below. |
 | 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
+| 2026-08-19 | 0b | 91 | `41392dfd2`. Also count-neutral - 0b changes which inputs an existing derivation gets, not how many sites read the wire. Suite 95/95. **Phase 0 complete.** |
+
+### Testing this area: three artifacts that impersonate bugs
+
+Every one of these produced a failure indistinguishable from the defect being
+hunted. Budget for them.
+
+1. **`ctl click` fires handlers on DISABLED widgets.** It calls
+   `lv_obj_send_event()` directly, bypassing the indev layer, so it proves the
+   handler runs and says nothing about whether a finger can reach it. Check the
+   widget's `disabled` state flag instead.
+2. **A dead fixture's `PrinterState` leaves subject names resolving to freed
+   storage**, and the damage lands in an unrelated destructor long after your own
+   assertions pass. Fixed upstream by `c7cc96670`, but the shape recurs.
+3. **One `UpdateQueue::drain()` is not enough.** The panel's observers are
+   `observe_int_sync`; a handler running during a drain queues more work that is
+   still pending when `drain()` returns, leaving the panel exactly one transition
+   behind. Drain until quiescent.
+
+**The discriminator is whether the failure moves when you change production
+code.** In 0b the firmware-side assertion moved and the other two did not - that
+was the signal, and it was available two wrong hypotheses before it was used.
 
 **Note on units.** The census counts **88 distinct decision sites**; the resume
 command counts **91 matching lines**. They are different measures and both are
