@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../lvgl_test_fixture.h"
+#include "../test_helpers/print_state_test_drivers.h"
 #include "ams_backend_ad5x_ifs.h"
 #include "ams_backend_afc.h"
 #include "ams_state.h"
@@ -9307,7 +9308,7 @@ struct Ad5xHomingGuardFixture : public LVGLTestFixture {
         Ad5xIfsTestAccess::set_running(*backend, true);
     }
     void set_print_state(helix::PrintJobState s) {
-        lv_subject_set_int(state.get_print_state_enum_subject(), static_cast<int>(s));
+        helix::test::set_wire_state(state, s);
     }
     MoonrakerClientMock mock_client;
     helix::PrinterState state;
@@ -9694,8 +9695,8 @@ struct Ad5xRunoutFixture : public LVGLTestFixture {
     // Plain null check, not REQUIRE: this also runs from the destructor, where a
     // Catch2 assertion would throw during unwinding.
     static void set_print_state(helix::PrintJobState s) {
-        if (auto* subj = get_printer_state().get_print_state_enum_subject()) {
-            lv_subject_set_int(subj, static_cast<int>(s));
+        if (get_printer_state().get_print_state_enum_subject()) {
+            helix::test::set_wire_state(get_printer_state(), s);
         }
     }
 
@@ -9747,8 +9748,7 @@ class Ad5xRunoutOpBackend : public AmsBackendAd5xIfs {
 struct Ad5xRunoutOpFixture : public Ad5xRunoutFixture {
     Ad5xRunoutOpFixture() : mock_client(MoonrakerClientMock::PrinterType::VORON_24) {
         local_state.init_subjects(false);
-        lv_subject_set_int(local_state.get_print_state_enum_subject(),
-                           static_cast<int>(helix::PrintJobState::STANDBY));
+        helix::test::set_wire_state(local_state, helix::PrintJobState::STANDBY);
         api = std::make_unique<MoonrakerAPIMock>(mock_client, local_state);
         backend = std::make_unique<Ad5xRunoutOpBackend>(api.get());
         Ad5xIfsTestAccess::set_running(*backend, true);

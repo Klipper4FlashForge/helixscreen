@@ -21,6 +21,7 @@
 #include "ams_types.h"
 #include "filament_database.h"
 #include "filament_op_dispatch.h" // EXTERNAL_SPOOL_SLOT — the bypass sentinel both headers key on
+#include "print_lifecycle_state.h"
 
 #include <optional>
 #include <string>
@@ -130,6 +131,10 @@ struct OpButtonState {
  * The UI mirror of AmsSubscriptionBackend::refuse_if_printing(). Read that
  * function's comment for the reasoning; the rule it enforces is:
  *
+ *   PREPARING                           -> refuse. A host-side pre-start block
+ *                                         is homing/probing; a firmware-side
+ *                                         PRINT_START is doing the same inside
+ *                                         a job that already reads PRINTING.
  *   PRINTING                            -> refuse. The nozzle is laying plastic.
  *   PAUSED, backend homes itself        -> refuse. AD5X IFS only: its
  *                                         `_IFS_REMOVE_CURRENT_PRUTOK` runs a
@@ -145,20 +150,28 @@ struct OpButtonState {
  * what the backend refuses is the dead end of bundle JX2FVRB9. One predicate,
  * both directions.
  *
- * @param printing            PrintJobState::PRINTING.
- * @param paused              PrintJobState::PAUSED.
+ * Takes the LIFECYCLE, not the raw job state. It used to take a
+ * (printing, paused) bool pair read off print_stats.state, which cannot express
+ * Preparing - so during a host-side pre-print block both bools were false and
+ * this returned "nothing blocks", offering a toolhead-motion filament op while
+ * the pre-start G-code was homing and probing. Preparing blocks exactly as
+ * PRINTING does; the PAUSED relaxation below is unchanged.
+ *
+ * @param lifecycle           The derived PrintState (print_lifecycle subject).
  * @param backend_self_homes  AmsBackend::filament_ops_self_home(). Pass false
  *                            when there is no backend — a plain macro/gcode path
  *                            has no firmware macro that could hide a home, and
  *                            Layer 1 (reject_homing_during_active_print) still
  *                            refuses any G28 the app itself emits.
  */
-[[nodiscard]] inline bool print_blocks_filament_op(bool printing, bool paused,
-                                                   bool backend_self_homes) {
-    if (printing) {
-        return true;
+[[nodiscard]] inline bool print_blocks_filament_op(PrintState lifecycle, bool backend_self_homes) {
+    // Paused first: job_holds_machine() is true for it too, and the whole point
+    // of this predicate is that PAUSED is the one state where the backend's own
+    // capability decides.
+    if (lifecycle == PrintState::Paused) {
+        return backend_self_homes;
     }
-    return paused && backend_self_homes;
+    return job_holds_machine(lifecycle);
 }
 
 /**

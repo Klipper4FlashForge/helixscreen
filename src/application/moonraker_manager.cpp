@@ -36,6 +36,7 @@
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #endif
+#include "print_collector_arming.h"
 #include "print_completion.h"
 #include "print_start_collector.h"
 #include "print_start_profile.h"
@@ -134,6 +135,7 @@ void MoonrakerManager::shutdown() {
     // Using release() avoids double-free of already-removed observers.
     m_print_start_observer.release();
     m_print_start_phase_observer.release();
+    m_preparing_epoch_observer.release();
     m_print_bed_target_fallback_observer.release();
     m_print_ext_target_fallback_observer.release();
     m_print_layer_observer.release();
@@ -677,18 +679,22 @@ void MoonrakerManager::init_print_start_collector() {
     // This prevents false triggers when the app starts while a print is already running.
     // (Similar pattern to print_start_navigation.cpp)
     //
-    // Thread safety: These statics are safe because:
-    // 1. init_print_start_collector() called once on main thread
-    // 2. LVGL subject observers always fire on main thread (synchronous)
-    static PrintJobState s_prev_print_state = PrintJobState::STANDBY;
-    s_prev_print_state = static_cast<PrintJobState>(
-        lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
-    // Track whether this is the first transition (app startup mid-print detection).
-    // After the first printing transition, this is cleared so subsequent prints
-    // (after cancel/complete) are never treated as mid-print joins.
-    static bool s_is_initial_transition = true;
+    // Thread safety: this static is safe because LVGL subject observers always
+    // fire on the main thread, synchronously.
+    //
+    // Lifetime: this function re-runs on EVERY printer switch, so the arming
+    // state must be re-established here. It previously lived in two separate
+    // statics; the initial-transition flag could not be reassigned (a
+    // function-local static initializes once per process), so after the first
+    // print the mid-print-join suppression was permanently off and switching to
+    // a printer already partway through a job drew a "Preparing..." overlay over
+    // a running print.
+    static helix::PrintCollectorArming s_arming;
+    s_arming.reset();
+    s_arming.note_transition(static_cast<PrintJobState>(
+        lv_subject_get_int(get_printer_state().get_print_state_enum_subject())));
     spdlog::debug("[MoonrakerManager] PRINT_START collector observer registered (initial state={})",
-                  static_cast<int>(s_prev_print_state));
+                  static_cast<int>(s_arming.prev_state()));
 
     // Capture print progress + duration subjects for mid-print detection.
     // Progress alone is unreliable on initial-state attach because the state
@@ -723,20 +729,21 @@ void MoonrakerManager::init_print_start_collector() {
             // field occurrence so the persistence path can be confirmed.
             spdlog::info("[MoonrakerManager] print_state transition: {} -> {} (progress={}%, "
                          "print_duration={}s, initial={}, collector_active={})",
-                         static_cast<int>(s_prev_print_state), static_cast<int>(new_state),
-                         current_progress, current_print_duration, s_is_initial_transition,
+                         static_cast<int>(s_arming.prev_state()), static_cast<int>(new_state),
+                         current_progress, current_print_duration, s_arming.is_initial_transition(),
                          collector->is_active());
 
             // Use helper function for testable decision logic
-            if (should_start_print_collector(s_prev_print_state, new_state, current_progress,
-                                             s_is_initial_transition, current_print_duration)) {
+            if (should_start_print_collector(s_arming.prev_state(), new_state, current_progress,
+                                             s_arming.is_initial_transition(),
+                                             current_print_duration)) {
                 if (!collector->is_active()) {
                     collector->reset();
                     collector->start();
                     collector->enable_fallbacks();
                     spdlog::info("[MoonrakerManager] PRINT_START collector started");
                 }
-                s_is_initial_transition = false;
+                s_arming.consume_initial_transition();
             } else if (new_state == PrintJobState::PRINTING && collector->is_active()) {
                 // Authoritative signal: Moonraker confirms print is running.
                 // This is the hard cutoff — if the collector is still active when
@@ -744,22 +751,64 @@ void MoonrakerManager::init_print_start_collector() {
                 spdlog::info("[MoonrakerManager] Authoritative: print_stats.state=printing, "
                              "completing pre-print phase");
                 collector->complete_from_external_signal("Moonraker state=printing");
-            } else if (s_is_initial_transition && s_prev_print_state != PrintJobState::PRINTING &&
-                       s_prev_print_state != PrintJobState::PAUSED &&
+            } else if (s_arming.is_initial_transition() &&
+                       s_arming.prev_state() != PrintJobState::PRINTING &&
+                       s_arming.prev_state() != PrintJobState::PAUSED &&
                        new_state == PrintJobState::PRINTING && current_progress > 0) {
                 // Log when we skip due to mid-print detection (app startup only)
                 spdlog::info("[MoonrakerManager] Skipping PRINT_START collector - mid-print ({}%)",
                              current_progress);
-                s_is_initial_transition = false;
-            } else if (new_state != PrintJobState::PRINTING && new_state != PrintJobState::PAUSED) {
-                // No longer printing - stop collector if active
+                s_arming.consume_initial_transition();
+            } else if (should_stop_print_collector(new_state,
+                                                   get_printer_state().has_preparing_job())) {
+                // No longer printing - stop collector if active. A live
+                // preparing job means this is the transient hop INTO a print we
+                // initiated, not the end of one.
                 if (collector->is_active()) {
                     collector->stop();
                     spdlog::info("[MoonrakerManager] PRINT_START collector stopped");
                 }
             }
 
-            s_prev_print_state = new_state;
+            s_arming.note_transition(new_state);
+        },
+        nullptr);
+
+    // Arm the collector when WE commit to a print, not only when the printer
+    // reports one. A host-side pre-start block runs before the job is handed
+    // over, so waiting for the printer edge leaves the whole window untracked:
+    // the overlay shows a generic "Preparing Print..." and no phase ever
+    // advances, because nothing is parsing gcode responses yet.
+    m_preparing_epoch_observer = ObserverGuard(
+        get_printer_state().get_preparing_epoch_subject(),
+        [](lv_observer_t*, lv_subject_t* subject) {
+            auto collector = s_collector.lock();
+            if (!collector) {
+                return;
+            }
+            if (lv_subject_get_int(subject) <= 0) {
+                // Retirement. The print-state observer cannot cover this: it
+                // only fires when print_state_enum CHANGES, and a job that dies
+                // before the printer accepts it never moves the wire off
+                // standby. Leaving the collector armed means the next G-code the
+                // user runs by hand is parsed as a pre-print phase, re-raising
+                // the "Preparing Print" overlay over whatever they are doing.
+                const auto job_state = static_cast<helix::PrintJobState>(
+                    lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
+                if (collector->is_active() && should_stop_collector_on_retirement(job_state)) {
+                    collector->stop();
+                    spdlog::info("[MoonrakerManager] PRINT_START collector stopped (retired "
+                                 "without a print)");
+                }
+                return;
+            }
+            if (collector->is_active()) {
+                return; // already tracking
+            }
+            collector->reset();
+            collector->start();
+            collector->enable_fallbacks();
+            spdlog::info("[MoonrakerManager] PRINT_START collector started (commit)");
         },
         nullptr);
 

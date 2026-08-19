@@ -961,6 +961,13 @@ bool PrinterState::is_blocking_operation_active() {
         return false;
     }
 
+    // RAW_PRINT_STATE_OK: this predicate is INVERTED — the print state is used
+    // to SUPPRESS the blocking answer, not to assert it — so job_holds_machine()
+    // would flip it the wrong way. During a host-side pre-print block
+    // idle_timeout reads "Printing" (the host is running G-code) while
+    // print_stats still reads standby, and answering "blocked" there is correct:
+    // the toolhead really is busy. Widening to Preparing would make this return
+    // false and ADMIT jogs during the bed mesh.
     const PrintJobState pstate = get_print_job_state();
     return pstate != PrintJobState::PRINTING && pstate != PrintJobState::PAUSED;
 }

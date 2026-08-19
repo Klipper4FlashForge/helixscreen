@@ -11,6 +11,7 @@
 #include "app_globals.h"
 #include "config.h"
 #include "i_moonraker_api.h"
+#include "print_lifecycle_state.h"
 #include "printer_state.h"
 #include "spdlog/fmt/fmt.h"
 #include "spdlog/spdlog.h"
@@ -991,9 +992,13 @@ void FilamentSensorManager::update_from_status(const json& status) {
                 bool ad5x_idle_unload = false;
                 if (auto* backend = AmsState::instance().get_backend()) {
                     if (backend->get_type() == AmsType::AD5X_IFS) {
-                        auto job_state = get_printer_state().get_print_job_state();
-                        if (job_state != PrintJobState::PRINTING &&
-                            job_state != PrintJobState::PAUSED) {
+                        // "Between prints" is the lifecycle's Idle/terminal
+                        // side, not merely "not PRINTING". A head-empty during a
+                        // pre-print block is not the firmware's idle auto-unload
+                        // and must not be swallowed.
+                        const auto lifecycle = static_cast<PrintState>(
+                            lv_subject_get_int(get_printer_state().get_print_lifecycle_subject()));
+                        if (!job_holds_machine(lifecycle)) {
                             ad5x_idle_unload = true;
                         }
                     }
