@@ -552,6 +552,43 @@ loaded" has two definitions in one file that disagree exactly where
 | 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
 | 2026-08-19 | 0b | 91 | `41392dfd2`. Also count-neutral - 0b changes which inputs an existing derivation gets, not how many sites read the wire. Suite 95/95. **Phase 0 complete.** |
 | 2026-08-19 | - | 91 | `d606bd823`. Re-merged main (10 commits, no conflicts). Suite 95/95, and the **full ungated** quality sweep passes (36 gates) - worth re-running before any push, because per-commit gates only ever run `--staged-only` and skip anything you did not stage. |
+| 2026-08-19 | - | 91 | `6945d4e98`. Re-merged main again (12 commits, no conflicts, translations auto-merged). Suite 95/95, ungated sweep green. Site counts re-verified unchanged: 21 bindings, 91 raw-state sites. |
+
+## Before you touch anything: state of the branch
+
+Branch `fix/preparing-job-lifecycle`, worktree
+`.worktrees/preprint-arm-on-initiation`. Green at three layers as of
+`6945d4e98`: build, suite 95/95, and the full ungated quality sweep.
+
+**Phase 0 is not separately mergeable.** `begin_preparing`, `retire_preparing`,
+`PreparingExit` and `derive_print_state` do not exist on main - they are all from
+the preparing-job work earlier on this branch. Neither 0a nor 0b can be
+cherry-picked. The mergeable unit is the whole branch.
+
+**Main moves fast; re-merging is a standing step, not a one-off.** Three merges
+in one day, and the last batch landed work adjacent to Phase 1. Re-merge and
+re-run before assuming any site list here is current, then re-check the two
+counts in the progress log - they are cheap and they are the tripwire.
+
+**Already checked, do not redo:** `90089b714 fix(ams): the bypass subject reports
+what the toggle acts on` repointed `ams_bypass_active` at the backend's
+`is_bypass_active()`. That is about *which bypass value* the subject reports and
+is orthogonal to the Phase 1 finding. `ui_bypass_toggle_controller.cpp:28` still
+reads `print_occupies_toolhead(PrintJobState)` and still cannot see the preparing
+window.
+
+**Landing checklist.** The pre-push hook now runs the **full ungated** sweep
+(`scripts/quality-checks.sh`), while every commit only ran `--staged-only`, which
+skips gates that inspect nothing you staged. Run the full sweep yourself before
+pushing rather than discovering it at push time. Note also that a green
+pre-commit hook is **not** evidence the generated artifacts are in sync - only
+`make test-run` catches a stale `theme_token_table.cpp` after a `ui_xml` change.
+
+**Build cost.** Touching `printer_print_state.h` or `print_lifecycle_state.h`
+rebuilds essentially everything; that was 40+ minutes on a contended box. Batch a
+phase's changes into one build instead of iterating, and check `uptime` before
+assuming a slow build is stuck - this machine runs many parallel sessions.
+
 
 ### Testing this area: three artifacts that impersonate bugs
 
