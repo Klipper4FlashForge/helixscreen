@@ -402,8 +402,15 @@ because it touches everything and must not be interleaved with behaviour changes
   caught mid-refactor during the preparing-job work; they look identical to the
   sites that should move.
 - **`upgrade_nudge.cpp:82` is PRINTING-only** while its neighbours are
-  `PRINTING || PAUSED`. Decide whether that is intentional before normalising it -
-  do not let a sweep silently change it.
+  `PRINTING || PAUSED`. **Decided 2026-08-19: normalise it, deliberately.** Its
+  own comment says *"Don't nudge mid-print - the printer is the priority, not our
+  prompts"*, and a paused print is mid-print; the neighbouring guard in
+  `update_checker.cpp:1246` refuses update downloads on `PRINTING || PAUSED` for
+  the same reason. The narrow spelling reads as an oversight, not a design. Phase
+  1 moves it to `job_holds_machine()`, which also suppresses the nudge during
+  `Preparing` - a user who just committed to a print is the last person who wants
+  an upgrade prompt. This makes the nudge strictly rarer, which is the safe
+  direction, but it IS a behaviour change and the commit must say so.
 - **Test count.** ~30 test files touch `PrintJobState`; three are pure
   predicate-definition tests that get rewritten outright
   (`test_print_start_navigation.cpp`, `test_print_active.cpp`,
