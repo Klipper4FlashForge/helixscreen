@@ -128,6 +128,16 @@ class ActivePrintMediaManager {
     void load_thumbnail_for_file(const std::string& filename);
     void clear_print_info();
 
+    /**
+     * @brief Drop the current print's identity without touching the subjects
+     *
+     * Resets the override, the idempotence key and thumbnail_origin_ - a stale
+     * ThumbnailOrigin::PreSet skips the thumbnail fetch (#526). Leaves the
+     * published subjects alone so an incoming filename repopulates them without
+     * a blank flash.
+     */
+    void release_identity();
+
     // --- Bounded thumbnail retry (metadata/thumbnail fetch failures) ---
     // Moonraker may not have finished scanning a just-uploaded file when the
     // print starts (OrcaSlicer upload-and-print), so the first metadata query
@@ -171,6 +181,7 @@ class ActivePrintMediaManager {
     PrinterState& printer_state_;
     IMoonrakerAPI* api_ = nullptr;
     ObserverGuard print_filename_observer_;
+    ObserverGuard preparing_epoch_observer_;
     std::string thumbnail_source_filename_;
     std::string last_effective_filename_;
     std::string last_loaded_thumbnail_filename_;

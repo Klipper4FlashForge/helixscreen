@@ -232,6 +232,29 @@ Two properties to commit to:
   signal `PreprintPredictor` wants. Today the three never compare notes, so nothing
   learns.
 
+## Status
+
+| # | Step | State |
+|---|---|---|
+| 1 | `s_is_initial_transition` re-arming | **done** - `PrintCollectorArming`, mutation-verified |
+| 2 | Pure deletions | **done, narrowed** - `is_in_print_start` and `clear_print_info` kept (step 5 gives both callers); `clear_gcode_loaded` field removed; layer-count formatter fixed |
+| ~~3~~ | Media identity | folded into 5 |
+| 4 | State-machine consolidation | **partial** - `derive_print_state()` is the single mapping and `print_lifecycle` is the authoritative subject. Migrating `print_completion`, `print_start_navigation` and `telemetry_manager` off their private trackers is outstanding |
+| 5 | `Preparing` at commit | **done** - ownership, reconciliation, both entry points wired, `end_preparing`/`set_state` deleted. Verified at runtime against the mock |
+| 6 | Estimate ladder | not started |
+| 7 | Elapsed/remaining strings | split out |
+
+Runtime evidence (mock, headless):
+
+```
+Preparing 'ECC_0.4_stand_PLA0.2_2h42m.gcode'   <- commit arms
+print_state transition: 0 -> 1                  <- printer confirms
+PRINT_START collector started                   <- printer-edge arming intact
+Retiring preparing job '...': confirmed         <- reconciled
+```
+
+The third line is the regression guard: externally started prints still arm.
+
 ## Scope and sequencing
 
 Too large for one commit. Each step is independently reviewable, and each earlier
@@ -325,6 +348,45 @@ fields (override vs current - the duplication is with the panel, not within APMM
 
 `ActivePrintMediaManager::clear_thumbnail_source()` is listed elsewhere as dead code,
 but this plan gives it its production caller. It stays.
+
+## Notifying when a start dies before it prints
+
+**Decided.** A pre-print that fails must notify **as a failure**, and an early
+cancel must read as **cancelled** - not as a completion, and not as each other.
+
+`PreparingExit` already carries the distinction, so the notification keys off the
+retire reason rather than off a terminal job state that never arrives:
+
+| Retire reason | User-facing outcome |
+|---|---|
+| `Failed`, `TimedOut` | Failure notification |
+| `Cancelled` | Cancelled notification |
+| `Superseded` | Silent - a different print is now running and owns the UI |
+| `Confirmed` | Nothing; the print is under way |
+
+This matters because a start can die during a ten-minute mesh without Klipper ever
+reporting a terminal state: `print_stats` still holds the PREVIOUS job's outcome, so
+the existing completion path cannot see the failure at all, and would report the old
+job's result if it did fire.
+
+### Why the existing consumers cannot simply be repointed
+
+`print_completion.cpp:268` gates on
+
+```cpp
+bool was_active = (prev_print_state == PRINTING || prev_print_state == PAUSED);
+```
+
+`PrintLifecycleState::is_active()` (`include/print_lifecycle_state.h:141`)
+**includes `Preparing`**. Repointing this consumer at the lifecycle subject widens
+the predicate, and `Preparing -> Error` would fire the *completion* path for a print
+that never started (L108: the old guard is what kept the callee correct). The
+notification must therefore be driven from the retire reason, keeping
+`print_completion`'s own guard as-is.
+
+`telemetry_manager.cpp:3039` has the same shape (`PRINTING && prev != PAUSED`).
+`print_start_navigation.cpp` differs again: it fires on `COMPLETE -> PAUSED` for
+power-loss restore (#1099), which the collector tracker deliberately does not.
 
 ## Constraints from issue history
 
@@ -585,30 +647,34 @@ generalising that, not inventing it.
 
 ### 2. `retire_preparing(Superseded)` and media reset
 
-**Corrected.** The first answer here was `clear_thumbnail_source()`. That is
-under-specified: `clear_print_info()`
-(`src/print/active_print_media_manager.cpp:817`) is the right reset, because it is
-a strict superset and the extra part is load-bearing:
+**Answered twice, wrongly both times; here is what the code actually needs.**
 
-```cpp
-thumbnail_retry_count_ = 0;
-thumbnail_origin_ = ThumbnailOrigin::None;
-```
+First answer was `clear_thumbnail_source()` - under-specified, because it leaves
+`thumbnail_origin_` set and a stale `ThumbnailOrigin::PreSet` **skips the thumbnail
+fetch**, which is the mechanism behind #526.
 
-`ThumbnailOrigin::PreSet` **skips the thumbnail fetch** - that is the documented
-contract of the enum. Leaving a stale `PreSet` across a supersede reproduces #526
-(layers 0/0, because a pre-set thumbnail suppressed the metadata fetch). Clearing
-`last_effective_filename_`, which both functions do, is what defeats the idempotence
-short-circuit at `:184-187` so the next `process_filename()` re-processes rather
-than returning early.
+Second answer was `clear_print_info()` - it does reset the origin, but it *also*
+defers `set_print_display_filename("")`. On a supersede that deferred blank lands
+**after** the incoming filename has been resolved synchronously, wiping it; and even
+when the ordering happens to work it flashes an empty filename.
 
-Both functions currently have **no production caller**. This work gives both the
-callers they were written for.
+The two concerns were tangled in one function. They are now split:
 
-Note the asymmetry this fixes, which is a live bug in its own right: the panel
-clears its copy of the override on `print_ended`
-(`ui_panel_print_status.cpp:2719`); the media manager never clears its copy, and
-the media manager is the one feeding the shared subjects the HomePanel reads.
+- `release_identity()` - synchronous bookkeeping: override, idempotence key,
+  retry state, `thumbnail_origin_`. Publishes nothing.
+- `clear_print_info()` - calls `release_identity()`, then defers the subject
+  blanking. For a genuine "there is no print" clear.
+
+A supersede calls `release_identity()` only. Whatever the printer reports next
+repopulates the subjects with no blank flash.
+
+Dispatch matters as much as the reset: the epoch observer uses
+`observe_int_immediate`, not `observe_int_sync`. `_sync` routes through
+`queue_update`, so the identity release would land after a synchronously
+dispatched filename update had already early-returned on the stale override -
+leaving the previous job's name on screen, which is the bug this is meant to fix.
+
+Note both media functions had **no production caller** before this work.
 
 ### 3. Overlay-withhold threshold
 

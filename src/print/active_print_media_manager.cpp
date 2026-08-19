@@ -75,6 +75,44 @@ ActivePrintMediaManager::ActivePrintMediaManager(PrinterState& printer_state)
         },
         printer_state_.get_subjects_lifetime());
 
+    // Adopt the preparing job's identity the moment a job starts preparing,
+    // and release it when that claim did not become the running print. Doing
+    // this here rather than at each start path is the point: the previous
+    // arrangement required every caller to remember a second call, and one of
+    // them (the reprint path) never did.
+    // observe_int_immediate, not _sync: _sync routes through queue_update, so the
+    // identity change would land AFTER a synchronously-dispatched filename
+    // update had already early-returned on the stale override. Safe to dispatch
+    // immediately by the same reasoning as the filename observer above - this
+    // handler only mutates identity fields and queues updates; it touches no
+    // observer lifecycle and destroys no widgets.
+    preparing_epoch_observer_ = helix::ui::observe_int_immediate<ActivePrintMediaManager>(
+        printer_state_.get_preparing_epoch_subject(), this,
+        [](ActivePrintMediaManager* self, int epoch) {
+            if (epoch > 0) {
+                const std::string full = self->printer_state_.preparing_job().full_path();
+                self->set_thumbnail_source(full);
+                // set_thumbnail_source only re-processes an EXISTING Moonraker
+                // filename. At commit there may not be one yet - that is the
+                // whole reason the identity is recorded - so resolve straight
+                // from the job. Idempotent: process_filename short-circuits if
+                // the effective name is already current.
+                self->process_filename(full.c_str());
+                return;
+            }
+            // Confirmed means the printer took OUR job, so the override still
+            // describes what is printing - a rewritten temp file may be what
+            // print_stats reports. Every other exit means it does not.
+            if (self->printer_state_.last_preparing_exit() != PreparingExit::Confirmed) {
+                // Release the identity, but do NOT blank the display subjects:
+                // clear_print_info() defers that blanking, which would land
+                // after the incoming filename had already been resolved and
+                // wipe it. Whatever the printer reports next repopulates them.
+                self->release_identity();
+            }
+        },
+        printer_state_.get_subjects_lifetime());
+
     spdlog::debug("[ActivePrintMediaManager] Observer attached to print_filename subject");
 }
 
@@ -814,13 +852,18 @@ void ActivePrintMediaManager::retrigger_thumbnail_load(const char* reason) {
     load_thumbnail_for_file(last_effective_filename_);
 }
 
-void ActivePrintMediaManager::clear_print_info() {
+void ActivePrintMediaManager::release_identity() {
     thumbnail_source_filename_.clear();
     last_effective_filename_.clear();
     last_loaded_thumbnail_filename_.clear();
     cancel_thumbnail_retry();
     thumbnail_retry_count_ = 0;
     thumbnail_origin_ = ThumbnailOrigin::None;
+    spdlog::debug("[ActivePrintMediaManager] Released print identity");
+}
+
+void ActivePrintMediaManager::clear_print_info() {
+    release_identity();
 
     // Thread-safe clear of shared subjects. Deferred through the lifetime guard
     // rather than a bare queue_update so the publish can route through

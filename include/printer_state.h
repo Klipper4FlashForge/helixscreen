@@ -874,6 +874,12 @@ class PrinterState {
     [[nodiscard]] const PrintJobRef& preparing_job() const {
         return print_domain_.preparing_job();
     }
+    lv_subject_t* get_preparing_epoch_subject() {
+        return print_domain_.get_preparing_epoch_subject();
+    }
+    [[nodiscard]] PreparingExit last_preparing_exit() const {
+        return print_domain_.last_preparing_exit();
+    }
 
     lv_subject_t* get_print_lifecycle_subject() {
         return print_domain_.get_print_lifecycle_subject();

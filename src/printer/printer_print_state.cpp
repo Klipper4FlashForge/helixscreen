@@ -98,6 +98,7 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(print_start_phase, static_cast<int>(PrintStartPhase::IDLE), subjects_,
                      register_xml);
     INIT_SUBJECT_INT(print_lifecycle, static_cast<int>(PrintState::Idle), subjects_, register_xml);
+    INIT_SUBJECT_INT(preparing_epoch, 0, subjects_, false);
     INIT_SUBJECT_STRING(print_start_message, "", subjects_, register_xml);
     INIT_SUBJECT_INT(print_start_progress, 0, subjects_, register_xml);
 
@@ -1313,6 +1314,10 @@ void PrinterPrintState::begin_preparing(const PrintJobRef& job) {
     lv_subject_set_int(&print_start_progress_, 0);
     publish_lifecycle_state();
     update_display_message_visible();
+
+    // Published last: observers of the epoch read preparing_job() and the
+    // cleared state, so everything they can see is already consistent.
+    lv_subject_set_int(&preparing_epoch_, ++preparing_epoch_counter_);
 }
 
 void PrinterPrintState::retire_preparing(PreparingExit reason) {
@@ -1322,6 +1327,7 @@ void PrinterPrintState::retire_preparing(PreparingExit reason) {
     spdlog::info("[PrinterPrintState] Retiring preparing job '{}': {}", preparing_job_.filename,
                  preparing_exit_name(reason));
     preparing_job_ = {};
+    last_preparing_exit_ = reason;
 
     // Confirmed hands off to a real print, which owns the phase from here. Every
     // other reason means no print is coming, so the pre-print UI must come down.
@@ -1332,6 +1338,7 @@ void PrinterPrintState::retire_preparing(PreparingExit reason) {
         update_display_message_visible();
     }
     publish_lifecycle_state();
+    lv_subject_set_int(&preparing_epoch_, 0);
 }
 
 void PrinterPrintState::publish_lifecycle_state() {

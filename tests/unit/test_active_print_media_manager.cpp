@@ -1733,3 +1733,54 @@ TEST_CASE_METHOD(ActivePrintMediaAsyncFixture,
 
     REQUIRE(files().pending_count() == 1); // no reload fired against the dead manager
 }
+
+// ============================================================================
+// Preparing-job identity
+// ============================================================================
+
+TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
+                 "Media adopts the preparing job's identity at commit",
+                 "[active_print_media][preparing]") {
+    // The thumbnail source used to be set from the Moonraker-confirmed callback,
+    // which on a printer with a host-side pre-start block lands minutes after the
+    // user pressed Print. In between, print_stats still names the PREVIOUS job,
+    // so the panel resolved and loaded the wrong file's preview.
+    set_print_filename("previous.gcode");
+    REQUIRE(get_display_filename() == "previous");
+
+    state().begin_preparing(helix::PrintJobRef{"next.gcode", "", ""});
+    UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    REQUIRE(get_display_filename() == "next");
+}
+
+TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
+                 "A superseded preparing job releases its media claim",
+                 "[active_print_media][preparing]") {
+    // Somebody started a different print while ours was preparing. Our override
+    // must go, including thumbnail_origin_ - a stale PreSet skips the thumbnail
+    // fetch, which is the mechanism behind #526.
+    state().begin_preparing(helix::PrintJobRef{"mine.gcode", "", ""});
+    UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    REQUIRE(get_display_filename() == "mine");
+
+    state().retire_preparing(helix::PreparingExit::Superseded);
+    set_print_filename("someone_elses.gcode");
+
+    REQUIRE(get_display_filename() == "someone_elses");
+}
+
+TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
+                 "A confirmed preparing job keeps its media claim",
+                 "[active_print_media][preparing]") {
+    // Confirmed means the printer took OUR job. The override must survive,
+    // because the printer may report a rewritten temp file standing in for the
+    // file the user actually chose.
+    state().begin_preparing(helix::PrintJobRef{"mine.gcode", "", ""});
+    UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    state().retire_preparing(helix::PreparingExit::Confirmed);
+    set_print_filename(".helix_temp/modified_mine.gcode");
+
+    REQUIRE(get_display_filename() == "mine");
+}

@@ -296,6 +296,23 @@ class PrinterPrintState {
     }
 
     /**
+     * @brief Bumped each time a job starts preparing; 0 when none is
+     *
+     * Consumers that must adopt the new job's identity - the media manager
+     * above all - observe this instead of relying on every start path
+     * remembering to tell them. An epoch rather than a flag, so two
+     * back-to-back prints of the SAME file are still distinguishable.
+     */
+    lv_subject_t* get_preparing_epoch_subject() {
+        return &preparing_epoch_;
+    }
+
+    /// Why the last preparing job ended. Meaningful once the epoch reads 0.
+    [[nodiscard]] PreparingExit last_preparing_exit() const {
+        return last_preparing_exit_;
+    }
+
+    /**
      * @brief The authoritative UI-level print state (PrintState enum)
      *
      * Derived from print_stats.state and the pre-print phase by
@@ -776,6 +793,9 @@ class PrinterPrintState {
 
     /// The job we are preparing; empty when none. See begin_preparing().
     PrintJobRef preparing_job_{};
+    lv_subject_t preparing_epoch_{}; // Integer: bumped per preparing job, 0 when none
+    int preparing_epoch_counter_ = 0;
+    PreparingExit last_preparing_exit_ = PreparingExit::Confirmed;
     lv_subject_t print_start_message_{};  // String: phase message
     lv_subject_t print_start_progress_{}; // Integer: 0-100%
 
