@@ -667,6 +667,28 @@ class PrintPreparationManager {
                               PrintCompletionCallback on_completion);
 
     /**
+     * @brief Retire the preparing job after a start attempt dies inside here
+     *
+     * The modify and remap routes take no completion callback -
+     * continue_print_start() calls modify_and_print() and returns - so
+     * PrintStartController's own retire_preparing(Failed) is unreachable from
+     * them. Whatever ends the attempt here has to retire the job.
+     *
+     * Getting this wrong is not a cosmetic leak: `print_in_progress` is now
+     * PUBLISHED from the preparing job rather than set by hand, so a job left
+     * armed keeps the flag true until the 1800s watchdog fires. In that window
+     * can_start_new_print() refuses every later print, `job_holds_machine` stays
+     * 1 (greying jog, levelling, macros and the bypass tile, refusing filament
+     * ops, inhibiting display sleep), and the status panel sits on "Preparing".
+     *
+     * Main thread only - it writes subjects. Every call site below is already
+     * inside a token.defer() or on a synchronous path.
+     *
+     * @param where Short tag naming the exit, for the log line.
+     */
+    void abandon_start(const char* where);
+
+    /**
      * @brief Lazy-initialize the prep-time estimate subject.
      *
      * Called from get_preprint_estimate_subject(); ensures the subject is
