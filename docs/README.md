@@ -102,7 +102,6 @@ Welcome to the HelixScreen documentation. Choose your path:
 |----------|-------------|
 | [**Roadmap**](devel/ROADMAP.md) | Feature timeline and milestones |
 | [**Active Plans**](devel/plans/) | Current implementation plans and tech debt |
-| [**Archive**](archive/) | Historical implementation plans |
 
 ---
 
