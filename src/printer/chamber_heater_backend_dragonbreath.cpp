@@ -71,9 +71,21 @@ class DragonbreathBackend : public ChamberHeaterBackend {
             d.filter_fan_reason = status["fan_reason"].get<std::string>();
         }
         // Externally driven: heater active, but neither klipper source nor our lease.
-        bool heating = status.value("mode", "") == "power_on";
-        std::string source = status.value("source", "");
-        bool ours = status.value("lease_owned", false) || source == "klipper";
+        // Fields may arrive as null (value() throws on null, not just on missing).
+        std::string mode;
+        if (status.contains("mode") && status["mode"].is_string()) {
+            mode = status["mode"].get<std::string>();
+        }
+        std::string source;
+        if (status.contains("source") && status["source"].is_string()) {
+            source = status["source"].get<std::string>();
+        }
+        bool lease_owned = false;
+        if (status.contains("lease_owned") && status["lease_owned"].is_boolean()) {
+            lease_owned = status["lease_owned"].get<bool>();
+        }
+        bool heating = mode == "power_on";
+        bool ours = lease_owned || source == "klipper";
         d.externally_controlled = heating && !ours;
         return d;
     }

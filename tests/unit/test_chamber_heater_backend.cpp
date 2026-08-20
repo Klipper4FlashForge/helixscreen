@@ -86,6 +86,17 @@ TEST_CASE("dragonbreath parse: faulted + external-control variants", "[chamber][
     CHECK(ext->externally_controlled == true); // heating, source != klipper, no lease
 }
 
+TEST_CASE("dragonbreath parse tolerates null lease fields", "[chamber][backend]") {
+    const auto* db = backend_by_id("dragonbreath");
+    // .value() throws type_error.302 when a key is present but null; the
+    // schema really emits nulls (mock synthesizes fault_reason: null).
+    auto d = db->parse_diagnostics(nlohmann::json::parse(R"({"fault":false,
+      "inhibited":false,"fault_reason":null,"ptc_temp":24.9,"fan_percent":0,
+      "fan_reason":"off","mode":null,"source":null,"lease_owned":null})"));
+    REQUIRE(d.has_value());
+    CHECK(d->externally_controlled == false);
+}
+
 TEST_CASE("dragonbreath parse rejects foreign payloads", "[chamber][backend]") {
     const auto* db = backend_by_id("dragonbreath");
     CHECK_FALSE(

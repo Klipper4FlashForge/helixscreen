@@ -41,11 +41,6 @@ class ChamberHeaterBackend {
     virtual std::string_view diagnostics_object() const = 0;
     /// Binary filtration-fan output_pin ("" = none).
     virtual std::string_view filter_fan_pin() const = 0;
-    /// Chamber cooling fan object for integrated chambers ("" = none).
-    virtual std::string cooling_fan_object(const std::string& discovered_name) const {
-        (void)discovered_name;
-        return {};
-    }
     /// Gcode clearing a latched fault ("" = none).
     virtual std::string_view fault_reset_gcode() const = 0;
     /// Conservative °C ceiling when configfile max_temp is unknown. 0 = no clamp.
