@@ -540,6 +540,7 @@ TEST_CASE("PrintStart: typical noise lines should not match phases", "[print][ne
 #include "moonraker_client_mock.h"
 #include "print_start_collector.h"
 #include "print_start_profile.h"
+#include "thermal_rate_model.h"
 #include "translation_loader.h"
 
 using namespace helix;
@@ -1909,6 +1910,90 @@ TEST_CASE_METHOD(PrintStartCollectorSequentialFixture,
     send_gcode_response("// State: PRINTING...");
     REQUIRE(get_current_progress() == 100);
     REQUIRE(get_current_phase() == PrintStartPhase::COMPLETE);
+}
+
+// ============================================================================
+// ============================================================================
+// ETA RE-BASELINE TESTS
+//
+// Reproduced from the K1C capture of 2026-08-19: monitoring started before the
+// firmware set heater targets, so the first ETA publish anchored on a
+// target-less provisional estimate (215s). Real targets arrived one second
+// later and the recompute said 469s — but the strict monotonic guard clamped
+// every subsequent publish back down to 215s for the entire 369s prep. The
+// anchor must re-baseline when the weights' inputs change, not just when time
+// passes.
+// ============================================================================
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "ETA rises when heater targets arrive after monitoring started",
+                 "[print][collector][eta]") {
+    // Ambient temps, no targets yet (START_PRINT hasn't issued M104/M140).
+    set_all_temps(250, 0, 500, 0);
+    collector().start();
+    collector().enable_fallbacks();
+    // Empty history bucket (first print with this window/temp class) and a
+    // learned-rate heater so the recomputed durations are realistic.
+    PrintStartCollectorTestAccess::clear_prediction_history(collector());
+    auto& rates = ThermalRateManager::instance();
+    rates.get_model("extruder").set_default_rate(1.0f);
+    rates.get_model("heater_bed").set_default_rate(1.0f);
+    drain_async_updates();
+
+    // start() publishes the provisional estimate immediately.
+    const int provisional = lv_subject_get_int(state().get_preprint_remaining_subject());
+    REQUIRE(provisional > 0);
+
+    // Heater targets land (K1C CX_ROUGH_G28 stage: nozzle to probe temp, bed
+    // to print temp) and the subject observer path runs the recompute.
+    set_all_temps(250, 550, 500, 1300);
+    collector().check_fallback_completion();
+    drain_async_updates();
+
+    PrintStartCollectorTestAccess::run_eta_update(collector());
+    drain_async_updates();
+
+    const int corrected = lv_subject_get_int(state().get_preprint_remaining_subject());
+    REQUIRE(corrected > provisional);
+
+    // The corrected estimate is the new anchor: without further input changes
+    // remaining must not creep back up on later ticks.
+    PrintStartCollectorTestAccess::run_eta_update(collector());
+    drain_async_updates();
+    const int settled = lv_subject_get_int(state().get_preprint_remaining_subject());
+    REQUIRE(settled <= corrected);
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "ETA re-baselines when nozzle target rises in stages", "[print][collector][eta]") {
+    // K1C heats the nozzle to ~130°C for probing, then to print temp. The
+    // second stage is a genuine new input: the recompute (and the anchor
+    // release) must fire on a substantial target RISE, not only on 0→positive.
+    set_all_temps(250, 550, 500, 1300);
+    collector().start();
+    collector().enable_fallbacks();
+    PrintStartCollectorTestAccess::clear_prediction_history(collector());
+    auto& rates = ThermalRateManager::instance();
+    rates.get_model("extruder").set_default_rate(1.0f);
+    rates.get_model("heater_bed").set_default_rate(1.0f);
+    drain_async_updates();
+    collector().check_fallback_completion();
+    drain_async_updates();
+    PrintStartCollectorTestAccess::run_eta_update(collector());
+    drain_async_updates();
+    const int probe_stage = lv_subject_get_int(state().get_preprint_remaining_subject());
+    REQUIRE(probe_stage > 0);
+
+    // Firmware raises the nozzle to print temp; nozzle temp is still well
+    // below it, so the heating phase keeps real weight.
+    set_all_temps(250, 550, 500, 2200);
+    collector().check_fallback_completion();
+    drain_async_updates();
+    PrintStartCollectorTestAccess::run_eta_update(collector());
+    drain_async_updates();
+
+    const int print_stage = lv_subject_get_int(state().get_preprint_remaining_subject());
+    REQUIRE(print_stage > probe_stage);
 }
 
 // ============================================================================

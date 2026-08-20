@@ -461,19 +461,28 @@ void PrintStartCollector::check_fallback_completion() {
     // Recompute predicted weights when heater targets increase from 0.
     // This handles macros that heat bed first, then issue M109 later —
     // at start() time the nozzle target is 0, so HEATING_NOZZLE gets no weight.
-    // Only recompute on 0→positive transitions to avoid churn from temporary
-    // M104 S0 (nozzle cooldown for probe cleaning) that would remove the
-    // heating phase and cause progress regression.
+    // Also recompute on a substantial RISE (e.g. staged heating: probe temp,
+    // then print temp), but never on decreases — temporary M104 S0 (nozzle
+    // cooldown for probe cleaning) must not remove the heating phase and
+    // cause progress regression.
     {
         int new_ext = helix::ui::temperature::deci_to_degrees(ext_target);
         int new_bed = helix::ui::temperature::deci_to_degrees(bed_target);
+        constexpr int TARGET_RISE_RECOMPUTE_DEGREES = 15;
         bool ext_newly_set = (weights_ext_target_ == 0 && new_ext > 0);
         bool bed_newly_set = (weights_bed_target_ == 0 && new_bed > 0);
-        if (ext_newly_set || bed_newly_set) {
+        bool ext_rose = new_ext > weights_ext_target_ + TARGET_RISE_RECOMPUTE_DEGREES;
+        bool bed_rose = new_bed > weights_bed_target_ + TARGET_RISE_RECOMPUTE_DEGREES;
+        if (ext_newly_set || bed_newly_set || ext_rose || bed_rose) {
             spdlog::info("[PrintStartCollector] Heater targets changed "
                          "(ext: {}→{}°C, bed: {}→{}°C), recomputing weights",
                          weights_ext_target_, new_ext, weights_bed_target_, new_bed);
             compute_predicted_weights();
+            // The ETA's inputs changed, not just its noise: release the
+            // monotonic anchor so the next publish can report the corrected
+            // estimate instead of clamping it back to the target-less
+            // provisional one (observed frozen at 215s for a 369s prep).
+            last_remaining_ = 0;
         }
     }
 
