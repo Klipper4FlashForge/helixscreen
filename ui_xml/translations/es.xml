@@ -2456,6 +2456,7 @@
   <translation tag="Toggle (fire-and-forget)" es="Alternar (fire-and-forget)"/>
   <translation tag="Toggle AFC LED strip" es="Alternar la tira LED del AFC"/>
   <translation tag="Toggle Auto-Refill" es="Alternar el rellenado automático"/>
+  <translation tag="Toggle Moonraker power devices" es="Alternar dispositivos de energía de Moonraker"/>
   <translation tag="Toggle Quiet Mode" es="Alternar el modo silencioso"/>
   <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" es="Alternar el LED del cabezal para un extrusor"/>

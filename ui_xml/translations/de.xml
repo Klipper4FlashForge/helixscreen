@@ -2456,6 +2456,7 @@
   <translation tag="Toggle (fire-and-forget)" de="Umschalten (fire-and-forget)"/>
   <translation tag="Toggle AFC LED strip" de="AFC-LED-Streifen umschalten"/>
   <translation tag="Toggle Auto-Refill" de="Automatisches Nachfüllen umschalten"/>
+  <translation tag="Toggle Moonraker power devices" de="Moonraker-Stromgeräte umschalten"/>
   <translation tag="Toggle Quiet Mode" de="Leisen Modus umschalten"/>
   <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" de="Werkzeugkopf-LED für einen Extruder umschalten"/>

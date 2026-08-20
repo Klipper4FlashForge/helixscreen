@@ -2456,6 +2456,7 @@
   <translation tag="Toggle (fire-and-forget)" ja="トグル（状態追跡なし）"/>
   <translation tag="Toggle AFC LED strip" ja="AFC LEDストリップを切り替え"/>
   <translation tag="Toggle Auto-Refill" ja="自動補充を切り替え"/>
+  <translation tag="Toggle Moonraker power devices" ja="Moonraker電源デバイスを切り替え"/>
   <translation tag="Toggle Quiet Mode" ja="静音モードを切り替え"/>
   <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" ja="エクストルーダーのツールヘッドLEDを切り替え"/>
