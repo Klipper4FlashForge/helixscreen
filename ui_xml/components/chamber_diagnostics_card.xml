@@ -81,14 +81,16 @@
         <bind_flag_if cond="chamber_heater_fault or chamber_heater_inhibited" flag="hidden" invert="true"/>
         <text_small name="fault_reason_label"
                     bind_text="chamber_heater_fault_reason" style_text_color="#danger" flex_grow="1"/>
-        <ui_button name="reset_fault_button" text="Reset" translation_tag="Reset" variant="ghost"
-                   height="#button_height_sm_tiny" style_pad_left="#space_xs" style_pad_right="#space_xs"
-                   style_border_width="#border_width" style_border_color="#border" style_border_opa="255">
+        <ui_button name="reset_fault_button"
+                   height="#button_height_sm_tiny" text="Reset" translation_tag="Reset" variant="ghost"
+                   style_pad_left="#space_xs" style_pad_right="#space_xs" style_border_width="#border_width"
+                   style_border_color="#border" style_border_opa="255">
           <event_cb trigger="clicked" callback="on_chamber_fault_reset_clicked"/>
         </ui_button>
       </lv_obj>
-      <lv_obj width="100%" height="content" flex_flow="row" style_pad_gap="#space_md"
-              style_flex_cross_place="center" scrollable="false">
+      <lv_obj width="100%"
+              height="content" flex_flow="row" style_pad_gap="#space_md" style_flex_cross_place="center"
+              scrollable="false">
         <lv_obj height="content" flex_flow="column" style_pad_gap="#space_xxs" scrollable="false">
           <text_muted text="Element" translation_tag="Element"/>
           <text_small name="element_temp_label" bind_text="chamber_heater_element_temp_text"/>
@@ -98,9 +100,10 @@
           <text_small name="fan_percent_label" bind_text="chamber_filter_fan_percent_text"/>
         </lv_obj>
         <lv_obj height="1" flex_grow="1" style_pad_all="0" scrollable="false" style_border_opa="0"/>
-        <ui_button name="filter_fan_button" width="#icon_button_size" height="#icon_button_size"
-                   variant="ghost" bind_icon="chamber_filter_fan_icon"
-                   style_border_width="#border_width" style_border_color="#border" style_border_opa="255">
+        <ui_button name="filter_fan_button"
+                   width="#icon_button_size" height="#icon_button_size" variant="ghost"
+                   bind_icon="chamber_filter_fan_icon" style_border_width="#border_width" style_border_color="#border"
+                   style_border_opa="255">
           <bind_flag_if_eq subject="printer_has_chamber_filter_fan" flag="hidden" ref_value="0"/>
           <event_cb trigger="clicked" callback="on_chamber_filter_fan_clicked"/>
         </ui_button>

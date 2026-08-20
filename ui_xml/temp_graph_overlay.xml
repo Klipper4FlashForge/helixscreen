@@ -87,8 +87,7 @@
              target (272x480). A floor large enough to matter would push the
              card below a scroll — the failure this layout removed. -->
         <lv_obj name="graph_container"
-                width="100%" flex_grow="1" style_pad_all="0" scrollable="false"
-                style_border_opa="0">
+                width="100%" flex_grow="1" style_pad_all="0" scrollable="false" style_border_opa="0">
           <!-- Temperature graph created programmatically in C++ -->
         </lv_obj>
         <!-- Chamber-heater diagnostics card — only when the matched backend
