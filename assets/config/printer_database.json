@@ -1544,18 +1544,15 @@
       "print_start_profile": "creality_k1",
       "pre_print_options": {
         "macro_name": "START_PRINT",
-        "setup_gcode": "PRINT_PREPARED",
         "options": [
           {
             "id": "bed_mesh",
             "category": "mechanical",
             "order": 10,
             "default_enabled": true,
-            "strategy": "macro_param",
-            "param_name": "PREPARE",
-            "enable_value": "0",
-            "skip_value": "1",
-            "default_value": "0"
+            "strategy": "pre_start_gcode",
+            "gcode_template": "CX_ROUGH_G28{?ext} EXTRUDER_TEMP={extruder_temp}{/?} BED_TEMP={bed_temp}\nCX_NOZZLE_CLEAR\nACCURATE_G28\nBED_MESH_CALIBRATE\nPRINT_PREPARED",
+            "emit_when_disabled": false
           }
         ]
       },
@@ -1615,18 +1612,15 @@
       "print_start_profile": "creality_k1",
       "pre_print_options": {
         "macro_name": "START_PRINT",
-        "setup_gcode": "PRINT_PREPARED",
         "options": [
           {
             "id": "bed_mesh",
             "category": "mechanical",
             "order": 10,
             "default_enabled": true,
-            "strategy": "macro_param",
-            "param_name": "PREPARE",
-            "enable_value": "0",
-            "skip_value": "1",
-            "default_value": "0"
+            "strategy": "pre_start_gcode",
+            "gcode_template": "CX_ROUGH_G28{?ext} EXTRUDER_TEMP={extruder_temp}{/?} BED_TEMP={bed_temp}\nCX_NOZZLE_CLEAR\nACCURATE_G28\nBED_MESH_CALIBRATE\nPRINT_PREPARED",
+            "emit_when_disabled": false
           }
         ]
       },
