@@ -47,6 +47,18 @@ Each slot can be in one of four states:
 - **Fallback**: Using HELIX_* macro (installed by HelixScreen)
 - **Empty**: No macro available; functionality is disabled
 
+A **Configured** entry is verified against the printer's macro list at
+`init()` (`StandardMacros::validate_configured()`). A name the printer does not
+define — a preset that seeded a template machine's macros, or a Klipper config
+change that retired one — is **demoted**: the name moves out of
+`configured_macro` into `missing_macro`, and the slot answers as though it were
+unconfigured. Dispatch then falls through to the detected macro, the HELIX
+fallback, or the caller's own fallback path, instead of sending a command
+Klipper will reject. The name is kept rather than dropped — `save_to_config()`
+round-trips what the user asked for (the printer may just be mid-restart), and
+`requested_macro()` still reports it so Settings can show "you configured this
+and it is broken" as distinct from "nothing is assigned here".
+
 ### Adaptive bed mesh: `ADAPTIVE` parameter forwarding
 
 `HELIX_START_PRINT` (in `assets/config/helix_macros.cfg`) accepts an optional
@@ -143,7 +155,7 @@ private:
 ### Resolution Order
 
 When executing a macro, the system checks in order:
-1. **User configured** - Explicit selection in Settings
+1. **User configured** - Explicit selection in Settings (verified to exist on the printer; a name that fails verification is demoted to `missing_macro` and skipped here)
 2. **Auto-detected** - Found on printer via pattern matching
 3. **HELIX fallback** - HelixScreen's helper macro (if available)
 4. **Empty** - No macro; `execute()` returns false, caller should disable UI

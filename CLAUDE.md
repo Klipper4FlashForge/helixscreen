@@ -70,7 +70,7 @@ Most commonly needed:
 
 | Doc | When |
 |-----|------|
-| `docs/devel/ARCHITECTURE.md` | Whole-app 15-minute model + routing table into the 15-chapter architecture guide |
+| `docs/devel/ARCHITECTURE.md` | Whole-app 15-minute model + routing table into the architecture guide's chapters |
 | `docs/devel/UI_CONTRIBUTOR_GUIDE.md` | UI/layout work: breakpoints, tokens, colors, widgets, layout overrides |
 | `docs/devel/LVGL9_XML_GUIDE.md` | XML layouts, widgets, bindings, observer cleanup |
 | `docs/devel/MODAL_SYSTEM.md` | Modal architecture: ui_dialog, modal_button_row, Modal pattern |

@@ -91,6 +91,23 @@ The wording depends on which way round it is, because the risk isn't symmetric:
 
 Your tool mapping is unaffected either way. HelixScreen still routes the tool to that lane, exactly as it did before — the grade difference changes what you're told, not where the filament comes from.
 
+### The Filament In The Toolhead dialog
+
+The dialogs above compare what the *file* needs against what your slots hold. This one looks at the toolhead itself: filament is sitting in it, but no lane in your filament system reports having loaded it. That usually means leftovers — filament that was on its way in or out when an earlier job was cancelled or aborted, and never got seated in a lane. Rather than silently print on top of unknown material, HelixScreen asks first:
+
+> *The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?*
+
+**Buttons:**
+
+| Button | Action |
+|--------|--------|
+| **Start Anyway** | Starts the print with the stray filament left in the toolhead. Reasonable when you know what it is and it matches the file — the tail of the spool you just printed with, for example. |
+| **Cancel** | Backs out. Pull the filament out by hand (or load it properly from a lane), then start the print again. |
+
+![The Filament In The Toolhead dialog](../../images/screenshot-unaccounted-dialog.png)
+
+Only filament systems that can actually tell raise this dialog — AFC (Box Turtle), Happy Hare, Creality CFS, and FlashForge AD5X IFS. On a system that can't determine it, the dialog never appears, and printing from bypass skips it too: bypass means the toolhead filament is the external spool's, which is exactly what you intended.
+
 ---
 
 ## Filament Runout During a Print

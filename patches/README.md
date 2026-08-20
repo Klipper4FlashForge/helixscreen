@@ -90,9 +90,15 @@ LVGL 9.5 removed the entire XML system from core. These patches are now in `lib/
 
 | Patch | Purpose |
 |-------|---------|
-| `libhv-dns-resolver-fallback.patch` | DNS resolver fallback for mDNS |
-| `libhv-streaming-upload.patch` | Streaming upload support |
+| `libhv-dns-resolver-fallback.patch` | Direct UDP DNS resolution fallback for statically-linked builds where `getaddrinfo()` fails |
+| `libhv-hlog-thread-safe-localtime.patch` | `_POSIX_C_SOURCE` define before the headers so `localtime_r()` is declared under `-std=c99` — the implicit-int return becomes a garbage pointer and the first `tm` dereference segfaults |
+| `libhv-hthreadpool-wait-lock.patch` | Take `task_mutex` in `hthreadpool` `wait()`/`commit()` — the unlocked `tasks` read raced a worker's pop (ThreadSanitizer via `ThumbnailProcessor`) |
+| `libhv-http-request-cancel-atomic.patch` | Dedicated `std::atomic` for `HttpRequest::Cancel()` — as a bitfield it shared a word with the redirect/proxy bits, so a cross-thread cancel raced `ParseUrl()`'s read-modify-write |
 | `libhv-openssl-static-link.patch` | OpenSSL/static build hook |
+| `libhv-streaming-upload.patch` | Streaming upload support |
+| `libhv-tcpclient-reconnect-resilience.patch` | `TcpClient` reconnect hardening: re-resolve the host on every retry (a hostname whose IP changed is no longer dialed at its stale address forever), guard the reconnect timer against a stopped event loop, defer old-channel destruction to the loop thread (the onclose closure was freed while still running), and reschedule instead of dropping the retry chain on transient `::socket()` failures |
+| `libhv-websocket-backoff-on-upgrade.patch` | Undo `open()`'s premature backoff reset when the upgrade handshake never reached WS_OPENED — a failing upgrade used to restart the reconnect delay from scratch on every attempt |
+| `libhv-websocket-open-install-once.patch` | Install the TcpClient-level channel callbacks exactly once in the constructor — `open()` reassigned those `std::function` members from the caller's thread, freeing the closure's heap storage under a concurrently running callback |
 
 ## Usage
 
