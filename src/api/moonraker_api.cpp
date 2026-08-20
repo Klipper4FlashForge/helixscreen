@@ -68,9 +68,18 @@ MoonrakerAPI::MoonrakerAPI(IMoonrakerClient& client, PrinterState& state)
             std::lock_guard<std::mutex> lock(bed_mesh_presence_mutex_);
             observer = bed_mesh_presence_observer_;
         }
-        if (observer && bed_mesh.contains("probed_matrix")) {
+        if (bed_mesh.contains("probed_matrix")) {
             const auto& matrix = bed_mesh["probed_matrix"];
-            observer(matrix.is_array() && !matrix.empty());
+            const bool present = matrix.is_array() && !matrix.empty();
+            if (observer) {
+                observer(present);
+            } else {
+                // Diagnostic for the on-device flap silence: distinguishes
+                // "observer never wired/replaced" from downstream gating.
+                spdlog::debug("[MoonrakerAPI] bed-mesh presence verdict dropped: no observer "
+                              "(present={})",
+                              present);
+            }
         }
     });
 }
