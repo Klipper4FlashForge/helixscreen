@@ -46,8 +46,7 @@
         <progress_bar name="calibration_progress_bar" width="80%" bind_value="wizard_input_shaper_progress">
           <!-- One compound rule, not two: two flag observers on the same flag
                each assert both polarities on every fire and clobber each other -->
-          <bind_flag_if cond="wizard_input_shaper_progress eq 0 or wizard_input_shaper_indeterminate eq 1"
-                        flag="hidden"/>
+          <bind_flag_if cond="wizard_input_shaper_progress eq 0 or wizard_input_shaper_indeterminate eq 1" flag="hidden"/>
         </progress_bar>
 
         <!-- Spinner during the indeterminate analysis phase -->

@@ -11,8 +11,8 @@
         extends="overlay_panel" title="Printer Model" title_tag="Printer Model" bg_color="#card_bg">
 
     <lv_obj name="overlay_content"
-            width="100%" flex_grow="1" style_pad_all="#space_sm" flex_flow="column"
-            style_pad_gap="#space_sm" scrollable="false">
+            width="100%" flex_grow="1" style_pad_all="#space_sm" flex_flow="column" style_pad_gap="#space_sm"
+            scrollable="false">
 
       <info_note icon="info"
                  text="Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses."
