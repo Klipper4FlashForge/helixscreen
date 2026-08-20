@@ -151,9 +151,14 @@ void PowerPanel::fetch_devices() {
 }
 
 void PowerPanel::clear_device_list() {
-    // Remove all device row widgets
+    // Deferred, never synchronous: the only caller is populate_device_list(),
+    // which runs from the deferred get_power_devices reply. N sync deletions in
+    // one UpdateQueue batch corrupt LVGL's global event linked list (#776, #190,
+    // #80 — THREADING.md invariant 3). safe_delete_deferred() detaches each row
+    // immediately, so the container is empty for the rebuild that follows, and
+    // hands the deletion to LVGL's own async list outside our drain.
     for (auto& row : device_rows_) {
-        helix::ui::safe_delete(row.container);
+        helix::ui::safe_delete_deferred(row.container);
     }
     device_rows_.clear();
 }
