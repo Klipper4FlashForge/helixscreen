@@ -4,9 +4,15 @@
 #include "../lvgl_test_fixture.h"
 #include "gcode_layer_renderer.h"
 #include "gcode_parser.h"
+#include "gcode_projection.h"
+#include "gcode_streaming_controller.h"
 #include "system/crash_handler.h"
 
+#include <cstdio>
+#include <fstream>
+#include <glm/glm.hpp>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 #include <unordered_set>
@@ -410,4 +416,300 @@ TEST_CASE_METHOD(LVGLTestFixture, "render_layers_to_cache emits gcode breadcrumb
         }
     }
     REQUIRE(found);
+}
+
+// =============================================================================
+// Pick Object At - whole-stack hit testing
+//
+// The view draws every layer up to current_layer_, so picking has to match. A
+// full preview parks current_layer_ on the TOP layer, whose segments are often
+// a sliver in one corner, which used to make tap-to-select and
+// long-press-to-exclude dead in the 2D view. The fixtures below populate
+// ParsedGCodeFile::objects with real 3D bounding boxes (make_test_gcode() above
+// deliberately does not), which is what the parser produces and what the
+// projected-AABB stage of the picker consumes.
+// =============================================================================
+
+namespace {
+
+constexpr int PICK_CANVAS = 200;
+
+// Mirror of the renderer's own projection so these tests can name a click point
+// in world millimetres instead of hard-coded pixels. auto_fit() feeds
+// compute_auto_fit() the global bounding box with the default 5% padding, and
+// content_offset_y_percent_ defaults to 0.
+glm::ivec2 project_expected(const AABB& fit_box, float x, float y, float z = 0.0f) {
+    auto fit = compute_auto_fit(fit_box, ViewMode::TOP_DOWN, PICK_CANVAS, PICK_CANVAS);
+    ProjectionParams params;
+    params.view_mode = ViewMode::TOP_DOWN;
+    params.scale = fit.scale;
+    params.offset_x = fit.offset_x;
+    params.offset_y = fit.offset_y;
+    params.offset_z = fit.offset_z;
+    params.canvas_width = PICK_CANVAS;
+    params.canvas_height = PICK_CANVAS;
+    return project(params, x, y, z);
+}
+
+bool xy_inside(const AABB& box, float x, float y) {
+    return x >= box.min.x && x <= box.max.x && y >= box.min.y && y <= box.max.y;
+}
+
+// Grow `layer` and `gcode` by one extrusion segment attributed to `object`,
+// mirroring GCodeParser: the object's bounding_box is expanded over that
+// object's own extrusion endpoints, so it spans the object's full Z range
+// rather than a single layer.
+void add_object_segment(ParsedGCodeFile& gcode, Layer& layer, const std::string& object,
+                        const glm::vec3& start, const glm::vec3& end) {
+    ToolpathSegment seg;
+    seg.start = start;
+    seg.end = end;
+    seg.is_extrusion = true;
+    seg.object_name_index = gcode.intern_object_name(object);
+    layer.segments.push_back(seg);
+    layer.segment_count_extrusion++;
+    layer.bounding_box.expand(start);
+    layer.bounding_box.expand(end);
+
+    gcode.global_bounding_box.expand(start);
+    gcode.global_bounding_box.expand(end);
+    gcode.total_segments++;
+
+    GCodeObject& obj = gcode.objects[object];
+    obj.name = object;
+    obj.bounding_box.expand(start);
+    obj.bounding_box.expand(end);
+}
+
+// Object "body" spans layers 0..3 as two rails across XY [10,50]x[10,50]. The
+// TOP layer (4) holds only a short patch parked at y=90, far from the body.
+// That is the shipped-bug shape: the picker saw layer 4 only.
+ParsedGCodeFile make_tall_object_gcode() {
+    ParsedGCodeFile gcode;
+    for (int i = 0; i < 4; ++i) {
+        Layer layer;
+        layer.z_height = 0.2f * static_cast<float>(i);
+        const float z = layer.z_height;
+        add_object_segment(gcode, layer, "body", {10.0f, 10.0f, z}, {50.0f, 10.0f, z});
+        add_object_segment(gcode, layer, "body", {10.0f, 50.0f, z}, {50.0f, 50.0f, z});
+        gcode.layers.push_back(std::move(layer));
+    }
+    Layer top;
+    top.z_height = 0.8f;
+    add_object_segment(gcode, top, "body", {10.0f, 90.0f, 0.8f}, {14.0f, 90.0f, 0.8f});
+    gcode.layers.push_back(std::move(top));
+    return gcode;
+}
+
+// Two L-shaped objects on one layer whose projected boxes overlap in
+// XY [40,60]x[40,60], so a click there is a candidate for both:
+//   "alpha": rail x=10 (y 10..60) + rail y=50 (x 10..60)  -> box [10,60]x[10,60]
+//   "beta" : rail x=90 (y 40..90) + rail y=90 (x 40..90)
+//            + rail x=55 (y 40..90)                       -> box [40,90]x[40,90]
+// "alpha" sorts first in the std::map, so a picker that just returned the first
+// containing box would always answer "alpha".
+ParsedGCodeFile make_overlapping_boxes_gcode() {
+    ParsedGCodeFile gcode;
+    Layer layer;
+    layer.z_height = 0.2f;
+    const float z = 0.2f;
+    add_object_segment(gcode, layer, "alpha", {10.0f, 10.0f, z}, {10.0f, 60.0f, z});
+    add_object_segment(gcode, layer, "alpha", {10.0f, 50.0f, z}, {60.0f, 50.0f, z});
+    add_object_segment(gcode, layer, "beta", {90.0f, 40.0f, z}, {90.0f, 90.0f, z});
+    add_object_segment(gcode, layer, "beta", {40.0f, 90.0f, z}, {90.0f, 90.0f, z});
+    add_object_segment(gcode, layer, "beta", {55.0f, 40.0f, z}, {55.0f, 90.0f, z});
+    gcode.layers.push_back(std::move(layer));
+    return gcode;
+}
+
+// 12 z-steps. The bottom layer is object "base" in the low XY corner; every
+// layer above is object "tower" in the high corner. Each layer wraps its own
+// EXCLUDE_OBJECT_START/END so a layer chunk parsed in isolation (streaming)
+// still carries object attribution.
+std::string make_streaming_pick_gcode() {
+    std::ostringstream out;
+    out << "; streaming pick fixture\nG28\nG90\nM82\n";
+    int e = 1;
+    for (int i = 0; i < 12; ++i) {
+        const char* name = (i == 0) ? "base" : "tower";
+        const int x0 = (i == 0) ? 10 : 70;
+        const int y0 = (i == 0) ? 10 : 70;
+        out << "G1 Z" << (0.2f * static_cast<float>(i + 1)) << " F1000\n";
+        out << "G1 X" << x0 << " Y" << y0 << " F3000\n";
+        out << "EXCLUDE_OBJECT_START NAME=" << name << "\n";
+        out << "G1 X" << (x0 + 20) << " Y" << y0 << " E" << e++ << "\n";
+        out << "G1 X" << (x0 + 20) << " Y" << (y0 + 20) << " E" << e++ << "\n";
+        out << "EXCLUDE_OBJECT_END NAME=" << name << "\n";
+    }
+    return out.str();
+}
+
+class TempPickGCodeFile {
+  public:
+    explicit TempPickGCodeFile(const std::string& content) {
+        char temp_path[] = "/tmp/gcode_pick_test_XXXXXX";
+        int fd = ::mkstemp(temp_path);
+        REQUIRE(fd != -1);
+        ::close(fd);
+        path_ = temp_path;
+        std::ofstream file(path_);
+        file << content;
+    }
+    ~TempPickGCodeFile() {
+        ::remove(path_.c_str());
+    }
+    const std::string& path() const {
+        return path_;
+    }
+
+  private:
+    std::string path_;
+};
+
+// Full-file renderer wired the way the preview panel wires it.
+void configure(GCodeLayerRenderer& renderer, const ParsedGCodeFile& gcode, int layer) {
+    renderer.set_gcode(&gcode);
+    renderer.set_canvas_size(PICK_CANVAS, PICK_CANVAS);
+    renderer.set_view_mode(GCodeLayerRenderer::ViewMode::TOP_DOWN);
+    renderer.auto_fit();
+    renderer.set_current_layer(layer);
+}
+
+} // namespace
+
+// THE REGRESSION. current_layer_ is the top layer, whose only segments sit at
+// y=90; the click is in the middle of the object's body, 20mm clear of every
+// rail on every layer. Before the projected-AABB stage existed this returned
+// nullopt, which is exactly what a real tap on a 3-object plate did.
+TEST_CASE("pick_object_at picks an object whose body is below the current layer",
+          "[layer_renderer][pick]") {
+    GCodeLayerRenderer renderer;
+    auto gcode = make_tall_object_gcode();
+    configure(renderer, gcode, 4);
+
+    const AABB& fit_box = gcode.global_bounding_box;
+    const glm::ivec2 body = project_expected(fit_box, 30.0f, 30.0f);
+    const glm::ivec2 top_patch = project_expected(fit_box, 12.0f, 90.0f);
+    const glm::ivec2 lower_rail = project_expected(fit_box, 30.0f, 10.0f);
+
+    // Fixture guards: the click must be far from the top layer's segments AND
+    // from the body's own rails, so a pass cannot come from segment proximity.
+    REQUIRE(glm::distance(glm::vec2(body), glm::vec2(top_patch)) > 15.0f);
+    REQUIRE(glm::distance(glm::vec2(body), glm::vec2(lower_rail)) > 15.0f);
+
+    auto result = renderer.pick_object_at(body.x, body.y);
+    REQUIRE(result.has_value());
+    CHECK(result.value() == "body");
+}
+
+TEST_CASE("pick_object_at returns nullopt outside every object's projected box",
+          "[layer_renderer][pick]") {
+    GCodeLayerRenderer renderer;
+    auto gcode = make_tall_object_gcode();
+    configure(renderer, gcode, 4);
+
+    const AABB& fit_box = gcode.global_bounding_box;
+    const glm::ivec2 left_edge = project_expected(fit_box, 10.0f, 30.0f);
+
+    // 40px left of the box's left edge - clear of the PICK_THRESHOLD_PX inflation.
+    auto left_miss = renderer.pick_object_at(left_edge.x - 40, left_edge.y);
+    CHECK_FALSE(left_miss.has_value());
+
+    const glm::ivec2 right_edge = project_expected(fit_box, 50.0f, 30.0f);
+    auto right_miss = renderer.pick_object_at(right_edge.x + 40, right_edge.y);
+    CHECK_FALSE(right_miss.has_value());
+}
+
+TEST_CASE("pick_object_at disambiguates overlapping projected boxes by segment distance",
+          "[layer_renderer][pick]") {
+    GCodeLayerRenderer renderer;
+    auto gcode = make_overlapping_boxes_gcode();
+    configure(renderer, gcode, 0);
+
+    const AABB& fit_box = gcode.global_bounding_box;
+    const AABB& alpha_box = gcode.objects.at("alpha").bounding_box;
+    const AABB& beta_box = gcode.objects.at("beta").bounding_box;
+
+    // Fixture guard: this click is inside BOTH boxes, so the tie has to be
+    // broken by geometry. It sits on beta's x=55 rail and 9mm (~20px) from
+    // alpha's nearest rail.
+    REQUIRE(xy_inside(alpha_box, 55.0f, 41.0f));
+    REQUIRE(xy_inside(beta_box, 55.0f, 41.0f));
+
+    const glm::ivec2 on_beta = project_expected(fit_box, 55.0f, 41.0f);
+    auto beta_hit = renderer.pick_object_at(on_beta.x, on_beta.y);
+    REQUIRE(beta_hit.has_value());
+    CHECK(beta_hit.value() == "beta");
+
+    // And a click only alpha's box contains still resolves to alpha.
+    REQUIRE_FALSE(xy_inside(beta_box, 10.0f, 20.0f));
+    const glm::ivec2 on_alpha = project_expected(fit_box, 10.0f, 20.0f);
+    auto alpha_hit = renderer.pick_object_at(on_alpha.x, on_alpha.y);
+    REQUIRE(alpha_hit.has_value());
+    CHECK(alpha_hit.value() == "alpha");
+}
+
+TEST_CASE("pick_object_at skips objects with an empty bounding box", "[layer_renderer][pick]") {
+    GCodeLayerRenderer renderer;
+    auto gcode = make_tall_object_gcode();
+
+    // EXCLUDE_OBJECT_DEFINE ran but no extrusion followed, so bounding_box is
+    // still the +/-inf default. Projecting those corners must not be attempted.
+    GCodeObject& ghost = gcode.objects["ghost"];
+    ghost.name = "ghost";
+    REQUIRE(ghost.bounding_box.is_empty());
+
+    configure(renderer, gcode, 4);
+
+    const AABB& fit_box = gcode.global_bounding_box;
+    const glm::ivec2 body = project_expected(fit_box, 30.0f, 30.0f);
+    const glm::ivec2 left_edge = project_expected(fit_box, 10.0f, 30.0f);
+
+    std::optional<std::string> body_hit;
+    REQUIRE_NOTHROW(body_hit = renderer.pick_object_at(body.x, body.y));
+    REQUIRE(body_hit.has_value());
+    CHECK(body_hit.value() == "body");
+
+    // Empty space must not resolve to the never-extruded object.
+    std::optional<std::string> miss;
+    REQUIRE_NOTHROW(miss = renderer.pick_object_at(left_edge.x - 40, left_edge.y));
+    CHECK_FALSE(miss.has_value());
+}
+
+TEST_CASE("pick_object_at in streaming mode walks past uncached layers",
+          "[layer_renderer][pick][streaming]") {
+    TempPickGCodeFile file(make_streaming_pick_gcode());
+    GCodeStreamingController controller;
+    REQUIRE(controller.open_file(file.path()));
+
+    const int layer_count = static_cast<int>(controller.get_layer_count());
+    REQUIRE(layer_count >= 12);
+
+    GCodeLayerRenderer renderer;
+    renderer.set_streaming_controller(&controller);
+    renderer.set_canvas_size(PICK_CANVAS, PICK_CANVAS);
+    renderer.set_view_mode(GCodeLayerRenderer::ViewMode::TOP_DOWN);
+    renderer.auto_fit();
+
+    // Cache only the bottom of the file. DEFAULT_PREFETCH_RADIUS is 3, so
+    // everything above layer 3 stays uncached and try_get_layer_segments()
+    // returns null there - the downward walk has to skip it, never seek.
+    (void)controller.get_layer_segments(0);
+    controller.wait_for_prefetch_idle();
+    REQUIRE_FALSE(controller.is_layer_cached(static_cast<size_t>(layer_count - 1)));
+
+    renderer.set_current_layer(layer_count - 1);
+
+    const auto& stats = controller.get_index_stats();
+    REQUIRE(stats.has_xy_bounds());
+    AABB fit_box;
+    fit_box.min = {stats.min_x, stats.min_y, stats.min_z};
+    fit_box.max = {stats.max_x, stats.max_y, stats.max_z};
+
+    // On "base"'s rail, which lives only on the bottom (cached) layer.
+    const glm::ivec2 on_base = project_expected(fit_box, 20.0f, 10.0f);
+    std::optional<std::string> result;
+    REQUIRE_NOTHROW(result = renderer.pick_object_at(on_base.x, on_base.y));
+    REQUIRE(result.has_value());
+    CHECK(result.value() == "base");
 }
