@@ -885,7 +885,42 @@ void MoonrakerClientMock::rebuild_hardware_from_lists() {
         objects.push_back(obj);
     }
 
-    discovery_.modify_hardware([&](PrinterDiscovery& hw) { hw.parse_objects(objects); });
+    // Chamber-backend surfaces (bare diagnostics object, filter-fan pin) are
+    // not derivable from the discovery lists — parse_objects() classifies
+    // neither into one. Preserve the ones a previous populate materialized
+    // (and only while the backend's heater itself survived the rebuild), or
+    // the chamber status helpers go silent after set_heaters()/set_fans().
+    {
+        const auto hw_prev = discovery_.hardware();
+        const auto* backend = chamber::backend_by_id(hw_prev.chamber_heater_backend_id());
+        const std::string& heater = hw_prev.chamber_heater_name();
+        if (backend && !heater.empty() &&
+            std::find(objects.begin(), objects.end(), json(heater)) != objects.end()) {
+            const auto& prev = hw_prev.printer_objects();
+            for (const std::string key : {std::string(backend->diagnostics_object()),
+                                          std::string(backend->filter_fan_pin())}) {
+                if (!key.empty() && std::find(prev.begin(), prev.end(), key) != prev.end() &&
+                    std::find(objects.begin(), objects.end(), json(key)) == objects.end()) {
+                    objects.push_back(key);
+                }
+            }
+        }
+    }
+
+    discovery_.modify_hardware([&](PrinterDiscovery& hw) {
+        hw.parse_objects(objects);
+        // parse_objects() clears printer_objects_; repopulate from the same
+        // array the way populate_capabilities() does (and the real discovery
+        // sequence does at moonraker_discovery_sequence.cpp), or
+        // objects.list and the chamber-backend status helpers go dark after
+        // a rebuild.
+        std::vector<std::string> all_objects;
+        all_objects.reserve(objects.size());
+        for (const auto& obj : objects) {
+            all_objects.push_back(obj.get<std::string>());
+        }
+        hw.set_printer_objects(all_objects);
+    });
     update_cached_chamber_key();
 }
 
@@ -3716,8 +3751,9 @@ void MoonrakerClientMock::dispatch_initial_state() {
     }
 
     // Chamber backend diagnostics + filter pin (e.g. dragonbreath trio via
-    // HELIX_MOCK_OBJECTS). Runs after the LED merge above so the filter pin's
-    // real value wins over the generic 0.75 output_pin default.
+    // HELIX_MOCK_OBJECTS). Tail of the builder; keys are distinct from every
+    // merge above (the LED loop only walks profile LEDs in discovery_.leds(),
+    // which never contains env-materialized pins).
     append_chamber_backend_status(initial_status, 0.0);
 
     spdlog::debug("[MoonrakerClientMock] Dispatching initial state: extruder={}/{}°C, bed={}/{}°C, "

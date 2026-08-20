@@ -177,6 +177,27 @@ TEST_CASE_METHOD(HelixTestFixture, "mock materializes dragonbreath trio", "[cham
         REQUIRE(frame.contains("dragonbreath"));
         CHECK(frame["dragonbreath"]["mode"].get<std::string>() == "power_on");
     }
+
+    SECTION("set_heaters rebuild keeps backend surfaces answering") {
+        // rebuild_hardware_from_lists() re-parses from the discovery lists,
+        // which cannot express the bare diagnostics object or the filter pin
+        // (parse_objects classifies neither). Without the rebuild preserving
+        // them, chamber status emission and objects.list silently go dark.
+        client.set_heaters({"heater_bed", "extruder", "heater_generic dragonbreath"});
+
+        const json response = query_object_list(client);
+        CHECK(object_list_contains(response, "heater_generic dragonbreath"));
+        CHECK(object_list_contains(response, "dragonbreath"));
+        CHECK(object_list_contains(response, "output_pin dragonbreath_filter"));
+
+        json frame;
+        client.register_notify_update(
+            [&frame](const json& notification) { frame = notification["params"][0]; });
+        MoonrakerClientMockTestAccess::dispatch_initial_state(client);
+        REQUIRE(frame.contains("dragonbreath"));
+        CHECK(frame["dragonbreath"]["ptc_temp"].get<double>() > 0.0);
+        CHECK(frame.contains("output_pin dragonbreath_filter"));
+    }
 }
 
 TEST_CASE_METHOD(HelixTestFixture, "mock dragonbreath fault hook", "[chamber][mock]") {

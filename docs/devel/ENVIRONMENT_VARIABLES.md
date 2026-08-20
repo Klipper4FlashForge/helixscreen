@@ -1350,9 +1350,31 @@ Append additional Klipper objects to the mock's advertised object list, so capab
 # Add a chamber temperature_fan and a generic heater
 HELIX_MOCK_OBJECTS="temperature_fan chamber heater_generic chamber_heater" \
   ./build/bin/helix-screen --test -vv
+
+# Materialize the dragonbreath chamber-heater trio: heater, diagnostics
+# object, and filter-fan output pin (drives status frames, SET_PIN
+# round-trip, and a configfile max_temp of 75)
+HELIX_MOCK_OBJECTS="heater_generic dragonbreath dragonbreath output_pin dragonbreath_filter" \
+  ./build/bin/helix-screen --test -vv
 ```
 
-**Two-word object names are reassembled by prefix.** The parser splits on whitespace, then treats a token starting with `heater_generic`, `temperature_fan`, or `temperature_sensor` as the start of a *new* object and glues any following tokens onto the current one. So `temperature_fan chamber` becomes the single object `temperature_fan chamber`. An object whose type prefix is not in that list cannot carry a name — it will be glued onto whatever preceded it. Each accepted object is logged as `[MoonrakerClientMock] Added mock object: <name>`.
+**Two-word object names are reassembled by prefix.** The parser splits on whitespace, then treats a token starting with `heater_generic`, `temperature_fan`, `temperature_sensor`, or `output_pin` as the start of a *new* object and glues any following tokens onto the current one. So `temperature_fan chamber` becomes the single object `temperature_fan chamber`. A token that is not a prefix glues onto the current object — with one exception: a token that exactly names a chamber-heater backend's diagnostics object (e.g. the bare `dragonbreath` after a completed `heater_generic dragonbreath`) starts a new standalone object instead of appending. A chamber heater accepted from this list also replaces the mock profile's built-in chamber heater. Each accepted object is logged as `[MoonrakerClientMock] Added mock object: <name>`.
+
+### `HELIX_MOCK_DRAGONBREATH_FAULT`
+
+Latch a fault into every synthesized dragonbreath status frame — the diagnostics object reports `fault: true` with a `fault_reason` instead of the nominal healthy payload. Pairs with the `HELIX_MOCK_OBJECTS` dragonbreath trio to exercise fault UI paths without hardware.
+
+| Property | Value |
+|----------|-------|
+| **Values** | Exactly `1` |
+| **Default** | Unset — nominal frame (`fault: false`, null `fault_reason`) |
+| **File** | `src/api/moonraker_client_mock.cpp` |
+
+```bash
+# Faulted dragonbreath chamber heater
+HELIX_MOCK_OBJECTS="heater_generic dragonbreath dragonbreath output_pin dragonbreath_filter" \
+  HELIX_MOCK_DRAGONBREATH_FAULT=1 ./build/bin/helix-screen --test -vv
+```
 
 ### `HELIX_MOCK_KALICO`
 
