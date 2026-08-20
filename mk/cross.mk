@@ -483,7 +483,7 @@ else ifeq ($(PLATFORM_TARGET),k2)
     #
     # The K2 root filesystem is glibc 2.29, NOT musl — but we ship a FULLY
     # STATIC binary built with the Bootlin musl toolchain, so it runs regardless
-    # of the device libc. See docs/printer-research/CREALITY_K2_PLUS_RESEARCH.md.
+    # of the device libc. See docs/devel/printer-research/CREALITY_K2_PLUS_RESEARCH.md.
     CROSS_COMPILE ?= arm-buildroot-linux-musleabihf-
     TARGET_ARCH := armv7-a
     TARGET_TRIPLE := arm-buildroot-linux-musleabihf

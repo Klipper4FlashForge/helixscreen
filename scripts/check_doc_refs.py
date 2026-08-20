@@ -50,7 +50,9 @@ SKIP_DIRS = {'.git', '.worktrees', 'build', 'node_modules', '.venv', 'venv'}
 # reproducing it. Add to this list rather than rewording a doc: the citations
 # are correct, the files simply do not exist yet at check time.
 EXEMPT_SUBSTRINGS = (
-    'superpowers/',        # docs/superpowers/ specs are gitignored, local-only
+    'superpowers/',        # docs/superpowers/ is local-only working space; nothing
+                           # there is tracked; refs to it are not resolvable on a
+                           # fresh clone
     # Written at runtime.
     'settings-test.json',  # seeded by --test
     'config/settings.json',
@@ -107,6 +109,12 @@ INDEX_EXEMPT = {
     'CLAUDE.md',           # the index itself
 }
 
+# Scanned with the agent-facing docs (same refs+links checks) although it is
+# neither a CLAUDE.md nor a skill: docs/README.md is the public index every
+# other docs/ page is reached through, so a dead link there is the first one
+# a reader hits.
+EXTRA_SCAN_DOCS = ('docs/README.md',)
+
 
 def repo_files():
     """Every file in the repo, for suffix resolution.
@@ -154,7 +162,8 @@ def uninitialized_submodules():
 
 
 def scan_targets():
-    """Agent-facing docs: every CLAUDE.md, plus everything under .claude/skills/."""
+    """Agent-facing docs: every CLAUDE.md, everything under .claude/skills/,
+    plus the extra scanned docs (the public docs index)."""
     targets = []
     for root, dirs, files in os.walk('.'):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -165,6 +174,7 @@ def scan_targets():
             path = os.path.join(rel, f) if rel else f
             if f == 'CLAUDE.md' or (rel.startswith('.claude/skills') and f.endswith('.md')):
                 targets.append(path)
+    targets.extend(EXTRA_SCAN_DOCS)
     return sorted(targets)
 
 

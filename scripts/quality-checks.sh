@@ -97,7 +97,7 @@ if [ -n "$FILES" ]; then
   if [ -n "$MISSING_HEADERS" ]; then
     section_time $SECTION_START
     echo ""
-    echo "See docs/COPYRIGHT_HEADERS.md for the required header format"
+    echo "See docs/devel/COPYRIGHT_HEADERS.md for the required header format"
   else
     section_time $SECTION_START
     echo ""

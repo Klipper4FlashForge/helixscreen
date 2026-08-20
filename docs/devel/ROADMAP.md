@@ -33,7 +33,7 @@
 
 Declarative repetition for the helix-xml engine: `<repeat count="N">…body…</repeat>` expands its body at load time with a zero-based `$i` iteration index, and `${name}` embedded composition self-wires repeated widgets to indexed subjects (`bind_text="demo_${i}_v"` → `demo_0_v`, `demo_1_v`, …). A subject-bound `count` (`count="row_count"`) reactively rebuilds the expansion when the subject changes, via async off-tree teardown (no synchronous deletion inside the count observer). Replaces C++ create-and-wire loops for fixed-N and subject-bound-count widget lists. Live demo in the test panel (`ui_xml/test_panel.xml`, "XML Repeat Demo" section).
 
-**Plan:** `docs/superpowers/plans/2026-07-15-xml-repeat-looping.md` | **Docs:** `docs/devel/LVGL9_XML_GUIDE.md` § "Repeating fragments with `<repeat>`"
+**Docs:** `docs/devel/LVGL9_XML_GUIDE.md` § "Repeating fragments with `<repeat>`"
 
 ### XML Engine Extraction & LVGL 9.5 Upgrade ✅
 **Completed:** 2026-02-18
