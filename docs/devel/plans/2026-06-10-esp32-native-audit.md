@@ -10,7 +10,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **Nature of this plan:** This is an AUDIT, not a feature. The deliverable is a measurement report with a go/no-go recommendation — `docs/devel/ESP32_NATIVE_AUDIT.md` — per Phase 0 of `docs/devel/specs/2026-06-10-esp32-display-device-design.md`. Timebox: 2-4 weeks. Audit scaffolding lives in `firmware/native-audit/` and is throwaway-quality by design (committed for reproducibility, never shipped). **Do not fix the app to make it compile on ESP32 in this phase** — categorize and count; fixing is Phase 2's job.
+> **Nature of this plan:** This is an AUDIT, not a feature. The deliverable is a measurement report with a go/no-go recommendation — `docs/devel/plans/ESP32_NATIVE_AUDIT.md` — per Phase 0 of `docs/devel/plans/2026-06-10-esp32-display-device-design.md`. Timebox: 2-4 weeks. Audit scaffolding lives in `firmware/native-audit/` and is throwaway-quality by design (committed for reproducibility, never shipped). **Do not fix the app to make it compile on ESP32 in this phase** — categorize and count; fixing is Phase 2's job.
 >
 > **Hardware:** any ESP32-S3 module with 16MB flash + 8/16MB octal PSRAM (the Phase 1c dev board works). Steps marked **[HW]** need it; the compile/link measurements (the most decisive ones) do not.
 
@@ -36,10 +36,10 @@
 - [ ] **Step 2:** `main/audit_main.c` v0: `lv_init()`, create a display with a PSRAM buffer (`heap_caps_malloc(800*480*2, MALLOC_CAP_SPIRAM)`, `LV_DISPLAY_RENDER_MODE_PARTIAL`, no-op flush), register one trivial inline XML component string, `lv_xml_create` it, log success + heap stats. No real panel needed yet — this can run on any S3 module headless.
 - [ ] **Step 3:** `idf.py build` → record in the report draft: compile result for every helix-xml file (expect: clean or near-clean — it's portable C), total component .a size from the map file.
 - [ ] **Step 4: [HW]** Flash + run; capture the success log and `esp_get_free_heap_size()`/`heap_caps_get_free_size(MALLOC_CAP_SPIRAM)` numbers.
-- [ ] **Step 5: Commit** the skeleton + start `docs/devel/ESP32_NATIVE_AUDIT.md` with a Results table (template in Task 5).
+- [ ] **Step 5: Commit** the skeleton + start `docs/devel/plans/ESP32_NATIVE_AUDIT.md` with a Results table (template in Task 5).
 
 ```bash
-git add firmware/native-audit docs/devel/ESP32_NATIVE_AUDIT.md
+git add firmware/native-audit docs/devel/plans/ESP32_NATIVE_AUDIT.md
 git commit -m "audit(esp32): skeleton + helix-xml compile/link/boot measurements"
 ```
 
@@ -63,7 +63,7 @@ git commit -m "audit(esp32): skeleton + helix-xml compile/link/boot measurements
 - [ ] **Step 4: Commit.**
 
 ```bash
-git add firmware/native-audit docs/devel/ESP32_NATIVE_AUDIT.md
+git add firmware/native-audit docs/devel/plans/ESP32_NATIVE_AUDIT.md
 git commit -m "audit(esp32): shim layer + compile sweep with A/B/C/D categorization"
 ```
 
@@ -86,7 +86,7 @@ Report: slice image size; breakdown attributing LVGL vs helix-xml vs app-core vs
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add firmware/native-audit docs/devel/ESP32_NATIVE_AUDIT.md
+git add firmware/native-audit docs/devel/plans/ESP32_NATIVE_AUDIT.md
 git commit -m "audit(esp32): vertical slice links and boots - size + RAM watermarks"
 ```
 
@@ -99,7 +99,7 @@ git commit -m "audit(esp32): vertical slice links and boots - size + RAM waterma
 - [ ] **Step 3: Commit.**
 
 ```bash
-git add firmware/native-audit docs/devel/ESP32_NATIVE_AUDIT.md
+git add firmware/native-audit docs/devel/plans/ESP32_NATIVE_AUDIT.md
 git commit -m "audit(esp32): CJK font + render throughput measurements"
 ```
 
@@ -107,7 +107,7 @@ git commit -m "audit(esp32): CJK font + render throughput measurements"
 
 ### Task 5: The report + recommendation
 
-- [ ] **Step 1:** Complete `docs/devel/ESP32_NATIVE_AUDIT.md` with this structure (started in Task 1, filled as measured):
+- [ ] **Step 1:** Complete `docs/devel/plans/ESP32_NATIVE_AUDIT.md` with this structure (started in Task 1, filled as measured):
 
 ```markdown
 # ESP32-S3 Native Port Feasibility Audit — Results
@@ -137,7 +137,7 @@ Date / commit / ESP-IDF version / hardware used
 - [ ] **Step 3: Final commit + cleanup check:** audit tree builds from a clean checkout (`idf.py fullclean && idf.py build`); zero modifications under `src/` or `lib/` in the main repo (`git status` clean outside `firmware/native-audit/` and `docs/`).
 
 ```bash
-git add firmware/native-audit docs/devel/ESP32_NATIVE_AUDIT.md docs/devel/specs/2026-06-10-esp32-display-device-design.md
+git add firmware/native-audit docs/devel/plans/ESP32_NATIVE_AUDIT.md docs/devel/plans/2026-06-10-esp32-display-device-design.md
 git commit -m "audit(esp32): final feasibility report + go/no-go recommendation"
 ```
 

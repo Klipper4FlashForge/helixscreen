@@ -3,7 +3,7 @@
 **Date:** 2026-07-13
 **Status:** Approved (brainstorm complete)
 **Parent spec:** `2026-06-10-esp32-display-device-design.md` (Phase 2, greenlit on the audit's yellow verdict)
-**Audit:** `docs/devel/ESP32_NATIVE_AUDIT.md` — measurements, feature gates, structural rules
+**Audit:** `docs/devel/plans/ESP32_NATIVE_AUDIT.md` — measurements, feature gates, structural rules
 **Hardware:** BTT K-Touch (ESP32-S3R8, 8MB octal PSRAM, 16MB flash, 800×480 RGB, GT911 touch)
 
 ## Decisions (Preston, 2026-07-13)

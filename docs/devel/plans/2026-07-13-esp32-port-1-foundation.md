@@ -4,7 +4,7 @@
 
 **Goal:** Product-quality ESP-IDF project at `firmware/helixscreen-esp32/` that boots the K-Touch to a touch-responsive LVGL screen from an OTA A/B partition layout, with CI cross-build and an enforced image-size budget.
 
-**Architecture:** Seams-first hybrid (approved spec `docs/devel/specs/2026-07-13-esp32-native-port-design.md`). This plan is firmware-tree only — no main-tree changes. The audit tree `firmware/native-audit/` is a frozen reference; specific proven files are copied from it deliberately, never symlinked.
+**Architecture:** Seams-first hybrid (approved spec `docs/devel/plans/2026-07-13-esp32-native-port-design.md`). This plan is firmware-tree only — no main-tree changes. The audit tree `firmware/native-audit/` is a frozen reference; specific proven files are copied from it deliberately, never symlinked.
 
 **Tech Stack:** ESP-IDF v5.5 (`~/Code/esp-idf`, `source export.sh`), LVGL 9.5 (repo submodule + patches, unmodified), `lib/helix-xml` (unmodified), `esp_lcd` RGB panel, `esp_lcd_touch_gt911` managed component, GitHub Actions + `espressif/idf:release-v5.5` docker.
 

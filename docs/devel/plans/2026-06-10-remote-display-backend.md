@@ -10,7 +10,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A fourth display backend (`DisplayBackendType::REMOTE`) that renders HelixScreen headless and serves the screen to one client over an RFB (VNC) 3.8 protocol subset, with touch coming back as pointer events — per Phase 1b of `docs/devel/specs/2026-06-10-esp32-display-device-design.md`.
+**Goal:** A fourth display backend (`DisplayBackendType::REMOTE`) that renders HelixScreen headless and serves the screen to one client over an RFB (VNC) 3.8 protocol subset, with touch coming back as pointer events — per Phase 1b of `docs/devel/plans/2026-06-10-esp32-display-device-design.md`.
 
 **Architecture:** Three layers. (1) `rfb_protocol` — pure, socket-free protocol framing + Raw/Hextile encoders + ARGB8888→RGB565 conversion, fully unit-tested against golden bytes. (2) `RfbServer` — libhv `hv::TcpServer` composition owning the shadow framebuffer, dirty-rect accumulator, per-client state machine, and a pointer-event queue; protocol work stays on libhv's event-loop thread, shared state is mutex-guarded plain data (no LVGL calls off main thread). (3) `DisplayBackendRemote` — implements the 5 pure virtuals; its LVGL flush callback (main thread) copies dirty rects into the shadow framebuffer; its lv_indev read callback (main thread) drains the pointer queue.
 
@@ -722,7 +722,7 @@ git commit -m "feat(remote-display): remote-mode polish - anim off, scroll butto
 
 - [ ] **Step 1:** Add `docs/devel/REMOTE_DISPLAY.md`: how to run (`HELIX_DISPLAY_BACKEND=remote`, `HELIX_DISPLAY_REMOTE_SIZE`, `HELIX_RFB_PORT`), protocol subset table (copy from this plan), threading model diagram (flush/main vs encode/libhv vs indev/main), known limits (single client, no auth, LAN-only, animations forced off). Add the env vars to `docs/devel/ENVIRONMENT_VARIABLES.md`.
 - [ ] **Step 2:** Full pass: `make -j && make test-run && ./build/bin/helix-tests "[rfb]"` — all green, output captured.
-- [ ] **Step 3:** Update the spec (`docs/devel/specs/2026-06-10-esp32-display-device-design.md`): mark the ServerInit-name identity deviation in the Open Items section.
+- [ ] **Step 3:** Update the spec (`docs/devel/plans/2026-06-10-esp32-display-device-design.md`): mark the ServerInit-name identity deviation in the Open Items section.
 - [ ] **Step 4:** Commit docs; verify each commit in the series contains only its files (`git log --stat`).
 
 ## Out of Scope (YAGNI)

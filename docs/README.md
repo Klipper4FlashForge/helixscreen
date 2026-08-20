@@ -148,7 +148,7 @@ docs/
 │   ├── LED_CONTROL.md        # LED system, 4 backends
 │   ├── UPDATE_SYSTEM.md      # Update channels, downloads
 │   ├── ROADMAP.md            # Feature timeline
-│   ├── plans/                # Active implementation plans
+│   ├── plans/                # In-flight plans and specs (single home)
 │   └── ...                   # 40+ more dev docs
 │
 ├── specs/                    # PUBLIC, VENDOR-NEUTRAL CONVENTION SPECS
@@ -156,7 +156,6 @@ docs/
 │   └── filament_slots.md     # lane_data Moonraker DB convention
 │
 ├── audits/                   # Security & quality
-├── archive/                  # Historical implementation plans
 └── images/                   # Screenshots
 
 moonraker-plugin/

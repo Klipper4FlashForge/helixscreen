@@ -4,7 +4,7 @@
 
 **Goal:** Land the four audit-proven abstractions in the main tree — asset root, build-time theme-token table, config storage backend, WiFi platform-backend hook — each desktop-neutral or desktop-improving, so Plans 3–4 can consume them from the firmware tree without forking app code.
 
-**Architecture:** Seams-first hybrid (approved spec `docs/devel/specs/2026-07-13-esp32-native-port-design.md`). This plan is **main-tree only** — zero changes under `firmware/`. Research findings that shaped it (2026-07-13 exploration):
+**Architecture:** Seams-first hybrid (approved spec `docs/devel/plans/2026-07-13-esp32-native-port-design.md`). This plan is **main-tree only** — zero changes under `firmware/`. Research findings that shaped it (2026-07-13 exploration):
 - The implicit asset root is the process CWD (`Application::ensure_project_root_cwd()` chdir); the ESP32 audit's `overrides/theme_manager.cpp` proves theme_manager's `"ui_xml"` literals are the boot-critical chokepoint. All `"A:..."` LVGL paths re-home for free once the strings route through one accessor (LVGL POSIX driver has an empty base prefix).
 - Theme token discovery runs **~28 full-directory scans** at boot (per element-type × per breakpoint-suffix), all funneling through exactly two aggregation functions in `theme_manager.cpp` — that's the table seam, NOT the audit's per-file byte cache (which still re-parses ~25×).
 - The settings seam belongs under `helix::Config` (the ONLY class that touches disk — every `*SettingsManager` delegates), at document level. The audit already compiled `config.cpp` on Xtensa; the legacy `fs::` migration blocks no-op harmlessly when their desktop paths don't exist, so only document load/store/probe needs abstracting.

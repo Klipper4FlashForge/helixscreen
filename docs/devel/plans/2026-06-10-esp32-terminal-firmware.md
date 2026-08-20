@@ -13,7 +13,7 @@
 >
 > **Prerequisite:** Phase 1b (`2026-06-10-remote-display-backend.md`) must be implemented first — this firmware is its client. Hardware-in-loop steps require an ESP32-S3 dev board with an 800×480 RGB panel + capacitive touch (e.g. Waveshare ESP32-S3-Touch-LCD-7 or an equivalent Guition/Elecrow 7" S3 board) and ESP-IDF v5.2+ installed (`idf.py` on PATH). Steps marked **[HW]** can only be verified on the device; everything else builds and tests on the host.
 
-**Goal:** ESP32-S3 firmware that connects over WiFi to a HelixScreen RFB server, displays the streamed UI, and sends touch back — a dumb terminal with provisioning and OTA, per Phase 1c of `docs/devel/specs/2026-06-10-esp32-display-device-design.md`.
+**Goal:** ESP32-S3 firmware that connects over WiFi to a HelixScreen RFB server, displays the streamed UI, and sends touch back — a dumb terminal with provisioning and OTA, per Phase 1c of `docs/devel/plans/2026-06-10-esp32-display-device-design.md`.
 
 **Architecture:** ESP-IDF project at `firmware/helix-terminal/` with four components: `board` (esp_lcd RGB panel + touch behind a board-config table), `provisioning` (SoftAP captive portal + NVS + mDNS browse), `rfb_client` (transport-free protocol core in plain C, host-compilable and unit-tested in the main repo's Catch2 suite, plus a thin esp socket task), and `ota` (esp_https_ota from a manifest URL). v1 scope freeze: frames + splash/provisioning screens only — no local fallback UI.
 

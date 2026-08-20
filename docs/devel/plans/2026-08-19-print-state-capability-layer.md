@@ -1,6 +1,6 @@
 # Print state: one axis, named capabilities
 
-Status: **Phase 0 in progress**
+Status: **Phases 0-4 complete; only the cosmetic Phase 5 (rename) remains**
 Branch: `fix/preparing-job-lifecycle` (Phase 0 only) → own branch for Phases 1-4
 
 > **Resuming after a context break?** Read "Phase tracker" and "How to resume"

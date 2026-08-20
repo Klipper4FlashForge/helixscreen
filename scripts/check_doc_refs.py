@@ -97,11 +97,10 @@ DOC_DIR = 'docs/devel'
 # walk, so a scan rooted anywhere (meta-test fixture, targeted run) exempts a
 # plans/ or printer-research/ subdir the same way the default walk does.
 #
-# 'plans' deliberately covers BOTH docs/devel/plans/ and docs/devel/specs/plans/:
-# both hold dated implementation plans written against the tree as it stood on
-# their date, so their citations are historical record, not promises. The specs
-# directly under docs/devel/specs/ ARE scanned — design docs stay live long
-# enough to owe the reader resolving paths.
+# 'plans' is the single tracked home for the in-flight set: dated
+# implementation plans, their design specs, and the ESP32 program docs all
+# live in docs/devel/plans/. They are written against the tree as it stood
+# on their date, so their citations are historical record, not promises.
 DEVEL_EXEMPT_SUBDIRS = ('plans', 'printer-research')
 
 # Docs deliberately not routed from the index.
