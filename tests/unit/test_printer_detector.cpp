@@ -5063,3 +5063,51 @@ TEST_CASE("PrinterDetector: should_warn_type_mismatch agrees with classify_type_
         REQUIRE(warn == classified);
     }
 }
+// ============================================================================
+// Reported Voron Trident misdetection (debug bundle TZT85MQ3)
+// ============================================================================
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: reported Voron Trident rig outscores FlashForge",
+                 "[printer][autosave][1284]") {
+    // Second reporter, different rig, same wrong label: a Voron Trident that
+    // shipped as "FlashForge Adventurer 5M Pro". The hostname is "vt-1899",
+    // which contains neither "voron" nor "trident", so every Voron hostname
+    // heuristic (voron 75, trident 90) misses - same blind spot as the
+    // QS846GMM rig above.
+    //
+    // The false-positive vector is DIFFERENT here, which is why this rig is
+    // worth pinning separately. QS846GMM matched the AD5M Pro pattern
+    // 'chamber_l' through its klipper-led_effect 'neopixel chamber_leds'.
+    // This rig has no led_effect config at all - it matches the same pattern
+    // through a plain 'output_pin Chamber_Light' chamber light, a name any
+    // enclosed custom build uses.
+    //
+    // Three Z steppers plus z_tilt and no quad_gantry_level is the Trident
+    // signature; the AFC/BoxTurtle and lane sensors are carried through as
+    // real-rig noise.
+    PrinterHardwareData hardware{
+        .heaters = {"extruder", "heater_bed", "heater_generic chamber"},
+        .sensors = {"temperature_sensor EBB36", "temperature_fan Pi", "tmc5160 stepper_x",
+                    "tmc5160 stepper_y", "temperature_sensor MCU",
+                    "temperature_sensor chamber_bottom", "temperature_sensor chamber",
+                    "temperature_sensor cartographer_coil", "temperature_sensor cartographer",
+                    "temperature_sensor BoxTurtle", "temperature_sensor OWLFC_Mini"},
+        .fans = {"fan", "heater_fan hotend_fan", "temperature_fan Pi", "fan_generic nevermore"},
+        .leds = {"neopixel sb_leds", "output_pin Chamber_Light"},
+        .hostname = "vt-1899",
+        .printer_objects = {"z_tilt", "bed_mesh", "exclude_object", "neopixel sb_leds",
+                            "output_pin Chamber_Light", "AFC", "AFC_stepper lane1",
+                            "filament_switch_sensor lane1", "filament_switch_sensor lane2"},
+        .steppers = {"stepper_x", "stepper_y", "stepper_z", "stepper_z1", "stepper_z2"},
+        .kinematics = "corexy",
+        .build_volume = {
+            .x_min = 0.0f, .x_max = 300.0f, .y_min = 0.0f, .y_max = 315.0f, .z_max = 310.0f}};
+
+    auto result = PrinterDetector::detect(hardware);
+
+    CAPTURE(result.confidence, result.runner_up_type_name, result.runner_up_confidence,
+            result.reason);
+    REQUIRE(result.type_name == "Voron Trident");
+    REQUIRE(PrinterDetector::meets_autosave_threshold(result));
+}
