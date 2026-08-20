@@ -129,7 +129,10 @@ TEST_CASE("unknown shaper types degrade to an empty curve", "[shaper_response][c
 
 TEST_CASE("residual vibration rewards a notch placed on the peak",
           "[shaper_response][calibration]") {
-    // Single sharp resonance at 50 Hz over 0-150 Hz.
+    // Single sharp resonance at 50 Hz over 0-150 Hz. Residual uses klippy's
+    // _estimate_remaining_vibrations(): only signal above psd.max()/20 counts
+    // and the shaped spectrum is H*psd, linear - the same number the firmware
+    // prints in the comparison table.
     const std::vector<double> freqs = grid(0.0, 150.0, 151);
     std::vector<double> psd;
     psd.reserve(freqs.size());

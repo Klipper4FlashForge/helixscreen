@@ -30,6 +30,10 @@
 #include "../ui_test_utils.h"
 #include "app_globals.h"
 
+#include <spdlog/sinks/ringbuffer_sink.h>
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -739,7 +743,10 @@ class InputShaperDeltaFixture : public LVGLUITestFixture {
 
         // Live-before config staged per-test (mock default is mzv@36.7/ei@47.6;
         // the staged pair deliberately differs so a leaked default fails loud).
-        mock_client_.set_input_shaper_values("ei", 69.8, "ei", 69.8);
+        // zv@100 is far off the mock's 53.8 Hz resonance, so under the
+        // thresholded (firmware-matching) residual metric the old setting
+        // leaves clearly more vibration than the new fit.
+        mock_client_.set_input_shaper_values("zv", 100.0, "zv", 100.0);
 
         printer_state_.init_subjects(false);
         printer_state_.set_klippy_state_sync(KlippyState::READY);
@@ -789,12 +796,13 @@ class InputShaperDeltaFixture : public LVGLUITestFixture {
 
     // Pumps the mock transcript (100ms/line), LVGL timers, and the UpdateQueue
     // until pred() holds. Optionally injects the Creality copy-marker line
-    // when the panel announces the Y run ("Step 2 of 2" is set by
+    // when the step label hits marker_trigger: "Step 2 of 2" (Calibrate All's
+    // Y run) or "Calibrating Y axis..." (a Y-only run) is set by
     // start_calibration('Y') right before the Y collector registers, and
     // survives until the Y sweep's first progress line one tick later - so it
-    // is observable exactly while the marker has a live collector to land on).
+    // is observable exactly while the marker has a live collector to land on.
     bool pump_until(const std::function<bool()>& done, bool inject_copy_marker,
-                    int max_ticks = 600) {
+                    const char* marker_trigger = "Step 2 of 2", int max_ticks = 600) {
         bool marker_sent = false;
         for (int i = 0; i < max_ticks && !done(); ++i) {
             lv_tick_inc(100);
@@ -802,7 +810,14 @@ class InputShaperDeltaFixture : public LVGLUITestFixture {
             helix::ui::UpdateQueue::instance().drain();
 
             if (inject_copy_marker && !marker_sent &&
-                subject_string("is_measuring_step_label") == "Step 2 of 2") {
+                subject_string("is_measuring_step_label") == marker_trigger) {
+                marker_sent = true;
+                mock_client_.dispatch_gcode_response(
+                    "copy_TestAxis_y_to_x Recommended shaper_type_x = ei, shaper_freq_x "
+                    "= 71.4 Hz");
+            }
+            if (inject_copy_marker && !marker_sent &&
+                subject_string("is_measuring_axis_label") == marker_trigger) {
                 marker_sent = true;
                 mock_client_.dispatch_gcode_response(
                     "copy_TestAxis_y_to_x Recommended shaper_type_x = ei, shaper_freq_x "
@@ -851,12 +866,9 @@ TEST_CASE_METHOD(InputShaperDeltaFixture,
                                      /*inject_copy_marker=*/true);
         REQUIRE(done);
 
-        // Live-before value: staged ei@69.8 (the mock recommends mzv@53.8).
-        CHECK(subject_string("is_x_was_text") == "ei @ 69.8 Hz");
-        CHECK(subject_string("is_y_was_text") == "ei @ 69.8 Hz");
-
-        // Delta line: was -> measured.
-        CHECK(subject_string("is_x_delta_text") == "ei @ 69.8 Hz -> mzv @ 53.8 Hz");
+        // Live-before value folded into the delta line: staged zv@100.0 (the
+        // mock recommends mzv@53.8).
+        CHECK(subject_string("is_x_delta_text") == "zv @ 100.0 Hz -> mzv @ 53.8 Hz");
         CHECK(subject_int("is_x_has_delta") == 1);
 
         // Verdict: the old setting re-scored on today's PSD must show MORE
@@ -939,4 +951,87 @@ TEST_CASE_METHOD(InputShaperDeltaFixture, "delta rows stay hidden without a live
     CHECK(std::string(lv_label_get_text(view_widget(view_, "legend_x_measured_label"))) ==
           "Measured (shaper off)");
     REQUIRE(lv_obj_find_by_name(view_, "chart_x_caption") != nullptr);
+}
+
+TEST_CASE_METHOD(InputShaperDeltaFixture,
+                 "a Y-only run warns on the Y card when firmware overwrites X",
+                 "[input_shaper][panel][delta][fw_overwrite]") {
+    // The fork's copy_TestAxis_y_to_x fires at the end of ANY Y run; with no X
+    // result in this session the warning must still surface - on the Y card,
+    // the only card a Y-only run shows.
+    panel_->handle_calibrate_y_clicked();
+
+    const bool done = pump_until([&] { return panel_state() == 2; },
+                                 /*inject_copy_marker=*/true,
+                                 /*marker_trigger=*/"Calibrating Y axis...");
+    REQUIRE(done);
+
+    // No X result exists, so the X card is absent and only the Y card shows.
+    CHECK(subject_int("is_results_has_x") == 0);
+    CHECK(subject_int("is_x_fw_overwrite_warn") == 1);
+
+    // The Y card's copy of the warning row is visible. The X card's own copy
+    // is unreachable because the whole X card is hidden (its row's own flag
+    // stays clear - LVGL hides children through the parent, not their flags).
+    CHECK_FALSE(lv_obj_has_flag(view_widget(view_, "fw_overwrite_warn_y"), LV_OBJ_FLAG_HIDDEN));
+    CHECK(lv_obj_has_flag(view_widget(view_, "result_card_x"), LV_OBJ_FLAG_HIDDEN));
+}
+
+TEST_CASE_METHOD(InputShaperDeltaFixture,
+                 "close drops the stored X result so a Y-only apply never sends X",
+                 "[input_shaper][panel][apply][stale_x]") {
+    // RAII spdlog capture: the mock client logs every SET_INPUT_SHAPER with
+    // its full arguments, which is the observable for what Apply sent.
+    class GcodeLogCapture {
+      public:
+        GcodeLogCapture() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256)) {
+            sink_->set_level(spdlog::level::trace);
+            spdlog::default_logger()->sinks().push_back(sink_);
+        }
+        ~GcodeLogCapture() {
+            auto& sinks = spdlog::default_logger()->sinks();
+            sinks.erase(std::remove(sinks.begin(), sinks.end(), sink_), sinks.end());
+        }
+        [[nodiscard]] int count(const std::string& needle) const {
+            int n = 0;
+            for (const auto& l : sink_->last_formatted(256)) {
+                if (l.find(needle) != std::string::npos) {
+                    ++n;
+                }
+            }
+            return n;
+        }
+
+      private:
+        std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
+    } capture;
+
+    // 1. Calibrate All stores an X result.
+    panel_->handle_calibrate_all_clicked();
+    REQUIRE(pump_until([&] { return panel_state() == 2; }, false));
+    REQUIRE(subject_int("is_results_has_x") == 1);
+
+    // 2. Close the results - clear_results() must drop the stored X result.
+    panel_->handle_close_clicked();
+    helix::ui::UpdateQueue::instance().drain();
+
+    // 3. A later Y-only calibration + Apply must send SET_INPUT_SHAPER for Y
+    //    only; a stale x_result_ would silently re-send X with the previous
+    //    session's values.
+    panel_->handle_calibrate_y_clicked();
+    REQUIRE(pump_until([&] { return panel_state() == 2; }, false));
+
+    panel_->handle_apply_clicked();
+    // The apply chain is async (lifetime-deferred success callbacks)
+    for (int i = 0; i < 20; ++i) {
+        lv_tick_inc(100);
+        lv_timer_handler_safe();
+        helix::ui::UpdateQueue::instance().drain();
+        if (capture.count("SET_INPUT_SHAPER") > 0) {
+            break;
+        }
+    }
+
+    CHECK(capture.count("SHAPER_TYPE_X") == 0);
+    CHECK(capture.count("SHAPER_TYPE_Y") == 1);
 }

@@ -962,6 +962,13 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
     }
 
     void on_gcode_response(const json& msg) {
+        // Ordering assumption: everything this collector needs (fits,
+        // recommendation, the copy_TestAxis_y_to_x marker, and the CSV-write
+        // line that completes the run) arrives BEFORE the CSV line. The
+        // captured K1C transcript (2026-08-19) shows the marker preceding the
+        // "calibration data written to" line, so completing on the CSV line
+        // cannot race the marker away. A fork emitting the marker after the
+        // CSV line would lose it here.
         if (completed_.load()) {
             return;
         }

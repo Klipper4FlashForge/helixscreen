@@ -47,17 +47,20 @@ std::vector<double> shaper_transfer_curve(const std::string& shaper_type, double
                                           const std::vector<double>& freqs_hz);
 
 /**
- * @brief Fraction of vibration energy a shaper leaves in a measured spectrum
+ * @brief Fraction of vibration a shaper leaves in a measured spectrum
  *
- * Energy-based verdict: a PSD through a filter with response H scales by
- * |H|^2, so the residual is sum(psd * H^2) / sum(psd) as a percentage.
+ * Reproduces klippy's _estimate_remaining_vibrations(): only signal above
+ * psd.max()/SHAPER_VIBRATION_REDUCTION counts, the shaped spectrum is H*psd
+ * (linear), and the residual is the thresholded ratio as a percentage. Using
+ * the same formula as the firmware keeps the verdict comparable to the
+ * vibrations% the comparison table shows for the same shaper.
  *
  * @param psd            Measured power spectral density, one value per bin
  * @param transfer_curve Attenuation per bin, as produced by
  *                       shaper_transfer_curve()
  * @return Residual vibration in percent, or -1 when the inputs are empty,
- *         size-mismatched, or the PSD carries no energy (callers omit the
- *         verdict rather than guess).
+ *         size-mismatched, or the PSD carries no energy above the threshold
+ *         (callers omit the verdict rather than guess).
  */
 double residual_vibration_percent(const std::vector<double>& psd,
                                   const std::vector<double>& transfer_curve);

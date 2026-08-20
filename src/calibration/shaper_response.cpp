@@ -187,11 +187,22 @@ double residual_vibration_percent(const std::vector<double>& psd,
         return -1.0;
     }
 
+    // Klipper's _estimate_remaining_vibrations(): only vibration above
+    // psd.max()/SHAPER_VIBRATION_REDUCTION counts (a shaper cannot attenuate
+    // further than that factor, so anything below is treated as noise), and
+    // the shaped spectrum is H*psd, linear. Matching that formula keeps the
+    // verdict row comparable to the vibrations% the comparison table shows.
+    double psd_max = 0.0;
+    for (double p : psd) {
+        psd_max = std::max(psd_max, p);
+    }
+    const double threshold = psd_max / VIBRATION_REDUCTION;
+
     double total = 0.0;
     double residual = 0.0;
     for (size_t i = 0; i < psd.size(); i++) {
-        total += psd[i];
-        residual += psd[i] * transfer_curve[i] * transfer_curve[i];
+        total += std::max(psd[i] - threshold, 0.0);
+        residual += std::max(psd[i] * transfer_curve[i] - threshold, 0.0);
     }
     if (!(total > 0.0)) {
         return -1.0;

@@ -307,7 +307,7 @@ When a calibration run starts, the panel snapshots the currently live `[input_sh
 Per axis, when a before-value exists and the result is valid:
 
 - **Was / delta rows** — `is_{axis}_was_text` ("ei @ 69.8 Hz") and `is_{axis}_delta_text` ("ei @ 69.8 Hz -> mzv @ 53.8 Hz"), gated by `is_{axis}_has_delta`.
-- **Verdict row** — "Old setting on today's data: N% residual - now: M%": the old setting's transfer curve re-scored against the freshly measured PSD next to the new fit's residual (`residual_vibration_percent()`, energy ratio `sum(psd*H^2)/sum(psd)`). The new side prefers the curve the firmware fitted into the CSV column (the parser shapes it by the raw PSD, so the verdict divides that back out bin by bin); both sides hide via `is_{axis}_has_verdict` when the PSD is missing or a shaper type has no ported taps.
+- **Verdict row** — "Old setting on today's data: N% residual - now: M%": the old setting's transfer curve re-scored against the freshly measured PSD next to the new fit's residual (`residual_vibration_percent()`, which reproduces klippy's `_estimate_remaining_vibrations()` — thresholded at `psd.max()/20`, shaped spectrum `H*psd` linear — so the verdict is comparable to the vibrations% the comparison table shows). The new side prefers the curve the firmware fitted into the CSV column (the parser shapes it by the raw PSD, so the verdict divides that back out bin by bin); both sides hide via `is_{axis}_has_verdict` when the PSD is missing or a shaper type has no ported taps.
 - **Chart overlay** — the old setting's curve is added as a muted series (see `draw_muted_series_cb` above) so its notch is comparable against the fresh fit on the same spectrum.
 
 ### Firmware overwrite warning (Creality forks)
@@ -327,6 +327,13 @@ IDLE (0)          Shows instructions, current config, Calibrate X/Y/All buttons
   |
   v
 MEASURING (1)     Spinner/progress bar, step labels, Abort button
+
+Both the panel and the first-run wizard step use the same analysis-phase
+treatment: the sweep shows a determinate bar; the offline analysis reports no
+percent, so the bar hides, a spinner takes over, and a 1 Hz
+`helix::ui::ElapsedLabelTimer` (ui_timer_guard.h) refreshes the status label
+with "Analyzing data... Ns" on the virtual clock. `PIDCalibrationPanel`'s eta
+timer is the same shape and is the intended follow-up consumer of the helper.
   |
   +---> RESULTS (2)   Per-axis result cards with charts, comparison tables, Save button
   |

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ui_frequency_response_chart.h"
+#include "ui_timer_guard.h"
 
 #include "async_lifetime_guard.h"
 #include "calibration_types.h" // For InputShaperResult
@@ -223,15 +224,12 @@ class InputShaperPanel : public OverlayBase {
     void clear_results();
 
     // Analysis-phase display: spinner + elapsed-seconds step label. Shared
-    // cancel_analysis_timer() runs from every path that stops showing the
+    // cancel_analysis_display() runs from every path that stops showing the
     // analysis (phase transitions out of Analyzing, state changes away from
     // MEASURING, cleanup/deactivate, destructor) so the timer is never left
     // armed on a stale label.
     void begin_analysis_display();
-    void format_analysis_label(uint32_t elapsed_seconds);
-    [[nodiscard]] uint32_t elapsed_analysis_seconds() const;
-    void cancel_analysis_timer();
-    static void analysis_elapsed_timer_cb(lv_timer_t* timer);
+    void cancel_analysis_display();
 
     // Per-axis result helpers
     static const char* get_shaper_explanation(const std::string& type);
@@ -296,10 +294,9 @@ class InputShaperPanel : public OverlayBase {
     // Analysis-phase elapsed label. The analysis reports no percent, so while
     // its spinner is shown a 1 Hz timer refreshes the step label
     // ("Analyzing data... Ns") from the tick stored when the phase began.
-    // lv_tick_get() (not a wall clock) so the label tracks the same clock the
-    // timer fires on.
-    lv_timer_t* analysis_elapsed_timer_ = nullptr;
-    uint32_t analysis_start_tick_ = 0;
+    // ElapsedLabelTimer (ui_timer_guard.h) owns the timer; its destructor and
+    // cancel() are both cancel-safe from every teardown path.
+    helix::ui::ElapsedLabelTimer analysis_elapsed_;
 
     // Per-axis result subjects
     lv_subject_t is_results_has_x_{};
@@ -343,15 +340,10 @@ class InputShaperPanel : public OverlayBase {
     lv_subject_t is_result_y_max_accel_{};
     lv_subject_t is_result_y_quality_{};
 
-    // Live-before delta display per axis: the value active when the run began
-    // ("ei @ 69.8 Hz"), the was -> measured line, and the old setting's
-    // residual-vibration verdict against the freshly measured PSD. Each row is
-    // gated by a has-subject so it hides when the inputs are missing (no
-    // before-config, no PSD data, or an unported shaper type).
-    char is_x_was_buf_[32] = {};
-    lv_subject_t is_x_was_text_{};
-    char is_y_was_buf_[32] = {};
-    lv_subject_t is_y_was_text_{};
+    // Live-before delta display per axis: the was -> measured line and the old
+    // setting's residual-vibration verdict against the freshly measured PSD.
+    // Each row is gated by a has-subject so it hides when the inputs are
+    // missing (no before-config, no PSD data, or an unported shaper type).
     char is_x_delta_buf_[64] = {};
     lv_subject_t is_x_delta_text_{};
     char is_y_delta_buf_[64] = {};
@@ -483,7 +475,7 @@ class InputShaperPanel : public OverlayBase {
      * Mirrors PIDCalibrationPanel::eta_timer_for_test().
      */
     [[nodiscard]] lv_timer_t* analysis_elapsed_timer_for_test() const {
-        return analysis_elapsed_timer_;
+        return analysis_elapsed_.timer_for_test();
     }
 };
 

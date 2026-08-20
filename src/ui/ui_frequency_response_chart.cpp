@@ -23,8 +23,11 @@
 #include <memory>
 #include <vector>
 
-// Maximum number of series supported
-static constexpr int MAX_SERIES = 8;
+// Maximum number of series supported: raw PSD + every fitted shaper curve the
+// panel can overlay (MAX_SHAPERS = 11) + the live-before "was" curve. Fitted
+// CSVs from Kalico carry up to 11 columns; too few slots here silently drops
+// the last-added series (chips without curves, no "was" overlay).
+static constexpr int MAX_SERIES = 13;
 
 // Maximum series name length
 static constexpr size_t MAX_NAME_LEN = 32;
@@ -305,6 +308,10 @@ int ui_frequency_response_chart_add_series(ui_frequency_response_chart_t* chart,
     series->id = chart->next_series_id++;
     series->color = color;
     series->visible = true;
+    // A slot previously used by a muted series (the live-before overlay) must
+    // not stay muted: the new series would be double-drawn (1px copy over its
+    // LVGL series) and could never be hidden by a chip toggle.
+    series->muted = false;
     series->has_peak = false;
     series->lv_series = nullptr;
     series->frequencies.clear();
@@ -402,6 +409,12 @@ void ui_frequency_response_chart_set_series_muted(ui_frequency_response_chart_t*
     }
 
     spdlog::debug("[FreqChart] Series {} muted: {}", series_id, muted);
+}
+
+bool ui_frequency_response_chart_is_series_muted(ui_frequency_response_chart_t* chart,
+                                                 int series_id) {
+    const FrequencySeriesData* series = find_series(chart, series_id);
+    return series ? series->muted : false;
 }
 
 // ============================================================================

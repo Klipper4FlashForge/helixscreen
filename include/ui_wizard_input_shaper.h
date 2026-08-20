@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "ui_timer_guard.h"
+
 #include "async_lifetime_guard.h"
 #include "input_shaper_calibrator.h"
 #include "lvgl/lvgl.h"
@@ -200,6 +202,32 @@ class WizardInputShaperStep : public helix::wizard::Step {
         return &calibration_active_;
     }
 
+    lv_subject_t* get_indeterminate_subject() {
+        return &calibration_indeterminate_;
+    }
+
+    /**
+     * @brief Show the analysis-phase treatment: spinner on, elapsed "Ns" label
+     *
+     * Arms the shared ElapsedLabelTimer against the status subject. Main
+     * thread only (touches LVGL and subjects).
+     */
+    void begin_analysis_display();
+
+    /// Stop the elapsed timer; the status label keeps its last text
+    void cancel_analysis_display();
+
+    /**
+     * @brief Test seam: raw handle of the analysis elapsed timer
+     *
+     * The unit-test harness only executes timers with a finite repeat count,
+     * so tests lend this periodic timer one temporarily (restoring -1 after),
+     * mirroring InputShaperPanel::analysis_elapsed_timer_for_test().
+     */
+    [[nodiscard]] lv_timer_t* analysis_timer_for_test() const {
+        return analysis_elapsed_.timer_for_test();
+    }
+
     /**
      * @brief Get lifetime token for async callback safety
      *
@@ -257,14 +285,20 @@ class WizardInputShaperStep : public helix::wizard::Step {
     // Subjects
     lv_subject_t calibration_status_;
     lv_subject_t calibration_progress_;
-    lv_subject_t calibration_started_; ///< 0=not started, 1=started (hides Start button)
-    lv_subject_t calibration_active_;  ///< 1 iff calibration is running (controls Cancel
-                                       ///< button visibility). Cleared on complete / cancel /
-                                       ///< error. Distinct from `started_` which stays at 1
-                                       ///< post-completion to keep the Start button hidden.
+    lv_subject_t calibration_started_;       ///< 0=not started, 1=started (hides Start button)
+    lv_subject_t calibration_active_;        ///< 1 iff calibration is running (controls Cancel
+                                             ///< button visibility). Cleared on complete / cancel /
+                                             ///< error. Distinct from `started_` which stays at 1
+                                             ///< post-completion to keep the Start button hidden.
+    lv_subject_t calibration_indeterminate_; ///< 1 during the offline analysis phase (no
+                                             ///< percent): hides the bar, shows the spinner
 
     // String buffers for subjects
     char status_buffer_[128] = "Ready to calibrate";
+
+    // Analysis-phase elapsed label ("Analyzing data... Ns"), 1 Hz on the
+    // virtual clock. Cancel-safe from every teardown path (helper guarantees).
+    helix::ui::ElapsedLabelTimer analysis_elapsed_;
 
     // Calibrator instance (owns the calibrator)
     std::unique_ptr<helix::calibration::InputShaperCalibrator> calibrator_;

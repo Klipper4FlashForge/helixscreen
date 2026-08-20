@@ -78,7 +78,7 @@ InputShaperPanel& get_global_input_shaper_panel() {
 
 InputShaperPanel::~InputShaperPanel() {
     // Stop the analysis elapsed timer before anything it could touch goes away.
-    cancel_analysis_timer();
+    cancel_analysis_display();
 
     // Share one implementation with the registry path. Normally the registry has
     // already run this and deinit_subjects_base() no-ops on subjects_initialized_;
@@ -315,8 +315,6 @@ void InputShaperPanel::init_subjects() {
     UI_MANAGED_SUBJECT_INT(is_result_y_quality_, 0, "is_result_y_quality", subjects_);
 
     // Live-before delta rows
-    UI_MANAGED_SUBJECT_STRING(is_x_was_text_, is_x_was_buf_, "", "is_x_was_text", subjects_);
-    UI_MANAGED_SUBJECT_STRING(is_y_was_text_, is_y_was_buf_, "", "is_y_was_text", subjects_);
     UI_MANAGED_SUBJECT_STRING(is_x_delta_text_, is_x_delta_buf_, "", "is_x_delta_text", subjects_);
     UI_MANAGED_SUBJECT_STRING(is_y_delta_text_, is_y_delta_buf_, "", "is_y_delta_text", subjects_);
     UI_MANAGED_SUBJECT_INT(is_x_has_delta_, 0, "is_x_has_delta", subjects_);
@@ -378,7 +376,7 @@ void InputShaperPanel::deinit_subjects() {
 
     // Same for the analysis elapsed timer: it writes the step label subject on
     // every tick, so it must not survive the subjects it refreshes.
-    cancel_analysis_timer();
+    cancel_analysis_display();
 
     deinit_subjects_base(subjects_);
 }
@@ -520,7 +518,7 @@ void InputShaperPanel::on_deactivate() {
 
     // Stop the analysis elapsed timer even when the state check below does not
     // run; the label it refreshes is going off screen either way.
-    cancel_analysis_timer();
+    cancel_analysis_display();
 
     // Cancel any in-progress calibration
     if (state_ == State::MEASURING && calibrator_) {
@@ -552,7 +550,7 @@ void InputShaperPanel::cleanup() {
     // Stop the analysis elapsed timer; StaticPanelRegistry::destroy_all() runs
     // before lv_deinit(), so teardown that skips this leaves it armed on a
     // freed panel (#1173).
-    cancel_analysis_timer();
+    cancel_analysis_display();
 
     // Destroy chart widgets
     if (x_chart_.chart) {
@@ -600,7 +598,7 @@ void InputShaperPanel::set_state(State new_state) {
     if (new_state != State::MEASURING) {
         // The analysis elapsed timer only makes sense while its spinner is on
         // screen; every exit from MEASURING stops it.
-        cancel_analysis_timer();
+        cancel_analysis_display();
     }
     state_ = new_state;
 
@@ -821,7 +819,7 @@ void InputShaperPanel::start_calibration(char axis) {
 
     lv_subject_set_int(&is_measuring_progress_, 0);
     lv_subject_set_int(&is_measuring_has_progress_, 0);
-    cancel_analysis_timer(); // no elapsed label from a previous run
+    cancel_analysis_display(); // no elapsed label from a previous run
     set_state(State::MEASURING);
     spdlog::info("[InputShaper] Starting calibration for axis {}", axis);
 
@@ -847,7 +845,7 @@ void InputShaperPanel::start_calibration(char axis) {
                 switch (phase) {
                 case ShaperCalibrationPhase::Sweeping: {
                     lv_subject_set_int(&is_measuring_has_progress_, 1);
-                    cancel_analysis_timer();
+                    cancel_analysis_display();
                     const std::string step =
                         fmt::format(lv_tr("Measuring vibrations... {}%"), percent);
                     snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_),
@@ -861,7 +859,7 @@ void InputShaperPanel::start_calibration(char axis) {
                     break;
                 case ShaperCalibrationPhase::Complete:
                     lv_subject_set_int(&is_measuring_has_progress_, 1);
-                    cancel_analysis_timer();
+                    cancel_analysis_display();
                     if (calibrate_all_mode_ && current_axis_ == 'X') {
                         snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_),
                                  "%s", lv_tr("X axis done, starting Y..."));
@@ -897,42 +895,13 @@ void InputShaperPanel::start_calibration(char axis) {
 
 void InputShaperPanel::begin_analysis_display() {
     lv_subject_set_int(&is_measuring_has_progress_, 0);
-    if (!analysis_elapsed_timer_) {
-        // First Analyzing report fixes the timestamp the label counts from.
-        analysis_start_tick_ = lv_tick_get();
-        analysis_elapsed_timer_ = lv_timer_create(analysis_elapsed_timer_cb, 1000, this);
-    }
-    format_analysis_label(elapsed_analysis_seconds());
+    analysis_elapsed_.begin(&is_measuring_step_label_, [](uint32_t elapsed_seconds) {
+        return fmt::format(lv_tr("Analyzing data... {}s"), elapsed_seconds);
+    });
 }
 
-void InputShaperPanel::analysis_elapsed_timer_cb(lv_timer_t* timer) {
-    auto* self = static_cast<InputShaperPanel*>(lv_timer_get_user_data(timer));
-    if (!self) {
-        return;
-    }
-    self->format_analysis_label(self->elapsed_analysis_seconds());
-}
-
-uint32_t InputShaperPanel::elapsed_analysis_seconds() const {
-    return (lv_tick_get() - analysis_start_tick_) / 1000;
-}
-
-void InputShaperPanel::format_analysis_label(uint32_t elapsed_seconds) {
-    const std::string step = fmt::format(lv_tr("Analyzing data... {}s"), elapsed_seconds);
-    snprintf(is_measuring_step_label_buf_, sizeof(is_measuring_step_label_buf_), "%s",
-             step.c_str());
-    lv_subject_copy_string(&is_measuring_step_label_, is_measuring_step_label_buf_);
-}
-
-void InputShaperPanel::cancel_analysis_timer() {
-    if (!analysis_elapsed_timer_) {
-        return;
-    }
-    // Neuter rather than delete: this runs from contexts (queued callbacks,
-    // destructor) where unlinking from the timer list mid-batch corrupts it.
-    // lv_timer_handler collects the neutered timer on its next pass.
-    helix::ui::lv_timer_cancel_safe(analysis_elapsed_timer_);
-    analysis_elapsed_timer_ = nullptr;
+void InputShaperPanel::cancel_analysis_display() {
+    analysis_elapsed_.cancel();
 }
 
 void InputShaperPanel::measure_noise() {
@@ -1186,8 +1155,10 @@ void InputShaperPanel::on_calibration_result(const InputShaperResult& result) {
 
     // The Y result carries the firmware-copy flag (some klippy forks overwrite
     // the staged X result with Y's values and announce it on the console).
-    // Surface it on the X card, whose measured value is the one discarded.
-    if (result.axis == 'Y' && result.x_overwritten_by_firmware && x_result_.is_valid()) {
+    // Latch on ANY flagged Y result: the fork's copy fires at the end of every
+    // Y-axis run, including Y-only runs where no X result exists in this
+    // session - the saved config still ends up X = Y.
+    if (result.axis == 'Y' && result.x_overwritten_by_firmware) {
         x_saved_value_overwritten_ = true;
         spdlog::warn("[InputShaper] Firmware overwrote the saved X result with Y's values");
     }
@@ -1297,8 +1268,6 @@ void InputShaperPanel::clear_results() {
     lv_subject_set_int(&is_y_num_shapers_, 0);
 
     // Clear live-before delta rows and the firmware overwrite warning
-    lv_subject_copy_string(&is_x_was_text_, "");
-    lv_subject_copy_string(&is_y_was_text_, "");
     lv_subject_copy_string(&is_x_delta_text_, "");
     lv_subject_copy_string(&is_y_delta_text_, "");
     lv_subject_set_int(&is_x_has_delta_, 0);
@@ -1311,6 +1280,9 @@ void InputShaperPanel::clear_results() {
     has_config_before_ = false;
     config_before_ = InputShaperConfig{};
     x_saved_value_overwritten_ = false;
+    // A stored X result is Calibrate All state; carrying it past Close would
+    // make a later single-axis Apply re-send X with this session's values
+    x_result_ = InputShaperResult{};
 
     // Clear comparison table subjects
     for (size_t i = 0; i < MAX_SHAPERS; i++) {
@@ -1505,8 +1477,6 @@ void InputShaperPanel::populate_axis_result(char axis, const InputShaperResult& 
 // ============================================================================
 
 void InputShaperPanel::populate_axis_delta(char axis, const InputShaperResult& result) {
-    auto& was_subject = (axis == 'X') ? is_x_was_text_ : is_y_was_text_;
-    auto& was_buf = (axis == 'X') ? is_x_was_buf_ : is_y_was_buf_;
     auto& delta_subject = (axis == 'X') ? is_x_delta_text_ : is_y_delta_text_;
     auto& delta_buf = (axis == 'X') ? is_x_delta_buf_ : is_y_delta_buf_;
     auto& has_delta = (axis == 'X') ? is_x_has_delta_ : is_y_has_delta_;
@@ -1521,14 +1491,13 @@ void InputShaperPanel::populate_axis_delta(char axis, const InputShaperResult& r
     std::string old_type;
     float old_freq = 0.0f;
     if (!result.is_valid() || !get_before_axis(axis, old_type, old_freq)) {
-        lv_subject_copy_string(&was_subject, "");
         lv_subject_copy_string(&delta_subject, "");
         return;
     }
 
     // "was" value, lowercase as the firmware reports it
+    char was_buf[32];
     snprintf(was_buf, sizeof(was_buf), "%s @ %.1f Hz", old_type.c_str(), old_freq);
-    lv_subject_copy_string(&was_subject, was_buf);
 
     char new_buf[32];
     snprintf(new_buf, sizeof(new_buf), "%s @ %.1f Hz", result.shaper_type.c_str(),

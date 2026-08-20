@@ -135,6 +135,16 @@ void ui_frequency_response_chart_show_series(ui_frequency_response_chart_t* char
 void ui_frequency_response_chart_set_series_muted(ui_frequency_response_chart_t* chart,
                                                   int series_id, bool muted);
 
+/**
+ * @brief Report whether a series is currently rendered as muted
+ *
+ * @param chart Chart instance
+ * @param series_id Series ID
+ * @return true when muted, false when not (or for an unknown series)
+ */
+bool ui_frequency_response_chart_is_series_muted(ui_frequency_response_chart_t* chart,
+                                                 int series_id);
+
 // ============================================================================
 // Data Management
 // ============================================================================

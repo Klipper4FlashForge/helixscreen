@@ -210,6 +210,33 @@ TEST_CASE_METHOD(WizardInputShaperStepTestFixture, "WizardInputShaperStep - cali
     }
 }
 
+TEST_CASE_METHOD(WizardInputShaperStepTestFixture,
+                 "WizardInputShaperStep - analysis phase counts elapsed seconds",
+                 "[wizard][input-shaper][analysis]") {
+    // The offline analysis reports no percent; the step's only liveness signal
+    // is the elapsed label refreshed by the shared 1 Hz timer.
+    WizardInputShaperStep step;
+    step.init_subjects();
+
+    step.begin_analysis_display();
+    REQUIRE(step.analysis_timer_for_test() != nullptr);
+    CHECK(std::string(lv_subject_get_string(step.get_status_subject())) == "Analyzing data... 0s");
+
+    // The harness only runs finite-repeat timers; lend this one a count.
+    lv_timer_set_repeat_count(step.analysis_timer_for_test(), 1000);
+    lv_tick_inc(1500);
+    lv_timer_handler_safe();
+    CHECK(std::string(lv_subject_get_string(step.get_status_subject())) == "Analyzing data... 1s");
+
+    // Cancel freezes the label; further virtual time changes nothing.
+    step.cancel_analysis_display();
+    const std::string frozen = lv_subject_get_string(step.get_status_subject());
+    lv_tick_inc(5000);
+    lv_timer_handler_safe();
+    CHECK(std::string(lv_subject_get_string(step.get_status_subject())) == frozen);
+    CHECK(step.analysis_timer_for_test() == nullptr);
+}
+
 // ============================================================================
 // Wizard Flow Integration Tests
 // ============================================================================
