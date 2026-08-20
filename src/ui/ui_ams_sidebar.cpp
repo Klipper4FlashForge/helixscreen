@@ -1244,6 +1244,15 @@ void AmsOperationSidebar::handle_check_gates() {
 
 void AmsOperationSidebar::handle_bypass_toggle() {
     bypass_toggle_.toggle();
+
+    // ui_switch flips its own CHECKED state before the handler runs, so a
+    // refusal (print active, hardware sensor, backend precondition) leaves the
+    // switch claiming a bypass state the backend never entered. Republish and
+    // force the binding to re-apply — lv_subject_set_int does not notify when
+    // the value is unchanged, which is precisely the refusal case. Same two
+    // lines as the Device Operations switch.
+    AmsState::instance().sync_from_backend();
+    lv_subject_notify(AmsState::instance().get_bypass_active_subject());
 }
 
 // ============================================================================
