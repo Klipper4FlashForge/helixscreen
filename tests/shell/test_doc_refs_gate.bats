@@ -62,3 +62,72 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" != *"lv_obj_t*"* ]]
 }
+
+@test "devel: cite past end of file fails" {
+    mkdir -p "$BATS_TEST_TMPDIR/src"
+    printf 'int foo(void);\n' > "$BATS_TEST_TMPDIR/src/zz_fixture_real.cpp"
+    cat > "$FIX/eof.md" <<'EOF'
+See `src/zz_fixture_real.cpp:9999` for the declaration.
+EOF
+    run python3 "$CHECK" --devel "$FIX/eof.md"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"past the end of the file"* ]]
+}
+
+@test "devel: symbol-near-cite, symbol first form, drift fails" {
+    mkdir -p "$BATS_TEST_TMPDIR/src"
+    printf 'int other(void);\nint other2(void);\n' > "$BATS_TEST_TMPDIR/src/zz_fixture_real.cpp"
+    cat > "$FIX/cite_a.md" <<'EOF'
+`foo()` (`src/zz_fixture_real.cpp:1`) does the thing.
+EOF
+    run python3 "$CHECK" --devel "$FIX/cite_a.md"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Symbol-cite drift"* ]]
+    [[ "$output" == *"`foo()` cited at `src/zz_fixture_real.cpp:1`"* ]]
+}
+
+@test "devel: symbol-near-cite, cite first form, drift fails" {
+    mkdir -p "$BATS_TEST_TMPDIR/src"
+    printf 'int aaa(void);\n' > "$BATS_TEST_TMPDIR/src/zz_fixture_real.cpp"
+    cat > "$FIX/cite_b.md" <<'EOF'
+`src/zz_fixture_real.cpp:1` — `bar` is the entry point.
+EOF
+    run python3 "$CHECK" --devel "$FIX/cite_b.md"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Symbol-cite drift"* ]]
+    [[ "$output" == *"`bar` cited at `src/zz_fixture_real.cpp:1`"* ]]
+}
+
+@test "devel: symbol present near cited line passes, including window edges" {
+    mkdir -p "$BATS_TEST_TMPDIR/src"
+    { printf 'noise\nnoise\n'; printf 'int widget_attach(void);\n'; printf 'noise\n'; } \
+        > "$BATS_TEST_TMPDIR/src/zz_fixture_real.cpp"
+    cat > "$FIX/cite_ok.md" <<'EOF'
+`attach()` (`src/zz_fixture_real.cpp:3`) and
+`src/zz_fixture_real.cpp:3` — `attach` both resolve: the symbol is on the
+exact line. A bare `src/zz_fixture_real.cpp:1` cite makes no symbol claim,
+so whatever sits on that line is none of the gate's business.
+EOF
+    run python3 "$CHECK" --devel "$FIX/cite_ok.md"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Symbol cites"* ]]
+}
+
+@test "devel: qualified symbol matches its final component" {
+    mkdir -p "$BATS_TEST_TMPDIR/src"
+    printf 'int Nav::shutdown(void);\n' > "$BATS_TEST_TMPDIR/src/zz_fixture_real.cpp"
+    cat > "$FIX/cite_qual.md" <<'EOF'
+`NavigationManager::shutdown()` (`src/zz_fixture_real.cpp:1`) runs last.
+EOF
+    run python3 "$CHECK" --devel "$FIX/cite_qual.md"
+    [ "$status" -eq 0 ]
+}
+
+@test "stale: report mode runs clean on a doc with no file cites" {
+    cat > "$FIX/nocites.md" <<'EOF'
+Plain prose, no backticked paths at all.
+EOF
+    run python3 "$CHECK" --stale --devel "$FIX/nocites.md"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No citation is older than its doc"* ]]
+}
