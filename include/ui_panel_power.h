@@ -15,6 +15,8 @@
 #include <string>
 #include <vector>
 
+class PowerPanelTestAccess;
+
 /**
  * @brief Power device control panel
  *
@@ -23,6 +25,8 @@
  * Devices marked as "locked_while_printing" show a lock indicator during prints.
  */
 class PowerPanel : public PanelBase {
+    friend class ::PowerPanelTestAccess;
+
   public:
     PowerPanel(helix::PrinterState& printer_state, IMoonrakerAPI* api);
     ~PowerPanel() override;
