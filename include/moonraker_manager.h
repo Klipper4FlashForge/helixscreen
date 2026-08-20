@@ -12,7 +12,6 @@
 #include "runtime_config.h"
 
 #include <atomic>
-#include <chrono>
 #include <memory>
 #include <queue>
 
@@ -62,6 +61,10 @@ class MacroModificationManager;
  */
 class MoonrakerManager {
   public:
+    // Out-of-line on purpose: the class holds unique_ptr members of
+    // forward-declared types (e.g. MacroModificationManager), and a defaulted
+    // constructor here would instantiate in every TU that constructs the
+    // manager, requiring those types to be complete there.
     MoonrakerManager();
     ~MoonrakerManager();
 
@@ -172,6 +175,9 @@ class MoonrakerManager {
                                                     int current_progress,
                                                     bool is_initial_transition,
                                                     int current_print_duration = 0) {
+        // RAW_PRINT_STATE_OK: the collector arms on the PRINTER accepting the
+        // job. On the lifecycle the transition would be Idle -> Preparing, which
+        // is the window the collector exists to measure, not its end.
         // Only start on TRANSITION to PRINTING from non-printing state
         bool was_not_printing = (prev_state != helix::PrintJobState::PRINTING &&
                                  prev_state != helix::PrintJobState::PAUSED);
@@ -243,6 +249,9 @@ class MoonrakerManager {
      */
     static inline bool should_stop_print_collector(helix::PrintJobState new_state,
                                                    bool has_preparing_job) {
+        // RAW_PRINT_STATE_OK: teardown mirrors the arming predicate above; the
+        // preparing axis is carried by the separate has_preparing_job argument
+        // so the two questions stay independent.
         if (new_state == helix::PrintJobState::PRINTING ||
             new_state == helix::PrintJobState::PAUSED) {
             return false;
@@ -433,9 +442,6 @@ class MoonrakerManager {
     // libhv event-loop thread (#1219). Invalidated in shutdown() alongside
     // m_alive.
     helix::AsyncLifetimeGuard lifetime_;
-
-    // Startup time for suppressing initial notifications (Klipper ready toast)
-    std::chrono::steady_clock::time_point m_startup_time;
 
     bool m_initialized = false;
 };

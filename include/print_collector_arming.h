@@ -23,6 +23,11 @@ class PrintCollectorArming {
   public:
     /// Re-arm for a fresh connection. Runs on every printer switch.
     void reset() {
+        // RAW_PRINT_STATE_OK: the collector arms on the printer's transitions.
+        // FIRST-TICK: seeding to STANDBY is safe here ONLY because
+        // is_initial_transition_ carries the "we just connected" fact
+        // explicitly - that flag, not the seed, distinguishes joining a running
+        // print from a user-started reprint.
         prev_state_ = PrintJobState::STANDBY;
         is_initial_transition_ = true;
     }
@@ -42,6 +47,7 @@ class PrintCollectorArming {
     }
 
   private:
+    /// RAW_PRINT_STATE_OK: see reset() for the first-tick contract.
     PrintJobState prev_state_ = PrintJobState::STANDBY;
     bool is_initial_transition_ = true;
 };

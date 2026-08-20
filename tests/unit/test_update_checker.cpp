@@ -1095,8 +1095,7 @@ TEST_CASE_METHOD(GlobalPrintStateFixture,
     // Host-side pre-print block: print_stats still reads standby while the
     // lifecycle is already Preparing.
     drive_lifecycle(state, "standby", PrintStartPhase::BED_MESH);
-    REQUIRE(static_cast<PrintState>(lv_subject_get_int(state.get_print_lifecycle_subject())) ==
-            PrintState::Preparing);
+    REQUIRE(state.get_print_lifecycle() == PrintState::Preparing);
 
     checker.start_download();
 
@@ -1126,8 +1125,7 @@ TEST_CASE_METHOD(GlobalPrintStateFixture,
     checker.clear_cache();
 
     drive_lifecycle(state, "standby", PrintStartPhase::IDLE);
-    REQUIRE(static_cast<PrintState>(lv_subject_get_int(state.get_print_lifecycle_subject())) ==
-            PrintState::Idle);
+    REQUIRE(state.get_print_lifecycle() == PrintState::Idle);
 
     checker.start_download();
 

@@ -584,8 +584,7 @@ void ToolSwitcherWidget::ToolPicker::on_created(lv_obj_t* backdrop) {
 // ============================================================================
 
 AmsError ToolSwitcherWidget::tool_change_refusal() const {
-    const auto lifecycle =
-        static_cast<PrintState>(lv_subject_get_int(printer_state_.get_print_lifecycle_subject()));
+    const auto lifecycle = printer_state_.get_print_lifecycle();
     const bool paused = lifecycle == PrintState::Paused;
 
     // No backend means a plain Tn / macro path with no firmware macro that could
@@ -673,8 +672,7 @@ void ToolSwitcherWidget::handle_tool_selected(int tool_index) {
     // paused job (everything except AD5X IFS) — pause-then-swap is the runout
     // and colour-change recovery workflow, so the change is offered, with a
     // confirmation because it moves the toolhead into a part still on the bed.
-    const auto lifecycle =
-        static_cast<PrintState>(lv_subject_get_int(printer_state_.get_print_lifecycle_subject()));
+    const auto lifecycle = printer_state_.get_print_lifecycle();
     if (lifecycle == PrintState::Paused) {
         spdlog::info("[ToolSwitcher] Print paused, showing confirmation for T{}", tool_index);
 

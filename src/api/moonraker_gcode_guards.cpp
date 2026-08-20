@@ -29,6 +29,8 @@ bool reject_homing_during_active_print(const std::string& gcode, helix::PrinterS
     // driving the toolhead — every affordance that could send a competing G28
     // (the motion/calibration XML bindings, the AMS filament ops, the bypass
     // tile) is disabled by job_holds_machine().
+    // RAW_PRINT_STATE_OK: see the full reason above - widening this refuses the
+    // app's own pre-start G-code.
     const helix::PrintJobState pstate = state.get_print_job_state();
     if (pstate != helix::PrintJobState::PRINTING && pstate != helix::PrintJobState::PAUSED) {
         return false;
