@@ -281,6 +281,23 @@ TEST_CASE("no toolhead-guarding XML binding is left on the raw print_active subj
             ++derived_bindings;
             pos += needle.size();
         }
+
+        // A control with a SECOND reason to be disabled cannot carry two binds:
+        // each bind_state_* sets or clears the state, so the later one undoes
+        // the earlier. Those fold the lifecycle guard into one compound cond=,
+        // which still pins the direction (`job_holds_machine eq 1`) and still
+        // counts - a silent drop is exactly as visible either way.
+        pos = 0;
+        const std::string compound = "<bind_state_if cond=\"job_holds_machine eq 1 or ";
+        while ((pos = xml.find(compound, pos)) != std::string::npos) {
+            const size_t end = xml.find("/>", pos);
+            INFO(path << " has an unterminated bind_state_if");
+            REQUIRE(end != std::string::npos);
+            INFO(path << " folds job_holds_machine into a bind that is not the disabled state");
+            REQUIRE(xml.substr(pos, end - pos).find("state=\"disabled\"") != std::string::npos);
+            ++derived_bindings;
+            pos = end;
+        }
     }
 
     // The census count. If a binding is legitimately added or removed, update

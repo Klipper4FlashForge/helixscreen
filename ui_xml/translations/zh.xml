@@ -2763,6 +2763,7 @@
   <translation tag="{} heater turned off" zh="{} 加热器已关闭"/>
   <translation tag="{} is installed but its backup-spool switching is turned off, so no automatic swap will happen." zh="{} 已安装，但其备用料盘切换已关闭，因此不会自动切换。"/>
   <translation tag="{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap." zh="{} 已安装，但无法读取其备用料盘设置 - 请勿指望自动切换。"/>
+  <translation tag="{} is not set up on this printer"/>
   <translation tag="{} lanes" zh="{} 个料仓"/>
   <translation tag="{} macro not configured" zh="{} 宏未配置"/>
   <translation tag="{} may cause unintended changes. Are you sure?" zh="{} 可能导致意外更改。确定吗？"/>

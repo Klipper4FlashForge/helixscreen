@@ -486,14 +486,18 @@
                        width="0" height="#button_height" flex_grow="1" bind_text="macro_1_name" variant="secondary"
                        style_text_font="#font_small" long_mode="wrap">
               <bind_flag_if_eq subject="macro_1_visible" flag="hidden" ref_value="0"/>
-              <bind_state_if_eq subject="job_holds_machine" state="disabled" ref_value="1"/>
+              <!-- One state bind, two reasons. Each bind_state_* sets OR clears the state,
+                   so a second "disabled" bind on the same widget undoes the first. -->
+              <bind_state_if cond="job_holds_machine eq 1 or macro_1_available eq 0" state="disabled"/>
               <event_cb trigger="clicked" callback="on_controls_macro" user_data="0"/>
             </ui_button>
             <ui_button name="btn_macro_2"
                        width="0" height="#button_height" flex_grow="1" bind_text="macro_2_name" variant="secondary"
                        style_text_font="#font_small" long_mode="wrap">
               <bind_flag_if_eq subject="macro_2_visible" flag="hidden" ref_value="0"/>
-              <bind_state_if_eq subject="job_holds_machine" state="disabled" ref_value="1"/>
+              <!-- One state bind, two reasons. Each bind_state_* sets OR clears the state,
+                   so a second "disabled" bind on the same widget undoes the first. -->
+              <bind_state_if cond="job_holds_machine eq 1 or macro_2_available eq 0" state="disabled"/>
               <event_cb trigger="clicked" callback="on_controls_macro" user_data="1"/>
             </ui_button>
           </lv_obj>
@@ -504,14 +508,18 @@
                        width="0" height="#button_height" flex_grow="1" bind_text="macro_3_name" variant="secondary"
                        style_text_font="#font_small" long_mode="wrap">
               <bind_flag_if_eq subject="macro_3_visible" flag="hidden" ref_value="0"/>
-              <bind_state_if_eq subject="job_holds_machine" state="disabled" ref_value="1"/>
+              <!-- One state bind, two reasons. Each bind_state_* sets OR clears the state,
+                   so a second "disabled" bind on the same widget undoes the first. -->
+              <bind_state_if cond="job_holds_machine eq 1 or macro_3_available eq 0" state="disabled"/>
               <event_cb trigger="clicked" callback="on_controls_macro" user_data="2"/>
             </ui_button>
             <ui_button name="btn_macro_4"
                        width="0" height="#button_height" flex_grow="1" bind_text="macro_4_name" variant="secondary"
                        style_text_font="#font_small" long_mode="wrap">
               <bind_flag_if_eq subject="macro_4_visible" flag="hidden" ref_value="0"/>
-              <bind_state_if_eq subject="job_holds_machine" state="disabled" ref_value="1"/>
+              <!-- One state bind, two reasons. Each bind_state_* sets OR clears the state,
+                   so a second "disabled" bind on the same widget undoes the first. -->
+              <bind_state_if cond="job_holds_machine eq 1 or macro_4_available eq 0" state="disabled"/>
               <event_cb trigger="clicked" callback="on_controls_macro" user_data="3"/>
             </ui_button>
           </lv_obj>
