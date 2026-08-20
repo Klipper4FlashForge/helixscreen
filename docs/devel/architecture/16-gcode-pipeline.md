@@ -79,7 +79,8 @@ flowchart TB
 | `include/gcode_footer_summary.h` | `parse_gcode_footer_summary()` + tail-window sizing (`16KB/64KB/512KB` bounds) |
 | `include/tools_used_cache.h` | Persistent per-file tools-used cache, LRU-bounded, JSON on disk |
 | `src/ui/ui_panel_print_status.cpp` | Print-status acquisition: size gate, stream-to-disk, render-mode application |
-| `ui_xml/print_status_panel.xml` | `btn_objects` — the skip-objects entry point, gated on `exclude_objects_available` |
+| `ui_xml/components/print_status_preview_card.xml` | The print-status preview card, one definition for both orientations: `btn_objects` (the skip-objects entry point, gated on `exclude_objects_available`), the view toggle, the metadata strip and the terminal-state overlays |
+| `ui_xml/components/preview_stack.xml` | The thumbnail / 2D / 3D stack itself, shared by the print-status card and `print_file_detail.xml`; each host passes its own per-layer hide condition |
 
 ## How it works
 
