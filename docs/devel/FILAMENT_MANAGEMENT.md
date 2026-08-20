@@ -3507,6 +3507,34 @@ The `AmsDeviceOperationsOverlay` (`ui_ams_device_operations_overlay.h`) consolid
 | Abort | `cancel()` | Cancel current operation |
 | Bypass Toggle | `enable_bypass()` / `disable_bypass()` | Toggle bypass mode (if supported) |
 
+### The Bypass Toggle row: one shared policy for the quick surfaces
+
+The table's last row names the backend calls, not the UI path. Two surfaces flip bypass
+without opening this overlay, and both route through one shared policy object,
+`BypassToggleController` (`src/ui/ui_bypass_toggle_controller.cpp`, extracted from the
+sidebar's handler in 03f784219): the AMS sidebar's toggle (`include/ui_ams_sidebar.h:195`)
+and the home-panel Bypass tile (`src/ui/panel_widgets/bypass_widget.h:33`). Each owns an
+instance and forwards its click to `toggle()`, which runs every guard before touching the
+backend:
+
+- **Print guard** (`:26-36`) — "Bypass cannot be changed while printing". Asked of the
+  print lifecycle via `job_holds_machine()`, not `print_stats.state`: Preparing and Paused
+  count too, because filament is already staged mid-path and a pre-start block may be
+  homing.
+- **Hardware-sensor refusal** (`:44-49`) — `has_hardware_bypass_sensor` means firmware owns
+  bypass; the toggle only reports it.
+- **Unload-first chaining** (`:62-79`) — enabling while a lane is loaded, on a backend that
+  allows implicit chaining, first unloads the active lane and arms an `ams_action`
+  observer; the UNLOADING→IDLE edge issues the `enable_bypass()`, an ERROR edge disarms
+  without enabling. The controller observes the action subject itself while the chain is
+  armed — before the extraction only the sidebar fed that subject, so a chain started from
+  the home tile never saw its completing edge.
+
+The overlay's own switch (the row above) is not behind the controller: its handler calls
+`enable_bypass()` / `disable_bypass()` directly, with its own hardware-sensor check but
+neither the print guard nor the unload chain
+(`src/ui/ui_ams_device_operations_overlay.cpp:570`).
+
 ### Bypass visibility and the force override
 
 Two pure predicates decide whether any bypass UI exists. Both had been inlined at four render
@@ -3534,11 +3562,11 @@ Where the override lands, by backend:
 | Backend | `supports_bypass` | Override row shown | `enable_bypass()` with override on |
 |---------|-------------------|--------------------|------------------------------------|
 | AFC | `afc_defaults` caps, default `true` | no | Consults `bypass_available_for()` |
-| AD5X IFS | `true` (`ams_backend_ad5x_ifs.cpp:85`) | no | Real command via `less_waste_external` |
+| AD5X IFS | `true` (`ams_backend_ad5x_ifs.cpp:134`) | no | Real command via `less_waste_external` |
 | Happy Hare | Runtime from `[mmu_machine] has_bypass`; `false` until first status | Only when `has_bypass: 0` | Consults `bypass_available_for()`; `MMU_SELECT_BYPASS` runs |
 | CFS | Converges on first full box frame: true (Fork: + payload `external` entry) | no | Consults `bypass_available_for()` — real `T<external>` on Fork, sensor-derived declaration on stock |
-| ACE | Hardcoded `false` (`:43`) | yes | `not_supported` |
-| Snapmaker | Hardcoded `false` (`:237`) | yes | `not_supported` |
+| ACE | Hardcoded `false` (`ams_backend_ace.cpp:44`) | yes | `not_supported` |
+| Snapmaker | Hardcoded `false` (`ams_backend_snapmaker.cpp:240`) | yes | `not_supported` |
 | Tool Changer | Hardcoded `false` (`:31`) | yes | `not_supported` |
 | QIDI Box | Hardcoded `false` (`:193`, stub backend) | yes | `not_supported` |
 
@@ -3569,7 +3597,7 @@ The input is `AmsState::any_bypass_active()`, which polls every backend's `is_by
 Two things it is deliberately **not**:
 
 - **Not `AmsSystemInfo::current_slot == -2`.** The AFC backend sets that at
-  `ams_backend_afc.cpp:2219` while parsing `bypass_state`, but nine later writes in the same
+  `ams_backend_afc.cpp:2241` while parsing `bypass_state`, but nine later writes in the same
   file can overwrite it — including the mount-state derivation from #1229, which is
   intentionally unguarded so it cannot re-latch. `is_bypass_active()` returns the firmware's own
   report and is stable.
@@ -3609,7 +3637,9 @@ gate pipeline: `PrintStartController::run_gates_from()` iterates
    a single-tool bypass print is the legitimate bypass use and stays silent. "Single-tool"
    is the gcode-scan's used-tool count, not the filament palette size — slicers emit a
    full-profile palette (e.g. `PLA;ASA-GF;ASA-GF;PLA`) even for a file extruding from one
-   tool, which made the palette-count form of this gate nag every such file (K2 CFS case)
+   tool, which made the palette-count form of this gate nag every such file (K2 CFS case).
+   How that scan runs — the footer-read fast path and the persistent tools-used cache —
+   is covered in `architecture/16-gcode-pipeline.md`
 3. `unaccounted_toolhead_filament` — filament in the toolhead that no lane accounts for
 4. `required_filament_present` — the empty-lane / runout dialog (at-tap sibling of the
    pre-flight block above); a single-tool bypass print skips lane truth entirely — its
@@ -3742,8 +3772,8 @@ The seed also dispatches from the main thread (inside an `UpdateQueue` drain), w
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `HELIX_AMS_GATES` | 1-16 | 4 | Number of simulated slots |
-| `HELIX_MOCK_AMS` | `afc`, `box_turtle`, `boxturtle`, `toolchanger`, `tool_changer`, `tc`, `mixed`, `multi`, `ifs`, `ad5x`, `ad5x_ifs` | Happy Hare | AMS type to simulate |
-| `HELIX_MOCK_AMS_STATE` | `idle`, `loading`, `error`, `bypass`, `unaccounted` | `idle` | Visual scenario to simulate |
+| `HELIX_MOCK_AMS` | `afc`, `box_turtle`, `boxturtle`, `toolchanger`, `tool_changer`, `tc`, `mixed`, `multi`, `torture`, `vivid`, `ifs`, `ad5x`, `ad5x_ifs`, `htlf_toolchanger`, `htlf_tc`, `htlf`, `snapmaker`, `snapswap`, `u1` | Happy Hare | AMS type to simulate |
+| `HELIX_MOCK_AMS_STATE` | `idle`, `loading`, `error`, `bypass`, `unaccounted`, `grade` | `idle` | Visual scenario to simulate |
 | `HELIX_MOCK_DRYER` | `1`, `true` | Disabled | Simulate integrated dryer |
 | `HELIX_MOCK_DRYER_SPEED` | Integer | 60 | Dryer speed multiplier (60 = 1 real sec = 1 sim min) |
 
