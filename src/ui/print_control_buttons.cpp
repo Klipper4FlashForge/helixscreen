@@ -45,6 +45,11 @@ void PrintControlButtons::init_subjects() {
     lv_xml_register_event_cb(nullptr, "on_print_control_stop", on_stop_clicked);
 
     // print_state_enum is a static global subject — no SubjectLifetime needed.
+    // RAW_PRINT_STATE_OK: TWO observers on purpose. This one clears the
+    // optimistic pending action when the PRINTER's own state moves; the
+    // lifecycle observer below recomputes the buttons. Collapsing them would
+    // clear a pending Pause on the Idle -> Preparing edge, before the printer
+    // has answered.
     print_state_observer_ = observe_int_sync<PrintControlButtons>(
         get_printer_state().get_print_state_enum_subject(), this,
         [](PrintControlButtons* self, int) {
@@ -86,9 +91,11 @@ ControlButtonView PrintControlButtons::current_view() const {
     auto& macros = StandardMacros::instance();
 
     ControlButtonInputs in;
-    in.job_state =
-        static_cast<helix::PrintJobState>(lv_subject_get_int(state.get_print_state_enum_subject()));
-    in.lifecycle = static_cast<PrintState>(lv_subject_get_int(state.get_print_lifecycle_subject()));
+    // RAW_PRINT_STATE_OK: ControlButtonInputs carries BOTH axes on purpose -
+    // job_state (the wire) and lifecycle - because "who holds the job" and "what
+    // may the user do" are different questions. See print_control_view.cpp.
+    in.job_state = state.get_print_job_state();
+    in.lifecycle = state.get_print_lifecycle();
     in.has_preparing_job = state.has_preparing_job();
     in.pending = pending_action_;
     in.pause_available = !macros.get(StandardMacroSlot::Pause).is_empty();
@@ -122,9 +129,13 @@ void PrintControlButtons::handle_primary_button() {
         return;
     }
     auto state = static_cast<helix::PrintJobState>(
+        // RAW_PRINT_STATE_OK: picks which macro to send; see below.
         lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
     auto& macros = StandardMacros::instance();
 
+    // RAW_PRINT_STATE_OK: chooses WHICH macro to send. Pause is meaningless
+    // before the printer holds the job, and print_control_view already refuses
+    // the button during Preparing.
     if (state == helix::PrintJobState::PRINTING) {
         if (macros.get(StandardMacroSlot::Pause).is_empty()) {
             NOTIFY_WARNING(lv_tr("Pause macro not configured"));
@@ -143,6 +154,8 @@ void PrintControlButtons::handle_primary_button() {
                 PrintControlButtons::instance().clear_pending_action();
             },
             /*timeout_ms=*/0, /*suppress_auto_toast=*/true);
+        // RAW_PRINT_STATE_OK: Resume is only meaningful once the PRINTER says
+        // it is paused.
     } else if (state == helix::PrintJobState::PAUSED) {
         request_resume();
     }

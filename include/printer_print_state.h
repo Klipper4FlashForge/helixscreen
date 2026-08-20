@@ -5,6 +5,7 @@
 
 #include "async_lifetime_guard.h"
 #include "print_job_ref.h"
+#include "print_lifecycle_state.h"
 #include "subject_managed_panel.h"
 
 #if defined(HELIX_PLATFORM_ESP32)
@@ -121,6 +122,12 @@ class PrinterPrintState {
     }
 
     /// Integer enum value for type-safe logic (PrintJobState)
+    ///
+    /// RAW_PRINT_STATE_OK: this IS the wire subject. Consumers asking a
+    /// capability question want get_print_lifecycle_subject() instead - this one
+    /// cannot express a start the app has committed to but the printer has not
+    /// reported. Pair it with observe_print_state(), never the lifecycle
+    /// factory: the two enums do not share numbering.
     lv_subject_t* get_print_state_enum_subject() {
         return &print_state_enum_;
     }
@@ -668,8 +675,33 @@ class PrinterPrintState {
     /**
      * @brief Get current print job state as enum
      * @return Current PrintJobState
+     *
+     * RAW_PRINT_STATE_OK: this IS the wire accessor; get_print_lifecycle() is
+     * the derived one.
      */
     PrintJobState get_print_job_state() const;
+
+    /**
+     * @brief Get the derived print lifecycle
+     *
+     * The typed counterpart to get_print_job_state(), and the ONLY way call
+     * sites should read `print_lifecycle`. Reading the subject by hand means
+     * hand-casting the subject's int, and because
+     * lv_subject_get_int() returns int that cast compiles against whichever
+     * subject you happened to name - so pairing it with the raw
+     * print_state_enum subject is silent, and the two enums do NOT share
+     * numbering past index 0:
+     *
+     *     PrintJobState  STANDBY=0 PRINTING=1 PAUSED=2 COMPLETE=3 ...
+     *     PrintState     Idle=0    Preparing=1 Printing=2 Paused=3 ...
+     *
+     * so a COMPLETE job reads back as Paused and a PRINTING one as Preparing.
+     * That mistake was made twice while migrating guards onto the lifecycle
+     * (ams_backend_ad5x_ifs, power_device_state) and was invisible both times
+     * until a test caught it. This accessor removes the cast, and with it the
+     * opportunity.
+     */
+    [[nodiscard]] PrintState get_print_lifecycle() const;
 
     /**
      * @brief Check if a new print can be started

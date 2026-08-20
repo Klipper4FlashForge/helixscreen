@@ -16,6 +16,7 @@
 #include "gcode_error_router.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
+#include "print_lifecycle_state.h"
 #include "printer_recovery_service.h"
 #include "static_panel_registry.h"
 
@@ -149,7 +150,6 @@ void EmergencyStopOverlay::deinit_subjects() {
     // re-runnable (soft restart after Add Printer). Releasing here makes the
     // pair symmetric.
     print_state_observer_.reset();
-    print_start_phase_observer_.reset();
     klippy_state_observer_.reset();
 
     // Same reasoning as the dialog pointers above, one level up: init() stored
@@ -185,18 +185,15 @@ void EmergencyStopOverlay::create() {
     // Subscribe to print state changes for automatic visibility updates
     // The estop_visible subject drives XML bindings in home_panel, controls_panel,
     // and print_status_panel (no FAB - buttons are embedded in each panel)
+    // One observer, on print_lifecycle. It already merges both axes this used to
+    // watch separately: the raw job state does not move during a host-side
+    // pre-start block, and print_start_phase does not move on PRINTING->PAUSED,
+    // so covering the button needed two subscriptions and a hand-rolled OR.
+    // derive_print_state() does that merge once, for everyone.
     print_state_observer_ = observe_int_sync<EmergencyStopOverlay>(
-        printer_state_->get_print_state_enum_subject(), this,
-        [](EmergencyStopOverlay* self, int /*state*/) { self->update_visibility(); }, ps_subjects);
-
-    // The pre-print preparing phase (homing, heating, leveling) is physical
-    // movement during which Moonraker still reports STANDBY — so the job-state
-    // observer above does not fire. print_start_phase is non-zero throughout
-    // preparing; treating it as active keeps the contextual e-stop reachable
-    // from the moment motion starts, not just after PRINTING begins.
-    print_start_phase_observer_ = observe_int_sync<EmergencyStopOverlay>(
-        printer_state_->get_print_start_phase_subject(), this,
-        [](EmergencyStopOverlay* self, int /*phase*/) { self->update_visibility(); }, ps_subjects);
+        printer_state_->get_print_lifecycle_subject(), this,
+        [](EmergencyStopOverlay* self, int /*lifecycle*/) { self->update_visibility(); },
+        ps_subjects);
 
     // Reset the initial-fire guard so each (re)subscription — including
     // soft-restart after Add Printer — drops the subject's placeholder
@@ -303,21 +300,24 @@ void EmergencyStopOverlay::update_visibility() {
         return;
     }
 
-    // Check if print is active (PRINTING, PAUSED, or in the pre-print preparing
-    // phase). The estop_visible subject drives XML bindings in each panel.
-    PrintJobState state = printer_state_->get_print_job_state();
-    bool is_printing = (state == PrintJobState::PRINTING || state == PrintJobState::PAUSED);
-    const int start_phase = lv_subject_get_int(printer_state_->get_print_start_phase_subject());
-    const bool preparing = (start_phase != 0);
-    const bool is_active = is_printing || preparing;
+    // The contextual E-Stop must be reachable from the moment the machine starts
+    // moving, which is BEFORE Moonraker reports a print: a host-side pre-start
+    // block homes and probes while print_stats still reads standby (or the
+    // previous job's terminal state).
+    //
+    // This used to hand-OR the raw job state with `start_phase != 0` and watch
+    // both subjects to catch each half. That is job_holds_machine() spelled out,
+    // so it asks the lifecycle once instead - one predicate, one observer, and
+    // no second spelling to drift.
+    const auto lifecycle = printer_state_->get_print_lifecycle();
 
-    int new_value = is_active ? 1 : 0;
+    int new_value = job_holds_machine(lifecycle) ? 1 : 0;
     int current_value = lv_subject_get_int(&estop_visible_);
 
     if (new_value != current_value) {
         lv_subject_set_int(&estop_visible_, new_value);
-        spdlog::debug("[EmergencyStop] Visibility changed: {} (state={}, phase={})", is_active,
-                      static_cast<int>(state), start_phase);
+        spdlog::debug("[EmergencyStop] Visibility changed: {} (lifecycle={})", new_value,
+                      static_cast<int>(lifecycle));
     }
 }
 

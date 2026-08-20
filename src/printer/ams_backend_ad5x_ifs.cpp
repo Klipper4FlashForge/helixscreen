@@ -53,8 +53,7 @@ namespace {
     // These two enums do NOT share numbering — PrintJobState::PAUSED is 2 while
     // PrintState::Paused is 3 — so reading one and casting to the other silently
     // answers "paused" for a COMPLETE job and "not paused" for a real pause.
-    auto* subj = get_printer_state().get_print_lifecycle_subject();
-    if (!subj) {
+    if (!get_printer_state().are_subjects_initialized()) {
         return false;
     }
     // PrintState::Paused, not job_holds_machine(): this asks specifically
@@ -62,7 +61,7 @@ namespace {
     // Equivalent to the old raw comparison — derive_print_state() excepts PAUSED
     // from the "a live phase outranks the job state" rule, so the two can never
     // disagree — but expressed on the one axis everything else now reads.
-    return static_cast<PrintState>(lv_subject_get_int(subj)) == PrintState::Paused;
+    return get_printer_state().get_print_lifecycle() == PrintState::Paused;
 }
 
 /// Fallback purge for a runout recovery: 50 mm of fresh filament at 10 mm/s.
@@ -634,10 +633,12 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
     // queue, and 'Timer too close' shutdowns are exactly what host starvation
     // there looks like. PAUSED deliberately keeps the 5s cadence: a pause is
     // when a user actually swaps a spool and relabels it.
+    // RAW_PRINT_STATE_OK: picks the poll cadence from what the MCU is actually
+    // doing. During a host-side block the board is not yet feeding the step
+    // queue, so the fast cadence is still the right choice there.
     bool printing_now = false;
-    if (auto* print_subj = get_printer_state().get_print_state_enum_subject()) {
-        printing_now = static_cast<helix::PrintJobState>(lv_subject_get_int(print_subj)) ==
-                       helix::PrintJobState::PRINTING;
+    if (get_printer_state().are_subjects_initialized()) {
+        printing_now = get_printer_state().get_print_job_state() == helix::PrintJobState::PRINTING;
     }
 
     auto now = std::chrono::steady_clock::now();

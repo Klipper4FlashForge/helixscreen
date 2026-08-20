@@ -173,6 +173,9 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
         [](PrintStatusPanel* self, int progress) { self->on_print_progress_changed(progress); },
         ps_subjects);
     print_state_observer_ = observe_print_state<PrintStatusPanel>(
+        // RAW_PRINT_STATE_OK: the panel's lifecycle_ adopts the published
+        // PrintState (Phase 0b); this observer feeds it the wire transition that
+        // derive_print_state() needs alongside the live phase.
         printer_state_.get_print_state_enum_subject(), this,
         [](PrintStatusPanel* self, PrintJobState state) { self->on_print_state_changed(state); },
         ps_subjects);
@@ -1043,6 +1046,7 @@ void PrintStatusPanel::on_activate() {
     OverlayBase::on_activate(); // Sets visible_ = true
     is_active_ = true;
 
+    // RAW_PRINT_STATE_OK: pairs with the scoped-runout guard's reason below.
     int state_enum = lv_subject_get_int(printer_state_.get_print_state_enum_subject());
     spdlog::debug("[{}] on_activate() print_state_enum={}", get_name(), state_enum);
 
@@ -1835,6 +1839,10 @@ void PrintStatusPanel::recompute_scoped_runout() {
     // the parsed file is dropped, get_tools_used() empties → compute returns -1;
     // but also clear explicitly here so a terminal transition reliably hides the
     // badge even if tools_used hasn't cleared yet (issue 9).
+    // RAW_PRINT_STATE_OK: the badge is scoped to the tools the RUNNING file
+    // uses. During a preparing window get_tools_used() still describes the
+    // previous job, so widening this would scope the badge to the wrong file
+    // instead of hiding it.
     auto state = static_cast<PrintJobState>(
         lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
     bool print_active = (state == PrintJobState::PRINTING || state == PrintJobState::PAUSED);
@@ -2599,8 +2607,15 @@ void PrintStatusPanel::recompute_paused_overlay_visibility() {
     auto pending = static_cast<helix::ui::PendingAction>(
         lv_subject_get_int(helix::ui::PrintControlButtons::instance().pending_action_subject()));
 
+    // RAW_PRINT_STATE_OK: a value question - is the printer reporting paused? -
+    // driving the optimistic Pause/Resume overlay. (PAUSED outranks a live phase
+    // in derive_print_state(), so the lifecycle would answer identically; the
+    // wire is simply the more direct statement of what is being asked.)
     auto state = static_cast<PrintJobState>(
+        // RAW_PRINT_STATE_OK: see the optimistic-overlay note below.
         lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+    // RAW_PRINT_STATE_OK: is the printer REPORTING paused - the optimistic
+    // Pause/Resume overlay tracks the printer, not our intent.
     bool paused = (state == PrintJobState::PAUSED);
 
     // Optimistic overlay state while a Pause/Resume RPC is in flight: show the
@@ -3066,7 +3081,9 @@ void PrintStatusPanel::on_print_start_phase_changed(int phase) {
         return;
     }
 
-    // Delegate state transition to lifecycle
+    // Delegate state transition to lifecycle. RAW_PRINT_STATE_OK: the panel's
+    // PrintLifecycleState derives its own PrintState from (wire, phase) via
+    // derive_print_state(), so this feeds it the wire half deliberately.
     auto current_job_state = static_cast<PrintJobState>(
         lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
     bool state_changed = lifecycle_.on_start_phase_changed(phase, current_job_state);

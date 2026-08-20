@@ -18,6 +18,7 @@
 #include "device_display_name.h"
 #include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "print_lifecycle_state.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
 
@@ -239,10 +240,12 @@ void PowerPanel::create_device_row(const PowerDevice& device) {
         lv_obj_remove_state(toggle, LV_STATE_CHECKED);
     }
 
-    // Check if device is locked during printing
-    PrintJobState job_state = printer_state_.get_print_job_state();
-    bool is_printing = (job_state == PrintJobState::PRINTING || job_state == PrintJobState::PAUSED);
-    bool is_locked = device.locked_while_printing && is_printing;
+    // Check if device is locked during printing. job_holds_machine() rather
+    // than the wire: the lock has to cover the pre-print window, where the
+    // printer still reports standby while the toolhead homes and probes, and
+    // cutting the PSU there is what the flag exists to prevent.
+    bool is_locked =
+        device.locked_while_printing && job_holds_machine(printer_state_.get_print_lifecycle());
 
     if (is_locked) {
         // Disable toggle interaction

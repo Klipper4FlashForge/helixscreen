@@ -1273,6 +1273,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // after backend start fires a poll immediately.
     std::chrono::steady_clock::time_point last_json_poll_kick_{};
 
+    // RAW_PRINT_STATE_OK: names the wire state this member caches.
     // Was the printer in PrintJobState::PRINTING at the previous status update?
     // Used to spot the printing->done edge and force an off-cadence poll there,
     // so the slower in-print interval never delays seeing the firmware's
