@@ -317,12 +317,17 @@ TEST_CASE("diagnostics parse block writes display text subjects", "[chamber][sub
           "100%");
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_filter_fan_on_text_subject())) ==
           std::string(lv_tr("Filter Fan: On")));
+    // Icon-name subject (compact portrait card's bind_icon toggle) flips with
+    // the same pin.
+    CHECK(std::string(lv_subject_get_string(ts.get_chamber_filter_fan_icon_subject())) == "fan");
 
     // Pin going low flips only the on/off pair (delta frames keep the rest).
     ts.update_from_status({{"output_pin dragonbreath_filter", {{"value", 0.0}}}});
     CHECK(lv_subject_get_int(ts.get_chamber_filter_fan_on_subject()) == 0);
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_filter_fan_on_text_subject())) ==
           std::string(lv_tr("Filter Fan: Off")));
+    CHECK(std::string(lv_subject_get_string(ts.get_chamber_filter_fan_icon_subject())) ==
+          "fan_off");
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_heater_element_temp_text_subject())) ==
           "106.2°C");
 }

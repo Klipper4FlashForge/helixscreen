@@ -94,6 +94,10 @@ void PrinterTemperatureState::init_subjects(bool register_xml) {
     INIT_SUBJECT_STRING(chamber_filter_fan_on_text, lv_tr("Filter Fan: Off"), subjects_,
                         register_xml);
     chamber_filter_fan_on_text_lifetime_ = std::make_shared<bool>(true);
+    // Icon-name subject for the compact portrait card's icon-button toggle
+    // (bind_icon); mirrors chamber_filter_fan_on_text, set from the same pin.
+    INIT_SUBJECT_STRING(chamber_filter_fan_icon, "fan_off", subjects_, register_xml);
+    chamber_filter_fan_icon_lifetime_ = std::make_shared<bool>(true);
 
     // Extruder version subject (bumped when extruder list changes)
     INIT_SUBJECT_INT(extruder_version, 0, subjects_, register_xml);
@@ -166,6 +170,9 @@ void PrinterTemperatureState::deinit_subjects() {
     if (chamber_filter_fan_on_text_lifetime_)
         *chamber_filter_fan_on_text_lifetime_ = false;
     chamber_filter_fan_on_text_lifetime_.reset();
+    if (chamber_filter_fan_icon_lifetime_)
+        *chamber_filter_fan_icon_lifetime_ = false;
+    chamber_filter_fan_icon_lifetime_.reset();
     for (auto& [name, info] : extruders_) {
         if (info.temp_lifetime)
             *info.temp_lifetime = false;
@@ -222,6 +229,7 @@ void PrinterTemperatureState::register_xml_subjects() {
     lv_xml_register_subject(nullptr, "chamber_filter_fan_percent_text",
                             &chamber_filter_fan_percent_text_);
     lv_xml_register_subject(nullptr, "chamber_filter_fan_on_text", &chamber_filter_fan_on_text_);
+    lv_xml_register_subject(nullptr, "chamber_filter_fan_icon", &chamber_filter_fan_icon_);
     lv_xml_register_subject(nullptr, "extruder_version", &extruder_version_);
 }
 
@@ -562,6 +570,7 @@ void PrinterTemperatureState::update_from_status(const nlohmann::json& status) {
             lv_subject_set_int(&chamber_filter_fan_on_, on);
             lv_subject_copy_string(&chamber_filter_fan_on_text_,
                                    on ? lv_tr("Filter Fan: On") : lv_tr("Filter Fan: Off"));
+            lv_subject_copy_string(&chamber_filter_fan_icon_, on ? "fan" : "fan_off");
         }
     }
 

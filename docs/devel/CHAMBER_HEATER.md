@@ -60,7 +60,7 @@ The invariant: **vendor JSON schemas are translated to the generic `ChamberHeate
 | `src/printer/printer_temperature_state.cpp` | Diagnostics parse block: translates backend output to subjects; also owns all `chamber_heater_*` / `chamber_filter_fan_*` subject registration and display-string formatters |
 | `src/printer/printer_state.cpp` | The wiring block: gates both the diagnostics source and the TemperatureController action surface on resolved-heater == discovery-pick |
 | `src/ui/temperature_controller.cpp` | `set_chamber_actions()`, `reset_chamber_fault()`, `set_chamber_filter_fan()`, and the `ensure_limits()` ceiling fallback |
-| `ui_xml/components/chamber_diagnostics_card.xml` | The card: fault/inhibited banner + Reset, element temp + filter fan %, filter-fan toggle. Instantiated in `temp_graph_overlay.xml` behind `<if cond="printer_has_chamber_heater_diagnostics and temp_graph_mode eq 3">` |
+| `ui_xml/components/chamber_diagnostics_card.xml` | The card: fault/inhibited banner + Reset, element temp + filter fan %, filter-fan toggle. Structural portrait branch renders a compact variant (single info row with an inline icon-button fan toggle, one-line banner) so 272x480 chamber mode fits with no scroll. Instantiated in `temp_graph_overlay.xml` behind `<if cond="printer_has_chamber_heater_diagnostics and temp_graph_mode eq 3">` |
 | `src/api/moonraker_client_mock.cpp` | Mock chamber backend shape (`HELIX_MOCK_OBJECTS` dragonbreath trio), registry-based chamber-status key |
 | `tests/unit/test_chamber_*.cpp` | Backend match/parse, subjects, ceiling, actions, discovery, mock — tags under `[chamber]` |
 
@@ -117,6 +117,7 @@ All registered by `PrinterTemperatureState`; display strings are formatter subje
 | `chamber_filter_fan_percent` / `..._text` | int / string | Filtration-fan speed ("-1"/"--" = unknown) |
 | `chamber_filter_fan_reason` | string | Why the firmware chose that fan speed |
 | `chamber_filter_fan_on` / `..._text` | int / string | Binary filter-fan pin state |
+| `chamber_filter_fan_icon` | string | Toggle icon name ("fan"/"fan_off") — bind_icon source for the compact portrait card |
 | `printer_has_chamber_heater_diagnostics` | int 0/1 | Capability: diagnostics card is built at all |
 | `printer_has_chamber_filter_fan` | int 0/1 | Capability: filter-fan toggle row |
 
