@@ -86,6 +86,16 @@ Profiles live in `assets/config/print_start_profiles/{name}.json`.
   // OPTIONAL: "weighted" (default) or "sequential"
   "progress_mode": "weighted",
 
+  // OPTIONAL: Opt in to Creality's tag-stream matchers (purge
+  // "// num: N, velocity: V, percent F" lines, "[box]" CFS load events).
+  // Without the flag those lines are inert on every profile.
+  "cfs_signals": false,
+
+  // OPTIONAL: The bed-mesh sweep is trimmed to the object (KAMP-style),
+  // so a configured probe_count overstates the sweep - the collector
+  // skips the configfile denominator and counts live points instead.
+  "adaptive_meshing": false,
+
   // OPTIONAL: Exact-match signal detection (for firmware with structured output)
   "signal_formats": [
     {
@@ -138,6 +148,10 @@ Profiles live in `assets/config/print_start_profiles/{name}.json`.
 **`response_patterns`** — Best for catching G-code commands and freeform console output. Patterns are compiled with `std::regex::icase`. Capture groups (`$1`, `$2`, etc.) in the message template are substituted with matched groups. Each pattern is checked via `std::regex_search` (partial match, not full line).
 
 **`phase_weights`** — Only meaningful in `weighted` mode. If omitted, phases matched by response_patterns use their individual `weight` field. If provided, this map is used by `calculate_progress_locked()` to sum detected phase weights.
+
+**`message` strings are English translation tags** — they pass through `lv_tr()` at match time, so a loaded language pack resolves them like the built-in labels. An untranslated tag displays as-is.
+
+**Non-console signals.** Two phase signals do not arrive through `notify_gcode_response`: a bed-mesh status clear while CLEANING enters BED_MESH ("Bed Leveling...", denominator fetched then), and `probe at X,Y is z=Z` lines are consumed as mesh points (never re-matched against `response_patterns`, so a BED_MESH pattern cannot re-announce the phase and reset the probe counters mid-sweep). See the "Silent-phase signals" section of [PRINT_START_INTEGRATION.md](PRINT_START_INTEGRATION.md).
 
 ---
 
