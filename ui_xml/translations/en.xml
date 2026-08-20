@@ -2756,6 +2756,7 @@
   <translation tag="{} heater turned off" en="{} heater turned off"/>
   <translation tag="{} is installed but its backup-spool switching is turned off, so no automatic swap will happen." en="{} is installed but its backup-spool switching is turned off, so no automatic swap will happen."/>
   <translation tag="{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap." en="{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap."/>
+  <translation tag="{} is not set up on this printer" en="{} is not set up on this printer"/>
   <translation tag="{} lanes" en="{} lanes"/>
   <translation tag="{} macro not configured" en="{} macro not configured"/>
   <translation tag="{} may cause unintended changes. Are you sure?" en="{} may cause unintended changes. Are you sure?"/>

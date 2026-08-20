@@ -2865,6 +2865,7 @@ translations:
   '{} heater turned off': '{} 加热器已关闭'
   '{} is installed but its backup-spool switching is turned off, so no automatic swap will happen.': '{} 已安装，但其备用料盘切换已关闭，因此不会自动切换。'
   '{} is installed, but its backup-spool setting could not be read - do not count on an automatic swap.': '{} 已安装，但无法读取其备用料盘设置 - 请勿指望自动切换。'
+  '{} is not set up on this printer': ''
   '{} lanes': '{} 个料仓'
   '{} macro not configured': '{} 宏未配置'
   '{} may cause unintended changes. Are you sure?': '{} 可能导致意外更改。确定吗？'
