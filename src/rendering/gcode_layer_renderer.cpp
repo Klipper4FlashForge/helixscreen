@@ -327,8 +327,15 @@ void GCodeLayerRenderer::auto_fit() {
         // cache churn, no blocking reads, on the auto-fit path.
         const auto& stats = streaming_controller_->get_index_stats();
 
-        bb.min.z = stats.min_z;
-        bb.max.z = stats.max_z;
+        if (stats.has_z_bounds()) {
+            bb.min.z = stats.min_z;
+            bb.max.z = stats.max_z;
+        } else {
+            // No extruding move in the whole file — leaving the sentinel pair in
+            // place would make the box read empty and discard the XY bounds too.
+            bb.min.z = 0.0f;
+            bb.max.z = 0.0f;
+        }
 
         if (stats.has_xy_bounds()) {
             bb.min.x = stats.min_x;

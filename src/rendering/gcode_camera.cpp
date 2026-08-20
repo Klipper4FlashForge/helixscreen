@@ -75,7 +75,12 @@ void GCodeCamera::zoom(float factor) {
     update_matrices();
 }
 
-void GCodeCamera::fit_to_bounds(const AABB& bounds) {
+void GCodeCamera::fit_to_bounds(const AABB& raw_bounds) {
+    // Order any inverted axis before the emptiness test — one bad axis must not
+    // discard the others. Shared with compute_auto_fit() so the 3D and 2D paths
+    // agree on which boxes are framable.
+    const AABB bounds = raw_bounds.normalized();
+
     if (bounds.is_empty()) {
         spdlog::warn("[GCode Camera] Cannot fit camera to empty bounding box");
         return;
