@@ -16,7 +16,7 @@
 #   make build    # Clean build from scratch
 #   make help     # Show all available targets
 #
-# See: DEVELOPMENT.md for complete build instructions
+# See: docs/devel/DEVELOPMENT.md for complete build instructions
 
 # Use bash for all shell commands (needed for [[ ]] and read -n)
 SHELL := /bin/bash

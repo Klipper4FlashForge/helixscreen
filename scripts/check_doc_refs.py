@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Lint gate: agent-facing docs and docs/devel/ docs must not cite files that
-# don't exist.
+# Lint gate: agent-facing docs, docs/README.md (the public docs index), and
+# docs/devel/ docs must not cite files that don't exist.
 #
 # CLAUDE.md files and skills work by progressive disclosure — they are mostly
 # pointers, and a pointer to a renamed or deleted file is worse than no pointer.
@@ -29,7 +29,8 @@
 # routing table is a doc nobody will find.
 #
 # Usage:
-#   check_doc_refs.py            # everything: agent docs + docs/devel/**/*.md,
+#   check_doc_refs.py            # everything: every CLAUDE.md, .claude/skills/,
+#                                # docs/README.md, docs/devel/**/*.md,
 #                                # refs+links+lines/cites, plus the index check
 #   check_doc_refs.py --refs     # broken references only
 #   check_doc_refs.py --index    # index completeness only
@@ -59,7 +60,9 @@ SKIP_DIRS = {'.git', '.worktrees', 'build', 'node_modules', '.venv', 'venv'}
 # reproducing it. Add to this list rather than rewording a doc: the citations
 # are correct, the files simply do not exist yet at check time.
 EXEMPT_SUBSTRINGS = (
-    'superpowers/',        # docs/superpowers/ specs are gitignored, local-only
+    'superpowers/',        # docs/superpowers/ is local-only working space; nothing
+                           # there is tracked; refs to it are not resolvable on a
+                           # fresh clone
     # Written at runtime.
     'settings-test.json',  # seeded by --test
     'config/settings.json',
@@ -129,17 +132,22 @@ DOC_DIR = 'docs/devel'
 # walk, so a scan rooted anywhere (meta-test fixture, targeted run) exempts a
 # plans/ or printer-research/ subdir the same way the default walk does.
 #
-# 'plans' deliberately covers BOTH docs/devel/plans/ and docs/devel/specs/plans/:
-# both hold dated implementation plans written against the tree as it stood on
-# their date, so their citations are historical record, not promises. The specs
-# directly under docs/devel/specs/ ARE scanned — design docs stay live long
-# enough to owe the reader resolving paths.
+# 'plans' is the single tracked home for the in-flight set: dated
+# implementation plans, their design specs, and the ESP32 program docs all
+# live in docs/devel/plans/. They are written against the tree as it stood
+# on their date, so their citations are historical record, not promises.
 DEVEL_EXEMPT_SUBDIRS = ('plans', 'printer-research')
 
 # Docs deliberately not routed from the index.
 INDEX_EXEMPT = {
     'CLAUDE.md',           # the index itself
 }
+
+# Scanned with the agent-facing docs (same refs+links checks) although it is
+# neither a CLAUDE.md nor a skill: docs/README.md is the public index every
+# other docs/ page is reached through, so a dead link there is the first one
+# a reader hits.
+EXTRA_SCAN_DOCS = ('docs/README.md',)
 
 
 def repo_files():
@@ -188,7 +196,8 @@ def uninitialized_submodules():
 
 
 def scan_targets():
-    """Agent-facing docs: every CLAUDE.md, plus everything under .claude/skills/."""
+    """Agent-facing docs: every CLAUDE.md, everything under .claude/skills/,
+    plus the extra scanned docs (the public docs index)."""
     targets = []
     for root, dirs, files in os.walk('.'):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -199,6 +208,7 @@ def scan_targets():
             path = os.path.join(rel, f) if rel else f
             if f == 'CLAUDE.md' or (rel.startswith('.claude/skills') and f.endswith('.md')):
                 targets.append(path)
+    targets.extend(EXTRA_SCAN_DOCS)
     return sorted(targets)
 
 

@@ -126,7 +126,7 @@ compiled font payload from `micro tiny` (cc1, yocto — 112MB RAM) to `all` (pi,
 compiled out entirely on K1/K2, tone-only on AD5M/AD5X, full on Pi/x86/native; the label-printer,
 CFS, and IFS gates are off on AD5M (`mk/cross.mk:240`). The ESP32 port (`firmware/helixscreen-esp32/`,
 ESP-IDF on the BTT K-Touch) is a separate CMake build that compiles LVGL and `lib/helix-xml`
-unmodified — verdict and budgets in `ESP32_NATIVE_AUDIT.md`; it does not ship yet.
+unmodified — verdict and budgets in `../plans/ESP32_NATIVE_AUDIT.md`; it does not ship yet.
 
 ### Patches: forked fixes, stamp-applied
 
@@ -179,7 +179,7 @@ end-user installer — modular POSIX shell with KIAUH and Moonraker-updater inte
 - `../printers/CREALITY_K1_SUPPORT.md` (and the K2, AD5X, QIDI, Snapmaker U1 siblings) — per-device hardware notes, firmware requirements, tested models.
 - `../AD5M_KMOD_VARIANT.md` — building HelixScreen as a native package inside the AD5M Klipper Mod firmware.
 - `../YOCTO_BUILD.md`, `../ANDROID_PLAY_STORE.md`, `../INSTALLER.md` — the three packaging pipelines.
-- `../ESP32_NATIVE_AUDIT.md` — the ESP32-S3 feasibility audit behind the `firmware/` port.
+- `../plans/ESP32_NATIVE_AUDIT.md` — the ESP32-S3 feasibility audit behind the `firmware/` port.
 - `../DEVELOPMENT.md` — fresh-checkout setup: `make check-deps` / `make install-deps`, dev environment, contributing basics.
 - `../ENVIRONMENT_VARIABLES.md` — runtime and build-time environment variables.
 

@@ -698,8 +698,6 @@ same way.
 
 ## Filament Catalog (`filaments.json`)
 
-**Design spec:** [`plans/2026-07-02-filament-catalog-merge-phase1.md`](plans/2026-07-02-filament-catalog-merge-phase1.md)
-
 HelixScreen ships a single generated catalog of **branded** filament products —
 `assets/filaments.json` — that unifies what used to be two disconnected data
 sources: the generic material-**type** table in `include/filament_database.h`

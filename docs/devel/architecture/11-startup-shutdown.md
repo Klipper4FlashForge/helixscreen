@@ -177,7 +177,6 @@ The crash dialog itself uses raw `lv_label`/`lv_obj` calls (`create_crash_dialog
 - `../CRASH_REPORTER.md` — the crash record pipeline the watchdog's exit-code translation feeds: detection, fingerprints, delivery, the in-app report modal.
 - `../THREADING.md` §7 — the registration and `deinit_subjects()` patterns, LIFO ordering, and idempotency rules this chapter summarizes.
 - `../HELIXCTL.md` — the remote-control server started at phase 14c and the client dispatched in `main()`.
-- `plans/2026-06-13-slow-boot-splash-ux.md` — the design history of the splash caps and handoff timing on slow devices (point-in-time plan; verify against code).
 
 ## Guided code tour
 
