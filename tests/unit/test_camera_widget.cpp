@@ -31,7 +31,7 @@ TEST_CASE("CameraWidget: registered in widget registry", "[camera][panel_widget]
     const auto* def = find_widget_def("camera");
     REQUIRE(def != nullptr);
     REQUIRE(std::string(def->display_name) == "Camera");
-    REQUIRE(std::string(def->icon) == "video");
+    REQUIRE(std::string(def->icon) == "webcam");
     REQUIRE(def->hardware_gate_subject == nullptr);
     REQUIRE(def->default_enabled == false); // opt-in widget
     // Tracks, not cells — a track is half a cell (GridLayout::TRACKS_PER_CELL).
