@@ -264,6 +264,30 @@ class PrinterTemperatureState {
         lifetime = chamber_filter_fan_on_lifetime_;
         return &chamber_filter_fan_on_;
     }
+    /// Heating-element temp display string ("--" unknown; "106.2°C" nominal)
+    lv_subject_t* get_chamber_heater_element_temp_text_subject() {
+        return &chamber_heater_element_temp_text_;
+    }
+    lv_subject_t* get_chamber_heater_element_temp_text_subject(SubjectLifetime& lifetime) {
+        lifetime = chamber_heater_element_temp_text_lifetime_;
+        return &chamber_heater_element_temp_text_;
+    }
+    /// Filter fan speed display string ("--" unknown; "100%" nominal)
+    lv_subject_t* get_chamber_filter_fan_percent_text_subject() {
+        return &chamber_filter_fan_percent_text_;
+    }
+    lv_subject_t* get_chamber_filter_fan_percent_text_subject(SubjectLifetime& lifetime) {
+        lifetime = chamber_filter_fan_percent_text_lifetime_;
+        return &chamber_filter_fan_percent_text_;
+    }
+    /// Filter-fan toggle label (translated "Filter Fan: On"/"Filter Fan: Off")
+    lv_subject_t* get_chamber_filter_fan_on_text_subject() {
+        return &chamber_filter_fan_on_text_;
+    }
+    lv_subject_t* get_chamber_filter_fan_on_text_subject(SubjectLifetime& lifetime) {
+        lifetime = chamber_filter_fan_on_text_lifetime_;
+        return &chamber_filter_fan_on_text_;
+    }
 
     /// Number of tracked extruders
     int extruder_count() const {
@@ -446,8 +470,14 @@ class PrinterTemperatureState {
     lv_subject_t chamber_filter_fan_percent_{};           ///< XML: -1 unknown
     lv_subject_t chamber_filter_fan_reason_{};            ///< XML: string, "" when none
     lv_subject_t chamber_filter_fan_on_{};                ///< XML: -1 unknown / 0 / 1
+    lv_subject_t chamber_heater_element_temp_text_{};     ///< XML: display string ("--"/"106.2°C")
+    lv_subject_t chamber_filter_fan_percent_text_{};      ///< XML: display string ("--"/"100%")
+    lv_subject_t chamber_filter_fan_on_text_{};           ///< XML: translated toggle label
     char chamber_heater_fault_reason_buf_[64] = {};
     char chamber_filter_fan_reason_buf_[64] = {};
+    char chamber_heater_element_temp_text_buf_[32] = {};
+    char chamber_filter_fan_percent_text_buf_[32] = {};
+    char chamber_filter_fan_on_text_buf_[64] = {};
     SubjectLifetime chamber_heater_fault_lifetime_;
     SubjectLifetime chamber_heater_inhibited_lifetime_;
     SubjectLifetime chamber_heater_fault_reason_lifetime_;
@@ -456,6 +486,9 @@ class PrinterTemperatureState {
     SubjectLifetime chamber_filter_fan_percent_lifetime_;
     SubjectLifetime chamber_filter_fan_reason_lifetime_;
     SubjectLifetime chamber_filter_fan_on_lifetime_;
+    SubjectLifetime chamber_heater_element_temp_text_lifetime_;
+    SubjectLifetime chamber_filter_fan_percent_text_lifetime_;
+    SubjectLifetime chamber_filter_fan_on_text_lifetime_;
 
     // Dynamic per-extruder tracking
     std::unordered_map<std::string, ExtruderInfo> extruders_;

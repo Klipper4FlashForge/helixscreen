@@ -444,6 +444,8 @@ translations:
   Choose rendering mode for G-code visualization: Choisir le mode de rendu pour la visualisation du G-code
   Choose rendering mode for bed mesh visualization: Choisir le mode de rendu pour la visualisation du maillage du plateau
   Choose sound style: Choisir le style de son
+  ? Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses.
+  : ''
   Choose what to power off or restart.: Choisissez ce qu'il faut éteindre ou redémarrer.
   Clean Brush: Nettoyer la brosse
   Clean Nozzle: Nettoyer la buse
@@ -729,6 +731,7 @@ translations:
   Eject needs [force_move] enabled in printer config: L'éjection nécessite l'activation de [force_move] dans la configuration de l'imprimante
   Ejecting: Éjection
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
+  Element: ''
   Emergency Stop: Arrêt d'urgence
   Emergency Stop?: Arrêt d'urgence ?
   Emergency stop activated: Arrêt d'urgence activé
@@ -992,6 +995,9 @@ translations:
   File: Fichier
   File Size: Taille du fichier
   Filename: Nom du fichier
+  Filter Fan: ''
+  'Filter Fan: Off': ''
+  'Filter Fan: On': ''
   Fine: Fin
   Fine-Tune: Réglage fin
   Finish: Terminer
@@ -1807,6 +1813,7 @@ translations:
   Printer Firmware Disconnected: Firmware imprimante déconnecté
   Printer Image: Image de l'imprimante
   Printer Manager: Gestionnaire d'imprimante
+  Printer Model: ''
   Printer Name: Nom de l'imprimante
   'Printer Setup: Connection': 'Config. imprimante : Connexion'
   'Printer Setup: Fans': 'Config. imprimante : Ventilateurs'
@@ -1910,6 +1917,7 @@ translations:
   Re-syncs Happy Hare's tracked state with the hardware.: Resynchronise l'état suivi par Happy Hare avec le matériel.
   Readings from extra temperature sensors: Relevés des capteurs supplémentaires
   Ready: Prêt
+  Ready for filament operations: ''
   Ready to Apply: Prêt à appliquer
   Ready to load: Prêt à charger
   Reason: Raison

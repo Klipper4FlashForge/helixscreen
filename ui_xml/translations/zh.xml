@@ -443,6 +443,7 @@
   <translation tag="Choose rendering mode for G-code visualization" zh="选择 G-code 可视化的渲染模式"/>
   <translation tag="Choose rendering mode for bed mesh visualization" zh="选择热床网格可视化的渲染模式"/>
   <translation tag="Choose sound style" zh="选择声音风格"/>
+  <translation tag="Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses."/>
   <translation tag="Choose what to power off or restart." zh="选择要关闭或重启的对象。"/>
   <translation tag="Clean Brush" zh="清洁刷子"/>
   <translation tag="Clean Nozzle" zh="清洁喷嘴"/>
@@ -724,6 +725,7 @@
   <translation tag="Eject needs [force_move] enabled in printer config" zh="弹出需要在打印机配置中启用 [force_move]"/>
   <translation tag="Ejecting" zh="弹出中"/>
   <translation tag="Elegoo Centauri Carbon" zh="Elegoo Centauri Carbon"/>
+  <translation tag="Element"/>
   <translation tag="Emergency Stop" zh="紧急停止"/>
   <translation tag="Emergency Stop?" zh="紧急停止？"/>
   <translation tag="Emergency stop activated" zh="紧急停止已激活"/>
@@ -980,6 +982,9 @@
   <translation tag="File" zh="文件"/>
   <translation tag="File Size" zh="文件大小"/>
   <translation tag="Filename" zh="文件名"/>
+  <translation tag="Filter Fan"/>
+  <translation tag="Filter Fan: Off"/>
+  <translation tag="Filter Fan: On"/>
   <translation tag="Fine" zh="细调"/>
   <translation tag="Fine-Tune" zh="微调"/>
   <translation tag="Finish" zh="完成"/>
@@ -1767,6 +1772,7 @@
   <translation tag="Printer Firmware Disconnected" zh="打印机固件已断开"/>
   <translation tag="Printer Image" zh="打印机图片"/>
   <translation tag="Printer Manager" zh="打印机管理"/>
+  <translation tag="Printer Model"/>
   <translation tag="Printer Name" zh="打印机名称"/>
   <translation tag="Printer Setup: Connection" zh="打印机设置：连接"/>
   <translation tag="Printer Setup: Fans" zh="打印机设置：风扇"/>
@@ -1870,6 +1876,7 @@
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." zh="将 Happy Hare 跟踪的状态与硬件重新同步。"/>
   <translation tag="Readings from extra temperature sensors" zh="额外温度传感器的读数"/>
   <translation tag="Ready" zh="就绪"/>
+  <translation tag="Ready for filament operations"/>
   <translation tag="Ready to Apply" zh="准备应用"/>
   <translation tag="Ready to load" zh="准备装载"/>
   <translation tag="Reason" zh="原因"/>
@@ -2456,6 +2463,7 @@
   <translation tag="Toggle (fire-and-forget)" zh="切换（无状态跟踪）"/>
   <translation tag="Toggle AFC LED strip" zh="切换 AFC LED 灯带"/>
   <translation tag="Toggle Auto-Refill" zh="切换自动续料"/>
+  <translation tag="Toggle Moonraker power devices" zh="切换 Moonraker 电源设备"/>
   <translation tag="Toggle Quiet Mode" zh="切换静音模式"/>
   <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" zh="切换某个挤出机的工具头 LED"/>

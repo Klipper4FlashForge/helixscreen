@@ -18,6 +18,7 @@
 #include "state/subject_macros.h"
 #include "unit_conversions.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -83,6 +84,16 @@ void PrinterTemperatureState::init_subjects(bool register_xml) {
     chamber_filter_fan_reason_lifetime_ = std::make_shared<bool>(true);
     INIT_SUBJECT_INT(chamber_filter_fan_on, -1, subjects_, register_xml);
     chamber_filter_fan_on_lifetime_ = std::make_shared<bool>(true);
+    // Display strings written alongside the raw ints — XML has no deci/percent
+    // formatter (bind_text-fmt prints the raw int), and the fan toggle needs a
+    // translated On/Off label, so the parse block owns the formatting.
+    INIT_SUBJECT_STRING(chamber_heater_element_temp_text, "--", subjects_, register_xml);
+    chamber_heater_element_temp_text_lifetime_ = std::make_shared<bool>(true);
+    INIT_SUBJECT_STRING(chamber_filter_fan_percent_text, "--", subjects_, register_xml);
+    chamber_filter_fan_percent_text_lifetime_ = std::make_shared<bool>(true);
+    INIT_SUBJECT_STRING(chamber_filter_fan_on_text, lv_tr("Filter Fan: Off"), subjects_,
+                        register_xml);
+    chamber_filter_fan_on_text_lifetime_ = std::make_shared<bool>(true);
 
     // Extruder version subject (bumped when extruder list changes)
     INIT_SUBJECT_INT(extruder_version, 0, subjects_, register_xml);
@@ -146,6 +157,15 @@ void PrinterTemperatureState::deinit_subjects() {
     if (chamber_filter_fan_on_lifetime_)
         *chamber_filter_fan_on_lifetime_ = false;
     chamber_filter_fan_on_lifetime_.reset();
+    if (chamber_heater_element_temp_text_lifetime_)
+        *chamber_heater_element_temp_text_lifetime_ = false;
+    chamber_heater_element_temp_text_lifetime_.reset();
+    if (chamber_filter_fan_percent_text_lifetime_)
+        *chamber_filter_fan_percent_text_lifetime_ = false;
+    chamber_filter_fan_percent_text_lifetime_.reset();
+    if (chamber_filter_fan_on_text_lifetime_)
+        *chamber_filter_fan_on_text_lifetime_ = false;
+    chamber_filter_fan_on_text_lifetime_.reset();
     for (auto& [name, info] : extruders_) {
         if (info.temp_lifetime)
             *info.temp_lifetime = false;
@@ -197,6 +217,11 @@ void PrinterTemperatureState::register_xml_subjects() {
     lv_xml_register_subject(nullptr, "chamber_filter_fan_percent", &chamber_filter_fan_percent_);
     lv_xml_register_subject(nullptr, "chamber_filter_fan_reason", &chamber_filter_fan_reason_);
     lv_xml_register_subject(nullptr, "chamber_filter_fan_on", &chamber_filter_fan_on_);
+    lv_xml_register_subject(nullptr, "chamber_heater_element_temp_text",
+                            &chamber_heater_element_temp_text_);
+    lv_xml_register_subject(nullptr, "chamber_filter_fan_percent_text",
+                            &chamber_filter_fan_percent_text_);
+    lv_xml_register_subject(nullptr, "chamber_filter_fan_on_text", &chamber_filter_fan_on_text_);
     lv_xml_register_subject(nullptr, "extruder_version", &extruder_version_);
 }
 
@@ -517,7 +542,15 @@ void PrinterTemperatureState::update_from_status(const nlohmann::json& status) {
                                    std::isnan(d->element_temp_c)
                                        ? -1
                                        : helix::units::to_decidegrees(d->element_temp_c));
+                lv_subject_copy_string(&chamber_heater_element_temp_text_,
+                                       std::isnan(d->element_temp_c)
+                                           ? "--"
+                                           : fmt::format("{:.1f}°C", d->element_temp_c).c_str());
                 lv_subject_set_int(&chamber_filter_fan_percent_, d->filter_fan_percent);
+                lv_subject_copy_string(&chamber_filter_fan_percent_text_,
+                                       d->filter_fan_percent < 0
+                                           ? "--"
+                                           : fmt::format("{}%", d->filter_fan_percent).c_str());
                 lv_subject_copy_string(&chamber_filter_fan_reason_, d->filter_fan_reason.c_str());
             }
         }
@@ -525,7 +558,10 @@ void PrinterTemperatureState::update_from_status(const nlohmann::json& status) {
     if (!chamber_filter_fan_pin_.empty() && status.contains(chamber_filter_fan_pin_)) {
         const auto& pin = status[chamber_filter_fan_pin_];
         if (pin.contains("value") && pin["value"].is_number()) {
-            lv_subject_set_int(&chamber_filter_fan_on_, pin["value"].get<double>() > 0.5 ? 1 : 0);
+            int on = pin["value"].get<double>() > 0.5 ? 1 : 0;
+            lv_subject_set_int(&chamber_filter_fan_on_, on);
+            lv_subject_copy_string(&chamber_filter_fan_on_text_,
+                                   on ? lv_tr("Filter Fan: On") : lv_tr("Filter Fan: Off"));
         }
     }
 

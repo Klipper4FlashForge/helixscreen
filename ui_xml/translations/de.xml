@@ -443,6 +443,7 @@
   <translation tag="Choose rendering mode for G-code visualization" de="Darstellungsmodus für G-Code-Visualisierung wählen"/>
   <translation tag="Choose rendering mode for bed mesh visualization" de="Darstellungsmodus für Bettnetz-Visualisierung wählen"/>
   <translation tag="Choose sound style" de="Klangstil auswählen"/>
+  <translation tag="Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses."/>
   <translation tag="Choose what to power off or restart." de="Wählen Sie, was ausgeschaltet oder neu gestartet werden soll."/>
   <translation tag="Clean Brush" de="Bürste reinigen"/>
   <translation tag="Clean Nozzle" de="Düse reinigen"/>
@@ -724,6 +725,7 @@
   <translation tag="Eject needs [force_move] enabled in printer config" de="Auswerfen erfordert [force_move] aktiviert in der Druckerkonfiguration"/>
   <translation tag="Ejecting" de="Auswerfen"/>
   <translation tag="Elegoo Centauri Carbon" de="Elegoo Centauri Carbon"/>
+  <translation tag="Element"/>
   <translation tag="Emergency Stop" de="Notaus"/>
   <translation tag="Emergency Stop?" de="Notaus?"/>
   <translation tag="Emergency stop activated" de="Notaus aktiviert"/>
@@ -980,6 +982,9 @@
   <translation tag="File" de="Datei"/>
   <translation tag="File Size" de="Dateigröße"/>
   <translation tag="Filename" de="Dateiname"/>
+  <translation tag="Filter Fan"/>
+  <translation tag="Filter Fan: Off"/>
+  <translation tag="Filter Fan: On"/>
   <translation tag="Fine" de="Fein"/>
   <translation tag="Fine-Tune" de="Feinabstimmung"/>
   <translation tag="Finish" de="Fertig"/>
@@ -1767,6 +1772,7 @@
   <translation tag="Printer Firmware Disconnected" de="Drucker-Firmware getrennt"/>
   <translation tag="Printer Image" de="Druckerbild"/>
   <translation tag="Printer Manager" de="Druckerverwaltung"/>
+  <translation tag="Printer Model"/>
   <translation tag="Printer Name" de="Druckername"/>
   <translation tag="Printer Setup: Connection" de="Druckereinrichtung: Verbindung"/>
   <translation tag="Printer Setup: Fans" de="Druckereinrichtung: Lüfter"/>
@@ -1870,6 +1876,7 @@
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." de="Synchronisiert den von Happy Hare erfassten Status erneut mit der Hardware."/>
   <translation tag="Readings from extra temperature sensors" de="Werte zusätzlicher Temperatursensoren"/>
   <translation tag="Ready" de="Bereit"/>
+  <translation tag="Ready for filament operations"/>
   <translation tag="Ready to Apply" de="Bereit zum Anwenden"/>
   <translation tag="Ready to load" de="Bereit zum Laden"/>
   <translation tag="Reason" de="Grund"/>
@@ -2456,6 +2463,7 @@
   <translation tag="Toggle (fire-and-forget)" de="Umschalten (fire-and-forget)"/>
   <translation tag="Toggle AFC LED strip" de="AFC-LED-Streifen umschalten"/>
   <translation tag="Toggle Auto-Refill" de="Automatisches Nachfüllen umschalten"/>
+  <translation tag="Toggle Moonraker power devices" de="Moonraker-Stromgeräte umschalten"/>
   <translation tag="Toggle Quiet Mode" de="Leisen Modus umschalten"/>
   <translation tag="Toggle external spool bypass"/>
   <translation tag="Toggle toolhead LED for an extruder" de="Werkzeugkopf-LED für einen Extruder umschalten"/>

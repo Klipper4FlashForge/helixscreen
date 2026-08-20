@@ -443,6 +443,7 @@
   <translation tag="Choose rendering mode for G-code visualization" en="Choose rendering mode for G-code visualization"/>
   <translation tag="Choose rendering mode for bed mesh visualization" en="Choose rendering mode for bed mesh visualization"/>
   <translation tag="Choose sound style" en="Choose sound style"/>
+  <translation tag="Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses." en="Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses."/>
   <translation tag="Choose what to power off or restart." en="Choose what to power off or restart."/>
   <translation tag="Clean Brush" en="Clean Brush"/>
   <translation tag="Clean Nozzle" en="Clean Nozzle"/>
@@ -724,6 +725,7 @@
   <translation tag="Eject needs [force_move] enabled in printer config" en="Eject needs [force_move] enabled in printer config"/>
   <translation tag="Ejecting" en="Ejecting"/>
   <translation tag="Elegoo Centauri Carbon" en="Elegoo Centauri Carbon"/>
+  <translation tag="Element" en="Element"/>
   <translation tag="Emergency Stop" en="Emergency Stop"/>
   <translation tag="Emergency Stop?" en="Emergency Stop?"/>
   <translation tag="Emergency stop activated" en="Emergency stop activated"/>
@@ -980,6 +982,9 @@
   <translation tag="File" en="File"/>
   <translation tag="File Size" en="File Size"/>
   <translation tag="Filename" en="Filename"/>
+  <translation tag="Filter Fan" en="Filter Fan"/>
+  <translation tag="Filter Fan: Off" en="Filter Fan: Off"/>
+  <translation tag="Filter Fan: On" en="Filter Fan: On"/>
   <translation tag="Fine" en="Fine"/>
   <translation tag="Fine-Tune" en="Fine-Tune"/>
   <translation tag="Finish" en="Finish"/>
@@ -1767,6 +1772,7 @@
   <translation tag="Printer Firmware Disconnected" en="Printer Firmware Disconnected"/>
   <translation tag="Printer Image" en="Printer Image"/>
   <translation tag="Printer Manager" en="Printer Manager"/>
+  <translation tag="Printer Model" en="Printer Model"/>
   <translation tag="Printer Name" en="Printer Name"/>
   <translation tag="Printer Setup: Connection" en="Printer Setup: Connection"/>
   <translation tag="Printer Setup: Fans" en="Printer Setup: Fans"/>
@@ -1870,6 +1876,7 @@
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." en="Re-syncs Happy Hare&apos;s tracked state with the hardware."/>
   <translation tag="Readings from extra temperature sensors" en="Readings from extra temperature sensors"/>
   <translation tag="Ready" en="Ready"/>
+  <translation tag="Ready for filament operations" en="Ready for filament operations"/>
   <translation tag="Ready to Apply" en="Ready to Apply"/>
   <translation tag="Ready to load" en="Ready to load"/>
   <translation tag="Reason" en="Reason"/>
