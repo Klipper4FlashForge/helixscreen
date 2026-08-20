@@ -94,9 +94,8 @@ test-infrastructure redesign on a critical path was the worse trade.
 ## What is lost until this is fixed
 
 XML row visibility for `panel_widget_print_status.xml` has no automated coverage. That is
-the same gap that allowed a clipped, dead M117 row to exist in view 4 undetected — see
-`docs/devel/specs/plans/2026-07-19-m117-preprint-visibility.md`. Verification for those
-rows is currently manual (runtime launch + screenshot).
+the same gap that allowed a clipped, dead M117 row to exist in view 4 undetected. Verification
+for those rows is currently manual (runtime launch + screenshot).
 
 The reverted tests are recoverable from `ef34fe998` and `79b723199`; they were correct and
 mutation-verified. Only their fixture could not be made safe.

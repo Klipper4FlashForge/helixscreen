@@ -2,7 +2,6 @@
 
 Status: **Phase 0 in progress**
 Branch: `fix/preparing-job-lifecycle` (Phase 0 only) → own branch for Phases 1-4
-Predecessor: [2026-08-18-preparing-job-lifecycle.md](2026-08-18-preparing-job-lifecycle.md)
 
 > **Resuming after a context break?** Read "Phase tracker" and "How to resume"
 > at the bottom first. Every phase has explicit exit criteria; do not start one

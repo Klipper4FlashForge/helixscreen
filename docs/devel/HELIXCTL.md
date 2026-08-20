@@ -779,8 +779,8 @@ transitions never animate to begin with — see "Golden corpus scope" in
 on. Wait for a transition to finish (or don't fight it — freeze right after a
 `navigate`/`click` rather than while one is still resolving) before freezing.
 
-See `docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`
-§ "Determinism model" for the full design rationale.
+See "Golden corpus scope" in `UI_TESTING.md` for the full determinism
+rationale.
 
 #### `screenshot --stable` / `--target` — the frame-hash gate
 
