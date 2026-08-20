@@ -676,6 +676,29 @@ ObserverGuard observe_print_state(lv_subject_t* subject, Panel* panel, Handler&&
 }
 
 /**
+ * @brief observe_print_state(), but firing SYNCHRONOUSLY like observe_int_immediate().
+ *
+ * Typing and dispatch mode are orthogonal, and a family that covers only one
+ * dispatch mode is a trap: swapping observe_int_immediate() for
+ * observe_print_state() to gain the typing silently moves the handler onto the
+ * UpdateQueue. AbortManager's cancel detection reads the resulting state in the
+ * same turn, so deferring it broke two tests the moment that swap was tried.
+ *
+ * Prefer the deferred observe_print_state() unless the caller genuinely needs
+ * the value before returning.
+ */
+template <typename Panel, typename Handler>
+ObserverGuard observe_print_state_immediate(lv_subject_t* subject, Panel* panel, Handler&& handler,
+                                            const SubjectLifetime& lifetime = {}) {
+    return observe_int_immediate<Panel>(
+        subject, panel,
+        [handler = std::forward<Handler>(handler)](Panel* p, int state_int) {
+            handler(p, static_cast<PrintJobState>(state_int));
+        },
+        lifetime);
+}
+
+/**
  * @brief Create a print lifecycle observer with typed PrintState
  *
  * The derived-lifecycle sibling of observe_print_state(). Consumers asking a

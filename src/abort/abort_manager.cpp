@@ -304,10 +304,10 @@ void AbortManager::send_cancel_print() {
     // Register observer on print_state_enum to detect when Klipper reports print ended
     // This allows early completion before the timeout when the cancel finishes
     if (printer_state_) {
-        cancel_state_observer_ = helix::ui::observe_int_immediate<AbortManager>(
+        cancel_state_observer_ = helix::ui::observe_print_state_immediate<AbortManager>(
             printer_state_->get_print_state_enum_subject(), this,
-            [](AbortManager* self, int value) {
-                self->on_print_state_during_cancel(static_cast<PrintJobState>(value));
+            [](AbortManager* self, PrintJobState value) {
+                self->on_print_state_during_cancel(value);
             });
         spdlog::debug("[AbortManager] Registered print_state_enum observer for cancel detection");
     }

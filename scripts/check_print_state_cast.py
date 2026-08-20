@@ -25,15 +25,25 @@ import re
 import sys
 from pathlib import Path
 
+# Two shapes, one mistake. The second was the gate's blind spot until 2026-08-19:
+# an observer lambda takes `int`, and the cast lands three to thirty lines away
+# from the get_*_subject() call that decided which enum is correct - so a reader
+# cannot check the pairing at a glance, which is the whole hazard. Seven sites
+# were sitting in it; the typed observer factories replaced them.
 PATTERN = re.compile(
-    r"static_cast<\s*(PrintState|helix::PrintJobState|PrintJobState)\s*>\s*\(\s*lv_subject_get_int"
+    r"static_cast<\s*(PrintState|helix::PrintJobState|PrintJobState)\s*>\s*\("
+    r"\s*(lv_subject_get_int|[A-Za-z_][A-Za-z0-9_]*\s*\))"
 )
 OPT_OUT = "PRINT_STATE_CAST_OK:"
 
-# The derivation layer legitimately converts between the wire and the lifecycle.
+# The derivation layer legitimately converts between the wire and the lifecycle,
+# and observer_factory.h is where the subject/enum pairing is SUPPOSED to live -
+# observe_print_state() and observe_print_lifecycle() each name the one subject
+# they are for, which is what makes every call site checkable.
 ALLOWLIST = {
     "src/printer/printer_print_state.cpp",  # get_print_job_state / get_print_lifecycle themselves
     "src/printer/print_lifecycle_state.cpp",
+    "include/observer_factory.h",
 }
 
 
@@ -70,9 +80,11 @@ def main(argv: list[str]) -> int:
         for h in hits:
             print("  " + h)
         print()
-        print("  Use the typed accessor that owns the pairing:")
-        print("    state.get_print_lifecycle()  -> PrintState")
-        print("    state.get_print_job_state()  -> PrintJobState")
+        print("  Use the typed accessor or factory that owns the pairing:")
+        print("    state.get_print_lifecycle()          -> PrintState")
+        print("    state.get_print_job_state()          -> PrintJobState")
+        print("    observe_print_state(subject, ..)     -> handler takes PrintJobState")
+        print("    observe_print_lifecycle(subject, ..) -> handler takes PrintState")
         print(f"  Genuinely needed? Annotate with // {OPT_OUT} <reason>")
         return 1
 

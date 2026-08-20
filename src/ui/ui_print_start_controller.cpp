@@ -763,9 +763,8 @@ void PrintStartController::observe_print_state_for_restore() {
     // At registration time, state is typically STANDBY (print hasn't started yet).
     // We only trigger restore on terminal states (COMPLETE/CANCELLED/ERROR),
     // NOT STANDBY — otherwise the immediate fire would undo our remaps.
-    print_state_observer_ = observe_int_sync<PrintStartController>(
-        subject, this, [](PrintStartController* self, int state_val) {
-            auto state = static_cast<PrintJobState>(state_val);
+    print_state_observer_ = observe_print_state<PrintStartController>(
+        subject, this, [](PrintStartController* self, PrintJobState state) {
             if (state == PrintJobState::COMPLETE || state == PrintJobState::CANCELLED ||
                 state == PrintJobState::ERROR) {
                 self->restore_filament_mapping();

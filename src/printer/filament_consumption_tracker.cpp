@@ -29,9 +29,11 @@ void FilamentConsumptionTracker::start() {
     }
     PrinterState& printer = get_printer_state();
 
-    print_state_obs_ = helix::ui::observe_int_sync<FilamentConsumptionTracker>(
+    print_state_obs_ = helix::ui::observe_print_state<FilamentConsumptionTracker>(
         printer.get_print_state_enum_subject(), this,
-        [](FilamentConsumptionTracker* self, int state) { self->on_print_state_changed(state); });
+        [](FilamentConsumptionTracker* self, PrintJobState state) {
+            self->on_print_state_changed(state);
+        });
 
     filament_used_obs_ = helix::ui::observe_int_sync<FilamentConsumptionTracker>(
         printer.get_print_filament_used_subject(), this,
@@ -156,8 +158,7 @@ void FilamentConsumptionTracker::unregister_sink(SinkHandle handle) {
     sinks_.erase(it);
 }
 
-void FilamentConsumptionTracker::on_print_state_changed(int job_state) {
-    auto state = static_cast<PrintJobState>(job_state);
+void FilamentConsumptionTracker::on_print_state_changed(PrintJobState state) {
     auto* printer_mm = get_printer_state().get_print_filament_used_subject();
     const float mm = static_cast<float>(lv_subject_get_int(printer_mm));
 
@@ -182,7 +183,7 @@ void FilamentConsumptionTracker::on_print_state_changed(int job_state) {
             flush_all_sinks();
             spdlog::info("[FilamentTracker] Print ended in state {}; "
                          "flushed sinks",
-                         job_state);
+                         static_cast<int>(state));
         }
         active_ = false;
         print_in_progress_ = false;
