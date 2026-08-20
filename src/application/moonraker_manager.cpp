@@ -82,14 +82,26 @@ bool MoonrakerManager::init(const RuntimeConfig& runtime_config, Config* config)
     // reported identity on every launch. Strictly env-gated: zero behavior
     // change when HELIX_MOCK_PRINTER is unset.
     if (config && std::getenv("HELIX_MOCK_PRINTER")) {
+        const std::string mock_printer = std::getenv("HELIX_MOCK_PRINTER");
         const std::string type_path = config->df() + helix::wizard::PRINTER_TYPE;
-        const std::string prev = config->get<std::string>(type_path, "");
-        if (!prev.empty()) {
-            config->set<std::string>(type_path, "");
+        // The k1 persona's detection identity is not complete enough to clear
+        // the auto-save bar (shared chamber sensor + generic volume score it
+        // as a Qidi at 73%), so name the capture machine directly: the
+        // persona's printer type is part of what the env var declares.
+        if (mock_printer == "k1") {
+            config->set<std::string>(type_path, "Creality K1C");
             config->save();
-            spdlog::info("[MoonrakerManager] HELIX_MOCK_PRINTER set — cleared saved "
-                         "printer type '{}' so mock identity re-detects this launch",
-                         prev);
+            spdlog::info("[MoonrakerManager] HELIX_MOCK_PRINTER=k1 — saved printer type "
+                         "'Creality K1C' (persona identity doesn't clear the detection bar)");
+        } else {
+            const std::string prev = config->get<std::string>(type_path, "");
+            if (!prev.empty()) {
+                config->set<std::string>(type_path, "");
+                config->save();
+                spdlog::info("[MoonrakerManager] HELIX_MOCK_PRINTER set — cleared saved "
+                             "printer type '{}' so mock identity re-detects this launch",
+                             prev);
+            }
         }
     }
 
@@ -389,6 +401,19 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
             }
             spdlog::info("[MoonrakerManager] HELIX_MOCK_AUTO_PRINT set — mock will "
                          "auto-start a print on connect");
+        }
+
+        // HELIX_MOCK_REPLAY=<script.json> — replay a captured print-start
+        // sequence (klippy + app log extraction) through the mock's real
+        // dispatch paths so the full observer chain runs against captured
+        // data. Combine with --sim-speed to fast-forward; position/gcode
+        // events fire at capture timing divided by the speedup.
+        const char* replay_env = std::getenv("HELIX_MOCK_REPLAY");
+        if (replay_env && replay_env[0]) {
+            if (mock->arm_event_replay(replay_env)) {
+                spdlog::info("[MoonrakerManager] HELIX_MOCK_REPLAY armed — capture replay "
+                             "starts on connect");
+            }
         }
 
         // Disable MMU if AMS is explicitly disabled via CLI or env var

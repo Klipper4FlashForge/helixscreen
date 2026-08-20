@@ -418,6 +418,9 @@ void PrintStartCollector::note_bed_mesh_presence(bool present) {
         // CLEANING are the rough G28's own mesh clear and say nothing about
         // which step is running.
         leveling_begins = was_present && !present && current_phase_ == PrintStartPhase::CLEANING;
+        spdlog::debug("[PrintStartCollector] bed-mesh presence: present={} was={} phase={} "
+                      "fires={}",
+                      present, was_present, static_cast<int>(current_phase_), leveling_begins);
     }
     if (leveling_begins) {
         spdlog::info("[PrintStartCollector] bed mesh cleared during cleaning → leveling");
@@ -452,28 +455,36 @@ void PrintStartCollector::note_position_sample(float x_mm, float y_mm, float z_m
             return; // same verdict — nothing to publish
         }
         last_position_activity_ = activity;
+        spdlog::debug("[PrintStartCollector] position activity: {} (x={:.1f} y={:.1f} z={:.1f})",
+                      static_cast<int>(activity), x_mm, y_mm, z_mm);
     }
 
     // Map the verdict onto the display. Message-only refinements keep the
     // phase (and its progress weight) untouched; only the sweep march
     // promotes the phase. Real gcode_response signals always outrank these —
     // the classifier's verdicts only matter while the console is quiet.
+    // Probing verdicts publish during ANY pre-mesh collection phase: K1-class
+    // firmware interleaves heating with rough-G28 centre probes, and the
+    // bed-mesh flap may already have promoted the phase by corner-tour time
+    // (the label is then moot, not wrong).
+    const bool before_mesh = phase != PrintStartPhase::BED_MESH &&
+                             phase != PrintStartPhase::PURGING &&
+                             phase != PrintStartPhase::COMPLETE;
     switch (activity) {
     case helix::PositionActivity::CENTER_PROBE:
-        if (phase == PrintStartPhase::HOMING || phase == PrintStartPhase::CLEANING) {
+        if (before_mesh) {
             spdlog::info("[PrintStartCollector] position: centre Z probes → \"Probing Z...\"");
             update_phase(phase, lv_tr("Probing Z..."));
         }
         break;
     case helix::PositionActivity::CORNER_PROBE:
-        if (phase == PrintStartPhase::CLEANING) {
+        if (before_mesh) {
             spdlog::info("[PrintStartCollector] position: corner tour → \"Checking Bed Mesh...\"");
             update_phase(phase, lv_tr("Checking Bed Mesh..."));
         }
         break;
     case helix::PositionActivity::RASTER:
-        if (phase != PrintStartPhase::BED_MESH && phase != PrintStartPhase::PURGING &&
-            phase != PrintStartPhase::COMPLETE) {
+        if (before_mesh) {
             spdlog::info("[PrintStartCollector] position: sweep march → bed mesh");
             update_phase(PrintStartPhase::BED_MESH, lv_tr("Bed Leveling..."));
         }
