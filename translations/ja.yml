@@ -1415,6 +1415,7 @@ translations:
   Measure and compare belt path frequencies: ベルトパスの周波数を測定・比較
   Measure belt path frequencies: ベルトパスの周波数を測定
   Measured: 測定値
+  Measured (shaper off): ''
   Measurement Failed: 測定失敗
   Measuring Path A... %d%%: パス A を測定中... %d%%
   Measuring Path B... %d%%: パス B を測定中... %d%%
@@ -1782,6 +1783,7 @@ translations:
   Press Scan to search: スキャンを押して検索
   'Pressure:': '圧力:'
   Preview Sounds: サウンドをプレビュー
+  Previous: ''
   Price: 価格
   Primary: プライマリ
   Priming...: プライミング中...
@@ -1967,6 +1969,7 @@ translations:
   Refresh: 更新
   Refresh Interval: 更新間隔
   Refresh RFID: 'RFIDを再読み込み'
+  Relative vibration: ''
   Release all stepper motors. Position will be lost.: すべてのステッピングモーターを解放します。位置情報は失われます。
   Remaining (g): 残量 (g)
   Remaining Weight (g): 残量（g）

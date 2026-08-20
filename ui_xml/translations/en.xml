@@ -1378,6 +1378,7 @@
   <translation tag="Measure and compare belt path frequencies" en="Measure and compare belt path frequencies"/>
   <translation tag="Measure belt path frequencies" en="Measure belt path frequencies"/>
   <translation tag="Measured" en="Measured"/>
+  <translation tag="Measured (shaper off)" en="Measured (shaper off)"/>
   <translation tag="Measurement Failed" en="Measurement Failed"/>
   <translation tag="Measuring Path A... %d%%" en="Measuring Path A... %d%%"/>
   <translation tag="Measuring Path B... %d%%" en="Measuring Path B... %d%%"/>
@@ -1733,6 +1734,7 @@
   <translation tag="Press Scan to search" en="Press Scan to search"/>
   <translation tag="Pressure:" en="Pressure:"/>
   <translation tag="Preview Sounds" en="Preview Sounds"/>
+  <translation tag="Previous" en="Previous"/>
   <translation tag="Price" en="Price"/>
   <translation tag="Primary" en="Primary"/>
   <translation tag="Priming..." en="Priming..."/>
@@ -1914,6 +1916,7 @@
   <translation tag="Refresh" en="Refresh"/>
   <translation tag="Refresh Interval" en="Refresh Interval"/>
   <translation tag="Refresh RFID" en="Refresh RFID"/>
+  <translation tag="Relative vibration" en="Relative vibration"/>
   <translation tag="Release all stepper motors. Position will be lost." en="Release all stepper motors. Position will be lost."/>
   <translation tag="Remaining (g)" en="Remaining (g)"/>
   <translation tag="Remaining Weight (g)" en="Remaining Weight (g)"/>

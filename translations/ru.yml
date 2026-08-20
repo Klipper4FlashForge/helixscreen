@@ -1536,6 +1536,7 @@ translations:
   Measure and compare belt path frequencies: Измерить и сравнить частоты путей ремня
   Measure belt path frequencies: Измерить частоты путей ремня
   Measured: Измерено
+  Measured (shaper off): ''
   Measurement Failed: Измерение не удалось
   Measuring Path A... %d%%: Измерение пути A... %d%%
   Measuring Path B... %d%%: Измерение пути B... %d%%
@@ -1919,6 +1920,7 @@ translations:
   Press Scan to search: Нажмите «Поиск» для сканирования
   'Pressure:': 'Давление:'
   Preview Sounds: Предпросмотр звуков
+  Previous: ''
   Price: Цена
   Primary: Основной
   Priming...: Грунтование...
@@ -2119,6 +2121,7 @@ translations:
   Refresh: Обновить
   Refresh Interval: Интервал обновления
   Refresh RFID: 'Обновить RFID'
+  Relative vibration: ''
   Release all stepper motors. Position will be lost.: Отпустить все шаговые моторы.
     Позиция будет потеряна.
   Remaining (g): Осталось (г)

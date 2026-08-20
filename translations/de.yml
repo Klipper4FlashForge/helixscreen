@@ -1565,6 +1565,7 @@ translations:
   Measure and compare belt path frequencies: Riemenpfad-Frequenzen messen und vergleichen
   Measure belt path frequencies: Riemenpfad-Frequenzen messen
   Measured: Gemessen
+  Measured (shaper off): ''
   Measurement Failed: Messung fehlgeschlagen
   Measuring Path A... %d%%: Pfad A wird gemessen... %d%%
   Measuring Path B... %d%%: Pfad B wird gemessen... %d%%
@@ -1952,6 +1953,7 @@ translations:
   Press Scan to search: Scannen drücken zum Suchen
   'Pressure:': 'Druck:'
   Preview Sounds: Sounds vorhören
+  Previous: ''
   Price: Preis
   Primary: Primär
   Priming...: Primen...
@@ -2153,6 +2155,7 @@ translations:
   Refresh: Aktualisieren
   Refresh Interval: Aktualisierungsintervall
   Refresh RFID: 'RFID aktualisieren'
+  Relative vibration: ''
   Release all stepper motors. Position will be lost.: Alle Schrittmotoren freigeben.
     Position geht verloren.
   Remaining (g): Verbleibend (g)

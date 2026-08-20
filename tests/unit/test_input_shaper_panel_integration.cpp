@@ -25,6 +25,7 @@
 #include "../../include/ui_update_queue.h"
 #include "../../lvgl/lvgl.h"
 #include "../lvgl_test_fixture.h"
+#include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
 #include "../ui_test_utils.h"
 #include "app_globals.h"
@@ -727,7 +728,7 @@ TEST_CASE("Apply recommendation applies both axes for Calibrate All",
 
 namespace {
 
-class InputShaperDeltaFixture : public LVGLTestFixture {
+class InputShaperDeltaFixture : public LVGLUITestFixture {
   public:
     InputShaperDeltaFixture() : mock_client_(MoonrakerClientMock::PrinterType::VORON_24) {
         // A previous test's mock run may have left the calibration CSVs in
@@ -751,14 +752,39 @@ class InputShaperDeltaFixture : public LVGLTestFixture {
         panel_ = &get_global_input_shaper_panel();
         panel_->init_subjects();
         panel_->set_api(&mock_client_, api_.get());
-        panel_->on_activate(); // resets to IDLE, drains the on_activate config query
+
+        // Create the panel's XML view so widget-level assertions (legend
+        // entries, captions) can run against real bindings. The view is NOT
+        // wired through panel_->create(): the persistent singleton would keep
+        // widget pointers past this fixture's screen teardown. The panel only
+        // ever touches subjects, so driving it and binding the view to the
+        // same subjects keeps both in sync.
+        view_ = static_cast<lv_obj_t*>(lv_xml_create(test_screen(), "input_shaper_panel", nullptr));
+        REQUIRE(view_ != nullptr);
+
+        panel_->on_activate(); // resets to IDLE, hides the gated legend rows
         helix::ui::UpdateQueue::instance().drain();
     }
 
     ~InputShaperDeltaFixture() override {
         panel_->on_deactivate();
         helix::ui::UpdateQueue::instance().drain();
+
+        // Drop the panel's subjects BEFORE the view: the view's bind observers
+        // live on those subjects, and the singleton panel would otherwise
+        // leave observers pointing into the deleted widget tree for whatever
+        // test runs next.
+        panel_->deinit_subjects();
+        lv_obj_delete(view_);
+        helix::ui::UpdateQueue::instance().drain();
         api_.reset();
+    }
+
+    /// Widget by name inside the panel view (fails loud when the XML drops it)
+    static lv_obj_t* view_widget(lv_obj_t* root, const char* name) {
+        lv_obj_t* w = lv_obj_find_by_name(root, name);
+        REQUIRE(w != nullptr);
+        return w;
     }
 
     // Pumps the mock transcript (100ms/line), LVGL timers, and the UpdateQueue
@@ -810,6 +836,7 @@ class InputShaperDeltaFixture : public LVGLTestFixture {
     PrinterState printer_state_;
     std::unique_ptr<MoonrakerAPI> api_;
     InputShaperPanel* panel_ = nullptr;
+    lv_obj_t* view_ = nullptr;
 };
 
 } // namespace
@@ -853,6 +880,23 @@ TEST_CASE_METHOD(InputShaperDeltaFixture,
         // during the Y run; it belongs on the X card, whose measured value is
         // the one the fork discarded.
         CHECK(subject_int("is_x_fw_overwrite_warn") == 1);
+
+        // Chart key: the legend names all three curves, and the Previous entry
+        // (the muted old-setting curve) exists only when a before-config was
+        // captured.
+        CHECK(std::string(lv_label_get_text(view_widget(view_, "legend_x_measured_label"))) ==
+              "Measured (shaper off)");
+        lv_obj_t* prev_dot = view_widget(view_, "legend_x_previous_dot");
+        lv_obj_t* prev_label = view_widget(view_, "legend_x_previous_label");
+        CHECK_FALSE(lv_obj_has_flag(prev_dot, LV_OBJ_FLAG_HIDDEN));
+        CHECK_FALSE(lv_obj_has_flag(prev_label, LV_OBJ_FLAG_HIDDEN));
+        CHECK(std::string(lv_label_get_text(prev_label)) == "Previous");
+        lv_obj_t* y_prev_dot = view_widget(view_, "legend_y_previous_dot");
+        CHECK_FALSE(lv_obj_has_flag(y_prev_dot, LV_OBJ_FLAG_HIDDEN));
+
+        // The chart's Y quantity is named above the plot.
+        REQUIRE(lv_obj_find_by_name(view_, "chart_x_caption") != nullptr);
+        REQUIRE(lv_obj_find_by_name(view_, "chart_y_caption") != nullptr);
     }
 
     SECTION("without the marker line the warning stays hidden") {
@@ -865,6 +909,9 @@ TEST_CASE_METHOD(InputShaperDeltaFixture,
         // Delta and verdict still populate from the staged live-before config...
         CHECK(subject_int("is_x_has_delta") == 1);
         CHECK(subject_int("is_x_has_verdict") == 1);
+        // ...so the Previous legend entry is present too...
+        CHECK_FALSE(
+            lv_obj_has_flag(view_widget(view_, "legend_x_previous_label"), LV_OBJ_FLAG_HIDDEN));
         // ...but no firmware overwrite happened, so no warning.
         CHECK(subject_int("is_x_fw_overwrite_warn") == 0);
     }
@@ -884,4 +931,12 @@ TEST_CASE_METHOD(InputShaperDeltaFixture, "delta rows stay hidden without a live
     CHECK(subject_int("is_x_has_verdict") == 0);
     CHECK(subject_string("is_x_delta_text").empty());
     CHECK(subject_int("is_x_fw_overwrite_warn") == 0);
+
+    // The Previous legend entry hides with the delta rows (no before-config),
+    // while the always-on key entries and the chart caption remain.
+    CHECK(lv_obj_has_flag(view_widget(view_, "legend_x_previous_dot"), LV_OBJ_FLAG_HIDDEN));
+    CHECK(lv_obj_has_flag(view_widget(view_, "legend_x_previous_label"), LV_OBJ_FLAG_HIDDEN));
+    CHECK(std::string(lv_label_get_text(view_widget(view_, "legend_x_measured_label"))) ==
+          "Measured (shaper off)");
+    REQUIRE(lv_obj_find_by_name(view_, "chart_x_caption") != nullptr);
 }

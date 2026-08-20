@@ -1510,6 +1510,7 @@ translations:
   Measure and compare belt path frequencies: Measure and compare belt path frequencies
   Measure belt path frequencies: Measure belt path frequencies
   Measured: Measured
+  Measured (shaper off): Measured (shaper off)
   Measurement Failed: Measurement Failed
   Measuring Path A... %d%%: Measuring Path A... %d%%
   Measuring Path B... %d%%: Measuring Path B... %d%%
@@ -1893,6 +1894,7 @@ translations:
   Press Scan to search: Press Scan to search
   'Pressure:': 'Pressure:'
   Preview Sounds: Preview Sounds
+  Previous: Previous
   Price: Price
   Primary: Primary
   Priming...: Priming...
@@ -2090,6 +2092,7 @@ translations:
   Refresh: Refresh
   Refresh Interval: Refresh Interval
   Refresh RFID: Refresh RFID
+  Relative vibration: Relative vibration
   Release all stepper motors. Position will be lost.: Release all stepper motors.
     Position will be lost.
   Remaining (g): Remaining (g)

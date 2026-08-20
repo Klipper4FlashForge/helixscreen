@@ -1554,6 +1554,7 @@ translations:
     cinghia
   Measure belt path frequencies: Misura le frequenze dei percorsi cinghia
   Measured: Misurato
+  Measured (shaper off): ''
   Measurement Failed: Misurazione fallita
   Measuring Path A... %d%%: Misurazione percorso A... %d%%
   Measuring Path B... %d%%: Misurazione percorso B... %d%%
@@ -1942,6 +1943,7 @@ translations:
   Press Scan to search: Premi Scansiona per cercare
   'Pressure:': 'Pressione:'
   Preview Sounds: Anteprima suoni
+  Previous: ''
   Price: Prezzo
   Primary: Primario
   Priming...: Preparazione ugello...
@@ -2141,6 +2143,7 @@ translations:
   Refresh: Aggiorna
   Refresh Interval: Intervallo aggiornamento
   Refresh RFID: 'Aggiorna RFID'
+  Relative vibration: ''
   Release all stepper motors. Position will be lost.: Rilascia tutti i motori stepper.
     La posizione verrà persa.
   Remaining (g): Rimanente (g)

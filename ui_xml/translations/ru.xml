@@ -1378,6 +1378,7 @@
   <translation tag="Measure and compare belt path frequencies" ru="Измерить и сравнить частоты путей ремня"/>
   <translation tag="Measure belt path frequencies" ru="Измерить частоты путей ремня"/>
   <translation tag="Measured" ru="Измерено"/>
+  <translation tag="Measured (shaper off)"/>
   <translation tag="Measurement Failed" ru="Измерение не удалось"/>
   <translation tag="Measuring Path A... %d%%" ru="Измерение пути A... %d%%"/>
   <translation tag="Measuring Path B... %d%%" ru="Измерение пути B... %d%%"/>
@@ -1733,6 +1734,7 @@
   <translation tag="Press Scan to search" ru="Нажмите «Поиск» для сканирования"/>
   <translation tag="Pressure:" ru="Давление:"/>
   <translation tag="Preview Sounds" ru="Предпросмотр звуков"/>
+  <translation tag="Previous"/>
   <translation tag="Price" ru="Цена"/>
   <translation tag="Primary" ru="Основной"/>
   <translation tag="Priming..." ru="Грунтование..."/>
@@ -1914,6 +1916,7 @@
   <translation tag="Refresh" ru="Обновить"/>
   <translation tag="Refresh Interval" ru="Интервал обновления"/>
   <translation tag="Refresh RFID" ru="Обновить RFID"/>
+  <translation tag="Relative vibration"/>
   <translation tag="Release all stepper motors. Position will be lost." ru="Отпустить все шаговые моторы. Позиция будет потеряна."/>
   <translation tag="Remaining (g)" ru="Осталось (г)"/>
   <translation tag="Remaining Weight (g)" ru="Оставшийся вес (г)"/>

@@ -1378,6 +1378,7 @@
   <translation tag="Measure and compare belt path frequencies" it="Misura e confronta le frequenze dei percorsi cinghia"/>
   <translation tag="Measure belt path frequencies" it="Misura le frequenze dei percorsi cinghia"/>
   <translation tag="Measured" it="Misurato"/>
+  <translation tag="Measured (shaper off)"/>
   <translation tag="Measurement Failed" it="Misurazione fallita"/>
   <translation tag="Measuring Path A... %d%%" it="Misurazione percorso A... %d%%"/>
   <translation tag="Measuring Path B... %d%%" it="Misurazione percorso B... %d%%"/>
@@ -1733,6 +1734,7 @@
   <translation tag="Press Scan to search" it="Premi Scansiona per cercare"/>
   <translation tag="Pressure:" it="Pressione:"/>
   <translation tag="Preview Sounds" it="Anteprima suoni"/>
+  <translation tag="Previous"/>
   <translation tag="Price" it="Prezzo"/>
   <translation tag="Primary" it="Primario"/>
   <translation tag="Priming..." it="Preparazione ugello..."/>
@@ -1914,6 +1916,7 @@
   <translation tag="Refresh" it="Aggiorna"/>
   <translation tag="Refresh Interval" it="Intervallo aggiornamento"/>
   <translation tag="Refresh RFID" it="Aggiorna RFID"/>
+  <translation tag="Relative vibration"/>
   <translation tag="Release all stepper motors. Position will be lost." it="Rilascia tutti i motori stepper. La posizione verrà persa."/>
   <translation tag="Remaining (g)" it="Rimanente (g)"/>
   <translation tag="Remaining Weight (g)" it="Peso rimanente (g)"/>

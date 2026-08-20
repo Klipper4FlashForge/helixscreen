@@ -1378,6 +1378,7 @@
   <translation tag="Measure and compare belt path frequencies" ja="ベルトパスの周波数を測定・比較"/>
   <translation tag="Measure belt path frequencies" ja="ベルトパスの周波数を測定"/>
   <translation tag="Measured" ja="測定値"/>
+  <translation tag="Measured (shaper off)"/>
   <translation tag="Measurement Failed" ja="測定失敗"/>
   <translation tag="Measuring Path A... %d%%" ja="パス A を測定中... %d%%"/>
   <translation tag="Measuring Path B... %d%%" ja="パス B を測定中... %d%%"/>
@@ -1733,6 +1734,7 @@
   <translation tag="Press Scan to search" ja="スキャンを押して検索"/>
   <translation tag="Pressure:" ja="圧力:"/>
   <translation tag="Preview Sounds" ja="サウンドをプレビュー"/>
+  <translation tag="Previous"/>
   <translation tag="Price" ja="価格"/>
   <translation tag="Primary" ja="プライマリ"/>
   <translation tag="Priming..." ja="プライミング中..."/>
@@ -1914,6 +1916,7 @@
   <translation tag="Refresh" ja="更新"/>
   <translation tag="Refresh Interval" ja="更新間隔"/>
   <translation tag="Refresh RFID" ja="RFIDを再読み込み"/>
+  <translation tag="Relative vibration"/>
   <translation tag="Release all stepper motors. Position will be lost." ja="すべてのステッピングモーターを解放します。位置情報は失われます。"/>
   <translation tag="Remaining (g)" ja="残量 (g)"/>
   <translation tag="Remaining Weight (g)" ja="残量（g）"/>

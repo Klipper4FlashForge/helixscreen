@@ -1572,6 +1572,7 @@ translations:
     chemins de courroie
   Measure belt path frequencies: Mesurer les fréquences des chemins de courroie
   Measured: Mesuré
+  Measured (shaper off): ''
   Measurement Failed: Échec de la mesure
   Measuring Path A... %d%%: Mesure du chemin A... %d%%
   Measuring Path B... %d%%: Mesure du chemin B... %d%%
@@ -1963,6 +1964,7 @@ translations:
   Press Scan to search: Appuyez sur Scanner pour rechercher
   'Pressure:': 'Pression :'
   Preview Sounds: Aperçu des sons
+  Previous: ''
   Price: Prix
   Primary: Principal
   Priming...: Amorçage...
@@ -2167,6 +2169,7 @@ translations:
   Refresh: Rafraîchir
   Refresh Interval: Intervalle de rafraîchissement
   Refresh RFID: 'Actualiser le RFID'
+  Relative vibration: ''
   Release all stepper motors. Position will be lost.: Relâcher tous les moteurs pas
     à pas. La position sera perdue.
   Remaining (g): Restant (g)

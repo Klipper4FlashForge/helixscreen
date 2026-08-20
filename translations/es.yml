@@ -1556,6 +1556,7 @@ translations:
     de correa
   Measure belt path frequencies: Medir frecuencias de rutas de correa
   Measured: Medido
+  Measured (shaper off): ''
   Measurement Failed: Medición fallida
   Measuring Path A... %d%%: Midiendo la trayectoria A... %d%%
   Measuring Path B... %d%%: Midiendo la trayectoria B... %d%%
@@ -1944,6 +1945,7 @@ translations:
   Press Scan to search: Presione Escanear para buscar
   'Pressure:': 'Presión:'
   Preview Sounds: Vista previa de sonidos
+  Previous: ''
   Price: Precio
   Primary: Primario
   Priming...: Cebando...
@@ -2145,6 +2147,7 @@ translations:
   Refresh: Actualizar
   Refresh Interval: Intervalo de Actualización
   Refresh RFID: 'Actualizar RFID'
+  Relative vibration: ''
   Release all stepper motors. Position will be lost.: Liberar todos los motores paso
     a paso. Se perderá la posición.
   Remaining (g): Restante (g)

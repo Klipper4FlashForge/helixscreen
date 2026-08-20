@@ -1378,6 +1378,7 @@
   <translation tag="Measure and compare belt path frequencies" zh="测量和比较皮带路径频率"/>
   <translation tag="Measure belt path frequencies" zh="测量皮带路径频率"/>
   <translation tag="Measured" zh="已测量"/>
+  <translation tag="Measured (shaper off)"/>
   <translation tag="Measurement Failed" zh="测量失败"/>
   <translation tag="Measuring Path A... %d%%" zh="正在测量路径 A... %d%%"/>
   <translation tag="Measuring Path B... %d%%" zh="正在测量路径 B... %d%%"/>
@@ -1733,6 +1734,7 @@
   <translation tag="Press Scan to search" zh="按扫描搜索"/>
   <translation tag="Pressure:" zh="压力:"/>
   <translation tag="Preview Sounds" zh="预览声音"/>
+  <translation tag="Previous"/>
   <translation tag="Price" zh="价格"/>
   <translation tag="Primary" zh="主要"/>
   <translation tag="Priming..." zh="正在预挤..."/>
@@ -1914,6 +1916,7 @@
   <translation tag="Refresh" zh="刷新"/>
   <translation tag="Refresh Interval" zh="刷新间隔"/>
   <translation tag="Refresh RFID" zh="刷新 RFID"/>
+  <translation tag="Relative vibration"/>
   <translation tag="Release all stepper motors. Position will be lost." zh="释放所有步进电机。位置信息将丢失。"/>
   <translation tag="Remaining (g)" zh="剩余 (g)"/>
   <translation tag="Remaining Weight (g)" zh="剩余重量（克）"/>
