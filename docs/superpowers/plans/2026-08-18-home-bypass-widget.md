@@ -198,7 +198,7 @@ Expected: build FAIL — `ui_bypass_toggle_controller.h: No such file or directo
 
 `include/ui_bypass_toggle_controller.h` — the Produces block above verbatim, plus `#include "ams_types.h"` (for `AmsAction`) and SPDX/copyright header (`// Copyright (C) 2025-2026 356C LLC` / `// SPDX-License-Identifier: GPL-3.0-or-later`, match `motion_widget.h`).
 
-`src/ui/ui_bypass_toggle_controller.cpp` — body ported **verbatim** from `src/ui/ui_ams_sidebar.cpp:1232-1287` (handle_bypass_toggle) and `:288-312` (the pending-bypass arm of the action observer), with these deltas:
+`src/ui/ui_bypass_toggle_controller.cpp` — body ported **verbatim** from `src/ui/ui_ams_sidebar.cpp:1232-1287` (handle_bypass_toggle) and `:288-312` (the pending-bypass arm of the action observer), with these deltas (the `print_occupies_toolhead()` guard below is historical: that helper was deleted by the v0.99.115 print-state rework, 155abc76b — the shipped guard asks `job_holds_machine()` of the derived lifecycle):
 
 ```cpp
 // SPDX-License-Identifier: GPL-3.0-or-later
