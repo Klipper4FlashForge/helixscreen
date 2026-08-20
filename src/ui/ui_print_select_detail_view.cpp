@@ -22,6 +22,7 @@
 #include "display_settings_manager.h"
 #include "gcode_footer_summary.h"
 #include "gcode_parser.h"
+#include "gcode_preview_setup.h"
 #include "gcode_temp_reclaim.h"
 #include "host_identity.h"
 #include "http_executor.h"
@@ -228,33 +229,12 @@ lv_obj_t* PrintSelectDetailView::create(lv_obj_t* parent_screen) {
         spdlog::debug("[DetailView] G-code viewer widget found");
         ui_gcode_viewer_disable_streaming(gcode_viewer_);
 
-        // Apply render mode - priority: cmdline > env var > settings
-        const auto* config = get_runtime_config();
-        const char* env_mode = std::getenv("HELIX_GCODE_MODE");
+        helix::ui::apply_preview_render_mode(gcode_viewer_, "DetailView");
 
-        if (config && config->gcode_render_mode >= 0) {
-            auto render_mode = static_cast<helix::GcodeViewerRenderMode>(config->gcode_render_mode);
-            ui_gcode_viewer_set_render_mode(gcode_viewer_, render_mode);
-            spdlog::debug("[DetailView] Set G-code render mode: {} (cmdline)",
-                          config->gcode_render_mode);
-        } else if (env_mode) {
-            spdlog::debug("[DetailView] G-code render mode: {} (env var)",
-                          ui_gcode_viewer_is_using_2d_mode(gcode_viewer_) ? "2D" : "3D");
-        } else {
-            int render_mode_val = DisplaySettingsManager::instance().get_gcode_render_mode();
-            if (render_mode_val == 3) {
-                // Thumbnail Only mode - skip render mode setup, viewer won't be used
-                spdlog::debug("[DetailView] G-code render mode: Thumbnail Only (settings)");
-            } else {
-                auto render_mode = static_cast<helix::GcodeViewerRenderMode>(render_mode_val);
-                ui_gcode_viewer_set_render_mode(gcode_viewer_, render_mode);
-                spdlog::debug("[DetailView] Set G-code render mode: {} (settings)",
-                              render_mode_val);
-            }
-        }
-
-        // Vertical offset to match thumbnail positioning
-        ui_gcode_viewer_set_content_offset_y(gcode_viewer_, -0.10f);
+        // Here the strip IS an overlay over the preview's bottom, so this is a
+        // real occlusion (~a third of the card) and the render shifts to clear it.
+        helix::ui::set_preview_bottom_occluder(
+            gcode_viewer_, lv_obj_find_by_name(overlay_root_, "detail_metadata_clip"));
 
         // Start paused — will resume in on_activate()
         ui_gcode_viewer_set_paused(gcode_viewer_, true);
