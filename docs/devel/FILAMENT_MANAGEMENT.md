@@ -3507,15 +3507,15 @@ The `AmsDeviceOperationsOverlay` (`ui_ams_device_operations_overlay.h`) consolid
 | Abort | `cancel()` | Cancel current operation |
 | Bypass Toggle | `enable_bypass()` / `disable_bypass()` | Toggle bypass mode (if supported) |
 
-### The Bypass Toggle row: one shared policy for the quick surfaces
+### The Bypass Toggle row: one shared policy for all three surfaces
 
-The table's last row names the backend calls, not the UI path. Two surfaces flip bypass
-without opening this overlay, and both route through one shared policy object,
-`BypassToggleController` (`src/ui/ui_bypass_toggle_controller.cpp`, extracted from the
-sidebar's handler in 03f784219): the AMS sidebar's toggle (`include/ui_ams_sidebar.h:195`)
-and the home-panel Bypass tile (`src/ui/panel_widgets/bypass_widget.h:33`). Each owns an
-instance and forwards its click to `toggle()`, which runs every guard before touching the
-backend:
+The table's last row names the backend calls, not the UI path. Three surfaces flip bypass,
+and all three route through one shared policy object, `BypassToggleController`
+(`src/ui/ui_bypass_toggle_controller.cpp`, extracted from the sidebar's handler in
+03f784219): the AMS sidebar's toggle (`include/ui_ams_sidebar.h:195`), the home-panel
+Bypass tile (`src/ui/panel_widgets/bypass_widget.h:33`), and this overlay's own switch
+(`include/ui_ams_device_operations_overlay.h`). Each owns an instance and forwards its
+click to `toggle()`, which runs every guard before touching the backend:
 
 - **Print guard** (`:26-36`) — "Bypass cannot be changed while printing". Asked of the
   print lifecycle via `job_holds_machine()`, not `print_stats.state`: Preparing and Paused
@@ -3530,10 +3530,23 @@ backend:
   armed — before the extraction only the sidebar fed that subject, so a chain started from
   the home tile never saw its completing edge.
 
-The overlay's own switch (the row above) is not behind the controller: its handler calls
-`enable_bypass()` / `disable_bypass()` directly, with its own hardware-sensor check but
-neither the print guard nor the unload chain
-(`src/ui/ui_ams_device_operations_overlay.cpp:570`).
+The overlay switch was the last holdout: its handler called `enable_bypass()` /
+`disable_bypass()` directly, with its own hardware-sensor check but neither the print guard
+nor the unload chain. On a backend whose `enable_bypass()` carries no filament-loaded
+refusal of its own — AD5X IFS — a tap mid-print therefore reached the firmware, and on the
+rest it stranded the loaded lane's filament behind the external feed.
+
+Both switch surfaces (this one and the sidebar's) additionally re-publish
+`ams_bypass_active` after `toggle()` returns. A `ui_switch` flips its own CHECKED state
+*before* the handler runs, so a refusal leaves the widget claiming a state the backend
+never entered — and `lv_subject_set_int()` does not notify when the value is unchanged,
+which is exactly the refusal case, hence the explicit `lv_subject_notify()`. Both also bind
+`disabled` to `job_holds_machine`, matching the home tile: the binding dims them, the
+controller refuses regardless (`helix-screen ctl click` reaches a disabled widget's handler,
+and so does a stale tap mid-transition). The switch's checked state follows the live
+`ams_bypass_active` subject rather than an overlay-local snapshot, so an enable that
+completes asynchronously behind the unload chain shows up when the backend actually gets
+there instead of when the gcode was queued.
 
 ### Bypass visibility and the force override
 
