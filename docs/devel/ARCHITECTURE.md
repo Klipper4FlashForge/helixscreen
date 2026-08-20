@@ -33,12 +33,12 @@ graph TB
         subgraph UI["UI Layer"]
             NAV["NavigationManager<br/>panel/overlay stack"]
             PANELS["6 root panels"]
-            OVERLAYS["58 overlay classes"]
+            OVERLAYS["~60 overlay classes"]
             MODALS["41 modal XMLs"]
             XMLW["ui_xml/*.xml<br/>232 top-level + 96 components"]
         end
         subgraph State["State Layer"]
-            PS["PrinterState<br/>get_printer_state()<br/>13 domains, 122 subjects"]
+            PS["PrinterState<br/>get_printer_state()<br/>13 domains, ~120 subjects"]
             AS["AmsState<br/>per-filament-system backends"]
             TS["ToolState<br/>multi-tool tracking"]
             SM["SettingsManager"]
@@ -124,6 +124,7 @@ graph TB
 | add a peripheral or remote-control the UI | [ch. 13 — Peripherals & remote](architecture/13-peripherals.md) |
 | make HelixScreen run on a new board | [ch. 14 — Build & platforms](architecture/14-build-platforms.md) |
 | pay down tech debt | [ch. 15 — Known debt](architecture/15-known-debt.md) |
+| work on the G-code viewer, preview download/parse, or object picking | [ch. 16 — G-code pipeline](architecture/16-gcode-pipeline.md) |
 
 ## The rules with teeth
 

@@ -860,8 +860,9 @@ controls > quit
 ```
 
 Tab completion covers commands, subject names, panels and scenarios — and, for
-any command that takes a target (`cd`, `ls`, `click`, `focus`, `text`, `geom`,
-`set_value`, `scroll`, `resolve`), the **widget names in the current cwd**.
+any command that takes a target (`cd`, `ls`, `click`, `focus`, `text`,
+`set_text`, `state`, `geom`, `set_value`, `scroll`, `resolve`), the **widget
+names in the current cwd**.
 Those are re-read on every keypress rather than cached: the tree changes under
 the REPL constantly, and a cache would offer widgets that have left the screen.
 

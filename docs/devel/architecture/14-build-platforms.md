@@ -195,7 +195,7 @@ Read in this order; about 25 minutes total.
 6. `mk/cross.mk:644` — the `native` block: SDL backend, and why dev conveniences live here rather than in cross builds.
 7. `Makefile:464` — `ENABLE_REMOTE_CONTROL`'s native-default-on / cross-default-off wiring; `:486` does the same for dev panels.
 8. `mk/display-lib.mk:23` — compile-time backend inclusion per OS (Darwin gets SDL only; Linux always gets fbdev+DRM).
-9. `src/api/display_backend.cpp:242` — `create_auto()`'s DRM→fbdev→SDL probe: the runtime half of the backend story.
+9. `src/api/display_backend.cpp:199` — `create_auto()`'s DRM→fbdev→SDL probe: the runtime half of the backend story.
 10. `mk/patches.mk:187` — the stamp recipe: wiring check both directions, then apply-if-needed; skim a few apply blocks to see the sentinel patterns.
 11. `patches/lvgl-evdev-protocol-a.patch` — a small, real patch that ships on every evdev device and is upstream as PR #9829.
 12. `mk/cross.mk:905` — the `.PHONY` roster of convenience, Docker, and deploy targets; then `:1376` is the help text that renders the same menu for humans.

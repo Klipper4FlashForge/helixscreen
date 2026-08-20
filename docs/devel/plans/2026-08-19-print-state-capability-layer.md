@@ -1,6 +1,6 @@
 # Print state: one axis, named capabilities
 
-Status: **Phases 0-4 complete; only the cosmetic Phase 5 (rename) remains**
+Status: **Phases 0a-4c complete** - merged in v0.99.115; only Phase 5 (the rename) remains open, see the Phase tracker
 Branch: `fix/preparing-job-lifecycle` (Phase 0 only) → own branch for Phases 1-4
 
 > **Resuming after a context break?** Read "Phase tracker" and "How to resume"

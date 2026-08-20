@@ -9,7 +9,7 @@ All developer documentation lives here. When working on features, look up the re
 | `DEVELOPMENT.md` | Build setup, dev environment, contributing |
 | `HELIXCTL.md` | Driving the UI / screenshots via `helix-screen ctl` (replaces the old `-p`/`--panel` flags). **Read the socket-isolation box first** — a bare `ctl` drives whichever instance started first and still reports success |
 | `ARCHITECTURE.md` | The 15-minute whole-app model (XML → Subjects → C++) + the routing table into the chapter series. Start here for "how does the app fit together" |
-| `architecture/` | The 15-chapter architecture guide — one subsystem per chapter, ~1 hour each. `architecture/README.md` is the "I want to work on..." index |
+| `architecture/` | The 16-chapter architecture guide — one subsystem per chapter, ~1 hour each. `architecture/README.md` is the "I want to work on..." index |
 | `THREADING.md` | **Single source of truth** for threading, async-callback, and object-lifetime rules. Read before any code that crosses a thread boundary, observes a subject, or destroys a widget |
 | `BUILD_SYSTEM.md` | Makefile internals, make target reference, cross-compilation, worktree workflow, ccache, patches |
 | `REVIEW_RUBRIC.md` | The quality bar for reviews: crash families, silent-failure traps, what not to flag, what the gates already cover |
@@ -42,6 +42,7 @@ All developer documentation lives here. When working on features, look up the re
 | `TRANSLATION_SYSTEM.md` | i18n: YAML strings -> code generation -> runtime lookups |
 | `TRANSLATION_CONTRIBUTOR_GUIDE.md` | For **translators** — how to improve existing translations or add a new language. No code needed. |
 | `UI_TESTING.md` | Headless LVGL testing, UITest utilities |
+| `architecture/16-gcode-pipeline.md` | G-code from file to screen: parse/scan paths, footer fast path, tools-used cache, render modes, object picking. Start here for viewer work |
 | `GCODE_VIEWER_CONFIG.md` | GCode viewer configuration |
 | `BED_MESH_RENDERING_INTERNALS.md` | Bed mesh 3D rendering internals |
 | `FILAMENT_PATH_CANVAS.md` | Filament-path canvas: 3-layer model, pathgeo arc-fillet routing, shared tube stroker, RenderCtx phases, topology renderers (linear/hub/parallel/mixed) |
