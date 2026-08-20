@@ -3038,6 +3038,11 @@ void on_print_state_changed_for_telemetry(lv_observer_t* observer, lv_subject_t*
         s_telemetry_max_phase = phase;
     }
 
+    // RAW_PRINT_STATE_OK, and load-bearing: on the wire this is one reset at the
+    // real start (STANDBY -> PRINTING). On the lifecycle it becomes
+    // Idle -> Preparing -> Printing, so the reset would fire at
+    // Preparing -> Printing and WIPE the pre-print phase data this tracker
+    // exists to collect.
     // When a new print starts (transition to PRINTING from non-PAUSED), reset tracking
     if (current == PrintJobState::PRINTING && s_telemetry_prev_state != PrintJobState::PAUSED) {
         s_telemetry_max_phase = 0;
@@ -3104,6 +3109,9 @@ void on_print_state_changed_for_telemetry(lv_observer_t* observer, lv_subject_t*
         }
     }
 
+    // RAW_PRINT_STATE_OK: terminal-outcome classification is about what the
+    // printer reported, and a preparing job that never confirms is retired by
+    // PrinterPrintState rather than ending here.
     // Detect transitions from active (PRINTING/PAUSED) to terminal states
     bool was_active = (s_telemetry_prev_state == PrintJobState::PRINTING ||
                        s_telemetry_prev_state == PrintJobState::PAUSED);

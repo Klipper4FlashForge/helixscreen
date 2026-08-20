@@ -1824,6 +1824,10 @@ void PrintStatusPanel::recompute_scoped_runout() {
     // the parsed file is dropped, get_tools_used() empties → compute returns -1;
     // but also clear explicitly here so a terminal transition reliably hides the
     // badge even if tools_used hasn't cleared yet (issue 9).
+    // RAW_PRINT_STATE_OK: the badge is scoped to the tools the RUNNING file
+    // uses. During a preparing window get_tools_used() still describes the
+    // previous job, so widening this would scope the badge to the wrong file
+    // instead of hiding it.
     auto state = static_cast<PrintJobState>(
         lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
     bool print_active = (state == PrintJobState::PRINTING || state == PrintJobState::PAUSED);
@@ -2588,6 +2592,10 @@ void PrintStatusPanel::recompute_paused_overlay_visibility() {
     auto pending = static_cast<helix::ui::PendingAction>(
         lv_subject_get_int(helix::ui::PrintControlButtons::instance().pending_action_subject()));
 
+    // RAW_PRINT_STATE_OK: a value question - is the printer reporting paused? -
+    // driving the optimistic Pause/Resume overlay. (PAUSED outranks a live phase
+    // in derive_print_state(), so the lifecycle would answer identically; the
+    // wire is simply the more direct statement of what is being asked.)
     auto state = static_cast<PrintJobState>(
         lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
     bool paused = (state == PrintJobState::PAUSED);

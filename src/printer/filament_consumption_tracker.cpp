@@ -161,6 +161,9 @@ void FilamentConsumptionTracker::on_print_state_changed(int job_state) {
     auto* printer_mm = get_printer_state().get_print_filament_used_subject();
     const float mm = static_cast<float>(lv_subject_get_int(printer_mm));
 
+    // RAW_PRINT_STATE_OK: this tracks material actually extruded, so it keys on
+    // the printer's own report. print_filament_used is 0 for the whole of a
+    // preparing window - there is nothing to snapshot or flush there.
     switch (state) {
     case PrintJobState::PRINTING:
         if (!print_in_progress_) {

@@ -1041,6 +1041,9 @@ void PrintStartController::recover_pending_remap() {
         // fire on the current PRINTING/PAUSED value is a no-op there.
         auto current_state = static_cast<PrintJobState>(
             lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+        // RAW_PRINT_STATE_OK: the mapping is restored on a TERMINAL state; this
+        // only suppresses the observer's immediate registration-fire while a job
+        // is running. A preparing job has no mapping to restore yet.
         bool print_active =
             (current_state == PrintJobState::PRINTING || current_state == PrintJobState::PAUSED);
 

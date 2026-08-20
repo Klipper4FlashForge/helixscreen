@@ -124,6 +124,9 @@ void PrintControlButtons::handle_primary_button() {
         lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
     auto& macros = StandardMacros::instance();
 
+    // RAW_PRINT_STATE_OK: chooses WHICH macro to send. Pause is meaningless
+    // before the printer holds the job, and print_control_view already refuses
+    // the button during Preparing.
     if (state == helix::PrintJobState::PRINTING) {
         if (macros.get(StandardMacroSlot::Pause).is_empty()) {
             NOTIFY_WARNING(lv_tr("Pause macro not configured"));

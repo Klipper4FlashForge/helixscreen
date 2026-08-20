@@ -633,6 +633,9 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
     // queue, and 'Timer too close' shutdowns are exactly what host starvation
     // there looks like. PAUSED deliberately keeps the 5s cadence: a pause is
     // when a user actually swaps a spool and relabels it.
+    // RAW_PRINT_STATE_OK: picks the poll cadence from what the MCU is actually
+    // doing. During a host-side block the board is not yet feeding the step
+    // queue, so the fast cadence is still the right choice there.
     bool printing_now = false;
     if (get_printer_state().are_subjects_initialized()) {
         printing_now = get_printer_state().get_print_job_state() == helix::PrintJobState::PRINTING;

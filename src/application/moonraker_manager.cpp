@@ -746,6 +746,10 @@ void MoonrakerManager::init_print_start_collector() {
                     spdlog::info("[MoonrakerManager] PRINT_START collector started");
                 }
                 s_arming.consume_initial_transition();
+                // RAW_PRINT_STATE_OK (this whole dispatch): the collector
+                // measures the pre-print window, so it arms and completes on the
+                // PRINTER's own transitions. On the lifecycle its completion
+                // signal would be the very state it is waiting to observe.
             } else if (new_state == PrintJobState::PRINTING && collector->is_active()) {
                 // Authoritative signal: Moonraker confirms print is running.
                 // This is the hard cutoff — if the collector is still active when

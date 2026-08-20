@@ -34,6 +34,8 @@ void U1StockSource::on_print_state(int state_enum) {
     // (and detection never fires) on non-U1 printers.
     if (!capable_)
         return;
+    // RAW_PRINT_STATE_OK: an edge INTO the printer's own paused state, which is
+    // what U1 stock firmware raises when it trips defect detection.
     if (state_enum != static_cast<int>(PrintJobState::PAUSED))
         return;
     if (prev == static_cast<int>(PrintJobState::PAUSED))

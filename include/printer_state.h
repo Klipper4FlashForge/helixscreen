@@ -110,6 +110,9 @@ enum class PrintJobState {
  * construction; UI code that already has a subject should read that instead of
  * reaching for the enum.
  */
+// RAW_PRINT_STATE_OK: zero callers since 32e516e14 - job_holds_machine() took
+// them all. Kept only until Phase 4 of the print-state plan deletes it; see
+// docs/devel/plans/2026-08-19-print-state-capability-layer.md.
 [[nodiscard]] constexpr bool print_occupies_toolhead(PrintJobState state) {
     return state == PrintJobState::PRINTING || state == PrintJobState::PAUSED;
 }

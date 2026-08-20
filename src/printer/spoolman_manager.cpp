@@ -95,6 +95,9 @@ void SpoolmanManager::init_subjects() {
     print_state_observer_ = observe_int_sync<SpoolmanManager>(
         get_printer_state().get_print_state_enum_subject(), this,
         [](SpoolmanManager* self, int state) {
+            // RAW_PRINT_STATE_OK: Spoolman weights only change when filament
+            // actually moves, so this refreshes on the printer's own reported
+            // transitions. Nothing has been consumed during Preparing.
             auto print_state = static_cast<PrintJobState>(state);
             if (print_state == PrintJobState::PRINTING || print_state == PrintJobState::COMPLETE ||
                 print_state == PrintJobState::PAUSED) {

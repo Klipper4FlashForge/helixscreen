@@ -57,6 +57,8 @@ PrintJobState parse_print_job_state(const char* state_str) {
         return PrintJobState::STANDBY;
     }
 
+    // RAW_PRINT_STATE_OK (whole function): this IS the wire parse. Everything
+    // downstream that wants the derived axis gets it from derive_print_state().
     if (std::strcmp(state_str, "standby") == 0) {
         return PrintJobState::STANDBY;
     } else if (std::strcmp(state_str, "printing") == 0) {
@@ -78,6 +80,7 @@ PrintJobState parse_print_job_state(const char* state_str) {
 }
 
 const char* print_job_state_to_string(PrintJobState state) {
+    // RAW_PRINT_STATE_OK (whole function): the wire enum's own name table.
     switch (state) {
     case PrintJobState::STANDBY:
         return "Standby";

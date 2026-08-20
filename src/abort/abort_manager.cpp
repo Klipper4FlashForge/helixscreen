@@ -732,6 +732,8 @@ void AbortManager::on_print_state_during_cancel(PrintJobState state) {
 
     case PrintJobState::PRINTING:
     case PrintJobState::PAUSED:
+        // RAW_PRINT_STATE_OK: waiting for the PRINTER to leave a running state
+        // after a cancel. Preparing is not something CANCEL_PRINT produces.
         // Non-terminal — cancel macro is still running, keep waiting
         spdlog::debug("[AbortManager] Print state {} during cancel — still waiting",
                       print_job_state_to_string(state));

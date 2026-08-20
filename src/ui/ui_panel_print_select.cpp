@@ -2378,6 +2378,11 @@ void PrintSelectPanel::merge_history_into_file_list() {
 
     // Get currently printing filename (if any)
     std::string current_print_filename;
+    // RAW_PRINT_STATE_OK: reads print_filename, which reset_for_new_print()
+    // deliberately does NOT clear - so during a preparing window it still holds
+    // the PREVIOUS job. Widening this would badge the wrong file rather than
+    // none. Badging the committed file would mean reading preparing_job()
+    // instead, which is a feature, not this migration.
     auto print_state = printer_state_.get_print_job_state();
     if (print_state == PrintJobState::PRINTING || print_state == PrintJobState::PAUSED) {
         if (auto* filename_subject = printer_state_.get_print_filename_subject()) {

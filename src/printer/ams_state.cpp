@@ -1471,6 +1471,9 @@ void AmsState::sync_from_backend() {
     // AmsBackendAd5xIfs::evaluate_runout_locked() already accepts deliberately —
     // a printer that boots into a job already paused on a runout reports nothing,
     // because we witnessed no transition.
+    // RAW_PRINT_STATE_OK: the edge must be witnessed while the printer is
+    // actually running the job. Arming it during Preparing would light the
+    // warning for a latch raised before any material moved.
     const PrintJobState job_state = get_printer_state().get_print_job_state();
     const bool paused = job_state == PrintJobState::PAUSED;
     const bool job_running = paused || job_state == PrintJobState::PRINTING;
@@ -2544,6 +2547,11 @@ void AmsState::recompute_action_detail() {
     } else if (action != AmsAction::IDLE) {
         new_detail = lv_tr(ams_action_to_string(action));
     } else {
+        // RAW_PRINT_STATE_OK: a label for what the printer reports. A
+        // "Preparing" arm would read better during a pre-print block, but there
+        // is no such translation key yet and this is the lowest-priority
+        // fallback in the chain - the AmsAction string wins whenever the AMS is
+        // doing anything at all.
         auto print_state = static_cast<PrintJobState>(
             lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
         switch (print_state) {

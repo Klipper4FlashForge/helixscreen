@@ -125,6 +125,10 @@ std::string LedAutoState::compute_state_key() const {
 
     // Check print job state
     if (printer_state_->are_subjects_initialized()) {
+        // RAW_PRINT_STATE_OK: these names are LED THEME KEYS (see the JSON
+        // themes), not internal state. There is no "preparing" key, and a
+        // pre-print block already falls through to "heating" below, which is
+        // what the machine is in fact doing.
         auto print_state = printer_state_->get_print_job_state();
         switch (print_state) {
         case PrintJobState::PRINTING:
