@@ -37,6 +37,8 @@ struct ControlButtonView {
 /// exactly the shape of mistake that silently drops a dimension at one call
 /// site (cf. the SubjectLifetime trap in CLAUDE.md).
 struct ControlButtonInputs {
+    /// RAW_PRINT_STATE_OK: the wire half of the pair. `lifecycle` below is the
+    /// derived half; the view needs both, which is why neither replaced the other.
     helix::PrintJobState job_state = helix::PrintJobState::STANDBY;
     PrintState lifecycle = PrintState::Idle;
     /// True while this screen owns a job the printer has not accepted yet.

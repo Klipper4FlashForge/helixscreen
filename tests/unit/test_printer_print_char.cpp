@@ -1827,9 +1827,7 @@ TEST_CASE("print_lifecycle subject publishes the derived UI state",
     PrinterStateTestAccess::reset(state);
     state.init_subjects(false);
 
-    auto lifecycle = [&state]() {
-        return static_cast<PrintState>(lv_subject_get_int(state.get_print_lifecycle_subject()));
-    };
+    auto lifecycle = [&state]() { return state.get_print_lifecycle(); };
 
     SECTION("follows print_stats.state when no phase is running") {
         state.update_from_status(json{{"print_stats", {{"state", "printing"}}}});
@@ -2031,9 +2029,7 @@ TEST_CASE("print_lifecycle publishes the previous state alongside the current on
     PrinterStateTestAccess::reset(state);
     state.init_subjects(false);
 
-    auto cur = [&state]() {
-        return static_cast<PrintState>(lv_subject_get_int(state.get_print_lifecycle_subject()));
-    };
+    auto cur = [&state]() { return state.get_print_lifecycle(); };
     auto prev = [&state]() {
         return static_cast<PrintState>(
             lv_subject_get_int(state.get_print_lifecycle_prev_subject()));

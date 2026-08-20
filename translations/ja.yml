@@ -180,7 +180,9 @@ translations:
     > バージョン情報 からデバッグバンドルを送信してください。
   An unexpected printer error occurred.: 予期しないプリンターエラーが発生しました。
   An update is available: 更新があります
+  Analyzing data...: ''
   Analyzing data... {}%: 'データを解析中... {}%'
+  Analyzing data... {}s: ''
   Android logcat: Android logcat
   Animations: アニメーション
   Anonymous data to help improve HelixScreen: HelixScreen改善のための匿名データ
@@ -1009,6 +1011,7 @@ translations:
   Firmware Restart: ファームウェア再起動
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: ファームウェアはバイパスがないと報告しています。フィラメントをエクストルーダーに直接送っている場合は有効にしてください
   Firmware restarting...: ファームウェア再起動中...
+  Firmware saved X = Y's value; the measured X result was discarded: ''
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
@@ -1412,6 +1415,7 @@ translations:
   Measure and compare belt path frequencies: ベルトパスの周波数を測定・比較
   Measure belt path frequencies: ベルトパスの周波数を測定
   Measured: 測定値
+  Measured (shaper off): ''
   Measurement Failed: 測定失敗
   Measuring Path A... %d%%: パス A を測定中... %d%%
   Measuring Path B... %d%%: パス B を測定中... %d%%
@@ -1631,6 +1635,7 @@ translations:
   Objects: オブジェクト
   'Off': オフ
   'Off:': 'オフ:'
+  "Old setting on today's data: {} residual - now: {}": ''
   'On': オン
   On and Off macros must be different: オンとオフのマクロは異なるものにしてください
   On-screen Alerts: '画面上の通知'
@@ -1778,6 +1783,7 @@ translations:
   Press Scan to search: スキャンを押して検索
   'Pressure:': '圧力:'
   Preview Sounds: サウンドをプレビュー
+  Previous: ''
   Price: 価格
   Primary: プライマリ
   Priming...: プライミング中...
@@ -1963,6 +1969,7 @@ translations:
   Refresh: 更新
   Refresh Interval: 更新間隔
   Refresh RFID: 'RFIDを再読み込み'
+  Relative vibration: ''
   Release all stepper motors. Position will be lost.: すべてのステッピングモーターを解放します。位置情報は失われます。
   Remaining (g): 残量 (g)
   Remaining Weight (g): 残量（g）

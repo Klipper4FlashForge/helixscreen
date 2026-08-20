@@ -3824,6 +3824,9 @@ void Application::init_action_prompt() {
             }
 
             // Only track layers while printing or paused
+            // RAW_PRINT_STATE_OK: layer tracking. There are no layers during a
+            // preparing window, and admitting one would derive a layer number
+            // from the pre-print block's own Z moves.
             auto job_state = get_printer_state().get_print_job_state();
             if (job_state != PrintJobState::PRINTING && job_state != PrintJobState::PAUSED) {
                 return;

@@ -202,7 +202,9 @@ translations:
     über Einstellungen > Über, falls er erneut auftritt.
   An unexpected printer error occurred.: Ein unerwarteter Druckerfehler ist aufgetreten.
   An update is available: Eine Aktualisierung ist verfügbar
+  Analyzing data...: ''
   Analyzing data... {}%: 'Analysiere Daten... {}%'
+  Analyzing data... {}s: ''
   Android logcat: Android-Logcat
   Animations: Animationen
   Anonymous data to help improve HelixScreen: Anonyme Daten zur Verbesserung von HelixScreen
@@ -1118,6 +1120,7 @@ translations:
   Firmware Restart: Firmware-Neustart
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: Firmware meldet keinen Bypass. Aktivieren Sie dies, wenn Sie das Filament direkt zum Extruder führen
   Firmware restarting...: Firmware wird neu gestartet...
+  Firmware saved X = Y's value; the measured X result was discarded: ''
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
@@ -1562,6 +1565,7 @@ translations:
   Measure and compare belt path frequencies: Riemenpfad-Frequenzen messen und vergleichen
   Measure belt path frequencies: Riemenpfad-Frequenzen messen
   Measured: Gemessen
+  Measured (shaper off): ''
   Measurement Failed: Messung fehlgeschlagen
   Measuring Path A... %d%%: Pfad A wird gemessen... %d%%
   Measuring Path B... %d%%: Pfad B wird gemessen... %d%%
@@ -1791,6 +1795,7 @@ translations:
   Objects: Objekte
   'Off': Aus
   'Off:': 'Aus:'
+  "Old setting on today's data: {} residual - now: {}": ''
   'On': Ein
   On and Off macros must be different: Ein- und Aus-Makros müssen unterschiedlich
     sein
@@ -1948,6 +1953,7 @@ translations:
   Press Scan to search: Scannen drücken zum Suchen
   'Pressure:': 'Druck:'
   Preview Sounds: Sounds vorhören
+  Previous: ''
   Price: Preis
   Primary: Primär
   Priming...: Primen...
@@ -2149,6 +2155,7 @@ translations:
   Refresh: Aktualisieren
   Refresh Interval: Aktualisierungsintervall
   Refresh RFID: 'RFID aktualisieren'
+  Relative vibration: ''
   Release all stepper motors. Position will be lost.: Alle Schrittmotoren freigeben.
     Position geht verloren.
   Remaining (g): Verbleibend (g)

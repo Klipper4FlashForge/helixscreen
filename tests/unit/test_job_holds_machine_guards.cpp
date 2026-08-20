@@ -82,7 +82,7 @@ void drive_lifecycle(PrinterState& ps, const char* wire_state,
 }
 
 PrintState published_lifecycle(PrinterState& ps) {
-    return static_cast<PrintState>(lv_subject_get_int(ps.get_print_lifecycle_subject()));
+    return ps.get_print_lifecycle();
 }
 
 /// AD5X-IFS backend installed as the active AMS backend, one RUNOUT-role

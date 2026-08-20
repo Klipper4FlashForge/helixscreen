@@ -69,6 +69,7 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     INIT_SUBJECT_STRING(print_progress_text, "0%", subjects_, register_xml);
     INIT_SUBJECT_STRING(print_filename, "", subjects_, register_xml);
     INIT_SUBJECT_STRING(print_state, "standby", subjects_, register_xml);
+    // RAW_PRINT_STATE_OK: declaring the wire subject itself.
     INIT_SUBJECT_INT(print_state_enum, static_cast<int>(PrintJobState::STANDBY), subjects_,
                      register_xml);
     INIT_SUBJECT_INT(print_outcome, static_cast<int>(PrintOutcome::NONE), subjects_, register_xml);
@@ -375,6 +376,10 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                     lv_subject_set_int(&print_outcome_, static_cast<int>(PrintOutcome::ERROR));
                     freeze_progress_display(false);
                 }
+                // RAW_PRINT_STATE_OK: this runs INSIDE the wire-state handler,
+                // one statement before publish_lifecycle_state() derives the
+                // lifecycle from it. Reading the derived value here would read
+                // the previous tick's answer.
                 // Starting a NEW print: clear the previous outcome and slicer state
                 // (only when transitioning TO PRINTING from a non-PAUSED state)
                 else if (new_state == PrintJobState::PRINTING &&
@@ -417,6 +422,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                 // PRINTING/PAUSED, so it's excluded here and the END_PRINT
                 // macro's farewell message (set after the COMPLETE clear above)
                 // survives.
+                // RAW_PRINT_STATE_OK: same handler, same reason as above.
                 if (new_state == PrintJobState::COMPLETE || new_state == PrintJobState::CANCELLED ||
                     new_state == PrintJobState::ERROR ||
                     (new_state == PrintJobState::STANDBY &&
@@ -1221,10 +1227,17 @@ void PrinterPrintState::set_print_in_progress_internal(bool in_progress) {
 // State queries
 // ============================================================================
 
+// RAW_PRINT_STATE_OK: the wire accessor itself. get_print_lifecycle() below is
+// the derived one, and each is paired with its own subject on purpose.
 PrintJobState PrinterPrintState::get_print_job_state() const {
     // Note: lv_subject_get_int is thread-safe (atomic read)
     return static_cast<PrintJobState>(
         lv_subject_get_int(const_cast<lv_subject_t*>(&print_state_enum_)));
+}
+
+PrintState PrinterPrintState::get_print_lifecycle() const {
+    return static_cast<PrintState>(
+        lv_subject_get_int(const_cast<lv_subject_t*>(&print_lifecycle_)));
 }
 
 bool PrinterPrintState::can_start_new_print() const {
@@ -1234,7 +1247,9 @@ bool PrinterPrintState::can_start_new_print() const {
         return false;
     }
 
-    // Check printer's physical state
+    // Check printer's physical state. RAW_PRINT_STATE_OK: the preparing window
+    // is already covered by the is_print_in_progress() early-return above, so
+    // this arm answers the narrower question of what the printer itself reports.
     PrintJobState state = get_print_job_state();
     // A new print can be started when printer is idle or previous print finished
     switch (state) {
@@ -1276,6 +1291,8 @@ void PrinterPrintState::reconcile_preparing() {
     if (preparing_job_.empty()) {
         return;
     }
+    // RAW_PRINT_STATE_OK: reconciliation requires an actually-running print -
+    // that is the whole point of reconciling a preparing claim against it.
     const auto job_state = static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
     if (job_state != PrintJobState::PRINTING) {
         return; // Only an actually-running print settles this.
