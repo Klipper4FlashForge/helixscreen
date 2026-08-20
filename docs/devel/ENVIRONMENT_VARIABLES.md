@@ -4,26 +4,27 @@ This document is a reference for the environment variables HelixScreen reads at 
 
 ## Quick Reference
 
-| Category | Count | Prefix |
-|----------|-------|--------|
-| [Display & Backend](#display--backend-configuration) | 22 | `HELIX_` |
-| [Touch Calibration](#touch-calibration) | 11 | `HELIX_TOUCH_*` / `HELIX_SCROLL_*` |
-| [G-Code Viewer](#g-code-viewer) | 4 | `HELIX_` |
-| [Bed Mesh](#bed-mesh) | 1 | `HELIX_` |
-| [Networking](#networking) | 1 | `HELIX_` |
-| [Mock & Testing](#mock--testing) | ~two dozen | `HELIX_MOCK_*` |
-| [UI Automation](#ui-automation) | 3 | `HELIX_AUTO_*` |
-| [Calibration](#calibration-auto-start) | 2 | `*_AUTO_START` |
-| [Development](#development) | 3 | `HELIX_` |
-| [Debugging](#debugging) | 8 | `HELIX_` |
-| [Deployment](#deployment) | 1 | `HELIX_` |
-| [Logging & Startup](#logging--startup) | 6 | `HELIX_LOG_*` |
-| [Process & Supervision](#process--supervision) | 7 | `HELIX_` / Standard Unix |
-| [Data Paths](#data-paths) | 13 | `HELIX_` / Standard Unix |
+| Category | Prefix |
+|----------|--------|
+| [Display & Backend](#display--backend-configuration) | `HELIX_` |
+| [Touch Calibration](#touch-calibration) | `HELIX_TOUCH_*` / `HELIX_SCROLL_*` |
+| [G-Code Viewer](#g-code-viewer) | `HELIX_` |
+| [Bed Mesh](#bed-mesh) | `HELIX_` |
+| [Networking](#networking) | `HELIX_` |
+| [Mock & Testing](#mock--testing) | `HELIX_MOCK_*` |
+| [UI Automation](#ui-automation) | `HELIX_AUTO_*` |
+| [Calibration](#calibration-auto-start) | `*_AUTO_START` |
+| [Development](#development) | `HELIX_` |
+| [Debugging](#debugging) | `HELIX_` |
+| [Deployment](#deployment) | `HELIX_` |
+| [Logging & Startup](#logging--startup) | `HELIX_LOG_*` |
+| [Process & Supervision](#process--supervision) | `HELIX_` / Standard Unix |
+| [Data Paths](#data-paths) | `HELIX_` / Standard Unix |
 
-Counts are per-section entry counts. `HELIX_DEBUG_TOUCH` is documented in both
-[Touch Calibration](#touch-calibration) and [Debugging](#debugging) and is counted in both.
-[Shell Script Variables](#shell-script-variables) are launcher/script-only and are not counted here.
+Per-section counts are deliberately omitted — they rotted between almost every
+release. `HELIX_DEBUG_TOUCH` is documented in both
+[Touch Calibration](#touch-calibration) and [Debugging](#debugging).
+[Shell Script Variables](#shell-script-variables) are launcher/script-only.
 
 ---
 
