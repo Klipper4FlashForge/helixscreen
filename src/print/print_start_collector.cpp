@@ -121,6 +121,7 @@ void PrintStartCollector::start() {
         pre_mesh_points_.reset();
         pre_mesh_last_probe_time_ = {};
         current_mesh_message_.clear();
+        bed_mesh_present_ = false;
         temps_ready_time_ = {};
         silent_progression_idx_ = 0;
         real_signal_seen_.store(false, std::memory_order_relaxed);
@@ -156,6 +157,11 @@ void PrintStartCollector::start() {
                              std::memory_order_relaxed);
     last_remaining_ = 0;
     fallback_completion_ = false;
+
+    // Position inference starts with a clean slate and a fresh sample clock
+    position_classifier_.reset();
+    last_position_activity_ = helix::PositionActivity::NONE;
+    position_clock_start_ = std::chrono::steady_clock::now();
 
     // Reset thermal rate models with current temperatures
     {
@@ -337,6 +343,7 @@ void PrintStartCollector::reset() {
         pre_mesh_points_.reset();
         pre_mesh_last_probe_time_ = {};
         current_mesh_message_.clear();
+        bed_mesh_present_ = false;
         temps_ready_time_ = {};
         silent_progression_idx_ = 0;
         real_signal_seen_.store(false, std::memory_order_relaxed);
@@ -397,6 +404,97 @@ void PrintStartCollector::note_priming() {
     update_phase(PrintStartPhase::PURGING, lv_tr("Priming..."));
 }
 
+void PrintStartCollector::note_bed_mesh_presence(bool present) {
+    if (!active_.load()) {
+        return;
+    }
+    bool leveling_begins = false;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        const bool was_present = bed_mesh_present_;
+        bed_mesh_present_ = present;
+        // The present→absent edge while CLEANING: the macro has finished its
+        // wipe and moved into the probing work. Clears arriving before
+        // CLEANING are the rough G28's own mesh clear and say nothing about
+        // which step is running.
+        leveling_begins = was_present && !present && current_phase_ == PrintStartPhase::CLEANING;
+        spdlog::debug("[PrintStartCollector] bed-mesh presence: present={} was={} phase={} "
+                      "fires={}",
+                      present, was_present, static_cast<int>(current_phase_), leveling_begins);
+    }
+    if (leveling_begins) {
+        spdlog::info("[PrintStartCollector] bed mesh cleared during cleaning → leveling");
+        update_phase(PrintStartPhase::BED_MESH, lv_tr("Bed Leveling..."));
+    }
+}
+
+void PrintStartCollector::note_mesh_bounds(float x_min, float x_max, float y_min, float y_max) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    position_classifier_.set_bounds(x_min, x_max, y_min, y_max);
+}
+
+void PrintStartCollector::note_position_sample(float x_mm, float y_mm, float z_mm) {
+    if (!active_.load()) {
+        return;
+    }
+    helix::PositionActivity activity;
+    helix::PrintStartPhase phase;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!profile_ || !profile_->position_signals()) {
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        const auto ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - position_clock_start_)
+                .count();
+        position_classifier_.note_position(x_mm, y_mm, z_mm, static_cast<uint64_t>(ms));
+        activity = position_classifier_.activity();
+        phase = current_phase_;
+        if (activity == last_position_activity_) {
+            return; // same verdict — nothing to publish
+        }
+        last_position_activity_ = activity;
+        spdlog::debug("[PrintStartCollector] position activity: {} (x={:.1f} y={:.1f} z={:.1f})",
+                      static_cast<int>(activity), x_mm, y_mm, z_mm);
+    }
+
+    // Map the verdict onto the display. Message-only refinements keep the
+    // phase (and its progress weight) untouched; only the sweep march
+    // promotes the phase. Real gcode_response signals always outrank these —
+    // the classifier's verdicts only matter while the console is quiet.
+    // Probing verdicts publish during ANY pre-mesh collection phase: K1-class
+    // firmware interleaves heating with rough-G28 centre probes, and the
+    // bed-mesh flap may already have promoted the phase by corner-tour time
+    // (the label is then moot, not wrong).
+    const bool before_mesh = phase != PrintStartPhase::BED_MESH &&
+                             phase != PrintStartPhase::PURGING &&
+                             phase != PrintStartPhase::COMPLETE;
+    switch (activity) {
+    case helix::PositionActivity::CENTER_PROBE:
+        if (before_mesh) {
+            spdlog::info("[PrintStartCollector] position: centre Z probes → \"Probing Z...\"");
+            update_phase(phase, lv_tr("Probing Z..."));
+        }
+        break;
+    case helix::PositionActivity::CORNER_PROBE:
+        if (before_mesh) {
+            spdlog::info("[PrintStartCollector] position: corner tour → \"Checking Bed Mesh...\"");
+            update_phase(phase, lv_tr("Checking Bed Mesh..."));
+        }
+        break;
+    case helix::PositionActivity::RASTER:
+        if (before_mesh) {
+            spdlog::info("[PrintStartCollector] position: sweep march → bed mesh");
+            update_phase(PrintStartPhase::BED_MESH, lv_tr("Bed Leveling..."));
+        }
+        break;
+    case helix::PositionActivity::WIPE:
+    case helix::PositionActivity::NONE:
+        break; // wipe already has its console marker; silence needs no label
+    }
+}
+
 void PrintStartCollector::check_fallback_completion() {
     if (!active_.load() || !fallbacks_enabled_.load()) {
         return;
@@ -438,19 +536,28 @@ void PrintStartCollector::check_fallback_completion() {
     // Recompute predicted weights when heater targets increase from 0.
     // This handles macros that heat bed first, then issue M109 later —
     // at start() time the nozzle target is 0, so HEATING_NOZZLE gets no weight.
-    // Only recompute on 0→positive transitions to avoid churn from temporary
-    // M104 S0 (nozzle cooldown for probe cleaning) that would remove the
-    // heating phase and cause progress regression.
+    // Also recompute on a substantial RISE (e.g. staged heating: probe temp,
+    // then print temp), but never on decreases — temporary M104 S0 (nozzle
+    // cooldown for probe cleaning) must not remove the heating phase and
+    // cause progress regression.
     {
         int new_ext = helix::ui::temperature::deci_to_degrees(ext_target);
         int new_bed = helix::ui::temperature::deci_to_degrees(bed_target);
+        constexpr int TARGET_RISE_RECOMPUTE_DEGREES = 15;
         bool ext_newly_set = (weights_ext_target_ == 0 && new_ext > 0);
         bool bed_newly_set = (weights_bed_target_ == 0 && new_bed > 0);
-        if (ext_newly_set || bed_newly_set) {
+        bool ext_rose = new_ext > weights_ext_target_ + TARGET_RISE_RECOMPUTE_DEGREES;
+        bool bed_rose = new_bed > weights_bed_target_ + TARGET_RISE_RECOMPUTE_DEGREES;
+        if (ext_newly_set || bed_newly_set || ext_rose || bed_rose) {
             spdlog::info("[PrintStartCollector] Heater targets changed "
                          "(ext: {}→{}°C, bed: {}→{}°C), recomputing weights",
                          weights_ext_target_, new_ext, weights_bed_target_, new_bed);
             compute_predicted_weights();
+            // The ETA's inputs changed, not just its noise: release the
+            // monotonic anchor so the next publish can report the corrected
+            // estimate instead of clamping it back to the target-less
+            // provisional one (observed frozen at 215s for a 369s prep).
+            last_remaining_ = 0;
         }
     }
 
@@ -724,10 +831,12 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
         return; // Signal handled
     }
 
-    // Check for K2/CFS-specific gcode tag stream (purge percent, box filament load).
-    // These tags are emitted by Creality firmware and carry per-step progress that
-    // universal heuristics can't infer. Falls through on stock Klipper printers.
-    if (check_k2_cfs_signal(line)) {
+    // Check for K2/CFS-specific gcode tag stream (purge percent, box filament
+    // load). These tags are emitted by Creality firmware and carry per-step
+    // progress that universal heuristics can't infer. Only profiles that
+    // declare cfs_signals get the matchers — the vocabulary is vendor-specific
+    // and must not fire on another printer's coincidental "percent"+"num:".
+    if (profile_ && profile_->cfs_signals() && check_k2_cfs_signal(line)) {
         return; // Signal handled
     }
 
@@ -746,6 +855,13 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
         PrintStartProfile::MatchResult match;
         if (profile_->try_match_signal(line, match)) {
             real_signal_seen_.store(true, std::memory_order_relaxed);
+            // Profile messages are English tags — resolve through the pack.
+            // Runs on the WebSocket thread like the ~15 pre-existing lv_tr
+            // sites in this collector (update_phase's built-in labels); the
+            // selected_lang swap race this shares with them is the documented
+            // #1219 family and needs a collector-wide marshal, not a
+            // per-call-site fix.
+            match.message = lv_tr(match.message.c_str());
             if (profile_->progress_mode() == PrintStartProfile::ProgressMode::SEQUENTIAL) {
                 update_phase(match.phase, match.message, match.progress);
             } else {
@@ -1008,6 +1124,16 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
                     }
                     state_.set_print_start_state(PrintStartPhase::BED_MESH, msg_buf, progress);
                 }
+
+                // The line is consumed as mesh data whether or not it added a
+                // point — a repeat sample of the same point is still mesh
+                // output. It must not reach check_phase_patterns: profiles
+                // whose BED_MESH pattern matches "probe at" (creality_k1)
+                // would re-announce the phase with the profile's label, which
+                // is treated as a sub-phase change and wipes the probe
+                // counters — including the denominator learned on entry —
+                // mid-sweep. Mirrors the "Probing point" branch above.
+                return;
             }
         }
     }
@@ -1030,6 +1156,9 @@ void PrintStartCollector::check_phase_patterns(const std::string& line) {
     if (profile_->try_match_pattern(line, match)) {
         real_signal_seen_.store(true, std::memory_order_relaxed);
         note_activity();
+        // match.message arrives already translated: try_match_pattern
+        // resolves the template through the loaded pack before substituting
+        // $1 capture groups.
         // Update when this is a NEW phase, OR when it's a BED_MESH sub-phase
         // *message* change while already in BED_MESH. The latter is what lets a
         // mesh-start signal (Snapmaker U1 "// z offset:") relabel the display

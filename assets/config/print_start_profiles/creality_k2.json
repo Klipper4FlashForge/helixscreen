@@ -3,6 +3,7 @@
   "description": "Print start patterns for Creality K2 series (K2, K2 Pro, K2 Plus) with CFS",
   "progress_mode": "weighted",
   "adaptive_meshing": true,
+  "cfs_signals": true,
   "signal_formats": [],
   "response_patterns": [
     {

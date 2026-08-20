@@ -238,6 +238,7 @@ translations:
   Auto-probe or manually check screw heights: Sondagem automática ou verificação manual
     da altura dos parafusos
   Auto-render video: Renderizar vídeo automaticamente
+  'Auto-tuning Shapers...': ''
   Auto-uninstall only works on local Moonraker: A desinstalação automática só funciona
     no Moonraker local
   Automatic: Automático
@@ -269,7 +270,9 @@ translations:
   Bed Heater: Aquecedor da Mesa
   Bed Level: Nível da Mesa
   Bed Leveling: Nivelamento da Mesa
+  'Bed Leveling...': ''
   Bed Mesh: Malha da Mesa
+  'Bed Mesh Complete': ''
   Bed Mesh Render: Renderização da Malha da Mesa
   Bed Mesh...: Malha da Mesa...
   Bed Moves: Mesa se move
@@ -281,6 +284,7 @@ translations:
   Bed Temperature: Temperatura da Mesa
   Bed is Level!: Mesa Nivelada!
   Bed mesh operation timed out: Malha da mesa — tempo esgotado
+  'Bed mesh...': ''
   Bed target set to {}°C: Mesa configurada para {}°C
   Bed temp must be 0-200°C: A temperatura da mesa deve ser 0-200°C
   Bed warming timed out: Aquecimento da mesa — tempo esgotado
@@ -377,6 +381,8 @@ translations:
   Calibrate, tune jitter and scroll feel: Calibrar, ajustar tremulação e sensação
     de rolagem
   Calibrated: Calibrado
+  'Calibrating Probe...': ''
+  'Calibrating bed mesh...': ''
   Calibrating {} axis...: 'Calibrando o eixo {}...'
   Calibrating...: Calibrando...
   Calibration & Tools: Calibração e Ferramentas
@@ -486,6 +492,7 @@ translations:
   Checking: Verificando
   Checking Spoolman server...: Verificando servidor Spoolman...
   Checking accelerometer...: Verificando acelerômetro...
+  'Checking extruders...': ''
   Checking filament...: Verificando filamento...
   Checking for plugin...: Verificando plugin...
   Checking for webcam...: Verificando webcam...
@@ -512,6 +519,7 @@ translations:
   Clean Brush: 'Limpar escova'
   Clean Nozzle: Limpar Bico
   Cleaning Nozzle...: Limpando bocal...
+  'Cleaning nozzle...': ''
   Clear: Limpar
   Clear All: Limpar Tudo
   Clear All Events: Limpar Todos os Eventos
@@ -635,6 +643,7 @@ translations:
   Cooling: Resfriamento
   Cooling Tube Length: 'Comprimento do tubo de resfriamento'
   Cooling Tube Retraction: 'Retração do tubo de resfriamento'
+  'Cooling for probing...': ''
   Copied to clipboard!: Copiado para a área de transferência!
   Copy Command: Copiar Comando
   Copy failed - use SSH manually: Falha ao copiar - use SSH manualmente
@@ -671,6 +680,7 @@ translations:
   Create a 4-6 digit security PIN: Crie um PIN de segurança de 4-6 dígitos
   Create backup of %s before applying: Criar backup de %s antes de aplicar
   Create video when print completes: Criar vídeo quando a impressão terminar
+  'Creating bed mesh...': ''
   Creating spool...: Criando carretel...
   'Critical hardware missing: {}': 'Hardware crítico ausente: {}'
   Current / Target: Atual / Alvo
@@ -732,6 +742,7 @@ translations:
   Deploy: Implantar
   Describe the issue (optional): Descreva o problema (opcional)
   Detailed: Detalhado
+  'Detecting plate...': ''
   Detecting printer type...: Detectando tipo de impressora...
   Detecting...: Detectando...
   Detection Length: Comprimento de Detecção
@@ -928,6 +939,7 @@ translations:
   Extruder heats automatically based on material: O extrusor aquece automaticamente
     com base no material
   Extruder to Nozzle: 'Extrusor ao bico'
+  'Extruding prime line...': ''
   FAILED: FALHOU
   FILAMENTS: FILAMENTOS
   FILTERS: FILTROS
@@ -1099,6 +1111,7 @@ translations:
   Fine: Fino
   Fine-Tune: Ajuste Fino
   Finish: Finalizar
+  'Finishing clean...': ''
   Finishing up...: Finalizando...
   Firmware Restart: Reiniciar Firmware
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: O
@@ -1115,6 +1128,7 @@ translations:
   Flow Rate: Taxa de Fluxo
   'Flow change failed: {}': 'Falha ao alterar fluxo: {}'
   Flowguard: Proteção de Fluxo
+  'Flushing Filament...': ''
   Flying Toasters: Torradeiras Voadoras
   Follow active tool: Seguir ferramenta ativa
   Follow graph screen: Acompanhar tela do gráfico
@@ -1194,7 +1208,13 @@ translations:
   Heating: Aquecendo
   Heating (%d°C below minimum): Aquecendo (%d°C abaixo do mínimo)
   Heating Bed...: Aquecendo mesa...
+  'Heating Chamber...': ''
   Heating Nozzle...: Aquecendo bocal...
+  'Heating bed to $1°C...': ''
+  'Heating bed...': ''
+  'Heating chamber...': ''
+  'Heating nozzle to $1°C...': ''
+  'Heating nozzle...': ''
   Heating to %d°C... %.0f°C: Aquecendo a %d°C... %.0f°C
   Heating to {}°C before {}...: Aquecendo a {}°C antes de {}...
   Heating to {}°C for {}...: Aquecendo a {}°C por {}...
@@ -1230,6 +1250,7 @@ translations:
   Homing Y...: Posicionando Y...
   Homing Z...: Posicionando Z...
   Homing all axes...: Posicionando todos os eixos...
+  'Homing axes...': ''
   'Homing failed: ': 'Falha ao referenciar: '
   'Homing failed: {}': 'Falha no homing: {}'
   Homing first...: Posicionando primeiro...
@@ -1285,6 +1306,7 @@ translations:
   Info: Info
   Initial speed for filament unloading: 'Velocidade inicial para o descarregamento do filamento'
   Initialized: Inicializado
+  'Initializing print...': ''
   Initializing...: Inicializando...
   Initiate blade change procedure: 'Iniciar o procedimento de troca de lâmina'
   Input: Entrada
@@ -1292,6 +1314,7 @@ translations:
   Input Shaper Help: Ajuda do Input Shaper
   Input Shaping: Input Shaping
   Input shaper calibration sensors: Sensores de calibração do input shaper
+  'Input shaper calibration...': ''
   Input shaper settings applied!: Configurações do input shaper aplicadas!
   Input shaping reduces ringing and ghosting artifacts caused by printer vibrations during fast movements.: O
     input shaping reduz artefatos de ringing e ghosting causados por vibrações da
@@ -1301,6 +1324,7 @@ translations:
   'Input: ': 'Entrada: '
   InputShaper: InputShaper
   Insert filament before resuming: Insira filamento antes de retomar
+  'Inspecting bed...': ''
   Install: Instalar
   Install HelixPrint Plugin: Instalar Plugin HelixPrint
   Install Older Version?: 'Instalar uma versão anterior?'
@@ -1767,6 +1791,7 @@ translations:
   Nozzle Temperature: Temperatura do Bico
   Nozzle Temperatures: 'Temperaturas dos bicos'
   Nozzle Temps: Temps do bico
+  'Nozzle clean complete': ''
   Nozzle did not reach {}°C — {} cancelled: O bico não atingiu {}°C — {} cancelado
   Nozzle min cannot exceed max: O mínimo do bico não pode exceder o máximo
   Nozzle target set to {}°C: Bico configurado para {}°C
@@ -1923,6 +1948,7 @@ translations:
   Power Devices: Dispositivos de energia
   Power off the printer or screen: Desligar a impressora ou a tela
   'Pre-print command failed: {}': 'Falha no comando pré-impressão: {}'
+  'Pre-print homing...': ''
   Preheat: 'Pré-aquecer'
   Preheat Macro: Macro de Pré-aquecimento
   Preheat PLA: Pré-aquecer PLA
@@ -1930,9 +1956,12 @@ translations:
   'Preheat: T{} + bed set': 'Pré-aquecer: T{} + mesa configurada'
   'Preheat: all {} tools + bed set': 'Pré-aquecer: todas as {} ferramentas + mesa
     configurada'
+  'Prepared': ''
   Preparing: Preparando
   Preparing Print: Preparando Impressão
   Preparing Print...: Preparando impressão...
+  'Preparing to Print...': ''
+  'Preparing to clean...': ''
   Preparing...: Preparando...
   Preset: Predefinição
   'Preset ID: {}': 'ID da predefinição: {}'
@@ -1944,6 +1973,7 @@ translations:
   Previous: Anterior
   Price: Preço
   Primary: Primário
+  'Priming nozzle...': ''
   Priming...: Preparando...
   Print: Imprimir
   Print Anyway: Imprimir Mesmo Assim
@@ -1970,9 +2000,13 @@ translations:
   Print Was Terminated: A impressão foi terminada
   Print cancelled: Impressão cancelada
   Print did not start: A impressão não iniciou
+  Print cancelled: ''
+  'Print complete': ''
+  Print did not start: ''
   Print didn't start — printer may be busy or offline (B3 polls={}, status=0x{:02X}, error=0x{:02X}): A
     impressão não iniciou — a impressora pode estar ocupada ou offline (B3 polls={},
     status=0x{:02X}, error=0x{:02X})
+  'Print ending...': ''
   Print error: Erro de impressão
   Print failed: Impressão falhou
   Print history statistics: 'Estatísticas do histórico de impressão'
@@ -2045,9 +2079,12 @@ translations:
   Probe controls, accuracy test, and settings: Controles de sonda, teste de precisão
     e configurações
   Probing Bed Mesh: Sondando Malha da Mesa
+  'Probing Bed Mesh...': ''
   Probing Bed Screws...: Sondando Parafusos da Mesa...
   Probing Bed...: Sondando Mesa...
   Probing Failed: Sondagem Falhou
+  'Probing Z...': ''
+  'Checking Bed Mesh...': ''
   Probing point {} of {}: 'Ponto de sondagem {} de {}'
   Probing... ({} points): 'Sondando... ({} pontos)'
   Proceed: Prosseguir
@@ -2144,6 +2181,7 @@ translations:
   Refresh Interval: Intervalo de Atualização
   Refresh RFID: 'Atualizar RFID'
   Relative vibration: Vibração relativa
+  'Reheating...': ''
   Release all stepper motors. Position will be lost.: Liberar todos os motores de
     passo. A posição será perdida.
   Remaining (g): Restante (g)
@@ -2165,6 +2203,7 @@ translations:
   Render Now: Renderizar Agora
   Rendering timelapse...: Renderizando timelapse...
   Replay Welcome Tour: Repetir Tour de Boas-Vindas
+  'Replenishing filament...': ''
   Report saved to crash_report.txt: Relatório salvo em crash_report.txt
   Reprint: Reimprimir
   Reprint Last: Reimprimir última
@@ -2222,6 +2261,7 @@ translations:
   Resume interrupted print?: Retomar impressão interrompida?
   Resume macro not configured: Macro de retomada não configurado
   Resume preparation failed: Falha na preparação para retomar
+  'Resuming print...': ''
   Resuming...: Retomando...
   Retract: Retrair
   Retract Distance: Distância de Retração
@@ -2552,6 +2592,8 @@ translations:
   Starting Print...: Iniciando impressão...
   Starting download...: Iniciando download...
   Starting measurement...: Iniciando medição...
+  'Starting nozzle clean...': ''
+  'Starting print...': ''
   Starting...: Iniciando...
   Startup Brightness: Brilho na inicialização
   Startup, auto-control, and macro devices: Inicialização, controle automático e dispositivos
@@ -2934,6 +2976,7 @@ translations:
   Use printer type to select image: Usar tipo de impressora para selecionar imagem
   VM Peak: Pico de VM
   VM Size: Tamanho de VM
+  'Validating bed mesh...': ''
   Value must be between {:.0f} and {:.0f}: O valor deve estar entre {:.0f} e {:.0f}
   Values must not be negative: Os valores não podem ser negativos
   Velocity and acceleration limits: Limites de velocidade e aceleração
@@ -2944,6 +2987,7 @@ translations:
   Verify: Verificar
   Verifying SHA256 checksum...: Verificando checksum SHA256...
   Verifying download...: Verificando download...
+  'Verifying file...': ''
   Verifying timelapse plugin...: Verificando plugin de timelapse...
   Verifying...: Verificando...
   Version: Versão

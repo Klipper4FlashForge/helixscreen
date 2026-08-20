@@ -233,6 +233,7 @@ translations:
   Auto-probe or manually check screw heights: Автозондирование или ручная проверка
     высоты винтов
   Auto-render video: Автоматический рендер видео
+  'Auto-tuning Shapers...': ''
   Auto-uninstall only works on local Moonraker: Автоудаление работает только с локальным
     Moonraker
   Automatic: Автоматический
@@ -264,7 +265,9 @@ translations:
   Bed Heater: Нагреватель стола
   Bed Level: Уровень стола
   Bed Leveling: Выравнивание стола
+  'Bed Leveling...': ''
   Bed Mesh: Сетка стола
+  'Bed Mesh Complete': ''
   Bed Mesh Render: Рендер сетки стола
   Bed Mesh...: Сетка стола...
   Bed Moves: Стол движется
@@ -276,6 +279,7 @@ translations:
   Bed Temperature: Температура стола
   Bed is Level!: Стол выровнен!
   Bed mesh operation timed out: Сетка стола — время ожидания истекло
+  'Bed mesh...': ''
   Bed target set to {}°C: Целевая температура стола {}°C
   Bed temp must be 0-200°C: Температура стола должна быть 0-200°C
   Bed warming timed out: Нагрев стола — время ожидания истекло
@@ -372,6 +376,8 @@ translations:
   Calibrate, tune jitter and scroll feel: Калибровка, настройка дрожания и поведения
     прокрутки
   Calibrated: Откалиброван
+  'Calibrating Probe...': ''
+  'Calibrating bed mesh...': ''
   Calibrating {} axis...: 'Калибровка оси {}...'
   Calibrating...: Калибровка...
   Calibration & Tools: Калибровка и инструменты
@@ -478,6 +484,7 @@ translations:
   Checking: Проверка
   Checking Spoolman server...: Проверка сервера Spoolman...
   Checking accelerometer...: Проверка акселерометра...
+  'Checking extruders...': ''
   Checking filament...: Проверка филамента...
   Checking for plugin...: Поиск плагина...
   Checking for webcam...: Проверка веб-камеры...
@@ -505,6 +512,7 @@ translations:
   Clean Brush: 'Очистить щётку'
   Clean Nozzle: Очистить сопло
   Cleaning Nozzle...: Очистка сопла...
+  'Cleaning nozzle...': ''
   Clear: Очистить
   Clear All: Очистить всё
   Clear All Events: Очистить все события
@@ -623,6 +631,7 @@ translations:
   Cooling: Охлаждение
   Cooling Tube Length: 'Длина трубки охлаждения'
   Cooling Tube Retraction: 'Ретракция в трубке охлаждения'
+  'Cooling for probing...': ''
   Copied to clipboard!: Скопировано в буфер обмена!
   Copy Command: Копировать команду
   Copy failed - use SSH manually: Ошибка копирования - используйте SSH вручную
@@ -658,6 +667,7 @@ translations:
   Create a 4-6 digit security PIN: Создайте PIN-код из 4-6 цифр
   Create backup of %s before applying: Создать резервную копию %s перед применением
   Create video when print completes: Создать видео после завершения печати
+  'Creating bed mesh...': ''
   Creating spool...: Создание катушки...
   'Critical hardware missing: {}': 'Отсутствует критическое оборудование: {}'
   Current / Target: Текущая / Цель
@@ -719,6 +729,7 @@ translations:
   Deploy: Развернуть
   Describe the issue (optional): Опишите проблему (необязательно)
   Detailed: Подробно
+  'Detecting plate...': ''
   Detecting printer type...: Определение типа принтера...
   Detecting...: Обнаружение...
   Detection Length: Длина обнаружения
@@ -914,6 +925,7 @@ translations:
   Extruder heats automatically based on material: Экструдер нагревается автоматически
     в зависимости от материала
   Extruder to Nozzle: 'Экструдер до сопла'
+  'Extruding prime line...': ''
   FAILED: ОШИБКА
   FILAMENTS: ФИЛАМЕНТЫ
   FILTERS: ФИЛЬТРЫ
@@ -1085,6 +1097,7 @@ translations:
   Fine: Точно
   Fine-Tune: Тонкая настройка
   Finish: Завершить
+  'Finishing clean...': ''
   Finishing up...: Завершение...
   Firmware Restart: Перезапуск прошивки
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: Прошивка не сообщает о байпасе. Включите, если филамент подаётся прямо в экструдер.
@@ -1099,6 +1112,7 @@ translations:
   Flow Rate: Множитель потока
   'Flow change failed: {}': 'Ошибка изменения потока: {}'
   Flowguard: Flowguard
+  'Flushing Filament...': ''
   Flying Toasters: Летающие тостеры
   Follow active tool: Следовать активному инструменту
   Follow graph screen: Следовать экрану графика
@@ -1177,7 +1191,13 @@ translations:
   Heating: Нагрев
   Heating (%d°C below minimum): Нагрев (%d°C ниже минимума)
   Heating Bed...: Нагрев стола...
+  'Heating Chamber...': ''
   Heating Nozzle...: Нагрев сопла...
+  'Heating bed to $1°C...': ''
+  'Heating bed...': ''
+  'Heating chamber...': ''
+  'Heating nozzle to $1°C...': ''
+  'Heating nozzle...': ''
   Heating to %d°C... %.0f°C: Нагрев до %d°C... %.0f°C
   Heating to {}°C before {}...: Нагрев до {}°C перед «{}»...
   Heating to {}°C for {}...: Нагрев до {}°C в течение {}...
@@ -1210,6 +1230,7 @@ translations:
   Homing Y...: Парковка Y...
   Homing Z...: Парковка Z...
   Homing all axes...: Парковка всех осей...
+  'Homing axes...': ''
   'Homing failed: ': 'Парковка не удалась: '
   'Homing failed: {}': 'Ошибка парковки: {}'
   Homing first...: Парковка...
@@ -1265,6 +1286,7 @@ translations:
   Info: Инфо
   Initial speed for filament unloading: 'Начальная скорость выгрузки филамента'
   Initialized: Инициализировано
+  'Initializing print...': ''
   Initializing...: Инициализация...
   Initiate blade change procedure: 'Начать процедуру замены лезвия'
   Input: Ввод
@@ -1272,6 +1294,7 @@ translations:
   Input Shaper Help: Справка по Input Shaper
   Input Shaping: Компенсация вибраций
   Input shaper calibration sensors: Датчики калибровки Input Shaper'а
+  'Input shaper calibration...': ''
   Input shaper settings applied!: Настройки компенсатора вибраций применены!
   Input shaping reduces ringing and ghosting artifacts caused by printer vibrations during fast movements.: Компенсация
     вибраций уменьшает артефакты звона и двоения, вызванные вибрациями принтера при
@@ -1281,6 +1304,7 @@ translations:
   'Input: ': 'Вход: '
   InputShaper: InputShaper
   Insert filament before resuming: Вставьте филамент перед возобновлением
+  'Inspecting bed...': ''
   Install: Установить
   Install HelixPrint Plugin: Установить плагин HelixPrint
   Install Older Version?: 'Установить более старую версию?'
@@ -1743,6 +1767,7 @@ translations:
   Nozzle Temperature: Температура сопла
   Nozzle Temperatures: 'Температуры сопел'
   Nozzle Temps: Темп. сопел
+  'Nozzle clean complete': ''
   Nozzle did not reach {}°C — {} cancelled: Сопло не нагрелось до {}°C — «{}» отменено
   Nozzle min cannot exceed max: Минимум сопла не может превышать максимум
   Nozzle target set to {}°C: Целевая температура сопла {}°C
@@ -1898,15 +1923,19 @@ translations:
   Power Devices: Устройства питания
   Power off the printer or screen: Выключить принтер или экран
   'Pre-print command failed: {}': 'Ошибка команды перед печатью: {}'
+  'Pre-print homing...': ''
   Preheat: 'Преднагрев'
   Preheat Macro: Макрос преднагрева
   Preheat PLA: Преднагрев PLA
   Preheat cancelled: Предварительный нагрев отменён
   'Preheat: T{} + bed set': 'Преднагрев: T{} + стол заданы'
   'Preheat: all {} tools + bed set': 'Преднагрев: все {} инструменты + стол заданы'
+  'Prepared': ''
   Preparing: Подготовка
   Preparing Print: Подготовка печати
   Preparing Print...: Подготовка печати...
+  'Preparing to Print...': ''
+  'Preparing to clean...': ''
   Preparing...: Подготовка...
   Preset: Пресет
   'Preset ID: {}': 'ID пресета: {}'
@@ -1918,6 +1947,7 @@ translations:
   Previous: Прежняя
   Price: Цена
   Primary: Основной
+  'Priming nozzle...': ''
   Priming...: Грунтование...
   Print: Печать
   Print Anyway: Всё равно печатать
@@ -1944,9 +1974,13 @@ translations:
   Print Was Terminated: Печать была прекращена
   Print cancelled: Печать отменена
   Print did not start: Печать не началась
+  Print cancelled: ''
+  'Print complete': ''
+  Print did not start: ''
   Print didn't start — printer may be busy or offline (B3 polls={}, status=0x{:02X}, error=0x{:02X}): Печать
     не началась — принтер может быть занят или не в сети (опросы B3={}, статус=0x{:02X},
     ошибка=0x{:02X})
+  'Print ending...': ''
   Print error: Ошибка печати
   Print failed: Печать не удалась
   Print history statistics: 'Статистика истории печати'
@@ -2018,9 +2052,12 @@ translations:
   Probe controls, accuracy test, and settings: Управление датчиком, тест точности
     и настройки
   Probing Bed Mesh: Зондирование сетки стола
+  'Probing Bed Mesh...': ''
   Probing Bed Screws...: Проверка винтов стола...
   Probing Bed...: Зондирование стола...
   Probing Failed: Ошибка зондирования
+  'Probing Z...': ''
+  'Checking Bed Mesh...': ''
   Probing point {} of {}: 'Точка замера {} из {}'
   Probing... ({} points): 'Замер... ({} точек)'
   Proceed: Продолжить
@@ -2116,6 +2153,7 @@ translations:
   Refresh Interval: Интервал обновления
   Refresh RFID: 'Обновить RFID'
   Relative vibration: Относительная вибрация
+  'Reheating...': ''
   Release all stepper motors. Position will be lost.: Отпустить все шаговые моторы.
     Позиция будет потеряна.
   Remaining (g): Осталось (г)
@@ -2137,6 +2175,7 @@ translations:
   Render Now: Отрендерить сейчас
   Rendering timelapse...: Рендеринг таймлапса...
   Replay Welcome Tour: Повторить приветственный тур
+  'Replenishing filament...': ''
   Report saved to crash_report.txt: Отчёт сохранён в crash_report.txt
   Reprint: Повторить печать
   Reprint Last: Перепечатать последнюю
@@ -2193,6 +2232,7 @@ translations:
   Resume interrupted print?: Продолжить прерванную печать?
   Resume macro not configured: Макрос возобновления не настроен
   Resume preparation failed: Не удалось подготовиться к возобновлению
+  'Resuming print...': ''
   Resuming...: Возобновление...
   Retract: Ретракция
   Retract Distance: Расстояние ретракта
@@ -2517,6 +2557,8 @@ translations:
   Starting Print...: Запуск печати...
   Starting download...: Начало загрузки...
   Starting measurement...: Запуск измерения...
+  'Starting nozzle clean...': ''
+  'Starting print...': ''
   Starting...: Запуск...
   Startup Brightness: Яркость при запуске
   Startup, auto-control, and macro devices: Запуск, автоуправление и макро-устройства
@@ -2888,6 +2930,7 @@ translations:
   Use printer type to select image: Использовать тип принтера для выбора изображения
   VM Peak: Пик VM
   VM Size: Размер VM
+  'Validating bed mesh...': ''
   Value must be between {:.0f} and {:.0f}: Значение должно быть от {:.0f} до {:.0f}
   Values must not be negative: Значения не должны быть отрицательными
   Velocity and acceleration limits: Ограничения скорости и ускорения
@@ -2898,6 +2941,7 @@ translations:
   Verify: Проверить
   Verifying SHA256 checksum...: Проверка контрольной суммы SHA256...
   Verifying download...: Проверка загрузки...
+  'Verifying file...': ''
   Verifying timelapse plugin...: Проверка плагина таймлапса...
   Verifying...: Проверка...
   Version: Версия

@@ -895,6 +895,17 @@ Boot the mock printer straight into an active print so print-gated features can 
 | **Default** | unset (no auto-print) |
 | **File** | `src/application/moonraker_manager.cpp` (sets `mock_auto_start_print`); consumed in `src/api/moonraker_client_mock.cpp` |
 
+### `HELIX_MOCK_REPLAY`
+
+Replay a captured print-start sequence through the mock client's real dispatch paths (`notify_gcode_response`, `notify_status_update`) so the full observer chain — manager wiring, MoonrakerAPI callbacks, collector — runs against real data with no printer attached. Pair with `HELIX_MOCK_PRINTER=k1` (the K1C capture's persona) and `--sim-speed` to fast-forward: a 386s capture replays in ~7s at `--sim-speed 60`.
+
+| Property | Value |
+|----------|-------|
+| **Values** | path to a replay script JSON (see `tests/fixtures/k1c_flowrate_replay.json`) |
+| **Default** | unset (no replay) |
+| **File** | `src/application/moonraker_manager.cpp` (env read); `src/api/moonraker_client_mock.cpp` (`arm_event_replay`) |
+| **Generating** | `scripts/extract_mock_replay.py` — extracts a script from a klippy.log + app log capture pair |
+
 When set truthy, the mock calls its normal `start_print_internal()` on connect (the same path `--print-status` uses), so `print_stats.state` becomes `printing`. Uses `--gcode-file` if given, otherwise the default test gcode. Useful for exercising any UI that depends on an active print.
 
 ```bash

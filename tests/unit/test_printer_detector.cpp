@@ -4382,6 +4382,18 @@ TEST_CASE("PrinterDetector: print_start_default_phases empty for unknown printer
     REQUIRE(phases.empty());
 }
 
+TEST_CASE("PrinterDetector: print_start_default_phases returns K1C measured durations",
+          "[printer][preprint]") {
+    // Measured on hardware 2026-08-19: the generic defaults (30s homing, 20s
+    // cleaning) under-predicted the K1C prep chain by 100-800%. Heating phases
+    // stay absent — the thermal model owns those.
+    auto phases = PrinterDetector::get_print_start_default_phases("Creality K1C");
+    REQUIRE(phases.size() == 3);
+    REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::HOMING)] == 60);
+    REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::CLEANING)] == 85);
+    REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::BED_MESH)] == 125);
+}
+
 TEST_CASE("PrinterDetector: print_start_default_phases empty for printer without override",
           "[printer][preprint]") {
     // Voron 2.4 has no print_start_default_phases field — generic defaults apply.
@@ -4922,8 +4934,8 @@ TEST_CASE_METHOD(PrinterDetectorFixture, "PrinterDetector: a build volume alone 
         // stayed silent before the volume reached detection; it must not start
         // crossing the 70-point bar that triggers a "this is not your printer"
         // warning just because it now reports a bed size.
-        for (float bed : {180.0f, 200.0f, 215.0f, 220.0f, 235.0f, 250.0f, 256.0f, 300.0f, 350.0f,
-                          400.0f}) {
+        for (float bed :
+             {180.0f, 200.0f, 215.0f, 220.0f, 235.0f, 250.0f, 256.0f, 300.0f, 350.0f, 400.0f}) {
             PrinterHardwareData hardware{.heaters = {"extruder", "heater_bed"},
                                          .hostname = "printer",
                                          .printer_objects = {"bed_mesh"},
@@ -4954,8 +4966,7 @@ TEST_CASE_METHOD(PrinterDetectorFixture, "PrinterDetector: a build volume alone 
 // With the volume scored as identifying evidence at confidence 97, it cleared
 // the 85-point auto-save bar on its own and no hostname could outrank it, so a
 // Geralkom auto-saved under a Sovol nameplate.
-TEST_CASE_METHOD(PrinterDetectorFixture,
-                 "PrinterDetector: a 500mm Geralkom keeps its own identity",
+TEST_CASE_METHOD(PrinterDetectorFixture, "PrinterDetector: a 500mm Geralkom keeps its own identity",
                  "[printer][build_volume][detector]") {
     PrinterHardwareData hardware{.heaters = {"extruder", "heater_bed"},
                                  .hostname = "geralkom-x500",

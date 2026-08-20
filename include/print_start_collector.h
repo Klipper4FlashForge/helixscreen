@@ -6,6 +6,7 @@
 #include "bed_mesh_probe_parser.h"
 #include "i_moonraker_client.h"
 #include "preprint_predictor.h"
+#include "print_start_position_classifier.h"
 #include "print_start_profile.h"
 #include "printer_state.h"
 #include "thermal_rate_model.h"
@@ -192,6 +193,48 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     void note_priming();
 
     /**
+     * @brief Record the printer's live bed-mesh presence
+     *
+     * Fed from the bed_mesh status stream. A mesh that disappears while the
+     * collector is in CLEANING marks the start of leveling work (accurate Z
+     * probing, bed-mesh corner validation) that Creality-class firmwares do
+     * not echo to gcode_response — the display moves to BED_MESH ("Bed
+     * Leveling...") instead of sitting on "Cleaning Nozzle..." through the
+     * whole silent window. Mesh clears arriving before CLEANING are the
+     * rough G28's own clear and carry no phase information.
+     *
+     * Thread-safe: called from the WebSocket background thread.
+     */
+    void note_bed_mesh_presence(bool present);
+
+    /**
+     * @brief Record the bed-mesh probe-area bounds (gcode mm)
+     *
+     * Fed from the same bed_mesh status updates as note_bed_mesh_presence().
+     * The bounds anchor the position classifier's geometric zones: Z-probing
+     * happens at the mesh centre, corner validation at the mesh corners, and
+     * the K1-class wipe strip sits beyond mesh_max at the bed rear. Until
+     * bounds arrive the classifier withholds all verdicts.
+     *
+     * Thread-safe: called from the WebSocket background thread.
+     */
+    void note_mesh_bounds(float x_min, float x_max, float y_min, float y_max);
+
+    /**
+     * @brief Feed one toolhead position sample (gcode mm)
+     *
+     * Fed from the toolhead.position subjects (subscribed already). When the
+     * profile declares position_signals and the console has gone silent, the
+     * inferred activity refines the status line: centre probes →
+     * "Probing Z...", corner tour → "Checking Bed Mesh...", sweep march →
+     * BED_MESH entry. Real gcode_response signals always win — this only
+     * fills silence.
+     *
+     * Thread-safe: observers fire on the main thread (queued subject sets).
+     */
+    void note_position_sample(float x_mm, float y_mm, float z_mm);
+
+    /**
      * @brief Set the print start profile for pattern/signal matching
      *
      * Must be called before start(). Ignored if the collector is active.
@@ -267,6 +310,10 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
      *
      * Mapped onto the existing PrintStartPhase enum (PURGING, INITIALIZING)
      * so the legacy `preparing_overlay` UI binds without change.
+     *
+     * Only consulted when the active profile declares cfs_signals — the
+     * vocabulary is vendor-specific and must not fire on another printer's
+     * coincidental "percent" plus "num:" output.
      *
      * @return true if a K2/CFS signal was detected and handled
      */
@@ -450,6 +497,18 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     // as the human label when rendering "<sub-phase> (N/M)" so the user sees
     // which sub-phase they're in. Empty when not in BED_MESH.
     std::string current_mesh_message_;
+
+    /// Last bed-mesh presence reported via note_bed_mesh_presence(). The
+    /// leveling trigger is the present→absent edge, so an unknown initial
+    /// state (no report yet) never fires it.
+    bool bed_mesh_present_{false};
+
+    /// Position-stream inference for silent pre-print windows. Fed by
+    /// note_position_sample()/note_mesh_bounds(); guarded by state_mutex_.
+    helix::PrintStartPositionClassifier position_classifier_;
+    helix::PositionActivity last_position_activity_ = helix::PositionActivity::NONE;
+    /// Anchor for the classifier's millisecond sample clock (set in start()).
+    std::chrono::steady_clock::time_point position_clock_start_{};
 
     /// Max gap between consecutive probe lines before resetting counters.
     /// Handles printers that emit "probe at" for non-mesh operations (e.g.
