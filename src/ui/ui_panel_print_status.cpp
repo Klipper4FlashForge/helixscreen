@@ -339,6 +339,17 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
     gcode_render_mode_observer_ = observe_int_sync<PrintStatusPanel>(
         DisplaySettingsManager::instance().subject_gcode_render_mode(), this,
         [](PrintStatusPanel* self, int mode) {
+            // A command-line override outranks the saved setting (cmdline > env > settings,
+            // as applied below in on_activate). Without this guard the observer fires once
+            // at startup with the persisted value and silently overwrites --render-2d /
+            // --render-3d about 16ms after they were applied, so the flags appeared to do
+            // nothing.
+            const auto* rt_config = get_runtime_config();
+            if (rt_config && rt_config->gcode_render_mode >= 0) {
+                spdlog::debug("[{}] Ignoring settings render mode {} - command line pinned {}",
+                              self->get_name(), mode, rt_config->gcode_render_mode);
+                return;
+            }
             spdlog::info("[{}] G-code render mode changed from settings: {}", self->get_name(),
                          mode);
             if (self->gcode_viewer_ && self->is_active_) {
