@@ -58,13 +58,16 @@ SERVICE_NAME="helixscreen"
 # Pi: /opt/helixscreen
 # CC1 (COSMOS): /user-resource/helixscreen (/ is RO squashfs)
 # Snapmaker U1: /userdata/helixscreen
+# shellcheck disable=SC2034  # consumed by uninstall.sh (sweep of all known install locations)
 HELIX_INSTALL_DIRS="/root/printer_software/helixscreen /opt/helixscreen /usr/data/helixscreen /srv/helixscreen /user-resource/helixscreen /userdata/helixscreen"
 
 # Init script locations vary by platform/firmware
 # AD5M Klipper Mod: S80, AD5M Forge-X: S90, K1: S99, CC1 (COSMOS): plain /etc/init.d/helixscreen
+# shellcheck disable=SC2034  # consumed by service.sh and uninstall.sh
 HELIX_INIT_SCRIPTS="/etc/init.d/S80helixscreen /etc/init.d/S90helixscreen /etc/init.d/S99helixscreen /etc/init.d/helixscreen"
 
 # HelixScreen process names (order matters: watchdog first to prevent crash dialog)
+# shellcheck disable=SC2034  # consumed by service.sh and uninstall.sh (kill_process_by_name)
 HELIX_PROCESSES="helix-watchdog helix-screen helix-splash"
 
 # Returns true when install.sh was spawned by helix-screen's in-app update.
@@ -180,9 +183,9 @@ klipper_config_dir() {
 
 # Track what we've done for cleanup
 CLEANUP_TMP=false
-CLEANUP_SERVICE=false
 BACKUP_CONFIG=""
 BACKUP_ENV=""
+# shellcheck disable=SC2034  # consumed by release.sh (set true at the swap, read at config restore)
 ORIGINAL_INSTALL_EXISTS=false
 
 # Colors (if terminal supports it)
@@ -199,6 +202,7 @@ setup_colors() {
         GREEN=''
         YELLOW=''
         CYAN=''
+        # shellcheck disable=SC2034  # consumed by main.sh (installer banner) and release.sh
         BOLD=''
         NC=''
     fi
@@ -337,6 +341,7 @@ _user_dir_name_ok() {
     [ -n "$base" ] || return 1
     local pat
     for pat in "$@"; do
+        # shellcheck disable=SC2254  # $pat is a caller-supplied glob ('*helixscreen-install*'), not a literal
         case "$base" in
             $pat) return 0 ;;
         esac
@@ -564,6 +569,7 @@ _USER_INSTALL_DIR="${INSTALL_DIR}"
 INIT_SCRIPT_DEST=""
 PREVIOUS_UI_SCRIPT=""
 AD5M_FIRMWARE=""
+# shellcheck disable=SC2034  # consumed by main.sh and competing_uis.sh
 K1_FIRMWARE=""
 KLIPPER_USER=""
 KLIPPER_GROUP=""
@@ -1419,6 +1425,7 @@ set_install_paths() {
         # the app now caches on /mnt/UDISK, so reclaim the old location.
         # Also reclaim scratch dirs leaked by pre-EXIT-trap installers: one
         # unit held a 60MB archive at /usr/data/helixscreen-install for months.
+        # shellcheck disable=SC2034  # consumed by release.sh (stale cache reclaim)
         STALE_CACHE_DIRS="/usr/data/helixscreen/cache /usr/data/helixscreen-install /opt/.helixscreen-install"
         log_info "Platform: Creality K2 series"
         log_info "Install directory: ${INSTALL_DIR}"
@@ -1438,6 +1445,7 @@ set_install_paths() {
         KLIPPER_USER="root"
         KLIPPER_GROUP="root"
         KLIPPER_HOME="/root"
+        # shellcheck disable=SC2034  # consumed by common.sh klipper_config_dir()
         KLIPPER_CONFIG_DIR="/etc/klipper/config"
         INIT_SYSTEM="sysv"
         log_info "Platform: Elegoo Centauri Carbon (COSMOS)"
@@ -1453,6 +1461,7 @@ set_install_paths() {
         KLIPPER_USER="root"
         KLIPPER_GROUP="root"
         KLIPPER_HOME="/home/lava"
+        # shellcheck disable=SC2034  # consumed by service.sh, common.sh, competing_uis.sh, uninstall.sh
         INIT_SYSTEM="sysv"
         # U1 does NOT install /etc/init.d/S99helixscreen. install_service_snapmaker_u1
         # patches the stock /etc/init.d/S99screen to delegate to helixscreen.init for
@@ -1463,7 +1472,9 @@ set_install_paths() {
         log_info "Install directory: ${INSTALL_DIR}"
     else
         # Pi and other platforms — detect klipper user, then auto-detect install dir
+        # shellcheck disable=SC2034  # consumed by service.sh and common.sh
         INIT_SCRIPT_DEST="/etc/init.d/S90helixscreen"
+        # shellcheck disable=SC2034  # consumed by competing_uis.sh and the uninstaller bundle
         PREVIOUS_UI_SCRIPT=""
         detect_klipper_user
         detect_pi_install_dir
@@ -2308,6 +2319,7 @@ detect_init_system() {
 
     # Check for SysV init (BusyBox or traditional)
     if [ -d /etc/init.d ]; then
+        # shellcheck disable=SC2034  # consumed by service.sh, common.sh, competing_uis.sh, uninstall.sh
         INIT_SYSTEM="sysv"
         log_info "Init system: SysV (BusyBox/traditional)"
         return
@@ -2916,6 +2928,7 @@ uninstall_forgex() {
     # Re-enable GuppyScreen and tslib init scripts
     if [ -f "/opt/config/mod/.root/S80guppyscreen" ]; then
         $SUDO chmod +x "/opt/config/mod/.root/S80guppyscreen" 2>/dev/null || true
+        # shellcheck disable=SC2034  # consumed by uninstall.sh (previous-UI restore chain) and the uninstaller bundle
         restored_ui="GuppyScreen (/opt/config/mod/.root/S80guppyscreen)"
     fi
     if [ -f "/opt/config/mod/.root/S35tslib" ]; then
@@ -4949,6 +4962,7 @@ use_local_tarball() {
     # and the in-app update flow can find it regardless of the source path.
     # Prefer a symlink to avoid copying large files on constrained devices.
     mkdir -p "$TMP_DIR"
+    # shellcheck disable=SC2034  # consumed by common.sh error_handler (sibling module)
     CLEANUP_TMP=true
 
     local dest
@@ -5079,9 +5093,8 @@ validate_binary_architecture() {
     local elf_class
     elf_class=$(echo "$header" | awk '{print $5}')
 
-    local machine_lo machine_hi
+    local machine_lo
     machine_lo=$(echo "$header" | awk '{print $19}')
-    machine_hi=$(echo "$header" | awk '{print $20}')
 
     # Determine expected values based on platform
     local expected_class expected_machine_lo expected_desc
@@ -6123,7 +6136,6 @@ install_service_systemd() {
     if _is_self_update; then
         log_info "Skipping main service file install (self-update; preserving customizations)"
         update_watcher_if_stale
-        CLEANUP_SERVICE=true
         return 0
     fi
 
@@ -6147,7 +6159,6 @@ install_service_systemd() {
     if _has_no_new_privs; then
         if [ -f "$service_dest" ]; then
             log_info "Skipping service reinstall (NoNewPrivileges; already installed)"
-            CLEANUP_SERVICE=true
             return 0
         fi
         log_error "Service not installed and NoNewPrivileges prevents installation"
@@ -6181,7 +6192,6 @@ install_service_systemd() {
     # Workaround for mainsail-crew/mainsail#2444: type: web lacks managed_services
     install_update_watcher_systemd
 
-    CLEANUP_SERVICE=true
     log_success "Installed systemd service"
 }
 
@@ -6298,7 +6308,6 @@ install_service_sysv() {
     if _is_self_update; then
         log_info "Skipping init script install (self-update; already installed)"
         _migrate_init_script_hooks_path
-        CLEANUP_SERVICE=true
         return 0
     fi
 
@@ -6322,7 +6331,6 @@ install_service_sysv() {
     # This is important for Klipper Mod which uses a different path
     _sed_inplace "s|DAEMON_DIR=.*|DAEMON_DIR=\"${INSTALL_DIR}\"|" "$INIT_SCRIPT_DEST"
 
-    CLEANUP_SERVICE=true
     log_success "Installed SysV init script at $INIT_SCRIPT_DEST"
 }
 
@@ -6384,8 +6392,8 @@ start_service_snapmaker_u1() {
     fi
 
     # Wait for service to start (may be slow on embedded hardware)
-    local i
-    for i in 1 2 3 4 5; do
+    local _
+    for _ in 1 2 3 4 5; do
         sleep 1
         if pidof helix-screen >/dev/null 2>&1; then
             log_success "HelixScreen is running!"
@@ -6429,8 +6437,8 @@ start_service_systemd() {
     fi
 
     # Wait for service to start (may be slow on embedded hardware)
-    local i
-    for i in 1 2 3 4 5; do
+    local _
+    for _ in 1 2 3 4 5; do
         sleep 1
         if systemctl is-active --quiet "$SERVICE_NAME"; then
             log_success "HelixScreen is running!"
@@ -6473,8 +6481,8 @@ start_service_sysv() {
     fi
 
     # Wait for service to start (may be slow on embedded hardware)
-    local i
-    for i in 1 2 3 4 5; do
+    local _
+    for _ in 1 2 3 4 5; do
         sleep 1
         if $SUDO "$INIT_SCRIPT_DEST" status >/dev/null 2>&1; then
             log_success "HelixScreen is running!"
@@ -9353,6 +9361,7 @@ main() {
                 # ASSUME_YES is read by clean_old_installation (uninstall.sh);
                 # it is deliberately NOT inferred from a non-TTY stdin, since
                 # the documented `curl ... | sh` invocation always has one.
+                # shellcheck disable=SC2034  # consumed by uninstall.sh (clean_old_installation)
                 ASSUME_YES=true
                 shift
                 ;;

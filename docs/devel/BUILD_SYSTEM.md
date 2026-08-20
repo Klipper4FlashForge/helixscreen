@@ -451,8 +451,11 @@ cd .worktrees/my-feature
 ### Script Options
 
 ```bash
-# Create at custom path
+# Create at custom path — the second argument is a PATH, not a base branch
 ./scripts/setup-worktree.sh feature/foo /tmp/helixscreen-foo
+
+# Branch from something other than the current HEAD
+./scripts/setup-worktree.sh --base feature/parent feature/child
 
 # Set up existing worktree without creating
 ./scripts/setup-worktree.sh --setup-only feature/i18n
@@ -460,6 +463,12 @@ cd .worktrees/my-feature
 # Skip the initial build
 ./scripts/setup-worktree.sh --no-build feature/quick-test
 ```
+
+A new branch is cut from the HEAD of **whichever tree you run the script in**,
+which is not necessarily `main` — the script prints the resolved base commit so
+a stale or unexpected one is visible immediately. Use `--base <ref>` to pick it
+explicitly. Passing a branch name as the second argument is rejected, as is any
+path inside the repo outside `.worktrees/`.
 
 ### What setup-worktree.sh Does
 

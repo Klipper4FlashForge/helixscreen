@@ -38,6 +38,7 @@
 #include "filament_sensor_manager.h"
 #include "format_utils.h"
 #include "gcode_parser.h"
+#include "gcode_preview_setup.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "i_moonraker_api.h"
 #include "injection_point_manager.h"
@@ -847,35 +848,7 @@ lv_obj_t* PrintStatusPanel::create(lv_obj_t* parent) {
     if (gcode_viewer_) {
         spdlog::debug("[{}]   ✓ G-code viewer widget found", get_name());
 
-        // Apply render mode - priority: cmdline > env var > settings
-        // Note: HELIX_GCODE_MODE env var is handled at widget creation, so we only
-        // override if there's an explicit command-line option or if no env var was set
-        const auto* config = get_runtime_config();
-        const char* env_mode = std::getenv("HELIX_GCODE_MODE");
-
-        if (config->gcode_render_mode >= 0) {
-            // Command line takes highest priority
-            auto render_mode = static_cast<GcodeViewerRenderMode>(config->gcode_render_mode);
-            ui_gcode_viewer_set_render_mode(gcode_viewer_, render_mode);
-            spdlog::debug("[{}]   ✓ Set G-code render mode: {} (cmdline)", get_name(),
-                          config->gcode_render_mode);
-        } else if (env_mode) {
-            // Env var already applied at widget creation - just log
-            spdlog::debug("[{}]   ✓ G-code render mode: {} (env var)", get_name(),
-                          ui_gcode_viewer_is_using_2d_mode(gcode_viewer_) ? "2D" : "3D");
-        } else {
-            // No cmdline or env var - apply saved settings
-            int render_mode_val = DisplaySettingsManager::instance().get_gcode_render_mode();
-            if (render_mode_val == 3) {
-                // Thumbnail Only mode - skip render mode setup, viewer won't be used
-                spdlog::debug("[{}]   ✓ G-code render mode: Thumbnail Only (settings)", get_name());
-            } else {
-                auto render_mode = static_cast<GcodeViewerRenderMode>(render_mode_val);
-                ui_gcode_viewer_set_render_mode(gcode_viewer_, render_mode);
-                spdlog::debug("[{}]   ✓ Set G-code render mode: {} (settings)", get_name(),
-                              render_mode_val);
-            }
-        }
+        helix::ui::apply_preview_render_mode(gcode_viewer_, get_name());
 
         // Create and initialize exclude object manager
         exclude_manager_ = std::make_unique<helix::ui::PrintExcludeObjectManager>(
@@ -883,8 +856,11 @@ lv_obj_t* PrintStatusPanel::create(lv_obj_t* parent) {
         exclude_manager_->init();
         spdlog::debug("[{}]   ✓ Created and initialized exclude object manager", get_name());
 
-        // Vertical offset to match thumbnail positioning (tuned empirically)
-        ui_gcode_viewer_set_content_offset_y(gcode_viewer_, -0.10f);
+        // The strip is a flex sibling BELOW the preview here, so this measures no
+        // overlap and the render stays centred. Wired anyway so a layout change
+        // is picked up without touching this file.
+        helix::ui::set_preview_bottom_occluder(
+            gcode_viewer_, lv_obj_find_by_name(thumbnail_section, "metadata_clip"));
 
         // Memory-pressure responder calls ui_gcode_viewer_clear_all_active().
         // Flip our mode subject back to thumbnail (0) so the user sees the

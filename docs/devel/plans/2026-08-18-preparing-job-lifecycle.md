@@ -1,6 +1,6 @@
 # Preparing-job lifecycle: make `Preparing` reachable at commit
 
-Status: plan, not yet implemented
+Status: shipped in v0.99.115
 Branch: `fix/preparing-job-lifecycle`
 Field report: K2 Plus, 2026-08-18
 

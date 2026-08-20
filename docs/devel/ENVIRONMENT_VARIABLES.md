@@ -11,7 +11,7 @@ This document is a reference for the environment variables HelixScreen reads at 
 | [G-Code Viewer](#g-code-viewer) | 4 | `HELIX_` |
 | [Bed Mesh](#bed-mesh) | 1 | `HELIX_` |
 | [Networking](#networking) | 1 | `HELIX_` |
-| [Mock & Testing](#mock--testing) | 23 | `HELIX_MOCK_*` |
+| [Mock & Testing](#mock--testing) | ~two dozen | `HELIX_MOCK_*` |
 | [UI Automation](#ui-automation) | 3 | `HELIX_AUTO_*` |
 | [Calibration](#calibration-auto-start) | 2 | `*_AUTO_START` |
 | [Development](#development) | 3 | `HELIX_` |
@@ -723,8 +723,12 @@ Force the G-code preview rendering mode.
 | Property | Value |
 |----------|-------|
 | **Values** | `2D`, `3D` |
-| **Default** | `2D` |
-| **Files** | `src/ui/ui_gcode_viewer.cpp`, `src/ui/ui_panel_print_status.cpp`, `src/ui/ui_panel_gcode_test.cpp` |
+| **Default** | unset — Auto, which resolves to 3D on GLES-capable builds and 2D elsewhere |
+| **Files** | `include/gcode_render_mode_policy.h`, `src/ui/ui_gcode_viewer.cpp`, `src/ui/ui_panel_print_status.cpp`, `src/ui/ui_panel_gcode_test.cpp` |
+
+Only the exact strings `2D` and `3D` are honored — matching is case-sensitive, so
+`3d` is an unrecognized value. An unrecognized value resolves to 2D (the renderer
+that works everywhere), not to Auto; unset is the only path to Auto.
 
 ```bash
 # Force 2D layer view

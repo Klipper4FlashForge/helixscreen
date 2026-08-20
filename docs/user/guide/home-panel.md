@@ -250,10 +250,12 @@ These are the same 5 groups the Widget Catalog uses on the device.
 | Widget | Description | Default | Min | Max | Resizable | Hardware Required |
 |--------|-------------|---------|-----|-----|-----------|-------------------|
 | **Printer Image** | Your printer's photo. Tap to open the Printer Manager overlay where you can change the name, image, and see hardware info. | 2x2 | 1x1 | 4x3 | Yes | — |
-| **Print Status** | Current print progress with filename, percentage, ETA, and elapsed time. Tap to open the full Print Status overlay when printing, or navigate to the file browser when idle. | 2x2 | 2x1 | Full width x3 | Yes | — |
+| **Print Status** | Tracks the print job in all three of its states — idle (pick a file), preparing (pre-print steps with a progress bar), and printing (filename, percentage, ETA, elapsed time). Tap opens the full Print Status overlay whenever a job is preparing or printing, or the file browser when idle. | 2x2 | 2x1 | Full width x3 | Yes | — |
 | **Print Controls** | Pause, resume, and stop buttons for the running print, right on the dashboard. | 2x1 | 2x1 | 2x1 | No | — |
 | **Print Stats** | Print history statistics — total prints, success rate, and total print time. Tap to open the full print history overlay. | 2x2 | 2x1 | 3x2 | Yes | — |
 | **Job Queue** | Shows the number of queued print jobs. Tap to open the Job Queue Manager modal (see [Job Queue Manager](#job-queue-manager) below). | 2x2 | 2x1 | 4x3 | Yes | — |
+
+![The Print Status widget during pre-print: current step, progress bar and ETA](../../images/screenshot-preparing-card.png)
 | **Camera** | Live webcam feed from your MJPEG stream. Tap to go fullscreen. Automatically detects webcams configured in Moonraker. See [Camera Widget](#camera-widget) below for setup tips. | 2x2 | 1x1 | 4x3 | Yes | Webcam configured |
 
 ### Temperature & Cooling
@@ -369,7 +371,7 @@ While **not** in Edit Mode, widgets respond to taps and other gestures:
 | Widget | Tap Action |
 |--------|------------|
 | Printer Image | Opens Printer Manager overlay |
-| Print Status | Opens Print Status overlay (printing) or File Browser (idle) |
+| Print Status | Opens Print Status overlay (preparing or printing) or File Browser (idle) |
 | Print Controls | Pauses, resumes, or stops the print — one button each |
 | Print Stats | Opens print history overlay |
 | Job Queue | Opens Job Queue Manager modal |
@@ -430,7 +432,7 @@ Below the state indicator, all queued jobs are listed with:
 
 ### Actions
 
-**Start a print:** Tap any job in the list. If the printer is idle, the job is removed from the queue and printing begins immediately. If the printer is already printing, HelixScreen will let you know.
+**Start a print:** Tap any job in the list to start it. The start only goes through when the printer is genuinely free — not just finished with the last print, but also not busy starting one (the heating, homing, and leveling before the first layer count as busy). While a job is preparing or printing, the tap is ignored and the job stays in the queue. There's no on-screen notice when this happens, so if tapping a job does nothing, check whether a print is still preparing or running, and try again once it's done.
 
 **Delete a job:** Tap the **trash icon** on the right side of any job row. The job is immediately removed from the queue.
 
