@@ -26,7 +26,7 @@ static const char* print_state_name(PrintState s) {
     return "Unknown";
 }
 
-// RAW_PRINT_STATE_OK (whole function): this is the mapping itself - the single
+// RAW_PRINT_STATE_OK: whole function. This is the mapping itself - the single
 // place the wire becomes the lifecycle. Every other consumer reads the result.
 PrintState derive_print_state(helix::PrintJobState job_state, int start_phase) {
     // A pause is user-visible and must not be masked by a phase left set when

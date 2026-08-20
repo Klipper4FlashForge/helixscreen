@@ -66,6 +66,8 @@ void PrintExcludeObjectManager::init() {
     // the stuck-visual edge case where both the status push and the RPC return fail
     // to arrive (Klipper crash, network drop, etc). Done silently per UX review —
     // cancels are usually deliberate and a toast would just be noise.
+    // RAW_PRINT_STATE_OK: subscribes to the WIRE deliberately - asks whether a live gcode
+    // queue exists; see on_print_state_changed().
     print_state_observer_ = helix::ui::observe_print_state<PrintExcludeObjectManager>(
         printer_state_.get_print_state_enum_subject(), this,
         [](PrintExcludeObjectManager* self, PrintJobState state) {

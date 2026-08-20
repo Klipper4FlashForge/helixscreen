@@ -130,6 +130,8 @@ void PrintStartController::initiate() {
 
     // Check if a print is already active before allowing a new one to start
     if (!printer_state_.can_start_new_print()) {
+        // RAW_PRINT_STATE_OK: the preparing axis is carried separately here by
+        // can_start_new_print(); this arm asks only what the printer reports.
         PrintJobState current_state = printer_state_.get_print_job_state();
         const char* state_str = print_job_state_to_string(current_state);
         NOTIFY_ERROR(lv_tr("Cannot start print: printer is {}"), state_str);
@@ -753,6 +755,8 @@ bool PrintStartController::apply_filament_remaps() {
 }
 
 void PrintStartController::observe_print_state_for_restore() {
+    // RAW_PRINT_STATE_OK: restores the filament mapping on a TERMINAL state,
+    // which the wire reports directly.
     auto* subject = printer_state_.get_print_state_enum_subject();
     if (!subject) {
         spdlog::warn("[PrintStartController] No print state subject — cannot auto-restore mapping");
@@ -1039,6 +1043,8 @@ void PrintStartController::recover_pending_remap() {
         // restore_filament_mapping on COMPLETE/CANCELLED/ERROR; the immediate-
         // fire on the current PRINTING/PAUSED value is a no-op there.
         auto current_state = static_cast<PrintJobState>(
+            // RAW_PRINT_STATE_OK: suppresses the observer's registration-fire
+            // while a job runs; a preparing job has no mapping to restore.
             lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
         // RAW_PRINT_STATE_OK: the mapping is restored on a TERMINAL state; this
         // only suppresses the observer's immediate registration-fire while a job

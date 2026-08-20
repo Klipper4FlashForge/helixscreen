@@ -29,6 +29,8 @@ void FilamentConsumptionTracker::start() {
     }
     PrinterState& printer = get_printer_state();
 
+    // RAW_PRINT_STATE_OK: subscribes to the WIRE deliberately - tracks material actually
+    // extruded; nothing is consumed during a preparing window.
     print_state_obs_ = helix::ui::observe_print_state<FilamentConsumptionTracker>(
         printer.get_print_state_enum_subject(), this,
         [](FilamentConsumptionTracker* self, PrintJobState state) {
@@ -188,6 +190,7 @@ void FilamentConsumptionTracker::on_print_state_changed(PrintJobState state) {
         active_ = false;
         print_in_progress_ = false;
         break;
+    // RAW_PRINT_STATE_OK: see the note on the switch - material, not intent.
     case PrintJobState::PAUSED:
         if (print_in_progress_) {
             flush_all_sinks(); // crash-safety snapshot

@@ -752,6 +752,8 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     // Register observer on print job state enum to enable/disable print button
     // Prevents starting a new print while one is already in progress
     // NOTE: get_print_state_enum_subject() is INT, get_print_state_subject() is STRING
+    // RAW_PRINT_STATE_OK: pairs with the print_filename read below, which still
+    // holds the PREVIOUS job during a preparing window.
     lv_subject_t* print_state_subject = printer_state_.get_print_state_enum_subject();
     if (print_state_subject) {
         print_state_observer_ = observe_int_sync<PrintSelectPanel>(

@@ -691,6 +691,9 @@ void MoonrakerManager::init_print_start_collector() {
     // a running print.
     static helix::PrintCollectorArming s_arming;
     s_arming.reset();
+    // RAW_PRINT_STATE_OK: the collector MEASURES the pre-print window, so every
+    // state it reacts to must be the printer's own. On the lifecycle its
+    // completion signal would be the very state it is waiting to observe.
     s_arming.note_transition(static_cast<PrintJobState>(
         lv_subject_get_int(get_printer_state().get_print_state_enum_subject())));
     spdlog::debug("[MoonrakerManager] PRINT_START collector observer registered (initial state={})",
@@ -710,6 +713,7 @@ void MoonrakerManager::init_print_start_collector() {
 
     // Observer to start/stop collector based on print state
     m_print_start_observer = ObserverGuard(
+        // RAW_PRINT_STATE_OK: collector arming - see note_transition() above.
         get_printer_state().get_print_state_enum_subject(),
         [](lv_observer_t*, lv_subject_t* subject) {
             auto collector = s_collector.lock();
@@ -746,10 +750,12 @@ void MoonrakerManager::init_print_start_collector() {
                     spdlog::info("[MoonrakerManager] PRINT_START collector started");
                 }
                 s_arming.consume_initial_transition();
-                // RAW_PRINT_STATE_OK (this whole dispatch): the collector
+                // RAW_PRINT_STATE_OK: this whole dispatch - the collector
                 // measures the pre-print window, so it arms and completes on the
                 // PRINTER's own transitions. On the lifecycle its completion
                 // signal would be the very state it is waiting to observe.
+                // RAW_PRINT_STATE_OK: Moonraker confirming the print is running
+                // is the collector's authoritative completion signal.
             } else if (new_state == PrintJobState::PRINTING && collector->is_active()) {
                 // Authoritative signal: Moonraker confirms print is running.
                 // This is the hard cutoff — if the collector is still active when
@@ -758,6 +764,7 @@ void MoonrakerManager::init_print_start_collector() {
                              "completing pre-print phase");
                 collector->complete_from_external_signal("Moonraker state=printing");
             } else if (s_arming.is_initial_transition() &&
+                       // RAW_PRINT_STATE_OK: mid-print detection at startup.
                        s_arming.prev_state() != PrintJobState::PRINTING &&
                        s_arming.prev_state() != PrintJobState::PAUSED &&
                        new_state == PrintJobState::PRINTING && current_progress > 0) {
@@ -799,6 +806,7 @@ void MoonrakerManager::init_print_start_collector() {
                 // standby. Leaving the collector armed means the next G-code the
                 // user runs by hand is parsed as a pre-print phase, re-raising
                 // the "Preparing Print" overlay over whatever they are doing.
+                // RAW_PRINT_STATE_OK: collector teardown mirrors its arming.
                 const auto job_state = static_cast<helix::PrintJobState>(
                     lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
                 if (collector->is_active() && should_stop_collector_on_retirement(job_state)) {

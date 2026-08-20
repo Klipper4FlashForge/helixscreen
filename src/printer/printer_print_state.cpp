@@ -69,6 +69,7 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     INIT_SUBJECT_STRING(print_progress_text, "0%", subjects_, register_xml);
     INIT_SUBJECT_STRING(print_filename, "", subjects_, register_xml);
     INIT_SUBJECT_STRING(print_state, "standby", subjects_, register_xml);
+    // RAW_PRINT_STATE_OK: declaring the wire subject itself.
     INIT_SUBJECT_INT(print_state_enum, static_cast<int>(PrintJobState::STANDBY), subjects_,
                      register_xml);
     INIT_SUBJECT_INT(print_outcome, static_cast<int>(PrintOutcome::NONE), subjects_, register_xml);
@@ -1226,6 +1227,8 @@ void PrinterPrintState::set_print_in_progress_internal(bool in_progress) {
 // State queries
 // ============================================================================
 
+// RAW_PRINT_STATE_OK: the wire accessor itself. get_print_lifecycle() below is
+// the derived one, and each is paired with its own subject on purpose.
 PrintJobState PrinterPrintState::get_print_job_state() const {
     // Note: lv_subject_get_int is thread-safe (atomic read)
     return static_cast<PrintJobState>(

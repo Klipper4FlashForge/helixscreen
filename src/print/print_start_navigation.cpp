@@ -17,6 +17,15 @@
 namespace helix {
 
 // Track previous state to detect inactive→active print transitions
+// RAW_PRINT_STATE_OK: navigation's activation edge - see is_active_print_state().
+//
+// FIRST-TICK CONTRACT: observe fires once at registration, so this is re-seeded
+// to the CURRENT state in init_print_start_navigation_observer() before
+// subscribing - otherwise connecting to an already-running printer would look
+// like a print that just started. The deliberate "already active" case is
+// handled separately by the level check there (#1099 power-loss recovery).
+// Four sites in this tree answer that first tick differently and all four are
+// correct; read the local one before copying any of them.
 static PrintJobState prev_print_state = PrintJobState::STANDBY;
 
 // RAW_PRINT_STATE_OK: navigation's activation edge. On a lifecycle that
@@ -94,6 +103,7 @@ static void on_print_state_changed_for_navigation(lv_observer_t* observer, lv_su
 
 ObserverGuard init_print_start_navigation_observer() {
     // Initialize prev_print_state to current state to prevent false trigger on startup
+    // RAW_PRINT_STATE_OK: see the first-tick contract on prev_print_state.
     prev_print_state = static_cast<PrintJobState>(
         lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
     spdlog::debug("[PrintStartNav] Observer registered (initial state={})",
@@ -111,6 +121,7 @@ ObserverGuard init_print_start_navigation_observer() {
         queue_push_print_status_overlay();
     }
 
+    // RAW_PRINT_STATE_OK: navigation must NOT fire on Idle -> Preparing.
     return ObserverGuard(get_printer_state().get_print_state_enum_subject(),
                          on_print_state_changed_for_navigation, nullptr);
 }

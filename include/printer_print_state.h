@@ -122,6 +122,12 @@ class PrinterPrintState {
     }
 
     /// Integer enum value for type-safe logic (PrintJobState)
+    ///
+    /// RAW_PRINT_STATE_OK: this IS the wire subject. Consumers asking a
+    /// capability question want get_print_lifecycle_subject() instead - this one
+    /// cannot express a start the app has committed to but the printer has not
+    /// reported. Pair it with observe_print_state(), never the lifecycle
+    /// factory: the two enums do not share numbering.
     lv_subject_t* get_print_state_enum_subject() {
         return &print_state_enum_;
     }
@@ -669,6 +675,9 @@ class PrinterPrintState {
     /**
      * @brief Get current print job state as enum
      * @return Current PrintJobState
+     *
+     * RAW_PRINT_STATE_OK: this IS the wire accessor; get_print_lifecycle() is
+     * the derived one.
      */
     PrintJobState get_print_job_state() const;
 

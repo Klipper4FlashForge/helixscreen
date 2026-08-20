@@ -93,6 +93,8 @@ void SpoolmanManager::init_subjects() {
     // Refreshes when print starts, ends, or pauses to keep weight data current.
     using helix::ui::observe_int_sync;
     using helix::ui::observe_print_state;
+    // RAW_PRINT_STATE_OK: subscribes to the WIRE deliberately - weights change when
+    // filament moves, which is the printer's own transition.
     print_state_observer_ = observe_print_state<SpoolmanManager>(
         get_printer_state().get_print_state_enum_subject(), this,
         [](SpoolmanManager* self, PrintJobState print_state) {

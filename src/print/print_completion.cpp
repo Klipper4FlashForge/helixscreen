@@ -312,6 +312,8 @@ static void on_print_state_changed_for_notification(lv_observer_t* observer,
     if (should_notify_print_ended(prev_lifecycle, lifecycle, outcome)) {
         // The terminal job state still drives which message and sound are used.
         const auto current = static_cast<PrintJobState>(
+            // RAW_PRINT_STATE_OK: terminal-outcome formatting is about what the
+            // printer reported, and the outcome enum derives from it directly.
             lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
         // Get filename from PrinterState and format for display
         const char* raw_filename =

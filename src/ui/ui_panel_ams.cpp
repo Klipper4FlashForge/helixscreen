@@ -250,6 +250,8 @@ void AmsPanel::init_subjects() {
     //
     // The lifetime token is mandatory: PrinterState is a separate singleton and
     // its subjects can be torn down while this guard is still alive (#705).
+    // RAW_PRINT_STATE_OK: subscribes to the WIRE deliberately - paired with the keep-raw
+    // comparison below; see the marker there for the full reason.
     print_state_observer_ = observe_int_sync<AmsPanel>(
         printer_state_.get_print_state_enum_subject(), this,
         [](AmsPanel* self, int print_state) {

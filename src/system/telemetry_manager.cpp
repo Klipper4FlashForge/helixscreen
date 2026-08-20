@@ -2993,6 +2993,11 @@ void TelemetryManager::load_snapshot_state() {
 namespace {
 
 /// Tracks the previous print state to detect transitions to terminal states
+// RAW_PRINT_STATE_OK: telemetry classifies the printer's own transitions.
+// FIRST-TICK: seeded to STANDBY, so connecting to an already-running printer
+// reads as one STANDBY -> PRINTING edge and resets the phase tracker. Harmless -
+// nothing has been collected at that point - but do not copy the pattern into a
+// site where a false first edge would discard data.
 PrintJobState s_telemetry_prev_state = PrintJobState::STANDBY;
 
 /// Guards against false completion on startup (first update may be stale)
@@ -3038,7 +3043,7 @@ void on_print_state_changed_for_telemetry(lv_observer_t* observer, lv_subject_t*
         s_telemetry_max_phase = phase;
     }
 
-    // RAW_PRINT_STATE_OK, and load-bearing: on the wire this is one reset at the
+    // RAW_PRINT_STATE_OK: load-bearing. On the wire this is one reset at the
     // real start (STANDBY -> PRINTING). On the lifecycle it becomes
     // Idle -> Preparing -> Printing, so the reset would fire at
     // Preparing -> Printing and WIPE the pre-print phase data this tracker
@@ -3171,6 +3176,7 @@ void on_print_state_changed_for_telemetry(lv_observer_t* observer, lv_subject_t*
 ObserverGuard TelemetryManager::init_print_outcome_observer() {
     // Reset state tracking on (re)initialization
     s_telemetry_first_update = false;
+    // RAW_PRINT_STATE_OK: re-seed on disconnect; see the declaration.
     s_telemetry_prev_state = PrintJobState::STANDBY;
     s_telemetry_max_phase = 0;
     s_telemetry_filament_type.clear();

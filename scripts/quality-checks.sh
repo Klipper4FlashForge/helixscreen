@@ -1645,6 +1645,35 @@ else
   echo "⚠️  check_print_state_cast.py not found — skipping"
 fi
 
+SECTION_START=$(date +%s)
+echo -n "🧭 Checking raw print-state reads..."
+
+if [ -f "scripts/check_raw_print_job_state.py" ]; then
+  # helix::PrintJobState is the WIRE — what print_stats.state said. It cannot
+  # express a job the app has committed to but the printer has not reported yet,
+  # so a semantic question asked of it is blind for the whole of a pre-print
+  # window. That blindness shipped: 21 motion controls live while the toolhead
+  # homed, the home print card reading idle, a queue tap deleting the job it then
+  # failed to start. Plenty of sites DO want the wire — the parse, terminal
+  # formatting, telemetry's phase tracker, the PRINT_START collector — so this
+  # does not forbid it. It forbids reading it SILENTLY, because a deliberate wire
+  # read and a stale one look identical. Annotate: `// RAW_PRINT_STATE_OK: <why>`.
+  if python3 scripts/check_raw_print_job_state.py >/tmp/raw_print_state.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/raw_print_state.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/raw_print_state.out
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_raw_print_job_state.py not found — skipping"
+fi
+
 echo ""
 
 SECTION_START=$(date +%s)

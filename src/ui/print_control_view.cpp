@@ -49,6 +49,7 @@ ControlButtonView compute_control_button_view(const ControlButtonInputs& in) {
         v.primary_label = "Resuming...";
         break;
     case PendingAction::None:
+        // RAW_PRINT_STATE_OK: which macro the button would send.
         if (in.job_state == helix::PrintJobState::PAUSED) {
             v.primary_icon = CONTROL_ICON_PLAY;
             v.primary_label = "Resume";
