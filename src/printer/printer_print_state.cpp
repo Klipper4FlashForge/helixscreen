@@ -1239,7 +1239,9 @@ bool PrinterPrintState::can_start_new_print() const {
         return false;
     }
 
-    // Check printer's physical state
+    // Check printer's physical state. RAW_PRINT_STATE_OK: the preparing window
+    // is already covered by the is_print_in_progress() early-return above, so
+    // this arm answers the narrower question of what the printer itself reports.
     PrintJobState state = get_print_job_state();
     // A new print can be started when printer is idle or previous print finished
     switch (state) {

@@ -19,6 +19,10 @@ namespace helix {
 // Track previous state to detect inactive→active print transitions
 static PrintJobState prev_print_state = PrintJobState::STANDBY;
 
+// RAW_PRINT_STATE_OK: navigation's activation edge. On a lifecycle that
+// includes host-side Preparing this would push the status panel for a job the
+// printer has not accepted, duplicating the optimistic push in
+// ui_panel_print_select.cpp.
 bool is_active_print_state(PrintJobState s) {
     return s == PrintJobState::PRINTING || s == PrintJobState::PAUSED;
 }
