@@ -2088,6 +2088,7 @@ translations:
   Probing Bed...: Bett wird abgetastet...
   Probing Failed: Abtasten fehlgeschlagen
   'Probing Z...': ''
+  'Checking Bed Mesh...': ''
   Probing point {} of {}: 'Messpunkt {} von {}'
   Probing... ({} points): 'Messung läuft... ({} Punkte)'
   Proceed: Fortfahren

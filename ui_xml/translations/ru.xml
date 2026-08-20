@@ -429,6 +429,7 @@
   <translation tag="Check the filament path and try again." ru="Проверьте путь филамента и попробуйте снова."/>
   <translation tag="Check your heater&apos;s rating (typically 40-60W for hotends)" ru="Проверьте мощность нагревателя (обычно 40–60W для хотэндов)"/>
   <translation tag="Checking" ru="Проверка"/>
+  <translation tag="Checking Bed Mesh..."/>
   <translation tag="Checking Spoolman server..." ru="Проверка сервера Spoolman..."/>
   <translation tag="Checking accelerometer..." ru="Проверка акселерометра..."/>
   <translation tag="Checking extruders..."/>

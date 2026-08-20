@@ -192,6 +192,19 @@ class PrintStartProfile {
         return cfs_signals_;
     }
 
+    /// True when this printer's pre-print chain goes silent (no
+    /// gcode_response markers) for minutes while it homes Z, validates the
+    /// mesh at its corners, and sweeps a calibration mesh — but toolhead
+    /// position keeps flowing. The collector feeds those position samples to
+    /// PrintStartPositionClassifier and refines the status line through the
+    /// silence ("Probing Z...", "Checking Bed Mesh...", mesh entry on the
+    /// sweep). Off by default: the geometric zones are meaningful for any
+    /// printer, but the inference is only wanted where the console actually
+    /// goes quiet.
+    bool position_signals() const {
+        return position_signals_;
+    }
+
   private:
     std::string name_;
     std::string description_;
@@ -199,6 +212,7 @@ class PrintStartProfile {
     ProgressMode progress_mode_ = ProgressMode::WEIGHTED;
     bool adaptive_meshing_{false};
     bool cfs_signals_{false};
+    bool position_signals_{false};
     std::vector<SignalFormat> signal_formats_;
     std::vector<ResponsePattern> response_patterns_;
     std::unordered_map<helix::PrintStartPhase, int> phase_weights_;

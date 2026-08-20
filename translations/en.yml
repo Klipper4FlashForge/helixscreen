@@ -2025,6 +2025,7 @@ translations:
   Probing Bed...: Probing Bed...
   Probing Failed: Probing Failed
   'Probing Z...': 'Probing Z...'
+  'Checking Bed Mesh...': 'Checking Bed Mesh...'
   Probing point {} of {}: Probing point {} of {}
   Probing... ({} points): Probing... ({} points)
   Proceed: Proceed

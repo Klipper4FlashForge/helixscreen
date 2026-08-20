@@ -2100,6 +2100,7 @@ translations:
   Probing Bed...: Palpage du plateau...
   Probing Failed: Palpage échoué
   'Probing Z...': ''
+  'Checking Bed Mesh...': ''
   Probing point {} of {}: 'Point de palpage {} sur {}'
   Probing... ({} points): 'Palpage... ({} points)'
   Proceed: Continuer

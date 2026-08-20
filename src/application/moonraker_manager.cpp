@@ -31,6 +31,7 @@
 #include "moonraker_event_routing.h"
 #include "power_device_state.h"
 #include "sensor_state.h"
+#include "unit_conversions.h"
 #ifdef HELIX_ENABLE_MOCKS
 #include "ams_backend_mock.h"
 #include "moonraker_api_mock.h"
@@ -138,6 +139,9 @@ void MoonrakerManager::shutdown() {
     m_preparing_epoch_observer.release();
     m_print_bed_target_fallback_observer.release();
     m_print_ext_target_fallback_observer.release();
+    for (auto& guard : m_print_position_observers) {
+        guard.release();
+    }
     m_print_layer_observer.release();
     m_print_duration_observer.release();
 
@@ -668,11 +672,22 @@ void MoonrakerManager::init_print_start_collector() {
     // firmware does not echo to gcode_response. The observer fires on the
     // WebSocket thread; the weak_ptr keeps it safe across printer switches
     // (init_print_start_collector re-runs and replaces the collector).
+    // Mesh probe-area bounds ride the same updates — they anchor the
+    // position classifier's zones, and reading them here runs on the same
+    // thread, ordered after the update_bed_mesh() write they come from.
     if (m_api) {
         std::weak_ptr<PrintStartCollector> collector_ref = m_print_start_collector;
-        m_api->set_bed_mesh_presence_observer([collector_ref](bool present) {
+        MoonrakerAPI* api = m_api.get();
+        m_api->set_bed_mesh_presence_observer([api, collector_ref](bool present) {
             if (auto collector = collector_ref.lock()) {
                 collector->note_bed_mesh_presence(present);
+                if (auto* mesh = api->advanced().get_active_bed_mesh()) {
+                    if (mesh->mesh_max[0] > mesh->mesh_min[0] &&
+                        mesh->mesh_max[1] > mesh->mesh_min[1]) {
+                        collector->note_mesh_bounds(mesh->mesh_min[0], mesh->mesh_max[0],
+                                                    mesh->mesh_min[1], mesh->mesh_max[1]);
+                    }
+                }
             }
         });
     }
@@ -939,6 +954,32 @@ void MoonrakerManager::init_print_start_collector() {
     m_print_bed_target_fallback_observer.set_alive_token(m_print_bed_target_fallback_lifetime);
     m_print_ext_target_fallback_observer = ObserverGuard(
         get_printer_state().get_active_extruder_target_subject(), fallback_cb, nullptr);
+
+    // Toolhead position feeds the collector's silent-window inference
+    // ("Probing Z..." / "Checking Bed Mesh..." / sweep → bed mesh). The
+    // subjects fire on the main thread (queued status updates), only while
+    // the toolhead moves; the collector gates on its profile and drops
+    // duplicates. One guard per axis — each callback reads the coherent
+    // triple, and near-identical repeat calls are deduped downstream.
+    auto position_cb = [](lv_observer_t*, lv_subject_t*) {
+        auto collector = s_collector.lock();
+        if (collector && collector->is_active()) {
+            auto& state = get_printer_state();
+            collector->note_position_sample(
+                static_cast<float>(
+                    helix::units::from_centimm(lv_subject_get_int(state.get_position_x_subject()))),
+                static_cast<float>(
+                    helix::units::from_centimm(lv_subject_get_int(state.get_position_y_subject()))),
+                static_cast<float>(helix::units::from_centimm(
+                    lv_subject_get_int(state.get_position_z_subject()))));
+        }
+    };
+    m_print_position_observers[0] =
+        ObserverGuard(get_printer_state().get_position_x_subject(), position_cb, nullptr);
+    m_print_position_observers[1] =
+        ObserverGuard(get_printer_state().get_position_y_subject(), position_cb, nullptr);
+    m_print_position_observers[2] =
+        ObserverGuard(get_printer_state().get_position_z_subject(), position_cb, nullptr);
 
     spdlog::debug("[MoonrakerManager] Print start collector initialized");
 }

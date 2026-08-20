@@ -2076,6 +2076,7 @@ translations:
   Probing Bed...: Sondaggio piano...
   Probing Failed: Sondaggio fallito
   'Probing Z...': ''
+  'Checking Bed Mesh...': ''
   Probing point {} of {}: 'Punto di sondaggio {} di {}'
   Probing... ({} points): 'Sondaggio in corso... ({} punti)'
   Proceed: Procedi

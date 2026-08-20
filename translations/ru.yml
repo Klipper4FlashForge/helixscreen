@@ -2054,6 +2054,7 @@ translations:
   Probing Bed...: Зондирование стола...
   Probing Failed: Ошибка зондирования
   'Probing Z...': ''
+  'Checking Bed Mesh...': ''
   Probing point {} of {}: 'Точка замера {} из {}'
   Probing... ({} points): 'Замер... ({} точек)'
   Proceed: Продолжить

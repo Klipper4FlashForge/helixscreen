@@ -429,6 +429,7 @@
   <translation tag="Check the filament path and try again." de="Prüfen Sie den Filamentpfad und versuchen Sie es erneut."/>
   <translation tag="Check your heater&apos;s rating (typically 40-60W for hotends)" de="Heizleistung prüfen (typisch 40-60W für Hotends)"/>
   <translation tag="Checking" de="Prüfen"/>
+  <translation tag="Checking Bed Mesh..."/>
   <translation tag="Checking Spoolman server..." de="Spoolman-Server wird geprüft..."/>
   <translation tag="Checking accelerometer..." de="Beschleunigungssensor prüfen..."/>
   <translation tag="Checking extruders..."/>

@@ -158,6 +158,11 @@ void PrintStartCollector::start() {
     last_remaining_ = 0;
     fallback_completion_ = false;
 
+    // Position inference starts with a clean slate and a fresh sample clock
+    position_classifier_.reset();
+    last_position_activity_ = helix::PositionActivity::NONE;
+    position_clock_start_ = std::chrono::steady_clock::now();
+
     // Reset thermal rate models with current temperatures
     {
         auto& mgr = ThermalRateManager::instance();
@@ -417,6 +422,65 @@ void PrintStartCollector::note_bed_mesh_presence(bool present) {
     if (leveling_begins) {
         spdlog::info("[PrintStartCollector] bed mesh cleared during cleaning → leveling");
         update_phase(PrintStartPhase::BED_MESH, lv_tr("Bed Leveling..."));
+    }
+}
+
+void PrintStartCollector::note_mesh_bounds(float x_min, float x_max, float y_min, float y_max) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    position_classifier_.set_bounds(x_min, x_max, y_min, y_max);
+}
+
+void PrintStartCollector::note_position_sample(float x_mm, float y_mm, float z_mm) {
+    if (!active_.load()) {
+        return;
+    }
+    helix::PositionActivity activity;
+    helix::PrintStartPhase phase;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!profile_ || !profile_->position_signals()) {
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        const auto ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - position_clock_start_)
+                .count();
+        position_classifier_.note_position(x_mm, y_mm, z_mm, static_cast<uint64_t>(ms));
+        activity = position_classifier_.activity();
+        phase = current_phase_;
+        if (activity == last_position_activity_) {
+            return; // same verdict — nothing to publish
+        }
+        last_position_activity_ = activity;
+    }
+
+    // Map the verdict onto the display. Message-only refinements keep the
+    // phase (and its progress weight) untouched; only the sweep march
+    // promotes the phase. Real gcode_response signals always outrank these —
+    // the classifier's verdicts only matter while the console is quiet.
+    switch (activity) {
+    case helix::PositionActivity::CENTER_PROBE:
+        if (phase == PrintStartPhase::HOMING || phase == PrintStartPhase::CLEANING) {
+            spdlog::info("[PrintStartCollector] position: centre Z probes → \"Probing Z...\"");
+            update_phase(phase, lv_tr("Probing Z..."));
+        }
+        break;
+    case helix::PositionActivity::CORNER_PROBE:
+        if (phase == PrintStartPhase::CLEANING) {
+            spdlog::info("[PrintStartCollector] position: corner tour → \"Checking Bed Mesh...\"");
+            update_phase(phase, lv_tr("Checking Bed Mesh..."));
+        }
+        break;
+    case helix::PositionActivity::RASTER:
+        if (phase != PrintStartPhase::BED_MESH && phase != PrintStartPhase::PURGING &&
+            phase != PrintStartPhase::COMPLETE) {
+            spdlog::info("[PrintStartCollector] position: sweep march → bed mesh");
+            update_phase(PrintStartPhase::BED_MESH, lv_tr("Bed Leveling..."));
+        }
+        break;
+    case helix::PositionActivity::WIPE:
+    case helix::PositionActivity::NONE:
+        break; // wipe already has its console marker; silence needs no label
     }
 }
 

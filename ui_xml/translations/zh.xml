@@ -429,6 +429,7 @@
   <translation tag="Check the filament path and try again." zh="检查耗材路径并重试。"/>
   <translation tag="Check your heater&apos;s rating (typically 40-60W for hotends)" zh="检查加热器功率（热端通常为 40-60W）"/>
   <translation tag="Checking" zh="检查中"/>
+  <translation tag="Checking Bed Mesh..."/>
   <translation tag="Checking Spoolman server..." zh="正在检查 Spoolman 服务器..."/>
   <translation tag="Checking accelerometer..." zh="正在检查加速度计..."/>
   <translation tag="Checking extruders..."/>

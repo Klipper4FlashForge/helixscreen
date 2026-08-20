@@ -2080,6 +2080,7 @@ translations:
   Probing Bed...: Sondeando Cama...
   Probing Failed: Sondeo Fallido
   'Probing Z...': ''
+  'Checking Bed Mesh...': ''
   Probing point {} of {}: 'Punto de sondeo {} de {}'
   Probing... ({} points): 'Sondeando... ({} puntos)'
   Proceed: Continuar

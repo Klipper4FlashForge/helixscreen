@@ -316,15 +316,17 @@ Profiles are JSON files in `assets/config/print_start_profiles/`. Each profile c
 - **Progress mode**: `sequential` (known firmware) or `weighted` (generic heuristics)
 - **`cfs_signals`**: Opt in to Creality's tag-stream matchers (purge `percent` lines, `[box]` CFS load events). The vocabulary is vendor-specific; without the flag, lines that merely contain `percent` plus `num:` never hijack the phase into PURGING.
 - **`adaptive_meshing`**: The bed-mesh sweep is trimmed to the object, so a configured `probe_count` overstates the sweep (see PRINT_START_PROFILES.md).
+- **`position_signals`**: Opt in to toolhead-position inference for the silent window (below).
 
 Profile `message` strings are English translation tags and resolve through the loaded language pack like the built-in labels.
 
 ### Silent-phase signals
 
-Some firmwares run whole preparation steps without echoing anything to the gcode console (Creality K1: accurate Z homing and the bed-mesh corner check are ~3 minutes of silence). Two non-console signals fill the gap:
+Some firmwares run whole preparation steps without echoing anything to the gcode console (Creality K1: accurate Z homing, the bed-mesh corner check, and the mesh sweep are ~3 minutes of silence). Three non-console signals fill the gap:
 
 - **Bed-mesh status flap** - klippy reports the loaded mesh, then clears it, when probing begins. A mesh that disappears while the display shows "Cleaning Nozzle" moves it to "Bed Leveling..." (the probe denominator is fetched at that point).
 - **"probe at X,Y is z=Z" lines** - counted as mesh points once enough distinct points confirm a sweep is underway; they never fall through to the pattern matcher, so a profile's BED_MESH pattern cannot re-announce the phase and reset the counters mid-sweep.
+- **Toolhead position inference** (`position_signals`, K1 family today) - Klipper keeps pushing `toolhead.position` through the silence. The collector classifies the stream geometrically against the bed-mesh probe area (`PrintStartPositionClassifier`, `tests/unit/test_print_start_position_classifier.cpp` replays real captures): repeated Z descents near the mesh centre read as **"Probing Z..."**, touches at ≥3 distinct mesh corners as **"Checking Bed Mesh..."**, and a monotonic row march as the mesh sweep (BED_MESH entry, same edge as the flap). These refine the message without touching the phase or its progress weight - real console markers always outrank them.
 
 For developer details on creating profiles for new printers, see [PRINT_START_PROFILES.md](PRINT_START_PROFILES.md).
 

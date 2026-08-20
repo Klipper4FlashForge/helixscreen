@@ -3396,3 +3396,71 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture, "A probe line counts as pre-p
 
     REQUIRE(get_current_phase() != PrintStartPhase::COMPLETE);
 }
+
+// ============================================================================
+// POSITION TELEMETRY INTEGRATION — silent-window refinement, end to end.
+// Coordinates below are the real K1C capture values (mesh 5..215, wipe strip
+// beyond Y=215, centre probes at ~(110,110), corner validation at the mesh
+// corners, sweep rows marching X at constant Y).
+// ============================================================================
+
+TEST_CASE_METHOD(K1CPrintStartReplayFixture,
+                 "Position samples refine the silent window's status line",
+                 "[print][collector][k1c][position]") {
+    if (!have_profile_) {
+        SKIP("creality_k1.json not available");
+    }
+    collector().start();
+    settle();
+    collector().enable_fallbacks();
+    collector().note_mesh_bounds(5.0f, 215.0f, 5.0f, 215.0f);
+
+    // The console marker that enters CLEANING — then the firmware goes quiet
+    // (no forwarded markers for the Z probes / corner validation / sweep).
+    send_gcode_response("// [CLEAR_NOZZLE_QUICK] src_pos[2]:3.1676562");
+    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
+
+    // Centre Z probes: hover-and-dip at the mesh centre.
+    collector().note_position_sample(114.1f, 103.7f, 6.0f);
+    collector().note_position_sample(114.1f, 103.7f, 0.0f);
+    collector().note_position_sample(110.7f, 110.9f, 6.0f);
+    collector().note_position_sample(110.7f, 110.9f, 0.0f);
+    drain_async_updates();
+    REQUIRE(get_current_message() == "Probing Z...");
+    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING); // message-only
+
+    // Corner validation tour: three distinct mesh corners.
+    collector().note_position_sample(5.0f, 5.0f, 5.0f);
+    collector().note_position_sample(5.0f, 215.0f, 5.0f);
+    collector().note_position_sample(215.0f, 215.0f, 5.0f);
+    drain_async_updates();
+    REQUIRE(get_current_message() == "Checking Bed Mesh...");
+    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
+
+    // Sweep march promotes the phase (same edge the bed-mesh flap produces).
+    collector().note_position_sample(57.5f, 5.0f, 3.0f);
+    collector().note_position_sample(110.0f, 5.0f, 3.0f);
+    collector().note_position_sample(162.5f, 5.0f, 3.0f);
+    drain_async_updates();
+    REQUIRE(get_current_phase() == PrintStartPhase::BED_MESH);
+    REQUIRE(get_current_message() == "Bed Leveling...");
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "Position samples ignored without profile position_signals",
+                 "[print][collector][position]") {
+    // Default profile has no position_signals — the inference must stay off.
+    collector().start();
+    drain_async_updates();
+    collector().enable_fallbacks();
+    collector().note_mesh_bounds(5.0f, 215.0f, 5.0f, 215.0f);
+
+    const std::string before = get_current_message();
+
+    collector().note_position_sample(114.1f, 103.7f, 6.0f);
+    collector().note_position_sample(110.7f, 110.9f, 0.0f);
+    collector().note_position_sample(110.7f, 110.9f, 0.0f);
+    drain_async_updates();
+
+    CHECK(get_current_message() == before);
+}

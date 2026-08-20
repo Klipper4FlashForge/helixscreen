@@ -429,6 +429,7 @@
   <translation tag="Check the filament path and try again." ja="フィラメント経路を確認して、もう一度お試しください。"/>
   <translation tag="Check your heater&apos;s rating (typically 40-60W for hotends)" ja="ヒーターの定格を確認してください（ホットエンドは通常40〜60W）"/>
   <translation tag="Checking" ja="確認中"/>
+  <translation tag="Checking Bed Mesh..."/>
   <translation tag="Checking Spoolman server..." ja="Spoolman サーバーを確認中..."/>
   <translation tag="Checking accelerometer..." ja="加速度センサーを確認中..."/>
   <translation tag="Checking extruders..."/>

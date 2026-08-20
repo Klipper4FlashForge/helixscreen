@@ -1899,6 +1899,7 @@ translations:
   Probing Bed...: 正在探测热床...
   Probing Failed: 探测失败
   'Probing Z...': ''
+  'Checking Bed Mesh...': ''
   Probing point {} of {}: '探测点 {} / {}'
   Probing... ({} points): '探测中...（{} 个点）'
   Proceed: 继续

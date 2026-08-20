@@ -91,6 +91,15 @@ Profiles live in `assets/config/print_start_profiles/{name}.json`.
   // Without the flag those lines are inert on every profile.
   "cfs_signals": false,
 
+  // OPTIONAL: This printer's prep chain goes silent (no gcode_response
+  // markers) while it homes Z, validates the mesh at its corners, and
+  // sweeps a calibration mesh - but toolhead.position keeps flowing.
+  // The collector classifies that stream and refines the status line
+  // through the silence: "Probing Z...", "Checking Bed Mesh...", and
+  // sweep-march -> BED_MESH entry. Zones are anchored to the bed-mesh
+  // probe area (mesh_min/mesh_max from the bed_mesh status object).
+  "position_signals": false,
+
   // OPTIONAL: The bed-mesh sweep is trimmed to the object (KAMP-style),
   // so a configured probe_count overstates the sweep - the collector
   // skips the configfile denominator and counts live points instead.

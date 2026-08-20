@@ -243,6 +243,11 @@ bool PrintStartProfile::parse_json(const json& j, const std::string& source_path
         cfs_signals_ = j["cfs_signals"].get<bool>();
     }
 
+    // Silent-window position inference (optional, defaults to false)
+    if (j.contains("position_signals") && j["position_signals"].is_boolean()) {
+        position_signals_ = j["position_signals"].get<bool>();
+    }
+
     // Progress mode (optional, defaults to weighted)
     if (j.contains("progress_mode") && j["progress_mode"].is_string()) {
         std::string mode_str = to_upper(j["progress_mode"].get<std::string>());
