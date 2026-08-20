@@ -4333,6 +4333,18 @@ TEST_CASE("PrinterDetector: print_start_default_phases empty for unknown printer
     REQUIRE(phases.empty());
 }
 
+TEST_CASE("PrinterDetector: print_start_default_phases returns K1C measured durations",
+          "[printer][preprint]") {
+    // Measured on hardware 2026-08-19: the generic defaults (30s homing, 20s
+    // cleaning) under-predicted the K1C prep chain by 100-800%. Heating phases
+    // stay absent — the thermal model owns those.
+    auto phases = PrinterDetector::get_print_start_default_phases("Creality K1C");
+    REQUIRE(phases.size() == 3);
+    REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::HOMING)] == 60);
+    REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::CLEANING)] == 85);
+    REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::BED_MESH)] == 125);
+}
+
 TEST_CASE("PrinterDetector: print_start_default_phases empty for printer without override",
           "[printer][preprint]") {
     // Voron 2.4 has no print_start_default_phases field — generic defaults apply.

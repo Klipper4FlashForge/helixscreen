@@ -1542,6 +1542,12 @@
       "probe_type": "prtouch_v2",
       "preset": "k1c",
       "print_start_profile": "creality_k1",
+      "_print_start_default_phases_comment": "Measured on a K1C 2026-08-19 (flowrate print, full prep chain): homing via CX_ROUGH_G28 ran 60s vs the 30s generic default; the nozzle wipe (CLEAR_NOZZLE_QUICK rounds) ran ~85s; a check-passed mesh (4-corner validation + 25-point sweep at 5.5s/point) ran 123s. Heating phases are omitted - the thermal model owns those.",
+      "print_start_default_phases": {
+        "HOMING": 60,
+        "CLEANING": 85,
+        "BED_MESH": 125
+      },
       "pre_print_options": {
         "macro_name": "START_PRINT",
         "options": [
@@ -1610,6 +1616,12 @@
       "probe_type": "prtouch_v2",
       "preset": "k1c",
       "print_start_profile": "creality_k1",
+      "_print_start_default_phases_comment": "Measured on a K1C 2026-08-19 (flowrate print, full prep chain): homing via CX_ROUGH_G28 ran 60s vs the 30s generic default; the nozzle wipe (CLEAR_NOZZLE_QUICK rounds) ran ~85s; a check-passed mesh (4-corner validation + 25-point sweep at 5.5s/point) ran 123s. Heating phases are omitted - the thermal model owns those.",
+      "print_start_default_phases": {
+        "HOMING": 60,
+        "CLEANING": 85,
+        "BED_MESH": 125
+      },
       "pre_print_options": {
         "macro_name": "START_PRINT",
         "options": [
