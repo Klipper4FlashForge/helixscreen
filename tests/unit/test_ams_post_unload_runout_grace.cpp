@@ -36,6 +36,7 @@
 #include "../lvgl_test_fixture.h"
 #include "../test_helpers/ams_state_test_access.h"
 #include "../test_helpers/post_unload_grace_test_access.h"
+#include "../test_helpers/print_state_test_drivers.h"
 #include "../test_helpers/print_status_widget_test_access.h"
 #include "ams_backend_mock.h"
 #include "ams_state.h"
@@ -395,8 +396,15 @@ class IdleRunoutGraceFixture : public LVGLTestFixture {
         api.reset();
     }
 
+    /// Drive the real input. PrintStatusWidget's idle-runout gate reads
+    /// print_lifecycle, which is republished from update_from_status(); writing
+    /// print_state_enum by hand leaves the lifecycle stale and the gate never
+    /// re-evaluates, so the assertion would fail as if the guard were missing.
     static void set_print_state(PrintJobState s) {
-        lv_subject_set_int(get_printer_state().get_print_state_enum_subject(), static_cast<int>(s));
+        helix::test::set_wire_state(get_printer_state(), s);
+        for (int i = 0; i < 8; ++i) {
+            helix::ui::UpdateQueue::instance().drain();
+        }
     }
 
     static constexpr const char* SENSOR = "filament_switch_sensor runout_sensor";

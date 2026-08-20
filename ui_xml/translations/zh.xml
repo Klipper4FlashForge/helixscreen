@@ -179,7 +179,9 @@
   <translation tag="An internal error occurred. The app continues running — please send a debug bundle from Settings &gt; About if it repeats." zh="发生了内部错误。应用程序继续运行 — 如果反复出现，请从设置 &gt; 关于发送调试捆绑包。"/>
   <translation tag="An unexpected printer error occurred." zh="发生了意外的打印机错误。"/>
   <translation tag="An update is available" zh="有可用更新"/>
+  <translation tag="Analyzing data..."/>
   <translation tag="Analyzing data... {}%" zh="正在分析数据... {}%"/>
+  <translation tag="Analyzing data... {}s"/>
   <translation tag="Android logcat" zh="Android logcat"/>
   <translation tag="Animations" zh="动画"/>
   <translation tag="Anonymous data to help improve HelixScreen" zh="匿名数据以帮助改进 HelixScreen"/>
@@ -986,6 +988,7 @@
   <translation tag="Firmware Restart" zh="固件重启"/>
   <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder" zh="固件报告未配置旁路。如果您将耗材直接送入挤出机，请启用此选项"/>
   <translation tag="Firmware restarting..." zh="固件重启中..."/>
+  <translation tag="Firmware saved X = Y&apos;s value; the measured X result was discarded"/>
   <translation tag="FlashForge Adventurer 5M" zh="FlashForge Adventurer 5M"/>
   <translation tag="FlashForge Adventurer 5X" zh="FlashForge Adventurer 5X"/>
   <translation tag="FlashForge IFS" zh="FlashForge IFS"/>
@@ -1375,6 +1378,7 @@
   <translation tag="Measure and compare belt path frequencies" zh="测量和比较皮带路径频率"/>
   <translation tag="Measure belt path frequencies" zh="测量皮带路径频率"/>
   <translation tag="Measured" zh="已测量"/>
+  <translation tag="Measured (shaper off)"/>
   <translation tag="Measurement Failed" zh="测量失败"/>
   <translation tag="Measuring Path A... %d%%" zh="正在测量路径 A... %d%%"/>
   <translation tag="Measuring Path B... %d%%" zh="正在测量路径 B... %d%%"/>
@@ -1589,6 +1593,7 @@
   <translation tag="Objects" zh="对象"/>
   <translation tag="Off" zh="关"/>
   <translation tag="Off:" zh="关:"/>
+  <translation tag="Old setting on today&apos;s data: {} residual - now: {}"/>
   <translation tag="On" zh="开"/>
   <translation tag="On and Off macros must be different" zh="开和关的宏必须不同"/>
   <translation tag="On-screen Alerts" zh="屏幕提醒"/>
@@ -1729,6 +1734,7 @@
   <translation tag="Press Scan to search" zh="按扫描搜索"/>
   <translation tag="Pressure:" zh="压力:"/>
   <translation tag="Preview Sounds" zh="预览声音"/>
+  <translation tag="Previous"/>
   <translation tag="Price" zh="价格"/>
   <translation tag="Primary" zh="主要"/>
   <translation tag="Priming..." zh="正在预挤..."/>
@@ -1910,6 +1916,7 @@
   <translation tag="Refresh" zh="刷新"/>
   <translation tag="Refresh Interval" zh="刷新间隔"/>
   <translation tag="Refresh RFID" zh="刷新 RFID"/>
+  <translation tag="Relative vibration"/>
   <translation tag="Release all stepper motors. Position will be lost." zh="释放所有步进电机。位置信息将丢失。"/>
   <translation tag="Remaining (g)" zh="剩余 (g)"/>
   <translation tag="Remaining Weight (g)" zh="剩余重量（克）"/>

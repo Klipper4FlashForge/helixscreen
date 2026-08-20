@@ -7,6 +7,10 @@ namespace helix::ui {
 ControlButtonView compute_control_button_view(const ControlButtonInputs& in) {
     ControlButtonView v;
 
+    // RAW_PRINT_STATE_OK: this must EXCLUDE Preparing. Widening it to
+    // job_holds_machine() re-enables Pause during a pre-print block and makes
+    // Stop send CANCEL_PRINT to a printer holding no job.
+    //
     // The printer owns the job only once it reports running or paused. During a
     // host-side pre-start block it still describes the PREVIOUS job.
     const bool printer_has_the_job = (in.job_state == helix::PrintJobState::PRINTING ||
@@ -28,6 +32,8 @@ ControlButtonView compute_control_button_view(const ControlButtonInputs& in) {
     // PRINT_START. There is nothing meaningful to pause in either case, and PAUSE
     // mid-macro is a footgun: the macro keeps running and the pause lands at the
     // next print move, which breaks many custom start macros.
+    // RAW_PRINT_STATE_OK: which macro the button would send is a question about
+    // what the printer reports, not about who holds the machine.
     const bool slot_ok =
         (in.job_state == helix::PrintJobState::PAUSED) ? in.resume_available : in.pause_available;
     v.primary_enabled =
@@ -43,6 +49,7 @@ ControlButtonView compute_control_button_view(const ControlButtonInputs& in) {
         v.primary_label = "Resuming...";
         break;
     case PendingAction::None:
+        // RAW_PRINT_STATE_OK: which macro the button would send.
         if (in.job_state == helix::PrintJobState::PAUSED) {
             v.primary_icon = CONTROL_ICON_PLAY;
             v.primary_label = "Resume";

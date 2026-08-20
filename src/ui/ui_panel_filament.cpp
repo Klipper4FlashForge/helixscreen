@@ -1873,8 +1873,7 @@ void FilamentPanel::update_filament_op_buttons() {
     // IFS). Reading the raw print_active subject here would grey the buttons
     // through every runout pause on every other backend — i.e. exactly when the
     // user needs them.
-    const auto lifecycle =
-        static_cast<PrintState>(lv_subject_get_int(printer_state_.get_print_lifecycle_subject()));
+    const auto lifecycle = printer_state_.get_print_lifecycle();
     const bool print_blocks_op =
         helix::ui::print_blocks_filament_op(lifecycle, backend->filament_ops_self_home());
 
@@ -2599,8 +2598,7 @@ void FilamentPanel::restore_heater_after_preheat() {
     // the pre-start block is about to heat the nozzle, and the comment above
     // already gives "a real print re-heats or cancels the pending cooldown" as
     // the reason this is safe. Preparing is that case, one step earlier.
-    const auto lifecycle =
-        static_cast<PrintState>(lv_subject_get_int(printer_state_.get_print_lifecycle_subject()));
+    const auto lifecycle = printer_state_.get_print_lifecycle();
     if (!job_holds_machine(lifecycle)) {
         PostOpCooldownManager::instance().schedule();
     }
