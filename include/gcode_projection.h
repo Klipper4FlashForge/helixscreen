@@ -90,13 +90,15 @@ struct AutoFitResult {
 
 /// Compute projection scale and offsets to fit a bounding box within a canvas.
 ///
-/// @param bb            Bounding box to fit (world coordinates, mm)
+/// @param raw_bb        Bounding box to fit (world coordinates, mm). Normalized
+///                      internally, so an axis that arrived inverted does not
+///                      discard the axes that were valid.
 /// @param view_mode     Projection mode
 /// @param canvas_width  Canvas width in pixels
 /// @param canvas_height Canvas height in pixels
 /// @param padding       Fractional padding around content (e.g. 0.05 = 5% each side)
 /// @return Scale and offset parameters for use with project()
-AutoFitResult compute_auto_fit(const AABB& bb, ViewMode view_mode, int canvas_width,
+AutoFitResult compute_auto_fit(const AABB& raw_bb, ViewMode view_mode, int canvas_width,
                                int canvas_height, float padding = 0.05f);
 
 // ============================================================================

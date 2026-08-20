@@ -76,9 +76,14 @@ glm::ivec2 project(const ProjectionParams& params, float x, float y, float z) {
 // AUTO-FIT
 // ============================================================================
 
-AutoFitResult compute_auto_fit(const AABB& bb, ViewMode view_mode, int canvas_width,
+AutoFitResult compute_auto_fit(const AABB& raw_bb, ViewMode view_mode, int canvas_width,
                                int canvas_height, float padding) {
     AutoFitResult result;
+
+    // Order any inverted axis before the emptiness test — one bad axis must not
+    // discard the others. Shared with GCodeCamera::fit_to_bounds so the 2D and
+    // 3D paths agree on which boxes are framable.
+    const AABB bb = raw_bb.normalized();
 
     // A default-constructed AABB is {+inf, -inf}: every range below goes to -inf,
     // trips the degeneracy clamp, and — worse — the offsets become
