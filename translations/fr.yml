@@ -21,7 +21,7 @@ translations:
   '%zu changes': '%zu modifications'
   '%zu events queued': '%zu événements en file'
   '%zu plugins failed to load': '%zu plugins nont pas pu se charger'
-  (different grade): ''
+  (different grade): (grade différent)
   (incompatible): (incompatible)
   (multi-tool): (multi-outils)
   (none detected): (aucun détecté)
@@ -103,9 +103,6 @@ translations:
   ACCELEROMETERS: ACCÉLÉROMÈTRES
   ACE Moonraker bridge not found. Install ace_status.py for full support.: Pont
     ACE Moonraker introuvable. Installez ace_status.py pour un support complet.
-  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Pont
-    ACE Moonraker introuvable. Installez ace_status.py depuis ValgACE pour un support
-    complet.
   ACTIONS: ACTIONS
   ADXL: ADXL
   AFC: AFC
@@ -204,9 +201,8 @@ translations:
   An unexpected printer error occurred.: Une erreur inattendue de l'imprimante s'est
     produite.
   An update is available: Une mise à jour est disponible
-  Analyzing data...: ''
-  Analyzing data... {}%: 'Analyse des données... {}%'
-  Analyzing data... {}s: ''
+  Analyzing data...: Analyse des données...
+  Analyzing data... {}s: Analyse des données... {}s
   Android logcat: Logcat Android
   Animations: Animations
   Anonymous data to help improve HelixScreen: Données anonymes pour améliorer HelixScreen
@@ -345,18 +341,17 @@ translations:
   Button taps and navigation sounds: Sons de boutons et de navigation
   Buzz Servo: 'Faire vibrer le servo'
   Bypass: Bypass
-  Bypass Is Active: ''
+  Bypass Is Active: Bypass actif
   Bypass Mode: Mode bypass
-  Bypass active — this print runs on the external spool, not on the lanes below.: ''
-  Bypass active — this print runs on the external spool.: ''
-  Bypass cannot be changed while printing: ''
+  Bypass active — this print runs on the external spool.: 'Bypass actif : cette impression utilise la bobine externe.'
+  Bypass cannot be changed while printing: Le bypass ne peut pas être modifié pendant l'impression
   Bypass controlled by hardware sensor: Bypass contrôlé par capteur matériel
   Bypass controlled by sensor: Bypass contrôlé par le capteur
   Bypass disabled: Bypass désactivé
   Bypass enabled: Bypass activé
   Bypass failed: Échec du bypass
   ? Bypass is active, but this print uses AMS lanes. The printer may refuse to load a lane while bypass filament is in the toolhead. Remove the filament and turn bypass off before printing. Start anyway?
-  : ''
+  : Le bypass est actif, mais cette impression utilise les voies de l'AMS. L'imprimante peut refuser de charger une voie tant que du filament bypass se trouve dans la tête d'outil. Retirez le filament et désactivez le bypass avant d'imprimer. Démarrer quand même ?
   Bypass toggle failed: Échec de la bascule du bypass
   C: C
   CALIBRATION: CALIBRATION
@@ -519,7 +514,7 @@ translations:
     la visualisation du maillage du plateau
   Choose sound style: Choisir le style de son
   ? Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses.
-  : ''
+  : Choisissez le modèle correspondant à votre imprimante. Cela définit les macros d'impression, les rôles des ventilateurs et le comportement de calibration qu'utilise HelixScreen.
   Choose what to power off or restart.: Choisissez ce qu'il faut éteindre ou redémarrer.
   Clean Brush: 'Nettoyer la brosse'
   Clean Nozzle: Nettoyer la buse
@@ -1074,8 +1069,8 @@ translations:
   Filament: Filament
   Filament Detected: Filament détecté
   Filament Environment: Environnement du filament
-  Filament Grade Mismatch: ''
-  Filament In The Toolhead: ''
+  Filament Grade Mismatch: Grade de filament incompatible
+  Filament In The Toolhead: Filament dans la tête d'outil
   Filament Mapping: Mappage du filament
   Filament Runout: Fin de filament
   Filament Sensor: Capteur de filament
@@ -1087,11 +1082,11 @@ translations:
   Filament deleted: Filament supprimé
   Filament diameter sensors for flow compensation: Capteurs de diamètre de filament
     pour compensation du débit
-  Filament is clear of the toolhead. Pull it out the rest of the way.: ''
+  Filament is clear of the toolhead. Pull it out the rest of the way.: Le filament est dégagé de la tête d'outil. Tirez-le jusqu'au bout.
   Filament is loose: Le filament est détendu
   Filament is pulling tight: Le filament est sous tension
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
-  : ''
+  : Le filament est encore à la buse après le déchargement. La coupe ou la rétractation n'a peut-être pas abouti. Dégagez la tête d'outil avant de charger une autre bobine.
   'Filament load failed: {}': 'Échec du chargement du filament : {}'
   Filament loaded: Filament chargé
   Filament operation failed: Échec de l'opération filament
@@ -1101,7 +1096,7 @@ translations:
   : 'Filament épuisé et le CFS n''a trouvé aucune bobine compatible vers laquelle basculer. Chargez une bobine de même matériau et de même couleur, puis reprenez.'
   Filament ran out at the toolhead: 'Filament épuisé à la tête d''outil'
   Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: 'Filament épuisé. Le réapprovisionnement automatique est désactivé, le CFS ne changera donc pas de bobine tout seul. Chargez du filament, puis reprenez.'
-  Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume.: ''
+  Filament ran out. The CFS knows which spools match, but those slots are empty. Load one of them, then resume.: Filament épuisé. Le CFS sait quelles bobines correspondent, mais ces slots sont vides. Chargez-en une, puis reprenez.
   Filament runout: Fin de filament
   Filament runout and motion detection sensors: Capteurs de fin de filament et de
     détection de mouvement
@@ -1125,7 +1120,7 @@ translations:
   Firmware Restart: Redémarrage firmware
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: Le firmware ne signale aucun bypass. Activez cette option si vous alimentez l'extrudeur directement en filament
   Firmware restarting...: Redémarrage du firmware...
-  Firmware saved X = Y's value; the measured X result was discarded: ''
+  Firmware saved X = Y's value; the measured X result was discarded: Le firmware a enregistré la valeur de Y pour X ; le résultat mesuré de X a été écarté
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
@@ -1372,8 +1367,8 @@ translations:
   Keep Navigation Bar: Conserver la barre de navigation
   Keep Printing: Continuer l'impression
   Keep Required: Garder obligatoire
-  Keep current: ''
-  Keep Spool Info on Eject: ''
+  Keep current: Garder l'actuel
+  Keep Spool Info on Eject: Garder les informations de bobine lors de l'éjection
   Keep the bypass spool visible when bypass is off: Garder la bobine de bypass visible lorsque le bypass est désactivé
   Kick away: 'Éjecter'
   Kinematics: Cinématique
@@ -1571,8 +1566,7 @@ translations:
   Measure and compare belt path frequencies: Mesurer et comparer les fréquences des
     chemins de courroie
   Measure belt path frequencies: Mesurer les fréquences des chemins de courroie
-  Measured: Mesuré
-  Measured (shaper off): ''
+  Measured (shaper off): Mesuré (shaper désactivé)
   Measurement Failed: Échec de la mesure
   Measuring Path A... %d%%: Mesure du chemin A... %d%%
   Measuring Path B... %d%%: Mesure du chemin B... %d%%
@@ -1753,7 +1747,7 @@ translations:
   Not Enough Filament: Filament insuffisant
   Not Now: Pas maintenant
   Not available here. Update from a terminal.: Indisponible ici. Mettez à jour depuis un terminal.
-  Not available on Android: ''
+  Not available on Android: Non disponible sur Android
   Not calibrated: Non calibré
   Not configured: Non configuré
   Not connected: Non connecté
@@ -1804,7 +1798,7 @@ translations:
   Objects: Objets
   'Off': Éteint
   'Off:': 'Arrêt :'
-  "Old setting on today's data: {} residual - now: {}": ''
+  "Old setting on today's data: {} residual - now: {}": 'Ancien réglage sur les données du jour : {} résiduel - maintenant : {}'
   'On': Allumé
   On and Off macros must be different: Les macros On et Off doivent être différentes
   On-screen Alerts: 'Alertes à l''écran'
@@ -1964,7 +1958,7 @@ translations:
   Press Scan to search: Appuyez sur Scanner pour rechercher
   'Pressure:': 'Pression :'
   Preview Sounds: Aperçu des sons
-  Previous: ''
+  Previous: Précédent
   Price: Prix
   Primary: Principal
   Priming...: Amorçage...
@@ -1991,8 +1985,8 @@ translations:
   Print Time: Temps d'impression
   Print Tuning: Réglage de l'impression
   Print Was Terminated: L'impression a été interrompue
-  Print cancelled: ''
-  Print did not start: ''
+  Print cancelled: Impression annulée
+  Print did not start: L'impression n'a pas démarré
   Print didn't start — printer may be busy or offline (B3 polls={}, status=0x{:02X}, error=0x{:02X}): Limpression
     na pas démarré — limprimante est peut-être occupée ou hors ligne (sondages B3={},
     état=0x{:02X}, erreur=0x{:02X})
@@ -2014,7 +2008,7 @@ translations:
   Printer Firmware Disconnected: Firmware imprimante déconnecté
   Printer Image: Image de l'imprimante
   Printer Manager: Gestionnaire d'imprimante
-  Printer Model: ''
+  Printer Model: Modèle d'imprimante
   Printer Name: Nom de l'imprimante
   'Printer Setup: Connection': 'Config. imprimante : Connexion'
   'Printer Setup: Fans': 'Config. imprimante : Ventilateurs'
@@ -2045,7 +2039,7 @@ translations:
   Printer name: Nom de l'imprimante
   Printer not ready: Imprimante non prête
   Printer ready: Imprimante prête
-  Printer type mismatch: ''
+  Printer type mismatch: Type d'imprimante incompatible
   'Printer:': 'Imprimante :'
   'Printer: ': 'Imprimante : '
   PrinterIdentify: Identifier l'imprimante
@@ -2127,15 +2121,14 @@ translations:
   Ramming Volume: 'Volume de bourrage'
   Raspberry Pi: Raspberry Pi
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
-  Re-identify: ''
+  Re-identify: Ré-identifier
   Re-probe: Re-palper
   Re-read spool RFID tags and remaining length: 'Relire les étiquettes RFID des bobines et la longueur restante'
   Re-syncs Happy Hare's tracked state with the hardware.: Resynchronise l'état suivi
     par Happy Hare avec le matériel.
   Ready: Prêt
-  Ready for filament operations: ''
+  Ready for filament operations: Prêt pour les opérations filament
   Ready to Apply: Prêt à appliquer
-  Ready to load: Prêt à charger
   Reason: Raison
   ? "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
   : "Raison : {}\n\nL'imprimante ne peut pas reprendre cette impression. Recommencer depuis le début ?"
@@ -2147,7 +2140,7 @@ translations:
     les résultats détaillés à tout moment dans les paramètres.
   Recent Prints: Impressions récentes
   Recently Printed: Récemment imprimé
-  Reconnect: ''
+  Reconnect: Reconnecter
   Record Timelapse: Enregistrer le timelapse
   Record timelapses of your prints: Enregistrer des timelapses de vos impressions
   Recorded timelapses will appear here: Les timelapses enregistrés apparaîtront ici
@@ -2169,7 +2162,7 @@ translations:
   Refresh: Rafraîchir
   Refresh Interval: Intervalle de rafraîchissement
   Refresh RFID: 'Actualiser le RFID'
-  Relative vibration: ''
+  Relative vibration: Vibration relative
   Release all stepper motors. Position will be lost.: Relâcher tous les moteurs pas
     à pas. La position sera perdue.
   Remaining (g): Restant (g)
@@ -2177,7 +2170,7 @@ translations:
   Remap Tool: Réassigner l'outil
   Remap needs the HelixPrint plugin: La réaffectation nécessite le plugin HelixPrint
   Remap…: Réaffecter…
-  Remember lane spool details across an eject: ''
+  Remember lane spool details across an eject: Mémoriser les détails de la bobine de la voie après une éjection
   Remove: Supprimer
   Remove PIN: Supprimer le PIN
   Remove Spoolman?: Supprimer Spoolman ?
@@ -2200,7 +2193,7 @@ translations:
   Requires Moonraker power device: 'Nécessite un périphérique d''alimentation Moonraker'
   Requires Moonraker-Timelapse plugin: Nécessite le plugin Moonraker-Timelapse
   Requires Multi-Filament System or MMU hardware: 'Nécessite un système multi-filament ou du matériel MMU'
-  Requires a filament system with bypass: ''
+  Requires a filament system with bypass: Nécessite un système de filament avec bypass
   Requires clog detection hardware: 'Nécessite du matériel de détection de bourrage'
   Resend write failed at chunk {}: Échec du renvoi de lécriture au bloc {}
   Reset: Réinitialiser
@@ -2539,7 +2532,6 @@ translations:
   Speed used to push filament out of the box (mm/s): Vitesse utilisée pour pousser
     le filament hors de la boîte (mm/s)
   Spool: Bobine
-  'Spool ': 'Bobine '
   'Spool #': Bobine n°
   'Spool #{}': 'Bobine #{}'
   Spool Info: Info bobine
@@ -2710,12 +2702,12 @@ translations:
     n'interfère avec les impressions. Vous pouvez le réactiver dans Paramètres > Affichage
     et son.
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
-  : ''
+  : Le filament n'est pas arrivé à la buse. Le CFS n'a signalé aucune erreur, mais le capteur de tête d'outil ne détecte toujours pas de filament. Vérifiez que la bobine est bien en place et que le chemin est dégagé, puis réessayez.
   The filament system reported an error: Le système de filament a signalé une erreur
   The heater will cycle on and off several times.: Le chauffage s'allumera et s'éteindra
     plusieurs fois.
   ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
-  : ''
+  : La bobine chargée est {}, mais ce fichier a été tranché pour {}. Un filament chargé fonctionne à un débit plus faible et nécessite une buse durcie.
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "Le moteur fait vibrer la courroie tandis qu'un stroboscope clignote à la même fréquence. Lorsque la courroie semble immobile (figée), vous avez trouvé la fréquence de résonance.\n\nUtilisez les boutons de fréquence pour balayer les valeurs jusqu'à ce que la courroie paraisse immobile, puis verrouillez la lecture."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
@@ -2738,7 +2730,7 @@ translations:
   The runout sensor indicates no filament is loaded. Start print anyway?: Le capteur
     de fin de filament indique qu'aucun filament n'est chargé. Démarrer l'impression
     quand même ?
-  The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?: ''
+  The toolhead has filament but no AMS lane reports it loaded. Pull it out manually before printing. Start anyway?: La tête d'outil contient du filament mais aucune voie de l'AMS ne le signale comme chargé. Retirez-le manuellement avant d'imprimer. Démarrer quand même ?
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: Le
     capteur de la tête d'outil indique que du filament est déjà chargé. Procéder au
     chargement quand même ?
@@ -2752,7 +2744,7 @@ translations:
     redémarrage.
   Theme reset to defaults: Thème réinitialisé par défaut
   'Theme: ': 'Thème : '
-  'These tools have a different filament grade loaded:': ''
+  'These tools have a different filament grade loaded:': 'Ces outils ont un grade de filament différent chargé :'
   'These tools have incompatible materials loaded:': 'Ces outils ont des matériaux
     incompatibles chargés :'
   'These tools have no filament loaded:': 'Ces outils n''ont pas de filament chargé
@@ -2770,10 +2762,10 @@ translations:
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a "Timer Too Close" error. Continue anyway?
   : Cet appareil dispose de très peu de RAM. La calibration de résonance est gourmande en mémoire et peut provoquer une erreur "Timer Too Close". Continuer quand même ?
   This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Cela ne correspond pas à la bobine Spoolman liée. L'ajouter comme nouvelle bobine, ou mettre à jour la bobine liée pour correspondre ?
-  This filament system does not report buffer or flow data.: ''
+  This filament system does not report buffer or flow data.: Ce système de filament ne fournit ni données de tampon ni données de débit.
   This file was sliced for {} but {} is loaded.: Ce fichier a été tranché pour {}
     mais {} est chargé.
-  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: ''
+  This file was sliced for {}, but {} is loaded. It will print slower and hotter than the loaded spool needs.: Ce fichier a été tranché pour {}, mais {} est chargé. L'impression sera plus lente et plus chaude que ce qu'exige la bobine chargée.
   This is exactly the data that will be sent: Voici exactement les données qui seront
     envoyées
   This is what data would be sent if enabled: Voici les données qui seraient envoyées
@@ -2788,7 +2780,7 @@ translations:
     impression nécessite environ %.0fg mais il reste environ %.0fg sur la bobine.
     Démarrer quand même ?
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
-  : ''
+  : Cette imprimante ressemble à un {} ({} % de confiance), mais elle est configurée en {}. Un type erroné applique des options et des préréglages de pré-impression incorrects.
   This tool probes each bed screw and tells you how much to adjust.: Cet outil palpe
     chaque vis du plateau et vous indique combien ajuster.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
@@ -2854,7 +2846,7 @@ translations:
   Toggle Auto-Refill: 'Basculer le réapprovisionnement automatique'
   Toggle Moonraker power devices: 'Basculer les périphériques d''alimentation Moonraker'
   Toggle Quiet Mode: 'Basculer le mode silencieux'
-  Toggle external spool bypass: ''
+  Toggle external spool bypass: Bascule du bypass de la bobine externe
   Toggle toolhead LED for an extruder: 'Basculer la LED de la tête d''outil pour un extrudeur'
   'Toggle:': 'Basculer :'
   Too humid: Trop humide
@@ -2957,8 +2949,7 @@ translations:
   Update your security PIN: Mettez à jour votre PIN de sécurité
     sur cette installation.
   Updating Configuration...: Mise à jour de la configuration...
-  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Passez à AFC 1.2.0 ou supérieur pour les noms de filament et les bobines multicolores.
-  Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.: ''
+  Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.: Passez à AFC 1.2.0 ou plus récent pour les bobines multicolores. Cette version ajoute aussi les noms de filament, qui nécessitent sinon Spoolman.
   Upload: Téléverser
   Upload Debug Bundle: Téléverser le bundle de débogage
   Upload Failed: Téléversement échoué
@@ -3159,7 +3150,7 @@ translations:
   of: de
   'off': éteint
   Monitor for print abnormalities (K2 Plus camera-based): Surveiller les anomalies d'impression (caméra K2 Plus)
-  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: ''
+  AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: Le paramètre remember_spool d'AFC retient les informations de bobine dans le firmware ; il prime sur cette option
   AI detection: Détection AI
   prints: impressions
   remaining: restant

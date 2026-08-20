@@ -95,8 +95,6 @@ translations:
   ABS: ABS
   ACCELEROMETERS: ACCELEROMETERS
   ACE Moonraker bridge not found. Install ace_status.py for full support.: ACE Moonraker bridge not found. Install ace_status.py for full support.
-  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: ACE
-    Moonraker bridge not found. Install ace_status.py from ValgACE for full support.
   ACTIONS: ACTIONS
   ADXL: ADXL
   AFC: AFC
@@ -192,7 +190,6 @@ translations:
   An unexpected printer error occurred.: An unexpected printer error occurred.
   An update is available: An update is available
   Analyzing data...: Analyzing data...
-  Analyzing data... {}%: Analyzing data... {}%
   Analyzing data... {}s: Analyzing data... {}s
   Android logcat: Android logcat
   Animations: Animations
@@ -328,7 +325,6 @@ translations:
   Bypass: Bypass
   Bypass Is Active: Bypass Is Active
   Bypass Mode: Bypass Mode
-  Bypass active — this print runs on the external spool, not on the lanes below.: Bypass active — this print runs on the external spool, not on the lanes below.
   Bypass active — this print runs on the external spool.: Bypass active — this print runs on the external spool.
   Bypass cannot be changed while printing: Bypass cannot be changed while printing
   Bypass controlled by hardware sensor: Bypass controlled by hardware sensor
@@ -1509,7 +1505,6 @@ translations:
   Maximum toolhead speed (mm/s): Maximum toolhead speed (mm/s)
   Measure and compare belt path frequencies: Measure and compare belt path frequencies
   Measure belt path frequencies: Measure belt path frequencies
-  Measured: Measured
   Measured (shaper off): Measured (shaper off)
   Measurement Failed: Measurement Failed
   Measuring Path A... %d%%: Measuring Path A... %d%%
@@ -2060,7 +2055,6 @@ translations:
   Ready: Ready
   Ready for filament operations: Ready for filament operations
   Ready to Apply: Ready to Apply
-  Ready to load: Ready to load
   Reason: Reason
   ? "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
   : "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
@@ -2449,7 +2443,6 @@ translations:
   Speed used to push filament out of the box (mm/s): Speed used to push filament out
     of the box (mm/s)
   Spool: Spool
-  'Spool ': 'Spool '
   'Spool #': 'Spool #'
   'Spool #{}': 'Spool #{}'
   Spool Info: Spool Info
@@ -2846,7 +2839,6 @@ translations:
   Update installed!: Update installed!
   Update your security PIN: Update your security PIN
   Updating Configuration...: Updating Configuration...
-  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.
   Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.: Upgrade to AFC 1.2.0 or newer for multi-color spools. It also adds filament names, which otherwise need Spoolman.
   Upload: Upload
   Upload Debug Bundle: Upload Debug Bundle
