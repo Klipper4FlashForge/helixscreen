@@ -15,6 +15,7 @@ Welcome to the HelixScreen documentation. Choose your path:
 | [**Configuration**](user/CONFIGURATION.md) | All settings explained |
 | [**Troubleshooting**](user/TROUBLESHOOTING.md) | Solutions to common problems |
 | [**FAQ**](user/FAQ.md) | Quick answers to common questions |
+| [**Feature Guides**](user/guide/) | 24 per-feature guides: printing, calibration, filament, sensors, camera, security, and more |
 | [**Plugin Development**](devel/PLUGIN_DEVELOPMENT.md) | Create custom plugins |
 
 ---
@@ -101,7 +102,7 @@ Welcome to the HelixScreen documentation. Choose your path:
 | Document | Description |
 |----------|-------------|
 | [**Roadmap**](devel/ROADMAP.md) | Feature timeline and milestones |
-| [**Active Plans**](devel/plans/) | Current implementation plans and tech debt |
+| [**In-Flight Plans**](devel/plans/) | In-flight plans and specs — point-in-time, not current truth |
 
 ---
 
@@ -111,9 +112,12 @@ Welcome to the HelixScreen documentation. Choose your path:
 
 | Document | Description |
 |----------|-------------|
+| [**Safety Audit**](audits/SAFETY_AUDIT.md) | User-facing safety: printer damage, self-harm, misleading state |
 | [**Security Review**](audits/MOONRAKER_SECURITY_REVIEW.md) | Moonraker security assessment |
 | [**Memory Analysis**](audits/MEMORY_ANALYSIS.md) | Memory profiling and optimization |
 | [**Test Coverage**](audits/TEST_COVERAGE_REPORT.md) | Test coverage report |
+| [**Moonraker Audit Summary**](audits/MOONRAKER_AUDIT_SUMMARY.md) | Moonraker client code-quality audit |
+| [**Moonraker Client Test Results**](audits/MOONRAKER_CLIENT_TEST_RESULTS.md) | Moonraker client robustness testing |
 
 ---
 
@@ -131,7 +135,7 @@ docs/
 │   ├── CONFIGURATION.md      # Settings reference
 │   ├── TROUBLESHOOTING.md    # Common problems
 │   ├── FAQ.md                # Frequently asked questions
-│   └── (see devel/PLUGIN_DEVELOPMENT.md)
+│   └── guide/                # 24 per-feature guides (+ guide/settings/)
 │
 ├── devel/                    # DEVELOPER DOCUMENTATION
 │   ├── CLAUDE.md             # Full developer doc index
@@ -140,23 +144,19 @@ docs/
 │   ├── architecture/         # 15-chapter architecture guide
 │   ├── BUILD_SYSTEM.md       # Build internals
 │   ├── TESTING.md            # Test infrastructure
-│   ├── LVGL9_XML_GUIDE.md    # XML reference
-│   ├── MODAL_SYSTEM.md       # Modal architecture
-│   ├── FILAMENT_MANAGEMENT.md # AMS, AFC, Happy Hare, TC
-│   ├── FILAMENT_SLOT_METADATA.md # Slot override store: internal impl notes
-│   ├── INPUT_SHAPER.md       # Calibration, freq charts
-│   ├── LED_CONTROL.md        # LED system, 4 backends
-│   ├── UPDATE_SYSTEM.md      # Update channels, downloads
-│   ├── ROADMAP.md            # Feature timeline
+│   ├── ROADMAP.md            # Feature timeline + docs-debt backlog
 │   ├── plans/                # In-flight plans and specs (single home)
-│   └── ...                   # 40+ more dev docs
+│   ├── printers/             # Platform guides (K1, K2, QIDI, U1, AD5X)
+│   ├── printer-research/     # Reverse-engineering notes
+│   └── ...                   # 70+ more dev docs (index: devel/CLAUDE.md)
 │
 ├── specs/                    # PUBLIC, VENDOR-NEUTRAL CONVENTION SPECS
 │   ├── CLAUDE.md             # Specs subtree routing
 │   └── filament_slots.md     # lane_data Moonraker DB convention
 │
-├── audits/                   # Security & quality
-└── images/                   # Screenshots
+├── audits/                   # 6 audit and review reports
+├── store/android/            # Play Store listing assets
+└── images/                   # Screenshots (+ images/user/)
 
 moonraker-plugin/
 └── README.md                 # HelixPrint plugin docs

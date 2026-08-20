@@ -35,7 +35,7 @@ graph TB
             PANELS["6 root panels"]
             OVERLAYS["58 overlay classes"]
             MODALS["41 modal XMLs"]
-            XMLW["ui_xml/*.xml<br/>230 top-level + 95 components"]
+            XMLW["ui_xml/*.xml<br/>232 top-level + 96 components"]
         end
         subgraph State["State Layer"]
             PS["PrinterState<br/>get_printer_state()<br/>13 domains, 122 subjects"]

@@ -1,6 +1,6 @@
 # HelixScreen Development Roadmap
 
-**Last Updated:** 2026-05-13 | **Status:** 1.0 (active)
+**Last Updated:** 2026-08-20 | **Status:** 1.0 (active)
 
 ---
 
@@ -8,21 +8,23 @@
 
 | Area | Status |
 |------|--------|
-| **Production UI** | 30+ panels, 19+ overlays, 13+ modals, 300+ XML layouts |
+| **Production UI** | 30+ panels, 19+ overlays, 13+ modals, 340+ XML layouts |
 | **First-Run Wizard** | 13-step guided setup (touch cal, WiFi, probe, input shaper, telemetry) |
 | **Moonraker API** | 116 methods, abstraction boundary enforced |
 | **Multi-Material (AMS)** | 7 backends, multi-unit, multi-backend, error visualization |
 | **Tool Abstraction** | ToolState with tool-backend mapping, multi-extruder temps |
 | **Spoolman** | 23 API methods, full CRUD, Spool Wizard, virtualized list with search |
 | **Plugin System** | Core infrastructure complete |
-| **Test Suite** | 460+ test files, 5,300+ test cases, 12,000+ Catch2 sections |
+| **Test Suite** | 1,050+ test files, 12,200+ Catch2 test cases, 8,500+ sections, 2,008 shell tests |
 | **Platforms** | Pi 3/4/5, AD5M, AD5X, K1, K2, QIDI, Snapmaker U1, Centauri Carbon, macOS, Linux |
-| **Printer Database** | 82 printer models with auto-detection |
-| **Filament Database** | 48 materials with temp/drying/compatibility data |
+| **Printer Database** | 94 printer models with auto-detection |
+| **Filament Database** | 66 materials with temp/drying/compatibility data |
 | **Theme System** | Dynamic JSON themes with live preview |
 | **Layout System** | Auto-detection for small (480x320) displays; ultrawide (1920x480) and portrait detection exists but the layouts themselves are alpha |
 | **Sound System** | Multi-backend synthesizer (SDL, ALSA, PWM, M300), JSON themes |
 | **Telemetry** | Opt-in crash reporting + session analytics + debug bundle upload |
+
+*Volatile counts (XML files, test suite, databases) measured 2026-08-20.*
 
 ---
 
@@ -126,7 +128,7 @@ Remaining items for production readiness:
 ## What's Complete
 
 ### Core Architecture
-- LVGL 9.5 with declarative XML layouts via `lib/helix-xml/` (300+ XML files)
+- LVGL 9.5 with declarative XML layouts via `lib/helix-xml/` (346 XML files)
 - Reactive Subject-Observer data binding
 - Design token system (no hardcoded colors/spacing)
 - RAII lifecycle management (PanelBase, ObserverGuard, SubscriptionGuard)
@@ -214,8 +216,8 @@ Remaining items for production readiness:
 - 15 dedicated test files covering all backends, multi-unit, tool mapping, endless spool, device actions
 
 ### Filament Database
-- **48 materials** with temperature ranges, drying parameters, density, compatibility groups
-- 7 compatibility groups (PLA, PETG, ABS_ASA, PA, TPU, PC, HIGH_TEMP)
+- **66 materials** with temperature ranges, drying parameters, density, compatibility groups
+- 12 compatibility groups (PLA, PETG, ABS_ASA, PA, TPU, PC, HIGH_TEMP, PP, PE, CoPE, EVA, SBS)
 - Material alias resolution ("Nylon" → "PA", "Polycarbonate" → "PC")
 - Dryer presets dropdown populated from database
 - Endless spool material validation
@@ -236,7 +238,7 @@ Remaining items for production readiness:
 ### Installer & Deployment
 - **KIAUH extension** for one-click install
 - **Bundled uninstaller** (`install.sh --uninstall`) with previous UI restoration
-- **572 shell tests** across 32 BATS test files
+- **2,008 shell tests** across 116 BATS test files
 - **Installer pre-flight checks** for Klipper/Moonraker on AD5M and K1
 - **QIDI & Snapmaker U1** platform support
 
@@ -259,9 +261,10 @@ Remaining items for production readiness:
 | ~~Update hash verification~~ | ~~Low~~ | ✅ Done — SHA256 verified from R2 manifest before install, graceful skip on GitHub fallback |
 | **Pre-migration config backup** | Low | Snapshot config *before* running versioned migrations, cleanup on success. Not yet built — `helix::config_backup::write_rolling_backup()` (`src/system/config_backup.cpp`) provides rolling primary+fallback backups on every save, but no migration-scoped snapshot exists. |
 | **Printer DB schema validation** | Low | Validate required fields in printer_database.json entries, detect duplicate IDs |
-| **Text overflow audit** | Medium | 226/282 XML files lack truncation/wrapping for long translated strings |
-| **Breakpoint coverage** | Medium | Only ~10 XML files implement responsive breakpoints; expand to more panels |
-| **UI test coverage** | High | 13% coverage (34/257 src files tested); add panel interaction tests |
+| **Text overflow audit** | Medium | 254/346 XML files carry no `long_mode` truncation handling (2026-08-20); long translated strings can overflow |
+| ~~Breakpoint coverage~~ | ~~Medium~~ | ✅ Done — 87 XML files now reference breakpoints/`min_width` (2026-08-20; the old "~10" count predated the tier rollout) |
+| **UI test coverage** | High | Add panel interaction tests — the old 13% ratio is stale, `src/` has since grown to ~700 .cpp files |
+| **480x320 follow-through** | Medium | Surviving worklist from the 480x320 audit: print-select list rows hardcode an ~880px minimum width (`ui_xml/print_file_list_row.xml`), sensors-overlay dropdowns pin `min_width="250"`, and ten panels carry no tiny-tier refs at all |
 | **Power consumption display** | Medium | Tasmota/Mainsail-style energy monitoring: voltage, current, power, energy usage for power devices |
 | **Plugin system tests** | Medium | Only mock tests exist; add real plugin load/unload/injection tests |
 | **Error-path integration tests** | High | Disconnect mid-print, settings corruption recovery, AMS hardware desync |
@@ -301,6 +304,7 @@ Currently open:
 | [#1 Real `<slot>` declarations](https://github.com/prestonbrown/helix-xml/issues/1) | The current slot support is a name-lookup lookalike whose failure mode reports a misleading "STALE BINARY" error. Blocks `SLOT_COMPONENT_DESIGNS.md` |
 | [#2 Multi-argument props (`<param>`)](https://github.com/prestonbrown/helix-xml/issues/2) | Already faked once as the hardcoded `bind_text-fmt`. Gives custom widgets real signatures |
 | [#3 `<enumdef>`](https://github.com/prestonbrown/helix-xml/issues/3) | Validates enum attributes on the 37 C++-registered widgets, and gives `tools/xml-linter` something to check |
+| Phase-1 resolver refactor (`lv_xml_resolve` purity, arena ownership, dropped bit) | Independent groundwork the since-deleted codegen design assumed; worth doing on its own — the only piece of that design that outlived the doc |
 
 ---
 
@@ -327,6 +331,28 @@ Currently open:
 **Planned post-1.0 refactoring (active intent, not yet scheduled):**
 - **Dynamic overlay allocation** — migrate existing `ui_overlay_*` and `ui_settings_*` files from the `get_global_*()` + `init_global_*()` singleton pattern to on-demand construction with destroy-on-pop ownership held by NavigationManager. Saves memory on small devices (AD5M 14–20MB budget) and unblocks multi-instantiation. Mechanism unresolved: destroy-on-pop vs memory-pressure eviction, NavigationManager API changes, per-instance event callback adapter pattern. New overlays should not use the singleton pattern; see `YOUR_FIRST_CONTRIBUTION.md` § "Going forward: dynamic overlays".
 - **Per-gate / per-slot / per-lane drying control** (#1026) — today the dryer is a single shared control surface with per-unit environment *readout* (temp/humidity). Independently drying specific gates (Happy Hare `MMU_HEATER … GATES=`, per-gate `drying_state` array, per-gate countdowns) needs a per-gate dryer model + UI. Deferred: no per-gate/EMU hardware to validate against. See `FILAMENT_MANAGEMENT.md` § "Happy Hare Specifics".
+
+---
+
+## Docs debt
+
+Consolidated 2026-08-20 from the docs-cleanup pass; sizes re-measured then.
+
+| Item | Effort | Notes |
+|------|--------|-------|
+| **Contributor entry path** | Low | Four overlapping on-ramp docs (DEVELOPMENT / DEVELOPER_QUICK_REFERENCE / ONBOARDING / YOUR_FIRST_CONTRIBUTION) — converge on one marked path |
+| **ENVIRONMENT_VARIABLES.md size** | Medium | 2,512 lines — split by runtime / build / mock |
+| **FILAMENT_MANAGEMENT.md size** | Medium | 4,082 lines — split per backend |
+| **LVGL_XML_SITUATION.md name** | Low | Name promises an XML-status survey; the content is fork-origin and licensing history |
+| **user/guide routing** | Low | camera, fans, print-history, security, and sensors guides unrouted in `docs/user/CLAUDE.md` |
+| **TESTING vs UI_TESTING** | Low | Overlapping scopes — merge, or split cleanly by layer |
+| **helixctl golden variants** | Medium | Screenshot/verification harness has no size or theme golden variants |
+| **CHANGELOG prose template** | Low | Wanted for release-notes consistency |
+| **G-code renderer design homeless** | Medium | The complete renderer design was deleted with the old G-code visualization doc, absorbed nowhere — `GCODE_VIEWER_CONFIG.md` covers settings/shading only, no architecture chapter owns the pipeline |
+| **plans/ gate exemption** | Low | Design specs moved into `plans/` are name-exempt in `check_doc_refs.py`; carve out `DEVEL_EXEMPT_SUBDIRS` if their refs should resolve again |
+| **Stale superpowers refs** | Low | Tracked plan files still cross-link via `docs/superpowers/` paths (dead on a fresh clone); four refs in src/tests/plans point at files that no longer exist anywhere |
+| **User-docs pass** | Medium | Follow-up: accuracy and coverage pass over `docs/user/` |
+| **Flat devel-docs pass** | Medium | Follow-up: next tranche of flat `docs/devel/*.md` into organized homes |
 
 ---
 

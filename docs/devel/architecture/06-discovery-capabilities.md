@@ -176,7 +176,7 @@ When a vendor branch in generic code is genuinely unavoidable, annotate it `// V
 - `04-moonraker.md` — the wire half of discovery: the sequence's klippy-state gate, narrowed subscriptions, reconnect behavior.
 - `05-printer-state.md` — the thirteen `PrinterState` domains these capabilities land in, and the singleton census that puts `PrinterDetector` outside the `::instance()` world.
 - `02-subjects-dataflow.md` — the subject machinery (`SubjectManager`, dynamic subjects, observer factories) the sensor managers and capability subjects are built on.
-- Chapter 09 (home widgets, not yet landed) will own the full `PanelWidgetDef`/gate-observer mechanics previewed here.
+- Chapter 09 owns the full `PanelWidgetDef`/gate-observer mechanics previewed here.
 
 ## Guided code tour
 
