@@ -77,6 +77,12 @@ void PowerPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
 
     spdlog::info("[{}] Setting up event handlers...", get_name());
 
+    // The panel/navigation layer owns this tree; nothing tells the panel when it
+    // dies. Without this hook the cached child pointers below outlive the widgets
+    // and the deferred rebuilds run on freed memory.
+    // DECLARATIVE_OK: LV_EVENT_DELETE cleanup has no declarative equivalent.
+    lv_obj_add_event_cb(panel_, on_panel_deleted, LV_EVENT_DELETE, this);
+
     // Register XML event callback (once)
     static bool callbacks_registered = false;
     if (!callbacks_registered) {
@@ -406,6 +412,44 @@ void PowerPanel::on_devices_discovered(const std::vector<PowerDevice>& devices) 
             set_selected_devices(pruned); // Save pruned list
         }
     }
+}
+
+void PowerPanel::on_panel_deleted(lv_event_t* e) {
+    auto* self = static_cast<PowerPanel*>(lv_event_get_user_data(e));
+    if (!self) {
+        return;
+    }
+    auto* dying = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+
+    // Only the tree the panel is currently pointing at matters. A root the panel
+    // has already replaced is deleted asynchronously, so its event can land after
+    // a later setup() installed the successor's pointers — clearing them then
+    // would blank a live tree.
+    if (dying != self->panel_) {
+        return;
+    }
+
+    self->forget_widget_tree();
+    spdlog::debug("[PowerPanel] Widget tree deleted - cached pointers dropped");
+}
+
+void PowerPanel::forget_widget_tree() {
+    // panel_ and cached_overlay_ are the same widget: get_or_create_overlay() is
+    // the only site that creates the tree and the only caller of setup().
+    panel_ = nullptr;
+    cached_overlay_ = nullptr;
+    device_list_container_ = nullptr;
+    empty_state_container_ = nullptr;
+    chip_container_ = nullptr;
+
+    // The rows are children of device_list_container_ and died with it. Keeping
+    // them would leave clear_device_list() calling safe_delete() on freed widgets
+    // and on_power_device_toggle() indexing rows whose toggles no longer exist.
+    device_rows_.clear();
+
+    // status_label_ is deliberately left alone: setup() caches it and no code
+    // reads it, so no path can dereference it. The status message reaches the XML
+    // through the power_status subject, not through this pointer.
 }
 
 void PowerPanel::populate_device_chips() {
