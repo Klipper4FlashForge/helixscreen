@@ -752,6 +752,23 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         return !active_bed_mesh_.probed_matrix.empty();
     }
 
+    /**
+     * @brief Serve configfile.settings.bed_mesh.probe_count from objects.query
+     *
+     * Mirrors what a printer with a configured [bed_mesh] section answers —
+     * the print-start collector's entry-time query reads it to size the mesh
+     * point denominator. Unset by default so existing tests see the same
+     * objects.query responses as before.
+     */
+    void set_config_bed_mesh_probe_count(int first, int second) {
+        config_bed_mesh_probe_count_ = std::make_pair(first, second);
+    }
+
+    /// The configured probe_count pair, or nullptr when unset.
+    [[nodiscard]] const std::pair<int, int>* config_bed_mesh_probe_count() const {
+        return config_bed_mesh_probe_count_ ? &*config_bed_mesh_probe_count_ : nullptr;
+    }
+
     // ========================================================================
     // Test Helpers - Public dispatch for test injection
     // ========================================================================
@@ -1136,6 +1153,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
 
     // Mock bed mesh storage (Client no longer stores this; mock simulates it)
     BedMeshProfile active_bed_mesh_;
+
+    /// configfile.settings.bed_mesh.probe_count to serve from objects.query
+    /// when set via set_config_bed_mesh_probe_count(); unset = absent.
+    std::optional<std::pair<int, int>> config_bed_mesh_probe_count_;
     std::vector<std::string> bed_mesh_profiles_;
     std::map<std::string, BedMeshProfile> stored_bed_mesh_profiles_; // Actual mesh data per profile
 

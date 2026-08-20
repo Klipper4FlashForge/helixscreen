@@ -55,8 +55,16 @@ MoonrakerAPI::MoonrakerAPI(IMoonrakerClient& client, PrinterState& state)
         });
 
     // Wire up bed mesh callback: Client pushes data to advanced API when it arrives from WebSocket
-    client_.set_bed_mesh_callback(
-        [this](const json& bed_mesh) { this->advanced_api_->update_bed_mesh(bed_mesh); });
+    client_.set_bed_mesh_callback([this](const json& bed_mesh) {
+        this->advanced_api_->update_bed_mesh(bed_mesh);
+        // Presence verdicts only when the update actually speaks about
+        // probed_matrix (klippy sends it as null on clear); partial updates
+        // carry no information about presence.
+        if (bed_mesh_presence_observer_ && bed_mesh.contains("probed_matrix")) {
+            const auto& matrix = bed_mesh["probed_matrix"];
+            bed_mesh_presence_observer_(matrix.is_array() && !matrix.empty());
+        }
+    });
 }
 
 MoonrakerAPI::~MoonrakerAPI() {

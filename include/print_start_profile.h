@@ -182,12 +182,23 @@ class PrintStartProfile {
         return adaptive_meshing_;
     }
 
+    /// True when this printer emits the Creality tag stream
+    /// ("// num: N, velocity: V, percent F" purge progress, "[box]" CFS
+    /// filament-load events) in gcode_response. The collector only runs the
+    /// tag matchers for profiles that declare this — the vocabulary is
+    /// vendor-specific, and a custom macro on another printer echoing
+    /// "percent" plus "num:" must not hijack the phase into PURGING.
+    bool cfs_signals() const {
+        return cfs_signals_;
+    }
+
   private:
     std::string name_;
     std::string description_;
     bool is_default_{false};
     ProgressMode progress_mode_ = ProgressMode::WEIGHTED;
     bool adaptive_meshing_{false};
+    bool cfs_signals_{false};
     std::vector<SignalFormat> signal_formats_;
     std::vector<ResponsePattern> response_patterns_;
     std::unordered_map<helix::PrintStartPhase, int> phase_weights_;

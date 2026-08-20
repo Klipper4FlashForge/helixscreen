@@ -121,6 +121,7 @@ void PrintStartCollector::start() {
         pre_mesh_points_.reset();
         pre_mesh_last_probe_time_ = {};
         current_mesh_message_.clear();
+        bed_mesh_present_ = false;
         temps_ready_time_ = {};
         silent_progression_idx_ = 0;
         real_signal_seen_.store(false, std::memory_order_relaxed);
@@ -337,6 +338,7 @@ void PrintStartCollector::reset() {
         pre_mesh_points_.reset();
         pre_mesh_last_probe_time_ = {};
         current_mesh_message_.clear();
+        bed_mesh_present_ = false;
         temps_ready_time_ = {};
         silent_progression_idx_ = 0;
         real_signal_seen_.store(false, std::memory_order_relaxed);
@@ -395,6 +397,27 @@ void PrintStartCollector::note_priming() {
     // displayed phase. NOT a completion — that stays on the current_layer edge.
     real_signal_seen_.store(true, std::memory_order_relaxed);
     update_phase(PrintStartPhase::PURGING, lv_tr("Priming..."));
+}
+
+void PrintStartCollector::note_bed_mesh_presence(bool present) {
+    if (!active_.load()) {
+        return;
+    }
+    bool leveling_begins = false;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        const bool was_present = bed_mesh_present_;
+        bed_mesh_present_ = present;
+        // The present→absent edge while CLEANING: the macro has finished its
+        // wipe and moved into the probing work. Clears arriving before
+        // CLEANING are the rough G28's own mesh clear and say nothing about
+        // which step is running.
+        leveling_begins = was_present && !present && current_phase_ == PrintStartPhase::CLEANING;
+    }
+    if (leveling_begins) {
+        spdlog::info("[PrintStartCollector] bed mesh cleared during cleaning → leveling");
+        update_phase(PrintStartPhase::BED_MESH, lv_tr("Bed Leveling..."));
+    }
 }
 
 void PrintStartCollector::check_fallback_completion() {
@@ -724,10 +747,12 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
         return; // Signal handled
     }
 
-    // Check for K2/CFS-specific gcode tag stream (purge percent, box filament load).
-    // These tags are emitted by Creality firmware and carry per-step progress that
-    // universal heuristics can't infer. Falls through on stock Klipper printers.
-    if (check_k2_cfs_signal(line)) {
+    // Check for K2/CFS-specific gcode tag stream (purge percent, box filament
+    // load). These tags are emitted by Creality firmware and carry per-step
+    // progress that universal heuristics can't infer. Only profiles that
+    // declare cfs_signals get the matchers — the vocabulary is vendor-specific
+    // and must not fire on another printer's coincidental "percent"+"num:".
+    if (profile_ && profile_->cfs_signals() && check_k2_cfs_signal(line)) {
         return; // Signal handled
     }
 
@@ -746,6 +771,13 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
         PrintStartProfile::MatchResult match;
         if (profile_->try_match_signal(line, match)) {
             real_signal_seen_.store(true, std::memory_order_relaxed);
+            // Profile messages are English tags — resolve through the pack.
+            // Runs on the WebSocket thread like the ~15 pre-existing lv_tr
+            // sites in this collector (update_phase's built-in labels); the
+            // selected_lang swap race this shares with them is the documented
+            // #1219 family and needs a collector-wide marshal, not a
+            // per-call-site fix.
+            match.message = lv_tr(match.message.c_str());
             if (profile_->progress_mode() == PrintStartProfile::ProgressMode::SEQUENTIAL) {
                 update_phase(match.phase, match.message, match.progress);
             } else {
@@ -1008,6 +1040,16 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
                     }
                     state_.set_print_start_state(PrintStartPhase::BED_MESH, msg_buf, progress);
                 }
+
+                // The line is consumed as mesh data whether or not it added a
+                // point — a repeat sample of the same point is still mesh
+                // output. It must not reach check_phase_patterns: profiles
+                // whose BED_MESH pattern matches "probe at" (creality_k1)
+                // would re-announce the phase with the profile's label, which
+                // is treated as a sub-phase change and wipes the probe
+                // counters — including the denominator learned on entry —
+                // mid-sweep. Mirrors the "Probing point" branch above.
+                return;
             }
         }
     }
@@ -1030,6 +1072,9 @@ void PrintStartCollector::check_phase_patterns(const std::string& line) {
     if (profile_->try_match_pattern(line, match)) {
         real_signal_seen_.store(true, std::memory_order_relaxed);
         note_activity();
+        // match.message arrives already translated: try_match_pattern
+        // resolves the template through the loaded pack before substituting
+        // $1 capture groups.
         // Update when this is a NEW phase, OR when it's a BED_MESH sub-phase
         // *message* change while already in BED_MESH. The latter is what lets a
         // mesh-start signal (Snapmaker U1 "// z offset:") relabel the display

@@ -692,6 +692,20 @@ class MoonrakerAPI : public IMoonrakerAPI {
     }
 
     /**
+     * @brief Observe live bed-mesh presence from the status stream
+     *
+     * Invoked (WebSocket thread) whenever a bed_mesh status update carries a
+     * verdict on probed_matrix — true when a mesh is loaded, false when it
+     * has been cleared. Updates that omit the key say nothing about presence
+     * and do not invoke the observer. Concrete-only: wiring detail for
+     * MoonrakerManager (print-start collector), not part of the consumer
+     * contract.
+     */
+    void set_bed_mesh_presence_observer(std::function<void(bool)> observer) {
+        bed_mesh_presence_observer_ = std::move(observer);
+    }
+
+    /**
      * @brief Get File Transfer API for HTTP download/upload operations
      *
      * All file transfer methods (download_file, download_thumbnail, upload_file, etc.)
@@ -843,7 +857,9 @@ class MoonrakerAPI : public IMoonrakerAPI {
   protected:
     // Sub-API unique_ptrs declared AFTER data members they reference
     // (http_base_url_, safety_limits_) so they are destroyed FIRST.
-    std::unique_ptr<MoonrakerAdvancedAPI> advanced_api_;          ///< Advanced panel operations API
+    std::unique_ptr<MoonrakerAdvancedAPI> advanced_api_; ///< Advanced panel operations API
+    std::function<void(bool)>
+        bed_mesh_presence_observer_; ///< Optional presence sink (manager wiring)
     std::unique_ptr<MoonrakerFileTransferAPI> file_transfer_api_; ///< HTTP file transfer API
     std::unique_ptr<MoonrakerFileAPI> file_api_;                  ///< File management API
     std::unique_ptr<MoonrakerHistoryAPI> history_api_;            ///< Print history API

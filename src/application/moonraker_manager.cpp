@@ -663,6 +663,20 @@ void MoonrakerManager::init_print_start_collector() {
         }
     }
 
+    // Bed-mesh presence verdicts feed the collector: a mesh cleared during
+    // nozzle cleaning marks the start of leveling work that Creality-class
+    // firmware does not echo to gcode_response. The observer fires on the
+    // WebSocket thread; the weak_ptr keeps it safe across printer switches
+    // (init_print_start_collector re-runs and replaces the collector).
+    if (m_api) {
+        std::weak_ptr<PrintStartCollector> collector_ref = m_print_start_collector;
+        m_api->set_bed_mesh_presence_observer([collector_ref](bool present) {
+            if (auto collector = collector_ref.lock()) {
+                collector->note_bed_mesh_presence(present);
+            }
+        });
+    }
+
     // Store shared_ptr in a static for the lambda captures
     // This avoids the capturing lambda issue with ObserverGuard
     static std::weak_ptr<PrintStartCollector> s_collector;
