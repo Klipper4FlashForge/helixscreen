@@ -184,9 +184,13 @@ void FilamentSensorWidget::clicked_cb(lv_event_t* e) {
 
 void FilamentSensorWidget::handle_click() {
     const int sensor_state = lv_subject_get_int(&tile_state_subject_);
-    const int print_state = static_cast<int>(get_printer_state().get_print_job_state());
+    // Lifecycle, not the raw wire enum (check_raw_print_job_state). The tap
+    // policy only asks whether a print is running right now; Paused keeps the
+    // full modal on purpose (Load/Unload are safe then), so this is exactly
+    // Printing rather than job_holds_machine().
+    const bool printing = get_printer_state().get_print_lifecycle() == PrintState::Printing;
 
-    switch (ui::decide_tap_destination(sensor_state, print_state)) {
+    switch (ui::decide_tap_destination(sensor_state, printing ? 1 : 0)) {
     case ui::FilamentTapDestination::None:
         spdlog::debug("[FilamentSensorWidget] Tap ignored - no sensor configured");
         return;

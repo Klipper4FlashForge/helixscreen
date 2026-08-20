@@ -12,7 +12,7 @@
     <!-- Whole tile dims + refuses while a job owns the toolhead. Same derived
          subject binding as controls_panel.xml's Save Z-Offset button; the
          controller still enforces the guard on every toggle(). -->
-    <bind_state_if_eq subject="print_active" state="disabled" ref_value="1"/>
+    <bind_state_if_eq subject="job_holds_machine" state="disabled" ref_value="1"/>
 
     <!-- State-swapped icon pair: OFF = the Device-Ops bypass-row glyph,
          ON = the filament-path bypass-node glyph. -->

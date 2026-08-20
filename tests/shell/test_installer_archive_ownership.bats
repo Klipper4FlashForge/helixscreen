@@ -29,8 +29,11 @@ setup() {
 
 # Only recipe lines count — a make recipe line starts with a literal tab, so
 # this skips prose in comments that happens to quote a tar command.
+#
+# The tab is written with printf rather than \t because BSD grep (macOS) has no
+# -P, and only PCRE understands \t; an ERE over a literal tab works everywhere.
 _release_tar_recipe_lines() {
-    grep -nP '^\t.*tar .*-czvf' "$1"
+    grep -nE "^$(printf '\t').*tar .*-czvf" "$1"
 }
 
 @test "every release tarball is created with TAR_OWNER_FLAGS" {
@@ -123,6 +126,16 @@ EOF
     [ -f "$d/out/src/file.txt" ]
 }
 
+# Print every archive entry's owner as "uid/gid", from either tar's listing.
+#
+# GNU tar prints uid/gid as a single field 2 ("0/0"); BSD tar (macOS) prints a
+# link count there and puts uid and gid in fields 3 and 4. Keying on whether
+# field 2 contains a slash normalises both without probing which tar this is.
+_archive_numeric_owners() {
+    tar -tvzf "$1" --numeric-owner |
+        awk '{ if ($2 ~ /\//) print $2; else print $3 "/" $4 }'
+}
+
 @test "TAR_OWNER_FLAGS produces an archive owned by 0:0" {
     local d="$BATS_TEST_TMPDIR/owner"
     mkdir -p "$d/helixscreen/bin"
@@ -141,7 +154,7 @@ EOF
 
     # No entry may carry a non-zero uid/gid.
     local bad
-    bad=$(tar -tvzf "$d/rel.tar.gz" --numeric-owner | awk '{print $2}' | grep -v '^0/0$' || true)
+    bad=$(_archive_numeric_owners "$d/rel.tar.gz" | grep -v '^0/0$' || true)
     if [ -n "$bad" ]; then
         printf 'archive entries with non-zero owner: %s\n' "$bad" >&2
         return 1
@@ -161,6 +174,6 @@ EOF
     tar -czf "$d/rel.tar.gz" -C "$d" helixscreen
 
     local bad
-    bad=$(tar -tvzf "$d/rel.tar.gz" --numeric-owner | awk '{print $2}' | grep -v '^0/0$' || true)
+    bad=$(_archive_numeric_owners "$d/rel.tar.gz" | grep -v '^0/0$' || true)
     [ -n "$bad" ]
 }

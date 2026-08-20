@@ -92,12 +92,14 @@ class GCodeCamera {
 
     /**
      * @brief Fit camera to view entire bounding box
-     * @param bounds Model bounding box to fit
+     * @param raw_bounds Model bounding box to fit. Normalized internally, so an
+     *                   axis that arrived inverted does not discard the axes
+     *                   that were valid.
      *
      * Automatically adjusts zoom and pan to frame the model.
      * Preserves current azimuth and elevation angles.
      */
-    void fit_to_bounds(const AABB& bounds);
+    void fit_to_bounds(const AABB& raw_bounds);
 
     // ==============================================
     // Preset Views

@@ -649,6 +649,8 @@ void AmsState::install_print_state_observer() {
     // subjects (e.g. between tests).
     print_state_observer_.reset();
     auto lifetime = get_printer_state().get_static_print_subjects_lifetime();
+    // RAW_PRINT_STATE_OK: subscribes to the WIRE deliberately - recompute_action_detail()
+    // labels what the printer reports, and reads the same subject.
     print_state_observer_ = helix::ui::observe_int_sync<AmsState>(
         get_printer_state().get_print_state_enum_subject(), this,
         [](AmsState* self, int /*print_state*/) { self->recompute_action_detail(); }, lifetime);
@@ -862,6 +864,11 @@ void AmsState::clear_backends() {
     runout_edge_armed_ = false;
     runout_prev_paused_ = false;
     runout_level_seeded_ = false;
+    // Same reasoning for the post-unload grace: it was armed for a removal on
+    // the backend going away, and nothing the next one reports can be that.
+    post_unload_runout_grace_ = false;
+    post_unload_runout_grace_at_ = {};
+    saw_unload_in_op_ = false;
 
     // Drop AMS-derived tool topology so the UI doesn't show stale tool pills
     // between backend disappearance and the next reconnect's init_tools().
@@ -1372,6 +1379,9 @@ void AmsState::sync_from_backend() {
         }
         if (action == AmsAction::IDLE && prev != AmsAction::IDLE) {
             post_unload_runout_grace_ = saw_unload_in_op_;
+            if (post_unload_runout_grace_) {
+                post_unload_runout_grace_at_ = std::chrono::steady_clock::now();
+            }
             saw_unload_in_op_ = false;
         }
     }
@@ -1463,6 +1473,9 @@ void AmsState::sync_from_backend() {
     // AmsBackendAd5xIfs::evaluate_runout_locked() already accepts deliberately —
     // a printer that boots into a job already paused on a runout reports nothing,
     // because we witnessed no transition.
+    // RAW_PRINT_STATE_OK: the edge must be witnessed while the printer is
+    // actually running the job. Arming it during Preparing would light the
+    // warning for a latch raised before any material moved.
     const PrintJobState job_state = get_printer_state().get_print_job_state();
     const bool paused = job_state == PrintJobState::PAUSED;
     const bool job_running = paused || job_state == PrintJobState::PRINTING;
@@ -2538,6 +2551,11 @@ void AmsState::recompute_action_detail() {
     } else if (action != AmsAction::IDLE) {
         new_detail = lv_tr(ams_action_to_string(action));
     } else {
+        // RAW_PRINT_STATE_OK: a label for what the printer reports. A
+        // "Preparing" arm would read better during a pre-print block, but there
+        // is no such translation key yet and this is the lowest-priority
+        // fallback in the chain - the AmsAction string wins whenever the AMS is
+        // doing anything at all.
         auto print_state = static_cast<PrintJobState>(
             lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
         switch (print_state) {
@@ -2653,9 +2671,28 @@ void AmsState::set_active_tool_port_present(bool present) {
 
 bool AmsState::consume_post_unload_runout_grace() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    const bool armed = post_unload_runout_grace_;
+    if (!post_unload_runout_grace_) {
+        return false;
+    }
     post_unload_runout_grace_ = false;
-    return armed;
+    const auto age = std::chrono::steady_clock::now() - post_unload_runout_grace_at_;
+    if (age >= POST_UNLOAD_RUNOUT_GRACE) {
+        spdlog::debug("[AmsState] Post-unload runout grace expired unused after {}s",
+                      std::chrono::duration_cast<std::chrono::seconds>(age).count());
+        return false;
+    }
+    return true;
+}
+
+bool AmsState::post_unload_runout_grace_armed() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (!post_unload_runout_grace_) {
+        return false;
+    }
+    // Deliberately does NOT clear on expiry: only the consumer spends the shot,
+    // so a peek that also disarmed would be a second consumer by another name.
+    return (std::chrono::steady_clock::now() - post_unload_runout_grace_at_) <
+           POST_UNLOAD_RUNOUT_GRACE;
 }
 
 bool AmsState::is_filament_operation_active() {

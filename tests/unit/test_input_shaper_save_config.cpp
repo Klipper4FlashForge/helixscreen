@@ -122,7 +122,8 @@ bool contains(const std::string& haystack, const std::string& needle) {
 class ToastRecorder {
   public:
     ToastRecorder() {
-        set_test_toast_hook([this](const std::string& msg) { messages_.push_back(msg); });
+        set_test_toast_hook(
+            [this](ToastSeverity, const std::string& msg) { messages_.push_back(msg); });
     }
     ~ToastRecorder() {
         set_test_toast_hook(nullptr);
@@ -159,8 +160,8 @@ class SaveConfigFixture : public LVGLTestFixture {
 
         panel_.init_subjects();
         panel_.set_api(&client_, &api_);
-        InputShaperPanelTestAccess::set_save_restart_timeout_ms(panel_, kRestartTimeoutMs);
-        InputShaperPanelTestAccess::clear_results(panel_);
+        ::InputShaperPanelTestAccess::set_save_restart_timeout_ms(panel_, kRestartTimeoutMs);
+        ::InputShaperPanelTestAccess::clear_results(panel_);
         UpdateQueue::instance().drain();
     }
 
@@ -173,7 +174,7 @@ class SaveConfigFixture : public LVGLTestFixture {
 
         panel_.on_deactivate();
         panel_.set_api(nullptr, nullptr);
-        InputShaperPanelTestAccess::clear_results(panel_);
+        ::InputShaperPanelTestAccess::clear_results(panel_);
         UpdateQueue::instance().drain();
     }
 
@@ -224,10 +225,10 @@ TEST_CASE_METHOD(SaveConfigFixture,
                  "save_configuration writes the selected shaper, not the "
                  "firmware recommendation",
                  "[input_shaper][save_config]") {
-    InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
-    InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
 
-    InputShaperPanelTestAccess::save(panel_);
+    ::InputShaperPanelTestAccess::save(panel_);
     REQUIRE(settle());
 
     const std::string written = uploaded(kOptionsPath);
@@ -252,10 +253,10 @@ TEST_CASE_METHOD(SaveConfigFixture,
 TEST_CASE_METHOD(SaveConfigFixture,
                  "save_configuration falls back to the recommendation when no chip is selected",
                  "[input_shaper][save_config]") {
-    InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), -1);
-    InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), -1);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), -1);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), -1);
 
-    InputShaperPanelTestAccess::save(panel_);
+    ::InputShaperPanelTestAccess::save(panel_);
     REQUIRE(settle());
 
     const std::string written = uploaded(kOptionsPath);
@@ -284,18 +285,18 @@ TEST_CASE_METHOD(SaveConfigFixture, "save_configuration with no valid result upl
         InputShaperResult bad;
         bad.shaper_type = "mzv";
         bad.shaper_freq = 0.0f;
-        InputShaperPanelTestAccess::seed_axis(panel_, 'X', bad, {}, -1);
-        InputShaperPanelTestAccess::seed_axis(panel_, 'Y', bad, {}, -1);
+        ::InputShaperPanelTestAccess::seed_axis(panel_, 'X', bad, {}, -1);
+        ::InputShaperPanelTestAccess::seed_axis(panel_, 'Y', bad, {}, -1);
     }
 
     SECTION("a result with a frequency but no type") {
         InputShaperResult bad;
         bad.shaper_freq = 41.6f;
-        InputShaperPanelTestAccess::seed_axis(panel_, 'X', bad, {}, -1);
-        InputShaperPanelTestAccess::seed_axis(panel_, 'Y', bad, {}, -1);
+        ::InputShaperPanelTestAccess::seed_axis(panel_, 'X', bad, {}, -1);
+        ::InputShaperPanelTestAccess::seed_axis(panel_, 'Y', bad, {}, -1);
     }
 
-    REQUIRE_NOTHROW(InputShaperPanelTestAccess::save(panel_));
+    REQUIRE_NOTHROW(::InputShaperPanelTestAccess::save(panel_));
     REQUIRE(settle());
 
     // Byte-identical to what was seeded: no upload, no backup rewrite, no
@@ -312,10 +313,10 @@ TEST_CASE_METHOD(SaveConfigFixture, "save_configuration creates [input_shaper] w
                  "[input_shaper][save_config]") {
     seed_config({{kRootPath, kRootCfg}, {kOptionsPath, kOptionsCfgNoShaper}});
 
-    InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
-    InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
 
-    InputShaperPanelTestAccess::save(panel_);
+    ::InputShaperPanelTestAccess::save(panel_);
     REQUIRE(settle());
 
     // Whichever file the editor decided owns the new section, exactly one of
@@ -345,10 +346,10 @@ TEST_CASE_METHOD(SaveConfigFixture, "save_configuration never issues SAVE_CONFIG
                  "[input_shaper][save_config]") {
     client_.clear_gcode_script_history();
 
-    InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
-    InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
 
-    InputShaperPanelTestAccess::save(panel_);
+    ::InputShaperPanelTestAccess::save(panel_);
     REQUIRE(settle());
 
     // SAVE_CONFIG would persist whatever SHAPER_CALIBRATE staged - the
@@ -380,12 +381,12 @@ TEST_CASE_METHOD(SaveConfigFixture, "the auto-revert warning survives the panel 
     // into its revert branch, which is the only path that produces this warning.
     MoonrakerClientTestAccess::force_connection_state(client_, ConnectionState::DISCONNECTED);
 
-    InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
-    InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
 
     ToastRecorder toasts;
 
-    InputShaperPanelTestAccess::save(panel_);
+    ::InputShaperPanelTestAccess::save(panel_);
 
     // Exactly what handle_save_clicked() does the instant save_configuration()
     // returns: OverlayBase::on_deactivate() invalidates lifetime_, expiring
@@ -400,12 +401,12 @@ TEST_CASE_METHOD(SaveConfigFixture, "the auto-revert warning survives the panel 
 
 TEST_CASE_METHOD(SaveConfigFixture, "the success toast survives the panel closing",
                  "[input_shaper][save_config]") {
-    InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
-    InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'X', make_x_result(), make_curves(), kMzvChip);
+    ::InputShaperPanelTestAccess::seed_axis(panel_, 'Y', make_y_result(), make_curves(), kMzvChip);
 
     ToastRecorder toasts;
 
-    InputShaperPanelTestAccess::save(panel_);
+    ::InputShaperPanelTestAccess::save(panel_);
     panel_.on_deactivate();
 
     REQUIRE(settle());

@@ -14,6 +14,7 @@
  * lane was loaded to the toolhead. The loaded lane must come from current_slot.
  */
 
+#include "../test_helpers/print_state_test_drivers.h"
 #include "filament_op_slot_resolver.h"
 
 #include <functional>
@@ -206,21 +207,42 @@ TEST_CASE("print_blocks_filament_op mirrors refuse_if_printing",
     using helix::ui::print_blocks_filament_op;
 
     SECTION("idle never blocks") {
-        CHECK_FALSE(print_blocks_filament_op(false, false, false));
-        CHECK_FALSE(print_blocks_filament_op(false, false, true));
+        CHECK_FALSE(print_blocks_filament_op(PrintState::Idle, false));
+        CHECK_FALSE(print_blocks_filament_op(PrintState::Idle, true));
     }
 
     SECTION("PRINTING always blocks, self-homing or not") {
-        CHECK(print_blocks_filament_op(/*printing=*/true, false, /*self_homes=*/false));
-        CHECK(print_blocks_filament_op(/*printing=*/true, false, /*self_homes=*/true));
+        CHECK(print_blocks_filament_op(PrintState::Printing, /*self_homes=*/false));
+        CHECK(print_blocks_filament_op(PrintState::Printing, /*self_homes=*/true));
+    }
+
+    SECTION("PREPARING blocks like PRINTING, on every backend") {
+        // The hole this signature change closes. On the bool pair a host-side
+        // pre-start block read (printing=false, paused=false) - indistinguishable
+        // from idle - so a toolhead-motion op was offered while the pre-start
+        // G-code homed and probed. The backend's self-homing capability is
+        // irrelevant here: the app's own block is already moving the toolhead.
+        CHECK(print_blocks_filament_op(PrintState::Preparing, /*self_homes=*/false));
+        CHECK(print_blocks_filament_op(PrintState::Preparing, /*self_homes=*/true));
     }
 
     SECTION("PAUSED blocks only on a self-homing backend") {
         // AFC / Happy Hare / CFS / ACE / QIDI / toolchanger / Snapmaker:
         // pause-then-swap is the runout recovery workflow, and it works.
-        CHECK_FALSE(print_blocks_filament_op(false, /*paused=*/true, /*self_homes=*/false));
+        CHECK_FALSE(print_blocks_filament_op(PrintState::Paused, /*self_homes=*/false));
         // AD5X IFS.
-        CHECK(print_blocks_filament_op(false, /*paused=*/true, /*self_homes=*/true));
+        CHECK(print_blocks_filament_op(PrintState::Paused, /*self_homes=*/true));
+    }
+
+    SECTION("terminal states never block") {
+        // A finished job does not own the toolhead. Worth pinning: on the
+        // lifecycle these are distinct values rather than "neither bool set",
+        // so a sloppy job_holds_machine() would be caught here.
+        for (PrintState terminal :
+             {PrintState::Complete, PrintState::Cancelled, PrintState::Error}) {
+            CHECK_FALSE(print_blocks_filament_op(terminal, false));
+            CHECK_FALSE(print_blocks_filament_op(terminal, true));
+        }
     }
 }
 
@@ -239,7 +261,8 @@ TEST_CASE("compute_op_button_gating: print state gates Load and Unload",
         OpButtonState s;
         s.slot_is_loaded = is_loaded;
         s.unload_available = is_loaded;
-        s.print_blocks_op = print_blocks_filament_op(printing, paused, self_homes);
+        s.print_blocks_op = print_blocks_filament_op(
+            helix::test::lifecycle_from_bools(printing, paused), self_homes);
         return compute_op_button_gating(s);
     };
 
@@ -424,7 +447,8 @@ TEST_CASE("compute_op_button_gating: the AMS sidebar Unload answers the same rul
         OpButtonState s;
         s.unload_available = filament_loaded;
         s.system_busy = system_busy;
-        s.print_blocks_op = helix::ui::print_blocks_filament_op(printing, paused, self_homes);
+        s.print_blocks_op = helix::ui::print_blocks_filament_op(
+            helix::test::lifecycle_from_bools(printing, paused), self_homes);
         s.unload_is_cold_lane_op = false;
         return compute_op_button_gating(s);
     };

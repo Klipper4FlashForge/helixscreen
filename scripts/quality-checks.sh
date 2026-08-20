@@ -1619,6 +1619,64 @@ fi
 echo ""
 
 SECTION_START=$(date +%s)
+echo -n "🔢 Checking print-state enum casts..."
+
+if [ -f "scripts/check_print_state_cast.py" ]; then
+  # lv_subject_get_int() returns int, so static_cast<PrintState>(...) compiles
+  # against whichever subject was named — and PrintJobState and PrintState do NOT
+  # share numbering past index 0 (COMPLETE=3 vs Paused=3). Pairing a cast with
+  # the wrong subject is silent: it compiles, runs, and answers a different
+  # question. Made twice while migrating guards onto the lifecycle. Use the typed
+  # accessors get_print_lifecycle() / get_print_job_state(), which own the
+  # pairing; annotate a genuine need `// PRINT_STATE_CAST_OK: <reason>`.
+  if python3 scripts/check_print_state_cast.py >/tmp/print_state_cast.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/print_state_cast.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/print_state_cast.out
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_print_state_cast.py not found — skipping"
+fi
+
+SECTION_START=$(date +%s)
+echo -n "🧭 Checking raw print-state reads..."
+
+if [ -f "scripts/check_raw_print_job_state.py" ]; then
+  # helix::PrintJobState is the WIRE — what print_stats.state said. It cannot
+  # express a job the app has committed to but the printer has not reported yet,
+  # so a semantic question asked of it is blind for the whole of a pre-print
+  # window. That blindness shipped: 21 motion controls live while the toolhead
+  # homed, the home print card reading idle, a queue tap deleting the job it then
+  # failed to start. Plenty of sites DO want the wire — the parse, terminal
+  # formatting, telemetry's phase tracker, the PRINT_START collector — so this
+  # does not forbid it. It forbids reading it SILENTLY, because a deliberate wire
+  # read and a stale one look identical. Annotate: `// RAW_PRINT_STATE_OK: <why>`.
+  if python3 scripts/check_raw_print_job_state.py >/tmp/raw_print_state.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/raw_print_state.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/raw_print_state.out
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_raw_print_job_state.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
 echo -n "🖥️  Checking DRM dumb-buffer mmap offset width..."
 
 # DRM allocates dumb-buffer mmap offsets from 4 GiB upward, so a 32-bit off_t

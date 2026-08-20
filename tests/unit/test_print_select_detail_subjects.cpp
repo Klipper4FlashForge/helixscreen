@@ -194,6 +194,13 @@ TEST_CASE_METHOD(LVGLUITestFixture, "detail_mapping_ready tracks cache seed and 
     REQUIRE(ready != nullptr);
     REQUIRE(lv_subject_get_int(ready) == 0); // fresh view: skeleton armed
 
+    // The other half of the cache seed: render_authoritative_chips() decides
+    // swatch-card visibility from the PRECISE used-tool set. No AMS backend is
+    // registered here, so the mapping card stays hidden and the swatch card is
+    // the surface that must reflect the seeded set.
+    lv_subject_t* swatches = lv_xml_get_subject(nullptr, "color_swatches_visible");
+    REQUIRE(swatches != nullptr);
+
     const std::vector<std::string> colors{"#FF0000", "#00FF00", "#0000FF", "#FFFF00"};
     // The (path, size, mtime) triple show() is called with — the cache key.
     constexpr size_t kSize = 1234;
@@ -216,6 +223,11 @@ TEST_CASE_METHOD(LVGLUITestFixture, "detail_mapping_ready tracks cache seed and 
         // cache hit — the deferred push/on_activate hasn't even run yet.
         REQUIRE(lv_subject_get_int(ready) == 1);
         REQUIRE(view.get_tools_used() == std::set<int>{0, 2});
+        // Authoritative chips rendered in the same show() call: 2 used tools on
+        // a single-extruder printer clears swatches_card_visible_for()'s >1
+        // threshold, and show() had just reset this subject to 0 — so a 1 here
+        // can only come from the cache seed's render.
+        REQUIRE(lv_subject_get_int(swatches) == 1);
 
         pop_and_drain();
         REQUIRE(lv_subject_get_int(ready) == 0); // latch re-arms on deactivate
@@ -224,6 +236,9 @@ TEST_CASE_METHOD(LVGLUITestFixture, "detail_mapping_ready tracks cache seed and 
     SECTION("cold cache: skeleton (0) until the scan resolves") {
         view.show("flash.gcode", "sub", "PLA", colors, {}, kSize, kMtime);
         REQUIRE(lv_subject_get_int(ready) == 0);
+        // Nothing authoritative to render yet — the swatch card stays in the
+        // neutral "not yet known" state show() reset it to.
+        REQUIRE(lv_subject_get_int(swatches) == 0);
 
         // Drain runs the deferred push → on_activate → scan kick-off. With no
         // API the degrade path marks the scan done immediately — the same

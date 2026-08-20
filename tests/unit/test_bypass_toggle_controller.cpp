@@ -12,6 +12,7 @@
 
 #include "../lvgl_test_fixture.h"
 #include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/print_state_test_drivers.h"
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "ams_types.h"
@@ -33,7 +34,14 @@ namespace {
 /// Same accessor the controller reads (singleton via app_globals), so test and
 /// code under test can never disagree on which PrinterState holds the state.
 void seed_print_state(PrintJobState state) {
-    lv_subject_set_int(get_printer_state().get_print_state_enum_subject(), static_cast<int>(state));
+    helix::test::set_wire_state(get_printer_state(), state);
+}
+
+/// Raise a host-side pre-print phase: print_stats still reads standby, but the
+/// lifecycle becomes Preparing. The wire cannot express this window at all.
+void seed_preprint_phase(helix::PrintStartPhase phase) {
+    get_printer_state().set_print_start_state(phase, "", 0);
+    helix::ui::UpdateQueue::instance().drain();
 }
 
 /// Install a started, zero-delay mock as AmsState's primary backend and hand
@@ -87,6 +95,34 @@ TEST_CASE("bypass toggle: refuses while printing", "[ams][bypass-home]") {
     seed_print_state(PrintJobState::PAUSED);
     fx.controller.toggle();
     CHECK_FALSE(fx.backend->is_bypass_active());
+}
+
+TEST_CASE("bypass toggle: refuses during a host-side pre-print block", "[ams][bypass-home]") {
+    // print_stats reads standby for the whole of a host-side block, so the wire
+    // cannot distinguish this from idle — the tile was tappable while the
+    // pre-start G-code homed and probed, and the handler agreed to drive
+    // filament through a moving toolhead.
+    BypassToggleFixture fx;
+    REQUIRE_FALSE(fx.backend->is_bypass_active());
+
+    seed_print_state(PrintJobState::STANDBY);
+    seed_preprint_phase(helix::PrintStartPhase::BED_MESH);
+
+    fx.controller.toggle();
+    CHECK_FALSE(fx.backend->is_bypass_active());
+    CHECK_FALSE(fx.controller.pending_enable());
+
+    // Abandoning the block hands the control back — a latched refusal would be
+    // worse than the bug. Unload first so this takes the DIRECT enable path, the
+    // same setup the standby case below uses; the mock boots with slot 0 loaded
+    // and would otherwise go down the unload-first chain.
+    seed_preprint_phase(helix::PrintStartPhase::IDLE);
+    REQUIRE(fx.backend->unload_active_filament().result == AmsResult::SUCCESS);
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+
+    fx.controller.toggle();
+    CHECK(fx.backend->is_bypass_active());
 }
 
 TEST_CASE("bypass toggle: standby allows enable/disable", "[ams][bypass-home]") {
@@ -209,11 +245,12 @@ TEST_CASE("bypass widget: gated on ams_supports_bypass", "[ams][bypass-home]") {
     REQUIRE(def != nullptr);
     CHECK(def->hardware_gate_subject != nullptr);
     CHECK(std::string_view(def->hardware_gate_subject) == "ams_supports_bypass");
-    // Default span 1x1, scalable to 2x1 per the registry row.
-    CHECK(def->colspan == 1);
-    CHECK(def->rowspan == 1);
-    CHECK(def->max_colspan == 2);
-    CHECK(def->max_rowspan == 1);
+    // Default span one cell (2x2 tracks), scalable to 2x1 cells (4x2
+    // tracks) per the registry row - spans are in grid tracks, half a cell.
+    CHECK(def->colspan == 2);
+    CHECK(def->rowspan == 2);
+    CHECK(def->max_colspan == 4);
+    CHECK(def->max_rowspan == 2);
     // opt-in tile, like the ams row
     CHECK_FALSE(def->default_enabled);
 }

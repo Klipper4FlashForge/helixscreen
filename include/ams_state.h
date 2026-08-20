@@ -1376,6 +1376,16 @@ class AmsState {
      */
     [[nodiscard]] bool consume_post_unload_runout_grace();
 
+    /**
+     * @brief Is the post-unload grace armed, without spending it?
+     *
+     * The idle runout modal is the grace's CONSUMER; surfaces that merely want
+     * to stay quiet during the same window (the "Filament removed" toast) must
+     * not race it for the single shot, or whichever sees the sensor edge first
+     * silently disarms the other. Same expiry as consume_post_unload_runout_grace().
+     */
+    [[nodiscard]] bool post_unload_runout_grace_armed();
+
     bool is_filament_operation_active();
 
     /**
@@ -1572,8 +1582,17 @@ class AmsState {
     /// slot-delta scan notices it, and the pre-print filament check would keep
     /// serving a stale result.
     bool last_bypass_active_{false};
+    /// How long after an unload completes its removal edge is still credited to
+    /// that unload. Same 30s window as RECENT_UNLOAD_GRACE below and as the
+    /// AD5X IFS runout suppression: past it, an empty sensor is a real runout.
+    static constexpr std::chrono::seconds POST_UNLOAD_RUNOUT_GRACE{30};
     /// One-shot: an unload completed and its removal edge has not arrived yet.
     bool post_unload_runout_grace_{false};
+    /// When post_unload_runout_grace_ was armed. Without it the flag has no time
+    /// bound, and an unload that leaves nothing loaded never reaches the
+    /// filament-back retirement — the next genuine idle runout, days later,
+    /// would be swallowed.
+    std::chrono::steady_clock::time_point post_unload_runout_grace_at_{};
     /// Whether the operation currently in flight has passed through UNLOADING.
     bool saw_unload_in_op_{false};
     /// prev_backend_runout_ has no meaning yet, so the first sample seeds it

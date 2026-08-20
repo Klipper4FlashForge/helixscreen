@@ -213,11 +213,10 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     // only on a backend whose filament macro homes itself (AD5X IFS). Reading
     // the raw print_active subject here — which is 1 for both — would keep the
     // menu greyed through the runout pause that is the whole recovery workflow.
-    const auto job_state = static_cast<helix::PrintJobState>(
-        lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
+    const auto lifecycle = static_cast<PrintState>(
+        lv_subject_get_int(get_printer_state().get_print_lifecycle_subject()));
     const bool print_blocks_op = helix::ui::print_blocks_filament_op(
-        job_state == helix::PrintJobState::PRINTING, job_state == helix::PrintJobState::PAUSED,
-        backend_ && backend_->filament_ops_self_home());
+        lifecycle, backend_ && backend_->filament_ops_self_home());
 
     // Check if system is busy (operation in progress). AmsSystemInfo::is_busy()
     // is the same predicate AmsSubscriptionBackend::check_preconditions() uses to

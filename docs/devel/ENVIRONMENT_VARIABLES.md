@@ -1570,6 +1570,33 @@ SCREWS_AUTO_START=1 ./build/bin/helix-screen --test &
 
 ## Development
 
+### `HELIX_TEMP_GRAPH_GRAD_SKIP`
+
+Force the temperature graph's gradient to re-render on every dirtied frame, disabling the
+content-signature skip. Diagnostic only: it exists so the skip's effect can be measured on a
+device without swapping binaries.
+
+The gradient under each trace is cached and re-rendered only when the drawn result would
+change. "Would change" is decided by hashing the pixel row each column's fill starts at
+(`include/temp_graph_column_map.h`), not the raw sample values - real temperatures jitter a
+tenth of a degree every sample, so a value hash never matches and nothing is ever skipped.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `0` (skip disabled, always render), anything else or unset (skip enabled) |
+| **Default** | Skip **enabled** |
+| **File** | `src/ui/ui_temp_graph.cpp`, `include/temp_graph_column_map.h` |
+
+```bash
+# Baseline: every dirtied frame renders. Pair with -vv for the per-render timing.
+HELIX_TEMP_GRAPH_GRAD_SKIP=0 ./build/bin/helix-screen --test -vv
+```
+
+Measured on a Creality K2 Plus (456x102 gradient, 2 series): 167ms median per render with the
+skip ineffective, ~10ms after coalescing equal-height column runs, with ~47% of frames skipped
+outright. Most of the original cost was `lv_canvas_finish_layer()` rasterising 456 separate
+single-column fills, not the pixels themselves.
+
 ### `HELIX_HOT_RELOAD`
 
 Enable XML hot reload for live UI editing. When enabled, a background thread polls `ui_xml/` (recursively — includes breakpoint variants and `components/`) every 500ms for file changes. Modified XML components are pre-validated, then unregistered and re-registered with LVGL, and the active panel/overlay/modal widget tree is torn down and rebuilt in place — no restart, no navigation needed.

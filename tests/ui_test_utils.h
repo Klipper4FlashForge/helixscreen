@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "ui_toast_manager.h"
+
 #include "lvgl/lvgl.h"
 
 #include <functional>
@@ -61,16 +63,6 @@ void set_test_notification_warning_hook(std::function<void(const std::string&)> 
 void set_test_notification_error_hook(std::function<void(const std::string&)> hook);
 
 /**
- * @brief Install a hook invoked by the test ToastManager::show() stub.
- *
- * mk/tests.mk excludes the real ui_toast_manager.o, so a toast raised during a
- * test is otherwise invisible - which makes "did the user actually get told?"
- * untestable. The hook receives the toast's message text. Pass nullptr to
- * clear, and clear it before the observed storage goes out of scope.
- */
-void set_test_toast_hook(std::function<void(const std::string&)> hook);
-
-/**
  * @brief Install a hook invoked by the test ui_notification_info() stubs.
  *
  * Third of the same set. INFO toasts are the ones that GUIDE rather than alarm
@@ -80,6 +72,18 @@ void set_test_toast_hook(std::function<void(const std::string&)> hook);
  * which this file replaces with a log-only no-op. Pass nullptr to clear.
  */
 void set_test_notification_info_hook(std::function<void(const std::string&)> hook);
+
+/**
+ * @brief Install a hook invoked by the test ToastManager stub's show paths.
+ *
+ * Same purpose as the notification hooks, one layer down: code that calls
+ * ToastManager::show() directly (deliberately bypassing ui_notification_* and
+ * its history row) has no other observation point in the test binary — the
+ * real ToastManager is excluded from the link. Carries the severity so a
+ * wrong-severity toast fails on severity, not just wording. Pass nullptr to
+ * clear.
+ */
+void set_test_toast_hook(std::function<void(ToastSeverity, const std::string&)> hook);
 
 } // namespace ui
 } // namespace helix

@@ -227,8 +227,8 @@
           <icon src="source_branch" size="sm" variant="info" clickable="false"/>
           <text_small name="bypass_source_label"
                       text="Bypass active — this print runs on the external spool."
-                      translation_tag="Bypass active — this print runs on the external spool."
-                      clickable="false" flex_grow="1"/>
+                      translation_tag="Bypass active — this print runs on the external spool." clickable="false"
+                      flex_grow="1"/>
         </ui_card>
 
         <!-- Filament mapping card (shown when AMS/toolchanger detected).

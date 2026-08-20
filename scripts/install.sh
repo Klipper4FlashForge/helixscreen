@@ -650,6 +650,22 @@ _resolve_primary_group() {
     fi
 }
 
+# Print the owning user NAME of a path, or nothing if it cannot be determined.
+#
+# Order matters: `stat -c` is the GNU/BusyBox spelling and every device we ship
+# to (AD5M, K1, K2, CC1, U1, Pi) speaks it, so it stays the first and normally
+# the only thing tried. BSD stat (macOS dev machines) has no -c and spells the
+# same field `-f '%Su'`; that runs only after the GNU form has already failed,
+# so device behaviour is unchanged.
+_file_owner_name() {
+    local _p="$1"
+    [ -n "$_p" ] || return 0
+    local _o
+    _o=$(stat -c '%U' "$_p" 2>/dev/null) || _o=""
+    [ -n "$_o" ] || _o=$(stat -f '%Su' "$_p" 2>/dev/null) || _o=""
+    echo "$_o"
+}
+
 # QIDI-class SBC fingerprint (Q2, and likely Plus 4): the Linaro Debian
 # reference rootfs hostname `linaro-alip` plus the Klipper user home. This is the
 # same signal get_hardware_label() uses to print "QIDI-class SBC". The user is
@@ -1192,7 +1208,7 @@ detect_pi_install_dir() {
     #    Escalation is not an answer here — the unit sets NoNewPrivileges=true, so
     #    sudo cannot run from the app or from the install.sh it forks.
     if [ "${KLIPPER_USER:-root}" != "root" ] && [ -d "$KLIPPER_HOME" ] && \
-       [ "$(stat -c '%U' "$KLIPPER_HOME" 2>/dev/null)" = "$KLIPPER_USER" ]; then
+       [ "$(_file_owner_name "$KLIPPER_HOME")" = "$KLIPPER_USER" ]; then
         INSTALL_DIR="$KLIPPER_HOME/helixscreen"
         log_info "Install directory (service user home, no ecosystem): $INSTALL_DIR"
         return 0
