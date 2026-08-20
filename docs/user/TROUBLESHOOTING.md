@@ -1316,6 +1316,27 @@ curl -X POST http://localhost:7125/printer/print/cancel
 
 ---
 
+### Power cut out during a print
+
+**Symptoms:**
+- After power comes back and HelixScreen reconnects, a dialog asks: **Resume interrupted print?**
+- The body names the file when the printer reported it ("The printer lost power while printing <name>.") or describes it generically
+
+**What's going on:**
+On printers whose firmware saves recovery data when power drops mid-print — the Creality models with recovery support (K1 family, K2, Ender 3 V3 and siblings) and the Snapmaker U1 — that data survives the reboot. When HelixScreen connects and finds it, it asks what you want to do rather than deciding for you. Creality printers get an extra-honest wording ("The resumed layer may not line up exactly.") because their recovery re-homes without re-probing the bed — that is a real property of the resume, not a malfunction.
+
+**Your choices:**
+
+| Choice | What happens |
+|--------|--------------|
+| **Resume** | The printer continues the interrupted print from where its firmware saved its progress. On Creality, check the first resumed layer before walking away — it can sit a millimetre or two off. |
+| **Discard** | The recovery data is cleared and nothing is printed. The printer is back to a clean slate; start whatever you like. |
+| Dismiss the dialog (tap outside it) | Nothing is decided: the recovery data is kept, and you are asked again the next time HelixScreen connects. |
+
+The offer never appears on top of a print you have already started — if you tap Start Print before answering, the question waits until that job is done. On printers without firmware-side recovery data there is nothing to find, so the dialog never appears there; a power cut simply means starting the print again.
+
+---
+
 ### Layer count is wrong, stuck at 0, or total layers missing
 
 **Symptoms:**
