@@ -911,8 +911,9 @@ static KeypadCallbackData s_keypad_data[helix::HEATER_TYPE_COUNT];
 // ============================================================================
 // XML event callbacks — chamber-heater diagnostics card (issue #1290)
 // ============================================================================
-// Both fire from chamber_temp_panel.xml with no instance user data (the panel
-// is shared across heaters), so they reach the controller through the same
+// Both fire from the chamber-diagnostics card (components/
+// chamber_diagnostics_card.xml, instantiated by temp_graph_overlay) with no
+// instance user data, so they reach the controller through the same
 // app_globals registration production wires in SubjectInitializer.
 
 void TemperatureService::on_chamber_fault_reset_clicked(lv_event_t* /*e*/) {
