@@ -162,7 +162,8 @@ render_image() {
     echo -ne "    ${screen_name} (${target_size}x${target_size})... "
 
     if lvgl_render_image "$full_source" "$OUTPUT_DIR" "$output_name" "$target_size"; then
-        local size=$(lvgl_file_size "$output_file")
+        local size
+        size=$(lvgl_file_size "$output_file")
         echo -e "${GREEN}✓${NC} ($size)"
         return 0
     else
@@ -203,7 +204,8 @@ render_all() {
         echo -ne "    ${target_size}x${target_size}... "
 
         if lvgl_render_image "$full_source" "$fixed_output" "$output_name" "$target_size"; then
-            local size=$(lvgl_file_size "$fixed_output/${output_name}.bin")
+            local size
+            size=$(lvgl_file_size "$fixed_output/${output_name}.bin")
             echo -e "${GREEN}✓${NC} ($size)"
             ((success++)) || true
         else
