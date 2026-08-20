@@ -118,7 +118,11 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan_stack labels/names follow pixels, not s
 
     // --- Neither flag: large span, sub-threshold pixels on both axes. ---
     // A span-reading implementation would go "bigger" here; pixels must win.
-    h.resize(4, 4, w_normal() - 1, h_tall() - 1);
+    //
+    // rowspan stays at 2 (one authored cell) so the icon-above layout is out
+    // of play — that one IS span-gated, deliberately, and promotes the text to
+    // font_body. colspan carries the span-contradiction this case is about.
+    h.resize(4, 2, w_normal() - 1, h_tall() - 1);
     process_lvgl(30);
 
     CHECK(lv_obj_get_style_text_font(part_speed, LV_PART_MAIN) ==
@@ -393,4 +397,116 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan_stack rows fit the cell they were grant
 
     // Put the token table back where the rest of the suite expects it.
     theme_manager_refresh_layout_constants(disp);
+}
+
+/**
+ * The icon-above layout (stacked_row_layout.h), the fan_stack twin of the
+ * temp_stack case in test_widget_size_temp_stack.cpp.
+ *
+ * Two things are specific to fan_stack and asserted here rather than there.
+ * The name and speed must stay on ONE line under the glyph — that is what the
+ * `fan_stack_*_value` wrapper in panel_widget_fan_stack.xml exists for, and a
+ * row flipped to a column without it would break them onto separate lines.
+ * And the name gets a MEASURED ladder here rather than the width band: a
+ * stacked row hands the name+speed pair the widget's whole content width, so
+ * the band (which answers "does a resolved name fit BESIDE the glyph") is
+ * calibrated for the wrong layout. Both ends of that ladder are pinned — a
+ * sub-band column that still fits a word gets one, a column that fits nothing
+ * falls back to the single letter.
+ */
+TEST_CASE_METHOD(LVGLUITestFixture, "fan_stack stacks icons above name+speed only when it fits",
+                 "[widget_size][fan_stack][panel_widget]") {
+    PanelWidgetHarness<FanStackWidget> h(test_screen(), "fan_stack", state());
+
+    lv_obj_t* part_row = h.child("fan_stack_part_row");
+    lv_obj_t* part_icon = h.child("fan_stack_part_icon");
+    lv_obj_t* part_value = h.child("fan_stack_part_value");
+    lv_obj_t* part_name = h.child("fan_stack_part_name");
+    lv_obj_t* part_speed = h.child("fan_stack_part_speed");
+    REQUIRE(part_row != nullptr);
+    REQUIRE(part_icon != nullptr);
+    REQUIRE(part_value != nullptr);
+    REQUIRE(part_name != nullptr);
+    REQUIRE(part_speed != nullptr);
+
+    // The name and speed share one inner row in both layouts. Assert it here
+    // once: everything below reasons about `part_value` as a single block.
+    REQUIRE(lv_obj_get_parent(part_name) == part_value);
+    REQUIRE(lv_obj_get_parent(part_speed) == part_value);
+    REQUIRE(lv_obj_get_parent(part_value) == part_row);
+
+    auto name_and_speed_share_a_line = [&]() {
+        // Vertical overlap, and the name to the left of the speed.
+        return lv_obj_get_y(part_name) < lv_obj_get_y(part_speed) + lv_obj_get_height(part_speed) &&
+               lv_obj_get_y(part_speed) < lv_obj_get_y(part_name) + lv_obj_get_height(part_name) &&
+               lv_obj_get_x(part_name) < lv_obj_get_x(part_speed);
+    };
+
+    // One authored cell: compact rows, however tall the cell is.
+    h.resize(2, 2, w_normal() - 1, 400);
+    process_lvgl(30);
+    CHECK(lv_obj_get_style_flex_flow(part_row, LV_PART_MAIN) == LV_FLEX_FLOW_ROW);
+    CHECK(lv_obj_get_x(part_icon) + lv_obj_get_width(part_icon) <= lv_obj_get_x(part_value));
+    CHECK(name_and_speed_share_a_line());
+
+    // Taller than a cell, with room: glyph moves above the pair, text goes to
+    // font_body — a rung past the font_small that the width band alone buys.
+    h.resize(2, 4, w_normal() - 1, 400);
+    process_lvgl(30);
+    CHECK(lv_obj_get_style_flex_flow(part_row, LV_PART_MAIN) == LV_FLEX_FLOW_COLUMN);
+    CHECK(lv_obj_get_y(part_icon) + lv_obj_get_height(part_icon) <= lv_obj_get_y(part_value));
+    CHECK(lv_obj_get_style_text_font(part_speed, LV_PART_MAIN) ==
+          theme_manager_get_font("font_body"));
+    CHECK(lv_obj_get_style_text_font(part_name, LV_PART_MAIN) ==
+          theme_manager_get_font("font_body"));
+
+    // ...and the pair is still one line, not two.
+    CHECK(name_and_speed_share_a_line());
+
+    // A stacked row puts the name on its own line, so the glyph is no longer
+    // competing for that width and a longer form fits than the width band
+    // would allow beside it. This column is BELOW w_normal() — the band alone
+    // would force the single letter — yet the name is a word.
+    CHECK(std::string(lv_label_get_text(part_name)) != lv_tr("P"));
+
+    // The longer form is measured, not assumed: a column with no room for any
+    // word still falls back to the single letter rather than overflowing.
+    h.resize(2, 4, 40, 400);
+    process_lvgl(30);
+    CHECK(lv_obj_get_style_flex_flow(part_row, LV_PART_MAIN) == LV_FLEX_FLOW_COLUMN);
+    CHECK(std::string(lv_label_get_text(part_name)) == lv_tr("P"));
+
+    // Wide AND tall: the name still shares its line with the speed under the
+    // glyph.
+    h.resize(4, 4, w_normal(), 400);
+    process_lvgl(30);
+    CHECK(lv_obj_get_style_flex_flow(part_row, LV_PART_MAIN) == LV_FLEX_FLOW_COLUMN);
+    CHECK(std::string(lv_label_get_text(part_name)) != lv_tr("P"));
+    CHECK(name_and_speed_share_a_line());
+
+    // Every visible row uses the SAME form, at every width. Picking each row's
+    // own longest-that-fits would render "Part / Hotend / C", which reads as a
+    // rendering fault rather than a deliberate abbreviation. "Hotend" is the
+    // longer of the two visible short words, so the pair disagreeing is
+    // exactly the failure this sweeps for.
+    lv_obj_t* hotend_name = h.child("fan_stack_hotend_name");
+    REQUIRE(hotend_name != nullptr);
+    for (int w = 30; w <= w_normal() + 60; w += 7) {
+        h.resize(2, 4, w, 400);
+        process_lvgl(30);
+        const bool part_is_letter = std::string(lv_label_get_text(part_name)) == lv_tr("P");
+        const bool hotend_is_letter = std::string(lv_label_get_text(hotend_name)) == lv_tr("H");
+        INFO("width " << w << ": part '" << lv_label_get_text(part_name) << "', hotend '"
+                      << lv_label_get_text(hotend_name) << "'");
+        CHECK(part_is_letter == hotend_is_letter);
+    }
+
+    // Taller than a cell but with nowhere to put the second line: compact
+    // rows, fully restored rather than left half-converted.
+    h.resize(2, 4, w_normal() - 1, 40);
+    process_lvgl(30);
+    CHECK(lv_obj_get_style_flex_flow(part_row, LV_PART_MAIN) == LV_FLEX_FLOW_ROW);
+    CHECK(lv_obj_get_x(part_icon) + lv_obj_get_width(part_icon) <= lv_obj_get_x(part_value));
+    CHECK(lv_obj_get_style_text_font(part_speed, LV_PART_MAIN) ==
+          theme_manager_get_font("font_xs"));
 }
