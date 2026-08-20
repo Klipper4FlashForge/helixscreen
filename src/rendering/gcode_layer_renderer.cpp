@@ -1381,9 +1381,11 @@ std::optional<std::string> GCodeLayerRenderer::pick_object_at(int screen_x, int 
     // unpickable: current_layer_ is then the TOP layer, whose segments are a
     // sliver in one corner, so tap-to-select and long-press-to-exclude both
     // did nothing. Each GCodeObject carries a 3D bounding box accumulated over
-    // its whole toolpath, so projecting its 8 corners yields the object's full
+    // its whole toolpath, so projecting its 8 corners yields the object's
     // screen footprint for one pass over the object list - no per-pixel
-    // buffer, no heap container, and no layer loads.
+    // buffer, no heap container, and no layer loads. The box covers the whole
+    // toolpath, though, and render() stops at current_layer_, so it is clamped
+    // to the drawn Z range first: what is not visible must not be pickable.
     //
     // Streaming mode has no object list (set_streaming_controller() clears
     // gcode_), so it falls through to the segment walk with no filter.
@@ -1392,9 +1394,21 @@ std::optional<std::string> GCodeLayerRenderer::pick_object_at(int screen_x, int 
     const std::string* candidate_names[MAX_CANDIDATES];
     size_t candidate_count = 0;
     bool candidate_overflow = false;
-    const bool objects_known = gcode_ && !gcode_->objects.empty();
+    const bool objects_known = gcode_ && !gcode_->objects.empty() &&
+                               static_cast<size_t>(current_layer_) < gcode_->layers.size();
 
     if (objects_known) {
+        // Only layers 0..current_layer_ are on screen, so an object's pickable
+        // volume ends at the top of the current layer no matter how tall its
+        // bounding box is. Slack of a tenth of a micron absorbs float noise in
+        // the Z the parser stored for a layer versus the Z it stored on that
+        // layer's segments - orders of magnitude below the thinnest layer
+        // height anyone slices, so it can never admit an undrawn layer.
+        constexpr float Z_VISIBLE_EPSILON_MM = 1e-4f;
+        const float visible_top_z =
+            gcode_->layers[static_cast<size_t>(current_layer_)].z_height + Z_VISIBLE_EPSILON_MM;
+        const bool supports_hidden = !show_supports_.load(std::memory_order_relaxed);
+
         for (const auto& [name, obj] : gcode_->objects) {
             const AABB& box = obj.bounding_box;
             // Defined but never extruded (EXCLUDE_OBJECT_DEFINE with no
@@ -1403,12 +1417,31 @@ std::optional<std::string> GCodeLayerRenderer::pick_object_at(int screen_x, int 
             if (box.is_empty())
                 continue;
 
+            // Has not started printing: render() has drawn nothing of it, and
+            // selecting geometry you cannot see is not a selection - you cannot
+            // decide to exclude an object that is not on screen.
+            if (box.min.z > visible_top_z)
+                continue;
+
+            // Supports hidden, and this object is one. Stage 2 already filters
+            // segments through should_render_segment(), but the single-candidate
+            // fast path never reaches stage 2, so the check has to live here.
+            if (supports_hidden && name_looks_like_support(name))
+                continue;
+
+            // Clamp to the drawn Z range before projecting. In FRONT view a
+            // higher Z maps higher on screen, so projecting the full box would
+            // stretch a partly-printed object's footprint above its drawn top
+            // and swallow clicks on empty space.
+            const AABB visible{box.min,
+                               glm::vec3(box.max.x, box.max.y, std::min(box.max.z, visible_top_z))};
+
             float min_sx = std::numeric_limits<float>::max();
             float min_sy = std::numeric_limits<float>::max();
             float max_sx = std::numeric_limits<float>::lowest();
             float max_sy = std::numeric_limits<float>::lowest();
 
-            for (const glm::vec3& corner : box.corners()) {
+            for (const glm::vec3& corner : visible.corners()) {
                 glm::ivec2 p = world_to_screen_raw(transform, corner.x, corner.y, corner.z);
                 min_sx = std::min(min_sx, static_cast<float>(p.x));
                 min_sy = std::min(min_sy, static_cast<float>(p.y));
