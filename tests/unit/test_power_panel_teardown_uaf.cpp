@@ -160,3 +160,62 @@ TEST_CASE_METHOD(PowerPanelTeardownFixture,
     // No rows can be built without a container to build them into.
     CHECK(PowerPanelTestAccess::device_row_count(panel()) == 0);
 }
+
+// ============================================================================
+// Row teardown must not delete synchronously inside an UpdateQueue batch
+// ============================================================================
+//
+// clear_device_list() runs from populate_device_list(), whose only production
+// caller is the deferred get_power_devices reply. Deleting N rows synchronously
+// there puts N sync deletions in one process_pending() batch, which corrupts
+// LVGL's global event linked list (#776/#190/#80) — THREADING.md invariant 3
+// bans exactly this. The deletions have to route through LVGL's own async list.
+
+namespace {
+
+int g_row_deletes = 0;
+
+void count_row_delete(lv_event_t* /*e*/) {
+    ++g_row_deletes;
+}
+
+/// Tag every current child of a container so we can tell when it really dies.
+void watch_deletes(lv_obj_t* container) {
+    g_row_deletes = 0;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(container); ++i) {
+        lv_obj_add_event_cb(lv_obj_get_child(container, i), count_row_delete, LV_EVENT_DELETE,
+                            nullptr);
+    }
+}
+
+} // namespace
+
+TEST_CASE_METHOD(PowerPanelTeardownFixture,
+                 "PowerPanel row teardown defers deletion out of the queue batch",
+                 "[power][teardown][uaf]") {
+    PowerPanelTestAccess::populate_device_list(panel(), sample_devices());
+    UpdateQueue::instance().drain();
+    process_lvgl(50); // settle the chip rebuild the first populate queued
+
+    lv_obj_t* list = PowerPanelTestAccess::device_list_container(panel());
+    REQUIRE(list != nullptr);
+    REQUIRE(lv_obj_get_child_count(list) == 3);
+    watch_deletes(list);
+
+    // Re-populate from inside a batch, exactly as the get_power_devices reply
+    // does. clear_device_list() tears down the three old rows in that batch.
+    queue_update("test::power_repopulate", [this]() {
+        PowerPanelTestAccess::populate_device_list(panel(),
+                                                   {PowerDevice{"printer", "gpio", "on", false}});
+    });
+    UpdateQueue::instance().drain();
+
+    // The rows must be detached and handed to LVGL's async list, not freed
+    // inside the batch we just drained.
+    CHECK(g_row_deletes == 0);
+    CHECK(lv_obj_get_child_count(list) == 1);
+
+    // LVGL's own async pass is where they actually die.
+    process_lvgl(50);
+    CHECK(g_row_deletes == 3);
+}
