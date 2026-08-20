@@ -526,13 +526,46 @@ class PrinterDetector {
      */
     static std::string screws_tilt_direction_override();
 
+    /// Minimum detection confidence before the saved-vs-detected type warning
+    /// may be offered. Matches the wizard's override threshold.
+    static constexpr int MISMATCH_MIN_CONFIDENCE = 70;
+
+    /**
+     * @brief Why the saved-vs-detected type warning was or was not offered.
+     *
+     * Every non-Warn value is a silent decline in the shipped flow, so the
+     * reason is the only thing a debug bundle can use to tell "detection scored
+     * 68" apart from "detection returned nothing at all".
+     */
+    enum class MismatchDecision {
+        Warn,                 ///< Offer the prompt.
+        NoDetection,          ///< Detection produced no type name.
+        ConfidenceTooLow,     ///< Below MISMATCH_MIN_CONFIDENCE.
+        MatchesSavedType,     ///< Detected type equals the saved one.
+        SavedTypeNotSpecific, ///< Saved type is empty, Custom/Other, or Unknown.
+        AlreadyDismissed      ///< The user already answered for this saved type.
+    };
+
+    /// Human-readable tag for a MismatchDecision, for logs.
+    static const char* mismatch_decision_name(MismatchDecision decision);
+
+    /**
+     * @brief Classify the saved-vs-detected type comparison.
+     *
+     * Warn iff detection is high-confidence (>= MISMATCH_MIN_CONFIDENCE),
+     * contradicts a meaningful saved type (not Custom/Other, Unknown, or
+     * empty), and the per-printer flag does not already equal the current saved
+     * type (changing the type re-arms the warning once).
+     */
+    static MismatchDecision classify_type_mismatch(const std::string& saved_type,
+                                                   const std::string& detected_type,
+                                                   int detected_confidence,
+                                                   const std::string& flag_value);
+
     /**
      * @brief Decide whether to show the one-time saved-vs-detected type warning.
      *
-     * True iff detection is high-confidence (>= 70, the wizard's override
-     * threshold), contradicts a meaningful saved type (not Custom/Other,
-     * Unknown, or empty), and the per-printer flag does not already equal the
-     * current saved type (changing the type re-arms the warning once).
+     * Convenience wrapper over classify_type_mismatch().
      */
     static bool should_warn_type_mismatch(const std::string& saved_type,
                                           const std::string& detected_type, int detected_confidence,

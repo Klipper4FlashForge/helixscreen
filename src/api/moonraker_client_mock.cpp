@@ -663,10 +663,21 @@ void MoonrakerClientMock::populate_capabilities() {
     // Probe section — shared with the configfile.config query/subscribe responses
     // so all three payloads describe the same probe.
     mock_config.merge_patch(mock_internal::get_mock_probe_config());
+    // Stepper travel limits, matching the configfile.settings the query and
+    // subscribe handlers report. The real discovery sequence derives the build
+    // volume from these before detection runs, so the mock has to carry them or
+    // --test detects against an empty volume the live path no longer sees.
+    mock_config["stepper_x"] = {{"position_min", mock_internal::MOCK_BED_X_MIN},
+                                {"position_max", mock_internal::MOCK_BED_X_MAX}};
+    mock_config["stepper_y"] = {{"position_min", mock_internal::MOCK_BED_Y_MIN},
+                                {"position_max", mock_internal::MOCK_BED_Y_MAX}};
+    mock_config["stepper_z"] = {{"position_min", 0.0},
+                                {"position_max", mock_internal::MOCK_BED_Z_MAX}};
 
     std::unordered_set<std::string> macros_snapshot;
     discovery_.modify_hardware([&](PrinterDiscovery& hw) {
         hw.parse_config_keys(mock_config);
+        hw.parse_build_volume(mock_config);
         macros_snapshot = hw.macros();
     });
 
