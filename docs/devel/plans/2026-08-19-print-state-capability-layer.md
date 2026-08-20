@@ -262,7 +262,8 @@ completing SHA.
 | **2d** | job queue modal, PLR offer, power panel, keep-raw markers (AMS panel stays raw) | 4 + 6 markers | **done** | `1c8677d4e` |
 | **3a** | The home print card + its idle-runout gate (the K2 finding) | 5 + 6 tests | **done** | `b10f464a3` |
 | **3b** | Every remaining raw site carries a verified reason | 26 markers | **done** | `858d36329` |
-| **4** | Delete the helper, add the ratcheting gate | 2 + gate | not started | - |
+| **4a** | Typed observer factories; the gate hole they close | 6 + factory | **done** | `26880e4c3` |
+| **4c** | Delete the helper; `check_raw_print_job_state.py` at zero | 1 + gate + 81 markers | **done** | `155abc76b` |
 | **5** | Rename `PrintState` -> `PrintLifecycle` | mechanical | not started | - |
 
 Total: **61 production edit points**, ~5 signature changes, ~30 test files.
@@ -626,9 +627,55 @@ meta-tests on the `tests/shell/test_l081_gate.bats` pattern. **No changes needed
 to the pre-commit hook or GitHub Actions** - both run `quality-checks.sh`
 wholesale.
 
+**4a first, because the gate could not have held without it.** Twenty sites
+subscribed to a print-state subject in six different spellings, and twelve of
+them cast the observer lambda's `int` by hand - with the `get_*_subject()` call
+that decides which enum is correct sitting up to twelve lines away.
+`check_print_state_cast.py` could not see any of them: it only matched
+`static_cast<Enum>(lv_subject_get_int(..))`. So it reported a clean zero while
+seven sites did exactly what it existed to forbid. Six moved onto
+`observe_print_state()` / `get_print_lifecycle()`; the pattern now also matches
+the plain-int form.
+
+`observe_print_state_immediate()` exists because **typing and dispatch mode are
+orthogonal**, and a factory family covering only one dispatch mode is a trap:
+swapping `observe_int_immediate()` for the typed factory silently deferred
+AbortManager's cancel detection onto the UpdateQueue. Two tests caught it. Worth
+remembering - "same subject, same handler, better typing" is not automatically
+behaviour-neutral.
+
+**Considered and deliberately NOT done: an `EdgeTracker<T>`.** Six sites track a
+previous print state with three different first-tick conventions, which looked
+like textbook drift. It is not: **four of the six are correct, and two of those
+encode requirements a generic tracker cannot express** - `print_start_navigation`
+re-seeds *and* does a level check because a restored power-loss job must still
+navigate (#1099); `print_collector_arming` seeds STANDBY *and* carries
+`is_initial_transition()` to tell "joined mid-print" from "user reprint". The
+other two (`telemetry_manager`, `ams_backend_ad5x_ifs`) can false-edge on the
+first tick, and both consequences are benign. A shared tracker would have sat
+*underneath* the four correct sites without removing their flags - a seventh
+mechanism, not a consolidation. The knowledge was kept instead: each of those
+sites now carries a FIRST-TICK note in its marker.
+
+**Two markers written in Phase 3b were invisible to the gate** - `RAW_PRINT_STATE_OK,`
+and `RAW_PRINT_STATE_OK (whole function):` rather than the literal
+`RAW_PRINT_STATE_OK:`. They read as annotated and were not. All 81 markers are
+now the same token, which is the only reason the zero is trustworthy. If the
+opt-out ever gains variants, the gate must be taught them in the same commit.
+
 **Exit criteria**
-- [ ] Gate fails on a newly introduced raw comparison outside the allowlist.
-- [ ] Baseline set to the surviving count and recorded here.
+- [x] Gate fails on a newly introduced raw comparison outside the allowlist.
+      Proven twice, not assumed: it fails on a canary file, and on the
+      pre-refactor version of `spoolman_manager.cpp` retrieved from git.
+- [x] Baseline set to the surviving count and recorded here: **0**, over 81
+      annotated sites in 30 files. Wired into `scripts/quality-checks.sh`, so
+      the pre-commit and pre-push hooks both run it.
+- [x] `print_occupies_toolhead()` deleted (zero callers since `32e516e14`).
+
+**Not done, deliberately:** the ~11 bats meta-tests this phase originally
+specified. The property that matters - the gate can fail - was proven directly
+by the two canaries above. The bats suite is polish; write it if the gate ever
+grows conditional logic worth pinning.
 
 ---
 
@@ -760,6 +807,7 @@ loaded" has two definitions in one file that disagree exactly where
 | 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
 | 2026-08-19 | 0b | 91 | `41392dfd2`. Also count-neutral - 0b changes which inputs an existing derivation gets, not how many sites read the wire. Suite 95/95. **Phase 0 complete.** |
 | 2026-08-19 | - | 91 | `d606bd823`. Re-merged main (10 commits, no conflicts). Suite 95/95, and the **full ungated** quality sweep passes (36 gates) - worth re-running before any push, because per-commit gates only ever run `--staged-only` and skip anything you did not stage. |
+| 2026-08-19 | 4 | 63 | `26880e4c3` + `155abc76b`. **Phase 4 complete; only the cosmetic Phase 5 remains.** Gate at zero over 81 annotated sites, wired into `quality-checks.sh`. `print_occupies_toolhead()` deleted. The count does not move because Phase 4 was never about removing wire reads - it was about making the surviving ones say why, and making the enum/subject mismatch unsayable. Suite 96/96. |
 | 2026-08-19 | 3 | 63 | `b10f464a3` + `858d36329`. **Phase 3 complete**, but not as written - see the correction box in Phase 3. One file migrated (the home print card + its idle-runout gate, both real, both K2-relevant); everything else was verified keep-raw and now says why. `observe_print_lifecycle()` added beside `observe_print_state()`: the old factory hard-cast to PrintJobState while accepting any subject, which is the enum-mismatch trap in reusable form. `print_active` documented rather than deleted - zero XML bindings, two internal readers that both want wire semantics. |
 | 2026-08-19 | 2d | 66 | `1c8677d4e`. **Phase 2 complete.** Three real defects, each written test-first and red before the fix: a queue tap during a pre-print block deleted the job then failed the start; PLR offered recovery on top of a committed start; a `locked_while_printing` PSU stayed togglable while the toolhead homed. `ui_panel_ams` was investigated and deliberately NOT migrated - see the correction box in Phase 2. Six `RAW_PRINT_STATE_OK` markers added. Suite green; the AMS keep-raw pin was mutation-verified. |
 | 2026-08-19 | 2c | 68 | `eb3f94048` on `fix/print-state-phase2`. Phase 2a-2c done. Remaining 2d: `ui_job_queue_modal` (real bug - a queue tap during a pre-print block deletes the entry, then the start fails; use `can_start_new_print()`), `ui_plr_offer_controller:86`, `ui_panel_ams:268` (**value comparison only** - see the correction box in Phase 2), `ui_panel_power:233` (near-no-op; the live path is `power_device_state`), and RAW_PRINT_STATE_OK markers on `print_control_buttons`, `print_start_navigation`, `can_start_new_print`. |
@@ -770,8 +818,8 @@ loaded" has two definitions in one file that disagree exactly where
 
 ## Before you touch anything: state of the branch
 
-**Phase 0 + 1 are MERGED to main** (`776a6afe1`) and verified on the K2. **Phases 2 and 3 are
-COMPLETE** on branch `fix/print-state-phase2`, in the same worktree
+**Phase 0 + 1 are MERGED to main** (`776a6afe1`) and verified on the K2. **Phases 2, 3
+and 4 are COMPLETE** on branch `fix/print-state-phase2`, in the same worktree
 (`.worktrees/preprint-arm-on-initiation`) - the old branch was deleted after the
 merge and the worktree reused, so the build cache is warm. Not yet merged.
 
