@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Lint gate: agent-facing docs and docs/devel/ docs must not cite files that
-# don't exist.
+# Lint gate: agent-facing docs, docs/README.md (the public docs index), and
+# docs/devel/ docs must not cite files that don't exist.
 #
 # CLAUDE.md files and skills work by progressive disclosure — they are mostly
 # pointers, and a pointer to a renamed or deleted file is worse than no pointer.
@@ -25,7 +25,8 @@
 # routing table is a doc nobody will find.
 #
 # Usage:
-#   check_doc_refs.py            # everything: agent docs + docs/devel/**/*.md,
+#   check_doc_refs.py            # everything: every CLAUDE.md, .claude/skills/,
+#                                # docs/README.md, docs/devel/**/*.md,
 #                                # refs+links, plus the docs/devel index check
 #   check_doc_refs.py --refs     # broken references only
 #   check_doc_refs.py --index    # index completeness only

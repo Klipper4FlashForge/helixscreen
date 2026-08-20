@@ -353,6 +353,8 @@ Consolidated 2026-08-20 from the docs-cleanup pass; sizes re-measured then.
 | **Stale superpowers refs** | Low | Tracked plan files still cross-link via `docs/superpowers/` paths (dead on a fresh clone); four refs in src/tests/plans point at files that no longer exist anywhere |
 | **User-docs pass** | Medium | Follow-up: accuracy and coverage pass over `docs/user/` |
 | **Flat devel-docs pass** | Medium | Follow-up: next tranche of flat `docs/devel/*.md` into organized homes |
+| **GcodeToolRemapper rationale** | Low | The remapper stays generic with ACE as consumer; the rationale was lost when the tool-remapper design was absorbed (2026-06-16). Capture it in `FILAMENT_MANAGEMENT.md` when next touched |
+| **Stale exact counts** | Low | 116 methods (x2), 23 Spoolman API methods, 13-step wizard predate the docs-cleanup re-measurement and were never re-verified |
 
 ---
 
