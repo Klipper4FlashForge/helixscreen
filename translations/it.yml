@@ -200,7 +200,9 @@ translations:
   An unexpected printer error occurred.: Si è verificato un errore imprevisto della
     stampante.
   An update is available: È disponibile un aggiornamento
+  Analyzing data...: ''
   Analyzing data... {}%: 'Analisi dei dati... {}%'
+  Analyzing data... {}s: ''
   Android logcat: Android logcat
   Animations: Animazioni
   Anonymous data to help improve HelixScreen: Dati anonimi per migliorare HelixScreen
@@ -1104,6 +1106,7 @@ translations:
   Firmware Restart: Riavvio firmware
   Firmware reports no bypass. Enable if you feed filament straight to the extruder: Il firmware non rileva un bypass. Abilita se alimenti il filamento direttamente all'estrusore
   Firmware restarting...: Riavvio firmware...
+  Firmware saved X = Y's value; the measured X result was discarded: ''
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
@@ -1551,6 +1554,7 @@ translations:
     cinghia
   Measure belt path frequencies: Misura le frequenze dei percorsi cinghia
   Measured: Misurato
+  Measured (shaper off): ''
   Measurement Failed: Misurazione fallita
   Measuring Path A... %d%%: Misurazione percorso A... %d%%
   Measuring Path B... %d%%: Misurazione percorso B... %d%%
@@ -1781,6 +1785,7 @@ translations:
   Objects: Oggetti
   'Off': 'Off'
   'Off:': 'Off:'
+  "Old setting on today's data: {} residual - now: {}": ''
   'On': 'On'
   On and Off macros must be different: Le macro On e Off devono essere diverse
   On-screen Alerts: 'Avvisi a schermo'
@@ -1938,6 +1943,7 @@ translations:
   Press Scan to search: Premi Scansiona per cercare
   'Pressure:': 'Pressione:'
   Preview Sounds: Anteprima suoni
+  Previous: ''
   Price: Prezzo
   Primary: Primario
   Priming...: Preparazione ugello...
@@ -2137,6 +2143,7 @@ translations:
   Refresh: Aggiorna
   Refresh Interval: Intervallo aggiornamento
   Refresh RFID: 'Aggiorna RFID'
+  Relative vibration: ''
   Release all stepper motors. Position will be lost.: Rilascia tutti i motori stepper.
     La posizione verrà persa.
   Remaining (g): Rimanente (g)

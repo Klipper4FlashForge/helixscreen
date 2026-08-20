@@ -760,7 +760,7 @@ Both are real, both were seen on hardware, neither blocked the merge.
   runout modal could fire on top of a committed start, and burned the one-shot
   post-unload grace on its way past.
 
-## Found while doing Phase 2d, not fixed
+## Found while doing Phase 2d - FIXED on main by `13db7c92e` / `faadde444`
 
 **`PowerPanel::populate_device_chips()` defers a rebuild that reads
 `chip_container_` raw.** `lifetime_.defer` guards against `this` dying; nothing
@@ -769,8 +769,10 @@ deferred body's `if (chip_container_)` then passes on a dangling pointer. Found
 because the Phase 2d power-panel test segfaulted in
 `create_led_chip -> lv_obj_add_style -> lv_obj_get_screen` when it drained the
 queue after deleting the tree. The test now drains first and says why. Unrelated
-to print state, so not fixed here - but it is the #776/#190 crash family and it
-is reachable any time the panel's tree goes away with a chip rebuild queued.
+to print state, so it was handed to a parallel session rather than widening this
+branch; `13db7c92e` makes PowerPanel drop its cached widget pointers when the
+tree dies, and `faadde444` moves the row deletion out of the UpdateQueue batch.
+Both are on main and merged in here.
 
 ## Out of scope, tracked separately
 

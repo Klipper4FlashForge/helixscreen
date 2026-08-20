@@ -83,11 +83,11 @@ class PowerPanelLockFixture : public LVGLUITestFixture {
     /// Tear the widget tree down before the panel, so nothing observes a
     /// subject the panel's destructor is about to deinit.
     ///
-    /// Drain FIRST. populate_device_list() defers a chip rebuild that reads
-    /// chip_container_ raw, and nothing nulls that pointer when the widget tree
-    /// is deleted - draining after the delete dereferences freed memory. That is
-    /// a real hazard in PowerPanel rather than a test artifact, but it is not
-    /// this change's to fix; see the plan's "found, not fixed" list.
+    /// Drain first, belt-and-braces. This used to be load-bearing: the deferred
+    /// chip rebuild read chip_container_ raw and nothing nulled it when the tree
+    /// died, so draining after the delete dereferenced freed memory. Fixed on
+    /// main by 13db7c92e (PowerPanel drops its cached widget pointers on tree
+    /// delete), so the ordering is now belt-and-braces rather than a workaround.
     void teardown(PowerPanel& panel, lv_obj_t* obj) {
         settle();
         process_lvgl(20);
@@ -123,7 +123,7 @@ TEST_CASE_METHOD(PowerPanelLockFixture, "Power device toggle is live when nothin
     PowerPanel panel(state(), nullptr);
     lv_obj_t* obj = build(panel);
 
-    PowerPanelTestAccess::populate(panel, one_locked_device());
+    helix::ui::PowerPanelTestAccess::populate_device_list(panel, one_locked_device());
     lv_obj_update_layout(test_screen());
 
     CHECK_FALSE(toggle_disabled(obj));
@@ -146,7 +146,7 @@ TEST_CASE_METHOD(PowerPanelLockFixture, "Power device toggle locks while a print
     PowerPanel panel(state(), nullptr);
     lv_obj_t* obj = build(panel);
 
-    PowerPanelTestAccess::populate(panel, one_locked_device());
+    helix::ui::PowerPanelTestAccess::populate_device_list(panel, one_locked_device());
     lv_obj_update_layout(test_screen());
 
     CHECK(toggle_disabled(obj));
@@ -169,7 +169,7 @@ TEST_CASE_METHOD(PowerPanelLockFixture,
     PowerPanel panel(state(), nullptr);
     lv_obj_t* obj = build(panel);
 
-    PowerPanelTestAccess::populate(panel, one_locked_device());
+    helix::ui::PowerPanelTestAccess::populate_device_list(panel, one_locked_device());
     lv_obj_update_layout(test_screen());
 
     CHECK(toggle_disabled(obj));
@@ -189,7 +189,7 @@ TEST_CASE_METHOD(PowerPanelLockFixture, "An unlocked device stays togglable mid-
 
     auto devices = one_locked_device();
     devices[0].locked_while_printing = false;
-    PowerPanelTestAccess::populate(panel, devices);
+    helix::ui::PowerPanelTestAccess::populate_device_list(panel, devices);
     lv_obj_update_layout(test_screen());
 
     CHECK_FALSE(toggle_disabled(obj));
