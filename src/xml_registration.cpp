@@ -518,6 +518,7 @@ void register_xml_components() {
     register_xml("components/panel_widget_humidity.xml");
     register_xml("components/panel_widget_width_sensor.xml");
     register_xml("components/panel_widget_filament.xml");
+    register_xml("components/panel_widget_bypass.xml");
     register_xml("components/panel_widget_thermistor.xml");
     register_xml("components/panel_widget_thermistor_carousel.xml");
     register_xml("components/panel_widget_temp_graph.xml");
