@@ -1,6 +1,6 @@
 # Print Monitoring & Failure Detection
 
-HelixScreen watches over a print in two ways: it checks your filament *before* a multi-color job starts (two separate dialogs — **Check filament** for an empty slot, **Color Mismatch** for an unassigned tool), and — on printers that support it — it reacts when the printer's own camera spots a print going wrong. This page covers both.
+HelixScreen watches over a print in two ways: it runs a series of filament checks *before* a job starts (an empty required slot stops with **Check filament**; unassigned tools, a grade or material change, stray filament in the toolhead, and a too-light spool each raise their own warning below), and — on printers that support it — it reacts when the printer's own camera spots a print going wrong. This page covers both.
 
 ---
 
@@ -107,6 +107,21 @@ The dialogs above compare what the *file* needs against what your slots hold. Th
 ![The Filament In The Toolhead dialog](../../images/screenshot-unaccounted-dialog.png)
 
 Only filament systems that can actually tell raise this dialog — AFC (Box Turtle), Happy Hare, Creality CFS, and FlashForge AD5X IFS. On a system that can't determine it, the dialog never appears, and printing from bypass skips it too: bypass means the toolhead filament is the external spool's, which is exactly what you intended.
+
+### The Not Enough Filament dialog
+
+This one is about quantity, not identity: when you print from the **external spool** and HelixScreen knows how much filament is left on it — a spool tracked through Spoolman with its remaining weight recorded — it compares that against what the file is expected to use before starting:
+
+> *This print needs about 108g but the spool has about 62g remaining. Start anyway?*
+
+**Buttons:**
+
+| Button | Action |
+|--------|--------|
+| **Start Anyway** | Starts the print. Often reasonable: the estimate comes from the slicer's numbers, and spools frequently hold a little more than their label says — a small shortfall may still fit. |
+| **Cancel** | Backs out. Swap in a fuller spool (or a fresh one) and start again. |
+
+The estimate uses the file's own filament weight when the slicer recorded it; when it only recorded a length, HelixScreen converts it using the material set on the spool. Two honest silences: spools whose remaining weight is unknown are never compared (there is nothing to compare against), and spools sitting in AMS slots are not covered by this dialog — slot-level tracking belongs to your filament system.
 
 ---
 
