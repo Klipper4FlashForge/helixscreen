@@ -700,8 +700,13 @@ class MoonrakerAPI : public IMoonrakerAPI {
      * and do not invoke the observer. Concrete-only: wiring detail for
      * MoonrakerManager (print-start collector), not part of the consumer
      * contract.
+     *
+     * Set from the main thread, invoked from the WebSocket thread: the
+     * mutex is load-bearing. Without it a weakly-ordered target (MIPS) can
+     * keep reading a stale null observer long after the store.
      */
     void set_bed_mesh_presence_observer(std::function<void(bool)> observer) {
+        std::lock_guard<std::mutex> lock(bed_mesh_presence_mutex_);
         bed_mesh_presence_observer_ = std::move(observer);
     }
 
@@ -858,6 +863,7 @@ class MoonrakerAPI : public IMoonrakerAPI {
     // Sub-API unique_ptrs declared AFTER data members they reference
     // (http_base_url_, safety_limits_) so they are destroyed FIRST.
     std::unique_ptr<MoonrakerAdvancedAPI> advanced_api_; ///< Advanced panel operations API
+    std::mutex bed_mesh_presence_mutex_;                 ///< Guards the observer across threads
     std::function<void(bool)>
         bed_mesh_presence_observer_; ///< Optional presence sink (manager wiring)
     std::unique_ptr<MoonrakerFileTransferAPI> file_transfer_api_; ///< HTTP file transfer API

@@ -59,10 +59,18 @@ MoonrakerAPI::MoonrakerAPI(IMoonrakerClient& client, PrinterState& state)
         this->advanced_api_->update_bed_mesh(bed_mesh);
         // Presence verdicts only when the update actually speaks about
         // probed_matrix (klippy sends it as null on clear); partial updates
-        // carry no information about presence.
-        if (bed_mesh_presence_observer_ && bed_mesh.contains("probed_matrix")) {
+        // carry no information about presence. Copy the observer under the
+        // mutex: it is set on the main thread and read here on the
+        // WebSocket thread, and on weakly-ordered targets an unsynchronized
+        // read can stay stale-null for the process lifetime.
+        std::function<void(bool)> observer;
+        {
+            std::lock_guard<std::mutex> lock(bed_mesh_presence_mutex_);
+            observer = bed_mesh_presence_observer_;
+        }
+        if (observer && bed_mesh.contains("probed_matrix")) {
             const auto& matrix = bed_mesh["probed_matrix"];
-            bed_mesh_presence_observer_(matrix.is_array() && !matrix.empty());
+            observer(matrix.is_array() && !matrix.empty());
         }
     });
 }
