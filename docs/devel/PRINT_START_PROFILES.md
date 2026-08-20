@@ -160,7 +160,7 @@ Profiles live in `assets/config/print_start_profiles/{name}.json`.
 
 **`message` strings are English translation tags** — they pass through `lv_tr()` at match time, so a loaded language pack resolves them like the built-in labels. An untranslated tag displays as-is.
 
-**Non-console signals.** Two phase signals do not arrive through `notify_gcode_response`: a bed-mesh status clear while CLEANING enters BED_MESH ("Bed Leveling...", denominator fetched then), and `probe at X,Y is z=Z` lines are consumed as mesh points (never re-matched against `response_patterns`, so a BED_MESH pattern cannot re-announce the phase and reset the probe counters mid-sweep). See the "Silent-phase signals" section of [PRINT_START_INTEGRATION.md](PRINT_START_INTEGRATION.md).
+**Non-console signals.** Two phase signals do not arrive through `notify_gcode_response`: a bed-mesh status clear while CLEANING enters BED_MESH ("Bed Leveling...", denominator fetched then), and `probe at X,Y is z=Z` lines are consumed as mesh points (never re-matched against `response_patterns`, so a BED_MESH pattern cannot re-announce the phase and reset the probe counters mid-sweep). See the "Silent-phase signals" section of [PRINT_START_INTEGRATION.md](PRINT_START_INTEGRATION.md); the full observer map - all five signal sources, threading, and the tests that pin them - is [PRINT_START_OBSERVERS.md](PRINT_START_OBSERVERS.md).
 
 ---
 

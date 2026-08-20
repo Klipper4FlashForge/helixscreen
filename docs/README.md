@@ -72,6 +72,7 @@ Welcome to the HelixScreen documentation. Choose your path:
 | [**Preprint Prediction**](devel/PREPRINT_PREDICTION.md) | ETA prediction engine, phase timing, history |
 | [**Exclude Objects**](devel/EXCLUDE_OBJECTS.md) | Object exclusion, thumbnails, slicer setup |
 | [**Print Start Profiles**](devel/PRINT_START_PROFILES.md) | Print start phase detection, profiles |
+| [**Print Start Observers**](devel/PRINT_START_OBSERVERS.md) | Pre-print observer system: signal sources, threading, tests |
 | [**Print Start Integration**](devel/PRINT_START_INTEGRATION.md) | User-facing macro setup guide |
 | [**Update System**](devel/UPDATE_SYSTEM.md) | Channels, R2 CDN, downloads, Moonraker updater |
 | [**Sound System**](devel/SOUND_SYSTEM.md) | Audio architecture, JSON themes, backends |

@@ -328,7 +328,7 @@ Some firmwares run whole preparation steps without echoing anything to the gcode
 - **"probe at X,Y is z=Z" lines** - counted as mesh points once enough distinct points confirm a sweep is underway; they never fall through to the pattern matcher, so a profile's BED_MESH pattern cannot re-announce the phase and reset the counters mid-sweep.
 - **Toolhead position inference** (`position_signals`, K1 family today) - Klipper keeps pushing `toolhead.position` through the silence. The collector classifies the stream geometrically against the bed-mesh probe area (`PrintStartPositionClassifier`, `tests/unit/test_print_start_position_classifier.cpp` replays real captures): repeated Z descents near the mesh centre read as **"Probing Z..."**, touches at ≥3 distinct mesh corners as **"Checking Bed Mesh..."**, and a monotonic row march as the mesh sweep (BED_MESH entry, same edge as the flap). These refine the message without touching the phase or its progress weight - real console markers always outrank them.
 
-For developer details on creating profiles for new printers, see [PRINT_START_PROFILES.md](PRINT_START_PROFILES.md).
+For developer details on creating profiles for new printers, see [PRINT_START_PROFILES.md](PRINT_START_PROFILES.md); for the whole observer system - sources, threading, tests - see [PRINT_START_OBSERVERS.md](PRINT_START_OBSERVERS.md).
 
 ### Phase Detection
 
