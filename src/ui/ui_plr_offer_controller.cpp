@@ -9,7 +9,7 @@
 #include "plr_backend.h"
 #include "plr_offer.h"
 #include "plr_offer_controller.h"
-#include "print_start_navigation.h" // is_active_print_state, PrintJobState
+#include "print_lifecycle_state.h" // PrintState, job_holds_machine
 #include "printer_state.h"
 
 #include <spdlog/spdlog.h>
@@ -81,9 +81,11 @@ void PlrOfferController::evaluate_offer() {
         break;
     }
 
-    // idle == not actively printing/paused. Reuse the print-start-navigation
-    // classifier so "active" means the same thing everywhere.
-    bool idle = !helix::is_active_print_state(ps.get_print_job_state());
+    // The lifecycle, not the wire: during a host-side pre-print block
+    // print_stats still reads standby, and offering "Resume interrupted print?"
+    // on top of a start the user has already committed to is a modal ambush —
+    // its Resume button would start a different file than the one they chose.
+    bool idle = !job_holds_machine(ps.get_print_lifecycle());
 
     PlrOfferSignals signals;
     signals.recovery_available = recovery_available;
@@ -157,6 +159,8 @@ void PlrOfferController::probe_creality_once() {
     // STANDBY, not merely "not active": the Klipper handler itself only arms
     // power_loss when print_stats.state == "standby", and probing out of a
     // terminal state would clear exclude_object_info for no benefit.
+    // RAW_PRINT_STATE_OK: mirrors a Klipper condition on print_stats.state
+    // itself — the handler only arms power_loss from "standby".
     auto state = ps.get_print_job_state();
     if (state != PrintJobState::STANDBY) {
         spdlog::debug("[PLR] Creality capable but print state is {} (not standby) — skipping probe",
