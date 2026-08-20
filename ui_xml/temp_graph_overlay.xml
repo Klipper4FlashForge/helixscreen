@@ -62,8 +62,13 @@
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
 
       <!-- Left column: Chip row + Temperature Graph -->
+      <!-- scrollable="true" is inert in landscape (content always fits) but
+           lets portrait/small-landscape windows scroll to the diagnostics
+           card below the chart instead of crushing the graph — the graph's
+           min_height floor below guarantees there is always something
+           worth scrolling back up to. -->
       <lv_obj name="graph_outer_container"
-              style_pad_all="0" scrollable="false" style_border_opa="0" flex_flow="column" style_pad_gap="0">
+              style_pad_all="0" scrollable="true" style_border_opa="0" flex_flow="column" style_pad_gap="0">
         <!-- Width axis: inline cond= (not subject_expr) so this evaluates at
              view creation, after temp_graph_mode is registered. -->
         <bind_style_if name="tg_graph_full" cond="ui_is_portrait or temp_graph_mode eq 0"/>
@@ -76,11 +81,24 @@
                 scrollable="false" flex_flow="row_wrap" style_pad_gap="#space_xs" style_flex_cross_place="center">
           <!-- Chips populated programmatically in C++ -->
         </lv_obj>
-        <!-- Graph fills remaining space -->
+        <!-- Graph fills remaining space. min_height keeps flex shrinkage (the
+             diagnostics card below claiming its content height on tight
+             portrait windows) from collapsing the chart to a sliver; the
+             scroll on graph_outer_container absorbs the overflow instead. -->
         <lv_obj name="graph_container"
-                width="100%" flex_grow="1" style_pad_all="0" scrollable="false" style_border_opa="0">
+                width="100%" flex_grow="1" style_min_height="140" style_pad_all="0" scrollable="false"
+                style_border_opa="0">
           <!-- Temperature graph created programmatically in C++ -->
         </lv_obj>
+        <!-- Chamber-heater diagnostics card — only when the matched backend
+             provides a diagnostics surface (external appliances, #1290) AND
+             the overlay is in chamber mode. Structural <if>: the whole card
+             is never built on printers without one, and the reactive cond
+             rebuilds it when the cached overlay is reopened in a different
+             mode (TempGraphOverlay::open re-seeds temp_graph_mode). -->
+        <if cond="printer_has_chamber_heater_diagnostics and temp_graph_mode eq 3">
+          <chamber_diagnostics_card/>
+        </if>
       </lv_obj>
 
       <!-- ════════════════════════════════════════════════════════════════ -->

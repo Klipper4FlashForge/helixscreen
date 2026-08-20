@@ -4,14 +4,21 @@
 /**
  * @file test_chamber_panel_diagnostics.cpp
  * @brief Task 7 of the chamber-heater backend abstraction (issue #1290):
- *        the chamber temp panel renders a capability-gated diagnostics card
- *        under the chart.
+ *        the temp graph overlay renders a capability- and mode-gated
+ *        diagnostics card under the chart (chamber mode only).
  *
- * The card is pure declarative XML: visibility comes from
- * bind_flag_if_eq (capability gates) and an inline-cond bind_flag_if
- * (fault OR inhibited banner), readouts bind the *_text formatter subjects,
- * and the two buttons fire TemperatureService XML callbacks that delegate
- * to the globally-registered TemperatureController — never the api directly.
+ * The card is pure declarative XML (shared component
+ * components/chamber_diagnostics_card.xml): outer visibility is a structural
+ * <if cond="printer_has_chamber_heater_diagnostics and temp_graph_mode eq 3">,
+ * inner visibility comes from bind_flag_if (fault OR inhibited banner) and
+ * bind_flag_if_eq (filter-fan capability), readouts bind the *_text formatter
+ * subjects, and the two buttons fire TemperatureService XML callbacks that
+ * delegate to the globally-registered TemperatureController — never the api
+ * directly.
+ *
+ * The unit-test display is landscape, so the portrait branch (scrollable
+ * graph column, min-height floored chart) is verified out-of-band via the
+ * live `ctl geom` gate documented in task-7-report.md.
  */
 
 #include "ui_update_queue.h"
@@ -37,9 +44,9 @@ using helix::TemperatureController;
 
 namespace {
 
-/// Set an int subject in the XML registry — the name the panel binds, which
+/// Set an int subject in the XML registry — the name the overlay binds, which
 /// may be this fixture's registration or a prior test's; either way it is the
-/// live subject the panel's bindings observe.
+/// live subject the overlay's bindings observe.
 lv_subject_t* set_xml_int(const char* name, int value) {
     lv_subject_t* subject = lv_xml_get_subject(nullptr, name);
     REQUIRE(subject != nullptr);
@@ -70,33 +77,61 @@ nlohmann::json faulted_dragonbreath_status() {
       "output_pin dragonbreath_filter": {"value": 1.0}})");
 }
 
-/// Builds the real chamber_temp_panel.xml with its component dependencies,
-/// in the same shape production's xml_registration.cpp uses.
-class ChamberPanelFixture : public XMLTestFixture {
+/// Builds the real temp_graph_overlay.xml with its component dependencies,
+/// in the same shape production's xml_registration.cpp uses. temp_graph_mode
+/// is a TempGraphOverlay-owned subject in production; the fixture registers a
+/// static stand-in (the XML subject registry is process-global and never
+/// forgets an entry, so a fixture member would dangle after this test — same
+/// reasoning as AdvancedPowerGroupFixture's host-power subject).
+class ChamberOverlayFixture : public XMLTestFixture {
   public:
-    ChamberPanelFixture() : XMLTestFixture() {
+    ChamberOverlayFixture() : XMLTestFixture() {
+        // Chamber mode BEFORE create: the card's outer gate is a structural
+        // <if cond="... temp_graph_mode eq 3"> evaluated at view creation.
+        mode_subject_ = lv_xml_get_subject(nullptr, "temp_graph_mode");
+        if (!mode_subject_) {
+            static lv_subject_t mode_subject;
+            lv_subject_init_int(&mode_subject, 3); // TempGraphOverlay::Mode::Chamber
+            lv_xml_register_subject(nullptr, "temp_graph_mode", &mode_subject);
+            mode_subject_ = &mode_subject;
+        }
+        // A prior test case may have left another mode on the shared static
+        // subject — chamber is the default for every section here.
+        lv_subject_set_int(mode_subject_, 3);
+
+        REQUIRE(register_component("components/nozzle_icon"));
         REQUIRE(register_component("components/heater_icon"));
+        REQUIRE(register_component("components/chamber_diagnostics_card"));
         REQUIRE(register_component("header_bar"));
         REQUIRE(register_component("overlay_panel"));
-        // The two diagnostics callbacks must exist before the panel's XML
-        // resolves them — same registration TemperatureService performs.
+        // The card's two diagnostics callbacks must exist before the overlay's
+        // XML resolves them — same registration TemperatureService performs.
         lv_xml_register_event_cb(nullptr, "on_chamber_fault_reset_clicked",
                                  TemperatureService::on_chamber_fault_reset_clicked);
         lv_xml_register_event_cb(nullptr, "on_chamber_filter_fan_clicked",
                                  TemperatureService::on_chamber_filter_fan_clicked);
-        REQUIRE(register_component("chamber_temp_panel"));
+        // The overlay's own callbacks (no-ops here; production registers the
+        // TempGraphOverlay handlers in xml_registration.cpp).
+        lv_xml_register_event_cb(nullptr, "on_temp_graph_preset_clicked", xml_test_noop_event_cb);
+        lv_xml_register_event_cb(nullptr, "on_temp_graph_custom_clicked", xml_test_noop_event_cb);
+        REQUIRE(register_component("temp_graph_overlay"));
 
-        panel_ = create_component("chamber_temp_panel");
-        REQUIRE(panel_ != nullptr);
-
-        // Both capability gates default to 0 (card hidden); raise them for
-        // every section — the hidden-when-off cases set them back explicitly.
+        // Capability gates default to 0 (card not built); raise them before
+        // creation so the structural <if> builds the card — the hidden-when-off
+        // cases re-set them explicitly (the reactive cond rebuilds).
         set_xml_int("printer_has_chamber_heater_diagnostics", 1);
         set_xml_int("printer_has_chamber_filter_fan", 1);
+
+        overlay_ = create_component("temp_graph_overlay");
+        REQUIRE(overlay_ != nullptr);
         helix::ui::UpdateQueue::instance().drain();
     }
 
-    lv_obj_t* panel_;
+    lv_obj_t* overlay_;
+    lv_subject_t* mode_subject_ = nullptr;
+
+  private:
+    static void xml_test_noop_event_cb(lv_event_t* /*e*/) {}
 };
 
 } // namespace
@@ -105,9 +140,10 @@ class ChamberPanelFixture : public XMLTestFixture {
 // Card structure + visibility (all declarative)
 // ============================================================================
 
-TEST_CASE_METHOD(ChamberPanelFixture, "chamber panel diagnostics card visibility and content",
+TEST_CASE_METHOD(ChamberOverlayFixture,
+                 "temp graph overlay diagnostics card visibility and content",
                  "[chamber][panel][xml]") {
-    SECTION("fault state shows banner, reason, buttons") {
+    SECTION("chamber mode with diagnostics shows banner, reason, buttons") {
         set_xml_int("chamber_heater_fault", 1);
         set_xml_int("chamber_heater_inhibited", 0);
         set_xml_string("chamber_heater_fault_reason", "ptc_overtemp");
@@ -115,29 +151,29 @@ TEST_CASE_METHOD(ChamberPanelFixture, "chamber panel diagnostics card visibility
         set_xml_string("chamber_filter_fan_percent_text", "100%");
         helix::ui::UpdateQueue::instance().drain();
 
-        lv_obj_t* card = lv_obj_find_by_name(panel_, "chamber_diagnostics_card");
+        lv_obj_t* card = lv_obj_find_by_name(overlay_, "chamber_diagnostics_card");
         REQUIRE(card != nullptr);
         CHECK_FALSE(hidden(card));
 
-        lv_obj_t* banner = lv_obj_find_by_name(panel_, "fault_banner");
+        lv_obj_t* banner = lv_obj_find_by_name(overlay_, "fault_banner");
         REQUIRE(banner != nullptr);
         CHECK_FALSE(hidden(banner));
 
-        lv_obj_t* reason = lv_obj_find_by_name(panel_, "fault_reason_label");
+        lv_obj_t* reason = lv_obj_find_by_name(overlay_, "fault_reason_label");
         REQUIRE(reason != nullptr);
         CHECK(std::string(lv_label_get_text(reason)).find("ptc_overtemp") != std::string::npos);
 
-        REQUIRE(lv_obj_find_by_name(panel_, "reset_fault_button") != nullptr);
+        REQUIRE(lv_obj_find_by_name(overlay_, "reset_fault_button") != nullptr);
 
-        lv_obj_t* fan_btn = lv_obj_find_by_name(panel_, "filter_fan_button");
+        lv_obj_t* fan_btn = lv_obj_find_by_name(overlay_, "filter_fan_button");
         REQUIRE(fan_btn != nullptr);
         CHECK_FALSE(hidden(fan_btn));
 
         // Readout labels bind the formatter subjects.
-        lv_obj_t* element = lv_obj_find_by_name(panel_, "element_temp_label");
+        lv_obj_t* element = lv_obj_find_by_name(overlay_, "element_temp_label");
         REQUIRE(element != nullptr);
         CHECK(std::string(lv_label_get_text(element)) == "106.2°C");
-        lv_obj_t* percent = lv_obj_find_by_name(panel_, "fan_percent_label");
+        lv_obj_t* percent = lv_obj_find_by_name(overlay_, "fan_percent_label");
         REQUIRE(percent != nullptr);
         CHECK(std::string(lv_label_get_text(percent)) == "100%");
     }
@@ -151,8 +187,8 @@ TEST_CASE_METHOD(ChamberPanelFixture, "chamber panel diagnostics card visibility
         set_xml_int("chamber_heater_inhibited", 0);
         helix::ui::UpdateQueue::instance().drain();
 
-        CHECK(hidden(lv_obj_find_by_name(panel_, "fault_banner")));
-        CHECK_FALSE(hidden(lv_obj_find_by_name(panel_, "chamber_diagnostics_card")));
+        CHECK(hidden(lv_obj_find_by_name(overlay_, "fault_banner")));
+        CHECK_FALSE(hidden(lv_obj_find_by_name(overlay_, "chamber_diagnostics_card")));
     }
 
     SECTION("inhibited alone keeps the banner (OR, not fault-only)") {
@@ -160,22 +196,43 @@ TEST_CASE_METHOD(ChamberPanelFixture, "chamber panel diagnostics card visibility
         set_xml_int("chamber_heater_inhibited", 1);
         helix::ui::UpdateQueue::instance().drain();
 
-        CHECK_FALSE(hidden(lv_obj_find_by_name(panel_, "fault_banner")));
+        CHECK_FALSE(hidden(lv_obj_find_by_name(overlay_, "fault_banner")));
     }
 
-    SECTION("no diagnostics capability hides the whole card") {
+    SECTION("no diagnostics capability unbuilds the whole card") {
+        // Structural <if>: dropping the capability tears the card down — the
+        // names are gone from the tree entirely, not merely hidden.
         set_xml_int("printer_has_chamber_heater_diagnostics", 0);
         helix::ui::UpdateQueue::instance().drain();
 
-        CHECK(hidden(lv_obj_find_by_name(panel_, "chamber_diagnostics_card")));
+        CHECK(lv_obj_find_by_name(overlay_, "chamber_diagnostics_card") == nullptr);
+        CHECK(lv_obj_find_by_name(overlay_, "fault_banner") == nullptr);
+    }
+
+    SECTION("non-chamber modes unbuild the card (structural mode gate)") {
+        set_xml_int("temp_graph_mode", 1); // Nozzle
+        helix::ui::UpdateQueue::instance().drain();
+        CHECK(lv_obj_find_by_name(overlay_, "chamber_diagnostics_card") == nullptr);
+
+        set_xml_int("temp_graph_mode", 0); // GraphOnly
+        helix::ui::UpdateQueue::instance().drain();
+        CHECK(lv_obj_find_by_name(overlay_, "chamber_diagnostics_card") == nullptr);
+
+        // Back to chamber: the reactive cond rebuilds the card.
+        set_xml_int("temp_graph_mode", 3);
+        helix::ui::UpdateQueue::instance().drain();
+        lv_obj_t* card = lv_obj_find_by_name(overlay_, "chamber_diagnostics_card");
+        REQUIRE(card != nullptr);
+        CHECK_FALSE(hidden(card));
+        CHECK(lv_obj_find_by_name(overlay_, "reset_fault_button") != nullptr);
     }
 
     SECTION("no filter-fan capability hides only the toggle") {
         set_xml_int("printer_has_chamber_filter_fan", 0);
         helix::ui::UpdateQueue::instance().drain();
 
-        CHECK_FALSE(hidden(lv_obj_find_by_name(panel_, "chamber_diagnostics_card")));
-        CHECK(hidden(lv_obj_find_by_name(panel_, "filter_fan_button")));
+        CHECK_FALSE(hidden(lv_obj_find_by_name(overlay_, "chamber_diagnostics_card")));
+        CHECK(hidden(lv_obj_find_by_name(overlay_, "filter_fan_button")));
     }
 }
 
@@ -183,7 +240,7 @@ TEST_CASE_METHOD(ChamberPanelFixture, "chamber panel diagnostics card visibility
 // Button actions delegate to the globally-registered TemperatureController
 // ============================================================================
 
-TEST_CASE_METHOD(ChamberPanelFixture, "diagnostics card buttons drive the controller",
+TEST_CASE_METHOD(ChamberOverlayFixture, "diagnostics card buttons drive the controller",
                  "[chamber][panel][xml][actions]") {
     // The XML callbacks reach the controller through app_globals, exactly as
     // production wires it — register the fixture's controller there.
@@ -201,7 +258,7 @@ TEST_CASE_METHOD(ChamberPanelFixture, "diagnostics card buttons drive the contro
     helix::ui::UpdateQueue::instance().drain();
 
     SECTION("reset button sends the backend reset gcode") {
-        lv_obj_t* reset = lv_obj_find_by_name(panel_, "reset_fault_button");
+        lv_obj_t* reset = lv_obj_find_by_name(overlay_, "reset_fault_button");
         REQUIRE(reset != nullptr);
 
         client.clear_gcode_script_history();
@@ -213,7 +270,7 @@ TEST_CASE_METHOD(ChamberPanelFixture, "diagnostics card buttons drive the contro
     }
 
     SECTION("filter-fan button toggles off->on and on->off from the on subject") {
-        lv_obj_t* fan_btn = lv_obj_find_by_name(panel_, "filter_fan_button");
+        lv_obj_t* fan_btn = lv_obj_find_by_name(overlay_, "filter_fan_button");
         REQUIRE(fan_btn != nullptr);
 
         // Currently off -> click turns it on.
