@@ -267,8 +267,19 @@ Remaining items for production readiness:
 | **Error-path integration tests** | High | Disconnect mid-print, settings corruption recovery, AMS hardware desync |
 | **Remove libinput dependency** | Medium | Refactor to use direct evdev for all input; eliminates libinput build/link complexity across cross-compile targets |
 | **Missing docs** | Medium | SENSOR_MANAGEMENT, GCODE_RENDERING_ARCHITECTURE, ACTION_PROMPTS, BLUETOOTH_SYSTEM, USB_MANAGEMENT |
+| **2D renderer crease/edge shading** | Future | Per-segment surface-normal estimate from inter-layer contours; darken where normals break sharply (creases, ridges) for a 3D look without the 3D renderer. Needs a post-parse pass building per-layer contour maps |
+| **Safe mode on crash loop** | Medium | Crash-loop detection (3+ in 120s, `Application::run()`) only resets the counter today — act on it: skip custom panel widget config, skip plugins, or boot a minimal safe-mode UI with a banner |
+| **Declarative `<subjects>` in XML** | Medium | Engine capability (helix-xml): purely presentational state (accordion expand, tab index, toggle visibility) declared in XML without a backing C++ class; C++ only for real printer/system data |
+| **libhv logging via spdlog** | Low | Route libhv's own log output into the spdlog pipeline |
 
-See `docs/devel/IDEAS.md` for additional ideas and design rationale.
+### Hardware verification owed
+
+Shipped against mock/static analysis only — each needs a pass on real hardware before it can be called verified:
+
+- **QIDI Box stock-firmware path** — destubbed load/unload sequence (#1041) ships blind; Camden to verify the full automated sequence on Q2 + Box stock firmware
+- **CB1 DRM-DPMS idle power-off** (#1049) — in-process connector DPMS for no-backlight devices shipped, never verified on the CB1 Allwinner-HDMI rig it targets
+- **AMS backend error-recovery (Happy Hare slice) + status-error-center bridge** — shipped blind (no HH/QIDI/AD5X hardware); only the U1 slice was verified live
+- **AD5X IFS seated-chan Fix 4** — never shipped (single "Unload current" affordance for the unknown-seated state); the seated-chan fixes that did ship have no AD5X rig to verify against
 
 ---
 

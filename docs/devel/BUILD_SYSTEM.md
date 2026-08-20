@@ -652,6 +652,11 @@ The project uses **GNU Make** with a modular architecture:
 - **Parallel build support** with output synchronization
 - **Build timing** for performance tracking
 
+**XML stays runtime-loaded — compile-time codegen was measured and declined.** A build-time
+XML-to-C component compiler was designed and measured (2026-08-08; the design doc has since
+been deleted) and declined: runtime-loaded XML with hot reload won on build complexity and
+iteration speed. Revisit only if startup cost on SPI-flash platforms demands it.
+
 ### Modular Makefile Structure
 
 The build system is organized into focused modules:

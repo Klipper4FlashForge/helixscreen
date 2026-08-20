@@ -450,7 +450,7 @@ Likely redundant with `print_stats.state` for most purposes.
 
 ### `defect_detection` — Print defect detection (NOT SUBSCRIBED)
 
-AI-based print defect detection system. Not subscribed because it's not directly relevant to AMS/filament management.
+AI-based print defect detection system. The status object itself is not subscribed — HelixScreen consumes detection through `print_stats.exception` instead: on a confirmed defect (custom `exception` sub-object, `code: 2` = spaghetti/noodle) the firmware pauses the print itself, and `U1StockSource` → `DetectionManager` (`include/detection_manager.h`) surfaces it as the response surface — spaghetti modal, defer-to-source policy, master toggle + per-source policy in Settings. Capability is gated by probing `printer.objects.list` for `defect_detection` after the WebSocket connects (probing at init would latch false forever).
 
 | Field | Example | Notes |
 |-------|---------|-------|
