@@ -232,6 +232,7 @@ main() {
                 # ASSUME_YES is read by clean_old_installation (uninstall.sh);
                 # it is deliberately NOT inferred from a non-TTY stdin, since
                 # the documented `curl ... | sh` invocation always has one.
+                # shellcheck disable=SC2034  # consumed by uninstall.sh (clean_old_installation)
                 ASSUME_YES=true
                 shift
                 ;;
