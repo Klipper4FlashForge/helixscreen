@@ -266,7 +266,7 @@ Read in this order; about 30 minutes total.
 7. `include/camera_stream.h:36` — the class doc: threading contract, snapshot fallback, downscaling, and the `was_detached()` leak rule.
 8. `src/system/camera_stream.cpp:58` — turbojpeg runtime loading; then `:190` for `stop()`'s timed-join-or-detach path.
 9. `src/ui/panel_widgets/camera_widget.cpp:492` — the fps ladder: paused under overlays, 2fps in edit mode, configured cap otherwise.
-10. `include/usb_scanner_monitor.h:26` — `ScannerKeymap` rationale and the `ScannerSource` grab-vs-passive split.
+10. `include/usb_scanner_monitor.h:20` — `ScannerKeymap` rationale and the `ScannerSource` grab-vs-passive split.
 11. `src/ui/ui_overlay_qr_scanner.cpp:383` — the overlay racing both scanner paths (`:312` for the snapshot viewfinder, `:383` for the evdev wedge).
 12. `include/mdns_discovery.h:54` — the class doc: PIMPL, threading, and callback contract.
 13. `include/remote_control_server.h:15` — the file doc: thread model, transports, and the `RemoteConfig` options.

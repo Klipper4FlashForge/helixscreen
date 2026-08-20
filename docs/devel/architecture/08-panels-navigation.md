@@ -2,18 +2,18 @@
 
 Every screen in HelixScreen is one of three surfaces. Six root panels (`helix::PanelId`) sit in the app layout behind the navbar, exactly one visible; overlays are (near-)full-screen layers pushed onto a z-ordered stack that `NavigationManager` — a `::instance()` singleton from chapter 05's census — owns; modals are dialogs on a completely separate stack (`ModalStack`) with their own backdrops. A C++ class (`PanelBase` / `OverlayBase` / `Modal` subclass) owns data and lifecycle, XML owns appearance, and `NavigationManager` dispatches `on_activate()` / `on_deactivate()` at every transition. The one rule with teeth: `on_deactivate()` is the teardown — a dismissed overlay's `cleanup()` does not run until shutdown (#943).
 
-How many of each (recounted 2026-08-17, method included so you can re-run it):
+How many of each (recounted 2026-08-20, method included so you can re-run it):
 
 | Surface | Count | Method |
 |---------|-------|--------|
 | Nav-root panels | 6 | `helix::PanelId` (`include/ui_nav_manager.h:34`) — matches the six panel children of `ui_xml/app_layout.xml:18`-28 |
 | `PanelBase` subclasses | 14 | `rg -l '^class \w+ : public PanelBase' include src -g '*.h'` minus the base header — 6 roots + 8 pushed as overlays or dev-only (AMS, AMS Overview, notification history, power, plus test/glyphs/gcode-test/step-test) |
-| `OverlayBase` subclasses | 58 | `rg -l '^class \w+ : public OverlayBase' include src -g '*.h'` |
+| `OverlayBase` subclasses | 59 | `rg -l '^class \w+ : public OverlayBase' include src -g '*.h'` |
 | `Modal` subclasses | 30 | `rg 'class \w+ : public Modal \{' include src -g '*.{h,cpp}'` minus the doc comment in `include/ui_modal.h` |
-| XML overlay/modal/panel files | 44 / 41 / 38 | `ls ui_xml | grep -c overlay` (and `modal`, `_panel`) out of 230 top-level XML files plus 95 in `ui_xml/components/` |
-| `src/ui` file prefixes | 30 / 10 / 8 | `ls src/ui/ui_panel_*.cpp`, `ui_overlay_*.cpp`, `ui_modal*.cpp` + `src/ui/modals/` — the prefix spread is itself evidence of the naming trap |
+| XML overlay/modal/panel files | 45 / 41 / 38 | `ls ui_xml | grep -c overlay` (and `modal`, `_panel`) out of ~230 top-level XML files plus ~100 in `ui_xml/components/` |
+| `src/ui` file prefixes | 30 / 11 / 8 | `ls src/ui/ui_panel_*.cpp`, `ui_overlay_*.cpp`, `ui_modal*.cpp` + `src/ui/modals/` — the prefix spread is itself evidence of the naming trap |
 
-Filename counts are the trap, in both directions: `console_panel.xml`, `bed_mesh_panel.xml`, and `ams_panel.xml` are *overlays* (their C++ classes derive from `OverlayBase`), while only 10 of the 58 overlay classes live in `src/ui/ui_overlay_*.cpp` files — the rest are spread across `ui_panel_*.cpp`, `ui_settings_*.cpp`, and feature files. The C++ base class is the taxonomy; the filename is not. The old UI-layer diagram implied ~30 overlays and ~11 modals by its node census; both were roughly half of today's tree.
+Filename counts are the trap, in both directions: `console_panel.xml`, `bed_mesh_panel.xml`, and `ams_panel.xml` are *overlays* (their C++ classes derive from `OverlayBase`), while only 11 of the 59 overlay classes live in `src/ui/ui_overlay_*.cpp` files — the rest are spread across `ui_panel_*.cpp`, `ui_settings_*.cpp`, and feature files. The C++ base class is the taxonomy; the filename is not. The old UI-layer diagram implied ~30 overlays and ~11 modals by its node census; both were roughly half of today's tree.
 
 Scope boundaries: chapter 01 owns the XML engine — how a file becomes widgets and how bindings resolve — so this chapter starts at "the widget tree exists." Chapter 03 owns the queueing and deferred-deletion rules the navigation bodies apply mechanically. Home-screen widgets take the `PanelWidget` path instead (chapter 09 of this series). Modal internals below the API — `ui_dialog` rendering, animation details — belong to `docs/devel/MODAL_SYSTEM.md`.
 
@@ -28,8 +28,8 @@ flowchart TB
 
     subgraph STACK["panel_stack_ — z-ordered overlay stack"]
         REG["register_overlay_instance(widget, lifecycle)<br/>MUST precede push_overlay —<br/>strict mode aborts if not"]
-        PUSH["push_overlay() :1931 — queued<br/>deactivates what it covers, snapshots backdrop,<br/>applies width class, slide-in, on_activate"]
-        BACK["go_back() :2208 — queued<br/>indev reset, on_deactivate, slide-out,<br/>exactly-once restore latch"]
+        PUSH["push_overlay() :1961 — queued<br/>deactivates what it covers, snapshots backdrop,<br/>applies width class, slide-in, on_activate"]
+        BACK["go_back() :2238 — queued<br/>indev reset, on_deactivate, slide-out,<br/>exactly-once restore latch"]
     end
 
     subgraph MODALS["ModalStack — separate stack"]
@@ -39,7 +39,7 @@ flowchart TB
 
     LIFE["IPanelLifecycle dispatch<br/>on_activate / on_deactivate / rebuild / repopulate<br/>PanelBase :77 — setup() pattern<br/>OverlayBase :88 — create() pattern"]
 
-    HOT["HELIX_HOT_RELOAD=1<br/>rebuild_active_views() :1796 →<br/>rebuild() + repopulate() on every<br/>active panel, overlay, and the top modal"]
+    HOT["HELIX_HOT_RELOAD=1<br/>rebuild_active_views() :1826 →<br/>rebuild() + repopulate() on every<br/>active panel, overlay, and the top modal"]
 
     NAV --> RP
     RP --> SWITCH
@@ -76,7 +76,7 @@ flowchart TB
 
 ### Two stacks: NavigationManager's overlays, ModalStack's dialogs
 
-`NavigationManager` keeps `panel_stack_`, a `vector<lv_obj_t*>` in z-order whose slot 0 is always the active root panel; every entry above it is an overlay (`include/ui_nav_manager.h:719`).
+`NavigationManager` keeps `panel_stack_`, a `vector<lv_obj_t*>` in z-order whose slot 0 is always the active root panel; every entry above it is an overlay (`include/ui_nav_manager.h:721`).
 
 The same screen three states later, as the user meets the stacks (mock `--test` instance): a root panel; the safety overlay pushed on top of it — the exemplar open path from `ui_settings_safety.cpp`, shown below; and the runout modal, which lives on `ModalStack` and dims *everything* beneath it, overlay included, without `NavigationManager` knowing anything changed:
 
@@ -86,17 +86,17 @@ The same screen three states later, as the user meets the stacks (mock `--test` 
 
 <img src="../../images/screenshot-nav-stack-modal.png" alt="The same screen again with the Filament Runout modal centered on its own backdrop, dimming the safety overlay beneath it" width="800"/>
 
-A push is always queued through `helix::ui::queue_update()`. `push_overlay()` (`src/ui/ui_nav_manager.cpp:1931`) validates the widget pointer survived the deferral, rejects duplicates, deactivates whatever it covers (the root panel for the first overlay, the previous overlay otherwise), snapshots the frozen backdrop *before* hiding, resolves the width class, shows with slide-in, then calls `on_activate()`. `go_back()` (`:2208`) resets in-flight pointer input (`lv_indev_reset`), calls `on_deactivate()` on the closing overlay *before* the animation, pops, and re-activates the restored view exactly once via the `restore_activation_pending_` latch — `on_activate()` handlers are not all idempotent, so a double fire is a real bug.
+A push is always queued through `helix::ui::queue_update()`. `push_overlay()` (`src/ui/ui_nav_manager.cpp:1961`) validates the widget pointer survived the deferral, rejects duplicates, deactivates whatever it covers (the root panel for the first overlay, the previous overlay otherwise), snapshots the frozen backdrop *before* hiding, resolves the width class, shows with slide-in, then calls `on_activate()`. `go_back()` (`:2238`) resets in-flight pointer input (`lv_indev_reset`), calls `on_deactivate()` on the closing overlay *before* the animation, pops, and re-activates the restored view exactly once via the `restore_activation_pending_` latch — `on_activate()` handlers are not all idempotent, so a double fire is a real bug.
 
 Two entry points to the roots differ in one load-bearing way. `set_active(PanelId)` swaps the base panel *underneath* whatever is stacked, while `request_panel()` (`include/ui_nav_manager.h:195`) is the whole navbar-tap decision — the Home re-tap carousel reset, connection and Klippy-ready gating (`BlockedDisconnected`, `BlockedKlippyNotReady`), and the stack-clearing switch.
 
 `helix-screen ctl navigate` and a finger both land here, differing only in queued-vs-inline dispatch. Overlays that must survive navbar switches — `PrintStatusPanel`, the print in progress — register with the third argument `persistent = true` (`src/ui/ui_panel_print_status.cpp:1272`); a navbar switch clears `overlay_instances_` but preserves `persistent_overlay_instances_`, and `resolve_overlay_lifecycle()` self-heals the main map from it on the next push.
 
-The stack is defensive at its edges. Every pushed widget gets an `LV_EVENT_DELETE` hook (`scrub_deleted_widget`, `src/ui/ui_nav_manager.cpp:1661`): if any path deletes a tracked widget without going through `go_back()`, the hook erases it from every widget-keyed map before the memory frees, so `panel_stack_.back()` can never dereference a corpse (bundle ZW6ATWSL).
+The stack is defensive at its edges. Every pushed widget gets an `LV_EVENT_DELETE` hook (`scrub_deleted_widget`, `src/ui/ui_nav_manager.cpp:1678`): if any path deletes a tracked widget without going through `go_back()`, the hook erases it from every widget-keyed map before the memory frees, so `panel_stack_.back()` can never dereference a corpse (bundle ZW6ATWSL). The base panels and the app layout are hooked too, through the same `ensure_delete_hook()` (`include/ui_nav_manager.h:632`): `set_panels()` hooks every `panel_widgets_` slot (`:1466`) and `set_app_layout()` hooks `app_layout_widget_` (`:1232`). That half is new — before 882edde88 the scrub only ever fired for pushed widgets, so a deleted base panel left a stale `panel_widgets_` entry that `handle_active_panel_change()` wrote flags through from a queued UpdateQueue callback (reproduced as an `EXC_BAD_ACCESS` in `lv_obj_add_flag`); the "never dereference a corpse" claim is true for base panels only since that fix.
 
 Connection loss is the other edge: a CONNECTED→DISCONNECTED transition clears the overlay stack and bounces to Home — except when `mark_disconnect_expected()` armed its one-shot, so backgrounding the Android app and reconnecting keeps your place (#1245).
 
-The dismiss-backdrop that dims behind the first overlay deserves its own paragraph because it is not what it looks like. It is a frozen *snapshot* of the screen taken before anything is hidden — not a live view — so anything outside the overlay stops tracking: `refresh_overlay_backdrop()` (`:1714`) re-takes it when a setting whose effect lands in the navbar (the printer-switcher badge) is toggled from inside an overlay. A tap on that backdrop while the on-screen keyboard is up dismisses only the keyboard: keyboard visibility is latched at `LV_EVENT_PRESSED`, because LVGL's click-focus DEFOCUS hides the keyboard before CLICKED fires (`take_backdrop_keyboard_dismiss()`, `include/ui_nav_manager.h:497`).
+The dismiss-backdrop that dims behind the first overlay deserves its own paragraph because it is not what it looks like. It is a frozen *snapshot* of the screen taken before anything is hidden — not a live view — so anything outside the overlay stops tracking: `refresh_overlay_backdrop()` (`:1744`) re-takes it when a setting whose effect lands in the navbar (the printer-switcher badge) is toggled from inside an overlay. A tap on that backdrop while the on-screen keyboard is up dismisses only the keyboard: keyboard visibility is latched at `LV_EVENT_PRESSED`, because LVGL's click-focus DEFOCUS hides the keyboard before CLICKED fires (`take_backdrop_keyboard_dismiss()`, `include/ui_nav_manager.h:497`).
 
 Two presentation details ride on the same stack. `push_overlay_zoom_from(root, rect)` (`include/ui_nav_manager.h:401`) opens with a zoom animation from the tapped card's screen rectangle and plays the reverse on pop — the source rect is remembered per overlay for exactly that. Transitions are uniformly 200 ms slide / 250 ms zoom with `nav_forward` / `nav_back` sounds, so the stack feels like one system rather than per-overlay improvisation. And `overlay_stack_names()` (`:364`) exposes the stack bottom-to-top as widget names; that is what the `helix-screen ctl` breadcrumb and the remote-control UI read to tell you where you are.
 
@@ -139,7 +139,7 @@ One end-to-end sequence ties it together. The user taps a Settings row: the sett
 
 Who owns the C++ objects? Almost every overlay and non-root panel is a function-local singleton — `get_safety_settings_overlay()` constructs on first use and registers a destroy hook with `StaticPanelRegistry` (`src/ui/ui_settings_safety.cpp:35`-42), which runs during `Application::shutdown()` after `NavigationManager::shutdown()` has deactivated everything. A couple of special surfaces (the emergency-stop overlay, the first-run tour) live outside the base classes entirely with their own `instance()` accessors and manage their own visibility; do not copy them as patterns — they predate this stack.
 
-XML hot reload closes the loop on the same lifecycle hooks: with `HELIX_HOT_RELOAD=1` the poller (chapter 01) re-registers changed components, then `NavigationManager::rebuild_active_views()` (`src/ui/ui_nav_manager.cpp:1796`) walks the active panel, every registered overlay (both maps), and the top modal, calling `rebuild()` — which re-runs `create()`/`setup()`, re-keys the registration maps off the old widget, and async-deletes the old tree — followed by `repopulate()` where a view keeps imperative content (dropdown lists, in-progress edits) that XML alone cannot restore.
+XML hot reload closes the loop on the same lifecycle hooks: with `HELIX_HOT_RELOAD=1` the poller (chapter 01) re-registers changed components, then `NavigationManager::rebuild_active_views()` (`src/ui/ui_nav_manager.cpp:1826`) walks the active panel, every registered overlay (both maps), and the top modal, calling `rebuild()` — which re-runs `create()`/`setup()`, re-keys the registration maps off the old widget, and async-deletes the old tree — followed by `repopulate()` where a view keeps imperative content (dropdown lists, in-progress edits) that XML alone cannot restore.
 
 ### Modals: three tiers of effort
 
@@ -164,7 +164,7 @@ Choosing between a modal and an overlay is a design question with a fixed answer
 - **`Modal` has both a static and an instance `show()`.** Static for XML-only, subclass instance when you need `on_ok()` logic. An instance-backed modal is hidden, never rebuilt, by hot reload — re-creating it from XML would skip `on_show()` wiring (`include/ui_modal.h:132`).
 - **A second `hide()` during a modal's exit animation is a no-op.** `ModalStack` marks the entry `exiting` and ignores further hides; teardown after `lv_anim_delete_all()` also validity-checks each backdrop because an exit that never completed leaves an entry whose screen may already be gone.
 - **All navigation entry points queue.** `push_overlay`/`go_back` run their bodies inside `queue_update`; an LVGL event callback must not navigate synchronously mid-render. The widget you pushed is re-validated inside the queued body — capture raw pointers freely, but expect the skip.
-- **Shutdown ordering is fixed.** `Application::shutdown()` calls `NavigationManager::shutdown()` (`src/application/application.cpp:4580`) before `StaticPanelRegistry::destroy_all()`, deactivating the visible surface first; overlays check `is_shutting_down()` and skip destructive actions (e.g. ABORT) on the way out.
+- **Shutdown ordering is fixed.** `Application::shutdown()` calls `NavigationManager::shutdown()` (`src/application/application.cpp:5025`) before `StaticPanelRegistry::destroy_all()`, deactivating the visible surface first; overlays check `is_shutting_down()` and skip destructive actions (e.g. ABORT) on the way out.
 - **Connection loss clears the stack.** A disconnect pops every overlay and returns to Home. Code that reconnects on the user's behalf (printer switching, app resume) must call `mark_disconnect_expected()` *before* triggering the disconnect, or the UI loses its place (#1245).
 - **Never delete an overlay root out-of-band and assume the manager notices.** The `LV_EVENT_DELETE` scrub hook catches it — that is the safety net, not license: a hand-rolled teardown still owes `unregister_overlay_instance()` for anything it did not delete.
 - **`on_activate()` must be idempotent, and must not navigate.** The restore latch exists because handlers are not all idempotent (PrintSelectPanel's print-last counter, the first-run tour); and a re-entrant navigation from inside `on_activate()` is the case the latch explicitly clears before dispatching to avoid.
@@ -194,11 +194,11 @@ Read in this order; about 30 minutes total.
 5. `include/ui_panel_base.h:77` — `PanelBase`: dependency injection, two-phase init, observer RAII. Note `setup()` at `:123` and the component-name contract at `:137`.
 6. `include/overlay_base.h:88` — `OverlayBase`: same two-phase shape with `create()` at `:119`; then `destroy_overlay_ui()` at `:229` and the destroy-on-close choreography in its doc.
 7. `src/ui/ui_settings_safety.cpp:113` — `SafetySettingsOverlay::show()`: the exemplar open path. Register at `:135`, push at `:138`. Then the singleton accessor at `:35` with its `StaticPanelRegistry` destroy hook — how overlay lifetimes are usually owned.
-8. `src/ui/ui_nav_manager.cpp:1931` — `push_overlay()`'s queued body: pointer re-validation, duplicate guard, the unregistered-push warning/abort, deactivate-what-it-covers, backdrop snapshot before hide, width application, slide-in, `on_activate()`.
-9. `src/ui/ui_nav_manager.cpp:2208` — `go_back()`: indev reset, `on_deactivate()` before animation, the exactly-once restore latch, backdrop teardown.
+8. `src/ui/ui_nav_manager.cpp:1961` — `push_overlay()`'s queued body: pointer re-validation, duplicate guard, the unregistered-push warning/abort, deactivate-what-it-covers, backdrop snapshot before hide, width application, slide-in, `on_activate()`.
+9. `src/ui/ui_nav_manager.cpp:2238` — `go_back()`: indev reset, `on_deactivate()` before animation, the exactly-once restore latch, backdrop teardown.
 10. `src/ui/ui_nav_manager.cpp:974` — `request_panel()`: the gating states (`PanelRequest` at `include/ui_nav_manager.h:176`) and how `ctl navigate` shares it.
 11. `src/ui/ui_nav_manager.cpp:1014` — `switch_to_panel_impl()`: the stack-clearing switch underneath, the queue-vs-inline dispatch question.
-12. `src/ui/ui_nav_manager.cpp:1661` — `scrub_deleted_widget()` and `adopt_overlay_backdrop()` at `:1698`: the self-healing bookkeeping and the snapshot backdrop; skim `refresh_overlay_backdrop()` at `:1714` for when a snapshot goes stale.
+12. `src/ui/ui_nav_manager.cpp:1678` — `scrub_deleted_widget()` and `adopt_overlay_backdrop()` at `:1728`: the self-healing bookkeeping and the snapshot backdrop; skim `refresh_overlay_backdrop()` at `:1744` for when a snapshot goes stale.
 13. `include/ui/ui_lazy_panel_helper.h:65` — `lazy_create_and_push_overlay()`: first-open init, destroy-on-close, and the re-register-on-every-push comment (UMAX4U2G). Glance at the simpler `lazy_push_overlay()` at `:160`.
 14. `src/ui/ui_panel_home.cpp:818` — a `PanelBase` subclass (AMS) opened as an overlay through the same dance by hand; compare with what the helper automates.
 15. `src/application/panel_factory.cpp:129` — `setup_panels()`: boot wiring, the ESP deferred-builder registration at `:139`, `activate_initial_panel()` at `:142`.
@@ -206,4 +206,4 @@ Read in this order; about 30 minutes total.
 17. `src/ui/ui_panel_print_status.cpp:1272` — persistent registration, third argument `true`: the one overlay family that survives navbar switches.
 18. `include/ui_modal.h:74` — `Modal`: static `show()` at `:101` vs instance `show()` at `:147`, the pure virtuals at `:185`, `ModalStack` at `:298`, helpers at `:463`.
 19. `include/ui_info_qr_modal.h:11` — the 42-line subclass; then `src/ui/ui_info_qr_modal.cpp:14` for `show_modal()`, `on_show()` wiring, and the self-deleting `on_hide()` at `:30`.
-20. `src/ui/ui_nav_manager.cpp:1796` — `rebuild_active_views()`: how hot reload reaches every live surface through the same lifecycle interface; end on `include/overlay_class.h:56` for the push-time width rule.
+20. `src/ui/ui_nav_manager.cpp:1826` — `rebuild_active_views()`: how hot reload reaches every live surface through the same lifecycle interface; end on `include/overlay_class.h:56` for the push-time width rule.

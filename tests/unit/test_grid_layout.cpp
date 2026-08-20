@@ -484,6 +484,7 @@ TEST_CASE("PanelWidgetDef: half-cell capability is classified per widget",
         {"preheat", {true, false}},        // flex row; row span is fixed
         {"fan", {true, false}},            // user fan name, long_mode=dots
         {"thermistor", {true, false}},     // user sensor name, long_mode=dots
+        {"bypass", {true, false}},         // material name, long_mode=dots
         {"favorite_macro", {true, false}}, // user macro name, long_mode=dots
         {"shutdown", {true, false}},       // fixed 1x1: placement only
         {"lock", {true, false}},           // fixed 1x1: placement only

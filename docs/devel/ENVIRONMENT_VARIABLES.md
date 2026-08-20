@@ -4,26 +4,28 @@ This document is a reference for the environment variables HelixScreen reads at 
 
 ## Quick Reference
 
-| Category | Count | Prefix |
-|----------|-------|--------|
-| [Display & Backend](#display--backend-configuration) | 23 | `HELIX_` |
-| [Touch Calibration](#touch-calibration) | 11 | `HELIX_TOUCH_*` / `HELIX_SCROLL_*` |
-| [G-Code Viewer](#g-code-viewer) | 4 | `HELIX_` |
-| [Bed Mesh](#bed-mesh) | 1 | `HELIX_` |
-| [Networking](#networking) | 1 | `HELIX_` |
-| [Mock & Testing](#mock--testing) | 23 | `HELIX_MOCK_*` |
-| [UI Automation](#ui-automation) | 3 | `HELIX_AUTO_*` |
-| [Calibration](#calibration-auto-start) | 2 | `*_AUTO_START` |
-| [Development](#development) | 3 | `HELIX_` |
-| [Debugging](#debugging) | 8 | `HELIX_` |
-| [Deployment](#deployment) | 1 | `HELIX_` |
-| [Logging & Startup](#logging--startup) | 6 | `HELIX_LOG_*` |
-| [Process & Supervision](#process--supervision) | 7 | `HELIX_` / Standard Unix |
-| [Data Paths](#data-paths) | 13 | `HELIX_` / Standard Unix |
+| Category | Prefix |
+|----------|--------|
+| [Display & Backend](#display--backend-configuration) | `HELIX_` |
+| [Touch Calibration](#touch-calibration) | `HELIX_TOUCH_*` / `HELIX_SCROLL_*` |
+| [G-Code Viewer](#g-code-viewer) | `HELIX_` |
+| [Bed Mesh](#bed-mesh) | `HELIX_` |
+| [Networking](#networking) | `HELIX_` |
+| [Mock & Testing](#mock--testing) | `HELIX_MOCK_*` |
+| [UI Automation](#ui-automation) | `HELIX_AUTO_*` |
+| [Calibration](#calibration-auto-start) | `*_AUTO_START` |
+| [Development](#development) | `HELIX_` |
+| [Debugging](#debugging) | `HELIX_` |
+| [Deployment](#deployment) | `HELIX_` |
+| [Logging & Startup](#logging--startup) | `HELIX_LOG_*` |
+| [Process & Supervision](#process--supervision) | `HELIX_` / Standard Unix |
+| [Data Paths](#data-paths) | `HELIX_` / Standard Unix |
+>>>>>>> main
 
-Counts are per-section entry counts. `HELIX_DEBUG_TOUCH` is documented in both
-[Touch Calibration](#touch-calibration) and [Debugging](#debugging) and is counted in both.
-[Shell Script Variables](#shell-script-variables) are launcher/script-only and are not counted here.
+Per-section counts are deliberately omitted — they rotted between almost every
+release. `HELIX_DEBUG_TOUCH` is documented in both
+[Touch Calibration](#touch-calibration) and [Debugging](#debugging).
+[Shell Script Variables](#shell-script-variables) are launcher/script-only.
 
 ---
 
@@ -723,8 +725,12 @@ Force the G-code preview rendering mode.
 | Property | Value |
 |----------|-------|
 | **Values** | `2D`, `3D` |
-| **Default** | `2D` |
-| **Files** | `src/ui/ui_gcode_viewer.cpp`, `src/ui/ui_panel_print_status.cpp`, `src/ui/ui_panel_gcode_test.cpp` |
+| **Default** | unset — Auto, which resolves to 3D on GLES-capable builds and 2D elsewhere |
+| **Files** | `include/gcode_render_mode_policy.h`, `src/ui/ui_gcode_viewer.cpp`, `src/ui/ui_panel_print_status.cpp`, `src/ui/ui_panel_gcode_test.cpp` |
+
+Only the exact strings `2D` and `3D` are honored — matching is case-sensitive, so
+`3d` is an unrecognized value. An unrecognized value resolves to 2D (the renderer
+that works everywhere), not to Auto; unset is the only path to Auto.
 
 ```bash
 # Force 2D layer view

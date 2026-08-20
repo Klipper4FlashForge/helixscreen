@@ -1,7 +1,7 @@
 # Delegates Homing to Printer — Design
 
 Date: 2026-08-18
-Status: Approved (brainstorm session, 2026-08-18)
+Status: Approved (brainstorm session, 2026-08-18) — shipped in v0.99.115
 Issue: prestonbrown/helixscreen#1265 (Disable homing check for AFC commands)
 
 ## Problem

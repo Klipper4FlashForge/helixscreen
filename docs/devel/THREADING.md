@@ -660,8 +660,17 @@ Create observers with the factories in `include/observer_factory.h` rather than 
 | `observe_int_async<T>()` | int subject, explicitly async |
 | `observe_string()` | string subject, callback deferred |
 | `observe_string_async()` | string subject, explicitly async |
+| `observe_print_state<T>()` | typed `PrintJobState` over the raw `print_state_enum` subject, deferred |
+| `observe_print_state_immediate<T>()` | the same typing, firing synchronously like `observe_int_immediate` |
+| `observe_print_lifecycle<T>()` | typed `PrintState` over the derived `print_lifecycle` subject |
 
 All return an `ObserverGuard` (`include/ui_observer_guard.h`) for RAII removal.
+
+The print factories are not sugar: `PrintJobState` and `PrintState` do not share
+numbering past index 0, so pairing a factory with the wrong subject (or hand-casting the
+subject's int) compiles and silently answers a different question. That mistake shipped
+twice — see `architecture/05-printer-state.md` § "Reading print state: typed accessors,
+not hand-cast ints".
 
 ### Deferred by default
 
@@ -942,7 +951,7 @@ Relevant tags: `[state]` (subjects/observers), `[connection]` (WebSocket lifecyc
 | `include/ui_update_queue.h` | `UpdateQueue`, `queue_update()`, `scoped_freeze()` |
 | `include/async_lifetime_guard.h` | `AsyncLifetimeGuard`, `LifetimeToken`, `bg_cb()` |
 | `include/ui_observer_guard.h` | `ObserverGuard`, `SubjectLifetime` |
-| `include/observer_factory.h` | `observe_int_sync/async`, `observe_string/async` |
+| `include/observer_factory.h` | `observe_int_sync/async`, `observe_string/async`, `observe_print_state[_immediate]`, `observe_print_lifecycle` |
 | `include/ui_utils.h` | `safe_delete_deferred`, `safe_clean_children`, `safe_delete_subtree` |
 | `include/static_subject_registry.h` | Shutdown cleanup registry |
 | `include/http_executor.h` | `HttpExecutor::fast()` / `slow()` pools |

@@ -51,7 +51,7 @@ sequenceDiagram
 | File | Role |
 |------|------|
 | `src/main.cpp` | Process entry: client-mode dispatch, terminate handler, in-place `execv` restart |
-| `src/application/application.cpp` | The whole ladder — `run()` (`:517`), every `init_*` phase, `main_loop()` (`:3805`), `shutdown()` (`:4824`) |
+| `src/application/application.cpp` | The whole ladder — `run()` (`:517`), every `init_*` phase, `main_loop()` (`:3949`), `shutdown()` (`:4968`) |
 | `src/application/subject_initializer.cpp` | The subject sweep in dependency phases: core → state → navigation → panels → observers |
 | `src/application/static_subject_registry.cpp` | LIFO registry of subject `deinit_subjects()` callbacks |
 | `src/application/static_panel_registry.cpp` | Self-registration registry for panel/overlay destruction |
@@ -107,9 +107,9 @@ The whole ladder, one line per phase comment (all in `run()` unless noted):
 
 ### Subjects, UI, and the connect-during-splash window
 
-Phase 9a constructs `SubjectInitializer` and runs `init_core_and_state()` (`src/application/subject_initializer.cpp:225`): core globals → `PrinterState` → AMS/sensor managers → `NavigationManager` last, *precisely so* reverse-order deinit clears NavigationManager's observers before PrinterState frees the subjects they observe. Phase 9b starts the HttpExecutor pools (`:754` — the Moonraker APIs submit to them on every request) before `MoonrakerManager::init()` creates the client and API. Then come the system services the panels will need: `UpdateChecker`, `UpgradeBanner`, `CrashHistory`/`CrashReporter`, `TelemetryManager::init()` (`:784`) — note the telemetry spread: init here, `record_session()` on discovery complete (`:3170`), `start_auto_send()` inside `connect_moonraker()` (`:3485`).
+Phase 9a constructs `SubjectInitializer` and runs `init_core_and_state()` (`src/application/subject_initializer.cpp:225`): core globals → `PrinterState` → AMS/sensor managers → `NavigationManager` last, *precisely so* reverse-order deinit clears NavigationManager's observers before PrinterState frees the subjects they observe. Phase 9b starts the HttpExecutor pools (`:754` — the Moonraker APIs submit to them on every request) before `MoonrakerManager::init()` creates the client and API. Then come the system services the panels will need: `UpdateChecker`, `UpgradeBanner`, `CrashHistory`/`CrashReporter`, `TelemetryManager::init()` (`:784`) — note the telemetry spread: init here, `record_session()` on discovery complete (`:3311`), `start_auto_send()` inside `connect_moonraker()` (`:3626`).
 
-Phase 9c (`init_panel_subjects`) runs the rest of the sweep — `init_panels()` then `init_post()` (observers, USB manager), EmergencyStop/AbortManager/detection wiring — so **every subject exists before any XML binding needs it**. Phase 9d then calls `connect_moonraker()` (`:3420`) *before* the UI exists: discovery runs async under the splash, and by the time `init_ui()` (Phase 10) calls `lv_xml_create(m_screen, "app_layout", nullptr)` (`:1960`) — timed in the log, it builds all six panel subtrees at once — the connection may already be complete, saving ~2s of splash time. The old startup diagram put connect *after* UI creation and `init_post()` after both; the code orders it 9c → 9d → 10, and `init_post()` runs inside 9c.
+Phase 9c (`init_panel_subjects`) runs the rest of the sweep — `init_panels()` then `init_post()` (observers, USB manager), EmergencyStop/AbortManager/detection wiring — so **every subject exists before any XML binding needs it**. Phase 9d then calls `connect_moonraker()` (`:3561`) *before* the UI exists: discovery runs async under the splash, and by the time `init_ui()` (Phase 10) calls `lv_xml_create(m_screen, "app_layout", nullptr)` (`:1960`) — timed in the log, it builds all six panel subtrees at once — the connection may already be complete, saving ~2s of splash time. The old startup diagram put connect *after* UI creation and `init_post()` after both; the code orders it 9c → 9d → 10, and `init_post()` runs inside 9c.
 
 Phases 11b–16b live in one `try` block (`:869`) with a catch that degrades to a toast instead of exiting — a regression here (`HomePanel::finalize_setup()` json throw) once crash-looped real devices, so anything after UI creation is survivable by policy. In order: stale-printer recovery (11b), first-run wizard (12), CLI startup actions (13), plugins (14), WiFi availability check (14b), the remote-control server — auto-on in `--test`, opt-in via `--remote` (14c, `:998`), memory monitor + hang detection + pressure responders (15), and the first full-screen repaint (16b, skipped while the external splash still owns the framebuffer). Then `main_loop()` (17) and `shutdown()` (18).
 
@@ -118,20 +118,20 @@ The main loop itself belongs to chapter 02 (notification dispatch, `lv_timer_han
 | Timer | Value | Owner | Fires when |
 |-------|-------|-------|------------|
 | Discovery timeout | 8s | App (`SplashScreenManager`) | Discovery incomplete — signal splash anyway |
-| Invalidation failsafe | 11s | App (`main_loop`, `:3842`) | Splash handoff never happened — force rendering back on |
+| Invalidation failsafe | 11s | App (`main_loop`, `:4182`) | Splash handoff never happened — force rendering back on |
 | Splash self-exit | 30s | Splash process (`helix_splash.cpp:83`) | No SIGUSR1 arrived — exit so it cannot pin the display forever |
 | Absolute cap | 180s | Splash (`SplashLifetimePolicy`, `include/splash_status.h:22`) | Even with heartbeats — hard backstop |
 
 ### Shutdown: the registry ladder
 
-`Application::shutdown()` (`:4824`) is guarded by `m_shutdown_complete` (the destructor calls it again) and runs a strict ladder. Simplified to its load-bearing steps:
+`Application::shutdown()` (`:4968`) is guarded by `m_shutdown_complete` (the destructor calls it again) and runs a strict ladder. Simplified to its load-bearing steps:
 
 1. **Stop producers.** Hot reloader, remote-control server, memory monitor, then `MoonrakerClient::disconnect()` — background threads must stop delivering before anything they would touch is freed. Clear `app_globals` pointers, then `NavigationManager::shutdown()`, then the service managers (UpdateChecker, Telemetry, CrashHistory, Sound, plugins).
 2. **Unregister and drain.** Timelapse/power/sensor/action-prompt callbacks come off the client, `AmsState::clear_backends()` releases subscription guards while the client's mutex is alive, `update_queue_shutdown()` drains deferred UI callbacks *before* the panels they capture die, and `lv_anim_delete_all()` stops completion callbacks firing on soon-freed widgets.
-3. **`StaticPanelRegistry::destroy_all()`** (`:4989`) — every panel/overlay singleton, self-registered at creation. Destroys panel-local subjects and releases ObserverGuards while LVGL is still up.
-4. **`StaticSubjectRegistry::deinit_all()`** (`:4996`) — LIFO over self-registered `deinit_subjects()` callbacks (`src/application/static_subject_registry.cpp:54` iterates a detached copy in reverse, so a callback that re-registers lands in the empty member vector).
-5. **`destroy_all()` again** (`:5003`) — a sweep for panels a deinit callback lazily *resurrected* through an auto-creating `get_global_*_panel()` getter, keeping their destructors off the static-destruction path.
-6. **`ObserverGuard::invalidate_all()`** (`:5026`), then destroy MoonrakerManager, stop the HttpExecutors, `m_display.reset()` → `DisplayManager::shutdown()` which runs **`lv_deinit()` then `lv_xml_deinit()`** (`src/application/display_manager.cpp:703`), and finally `theme_manager_deinit()` dead last (`:5067`).
+3. **`StaticPanelRegistry::destroy_all()`** (`:5133`) — every panel/overlay singleton, self-registered at creation. Destroys panel-local subjects and releases ObserverGuards while LVGL is still up.
+4. **`StaticSubjectRegistry::deinit_all()`** (`:5140`) — LIFO over self-registered `deinit_subjects()` callbacks (`src/application/static_subject_registry.cpp:54` iterates a detached copy in reverse, so a callback that re-registers lands in the empty member vector).
+5. **`destroy_all()` again** (`:5147`) — a sweep for panels a deinit callback lazily *resurrected* through an auto-creating `get_global_*_panel()` getter, keeping their destructors off the static-destruction path.
+6. **`ObserverGuard::invalidate_all()`** (`:5170`), then destroy MoonrakerManager, stop the HttpExecutors, `m_display.reset()` → `DisplayManager::shutdown()` which runs **`lv_deinit()` then `lv_xml_deinit()`** (`src/application/display_manager.cpp:703`), and finally `theme_manager_deinit()` dead last (`:5211`).
 
 The *why* of steps 3→4→6 is the observer-corruption chain: `lv_deinit()` deletes widgets; widget deletion fires the `unsubscribe_on_delete_cb` that each observer registered, which calls `lv_observer_remove()` against the owning subject's `subs_ll` list. If the singleton subjects were already deinit'd, those lists are freed memory — SIGSEGV inside `lv_observer.c`. Panels die first so their observers release while both sides are alive; subjects die second; only then is LVGL allowed to delete anything. Two more orderings from the same family: `lv_xml_deinit()` must follow `lv_deinit()` because component scopes own styles the (now-deleted) widgets pointed at, and a scope with a `<subject_expr>` owns **raw** `lv_observer_t*` on app-owned theme subjects — which is why `theme_manager_deinit()` runs after both, or every `ctl shutdown` heap-use-after-frees. And `ObserverGuard::invalidate_all()` must precede `MoonrakerManager`'s destructor, whose guard members would otherwise `lv_observer_remove()` on observers that `lv_subject_deinit()` already freed.
 
@@ -186,15 +186,15 @@ Read in this order; about 30 minutes total.
 1. `src/main.cpp:121` — `main()`: client dispatch, `set_terminate`, the `execv` in-place restart. 175 lines; read it whole.
 2. `src/application/application.cpp:517` — `run()`: skim top-to-bottom once reading only the `Phase N` comments; this is the authoritative ladder.
 3. `src/application/application.cpp:1374` — `init_display()`: DPI forcing, and the splash suppression block at `:1563` (invalidation off + no-op flush callback).
-4. `src/application/application.cpp:1592` — `init_theme()`: note `globals.xml` registered *before* `theme_manager_init()` and why.
+4. `src/application/application.cpp:705` — `init_theme()`: note `globals.xml` registered *before* `theme_manager_init()` and why.
 5. `src/xml_registration.cpp:300` — `register_xml_components()`: responsive consts → semantic widgets → callbacks → XML files; the `boot_yield` cadence note at `:290`.
 6. `src/application/subject_initializer.cpp:225` — `init_core_and_state()`: the dependency phases, and the NavigationManager-registers-last comment.
-7. `src/application/application.cpp:3420` — `connect_moonraker()`: when it connects, what Safe Mode skips, where `start_auto_send` lands.
-8. `src/application/application.cpp:1955` — `init_ui()`: the timed `lv_xml_create`, navbar wiring, `PanelFactory` handoff.
-9. `src/application/application.cpp:3805` — `main_loop()`: read only the splash-handoff and 11s-failsafe blocks (`:3997`–`:4048`); chapter 02 owns the rest.
-10. `src/application/application.cpp:4824` — `shutdown()`: walk the ladder against the "How it works" list; the long comments at `:5016` and `:5050` are the two UAF post-mortems.
+7. `src/application/application.cpp:680` — `connect_moonraker()`: when it connects, what Safe Mode skips, where `start_auto_send` lands.
+8. `src/application/application.cpp:854` — `init_ui()`: the timed `lv_xml_create`, navbar wiring, `PanelFactory` handoff.
+9. `src/application/application.cpp:864` — `main_loop()`: read only the splash-handoff and 11s-failsafe blocks (`:4141`–`:4192`); chapter 02 owns the rest.
+10. `src/application/application.cpp:5` — `shutdown()`: walk the ladder against the "How it works" list; the long comments at `:5160` and `:5194` are the two UAF post-mortems.
 11. `src/application/display_manager.cpp:630` — `DisplayManager::shutdown()`: `lv_deinit()` → `lv_xml_deinit()` and the style-ownership comment above them.
-12. `src/application/static_subject_registry.cpp:54` — `deinit_all()`: 25 lines; the detached-copy/reverse-iteration trick.
+12. `src/application/static_subject_registry.cpp:34` — `deinit_all()`: 25 lines; the detached-copy/reverse-iteration trick.
 13. `src/helix_watchdog.cpp:1099` — `run_watchdog()`: fork/supervise loop, exit-code translation at `:1221`, crash-loop branch at `:1336`.
 14. `src/helix_watchdog.cpp:875` — `create_crash_dialog()`: raw LVGL, hardcoded colors, countdown.
 15. `src/helix_splash.cpp:83` — `MAX_LIFETIME_SEC` and the defense-in-depth comment; then `include/splash_screen_manager.h:32` for the app-side 8s timeout.

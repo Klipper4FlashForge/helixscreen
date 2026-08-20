@@ -70,7 +70,7 @@ Most commonly needed:
 
 | Doc | When |
 |-----|------|
-| `docs/devel/ARCHITECTURE.md` | Whole-app 15-minute model + routing table into the 15-chapter architecture guide |
+| `docs/devel/ARCHITECTURE.md` | Whole-app 15-minute model + routing table into the architecture guide's chapters |
 | `docs/devel/UI_CONTRIBUTOR_GUIDE.md` | UI/layout work: breakpoints, tokens, colors, widgets, layout overrides |
 | `docs/devel/LVGL9_XML_GUIDE.md` | XML layouts, widgets, bindings, observer cleanup |
 | `docs/devel/MODAL_SYSTEM.md` | Modal architecture: ui_dialog, modal_button_row, Modal pattern |
@@ -116,7 +116,7 @@ Features, refactors, new panels/widgets/managers — **scope AFTER investigating
 
 **Submodule patch workflow** — third-party submodules ONLY (`lib/lvgl/`, `lib/libhv/`, …). **Never run it on `lib/helix-xml/`**: that repo is ours, its edits are meant to be committed, and the `git restore .` below would destroy them.
 
-Edit the file under `lib/<sub>/`, then `cd lib/<sub> && git diff -- <the files you touched> > ../../patches/<name>.patch && git restore -- <those files>`. **Scope the diff** — a bare `git diff` captures every patch currently applied. And if two patches touch the same file (16 do; `src/misc/lv_event.c` has seven) even a scoped diff folds the others in, so use the pristine-file method in `patches/README.md` § "Regenerating a patch whose file is shared". The patch in `patches/` is the source of truth — direct edits get wiped on the next `git submodule update`. Check `mk/patches.mk` (`LVGL_PATCHED_FILES`, `LIBHV_PATCHED_FILES`, etc.) and existing `patches/*.patch` before creating a new one — amend an existing patch when the change is in the same area (e.g., `lvgl_sdl_window.patch` already owns `lv_sdl_window.c`).
+Edit the file under `lib/<sub>/`, then `cd lib/<sub> && git diff -- <the files you touched> > ../../patches/<name>.patch && git restore -- <those files>`. **Scope the diff** — a bare `git diff` captures every patch currently applied. And if two patches touch the same file (a dozen-plus files are; `src/misc/lv_event.c` has seven) even a scoped diff folds the others in, so use the pristine-file method in `patches/README.md` § "Regenerating a patch whose file is shared". The patch in `patches/` is the source of truth — direct edits get wiped on the next `git submodule update`. Check `mk/patches.mk` (`LVGL_PATCHED_FILES`, `LIBHV_PATCHED_FILES`, etc.) and existing `patches/*.patch` before creating a new one — amend an existing patch when the change is in the same area (e.g., `lvgl_sdl_window.patch` already owns `lv_sdl_window.c`).
 
 ---
 

@@ -31,7 +31,8 @@ SCRIPT_START=$(date +%s)
 # Timing helper - prints elapsed time for a section (seconds)
 section_time() {
   local start=$1
-  local end=$(date +%s)
+  local end
+  end=$(date +%s)
   local elapsed=$((end - start))
   if [ $elapsed -gt 0 ]; then
     printf " (%ds)" "$elapsed"
@@ -163,7 +164,7 @@ if [ -n "$FILES" ]; then
   if [ -n "$TRAILING_WS" ]; then
     echo "⚠️  Found trailing whitespace:"
     echo "$TRAILING_WS" | head -10 | sed 's/^/   /'
-    if [ $(echo "$TRAILING_WS" | wc -l) -gt 10 ]; then
+    if [ "$(echo "$TRAILING_WS" | wc -l)" -gt 10 ]; then
       echo "   ... and $(($(echo "$TRAILING_WS" | wc -l) - 10)) more"
     fi
     echo "ℹ️  Fix with: sed -i 's/[[:space:]]*$//' <file>"
@@ -2058,10 +2059,16 @@ echo -n "🐚 Checking shell scripts (shellcheck)..."
 #   config/  - platform hooks and the init script. Clean at shellcheck's
 #              default severity; kept there.
 #   scripts/ - installer modules, launcher, release tooling. These ship to
-#              devices but were outside this gate entirely until now, so 19
-#              files carry pre-existing findings. Those are listed in
-#              SHELLCHECK_BASELINE: still reported, but not fatal. Every other
-#              file must be clean. The list may shrink, never grow.
+#              devices and are held to the same bar as config/: clean at
+#              warning severity (minus the two excluded codes below). The 19
+#              files that carried pre-existing findings when this gate landed
+#              have since been fixed and SHELLCHECK_BASELINE is empty. A file
+#              enters the baseline only by explicit decision after a fix is
+#              judged riskier than the finding; the list may shrink, never
+#              grow. Variables shared across `source` boundaries carry a
+#              per-line disable directive naming their consumer at the
+#              assignment site - SC1091 is excluded, so shellcheck cannot see
+#              those reads itself.
 #
 # install.sh / uninstall.sh are skipped: they are bundled artifacts of
 # install-dev.sh + lib/installer/, which are themselves checked here.
@@ -2072,25 +2079,7 @@ echo -n "🐚 Checking shell scripts (shellcheck)..."
 #   SC1091 - "not following sourced file". The installer sources its modules
 #            by a path that only exists once unpacked on the device.
 SHELLCHECK_SCRIPTS_EXCLUDE="SC3043,SC1091"
-SHELLCHECK_BASELINE="scripts/audit_codebase.sh
-scripts/benchmark_hosts.sh
-scripts/benchmark_neon.sh
-scripts/check_cjk_font_staleness.sh
-scripts/git-stats.sh
-scripts/install-dev.sh
-scripts/lib/installer/common.sh
-scripts/lib/installer/forgex.sh
-scripts/lib/installer/main.sh
-scripts/lib/installer/platform.sh
-scripts/lib/installer/release.sh
-scripts/lib/installer/requirements.sh
-scripts/lib/installer/service.sh
-scripts/lib/lvgl_image_lib.sh
-scripts/quality-checks.sh
-scripts/regen_images.sh
-scripts/regen_printer_images.sh
-scripts/resolve-backtrace.sh
-scripts/screenshot.sh"
+SHELLCHECK_BASELINE=""
 
 SHELL_FILES=""
 if [ "$STAGED_ONLY" = true ]; then
