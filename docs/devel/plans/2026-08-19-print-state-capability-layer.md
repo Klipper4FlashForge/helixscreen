@@ -260,7 +260,8 @@ completing SHA.
 | **2b** | `locked_while_printing` covers the preparing window (predicate AND observer) | 3 + 3 tests | **done** | `734f7f4d1` |
 | **2c** | Typed accessors + `check_print_state_cast.py`; 24 hand-casts removed | 24 + gate | **done** | `eb3f94048` |
 | **2d** | job queue modal, PLR offer, power panel, keep-raw markers (AMS panel stays raw) | 4 + 6 markers | **done** | `1c8677d4e` |
-| **3** | Display + bookkeeping | 11 + 15 | not started | - |
+| **3a** | The home print card + its idle-runout gate (the K2 finding) | 5 + 6 tests | **done** | `b10f464a3` |
+| **3b** | Every remaining raw site carries a verified reason | 26 markers | **done** | `858d36329` |
 | **4** | Delete the helper, add the ratcheting gate | 2 + gate | not started | - |
 | **5** | Rename `PrintState` -> `PrintLifecycle` | mechanical | not started | - |
 
@@ -555,14 +556,57 @@ that must stay on the wire. Only `ui_plr_offer_controller.cpp:86` and
 
 ### Phase 3 - display and bookkeeping
 
-11 display sites and 15 bookkeeping sites, **excluding** the terminal-outcome and
-freeze-guard sites listed under "must keep raw". Retire `print_active` once its
-last reader is gone.
+> **The premise of this phase was wrong, and the census is the correction.**
+> It was written as "11 display sites and 15 bookkeeping sites" to migrate. Read
+> site by site on 2026-08-19, **exactly one file needed migrating** - the home
+> print-status widget - and it held two real defects. Every other remaining site
+> is legitimately on the wire, several for reasons the plan did not anticipate:
+>
+> | Site | Why it stays raw - none of these were predicted |
+> |---|---|
+> | `ui_panel_print_select.cpp:2382` | Reads `print_filename`, which `reset_for_new_print()` **deliberately does not clear**, so during a preparing window it still holds the PREVIOUS job. Widening it badges the wrong file rather than none. Badging the committed file means reading `preparing_job()` - a feature, not a migration. |
+> | `led_auto_state.cpp:128` | The returned strings are **LED theme keys** in the JSON themes. There is no `preparing` key, and a pre-print block already falls through to `heating`, which is what the machine is doing. |
+> | `ams_state.cpp:2547` | Wants a `Preparing` label, but **no such translation key exists** and this is the lowest-priority fallback in the chain. Deferred rather than adding a key for a line the AmsAction string usually wins. |
+> | `ams_state.cpp:1474` | Arms a runout EDGE that must be witnessed while material moves. Preparing would arm it for a latch raised before anything moved. |
+> | `ui_panel_print_status.cpp:1829` | Scopes the runout badge to the running file's tools; during Preparing `get_tools_used()` still describes the previous job. |
+> | `gcode_error_router.cpp:364` | Feeds resume/retry affordances. A failure inside a host-side block is `PrintPreparationManager`'s to report. |
+>
+> The lesson is the one this plan keeps re-learning: **a census taken from a grep
+> is a list of candidates, not a list of sites.** Two earlier corrections in this
+> document say the same thing about Phase 1's and Phase 2's tables.
+
+**3a - the home print card.** `PrintStatusWidget` observed `print_state_enum`, so
+`is_active_` (which picks the `view_subject_` variant) read idle for the whole of
+a host-side pre-print block - the defect seen on the K2 and recorded below under
+"found on the K2, not fixed". Tapping the card went to the file browser instead
+of the status overlay. The same wire read also let the **idle runout modal** fire
+on top of a committed start, burning the one-shot post-unload grace on the way
+past. Both now ask the lifecycle.
+
+Also added: `observe_print_lifecycle()` beside `observe_print_state()` in
+`observer_factory.h`. The existing factory hard-casts to `PrintJobState` while
+accepting any subject, which is trap #5 in reusable form - handing it
+`print_lifecycle` compiles and answers a different question. Both now name the
+subject they are for.
+
+**3b - reasons, not just markers.** Every file that still names
+`PrintJobState::PRINTING` or `PAUSED` carries a `RAW_PRINT_STATE_OK` explaining
+why, written from reading the site. Derivation functions carry one whole-function
+note rather than per-arm markers.
+
+**`print_active` is NOT deleted, and should not be.** It has **zero XML bindings**
+(Phase 1a moved all 21) and exactly two C++ readers, both inside
+`PrinterPrintState`, and both want wire semantics on purpose:
+`update_print_show_progress()` (`:973`) and the stale-phase guard at `:1099`,
+whose own comment says *"print_active is legitimately 0 for the whole host-side
+pre-start block"*. Deleting it would mean re-deriving the same value at both
+sites. Documented as wire-semantics-on-purpose, which is what the exit criterion
+allowed for.
 
 **Exit criteria**
-- [ ] `print_active` deleted, or documented as wire-semantics-on-purpose.
-- [ ] Every remaining raw-state site carries a comment saying why.
-- [ ] Full suite green.
+- [x] `print_active` deleted, or documented as wire-semantics-on-purpose.
+- [x] Every remaining raw-state site carries a comment saying why.
+- [x] Full suite green.
 
 ---
 
@@ -663,10 +707,11 @@ Both are real, both were seen on hardware, neither blocked the merge.
   reachable, so it is newly exposed. A real fix means emitting an abort for the
   block, which is its own design question.
 
-- **The home print-status widget shows `print_card_idle` during Preparing.**
-  Noticed while reading the widget tree mid-window; not chased. It observes
-  `print_state_enum`, which reads standby for the whole host-side block, so this
-  is very likely the same defect class in a surface Phase 1 did not cover.
+- ~~**The home print-status widget shows `print_card_idle` during Preparing.**~~
+  **Fixed in Phase 3a (`b10f464a3`).** The guess was right - same defect class,
+  same wire read. Fixing it turned up a second one in the same file: the idle
+  runout modal could fire on top of a committed start, and burned the one-shot
+  post-unload grace on its way past.
 
 ## Found while doing Phase 2d, not fixed
 
@@ -715,6 +760,7 @@ loaded" has two definitions in one file that disagree exactly where
 | 2026-08-19 | 0a | 91 | `289d56856`. Phase 0a touches the preparing window, not the raw-state count, so the metric is unchanged by design. Suite 95/95. |
 | 2026-08-19 | 0b | 91 | `41392dfd2`. Also count-neutral - 0b changes which inputs an existing derivation gets, not how many sites read the wire. Suite 95/95. **Phase 0 complete.** |
 | 2026-08-19 | - | 91 | `d606bd823`. Re-merged main (10 commits, no conflicts). Suite 95/95, and the **full ungated** quality sweep passes (36 gates) - worth re-running before any push, because per-commit gates only ever run `--staged-only` and skip anything you did not stage. |
+| 2026-08-19 | 3 | 63 | `b10f464a3` + `858d36329`. **Phase 3 complete**, but not as written - see the correction box in Phase 3. One file migrated (the home print card + its idle-runout gate, both real, both K2-relevant); everything else was verified keep-raw and now says why. `observe_print_lifecycle()` added beside `observe_print_state()`: the old factory hard-cast to PrintJobState while accepting any subject, which is the enum-mismatch trap in reusable form. `print_active` documented rather than deleted - zero XML bindings, two internal readers that both want wire semantics. |
 | 2026-08-19 | 2d | 66 | `1c8677d4e`. **Phase 2 complete.** Three real defects, each written test-first and red before the fix: a queue tap during a pre-print block deleted the job then failed the start; PLR offered recovery on top of a committed start; a `locked_while_printing` PSU stayed togglable while the toolhead homed. `ui_panel_ams` was investigated and deliberately NOT migrated - see the correction box in Phase 2. Six `RAW_PRINT_STATE_OK` markers added. Suite green; the AMS keep-raw pin was mutation-verified. |
 | 2026-08-19 | 2c | 68 | `eb3f94048` on `fix/print-state-phase2`. Phase 2a-2c done. Remaining 2d: `ui_job_queue_modal` (real bug - a queue tap during a pre-print block deletes the entry, then the start fails; use `can_start_new_print()`), `ui_plr_offer_controller:86`, `ui_panel_ams:268` (**value comparison only** - see the correction box in Phase 2), `ui_panel_power:233` (near-no-op; the live path is `power_device_state`), and RAW_PRINT_STATE_OK markers on `print_control_buttons`, `print_start_navigation`, `can_start_new_print`. |
 | 2026-08-19 | merged | 72 | `776a6afe1` on main. Phase 1 verified on the K2: job_holds_machine=1 while print_active=0 during a host-side block, controls flip enabled->disabled, Pause refused / Cancel offered, cancel reports as cancelled with no spurious completion, no latch, collector stopped, second start works. A full-branch review first found 1 Blocker + 1 Blocker-coverage + 6 Major, all fixed in 8 chunks - see "What the review caught" below. |
@@ -724,12 +770,13 @@ loaded" has two definitions in one file that disagree exactly where
 
 ## Before you touch anything: state of the branch
 
-**Phase 0 + 1 are MERGED to main** (`776a6afe1`) and verified on the K2. **Phase 2
-is COMPLETE** on branch `fix/print-state-phase2`, in the same worktree
+**Phase 0 + 1 are MERGED to main** (`776a6afe1`) and verified on the K2. **Phases 2 and 3 are
+COMPLETE** on branch `fix/print-state-phase2`, in the same worktree
 (`.worktrees/preprint-arm-on-initiation`) - the old branch was deleted after the
 merge and the worktree reused, so the build cache is warm. Not yet merged.
 
-Raw-state metric: **66** (was 91 at the start of Phase 1).
+Raw-state metric: **63** (was 91 at the start of Phase 1), and every one of those
+now carries a `RAW_PRINT_STATE_OK` reason.
 
 Next up is **Phase 3** (display + bookkeeping, 11 + 15 sites; retire
 `print_active`), then **Phase 4** (the ratcheting gate - the helper deletion it
