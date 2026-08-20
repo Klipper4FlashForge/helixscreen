@@ -2,7 +2,7 @@
 
 The home panel is not one hardcoded screen: it is a grid of independently developed "widgets" — fan speeds, temperatures, camera, macros, and 30-odd more — each pairing an XML component (appearance) with an optional C++ `PanelWidget` subclass (behavior). `PanelWidgetManager`, a `::instance()` singleton, owns the whole lifecycle: it reads the user's saved layout from disk, decides which widgets the connected hardware earns, places them on a responsive grid, and creates/attaches each one. When hardware, config, or the user in edit mode invalidates the layout, the LVGL tree is torn down and rebuilt — but C++ widget instances are recycled through that churn so expensive state (a live camera stream) never restarts.
 
-Counts, recounted 2026-08-17 (method included so you can re-run it):
+Counts, recounted 2026-08-20 (method included so you can re-run it):
 
 | What | Count | Method |
 |------|-------|--------|
@@ -10,7 +10,7 @@ Counts, recounted 2026-08-17 (method included so you can re-run it):
 | `PanelWidget` subclasses | 31 | `rg -l 'public PanelWidget' include src -g '*.h'` — 28 in `src/ui/panel_widgets/`, plus `favorite_macro`, `power_device`, `preheat` headers in `include/` |
 | XML components | 41 | `ls ui_xml/components/panel_widget_*.xml \| wc -l` |
 | Factory-less (pure XML) defs | 4 | `ams`, `filament`, `notifications`, `firmware_restart` — no `register_*` call in `init_widget_registrations()` |
-| Hardware-gated defs | 11 (10 distinct gate subjects) | defs with a non-null `hardware_gate_subject` in the table below |
+| Hardware-gated defs | 12 (11 distinct gate subjects) | defs with a non-null `hardware_gate_subject` in the table below |
 | Multi-instance defs (`base_id:N`) | 6 | `power_device`, `fan_stack`, `fan`, `thermistor`, `temp_graph`, `favorite_macro` (`multi_instance = true`) |
 
 One class can serve several defs: `HeaterTempWidget` is instantiated three ways with different configs (`temperature`, `bed_temperature`, `chamber_temperature`, `src/ui/panel_widgets/heater_temp_widget.cpp:75`-86). And two implementations live outside `panel_widgets/` entirely (`src/ui/widgets/power_device_widget.cpp`, `src/ui/widgets/favorite_macro_widget.cpp`) — the registry does not care where the factory lives.
@@ -90,6 +90,7 @@ The catalog itself, as the registry defines it (gate subjects from the def table
 | `temp_graph` | `TempGraphWidget` | — |
 | `preheat` | `PreheatWidget` | — |
 | `ams` | *pure XML* (mini-status width propagated by the manager) | `ams_slot_count` |
+| `bypass` | `BypassWidget` | `ams_supports_bypass` |
 | `active_spool` | `ActiveSpoolWidget` | — |
 | `filament` | *pure XML* | `filament_sensor_count` |
 | `humidity` | `HumidityWidget` | `humidity_sensor_count` |

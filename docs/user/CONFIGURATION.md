@@ -430,14 +430,19 @@ Auto-detection finds the first device with dumb buffer support and a connected d
 
 ### `gcode_render_mode`
 **Type:** integer
-**Default:** `2`
-**Values:** `0` (Auto/2D), `1` (3D GLES), `2` (2D Layer)
-**Description:** G-code visualization mode:
-- `0` - Auto (currently uses 2D)
-- `1` - 3D GLES-accelerated view
-- `2` - 2D Layer view (default, recommended)
+**Default:** `0`
+**Values:** `0` (Auto), `1` (3D View), `2` (2D Layers), `3` (Thumbnail Only)
+**Description:** G-code visualization mode for the active print:
+- `0` - Auto: interactive 3D on hardware with a working GLES renderer, 2D layers everywhere else (also the mode HelixScreen drops to if 3D has to bail mid-print)
+- `1` - 3D View: interactive 3D rendering of the toolpath
+- `2` - 2D Layers: flat per-layer view, lighter on the GPU than 3D
+- `3` - Thumbnail Only: shows just the slicer-embedded thumbnail, no live toolpath rendering - the lightest option
 
-Can also be overridden via `HELIX_GCODE_MODE` env var (`3D` or `2D`).
+Adjustable from the UI at **Settings > Printing > G-code Preview**.
+
+The mode can be overridden per launch without touching settings. Precedence is command line > `HELIX_GCODE_MODE` env var > this setting:
+- `helix-screen --render-2d` forces 2D Layers and `--render-3d` forces 3D View for that session. Launching with `--render-2d` is the quick way to force 2D on hardware that struggles with 3D rendering.
+- `HELIX_GCODE_MODE=3D` (or `2D`) - only those exact, case-sensitive values are honored; anything else falls back to 2D, and leaving it unset means Auto.
 
 ### `gcode_3d_enabled`
 **Type:** boolean
@@ -1832,7 +1837,7 @@ These can be set in the systemd service file or before running the binary:
 | Variable | Description |
 |----------|-------------|
 | `HELIX_THEME` | Override theme (e.g., `dracula`, `nord`, `gruvbox`) |
-| `HELIX_GCODE_MODE` | Override G-code render mode (`3D` or `2D`) |
+| `HELIX_GCODE_MODE` | Override G-code render mode (`3D` or `2D`, exact case-sensitive; unset = Auto, any other value = 2D) |
 | `HELIX_GCODE_STREAMING` | Override G-code streaming mode |
 | `HELIX_FORCE_STREAMING` | Force streaming for all file operations (`1` to enable) |
 | `HELIX_HOT_RELOAD` | Override XML hot reload default (`0` force off, `1` force on). Defaults ON for native builds, OFF for device release builds. |
