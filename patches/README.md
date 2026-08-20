@@ -115,10 +115,10 @@ git -C lib/lvgl diff src/path/to/file.c > patches/patch_name.patch
 
 ### Regenerating a patch whose file is shared
 
-That `git diff` recipe is only safe when exactly one patch touches the file. **Sixteen files
+That `git diff` recipe is only safe when exactly one patch touches the file. **A dozen-plus files
 are touched by more than one patch**, so for those it silently folds every other patch's hunks
-into the one being regenerated. `src/misc/lv_event.c` has seven patches; `lv_obj_event.c`,
-`lv_obj_tree.c` and `lv_linux_fbdev.c` have four each.
+into the one being regenerated. `src/misc/lv_event.c` has seven patches; `lv_obj_event.c` and
+`lv_obj_tree.c` have four each.
 
 Check before regenerating:
 

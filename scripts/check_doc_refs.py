@@ -233,6 +233,14 @@ def scan_devel_targets(paths):
 
 def check_refs(targets, allpaths, devel=False):
     problems = []
+    # Basename index so a bare `THREADING.md` resolves without scanning all
+    # ~70k repo paths per citation — the suffix fallback used to dominate the
+    # whole run (8s of the gate's cost). Refs containing '/' keep the exact
+    # suffix scan (p.endswith('/'+path)); those are rare.
+    by_basename = {}
+    for p in allpaths:
+        by_basename.setdefault(p.rsplit('/', 1)[-1], []).append(p)
+    allpaths_set = allpaths if isinstance(allpaths, set) else set(allpaths)
     for target in targets:
         base = os.path.dirname(target)
         try:
@@ -259,7 +267,12 @@ def check_refs(targets, allpaths, devel=False):
                 if parent and os.path.exists(os.path.join(parent, path)):
                     continue
             # a bare or partial path is fine if exactly that suffix exists somewhere
-            if any(p == path or p.endswith('/' + path) for p in allpaths):
+            if '/' in path:
+                if any(p.endswith('/' + path) for p in allpaths):
+                    continue
+            elif path in by_basename:
+                continue
+            if path in allpaths_set:
                 continue
             line = text.count('\n', 0, m.start()) + 1
             problems.append((target, line, ref))
@@ -412,15 +425,46 @@ def load_cite_baseline():
             if l.strip() and not l.startswith('#')}
 
 
-def last_commit_date(path):
-    """ISO date of the last commit touching path, or None (untracked/absent)."""
+def last_commit_dates(paths):
+    """Newest commit date (ISO) per path, from ONE streaming `git log` walk.
+
+    Spawning `git log -1 -- <path>` per citation made --stale take 100s+ (a
+    process spawn per cited file, several hundred of them). Instead we stream
+    full history newest-first with --name-only and record the first commit
+    each wanted path appears in — then stop the walk as soon as every wanted
+    path has been seen. Docs cite living code, so the walk almost always ends
+    within a few hundred commits of HEAD.
+    """
     import subprocess
+    wanted = set(paths)
+    found = {}
+    if not wanted:
+        return found
     try:
-        out = subprocess.run(['git', 'log', '-1', '--format=%cI', '--', path],
-                             capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return out.stdout.strip() or None
+        proc = subprocess.Popen(
+            ['git', 'log', '--format=\x01%cI', '--name-only', '--no-renames'],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            errors='ignore')
+    except OSError:
+        return found
+    date = None
+    try:
+        for line in proc.stdout:
+            line = line.rstrip('\n')
+            if line.startswith('\x01'):
+                date = line[1:]
+                continue
+            if not line or date is None:
+                continue
+            if line in wanted and line not in found:
+                found[line] = date
+                if len(found) == len(wanted):
+                    proc.kill()
+                    break
+    finally:
+        proc.stdout.close()
+        proc.wait()
+    return found
 
 
 def check_stale(targets, devel=False):
@@ -438,19 +482,29 @@ def check_stale(targets, devel=False):
     PATH_ONLY_RE = re.compile(
         r'`([A-Za-z0-9_./-]+\.(?:cpp|cc|h|hpp|c|xml|py|sh|json|mk|bats|yml|'
         r'yaml|html|txt))(?::\d+|:[A-Za-z0-9_]+\(\))?`')
-    reports = []
+    docs = {}
     for target in targets:
         try:
             text = open(target, errors='ignore').read()
         except OSError:
             continue
-        doc_date = last_commit_date(target)
+        docs[target] = text
+    all_cited = set()
+    for target, text in docs.items():
+        all_cited.update(m.group(1) for m in PATH_ONLY_RE.finditer(text)
+                         if not any(s in m.group(1) for s in EXEMPT_SUBSTRINGS))
+    dates = last_commit_dates(all_cited | set(docs))
+    reports = []
+    for target, text in docs.items():
+        doc_date = dates.get(target)
+        if not doc_date:
+            continue
         recounts = RECOUNT_RE.findall(text)
         cited = sorted({m.group(1) for m in PATH_ONLY_RE.finditer(text)
                         if not any(s in m.group(1) for s in EXEMPT_SUBSTRINGS)})
         for ref in cited:
-            fdate = last_commit_date(ref)
-            if not fdate or not doc_date:
+            fdate = dates.get(ref)
+            if not fdate:
                 continue
             if fdate[:10] > doc_date[:10]:
                 reports.append('%s cites `%s` — file last changed %s, doc %s'

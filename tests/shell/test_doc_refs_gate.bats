@@ -12,7 +12,8 @@ setup() {
 
 @test "devel: clean doc with file ref, :line ref, and live link passes" {
     mkdir -p "$BATS_TEST_TMPDIR/src"
-    echo x > "$BATS_TEST_TMPDIR/src/zz_fixture_real.cpp"
+    # 50 lines so the doc's :42 cite lands inside the file (past-EOF check)
+    for i in $(seq 50); do echo "line $i"; done > "$BATS_TEST_TMPDIR/src/zz_fixture_real.cpp"
     cat > "$FIX/good.md" <<'EOF'
 See `src/zz_fixture_real.cpp` and `src/zz_fixture_real.cpp:42` and
 [the other doc](other.md). Glob `src/*.cpp` and `<placeholder>` are skipped.
