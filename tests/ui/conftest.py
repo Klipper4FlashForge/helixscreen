@@ -47,6 +47,11 @@ _TEST_GCODE_MTIME_ORDER = [
     "Night Spirit_v1_2_og.gcode",
     "Low poly vase v1.1 flat top.gcode",
     "ECC_0.4_stand_PLA0.2_2h42m.gcode",
+    # Added by 6ba20a707 as extra mock gcode; nothing references them by name.
+    # Pinned oldest so the visible top-10 stays what the golden was captured
+    # under. Moving either into the top 10 is a deliberate golden update.
+    "eiffel_final_PLA_2h42m.gcode",
+    "2022-big-ben-by-miniworld3d_ABS_36m21s.gcode",
 ]
 
 
@@ -61,6 +66,19 @@ def _pin_test_gcode_mtimes():
     mtime (only content), so this is safe to run unconditionally rather than
     gating it on which test actually needs print-select.
     """
+    # An unpinned .gcode keeps its checkout mtime, which is newer than every
+    # pinned one, so it silently takes card 0 and print-select tests fail on a
+    # card-identity assertion that says nothing about the real cause. Fail here
+    # instead, naming the file and the fix.
+    on_disk = {p.name for p in _TEST_GCODE_DIR.glob("*.gcode")}
+    unpinned = sorted(on_disk - set(_TEST_GCODE_MTIME_ORDER))
+    if unpinned:
+        raise AssertionError(
+            f"unpinned gcode fixture(s) in assets/test_gcodes: {unpinned}. "
+            "Add each to _TEST_GCODE_MTIME_ORDER above - at the END to keep it out "
+            "of print-select's visible top 10, or higher up as a deliberate golden "
+            "update. Left unpinned it sorts newest and displaces card 0.")
+
     base = 1_700_000_000  # arbitrary fixed epoch; only the relative order matters
     for i, name in enumerate(reversed(_TEST_GCODE_MTIME_ORDER)):
         path = _TEST_GCODE_DIR / name
