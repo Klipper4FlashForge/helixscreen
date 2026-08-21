@@ -1,3 +1,9 @@
+> **FlashForge Creator 5 Pro fork.** This branch (`creator5`) adds a cross-compile target for the
+> Creator 5 Pro (Ingenic X2000 MIPS, NaN2008 kernel, 800×480 fbdev): `make creator5-docker`, a
+> crosstool-NG toolchain image, and a WSL-friendly build wrapper. Start at
+> [docs/devel/printers/FLASHFORGE_CREATOR5_PRO_SUPPORT.md](docs/devel/printers/FLASHFORGE_CREATOR5_PRO_SUPPORT.md).
+> Everything else is upstream [prestonbrown/helixscreen](https://github.com/prestonbrown/helixscreen).
+
 <p align="center">
   <img src="assets/images/helix-icon-256.png" alt="HelixScreen" width="128"/>
   <br>
