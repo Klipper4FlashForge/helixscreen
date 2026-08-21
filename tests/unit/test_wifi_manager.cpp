@@ -160,6 +160,14 @@ class WiFiManagerTestFixture {
             wifi_manager->stop_scan();
             wifi_manager->set_enabled(false);
         }
+        // Every backend start fires READY, whose handler defers a
+        // WiFiManager::reassert_stored_radio_state closure through
+        // AsyncLifetimeGuard. Drain here, in the destructor BODY, while
+        // wifi_manager is still alive: the base fixture's reset_all() drain
+        // runs after this object's members are gone, so anything still queued
+        // at that point survives into the next test as an isolation leak.
+        // Same reasoning as the explicit drain in the radio-toggle test below.
+        helix::ui::UpdateQueue::instance().drain();
     }
 
     // Helper: Scan callback that captures results
