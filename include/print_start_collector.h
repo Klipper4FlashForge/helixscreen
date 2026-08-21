@@ -616,6 +616,37 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     float compute_heating_fraction() const;
 
     /**
+     * @brief Compute the heating fraction for an arbitrary phase
+     *
+     * Concurrent-heat firmwares (K1/K2 class) run heating in parallel with
+     * homing, wiping and meshing, so a heating phase that is no longer
+     * current may still be physically running. This is the phase-aware
+     * generalization compute_heating_fraction() delegates to.
+     */
+    float compute_heating_fraction_for_locked(helix::PrintStartPhase phase) const;
+
+    /**
+     * @brief True once the phase's heater has reached its target (within 2C)
+     *
+     * The completion criterion for heating phases on concurrent-heat
+     * firmware: the marker passing means the chain moved on, not that the
+     * heater finished.
+     */
+    bool heating_target_reached_locked(helix::PrintStartPhase phase) const;
+
+    /**
+     * @brief Enter BED_MESH and credit any buffered pre-mesh probes
+     *
+     * update_phase() clears the mesh counters, so the probes buffered while
+     * approaching the mesh (console pre-mesh points, or samples seen before
+     * the position classifier's sweep-march verdict) have to be re-applied
+     * after it returns — they are the sweep's first points. Every BED_MESH
+     * promotion path (console threshold, bed-mesh flap, sweep march) goes
+     * through here so none of them drops the count.
+     */
+    void enter_bed_mesh_with_buffer(const char* message);
+
+    /**
      * @brief Save current print's phase timings to prediction history
      *
      * Called on COMPLETE. Computes per-phase durations from timestamps,

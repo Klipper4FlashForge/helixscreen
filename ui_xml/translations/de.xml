@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" de="Bettheizung"/>
   <translation tag="Bed Level" de="Bettnivellierung"/>
   <translation tag="Bed Leveling" de="Bettnivellierung"/>
-  <translation tag="Bed Leveling..."/>
   <translation tag="Bed Mesh" de="Bettnetz"/>
   <translation tag="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" de="Bettnetz-Darstellung"/>
   <translation tag="Bed Mesh..." de="Bettnetz..."/>
+  <translation tag="Bed Meshing..."/>
   <translation tag="Bed Moves" de="Bett bewegt sich"/>
   <translation tag="Bed Screw Adjustment" de="Bettschrauben-Einstellung"/>
   <translation tag="Bed Screw Results" de="Bettschrauben-Ergebnisse"/>

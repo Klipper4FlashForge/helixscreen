@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" zh="热床加热器"/>
   <translation tag="Bed Level" zh="热床调平"/>
   <translation tag="Bed Leveling" zh="热床调平"/>
-  <translation tag="Bed Leveling..."/>
   <translation tag="Bed Mesh" zh="热床网格"/>
   <translation tag="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" zh="热床网格渲染"/>
   <translation tag="Bed Mesh..." zh="热床网格..."/>
+  <translation tag="Bed Meshing..."/>
   <translation tag="Bed Moves" zh="热床移动"/>
   <translation tag="Bed Screw Adjustment" zh="热床螺丝调整"/>
   <translation tag="Bed Screw Results" zh="热床螺丝结果"/>

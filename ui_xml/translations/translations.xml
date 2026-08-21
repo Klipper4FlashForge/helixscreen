@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" de="Bettheizung" en="Bed Heater" es="Calentador de Cama" fr="Chauffage du plateau" it="Riscaldatore piano" ja="ベッドヒーター" pt="Aquecedor da Mesa" ru="Нагреватель стола" zh="热床加热器"/>
   <translation tag="Bed Level" de="Bettnivellierung" en="Bed Level" es="Nivel de Cama" fr="Niveau du plateau" it="Livellamento piano" ja="ベッドレベル" pt="Nível da Mesa" ru="Уровень стола" zh="热床调平"/>
   <translation tag="Bed Leveling" de="Bettnivellierung" en="Bed Leveling" es="Nivelación de Cama" fr="Mise à niveau du plateau" it="Livellamento piano" ja="ベッドレベリング" pt="Nivelamento da Mesa" ru="Выравнивание стола" zh="热床调平"/>
-  <translation tag="Bed Leveling..." en="Bed Leveling..."/>
   <translation tag="Bed Mesh" de="Bettnetz" en="Bed Mesh" es="Malla de Cama" fr="Maillage du plateau" it="Mesh piano" ja="ベッドメッシュ" pt="Malha da Mesa" ru="Сетка стола" zh="热床网格"/>
   <translation tag="Bed Mesh Complete" en="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" de="Bettnetz-Darstellung" en="Bed Mesh Render" es="Renderizado de Malla de Cama" fr="Rendu du maillage du plateau" it="Rendering mesh piano" ja="ベッドメッシュ描画" pt="Renderização da Malha da Mesa" ru="Рендер сетки стола" zh="热床网格渲染"/>
   <translation tag="Bed Mesh..." de="Bettnetz..." en="Bed Mesh..." es="Malla de Cama..." fr="Maillage du plateau..." it="Mesh piano..." ja="ベッドメッシュ..." pt="Malha da Mesa..." ru="Сетка стола..." zh="热床网格..."/>
+  <translation tag="Bed Meshing..." en="Bed Meshing..."/>
   <translation tag="Bed Moves" de="Bett bewegt sich" en="Bed Moves" es="Cama se mueve" fr="Le lit bouge" it="Piatto si muove" ja="ベッド移動" pt="Mesa se move" ru="Стол движется" zh="热床移动"/>
   <translation tag="Bed Screw Adjustment" de="Bettschrauben-Einstellung" en="Bed Screw Adjustment" es="Ajuste de Tornillos de Cama" fr="Ajustement des vis du plateau" it="Regolazione viti piano" ja="ベッドネジ調整" pt="Ajuste dos Parafusos da Mesa" ru="Регулировка винтов стола" zh="热床螺丝调整"/>
   <translation tag="Bed Screw Results" de="Bettschrauben-Ergebnisse" en="Bed Screw Results" es="Resultados de Tornillos de Cama" fr="Résultats des vis du plateau" it="Risultati viti piano" ja="ベッドネジ結果" pt="Resultados dos Parafusos da Mesa" ru="Результаты по винтам стола" zh="热床螺丝结果"/>

@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" es="Calentador de Cama"/>
   <translation tag="Bed Level" es="Nivel de Cama"/>
   <translation tag="Bed Leveling" es="Nivelación de Cama"/>
-  <translation tag="Bed Leveling..."/>
   <translation tag="Bed Mesh" es="Malla de Cama"/>
   <translation tag="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" es="Renderizado de Malla de Cama"/>
   <translation tag="Bed Mesh..." es="Malla de Cama..."/>
+  <translation tag="Bed Meshing..."/>
   <translation tag="Bed Moves" es="Cama se mueve"/>
   <translation tag="Bed Screw Adjustment" es="Ajuste de Tornillos de Cama"/>
   <translation tag="Bed Screw Results" es="Resultados de Tornillos de Cama"/>

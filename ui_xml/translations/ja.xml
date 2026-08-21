@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" ja="ベッドヒーター"/>
   <translation tag="Bed Level" ja="ベッドレベル"/>
   <translation tag="Bed Leveling" ja="ベッドレベリング"/>
-  <translation tag="Bed Leveling..."/>
   <translation tag="Bed Mesh" ja="ベッドメッシュ"/>
   <translation tag="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" ja="ベッドメッシュ描画"/>
   <translation tag="Bed Mesh..." ja="ベッドメッシュ..."/>
+  <translation tag="Bed Meshing..."/>
   <translation tag="Bed Moves" ja="ベッド移動"/>
   <translation tag="Bed Screw Adjustment" ja="ベッドネジ調整"/>
   <translation tag="Bed Screw Results" ja="ベッドネジ結果"/>

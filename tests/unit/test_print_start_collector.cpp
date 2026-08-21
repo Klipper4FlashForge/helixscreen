@@ -1996,6 +1996,90 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
     REQUIRE(print_stage > probe_stage);
 }
 
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "Remaining keeps unfinished heating work after the phase marker passes",
+                 "[print][collector][eta]") {
+    // K1C capture 2026-08-20: heater targets land first, homing starts while
+    // the bed is at 29 of 55C, and both heating phases' durations vanished
+    // from the estimate the moment their markers passed - the countdown dove
+    // to 205s of a 378s prep and the bar jumped to ~45% twenty seconds in.
+    // A heating phase is done when its TARGET IS REACHED, not when the next
+    // phase's marker arrives.
+    set_all_temps(250, 550, 290, 550); // nozzle 25/55C, bed 29/55C
+    collector().start();
+    collector().enable_fallbacks();
+
+    // Deterministic history: heating phases carry 90s each, mesh 120s.
+    helix::PreprintEntry e;
+    e.total_seconds = 300;
+    e.timestamp = 1000;
+    e.temp_bucket = 1;
+    e.phase_durations = {{static_cast<int>(PrintStartPhase::HEATING_NOZZLE), 90},
+                         {static_cast<int>(PrintStartPhase::HEATING_BED), 90},
+                         {static_cast<int>(PrintStartPhase::HOMING), 15},
+                         {static_cast<int>(PrintStartPhase::BED_MESH), 120}};
+    PrintStartCollectorTestAccess::load_prediction_entries(collector(), {e});
+    auto& rates = ThermalRateManager::instance();
+    rates.get_model("extruder").set_default_rate(1.0f);
+    rates.get_model("heater_bed").set_default_rate(1.0f);
+    drain_async_updates();
+
+    // The chain passes heating and lands in HOMING while both heaters are
+    // still mid-climb (bed at 29 of 55C).
+    send_gcode_response("M190"); // HEATING_BED marker
+    send_gcode_response("M109"); // HEATING_NOZZLE marker
+    send_gcode_response("G28");  // HOMING begins - heaters still running
+
+    PrintStartCollectorTestAccess::run_eta_update(collector());
+    drain_async_updates();
+
+    // With bed 26C short at ~1s/C the unfinished heating work is ~26s of the
+    // bed phase alone; the estimate must still hold most of the prep. The old
+    // behavior dropped both 90s heating phases as "completed".
+    const int remaining = lv_subject_get_int(state().get_preprint_remaining_subject());
+    REQUIRE(remaining > 150);
+
+    // And the bar (total - remaining) must not front-load: 20s into a 300s
+    // prep it has no business showing a third.
+    const int progress = lv_subject_get_int(state().get_print_start_progress_subject());
+    REQUIRE(progress < 30);
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "Entering a phase releases the monotonic countdown anchor",
+                 "[print][collector][eta]") {
+    // K1C capture 2026-08-20: the countdown eased to 39s during the pre-mesh
+    // probes, BED_MESH entered with 124s predicted, and the strict monotonic
+    // guard pinned the display at 39s for the entire mesh (the collector
+    // logged "Monotonic bias: suppressed 39s->103s, overrun=15.3%"). A new
+    // phase is a genuine re-assessment of the remaining work, not noise.
+    set_all_temps(250, 550, 500, 550);
+    collector().start();
+    collector().enable_fallbacks();
+
+    helix::PreprintEntry e;
+    e.total_seconds = 240;
+    e.timestamp = 1000;
+    e.temp_bucket = 1;
+    e.phase_durations = {{static_cast<int>(PrintStartPhase::HOMING), 15},
+                         {static_cast<int>(PrintStartPhase::BED_MESH), 124}};
+    PrintStartCollectorTestAccess::load_prediction_entries(collector(), {e});
+    drain_async_updates();
+
+    // Model the eased-down pre-mesh floor directly.
+    PrintStartCollectorTestAccess::set_last_remaining(collector(), 39);
+    send_gcode_response("BED_MESH_CALIBRATE");
+
+    // The phase transition must have released the anchor...
+    REQUIRE(PrintStartCollectorTestAccess::get_last_remaining(collector()) == 0);
+
+    // ...so the mesh's 124s publish instead of clamping to 39.
+    PrintStartCollectorTestAccess::run_eta_update(collector());
+    drain_async_updates();
+    const int remaining = lv_subject_get_int(state().get_preprint_remaining_subject());
+    REQUIRE(remaining > 100);
+}
+
 // ============================================================================
 // ADAPTIVE TIMEOUT TESTS
 //
@@ -3217,13 +3301,13 @@ TEST_CASE_METHOD(K1CPrintStartReplayFixture,
  * What the printer DOES emit is a bed_mesh status flap: klippy reports the
  * loaded profile, then clears it, when the probing sequence begins. A mesh
  * that disappears while the collector is in CLEANING is the start of that
- * silent leveling work, so the display moves to "Bed Leveling..." — with the
+ * silent meshing work, so the display moves to "Bed Meshing..." — with the
  * probe denominator already sized from the entry-time query. The same clear
  * arriving BEFORE the nozzle clean is the rough G28's own mesh clear and
  * carries no phase information.
  */
 TEST_CASE_METHOD(K1CPrintStartReplayFixture,
-                 "PrintStartCollector: bed-mesh clear during cleaning enters Bed Leveling",
+                 "PrintStartCollector: bed-mesh clear during cleaning enters Bed Meshing",
                  "[print][collector][k1c][bedmesh-flap]") {
     collector().start();
     settle();
@@ -3254,7 +3338,7 @@ TEST_CASE_METHOD(K1CPrintStartReplayFixture,
     collector().note_bed_mesh_presence(false);
     settle();
     REQUIRE(get_current_phase() == PrintStartPhase::BED_MESH);
-    REQUIRE(get_current_message() == "Bed Leveling...");
+    REQUIRE(get_current_message() == "Bed Meshing...");
 
     // Mesh probes now count against the denominator the entry query fetched.
     const double c[] = {5.0, 57.5, 110.0, 162.5, 215.0};
@@ -3263,7 +3347,7 @@ TEST_CASE_METHOD(K1CPrintStartReplayFixture,
     }
     settle();
     REQUIRE(PrintStartCollectorTestAccess::get_mesh_probe_total(collector()) == 25);
-    REQUIRE(get_current_message() == "Bed Leveling (5/25)");
+    REQUIRE(get_current_message() == "Bed Meshing (5/25)");
 }
 
 /**
@@ -3443,7 +3527,43 @@ TEST_CASE_METHOD(K1CPrintStartReplayFixture,
     collector().note_position_sample(162.5f, 5.0f, 3.0f);
     drain_async_updates();
     REQUIRE(get_current_phase() == PrintStartPhase::BED_MESH);
-    REQUIRE(get_current_message() == "Bed Leveling...");
+    REQUIRE(get_current_message() == "Bed Meshing...");
+}
+
+TEST_CASE_METHOD(K1CPrintStartReplayFixture,
+                 "Buffered pre-mesh probes are credited when the sweep march promotes BED_MESH",
+                 "[print][collector][k1c][position]") {
+    // K1C capture 2026-08-20: the two front-row probes arrived before the
+    // position classifier's sweep-march verdict, were buffered ("Pre-mesh
+    // probe point 1/5 (buffering)"), and were then DISCARDED when the march
+    // promoted BED_MESH - the displayed count lagged the physical taps by 2
+    // for the whole mesh.
+    if (!have_profile_) {
+        SKIP("creality_k1.json not available");
+    }
+    collector().start();
+    settle();
+    collector().enable_fallbacks();
+    collector().note_mesh_bounds(5.0f, 215.0f, 5.0f, 215.0f);
+    send_gcode_response("// [CLEAR_NOZZLE_QUICK] src_pos[2]:3.1676562");
+    REQUIRE(get_current_phase() == PrintStartPhase::CLEANING);
+
+    // Two front-row probe lines buffer below the console entry threshold.
+    point(110.0, 5.0);
+    point(130.0, 5.0);
+    settle();
+    REQUIRE(PrintStartCollectorTestAccess::get_mesh_probe_current(collector()) == 0);
+
+    // The sweep march promotes BED_MESH from position telemetry.
+    collector().note_position_sample(110.0f, 5.0f, 3.0f);
+    collector().note_position_sample(130.0f, 5.0f, 3.0f);
+    collector().note_position_sample(150.0f, 5.0f, 3.0f);
+    collector().note_position_sample(170.0f, 5.0f, 3.0f);
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() == PrintStartPhase::BED_MESH);
+    // The buffered front row is the sweep's first points.
+    REQUIRE(PrintStartCollectorTestAccess::get_mesh_probe_current(collector()) == 2);
 }
 
 TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,

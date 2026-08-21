@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" en="Bed Heater"/>
   <translation tag="Bed Level" en="Bed Level"/>
   <translation tag="Bed Leveling" en="Bed Leveling"/>
-  <translation tag="Bed Leveling..." en="Bed Leveling..."/>
   <translation tag="Bed Mesh" en="Bed Mesh"/>
   <translation tag="Bed Mesh Complete" en="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" en="Bed Mesh Render"/>
   <translation tag="Bed Mesh..." en="Bed Mesh..."/>
+  <translation tag="Bed Meshing..." en="Bed Meshing..."/>
   <translation tag="Bed Moves" en="Bed Moves"/>
   <translation tag="Bed Screw Adjustment" en="Bed Screw Adjustment"/>
   <translation tag="Bed Screw Results" en="Bed Screw Results"/>

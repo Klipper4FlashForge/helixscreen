@@ -79,4 +79,31 @@ class PrintStartCollectorTestAccess {
     static void clear_prediction_history(PrintStartCollector& c) {
         c.predictor_.load_entries({}, 0, helix::PreprintWindow::Unknown);
     }
+
+    /// Read the counted mesh probes (the "N" in the displayed "N / M").
+    static int get_mesh_probe_current(PrintStartCollector& c) {
+        std::lock_guard<std::mutex> lock(c.state_mutex_);
+        return c.mesh_probe_current_;
+    }
+
+    /// Set the monotonic anchor directly. Production sets it on every ETA
+    /// publish; a test uses this to model a prior low estimate without
+    /// replaying the whole ease-down that produced it.
+    static void set_last_remaining(PrintStartCollector& c, int seconds) {
+        std::lock_guard<std::mutex> lock(c.state_mutex_);
+        c.last_remaining_ = seconds;
+    }
+
+    /// Read the monotonic anchor.
+    static int get_last_remaining(PrintStartCollector& c) {
+        std::lock_guard<std::mutex> lock(c.state_mutex_);
+        return c.last_remaining_;
+    }
+
+    /// Inject predictor history (deterministic per-phase durations) instead of
+    /// relying on the theoretical-duration path.
+    static void load_prediction_entries(PrintStartCollector& c,
+                                        std::vector<helix::PreprintEntry> entries) {
+        c.predictor_.load_entries(entries, helix::StartCondition::COLD);
+    }
 };

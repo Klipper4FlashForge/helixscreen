@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" it="Riscaldatore piano"/>
   <translation tag="Bed Level" it="Livellamento piano"/>
   <translation tag="Bed Leveling" it="Livellamento piano"/>
-  <translation tag="Bed Leveling..."/>
   <translation tag="Bed Mesh" it="Mesh piano"/>
   <translation tag="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" it="Rendering mesh piano"/>
   <translation tag="Bed Mesh..." it="Mesh piano..."/>
+  <translation tag="Bed Meshing..."/>
   <translation tag="Bed Moves" it="Piatto si muove"/>
   <translation tag="Bed Screw Adjustment" it="Regolazione viti piano"/>
   <translation tag="Bed Screw Results" it="Risultati viti piano"/>

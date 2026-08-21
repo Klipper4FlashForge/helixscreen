@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" fr="Chauffage du plateau"/>
   <translation tag="Bed Level" fr="Niveau du plateau"/>
   <translation tag="Bed Leveling" fr="Mise à niveau du plateau"/>
-  <translation tag="Bed Leveling..."/>
   <translation tag="Bed Mesh" fr="Maillage du plateau"/>
   <translation tag="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" fr="Rendu du maillage du plateau"/>
   <translation tag="Bed Mesh..." fr="Maillage du plateau..."/>
+  <translation tag="Bed Meshing..."/>
   <translation tag="Bed Moves" fr="Le lit bouge"/>
   <translation tag="Bed Screw Adjustment" fr="Ajustement des vis du plateau"/>
   <translation tag="Bed Screw Results" fr="Résultats des vis du plateau"/>
