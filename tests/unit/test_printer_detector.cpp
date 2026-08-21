@@ -4394,6 +4394,23 @@ TEST_CASE("PrinterDetector: print_start_default_phases returns K1C measured dura
     REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::BED_MESH)] == 125);
 }
 
+TEST_CASE("PrinterDetector: print_start_default_phases returns K2 measured durations",
+          "[printer][preprint]") {
+    // Measured on a K2 Plus 2026-08-18 (three captured prints): three homing
+    // rail rounds ~15s; nozzle wipe plus both BOX_NOZZLE_CLEAN passes ~60s;
+    // the bed-mesh toggle is OPTIONAL (emit_when_disabled: false) and when on
+    // runs a check-passed validation of ~6s — a failed check re-meshes (67-pt
+    // adaptive) and the prediction history learns that longer duration after
+    // the first such print. Heating stays absent: thermal model owns it.
+    for (const char* name : {"Creality K2 Plus", "Creality K2 Pro"}) {
+        auto phases = PrinterDetector::get_print_start_default_phases(name);
+        REQUIRE(phases.size() == 3);
+        REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::HOMING)] == 15);
+        REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::CLEANING)] == 60);
+        REQUIRE(phases[static_cast<int>(helix::PrintStartPhase::BED_MESH)] == 10);
+    }
+}
+
 TEST_CASE("PrinterDetector: print_start_default_phases empty for printer without override",
           "[printer][preprint]") {
     // Voron 2.4 has no print_start_default_phases field — generic defaults apply.
