@@ -1829,9 +1829,7 @@ translations:
   Print Was Terminated: 打印已终止
   Print cancelled: 打印已取消
   Print did not start: 打印未启动
-  Print cancelled: ''
   'Print complete': ''
-  Print did not start: ''
   Print didn't start — printer may be busy or offline (B3 polls={}, status=0x{:02X}, error=0x{:02X}): 打印未开始
     — 打印机可能繁忙或离线 (B3 polls={}, status=0x{:02X}, error=0x{:02X})
   'Print ending...': ''

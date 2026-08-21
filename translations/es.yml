@@ -1998,9 +1998,7 @@ translations:
   Print Was Terminated: La impresión fue terminada
   Print cancelled: Impresión cancelada
   Print did not start: La impresión no se inició
-  Print cancelled: ''
   'Print complete': ''
-  Print did not start: ''
   Print didn't start — printer may be busy or offline (B3 polls={}, status=0x{:02X}, error=0x{:02X}): La
     impresión no comenzó — la impresora puede estar ocupada o desconectada (sondeos
     B3={}, status=0x{:02X}, error=0x{:02X})

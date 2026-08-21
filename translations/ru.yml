@@ -1974,9 +1974,7 @@ translations:
   Print Was Terminated: Печать была прекращена
   Print cancelled: Печать отменена
   Print did not start: Печать не началась
-  Print cancelled: ''
   'Print complete': ''
-  Print did not start: ''
   Print didn't start — printer may be busy or offline (B3 polls={}, status=0x{:02X}, error=0x{:02X}): Печать
     не началась — принтер может быть занят или не в сети (опросы B3={}, статус=0x{:02X},
     ошибка=0x{:02X})
