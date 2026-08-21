@@ -94,6 +94,22 @@ PATH_RE = re.compile(
 # optional and dropped; the target is resolved relative to the doc's own directory.
 LINK_RE = re.compile(r'\[[^\]]+\]\(([^)#\s]+)(?:#[^)]*)?\)')
 
+# A citation wrapped in a link — [`src/foo.cpp:12`](../../../src/foo.cpp#L12) —
+# is still a citation. scripts/gen_doc_links.py generates those wrappers from
+# the very text the checks below parse, so the path/line/symbol checks unwrap
+# first. Without it, linking a doc would silently switch off the drift checks
+# that make its citations trustworthy: the symbol-cite shapes below expect
+# `sym` (`file:N`) with nothing between the paren and the backtick, so across
+# the architecture guide the wrappers alone drop the check from 243 matches to
+# 5. Only a link around a code span is unwrapped; a prose link is left alone.
+# Removing the wrapper cannot move a reported line number — a markdown link
+# holds no newline, and every finding is located by counting '\n'.
+LINKED_SPAN_RE = re.compile(r'\[(`[^`\n]+`)\]\([^)\s]*\)')
+
+
+def unwrap_links(text):
+    return LINKED_SPAN_RE.sub(lambda m: m.group(1), text)
+
 # `path/file.cpp:123` citations. The path charset mirrors PATH_RE's so the two
 # agree on what counts as a line-cited reference.
 LINE_REF_RE = re.compile(
@@ -254,7 +270,7 @@ def check_refs(targets, allpaths, devel=False):
     for target in targets:
         base = os.path.dirname(target)
         try:
-            text = open(target, errors='ignore').read()
+            text = unwrap_links(open(target, errors='ignore').read())
         except OSError:
             continue
         for m in PATH_RE.finditer(text):
@@ -366,7 +382,7 @@ def check_line_refs(targets, devel=False):
     for target in targets:
         base = os.path.dirname(target)
         try:
-            text = open(target, errors='ignore').read()
+            text = unwrap_links(open(target, errors='ignore').read())
         except OSError:
             continue
         for m in LINE_REF_RE.finditer(text):
@@ -396,7 +412,7 @@ def check_symbol_cites(targets, devel=False):
     for target in targets:
         base = os.path.dirname(target)
         try:
-            text = open(target, errors='ignore').read()
+            text = unwrap_links(open(target, errors='ignore').read())
         except OSError:
             continue
         pairs = []
@@ -495,7 +511,7 @@ def check_stale(targets, devel=False):
     docs = {}
     for target in targets:
         try:
-            text = open(target, errors='ignore').read()
+            text = unwrap_links(open(target, errors='ignore').read())
         except OSError:
             continue
         docs[target] = text
