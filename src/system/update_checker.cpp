@@ -2832,7 +2832,12 @@ std::string UpdateChecker::mips_runtime_platform_key(const std::string& probe_ro
 }
 
 std::string UpdateChecker::get_platform_key() {
-#ifdef HELIX_PLATFORM_AD5M
+#if defined(HELIX_PLATFORM_CREATOR5)
+    // FlashForge Creator 5 Pro: static MIPS build (HELIX_PLATFORM_MIPS is also
+    // defined). Must come before the MIPS branch — its /usr/prog sniff would
+    // report "ad5x" here, since every FlashForge rootfs has that directory.
+    return "creator5";
+#elif defined(HELIX_PLATFORM_AD5M)
     return "ad5m";
 #elif defined(HELIX_PLATFORM_CC1)
     return "cc1";
