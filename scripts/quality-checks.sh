@@ -1960,6 +1960,50 @@ echo ""
 }
 
 # ====================================================================
+# Architecture-guide file links are generated, not hand-written
+# ====================================================================
+qc_doc_links() {
+  local EXIT_CODE=0
+# The guide links every backticked citation to the file (and line) it names.
+# Those links are DERIVED from the citation text by scripts/gen_doc_links.py, so
+# a hand-edited URL, a citation added without regenerating, or a renamed target
+# all show up here as "stale" rather than rotting silently in the rendered doc.
+# Same contract as regen-tokens / regen-xml-schema: the artifact is committed,
+# and the gate proves it matches its source.
+SECTION_START=$(date +%s)
+echo -n "🔗 Checking architecture-guide file links..."
+
+if [ -f "scripts/gen_doc_links.py" ]; then
+  if python3 scripts/gen_doc_links.py --diff >/tmp/doc_links.out 2>&1; then
+    :
+  else
+    EXIT_CODE=1
+    # --auto-fix (what the pre-commit hook passes) repairs the guide in place so
+    # the committer only has to stage it. It still FAILS: the fix lands in the
+    # working tree, not the index, and passing here would commit the stale doc
+    # while leaving a green run behind it. Deliberately not `git add`-ed — a
+    # hook that stages for you sweeps up whatever else sits in those files.
+    if [ "$AUTO_FIX" = true ]; then
+      python3 scripts/gen_doc_links.py >>/tmp/doc_links.out 2>&1
+      echo "   Regenerated in place — 'git add' the guide and commit again." >>/tmp/doc_links.out
+    fi
+  fi
+  section_time $SECTION_START
+  echo ""
+  cat /tmp/doc_links.out
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  gen_doc_links.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+  return $EXIT_CODE
+}
+
+# ====================================================================
 # Translation format-specifier parity (crash #1073)
 # ====================================================================
 qc_translation_fmt() {
@@ -2222,7 +2266,7 @@ qc_run_buffered() {
 # when asked to fix them.
 QC_SERIAL="qc_xml_linter"
 if [ "$AUTO_FIX" = true ]; then QC_SERIAL="$QC_SERIAL qc_phase2"; fi
-QC_ALL="qc_phase1 qc_xml_const qc_xml_attr qc_dup_names qc_xml_linter qc_xml_subtests qc_hidden_tests qc_overlay_width qc_design_pixels qc_phase2 qc_icon_font qc_mdi_codepoints qc_code_style qc_mem_safety qc_null_safety qc_l081 qc_net_pii qc_decl_ui qc_spdlog_only qc_design_tokens qc_doc_refs qc_translation_fmt qc_base_locale qc_shellcheck"
+QC_ALL="qc_phase1 qc_xml_const qc_xml_attr qc_dup_names qc_xml_linter qc_xml_subtests qc_hidden_tests qc_overlay_width qc_design_pixels qc_phase2 qc_icon_font qc_mdi_codepoints qc_code_style qc_mem_safety qc_null_safety qc_l081 qc_net_pii qc_decl_ui qc_spdlog_only qc_design_tokens qc_doc_refs qc_doc_links qc_translation_fmt qc_base_locale qc_shellcheck"
 
 QC_PARALLEL=""
 for fn in $QC_ALL; do
@@ -2251,6 +2295,7 @@ qc_trigger_re() {
                         echo '\.(cpp|c|h|mm)$' ;;
     qc_design_tokens)   echo '\.(cpp|h|xml)$' ;;
     qc_doc_refs)        echo '\.md$|^scripts/check_doc_refs\.py$' ;;
+    qc_doc_links)       echo '^docs/devel/ARCHITECTURE\.md$|^docs/devel/architecture/|^scripts/gen_doc_links\.py$' ;;
     qc_translation_fmt) echo '^translations/|^ui_xml/|\.py$' ;;
     qc_base_locale)     echo '^translations/' ;;
     qc_shellcheck)      echo '\.(sh|bats)$' ;;
