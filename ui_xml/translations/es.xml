@@ -1788,9 +1788,9 @@
   <translation tag="Print Time" es="Tiempo de Impresión"/>
   <translation tag="Print Tuning" es="Ajuste de Impresión"/>
   <translation tag="Print Was Terminated" es="La impresión fue terminada"/>
-  <translation tag="Print cancelled"/>
+  <translation tag="Print cancelled" es="Impresión cancelada"/>
   <translation tag="Print complete"/>
-  <translation tag="Print did not start"/>
+  <translation tag="Print did not start" es="La impresión no se inició"/>
   <translation tag="Print didn&apos;t start — printer may be busy or offline (B3 polls={}, status=0x{:02X}, error=0x{:02X})" es="La impresión no comenzó — la impresora puede estar ocupada o desconectada (sondeos B3={}, status=0x{:02X}, error=0x{:02X})"/>
   <translation tag="Print ending..."/>
   <translation tag="Print error" es="Error de impresión"/>

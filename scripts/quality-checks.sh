@@ -1110,13 +1110,57 @@ if [ -n "$XML_FILES" ]; then
     # clean", is how three LVGL state-selector layouts drifted unnoticed.
     if $VENV_PYTHON scripts/format-xml.py --check $XML_FILES; then
       echo "✅ All XML files properly formatted"
+    elif [ "$AUTO_FIX" = true ]; then
+      # Close the loop the way qc_phase2 does for C++. Staying purely advisory
+      # here left a real hole: tests/shell/test_format_xml_gate.bats checks the
+      # WHOLE ui_xml tree and fails hard, so an unformatted file that sails past
+      # this warning turns the shell suite red on main until someone notices.
+      # panel_widget_bypass.xml sat that way through 58ea1eea2.
+      # Which files already had unstaged work — recorded BEFORE formatting,
+      # because the reformat itself makes every file differ from the index.
+      XML_PRE_DIRTY=""
+      if [ "$STAGED_ONLY" = true ]; then
+        for f in $XML_FILES; do
+          git diff --quiet -- "$f" || XML_PRE_DIRTY="$XML_PRE_DIRTY $f "
+        done
+      fi
+      XML_FIXED=$($VENV_PYTHON scripts/format-xml.py $XML_FILES 2>&1 \
+                  | sed -n 's/^Formatted: //p')
+      if [ -n "$XML_FIXED" ]; then
+        for f in $XML_FIXED; do echo "   ✓ Auto-formatted: $f"; done
+        if [ "$STAGED_ONLY" = true ]; then
+          # Re-stage only files with NOTHING unstaged. `git add` takes the whole
+          # working-tree file, so on a partially staged file it would sweep in
+          # hunks deliberately held back — the commit would carry work its author
+          # never staged. Those get formatted on disk and named instead.
+          XML_RESTAGE=""; XML_HELD=""
+          for f in $XML_FIXED; do
+            case "$XML_PRE_DIRTY" in
+              *" $f "*) XML_HELD="$XML_HELD $f" ;;
+              *)        XML_RESTAGE="$XML_RESTAGE $f" ;;
+            esac
+          done
+          # shellcheck disable=SC2086  # word splitting is the point: a path list
+          [ -n "$XML_RESTAGE" ] && git add $XML_RESTAGE && \
+            echo "✅ Re-staged:$XML_RESTAGE"
+          if [ -n "$XML_HELD" ]; then
+            echo "⚠️  Formatted but NOT re-staged (partially staged):$XML_HELD"
+            echo "ℹ️  This commit still carries unformatted XML. Stage it with: git add$XML_HELD"
+          fi
+        fi
+      else
+        # --check disagreed with a real run: the file is unparseable, not unformatted.
+        echo "⚠️  XML could not be parsed — see above"
+        echo "ℹ️  Fix with: .venv/bin/python scripts/format-xml.py <files>"
+      fi
     else
       echo "⚠️  XML files need formatting (or could not be parsed — see above)"
       echo "ℹ️  Fix with: .venv/bin/python scripts/format-xml.py <files>"
       echo "ℹ️  Or run: make format"
-      # Don't fail CI for XML formatting - it's a style preference.
-      # Genuine malformed XML is still a hard failure via the xmllint validation pass
-      # earlier in this script, so staying advisory here does not let broken XML through.
+      # Don't fail CI for XML formatting - it's a style preference, and --auto-fix
+      # (the pre-commit path) now repairs it rather than nagging. Genuine malformed
+      # XML is still a hard failure via the xmllint validation pass earlier in this
+      # script, so staying advisory here does not let broken XML through.
       # EXIT_CODE=1
     fi
   elif command -v xmllint >/dev/null 2>&1; then
