@@ -32,6 +32,9 @@ make ad5x-docker
 # Build for Creality K1 series (MIPS32, dynamic/glibc)
 make k1-dynamic-docker
 
+# Build for FlashForge Creator 5 Pro (MIPS32r2, static/musl, shares the K1 image)
+make creator5-docker
+
 # Build for Creality K2 series (ARM, tested on K2 Plus)
 make k2-docker
 
@@ -43,6 +46,7 @@ file build/cc1/bin/helix-screen    # ELF 32-bit LSB, ARM, EABI5
 file build/mips/bin/helix-screen   # ELF 32-bit LSB, MIPS32 (static)
 file build/ad5x/bin/helix-screen  # ELF 32-bit LSB, MIPS32r5 (dynamic)
 file build/k1-dynamic/bin/helix-screen  # ELF 32-bit LSB, MIPS32 (dynamic)
+file build/creator5/bin/helix-screen  # ELF 32-bit LSB, MIPS32 (static)
 file build/k2/bin/helix-screen     # ELF 32-bit LSB, ARM, EABI5
 ```
 
@@ -184,6 +188,17 @@ make cross-info          # Show cross-compilation help
 - **GCC 7.5 constraints**: See [GCC 7.5 Compatibility](#gcc-75-compatibility-k1-dynamic-target) section above
 - **Why two K1 targets?** Static/musl is simpler and more portable. Dynamic/glibc produces smaller binaries (shared system libs) and avoids musl edge cases, but requires the custom NaN2008 toolchain.
 
+#### FlashForge Creator 5 Pro
+- **CPU**: Ingenic X2000 (XBurst2, MIPS32r2 dual-core @ 1.2 GHz)
+- **Toolchain**: Custom `mipsel-creator5-linux-musl-` (GCC 12 + musl 1.2.4 via crosstool-NG, NaN2008 default)
+- **Display**: 800×480 framebuffer (`/dev/fb0`), native landscape
+- **Input**: evdev for touch (`/dev/input/event2`)
+- **C Library**: musl (fully static binary)
+- **Why not the K1 image**: the Creator 5 Pro kernel refuses legacy-NaN executables (`ENOEXEC`); Bootlin's musl toolchain cannot emit NaN2008 because its `libc.a` is legacy-NaN
+- **LTO**: off — the static crosstool-NG toolchain has no LTO plugin (as for `k1-dynamic`)
+- **Docker Image**: `helixscreen/toolchain-creator5` (Debian Bookworm; ~10 min to build, GCC from source)
+- See `docs/devel/printers/FLASHFORGE_CREATOR5_PRO_SUPPORT.md`
+
 #### Creality K2 Series (K2, K2 Pro, K2 Plus) — Tested on K2 Plus
 - **CPU**: Allwinner sun8iw20p1 (ARM Cortex-A7, dual-core, 57 BogoMIPS)
 - **Toolchain**: Bootlin `armv7-eabihf-musl` (GCC 12, musl libc)
@@ -208,6 +223,7 @@ docker/
 ├── Dockerfile.k1-dynamic  # K1 dynamic toolchain (crosstool-NG, GCC 7.5, glibc 2.29)
 ├── Dockerfile.k2          # K2 toolchain (Bootlin armv7-eabihf-musl, GCC 12)
 ├── Dockerfile.ad5x        # AD5X toolchain (MIPS, ZMOD)
+├── Dockerfile.creator5    # Creator 5 Pro toolchain (crosstool-NG, GCC 12, musl, NaN2008)
 ├── Dockerfile.snapmaker-u1 # Snapmaker U1 toolchain
 └── Dockerfile.x86         # x86 native/container build
 ```

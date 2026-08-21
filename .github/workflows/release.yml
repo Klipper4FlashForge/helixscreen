@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [pi, pi32, ad5m, cc1, k1, ad5x, k2, x86, snapmaker-u1]
+        platform: [pi, pi32, ad5m, cc1, k1, ad5x, creator5, k2, x86, snapmaker-u1]
         include:
           - platform: pi
             display_name: "Raspberry Pi"
@@ -89,6 +89,8 @@ jobs:
             docker_image: ad5x
             build_target: ad5x
             build_dir: ad5x
+          - platform: creator5
+            display_name: "Flashforge Creator 5 Pro"
           - platform: k2
             display_name: "Creality K2 Series"
           - platform: x86

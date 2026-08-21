@@ -17,6 +17,7 @@
 #   make PLATFORM_TARGET=mips  # Cross-compile for MIPS32 devices (K1)
 #   make PLATFORM_TARGET=k1    # Alias for mips (Creality K1 series)
 #   make PLATFORM_TARGET=ad5x  # Cross-compile for FlashForge AD5X (mips)
+#   make PLATFORM_TARGET=creator5 # Cross-compile for FlashForge Creator 5 Pro (mips, static)
 #   make PLATFORM_TARGET=k2    # Cross-compile for Creality K2 series (ARM)
 #   make PLATFORM_TARGET=snapmaker-u1 # Cross-compile for Snapmaker U1 (aarch64)
 #   make PLATFORM_TARGET=x86   # Build for x86_64 Debian SBCs (DRM+GLES)
@@ -32,6 +33,7 @@
 #   make cc1-docker            # Docker-based CC1 build
 #   make k1-docker             # Docker-based K1/MIPS build
 #   make ad5x-docker           # Docker-based AD5X/MIPS build
+#   make creator5-docker       # Docker-based Creator 5 Pro/MIPS build (K1 toolchain image)
 #   make k2-docker             # Docker-based K2 build
 #   make snapmaker-u1-docker   # Docker-based Snapmaker U1 build
 #   make x86-docker            # Docker-based x86_64 build (DRM+GLES)
@@ -433,6 +435,52 @@ else ifneq ($(filter mips k1,$(PLATFORM_TARGET)),)
     STRIP_BINARY := yes
     FONT_TIERS := small medium
 
+else ifeq ($(PLATFORM_TARGET),creator5)
+    # -------------------------------------------------------------------------
+    # FlashForge Creator 5 Pro - Ingenic X2000 (XBurst2, MIPS32r2), 800x480
+    # Display: /dev/fb0 (landscape, no rotation), touch: evdev (/dev/input/event2)
+    # Stock rootfs: glibc 2.33 (Ingenic GCC 12.1 "Release6.0.1"), nan2008 + FP64
+    #   -> /lib/ld-linux-mipsn8.so.1, kernel >= 3.10.14 (Ingenic SDK 4.4 series)
+    # -------------------------------------------------------------------------
+    # Same SoC family as the Creality K1 (X2000E), but the Creator 5 Pro kernel
+    # REJECTS legacy-NaN executables with ENOEXEC, so the K1's Bootlin toolchain
+    # output does not run here (its libc.a is legacy-NaN and ld refuses to mix
+    # NaN encodings, so -mnan=2008 alone cannot fix it). docker/Dockerfile.creator5
+    # builds a crosstool-NG GCC 12 + musl toolchain with NaN2008 as the default.
+    # The binary is still fully static, so it has no glibc-version dependency
+    # on the stock libs. See docs/devel/printers/FLASHFORGE_CREATOR5_PRO_SUPPORT.md.
+    CROSS_COMPILE ?= mipsel-creator5-linux-musl-
+    TARGET_ARCH := mips32r2
+    TARGET_TRIPLE := mipsel-creator5-linux-musl
+    # Flags mirror the K1 target (see comments there). Differences:
+    # -mnan=2008: mandatory for this kernel (also the toolchain default; stated
+    #   explicitly so a mismatched toolchain fails at link time, not on device).
+    # -DHELIX_PLATFORM_CREATOR5 is added on top of HELIX_PLATFORM_MIPS so the
+    #   update checker reports its own platform key instead of sniffing
+    #   /usr/prog (which exists on every FlashForge box and would otherwise
+    #   make the self-updater fetch the AD5X glibc/MIPS32r5 build).
+    # No LTO: the crosstool-NG toolchain is built static (CT_STATIC_TOOLCHAIN) and
+    # therefore ships no liblto_plugin.so — same constraint as k1-dynamic. With
+    # -flto every configure test dies with "LTO support has not been enabled in
+    # this configuration". gc-sections still strips unused code.
+    TARGET_CFLAGS := -march=mips32r2 -mtune=mips32r2 -mnan=2008 \
+        -Os -ffunction-sections -fdata-sections \
+        -fno-omit-frame-pointer -funwind-tables \
+        -fmerge-all-constants -fno-ident \
+        -Wno-error=conversion -Wno-error=sign-conversion -DHELIX_RELEASE_BUILD \
+        -DHELIX_PLATFORM_MIPS -DHELIX_PLATFORM_CREATOR5
+    TARGET_LDFLAGS := -Wl,--gc-sections -Wl,-O2 -Wl,--as-needed -static
+    ENABLE_SSL := yes
+    DISPLAY_BACKEND := fbdev
+    ENABLE_SDL := no
+    ENABLE_GLES_3D := no
+    ENABLE_SCREENSAVER := no
+    ENABLE_EVDEV := yes
+    BUILD_SUBDIR := creator5
+    STRIP_BINARY := yes
+    # 800x480 panel -> same tiers as AD5M/AD5X
+    FONT_TIERS := medium large
+
 else ifeq ($(PLATFORM_TARGET),k1-dynamic)
     # -------------------------------------------------------------------------
     # Creality K1 Series - Dynamic Linking (Ingenic X2000E MIPS32r2)
@@ -675,7 +723,9 @@ ifneq ($(CROSS_COMPILE),)
 
     # k1-dynamic: GCC 7.5 static toolchain doesn't ship liblto_plugin.so,
     # so gcc-ar/gcc-ranlib fail. Use plain ar/ranlib (LTO is disabled anyway).
-    ifeq ($(PLATFORM_TARGET),k1-dynamic)
+    ifneq ($(filter k1-dynamic creator5,$(PLATFORM_TARGET)),)
+        # Static crosstool-NG toolchains have no LTO plugin, so gcc-ar/gcc-ranlib
+        # cannot even start; use the plain binutils tools.
         AR := $(CROSS_COMPILE)ar
         RANLIB := $(CROSS_COMPILE)ranlib
     endif
@@ -809,6 +859,13 @@ ifeq ($(PLATFORM_TARGET),k1)
     SUBMODULE_CXXFLAGS := $(subst -O2,-Os,$(SUBMODULE_CXXFLAGS))
 endif
 
+ifeq ($(PLATFORM_TARGET),creator5)
+    CFLAGS := $(subst -O2,-Os,$(CFLAGS))
+    CXXFLAGS := $(subst -O2,-Os,$(CXXFLAGS))
+    SUBMODULE_CFLAGS := $(subst -O2,-Os,$(SUBMODULE_CFLAGS))
+    SUBMODULE_CXXFLAGS := $(subst -O2,-Os,$(SUBMODULE_CXXFLAGS))
+endif
+
 ifeq ($(PLATFORM_TARGET),k1-dynamic)
     CFLAGS := $(subst -O2,-Os,$(CFLAGS))
     CXXFLAGS := $(subst -O2,-Os,$(CXXFLAGS))
@@ -902,7 +959,7 @@ endif
 # Cross-Compilation Build Targets
 # =============================================================================
 
-.PHONY: pi pi-both pi32 pi32-both ad5m ad5m-br cc1 mips k1 ad5x k1-dynamic k2 snapmaker-u1 x86 x86-both pi-docker pi32-docker ad5m-docker cc1-docker mips-docker k1-docker ad5x-docker k1-dynamic-docker k2-docker ustreamer-k2 snapmaker-u1-docker x86-docker x86-fbdev-docker x86-all-docker docker-toolchains docker-toolchain-snapmaker-u1 docker-toolchain-x86 cross-info ensure-docker ensure-buildx maybe-stop-colima
+.PHONY: pi pi-both pi32 pi32-both ad5m ad5m-br cc1 mips k1 ad5x creator5 k1-dynamic k2 snapmaker-u1 x86 x86-both pi-docker pi32-docker ad5m-docker cc1-docker mips-docker k1-docker ad5x-docker creator5-docker k1-dynamic-docker k2-docker ustreamer-k2 snapmaker-u1-docker x86-docker x86-fbdev-docker x86-all-docker docker-toolchains docker-toolchain-snapmaker-u1 docker-toolchain-x86 cross-info ensure-docker ensure-buildx maybe-stop-colima
 
 # Persistent ccache for Docker builds — bind-mounts a host directory so the
 # cache survives across container runs (the container is --rm).  Per-platform
@@ -973,6 +1030,10 @@ mips:
 	$(Q)$(MAKE) PLATFORM_TARGET=mips -j$(NPROC) all
 
 k1: mips
+creator5:
+	@echo "$(CYAN)$(BOLD)Cross-compiling for FlashForge Creator 5 Pro (MIPS32r2, static musl)...$(RESET)"
+	$(Q)$(MAKE) PLATFORM_TARGET=creator5 -j$(NPROC) all
+
 k1-dynamic:
 	@echo "$(CYAN)$(BOLD)Cross-compiling for Creality K1 series (MIPS32, dynamic linking)...$(RESET)"
 	$(Q)$(MAKE) PLATFORM_TARGET=k1-dynamic -j$(NPROC) all
@@ -1235,6 +1296,26 @@ mips-docker: ensure-docker
 
 k1-docker: mips-docker
 
+# Creator 5 Pro: own toolchain image (NaN2008 musl, crosstool-NG) — the K1 image
+# produces legacy-NaN binaries the Creator 5 Pro kernel refuses to exec.
+creator5-docker: ensure-docker
+	@echo "$(CYAN)$(BOLD)Cross-compiling for FlashForge Creator 5 Pro via Docker...$(RESET)"
+	@if ! docker image inspect helixscreen/toolchain-creator5 >/dev/null 2>&1; then \
+		echo "$(YELLOW)Docker image not found. Building toolchain first (crosstool-NG, ~30 min)...$(RESET)"; \
+		$(MAKE) docker-toolchain-creator5; \
+	fi
+	$(call ensure-ccache-dir,creator5)
+	$(Q)scripts/cross-compile-lock.sh docker run --rm --user $$(id -u):$$(id -g) -e MAKEFLAGS= -v "$(PWD)":/src $(DOCKER_HOST_CONTEXT) -w /src $(call docker-ccache-args,creator5) helixscreen/toolchain-creator5 \
+		make PLATFORM_TARGET=creator5 SKIP_OPTIONAL_DEPS=1 $(if $(ENABLE_REMOTE_CONTROL),ENABLE_REMOTE_CONTROL=$(ENABLE_REMOTE_CONTROL)) -j$(NPROC_DOCKER_RUN)
+	@mkdir -p build/creator5/certs
+	@docker run --rm helixscreen/toolchain-creator5 cat /etc/ssl/certs/ca-certificates.crt > build/creator5/certs/ca-certificates.crt 2>/dev/null \
+		&& echo "$(DIM)Extracted CA certificates to build/creator5/certs/$(RESET)" || true
+	@$(MAKE) --no-print-directory maybe-stop-colima
+
+docker-toolchain-creator5: ensure-buildx
+	@echo "$(CYAN)Building Creator 5 Pro (NaN2008 musl) toolchain Docker image...$(RESET)"
+	$(Q)docker buildx build -t helixscreen/toolchain-creator5 -f docker/Dockerfile.creator5 docker/
+
 
 k1-dynamic-docker: ensure-docker
 	@echo "$(CYAN)$(BOLD)Cross-compiling for Creality K1 series (dynamic) via Docker...$(RESET)"
@@ -1397,6 +1478,7 @@ help-cross:
 	echo "  $${G}ad5m-docker$${X}          - Build for Adventurer 5M (armv7-a) via Docker"; \
 	echo "  $${G}cc1-docker$${X}           - Build for Centauri Carbon 1 (armv7-a) via Docker"; \
 	echo "  $${G}k1-docker$${X}            - Build for Creality K1 series (MIPS32, static) via Docker"; \
+	echo "  $${G}creator5-docker$${X}      - Build for FlashForge Creator 5 Pro (MIPS32, static) via Docker"; \
 	echo "  $${G}k1-dynamic-docker$${X}    - Build for Creality K1 series (MIPS32, dynamic) via Docker"; \
 	echo "  $${G}k2-docker$${X}            - Build for Creality K2 series (ARM, static) via Docker"; \
 	echo "  $${G}snapmaker-u1-docker$${X}  - Build for Snapmaker U1 (aarch64, static) via Docker"; \
@@ -1407,6 +1489,7 @@ help-cross:
 	echo "  $${G}docker-toolchain-ad5m$${X} - Build AD5M toolchain image only"; \
 	echo "  $${G}docker-toolchain-cc1$${X}  - Build CC1 toolchain image only"; \
 	echo "  $${G}docker-toolchain-k1$${X}  - Build K1 static toolchain image only"; \
+	echo "  $${G}docker-toolchain-creator5$${X} - Build Creator 5 Pro (NaN2008 musl) toolchain image only"; \
 	echo "  $${G}docker-toolchain-k1-dynamic$${X} - Build K1 dynamic toolchain image only"; \
 	echo "  $${G}docker-toolchain-k2$${X}  - Build K2 toolchain image only"; \
 	echo "  $${G}docker-toolchain-snapmaker-u1$${X} - Build Snapmaker U1 toolchain image only"; \
@@ -1418,6 +1501,7 @@ help-cross:
 	echo "  $${G}ad5m$${X}                 - Cross-compile for Adventurer 5M"; \
 	echo "  $${G}cc1$${X}                  - Cross-compile for Centauri Carbon 1"; \
 	echo "  $${G}k1$${X}                   - Cross-compile for Creality K1 series (static)"; \
+	echo "  $${G}creator5$${X}             - Cross-compile for FlashForge Creator 5 Pro (static)"; \
 	echo "  $${G}k1-dynamic$${X}           - Cross-compile for Creality K1 series (dynamic)"; \
 	echo "  $${G}k2$${X}                   - Cross-compile for Creality K2 series"; \
 	echo "  $${G}snapmaker-u1$${X}         - Cross-compile for Snapmaker U1 (aarch64)"; \
@@ -2651,14 +2735,14 @@ endef
 # single source of truth shared with the installer's runtime fallback — so the
 # baked value and the fallback can't diverge and send Moonraker after the wrong
 # (or non-zip) asset (prestonbrown/helixscreen#993).
-# Args: $(1) = platform key (pi, pi32, ad5m, ad5x, cc1, k1, k1-dynamic, k2,
-#              snapmaker-u1, x86)
+# Args: $(1) = platform key (pi, pi32, ad5m, ad5x, cc1, creator5, k1, k1-dynamic,
+#              k2, snapmaker-u1, x86)
 define write-release-info
 	@asset=$$(. scripts/lib/installer/platform.sh >/dev/null 2>&1 && helix_self_update_asset $(1)); \
 	echo "{\"project_name\":\"helixscreen\",\"project_owner\":\"prestonbrown\",\"version\":\"$(RELEASE_VERSION)\",\"asset_name\":\"$$asset\"}" > $(RELEASE_DIR)/helixscreen/release_info.json
 endef
 
-.PHONY: release-pi release-pi32 release-ad5m release-k1 release-ad5x release-k1-dynamic release-k2 release-snapmaker-u1 release-x86 release-all release-clean pi-fbdev-docker pi32-fbdev-docker pi-all-docker pi32-all-docker x86-fbdev-docker x86-all-docker
+.PHONY: release-pi release-pi32 release-ad5m release-k1 release-ad5x release-creator5 release-k1-dynamic release-k2 release-snapmaker-u1 release-x86 release-all release-clean pi-fbdev-docker pi32-fbdev-docker pi-all-docker pi32-all-docker x86-fbdev-docker x86-all-docker
 
 # Package Pi release
 release-pi: | build/pi/bin/helix-screen build/pi/bin/helix-splash build/pi-fbdev/bin/helix-screen
@@ -2848,6 +2932,54 @@ release-ad5x: | build/ad5x/bin/helix-screen build/ad5x/bin/helix-splash
 	@rm -rf $(RELEASE_DIR)/helixscreen
 	@echo "$(GREEN)✓ Created $(RELEASE_DIR)/helixscreen-ad5x-$(RELEASE_VERSION).tar.gz + helixscreen-ad5x.zip$(RESET)"
 	@ls -lh $(RELEASE_DIR)/helixscreen-ad5x-$(RELEASE_VERSION).tar.gz $(RELEASE_DIR)/helixscreen-ad5x.zip
+
+# Package Creator 5 Pro release (no preset yet: first run goes through the
+# hardware wizard, same as release-x86)
+release-creator5: | build/creator5/bin/helix-screen build/creator5/bin/helix-splash
+	@echo "$(CYAN)$(BOLD)Packaging Creator 5 Pro release v$(VERSION)...$(RESET)"
+	@mkdir -p $(RELEASE_DIR)/helixscreen/bin
+	@cp build/creator5/bin/helix-screen build/creator5/bin/helix-splash $(RELEASE_DIR)/helixscreen/bin/
+	@if [ -f build/creator5/bin/helix-watchdog ]; then cp build/creator5/bin/helix-watchdog $(RELEASE_DIR)/helixscreen/bin/; fi
+	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
+	@rm -f $(RELEASE_DIR)/helixscreen/config/settings.json $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
+	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
+	@cp scripts/$(INSTALLER_FILENAME) $(RELEASE_DIR)/helixscreen/
+	@chmod +x $(RELEASE_DIR)/helixscreen/$(INSTALLER_FILENAME)
+	@mkdir -p $(RELEASE_DIR)/helixscreen/scripts
+	@cp scripts/uninstall.sh $(RELEASE_DIR)/helixscreen/scripts/
+	@cp -r scripts/kiauh $(RELEASE_DIR)/helixscreen/scripts/
+	@mkdir -p $(RELEASE_DIR)/helixscreen/assets
+	@for asset in $(RELEASE_ASSETS); do \
+		if [ -d "$$asset" ]; then cp -r "$$asset" $(RELEASE_DIR)/helixscreen/assets/; fi; \
+	done
+	@for f in $(RELEASE_ASSET_FILES); do \
+		if [ -f "$$f" ]; then cp "$$f" $(RELEASE_DIR)/helixscreen/assets/; fi; \
+	done
+	@# Copy pre-rendered images from build directory (splash + printer images)
+	@if [ -d "build/assets/images/prerendered" ]; then \
+		mkdir -p $(RELEASE_DIR)/helixscreen/assets/images/prerendered; \
+		cp -r build/assets/images/prerendered/* $(RELEASE_DIR)/helixscreen/assets/images/prerendered/; \
+	fi
+	@if [ -d "build/assets/images/printers/prerendered" ]; then \
+		mkdir -p $(RELEASE_DIR)/helixscreen/assets/images/printers/prerendered; \
+		cp -r build/assets/images/printers/prerendered/* $(RELEASE_DIR)/helixscreen/assets/images/printers/prerendered/; \
+	fi
+	@# Bundle CA certificates for HTTPS verification (fallback if device lacks system certs)
+	@if [ -f "build/creator5/certs/ca-certificates.crt" ]; then \
+		mkdir -p $(RELEASE_DIR)/helixscreen/certs; \
+		cp build/creator5/certs/ca-certificates.crt $(RELEASE_DIR)/helixscreen/certs/; \
+		echo "  $(DIM)Included CA certificates for HTTPS$(RESET)"; \
+	fi
+	@find $(RELEASE_DIR)/helixscreen -name '.DS_Store' -delete 2>/dev/null || true
+	$(call release-clean-assets,$(RELEASE_DIR)/helixscreen)
+	@xattr -cr $(RELEASE_DIR)/helixscreen 2>/dev/null || true
+	$(call write-release-info,creator5)
+	@cd $(RELEASE_DIR)/helixscreen && zip -qr ../helixscreen-creator5.zip .
+	@cd $(RELEASE_DIR) && COPYFILE_DISABLE=1 tar $(TAR_OWNER_FLAGS) -czvf helixscreen-creator5-$(RELEASE_VERSION).tar.gz helixscreen
+	@rm -rf $(RELEASE_DIR)/helixscreen
+	@echo "$(GREEN)✓ Created $(RELEASE_DIR)/helixscreen-creator5-$(RELEASE_VERSION).tar.gz + helixscreen-creator5.zip$(RESET)"
+	@ls -lh $(RELEASE_DIR)/helixscreen-creator5-$(RELEASE_VERSION).tar.gz $(RELEASE_DIR)/helixscreen-creator5.zip
 
 # Package CC1 release
 release-cc1: | build/cc1/bin/helix-screen build/cc1/bin/helix-splash
@@ -3136,7 +3268,7 @@ release-x86: | build/x86/bin/helix-screen build/x86/bin/helix-splash build/x86-f
 	@ls -lh $(RELEASE_DIR)/helixscreen-x86-$(RELEASE_VERSION).tar.gz $(RELEASE_DIR)/helixscreen-x86.zip
 
 # Package all releases
-release-all: release-pi release-pi32 release-ad5m release-cc1 release-k1 release-ad5x release-k1-dynamic release-k2 release-snapmaker-u1 release-x86
+release-all: release-pi release-pi32 release-ad5m release-cc1 release-k1 release-ad5x release-creator5 release-k1-dynamic release-k2 release-snapmaker-u1 release-x86
 	@echo "$(GREEN)$(BOLD)✓ All releases packaged in $(RELEASE_DIR)/$(RESET)"
 	@ls -lh $(RELEASE_DIR)/*.tar.gz $(RELEASE_DIR)/*.zip
 

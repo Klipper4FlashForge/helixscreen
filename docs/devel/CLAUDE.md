@@ -92,6 +92,7 @@ All developer documentation lives here. When working on features, look up the re
 | `printers/SNAPMAKER_U1_SUPPORT.md` | Snapmaker U1 toolchanger platform |
 | `printers/CREALITY_K2_SUPPORT.md` | Creality K2 series platform |
 | `printers/FLASHFORGE_AD5X_SUPPORT.md` | FlashForge Adventurer 5X (MIPS, ZMOD) |
+| `printers/FLASHFORGE_CREATOR5_PRO_SUPPORT.md` | FlashForge Creator 5 Pro (Ingenic X2000 MIPS, `creator5` static target) |
 | `YOCTO_BUILD.md` | Building HelixScreen as a Yocto recipe |
 | `SNAPMAKER_U1_PRINT_TASK_CONFIG.md` | Snapmaker U1 native `print_task_config` filament/tool-mapping command API |
 | `AD5M_KMOD_VARIANT.md` | Building HelixScreen as a native variant inside the AD5M Klipper Mod firmware |

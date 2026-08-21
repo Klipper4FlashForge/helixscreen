@@ -785,8 +785,8 @@ else ifneq ($(CROSS_COMPILE)$(filter x86 x86-fbdev x86-both,$(PLATFORM_TARGET)),
             $(LIBHV_LIBS) $(FMT_LIBS) $(WPA_CLIENT_LIB) $(LIBNL_LIBS) -lstdc++fs \
             -Wl,-Bdynamic \
             -lstdc++ -lz -lm -lpthread -lrt -ldl -latomic -lgcc_s
-    else ifneq ($(filter mips k1 ad5x,$(PLATFORM_TARGET)),)
-        # MIPS targets (K1, AD5X) use musl - fully static, no system library paths needed
+    else ifneq ($(filter mips k1 ad5x creator5,$(PLATFORM_TARGET)),)
+        # MIPS targets (K1, AD5X, Creator 5 Pro) use musl - fully static, no system library paths needed
         # -latomic: Required for 64-bit atomics on 32-bit MIPS (std::atomic<int64_t>)
         LDFLAGS := $(LIBHV_LIBS) $(FMT_LIBS) $(WPA_CLIENT_LIB) $(LIBNL_LIBS) -latomic -ldl -lz -lm -lpthread
     else ifeq ($(PLATFORM_TARGET),k2)
