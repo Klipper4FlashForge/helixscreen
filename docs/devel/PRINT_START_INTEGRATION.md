@@ -324,7 +324,7 @@ Profile `message` strings are English translation tags and resolve through the l
 
 Some firmwares run whole preparation steps without echoing anything to the gcode console (Creality K1: accurate Z homing, the bed-mesh corner check, and the mesh sweep are ~3 minutes of silence). Three non-console signals fill the gap:
 
-- **Bed-mesh status flap** - klippy reports the loaded mesh, then clears it, when probing begins. A mesh that disappears while the display shows "Cleaning Nozzle" moves it to "Bed Leveling..." (the probe denominator is fetched at that point).
+- **Bed-mesh status flap** - klippy reports the loaded mesh, then clears it, when probing begins. A mesh that disappears while the display shows "Cleaning Nozzle" moves it to "Bed Meshing..." (the probe denominator is fetched at that point).
 - **"probe at X,Y is z=Z" lines** - counted as mesh points once enough distinct points confirm a sweep is underway; they never fall through to the pattern matcher, so a profile's BED_MESH pattern cannot re-announce the phase and reset the counters mid-sweep.
 - **Toolhead position inference** (`position_signals`, K1 family today) - Klipper keeps pushing `toolhead.position` through the silence. The collector classifies the stream geometrically against the bed-mesh probe area (`PrintStartPositionClassifier`, `tests/unit/test_print_start_position_classifier.cpp` replays real captures): repeated Z descents near the mesh centre read as **"Probing Z..."**, touches at ≥3 distinct mesh corners as **"Checking Bed Mesh..."**, and a monotonic row march as the mesh sweep (BED_MESH entry, same edge as the flap). These refine the message without touching the phase or its progress weight - real console markers always outrank them.
 

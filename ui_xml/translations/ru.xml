@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" ru="Нагреватель стола"/>
   <translation tag="Bed Level" ru="Уровень стола"/>
   <translation tag="Bed Leveling" ru="Выравнивание стола"/>
-  <translation tag="Bed Leveling..."/>
   <translation tag="Bed Mesh" ru="Сетка стола"/>
   <translation tag="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" ru="Рендер сетки стола"/>
   <translation tag="Bed Mesh..." ru="Сетка стола..."/>
+  <translation tag="Bed Meshing..."/>
   <translation tag="Bed Moves" ru="Стол движется"/>
   <translation tag="Bed Screw Adjustment" ru="Регулировка винтов стола"/>
   <translation tag="Bed Screw Results" ru="Результаты по винтам стола"/>

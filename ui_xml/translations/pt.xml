@@ -242,11 +242,11 @@
   <translation tag="Bed Heater" pt="Aquecedor da Mesa"/>
   <translation tag="Bed Level" pt="Nível da Mesa"/>
   <translation tag="Bed Leveling" pt="Nivelamento da Mesa"/>
-  <translation tag="Bed Leveling..."/>
   <translation tag="Bed Mesh" pt="Malha da Mesa"/>
   <translation tag="Bed Mesh Complete"/>
   <translation tag="Bed Mesh Render" pt="Renderização da Malha da Mesa"/>
   <translation tag="Bed Mesh..." pt="Malha da Mesa..."/>
+  <translation tag="Bed Meshing..."/>
   <translation tag="Bed Moves" pt="Mesa se move"/>
   <translation tag="Bed Screw Adjustment" pt="Ajuste dos Parafusos da Mesa"/>
   <translation tag="Bed Screw Results" pt="Resultados dos Parafusos da Mesa"/>
