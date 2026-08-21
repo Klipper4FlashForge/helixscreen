@@ -1094,6 +1094,10 @@ translations:
   Heated Bed PID Tuning: Настройка PID стола
   Heater: Нагреватель
   Heater Power: Мощность нагревателя
+  Heater connection lost: ''
+  Heater fault: ''
+  Heater over-temperature: ''
+  Heater sensor fault: ''
   HeaterSelect: Выбрать нагреватель
   Heaters off: Нагреватели выключены
   Heating: Нагрев

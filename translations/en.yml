@@ -1094,6 +1094,10 @@ translations:
   Heated Bed PID Tuning: Heated Bed PID Tuning
   Heater: Heater
   Heater Power: Heater Power
+  Heater connection lost: Heater connection lost
+  Heater fault: Heater fault
+  Heater over-temperature: Heater over-temperature
+  Heater sensor fault: Heater sensor fault
   HeaterSelect: HeaterSelect
   Heaters off: Heaters off
   Heating: Heating

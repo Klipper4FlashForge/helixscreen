@@ -1064,6 +1064,10 @@
   <translation tag="Heated Bed PID Tuning" zh="热床 PID 调优"/>
   <translation tag="Heater" zh="加热器"/>
   <translation tag="Heater Power" zh="加热器功率"/>
+  <translation tag="Heater connection lost"/>
+  <translation tag="Heater fault"/>
+  <translation tag="Heater over-temperature"/>
+  <translation tag="Heater sensor fault"/>
   <translation tag="HeaterSelect" zh="选择加热器"/>
   <translation tag="Heaters off" zh="加热器已关闭"/>
   <translation tag="Heating" zh="加热中"/>

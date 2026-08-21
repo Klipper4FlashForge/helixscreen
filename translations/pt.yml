@@ -1094,6 +1094,10 @@ translations:
   Heated Bed PID Tuning: Ajuste PID da Mesa Aquecida
   Heater: Aquecedor
   Heater Power: Potência do Aquecedor
+  Heater connection lost: ''
+  Heater fault: ''
+  Heater over-temperature: ''
+  Heater sensor fault: ''
   HeaterSelect: Selecionar Aquecedor
   Heaters off: Aquecedores desligados
   Heating: Aquecendo

@@ -1064,6 +1064,10 @@
   <translation tag="Heated Bed PID Tuning" de="Heizbett PID-Abstimmung" en="Heated Bed PID Tuning" es="Ajuste PID de la cama caliente" fr="Réglage PID du plateau chauffant" it="Regolazione PID piano riscaldato" ja="ヒートベッド PIDチューニング" pt="Ajuste PID da Mesa Aquecida" ru="Настройка PID стола" zh="热床 PID 调优"/>
   <translation tag="Heater" de="Heizung" en="Heater" es="Calentador" fr="Chauffage" it="Riscaldatore" ja="ヒーター" pt="Aquecedor" ru="Нагреватель" zh="加热器"/>
   <translation tag="Heater Power" de="Heizleistung" en="Heater Power" es="Potencia del calentador" fr="Puissance du chauffage" it="Potenza riscaldatore" ja="ヒーター出力" pt="Potência do Aquecedor" ru="Мощность нагревателя" zh="加热器功率"/>
+  <translation tag="Heater connection lost" en="Heater connection lost"/>
+  <translation tag="Heater fault" en="Heater fault"/>
+  <translation tag="Heater over-temperature" en="Heater over-temperature"/>
+  <translation tag="Heater sensor fault" en="Heater sensor fault"/>
   <translation tag="HeaterSelect" de="Heizung auswählen" en="HeaterSelect" es="Seleccionar calentador" fr="Sélection du chauffage" it="Seleziona riscaldatore" ja="ヒーターを選択" pt="Selecionar Aquecedor" ru="Выбрать нагреватель" zh="选择加热器"/>
   <translation tag="Heaters off" de="Heizungen aus" en="Heaters off" es="Calentadores apagados" fr="Chauffages éteints" it="Riscaldatori spenti" ja="ヒーターをオフにしました" pt="Aquecedores desligados" ru="Нагреватели выключены" zh="加热器已关闭"/>
   <translation tag="Heating" de="Aufheizen" en="Heating" es="Calentando" fr="Chauffage" it="Riscaldamento" ja="加熱中" pt="Aquecendo" ru="Нагрев" zh="加热中"/>

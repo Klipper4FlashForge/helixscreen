@@ -16,6 +16,8 @@
 #include "printer_temperature_state.h"
 #include "settings_manager.h"
 
+#include <lvgl/src/others/translation/lv_translation.h>
+
 #include <lvgl.h>
 #include <string>
 
@@ -56,6 +58,10 @@ TEST_CASE("dragonbreath status drives diagnostics subjects", "[chamber][subjects
     CHECK(lv_subject_get_int(ts.get_chamber_heater_inhibited_subject()) == 0);
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_heater_fault_reason_subject())) ==
           "ptc_overtemp");
+    // The UI-facing subject carries the TRANSLATED phrase for the classified
+    // kind — the vendor code ("ptc_overtemp") never binds.
+    CHECK(std::string(lv_subject_get_string(ts.get_chamber_heater_fault_reason_text_subject())) ==
+          std::string(lv_tr("Heater over-temperature")));
     CHECK(lv_subject_get_int(ts.get_chamber_heater_externally_controlled_subject()) == 0);
     // 106.2°C → decidegrees
     CHECK(lv_subject_get_int(ts.get_chamber_heater_element_temp_subject()) == 1062);
@@ -65,6 +71,39 @@ TEST_CASE("dragonbreath status drives diagnostics subjects", "[chamber][subjects
     CHECK(lv_subject_get_int(ts.get_chamber_filter_fan_on_subject()) == 1);
     // Capabilities are set by PrinterState::set_hardware in production; unit-level here:
     CHECK(ts.chamber_diagnostics_object() == "dragonbreath");
+}
+
+TEST_CASE("fault reason kinds map to translated phrases at the subject border",
+          "[chamber][subjects]") {
+    LVGLTestFixture fixture;
+
+    PrinterTemperatureState ts;
+    ts.init_subjects(false);
+    ts.set_chamber_diagnostics_source("dragonbreath", "dragonbreath",
+                                      "output_pin dragonbreath_filter");
+
+    auto fault_with_reason = [&ts](const char* reason) {
+        ts.update_from_status(
+            {{"dragonbreath", {{"fault", true}, {"fault_reason", reason}, {"ptc_temp", 24.9}}}});
+    };
+    auto text = [&ts]() {
+        return std::string(
+            lv_subject_get_string(ts.get_chamber_heater_fault_reason_text_subject()));
+    };
+
+    fault_with_reason("ptc_sensor_fault");
+    CHECK(text() == std::string(lv_tr("Heater sensor fault")));
+
+    fault_with_reason("comms_timeout");
+    CHECK(text() == std::string(lv_tr("Heater connection lost")));
+
+    fault_with_reason("mystery_code");
+    CHECK(text() == std::string(lv_tr("Heater fault")));
+
+    // Reason clears -> empty phrase.
+    ts.update_from_status(
+        {{"dragonbreath", {{"fault", false}, {"fault_reason", nullptr}, {"ptc_temp", 24.9}}}});
+    CHECK(text().empty());
 }
 
 TEST_CASE("absent diagnostics objects in a delta frame keep last values", "[chamber][subjects]") {
@@ -88,6 +127,8 @@ TEST_CASE("absent diagnostics objects in a delta frame keep last values", "[cham
     CHECK(lv_subject_get_int(ts.get_chamber_heater_fault_subject()) == 1);
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_heater_fault_reason_subject())) ==
           "ptc_overtemp");
+    CHECK(std::string(lv_subject_get_string(ts.get_chamber_heater_fault_reason_text_subject())) ==
+          std::string(lv_tr("Heater over-temperature")));
     CHECK(lv_subject_get_int(ts.get_chamber_heater_element_temp_subject()) == 1062);
     CHECK(lv_subject_get_int(ts.get_chamber_filter_fan_on_subject()) == 1);
 }
@@ -133,8 +174,9 @@ TEST_CASE("chamber diagnostics subjects are XML-registered", "[chamber][xml][str
 
     for (const char* name :
          {"chamber_heater_fault", "chamber_heater_inhibited", "chamber_heater_fault_reason",
-          "chamber_heater_externally_controlled", "chamber_heater_element_temp",
-          "chamber_filter_fan_percent", "chamber_filter_fan_reason", "chamber_filter_fan_on"}) {
+          "chamber_heater_fault_reason_text", "chamber_heater_externally_controlled",
+          "chamber_heater_element_temp", "chamber_filter_fan_percent", "chamber_filter_fan_reason",
+          "chamber_filter_fan_on", "chamber_filter_fan_icon"}) {
         CAPTURE(name);
         REQUIRE(lv_xml_get_subject(nullptr, name) != nullptr);
     }

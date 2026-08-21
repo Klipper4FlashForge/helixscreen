@@ -1094,6 +1094,10 @@ translations:
   Heated Bed PID Tuning: Heizbett PID-Abstimmung
   Heater: Heizung
   Heater Power: Heizleistung
+  Heater connection lost: ''
+  Heater fault: ''
+  Heater over-temperature: ''
+  Heater sensor fault: ''
   HeaterSelect: Heizung auswählen
   Heaters off: Heizungen aus
   Heating: Aufheizen

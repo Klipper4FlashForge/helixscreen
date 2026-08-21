@@ -1089,6 +1089,10 @@ translations:
   Heated Bed PID Tuning: 热床 PID 调优
   Heater: 加热器
   Heater Power: 加热器功率
+  Heater connection lost: ''
+  Heater fault: ''
+  Heater over-temperature: ''
+  Heater sensor fault: ''
   HeaterSelect: 选择加热器
   Heaters off: 加热器已关闭
   Heating: 加热中

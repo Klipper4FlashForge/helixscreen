@@ -12,6 +12,11 @@
 
 namespace helix::chamber {
 
+/// Generic fault classification. Vendor codes map to one of these at the
+/// backend border; the raw vendor string is kept for logging only and never
+/// reaches the UI.
+enum class FaultReason { None, Overtemp, SensorFault, CommsLoss, Other };
+
 /// Generic chamber-heater diagnostics — the ONLY shape subjects/UI ever see.
 /// Vendor JSON schemas are translated to this at the backend border.
 struct ChamberHeaterDiagnostics {
@@ -20,10 +25,13 @@ struct ChamberHeaterDiagnostics {
     /// Another controller (device web UI, physical button) is currently driving
     /// the heater, not us. Display-only annotation in v1.
     bool externally_controlled = false;
-    std::string fault_reason;      ///< empty when none
-    double element_temp_c = NAN;   ///< heating-element temp; NAN = unknown
-    int filter_fan_percent = -1;   ///< -1 = unknown
-    std::string filter_fan_reason; ///< empty when none
+    /// Raw vendor fault code, empty when none. Logs only — the UI binds the
+    /// translated chamber_heater_fault_reason_text derived from fault_reason_kind.
+    std::string fault_reason;
+    FaultReason fault_reason_kind = FaultReason::None; ///< classified kind for UI
+    double element_temp_c = NAN;                       ///< heating-element temp; NAN = unknown
+    int filter_fan_percent = -1;                       ///< -1 = unknown
+    std::string filter_fan_reason;                     ///< empty when none
 };
 
 /// One chamber-heater style/brand behind an interface (AMS-backend pattern).

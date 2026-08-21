@@ -11,6 +11,31 @@
 namespace helix::chamber {
 namespace {
 
+/// Vendor fault code -> generic classification (substring heuristics over the
+/// lowercased code). This file owns the mapping; generic code never sees a
+/// vendor string. The raw code stays in fault_reason for logs.
+FaultReason classify_fault_reason(const std::string& raw) {
+    if (raw.empty()) {
+        return FaultReason::None;
+    }
+    std::string lower;
+    lower.reserve(raw.size());
+    for (char c : raw) {
+        lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    auto has = [&lower](const char* needle) { return lower.find(needle) != std::string::npos; };
+    if (has("overtemp") || has("overheat")) {
+        return FaultReason::Overtemp;
+    }
+    if (has("sensor") || has("short") || has("open")) {
+        return FaultReason::SensorFault;
+    }
+    if (has("comms") || has("timeout") || has("watchdog") || has("disconnect")) {
+        return FaultReason::CommsLoss;
+    }
+    return FaultReason::Other;
+}
+
 class DragonbreathBackend : public ChamberHeaterBackend {
   public:
     std::string_view id() const override {
@@ -60,6 +85,7 @@ class DragonbreathBackend : public ChamberHeaterBackend {
         }
         if (status.contains("fault_reason") && status["fault_reason"].is_string()) {
             d.fault_reason = status["fault_reason"].get<std::string>();
+            d.fault_reason_kind = classify_fault_reason(d.fault_reason);
         }
         if (status["ptc_temp"].is_number()) {
             d.element_temp_c = status["ptc_temp"].get<double>();

@@ -1094,6 +1094,10 @@ translations:
   Heated Bed PID Tuning: Réglage PID du plateau chauffant
   Heater: Chauffage
   Heater Power: Puissance du chauffage
+  Heater connection lost: ''
+  Heater fault: ''
+  Heater over-temperature: ''
+  Heater sensor fault: ''
   HeaterSelect: Sélection du chauffage
   Heaters off: Chauffages éteints
   Heating: Chauffage

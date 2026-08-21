@@ -146,8 +146,10 @@ TEST_CASE_METHOD(ChamberOverlayFixture,
     SECTION("chamber mode with diagnostics shows banner, reason, buttons") {
         set_xml_int("chamber_heater_fault", 1);
         set_xml_int("chamber_heater_inhibited", 0);
+        // Raw vendor code stays log-only; the banner binds the translated kind.
         set_xml_string("chamber_heater_fault_reason", "ptc_overtemp");
-        set_xml_string("chamber_heater_element_temp_text", "106.2°C");
+        set_xml_string("chamber_heater_fault_reason_text", lv_tr("Heater over-temperature"));
+        set_xml_string("chamber_heater_element_temp_text", "106°C");
         set_xml_string("chamber_filter_fan_percent_text", "100%");
         helix::ui::UpdateQueue::instance().drain();
 
@@ -161,7 +163,9 @@ TEST_CASE_METHOD(ChamberOverlayFixture,
 
         lv_obj_t* reason = lv_obj_find_by_name(overlay_, "fault_reason_label");
         REQUIRE(reason != nullptr);
-        CHECK(std::string(lv_label_get_text(reason)).find("ptc_overtemp") != std::string::npos);
+        std::string reason_text = lv_label_get_text(reason);
+        CHECK(reason_text == std::string(lv_tr("Heater over-temperature")));
+        CHECK(reason_text.find("ptc_overtemp") == std::string::npos);
 
         REQUIRE(lv_obj_find_by_name(overlay_, "reset_fault_button") != nullptr);
 
@@ -172,7 +176,7 @@ TEST_CASE_METHOD(ChamberOverlayFixture,
         // Readout labels bind the formatter subjects.
         lv_obj_t* element = lv_obj_find_by_name(overlay_, "element_temp_label");
         REQUIRE(element != nullptr);
-        CHECK(std::string(lv_label_get_text(element)) == "106.2°C");
+        CHECK(std::string(lv_label_get_text(element)) == "106°C");
         lv_obj_t* percent = lv_obj_find_by_name(overlay_, "fan_percent_label");
         REQUIRE(percent != nullptr);
         CHECK(std::string(lv_label_get_text(percent)) == "100%");
@@ -311,8 +315,10 @@ TEST_CASE("diagnostics parse block writes display text subjects", "[chamber][sub
 
     ts.update_from_status(faulted_dragonbreath_status());
 
+    CHECK(std::string(lv_subject_get_string(ts.get_chamber_heater_fault_reason_text_subject())) ==
+          std::string(lv_tr("Heater over-temperature")));
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_heater_element_temp_text_subject())) ==
-          "106.2°C");
+          "106°C"); // canonical decimal-drop rule: whole degrees at/above 100
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_filter_fan_percent_text_subject())) ==
           "100%");
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_filter_fan_on_text_subject())) ==
@@ -329,5 +335,11 @@ TEST_CASE("diagnostics parse block writes display text subjects", "[chamber][sub
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_filter_fan_icon_subject())) ==
           "fan_off");
     CHECK(std::string(lv_subject_get_string(ts.get_chamber_heater_element_temp_text_subject())) ==
-          "106.2°C");
+          "106°C");
+
+    // Sub-100 element temp keeps its one decimal.
+    ts.update_from_status(
+        {{"dragonbreath", {{"fault", false}, {"fault_reason", nullptr}, {"ptc_temp", 39.4}}}});
+    CHECK(std::string(lv_subject_get_string(ts.get_chamber_heater_element_temp_text_subject())) ==
+          "39.4°C");
 }

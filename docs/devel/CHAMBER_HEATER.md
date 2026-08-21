@@ -111,7 +111,8 @@ All registered by `PrinterTemperatureState`; display strings are formatter subje
 |---------|------|---------|
 | `chamber_heater_fault` | int 0/1 | Latched fault |
 | `chamber_heater_inhibited` | int 0/1 | Heater refusing commands (e.g. post-fault cooldown) |
-| `chamber_heater_fault_reason` | string | Vendor-provided reason, "" when none |
+| `chamber_heater_fault_reason` | string | Raw vendor fault code, "" when none — log-only, never bound by UI |
+| `chamber_heater_fault_reason_text` | string | Translated phrase for the backend's generic `FaultReason` kind ("" when none) — what the banner binds |
 | `chamber_heater_externally_controlled` | int 0/1 | Another controller is driving the heater (display-only, see below) |
 | `chamber_heater_element_temp` / `..._text` | int / string | Heating-element temp ("-1"/"--" = unknown) |
 | `chamber_filter_fan_percent` / `..._text` | int / string | Filtration-fan speed ("-1"/"--" = unknown) |

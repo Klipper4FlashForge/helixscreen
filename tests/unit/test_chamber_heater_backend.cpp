@@ -76,6 +76,7 @@ TEST_CASE("dragonbreath parse: faulted + external-control variants", "[chamber][
     REQUIRE(faulted.has_value());
     CHECK(faulted->fault == true);
     CHECK(faulted->fault_reason == "ptc_overtemp");
+    CHECK(faulted->fault_reason_kind == FaultReason::Overtemp);
     CHECK(faulted->element_temp_c == Catch::Approx(106.2));
 
     auto ext = db->parse_diagnostics(nlohmann::json::parse(R"({"fault":false,
@@ -84,6 +85,43 @@ TEST_CASE("dragonbreath parse: faulted + external-control variants", "[chamber][
       "lease_owned":false,"connected":true})"));
     REQUIRE(ext.has_value());
     CHECK(ext->externally_controlled == true); // heating, source != klipper, no lease
+}
+
+TEST_CASE("dragonbreath fault codes classify to generic kinds", "[chamber][backend]") {
+    const auto* db = backend_by_id("dragonbreath");
+    REQUIRE(db != nullptr);
+
+    // Substring-heuristic table: the live "ptc_overtemp" plus the documented
+    // families (overheat / sensor-short-open / comms-timeout-watchdog-
+    // disconnect). Anything unrecognized is Other, never a vendor leak.
+    struct Case {
+        const char* code;
+        FaultReason expected;
+    };
+    const Case cases[] = {
+        {"ptc_overtemp", FaultReason::Overtemp},
+        {"element_overheat", FaultReason::Overtemp},
+        {"ptc_sensor_fault", FaultReason::SensorFault},
+        {"ptc_short_circuit", FaultReason::SensorFault},
+        {"thermistor_open", FaultReason::SensorFault},
+        {"comms_timeout", FaultReason::CommsLoss},
+        {"host_watchdog", FaultReason::CommsLoss},
+        {"link_disconnect", FaultReason::CommsLoss},
+        {"mystery_code", FaultReason::Other},
+    };
+    for (const auto& c : cases) {
+        CAPTURE(c.code);
+        auto d = db->parse_diagnostics(
+            nlohmann::json{{"fault", true}, {"fault_reason", c.code}, {"ptc_temp", 24.9}});
+        REQUIRE(d.has_value());
+        CHECK(d->fault_reason == c.code); // raw code preserved for logs
+        CHECK(d->fault_reason_kind == c.expected);
+    }
+
+    // No reason at all -> None.
+    auto nominal = db->parse_diagnostics(nlohmann::json{{"ptc_temp", 24.9}});
+    REQUIRE(nominal.has_value());
+    CHECK(nominal->fault_reason_kind == FaultReason::None);
 }
 
 TEST_CASE("dragonbreath parse tolerates null lease fields", "[chamber][backend]") {
