@@ -725,6 +725,7 @@
   <translation tag="Eject needs [force_move] enabled in printer config" en="Eject needs [force_move] enabled in printer config"/>
   <translation tag="Ejecting" en="Ejecting"/>
   <translation tag="Elegoo Centauri Carbon" en="Elegoo Centauri Carbon"/>
+  <translation tag="Element" en="Element"/>
   <translation tag="Emergency Stop" en="Emergency Stop"/>
   <translation tag="Emergency Stop?" en="Emergency Stop?"/>
   <translation tag="Emergency stop activated" en="Emergency stop activated"/>
@@ -981,6 +982,9 @@
   <translation tag="File" en="File"/>
   <translation tag="File Size" en="File Size"/>
   <translation tag="Filename" en="Filename"/>
+  <translation tag="Filter Fan" en="Filter Fan"/>
+  <translation tag="Filter Fan: Off" en="Filter Fan: Off"/>
+  <translation tag="Filter Fan: On" en="Filter Fan: On"/>
   <translation tag="Fine" en="Fine"/>
   <translation tag="Fine-Tune" en="Fine-Tune"/>
   <translation tag="Finish" en="Finish"/>
@@ -1061,6 +1065,10 @@
   <translation tag="Heated Bed PID Tuning" en="Heated Bed PID Tuning"/>
   <translation tag="Heater" en="Heater"/>
   <translation tag="Heater Power" en="Heater Power"/>
+  <translation tag="Heater connection lost" en="Heater connection lost"/>
+  <translation tag="Heater fault" en="Heater fault"/>
+  <translation tag="Heater over-temperature" en="Heater over-temperature"/>
+  <translation tag="Heater sensor fault" en="Heater sensor fault"/>
   <translation tag="HeaterSelect" en="HeaterSelect"/>
   <translation tag="Heaters off" en="Heaters off"/>
   <translation tag="Heating" en="Heating"/>

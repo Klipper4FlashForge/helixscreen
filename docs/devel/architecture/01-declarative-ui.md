@@ -40,7 +40,7 @@ flowchart TD
 | `src/application/xml_hot_reloader.cpp` | `HELIX_HOT_RELOAD` live re-registration and active-view rebuild |
 | `ui_xml/globals.xml` | The `globals` scope: consts, theme tokens, XML-declared subjects |
 | `ui_xml/overlay_panel.xml` | Reusable wrapper component most overlay panels extend |
-| `ui_xml/bed_temp_panel.xml` | A representative panel: consts, bindings, event callbacks |
+| `ui_xml/history_dashboard_panel.xml` | A representative panel: consts, styles, bindings, event callbacks |
 | `ui_xml/app_layout.xml` | Root layout, created once at startup |
 | `src/ui/ui_card.cpp` | Representative custom widget (one of the 29 `lv_xml_register_widget` files) |
 | `lib/helix-xml/src/xml/lv_xml.c` | Engine core: create dispatch, subject lookup, binding elements |
@@ -68,17 +68,19 @@ At boot, `Application` runs the phases in a fixed order (phase numbers and lines
 ```xml
 <component>
   <consts>
-    <const name="temp_graph_bed_light" value="#00CED1"/>
+    <!-- Layout dimensions for side-by-side stats + chart -->
+    <percentage name="stats_section_width" value="55%"/>
+    <percentage name="chart_section_width" value="43%"/>
   </consts>
-  <view name="bed_temp_panel" extends="overlay_panel" title="Heatbed Temperature">
+  <view name="history_dashboard_panel" extends="overlay_panel" title="Print History" title_tag="Print History">
     <!-- child widgets, bindings, event callbacks -->
   </view>
 </component>
 ```
 
-(excerpted from `ui_xml/bed_temp_panel.xml:4`; comments removed). A template is not yet widgets — just a parsed definition waiting to be instantiated. On ESP-class targets the registration sweep yields periodically (`boot_yield.h`) so the watchdog never fires mid-sweep.
+(excerpted from `ui_xml/history_dashboard_panel.xml:9`; comments removed). A template is not yet widgets — just a parsed definition waiting to be instantiated. On ESP-class targets the registration sweep yields periodically (`boot_yield.h`) so the watchdog never fires mid-sweep.
 
-Creation happens later, on demand. When navigation needs a panel, `PanelFactory` calls `lv_xml_create(parent, "bed_temp_panel", attrs)`. The engine (`lib/helix-xml/src/xml/lv_xml.c:438`) first looks the name up in the widget-processor table — the built-in `lv_label`/`lv_slider` types plus our custom `ui_*` widgets. If that misses, it looks up a registered component scope and instantiates the template: recursively creating child widgets, applying attributes, and resolving bindings as it goes.
+Creation happens later, on demand. When navigation needs a panel, its owner calls `lv_xml_create(parent, "history_dashboard_panel", attrs)` (`src/ui/ui_panel_history_dashboard.cpp:226`). The engine (`lib/helix-xml/src/xml/lv_xml.c:438`) first looks the name up in the widget-processor table — the built-in `lv_label`/`lv_slider` types plus our custom `ui_*` widgets. If that misses, it looks up a registered component scope and instantiates the template: recursively creating child widgets, applying attributes, and resolving bindings as it goes.
 
 Components compose. A panel's `<view extends="overlay_panel">` inherits a registered wrapper template (`ui_xml/overlay_panel.xml`, registered at `src/xml_registration.cpp:414`) instead of a bare `lv_obj`; the `extends` link is resolved at instantiation time through the same widget/component tables (`lib/helix-xml/src/xml/lv_xml_component.c:200`). A component file may also declare `<consts>` — named values visible to that component's bindings and styles — which is where per-panel colors and sizes live when they are not global theme tokens.
 
@@ -117,11 +119,11 @@ Events flow the other direction through the same registration idea: XML declares
 
 Structural conditionals avoid building both branches: `<if cond="expr">...</if>` / `<else>` builds only the matching side, and `<repeat count="4">` clones a fragment with the loop index available as bare `$i` or embedded `${i}` (`lib/helix-xml/src/xml/lv_xml.c:1137` and `:1121`). A `count` that names a subject rebuilds the fragment when that subject changes. Compound conditions stay in XML too — `<subject_expr name="x" expr="a or b gt c"/>` derives a new subject from existing ones via the integer-only evaluator in `lib/helix-xml/src/xml/lv_xml_expr.c`. Do not hand-write a C++ observer to combine subjects; the evaluator already does it.
 
-**A preset button, end to end.** One button in `ui_xml/bed_temp_panel.xml:73` exercises every vocabulary above at once:
+**A preset button, end to end.** One button in `ui_xml/temp_graph_overlay.xml:170` exercises every vocabulary above at once:
 
 ```xml
-<ui_button name="preset_m0" width="48%" bind_text="preset_material_0_name">
-  <event_cb trigger="clicked" callback="on_heater_preset_clicked"/>
+<ui_button name="preset_1" width="48%" bind_text="preset_material_0_name">
+  <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
 </ui_button>
 ```
 
@@ -140,19 +142,20 @@ Structural conditionals avoid building both branches: `<if cond="expr">...</if>`
 
   (verbatim from `src/system/preset_materials.cpp:115`; the null scope means globals). When preset names load from settings, C++ writes the subject once and every bound button across every panel updates.
 
-- `<event_cb ... callback="on_heater_preset_clicked"/>` resolves the name against C++ registrations — here a table in `src/ui/temperature_service.cpp:205`:
+- `<event_cb ... callback="on_temp_graph_preset_clicked"/>` resolves the name against C++ registrations — here the startup table in `src/xml_registration.cpp:590`:
 
   ```cpp
-  {"on_heater_preset_clicked", on_heater_preset_clicked},
+  lv_xml_register_event_cb(nullptr, "on_temp_graph_preset_clicked",
+                           TempGraphOverlay::on_temp_graph_preset_clicked);
   ```
 
-  The handler at `src/ui/temperature_service.cpp:830` receives the click with the button's user data.
+  The handler at `src/ui/ui_overlay_temp_graph.cpp:716` receives the click with the button's user data.
 
 Three files, no direct references between them. The XML names a subject and a callback; C++ publishes both by name; the engine ties them at instantiation. This is the shape essentially every interactive element in the app takes.
 
-The panel those three files produce, as the user meets it — the preset buttons bottom-right are the excerpt's `preset_m0`/`m1`/`m2` widgets, their labels ("PLA", "PETG", "ABS") arriving through the `preset_material_*` subjects that `preset_materials.cpp` registers:
+The overlay those three files produce, as the user meets it — the preset buttons bottom-right are the excerpt's `preset_1`/`preset_2`/`preset_3` widgets, their labels ("PLA", "PETG", "ABS") arriving through the `preset_material_*` subjects that `preset_materials.cpp` registers (the red banner + card under the chart is the chamber-diagnostics surface from `components/chamber_diagnostics_card.xml`):
 
-<img src="../../images/screenshot-bed-temp-panel.png" alt="The Heatbed Temperature overlay: temperature graph, current/target card, and the preset buttons built from bed_temp_panel.xml" width="800"/>
+<img src="../../images/screenshot-temp-graph-overlay.png" alt="The temperature graph overlay: chart, current/target card, preset buttons, and the chamber diagnostics card" width="800"/>
 
 ### The globals scope: where subjects live
 
@@ -193,7 +196,7 @@ The engine those 29 files register into stopped being LVGL's code in v9.5. `lib/
 
 Read in this order; about 25 minutes total.
 
-1. `ui_xml/bed_temp_panel.xml:14` — a whole panel in 124 lines. Notice `<consts>` for local tokens, the `<view extends="overlay_panel">` inheritance, `bind_text` on `text_small` (line 56), and the preset buttons at line 73 that the worked example above dissects.
+1. `ui_xml/temp_graph_overlay.xml:54` — a whole live overlay in ~450 lines. Notice the orthogonal `<styles>` pairs driven by `bind_style_if cond=`, the structural `<if>` branches for portrait/landscape and the chamber-diagnostics card, `bind_text` on preset buttons (line 170), and the shared component instantiation (`<chamber_diagnostics_card/>`).
 2. `ui_xml/overlay_panel.xml:7` — the wrapper component those panels extend: positioning, header, and the content slot convention.
 3. `src/xml_registration.cpp:284` — the `register_xml()` helper: path resolution, the LVGL drive-letter prefix, and the ESP boot-yield. Then skim `register_xml_components()` at `src/xml_registration.cpp:300` to feel the size of the sweep.
 4. `src/application/application.cpp:711` — `register_widgets()` (the first wave of C++ widget registrations), then `:1777` `register_xml_components()` and its hot-reloader wiring, and finally `:1960` the single `lv_xml_create` that instantiates the root layout. This is the whole boot ordering in four stops.

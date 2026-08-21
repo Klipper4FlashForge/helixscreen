@@ -45,6 +45,8 @@ void PrinterCapabilitiesState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(printer_bed_moves, 0, subjects_, register_xml); // 0=gantry moves, 1=bed moves
     INIT_SUBJECT_INT(printer_has_chamber_sensor, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_chamber_heater, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(printer_has_chamber_heater_diagnostics, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(printer_has_chamber_filter_fan, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_chamber, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_screws_tilt, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_webcam, 0, subjects_, register_xml);
@@ -209,6 +211,16 @@ void PrinterCapabilitiesState::set_has_chamber_sensor(bool available) {
 void PrinterCapabilitiesState::set_has_chamber_heater(bool available) {
     lv_subject_set_int(&printer_has_chamber_heater_, available ? 1 : 0);
     update_has_chamber();
+}
+
+// Diagnostics / filter-fan capabilities are independent of the combined
+// printer_has_chamber_ flag: they gate backend-specific surfaces only.
+void PrinterCapabilitiesState::set_has_chamber_heater_diagnostics(bool available) {
+    lv_subject_set_int(&printer_has_chamber_heater_diagnostics_, available ? 1 : 0);
+}
+
+void PrinterCapabilitiesState::set_has_chamber_filter_fan(bool available) {
+    lv_subject_set_int(&printer_has_chamber_filter_fan_, available ? 1 : 0);
 }
 
 void PrinterCapabilitiesState::update_has_chamber() {

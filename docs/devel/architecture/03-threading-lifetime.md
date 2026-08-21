@@ -190,7 +190,7 @@ Read in this order; about 25 minutes total.
 1. `include/ui_update_queue.h:94` — the `UpdateQueue` class: timer creation in `init()` (`:119`), the tagged drain `process_pending()` (`:438`), `ScopedFreeze` (`:249`). The comments on "why not `lv_async_call`" are the design argument in three lines.
 2. `include/async_lifetime_guard.h:115` — `LifetimeToken::expired()` with the background-thread detector inline; then `:165` `defer()` and its pre-enqueue generation check (the doomed-callback drop), and `:329` `bg_cb()` — read the doc comment for the short-form/long-form tradeoff.
 3. `src/printer/detection_manager.cpp:26` — the two-line `bg_cb` in the wild: an observer registered with a marshalled callback, nothing else to it.
-4. `src/printer/printer_state.cpp:641` — `set_printer_connection_state()` (defer through the guard), then `:659` `set_klippy_state()` (`call_method` flavor). The whole marshalling-setter pattern in twenty lines.
+4. `src/printer/printer_state.cpp:647` — `set_printer_connection_state()` (defer through the guard), then `:659` `set_klippy_state()` (`call_method` flavor). The whole marshalling-setter pattern in twenty lines.
 5. `include/ui_observer_guard.h:40` — the `SubjectLifetime` contract in the doc comment; then `reset()` (`:123`) with its two death checks: token value (`:137`) and invalidation epoch (`:150`).
 6. `src/api/wifi_manager.cpp:814` — `handle_scan_complete`: parse on the backend thread, `queue_update` the mutation. THREADING.md's other reference integration.
 7. `include/http_executor.h:33` — the class comment: why the pools exist (EAGAIN history), the stop-timeout-detach semantics, and the self-wait deadlock warning on `run_sync`.

@@ -726,6 +726,7 @@
   <translation tag="Eject needs [force_move] enabled in printer config" pt="A ejeção precisa de [force_move] habilitado na configuração da impressora"/>
   <translation tag="Ejecting" pt="Ejetando"/>
   <translation tag="Elegoo Centauri Carbon" pt="Elegoo Centauri Carbon"/>
+  <translation tag="Element"/>
   <translation tag="Emergency Stop" pt="Parada de Emergência"/>
   <translation tag="Emergency Stop?" pt="Parada de Emergência?"/>
   <translation tag="Emergency stop activated" pt="Parada de emergência ativada"/>
@@ -982,6 +983,9 @@
   <translation tag="File" pt="Arquivo"/>
   <translation tag="File Size" pt="Tamanho do Arquivo"/>
   <translation tag="Filename" pt="Nome do Arquivo"/>
+  <translation tag="Filter Fan"/>
+  <translation tag="Filter Fan: Off"/>
+  <translation tag="Filter Fan: On"/>
   <translation tag="Fine" pt="Fino"/>
   <translation tag="Fine-Tune" pt="Ajuste Fino"/>
   <translation tag="Finish" pt="Finalizar"/>
@@ -1062,6 +1066,10 @@
   <translation tag="Heated Bed PID Tuning" pt="Ajuste PID da Mesa Aquecida"/>
   <translation tag="Heater" pt="Aquecedor"/>
   <translation tag="Heater Power" pt="Potência do Aquecedor"/>
+  <translation tag="Heater connection lost"/>
+  <translation tag="Heater fault"/>
+  <translation tag="Heater over-temperature"/>
+  <translation tag="Heater sensor fault"/>
   <translation tag="HeaterSelect" pt="Selecionar Aquecedor"/>
   <translation tag="Heaters off" pt="Aquecedores desligados"/>
   <translation tag="Heating" pt="Aquecendo"/>

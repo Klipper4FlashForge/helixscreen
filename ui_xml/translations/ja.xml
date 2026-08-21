@@ -726,6 +726,7 @@
   <translation tag="Eject needs [force_move] enabled in printer config" ja="取り出しにはプリンター設定で [force_move] を有効にする必要があります"/>
   <translation tag="Ejecting" ja="排出中"/>
   <translation tag="Elegoo Centauri Carbon" ja="Elegoo Centauri Carbon"/>
+  <translation tag="Element"/>
   <translation tag="Emergency Stop" ja="緊急停止"/>
   <translation tag="Emergency Stop?" ja="緊急停止しますか？"/>
   <translation tag="Emergency stop activated" ja="緊急停止が作動しました"/>
@@ -982,6 +983,9 @@
   <translation tag="File" ja="ファイル"/>
   <translation tag="File Size" ja="ファイルサイズ"/>
   <translation tag="Filename" ja="ファイル名"/>
+  <translation tag="Filter Fan"/>
+  <translation tag="Filter Fan: Off"/>
+  <translation tag="Filter Fan: On"/>
   <translation tag="Fine" ja="微動"/>
   <translation tag="Fine-Tune" ja="微調整"/>
   <translation tag="Finish" ja="完了"/>
@@ -1062,6 +1066,10 @@
   <translation tag="Heated Bed PID Tuning" ja="ヒートベッド PIDチューニング"/>
   <translation tag="Heater" ja="ヒーター"/>
   <translation tag="Heater Power" ja="ヒーター出力"/>
+  <translation tag="Heater connection lost"/>
+  <translation tag="Heater fault"/>
+  <translation tag="Heater over-temperature"/>
+  <translation tag="Heater sensor fault"/>
   <translation tag="HeaterSelect" ja="ヒーターを選択"/>
   <translation tag="Heaters off" ja="ヒーターをオフにしました"/>
   <translation tag="Heating" ja="加熱中"/>

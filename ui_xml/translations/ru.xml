@@ -726,6 +726,7 @@
   <translation tag="Eject needs [force_move] enabled in printer config" ru="Для извлечения нужно включить [force_move] в конфигурации принтера"/>
   <translation tag="Ejecting" ru="Извлечение"/>
   <translation tag="Elegoo Centauri Carbon" ru="Elegoo Centauri Carbon"/>
+  <translation tag="Element"/>
   <translation tag="Emergency Stop" ru="Аварийная остановка"/>
   <translation tag="Emergency Stop?" ru="Аварийная остановка?"/>
   <translation tag="Emergency stop activated" ru="Аварийная остановка активирована"/>
@@ -982,6 +983,9 @@
   <translation tag="File" ru="Файл"/>
   <translation tag="File Size" ru="Размер файла"/>
   <translation tag="Filename" ru="Имя файла"/>
+  <translation tag="Filter Fan"/>
+  <translation tag="Filter Fan: Off"/>
+  <translation tag="Filter Fan: On"/>
   <translation tag="Fine" ru="Точно"/>
   <translation tag="Fine-Tune" ru="Тонкая настройка"/>
   <translation tag="Finish" ru="Завершить"/>
@@ -1062,6 +1066,10 @@
   <translation tag="Heated Bed PID Tuning" ru="Настройка PID стола"/>
   <translation tag="Heater" ru="Нагреватель"/>
   <translation tag="Heater Power" ru="Мощность нагревателя"/>
+  <translation tag="Heater connection lost"/>
+  <translation tag="Heater fault"/>
+  <translation tag="Heater over-temperature"/>
+  <translation tag="Heater sensor fault"/>
   <translation tag="HeaterSelect" ru="Выбрать нагреватель"/>
   <translation tag="Heaters off" ru="Нагреватели выключены"/>
   <translation tag="Heating" ru="Нагрев"/>

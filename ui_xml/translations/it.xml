@@ -726,6 +726,7 @@
   <translation tag="Eject needs [force_move] enabled in printer config" it="L&apos;espulsione richiede [force_move] abilitato nella configurazione della stampante"/>
   <translation tag="Ejecting" it="Espulsione"/>
   <translation tag="Elegoo Centauri Carbon" it="Elegoo Centauri Carbon"/>
+  <translation tag="Element"/>
   <translation tag="Emergency Stop" it="Arresto emergenza"/>
   <translation tag="Emergency Stop?" it="Arresto emergenza?"/>
   <translation tag="Emergency stop activated" it="Arresto emergenza attivato"/>
@@ -982,6 +983,9 @@
   <translation tag="File" it="File"/>
   <translation tag="File Size" it="Dimensione file"/>
   <translation tag="Filename" it="Nome file"/>
+  <translation tag="Filter Fan"/>
+  <translation tag="Filter Fan: Off"/>
+  <translation tag="Filter Fan: On"/>
   <translation tag="Fine" it="Preciso"/>
   <translation tag="Fine-Tune" it="Regolazione fine"/>
   <translation tag="Finish" it="Fine"/>
@@ -1062,6 +1066,10 @@
   <translation tag="Heated Bed PID Tuning" it="Regolazione PID piano riscaldato"/>
   <translation tag="Heater" it="Riscaldatore"/>
   <translation tag="Heater Power" it="Potenza riscaldatore"/>
+  <translation tag="Heater connection lost"/>
+  <translation tag="Heater fault"/>
+  <translation tag="Heater over-temperature"/>
+  <translation tag="Heater sensor fault"/>
   <translation tag="HeaterSelect" it="Seleziona riscaldatore"/>
   <translation tag="Heaters off" it="Riscaldatori spenti"/>
   <translation tag="Heating" it="Riscaldamento"/>

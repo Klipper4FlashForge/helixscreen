@@ -23,6 +23,11 @@ class MockPrinterState;
 // Forward declaration for MoonrakerClientMock (needed for internal handler registry)
 class MoonrakerClientMock;
 
+// Forward declaration for the test-access friend (tests/test_helpers/)
+namespace helix {
+class MoonrakerClientMockTestAccess;
+} // namespace helix
+
 // Forward declaration for internal handler registry
 namespace mock_internal {
 using MethodHandler =
@@ -792,7 +797,35 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      */
     void dispatch_gcode_response(const std::string& line);
 
+    /**
+     * @brief Append chamber-backend status objects to a synthesized frame
+     *
+     * Emits the nominal diagnostics payload + filter-pin value for appliance
+     * chamber-heater backends (e.g. dragonbreath) whose objects were
+     * materialized via HELIX_MOCK_OBJECTS. `requested` (a
+     * printer.objects.subscribe objects filter) limits emission to subscribed
+     * keys; null emits every present backend object.
+     */
+    void append_chamber_backend_status(json& status_obj, double sim_time,
+                                       const json* requested = nullptr) const;
+
+    /**
+     * @brief Bare gcode name of the resolved chamber heater
+     * @return e.g. "chamber" or "dragonbreath" (the HEATER= form), empty if none
+     */
+    std::string chamber_heater_bare_name() const;
+
+    /**
+     * @brief Full filter-fan pin object of the chamber backend, when materialized
+     * @return e.g. "output_pin dragonbreath_filter", empty when absent
+     */
+    std::string chamber_filter_pin_object() const;
+
   private:
+    // Test visibility into the chamber-key cache and the synchronous initial
+    // state dispatch (see tests/test_helpers/moonraker_client_mock_test_access.h).
+    friend class helix::MoonrakerClientMockTestAccess;
+
     /**
      * @brief Populate hardware lists based on configured printer type
      *
@@ -1432,6 +1465,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
 
     // Cached chamber heater status key (updated by override_chamber_heater / populate)
     std::string cached_chamber_status_key_;
+
+    // Chamber filter-fan pin value (SET_PIN target; drives fan_percent in
+    // synthesized chamber-backend diagnostics frames)
+    std::atomic<double> chamber_filter_value_{0.0};
 
     // Calibration simulation timers (PID, MPC, shaper) — must be cleaned up
     // in destructor to prevent use-after-free when mock is destroyed before

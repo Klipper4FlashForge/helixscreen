@@ -413,6 +413,10 @@ void register_xml_components() {
     register_xml("temp_display.xml");
     register_xml("components/nozzle_icon.xml");
     register_xml("components/heater_icon.xml");
+    // Chamber-heater diagnostics card — instantiated by temp_graph_overlay's
+    // graph column (must be registered before temp_graph_overlay.xml, which
+    // is loaded later in this function).
+    register_xml("components/chamber_diagnostics_card.xml");
     // Shared progress arc widget — diameter-driven stroke thickness, see
     // include/ui_progress_arc.h for the C++ companion (attach_progress_arc).
     register_xml("components/helix_progress_arc.xml");
@@ -589,12 +593,13 @@ void register_xml_components() {
     // before motion_panel.xml, which uses it.
     register_xml("components/motion_position_card.xml");
     register_xml("motion_panel.xml");
-    // TODO: Remove these old per-heater overlays once application.cpp's
-    // --overlays command-line paths and TemperatureService::xml_component_name()
-    // are updated to use the unified TempGraphOverlay instead.
-    register_xml("nozzle_temp_panel.xml");
-    register_xml("bed_temp_panel.xml");
-    register_xml("chamber_temp_panel.xml");
+    // The three old per-heater overlays (nozzle/bed/chamber_temp_panel.xml)
+    // were removed: unreachable since the unified TempGraphOverlay replaced
+    // them (137e51ff3). TemperatureService::setup_panel() /
+    // xml_component_name() are the residual per-heater panel machinery —
+    // compiled but with no callers and no XML behind the names it returns
+    // (lv_xml_component_get_scope() returns nullptr, guarded); a future
+    // cleanup can delete that whole dead path.
     register_xml("temp_graph_overlay.xml");
     // Register TempGraphOverlay event callbacks at startup (before XML is parsed)
     lv_xml_register_event_cb(nullptr, "on_temp_graph_preset_clicked",

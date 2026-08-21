@@ -88,7 +88,7 @@ if (btn_zoom_in)
     lv_obj_add_event_cb(btn_zoom_in, on_zoom_clicked_static, LV_EVENT_CLICKED, this);
 ```
 
-The declarative target is the shape every `ui_xml/bed_temp_panel.xml:73` preset button already uses — declare the callback where the button is declared (`ui_xml/gcode_test_panel.xml:61` defines `btn_zoom_in` today, callback-less):
+The declarative target is the shape every `ui_xml/temp_graph_overlay.xml` preset button already uses — declare the callback where the button is declared (`ui_xml/gcode_test_panel.xml:61` defines `btn_zoom_in` today, callback-less):
 
 ```xml
 <ui_button name="btn_zoom_in" flex_grow="1" text="+">

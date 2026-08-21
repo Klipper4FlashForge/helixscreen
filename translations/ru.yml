@@ -1,6 +1,14 @@
 locale: ru
 translations:
   ' (timed out)': ' (время ожидания истекло)'
+  Element: ''
+  Filter Fan: ''
+  'Filter Fan: Off': ''
+  'Filter Fan: On': ''
+  Heater connection lost: ''
+  Heater fault: ''
+  Heater over-temperature: ''
+  Heater sensor fault: ''
   ' elapsed · ': ' истёк · '
   ' frames': ' кадров'
   ' left': ' осталось'

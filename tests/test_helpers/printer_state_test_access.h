@@ -108,6 +108,16 @@ class PrinterStateTestAccess {
         return ps.print_domain_;
     }
 
+    /// Non-const temperature state (temperature_state() returns a const ref;
+    /// subject getters are non-const)
+    static PrinterTemperatureState& get_temperature_state(PrinterState& ps) {
+        return ps.temperature_state_;
+    }
+
+    static PrinterCapabilitiesState& get_capabilities_state(PrinterState& ps) {
+        return ps.capabilities_state_;
+    }
+
     /// Inject a synthetic pre-print option set (bypasses the printer DB) so tests
     /// can exercise option configurations that no shipped printer declares yet —
     /// e.g. a bed_mesh option with a custom adaptive_param name.

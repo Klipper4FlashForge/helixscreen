@@ -1,6 +1,14 @@
 locale: de
 translations:
   ' (timed out)': ' (Zeitüberschreitung)'
+  Element: ''
+  Filter Fan: ''
+  'Filter Fan: Off': ''
+  'Filter Fan: On': ''
+  Heater connection lost: ''
+  Heater fault: ''
+  Heater over-temperature: ''
+  Heater sensor fault: ''
   ' elapsed · ': ' vergangen · '
   ' frames': ' Bilder'
   ' left': ' übrig'
@@ -450,9 +458,6 @@ translations:
   Clean Brush: Bürste reinigen
   ? Choose the model that matches your printer. This sets the print macros, fan roles and calibration behaviour HelixScreen uses.
   : Wählen Sie das Modell, das zu Ihrem Drucker passt. Dies legt fest, welche Druckmakros, Lüfterrollen und welches Kalibrierungsverhalten HelixScreen verwendet.
-  Choose what to power off or restart.: Wählen Sie, was ausgeschaltet oder neu gestartet
-    werden soll.
-  Clean Brush: 'Bürste reinigen'
   Clean Nozzle: Düse reinigen
   Cleaning Nozzle...: Düse reinigen...
   Clear: Löschen
@@ -1235,7 +1240,6 @@ translations:
   Keep Navigation Bar: Navigationsleiste behalten
   Keep Printing: Weiter drucken
   Keep Required: Erforderlich behalten
-  Keep Spool Info on Eject: ''
   Keep current: Aktuelle behalten
   Keep Spool Info on Eject: Spuleninfo beim Auswerfen behalten
   Keep the bypass spool visible when bypass is off: Bypass-Spule sichtbar halten, wenn Bypass deaktiviert ist

@@ -14,7 +14,8 @@
  */
 
 #include "ams_types.h"
-#include "printer_detector.h" // For BuildVolume struct
+#include "chamber_heater_backend.h" // For chamber::match — heater candidate scoring
+#include "printer_detector.h"       // For BuildVolume struct
 
 #include <spdlog/spdlog.h>
 
@@ -98,16 +99,22 @@ class PrinterDiscovery {
         // type_weight breaks ties between equal-keyword candidates.
         auto try_set_chamber_heater = [&](const std::string& full_name,
                                           const std::string& object_name, int type_weight) {
-            int keyword = chamber_keyword_confidence(object_name);
-            if (keyword == 0) {
+            // Registry first: appliance backends (dragonbreath, panda_breath)
+            // claim their names at 95; generic carries the keyword tiers.
+            // chamber_keyword_confidence is kept for sensor/cooling-fan paths.
+            chamber::MatchResult m = chamber::match(object_name);
+            if (m.confidence == 0) {
                 return; // not a chamber-named object — never a heater candidate
             }
-            int conf = keyword * 10 + type_weight;
+            int conf = m.confidence * 10 + type_weight;
             if (conf > best_chamber_heater_conf) {
                 has_chamber_heater_ = true;
                 chamber_heater_name_ = full_name;
                 chamber_heater_object_name_ = object_name;
                 best_chamber_heater_conf = conf;
+                chamber_heater_backend_id_ = std::string(m.backend->id());
+                chamber_diagnostics_object_ = std::string(m.backend->diagnostics_object());
+                chamber_filter_fan_pin_ = std::string(m.backend->filter_fan_pin());
             }
         };
         auto try_set_chamber_sensor = [&](const std::string& full_name,
@@ -750,6 +757,9 @@ class PrinterDiscovery {
         chamber_sensor_name_.clear();
         chamber_heater_name_.clear();
         chamber_heater_object_name_.clear();
+        chamber_heater_backend_id_.clear();
+        chamber_diagnostics_object_.clear();
+        chamber_filter_fan_pin_.clear();
         chamber_cooling_fan_name_.clear();
         chamber_fan_resting_deci_ = 0;
         fan_max_power_.clear();
@@ -862,6 +872,19 @@ class PrinterDiscovery {
 
     [[nodiscard]] const std::string& chamber_heater_object_name() const {
         return chamber_heater_object_name_;
+    }
+
+    /// Matched chamber-heater backend id ("" when no chamber heater).
+    [[nodiscard]] const std::string& chamber_heater_backend_id() const {
+        return chamber_heater_backend_id_;
+    }
+    /// Diagnostics status object bound by the backend ("" when none).
+    [[nodiscard]] const std::string& chamber_diagnostics_object() const {
+        return chamber_diagnostics_object_;
+    }
+    /// Filter-fan output_pin bound by the backend ("" when none).
+    [[nodiscard]] const std::string& chamber_filter_fan_pin() const {
+        return chamber_filter_fan_pin_;
     }
 
     /// Full object name of the chamber cooling temperature_fan (empty if none).
@@ -1469,6 +1492,9 @@ class PrinterDiscovery {
     std::string chamber_sensor_name_;
     std::string chamber_heater_name_;        ///< Full object name (e.g., "heater_generic chamber")
     std::string chamber_heater_object_name_; ///< Object name only (e.g., "chamber")
+    std::string chamber_heater_backend_id_;  ///< "" none, "generic", appliance id
+    std::string chamber_diagnostics_object_; ///< status object with diagnostics, "" none
+    std::string chamber_filter_fan_pin_;     ///< binary filter fan output_pin, "" none
     std::string chamber_cooling_fan_name_;   ///< Full object name of the chamber temperature_fan
                                              ///< (e.g., "temperature_fan chamber_fan"). Recorded
                                              ///< independent of the heater pick: in COOLING mode

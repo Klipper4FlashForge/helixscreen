@@ -7,6 +7,7 @@
 
 #include "accel_sensor_manager.h"
 #include "app_globals.h"
+#include "chamber_heater_backend.h"
 #include "config.h"
 #include "helix_version.h"
 #include "humidity_sensor_types.h"
@@ -1365,6 +1366,13 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
     // whatever object stores it; without this the Z-offset row reads 0.000
     // whenever such a printer is idle. See include/z_offset_persistence.h.
     for (const auto& obj : helix::zoffset::required_status_objects(hw)) {
+        subscription_objects[obj] = nullptr;
+    }
+
+    // Chamber-heater backend surfaces (diagnostics object + filter fan pin).
+    // See include/chamber_heater_backend.h.
+    for (const auto& obj : helix::chamber::required_status_objects(hw.chamber_diagnostics_object(),
+                                                                   hw.chamber_filter_fan_pin())) {
         subscription_objects[obj] = nullptr;
     }
 

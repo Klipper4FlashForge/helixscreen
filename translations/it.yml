@@ -1,6 +1,14 @@
 locale: it
 translations:
   ' (timed out)': ' (tempo scaduto)'
+  Element: ''
+  Filter Fan: ''
+  'Filter Fan: Off': ''
+  'Filter Fan: On': ''
+  Heater connection lost: ''
+  Heater fault: ''
+  Heater over-temperature: ''
+  Heater sensor fault: ''
   ' elapsed · ': ' trascorso · '
   ' frames': ' fotogrammi'
   ' left': ' rimanente'

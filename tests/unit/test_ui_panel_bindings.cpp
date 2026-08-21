@@ -12,7 +12,7 @@
  * - [ui][home_panel] - Home panel bindings
  * - [ui][controls_panel] - Controls panel bindings
  * - [ui][print_status_panel] - Print status panel bindings
- * - [ui][temp_panel] - Temperature panel bindings (nozzle + bed)
+ * - [ui][temp_display] - temp_display widget bindings (nozzle + bed subjects)
  * - [bind_text] - Text binding tests
  * - [bind_value] - Value binding tests (bars, sliders)
  * - [bind_flag] - Flag binding tests (visibility)
@@ -127,25 +127,6 @@ TEST_CASE_METHOD(XMLTestFixture, "temp_display: target shows -- when heater off 
 
     // 4. Verify target is 0 (the display shows "--" but getter returns 0)
     REQUIRE(ui_temp_display_get_target(temp) == 0);
-}
-
-TEST_CASE_METHOD(XMLTestFixture, "nozzle_temp_panel: temp_display shows current temperature",
-                 "[ui][temp_panel][bind_current][.xml_required]") {
-    SKIP("Requires nozzle_status subject registration - implement when subject is available");
-
-    // Test implementation ready - uncomment when all subjects are registered:
-    // REQUIRE(register_component("temp_display"));
-    // REQUIRE(register_component("header_bar"));
-    // REQUIRE(register_component("overlay_panel"));
-    // REQUIRE(register_component("nozzle_temp_panel"));
-    // lv_subject_set_int(state().get_active_extruder_temp_subject(), 20000);
-    // lv_obj_t* panel = create_component("nozzle_temp_panel");
-    // REQUIRE(panel != nullptr);
-    // process_lvgl(100);
-    // lv_obj_t* temp_display = UITest::find_by_name(panel, "nozzle_temp_display");
-    // REQUIRE(temp_display != nullptr);
-    // int displayed_current = ui_temp_display_get_current(temp_display);
-    // REQUIRE(displayed_current == 200); // 20000 decidegrees = 200C
 }
 
 TEST_CASE_METHOD(XMLTestFixture, "temp_display: binds to bed temperature subjects",
@@ -337,24 +318,11 @@ TEST_CASE_METHOD(MoonrakerTestFixture,
          "work");
 }
 
-// =============================================================================
-// NOZZLE/BED TEMP PANEL STATUS BINDING TESTS (SKIP - needs nozzle_status subject)
-// =============================================================================
-
-TEST_CASE_METHOD(MoonrakerTestFixture, "nozzle_temp_panel: status_message binding updates text",
-                 "[ui][temp_panel][bind_text][.xml_required]") {
-    SKIP("Requires nozzle_status subject registration - implement when subject is available");
-}
-
-TEST_CASE_METHOD(MoonrakerTestFixture, "bed_temp_panel: temp_display shows target temperature",
-                 "[ui][temp_panel][bind_target][.xml_required]") {
-    SKIP("Requires full bed_temp_panel test - similar to nozzle tests above");
-}
-
-TEST_CASE_METHOD(MoonrakerTestFixture, "bed_temp_panel: status_message binding updates text",
-                 "[ui][temp_panel][bind_text][.xml_required]") {
-    SKIP("Requires bed_status subject registration - implement when subject is available");
-}
+// The nozzle_temp_panel / bed_temp_panel placeholder cases below were
+// deleted with the panels themselves (unreachable since the unified
+// TempGraphOverlay, 137e51ff3): every one was a SKIP stub asserting nothing.
+// Live per-heater binding coverage now lives in the temp_display cases above
+// and in test_chamber_panel_diagnostics.cpp (temp_graph_overlay).
 
 // =============================================================================
 // ADDITIONAL BINDING TESTS (MIXED PANELS - SKIP)

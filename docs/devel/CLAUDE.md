@@ -74,6 +74,7 @@ All developer documentation lives here. When working on features, look up the re
 | `UPDATE_SYSTEM.md` | Update channels (stable/beta/dev), R2 CDN, Moonraker updater |
 | `SOUND_SYSTEM.md` | Audio architecture, JSON themes, backends (SDL, ALSA, PWM, M300). User guide: `../user/guide/settings.md#sound-settings` |
 | `LED_CONTROL.md` | LED control system: 5 backends, auto-state lighting, control/settings overlays, home panel widget |
+| `CHAMBER_HEATER.md` | Chamber heaters: backend registry (generic/dragonbreath/panda_breath), discovery, diagnostics subjects + card, ceiling rules, arbitration, verification logs |
 | `PRINTER_MANAGER.md` | Printer overlay, custom images, inline name editing |
 | `MULTI_PRINTER.md` | Multi-printer management: config v4, soft restart, printer switching |
 | `TIMELAPSE.md` | Moonraker timelapse plugin integration |

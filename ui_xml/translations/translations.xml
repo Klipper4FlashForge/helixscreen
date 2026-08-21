@@ -726,6 +726,7 @@
   <translation tag="Eject needs [force_move] enabled in printer config" de="Auswerfen erfordert [force_move] aktiviert in der Druckerkonfiguration" en="Eject needs [force_move] enabled in printer config" es="La expulsión requiere [force_move] habilitado en la configuración de la impresora" fr="L&apos;éjection nécessite l&apos;activation de [force_move] dans la configuration de l&apos;imprimante" it="L&apos;espulsione richiede [force_move] abilitato nella configurazione della stampante" ja="取り出しにはプリンター設定で [force_move] を有効にする必要があります" pt="A ejeção precisa de [force_move] habilitado na configuração da impressora" ru="Для извлечения нужно включить [force_move] в конфигурации принтера" zh="弹出需要在打印机配置中启用 [force_move]"/>
   <translation tag="Ejecting" de="Auswerfen" en="Ejecting" es="Expulsando" fr="Éjection" it="Espulsione" ja="排出中" pt="Ejetando" ru="Извлечение" zh="弹出中"/>
   <translation tag="Elegoo Centauri Carbon" de="Elegoo Centauri Carbon" en="Elegoo Centauri Carbon" es="Elegoo Centauri Carbon" fr="Elegoo Centauri Carbon" it="Elegoo Centauri Carbon" ja="Elegoo Centauri Carbon" pt="Elegoo Centauri Carbon" ru="Elegoo Centauri Carbon" zh="Elegoo Centauri Carbon"/>
+  <translation tag="Element" en="Element"/>
   <translation tag="Emergency Stop" de="Notaus" en="Emergency Stop" es="Parada de Emergencia" fr="Arrêt d&apos;urgence" it="Arresto emergenza" ja="緊急停止" pt="Parada de Emergência" ru="Аварийная остановка" zh="紧急停止"/>
   <translation tag="Emergency Stop?" de="Notaus?" en="Emergency Stop?" es="¿Parada de Emergencia?" fr="Arrêt d&apos;urgence ?" it="Arresto emergenza?" ja="緊急停止しますか？" pt="Parada de Emergência?" ru="Аварийная остановка?" zh="紧急停止？"/>
   <translation tag="Emergency stop activated" de="Notaus aktiviert" en="Emergency stop activated" es="Parada de emergencia activada" fr="Arrêt d&apos;urgence activé" it="Arresto emergenza attivato" ja="緊急停止が作動しました" pt="Parada de emergência ativada" ru="Аварийная остановка активирована" zh="紧急停止已激活"/>
@@ -982,6 +983,9 @@
   <translation tag="File" de="Datei" en="File" es="Archivo" fr="Fichier" it="File" ja="ファイル" pt="Arquivo" ru="Файл" zh="文件"/>
   <translation tag="File Size" de="Dateigröße" en="File Size" es="Tamaño del archivo" fr="Taille du fichier" it="Dimensione file" ja="ファイルサイズ" pt="Tamanho do Arquivo" ru="Размер файла" zh="文件大小"/>
   <translation tag="Filename" de="Dateiname" en="Filename" es="Nombre de Archivo" fr="Nom du fichier" it="Nome file" ja="ファイル名" pt="Nome do Arquivo" ru="Имя файла" zh="文件名"/>
+  <translation tag="Filter Fan" en="Filter Fan"/>
+  <translation tag="Filter Fan: Off" en="Filter Fan: Off"/>
+  <translation tag="Filter Fan: On" en="Filter Fan: On"/>
   <translation tag="Fine" de="Fein" en="Fine" es="Fino" fr="Fin" it="Preciso" ja="微動" pt="Fino" ru="Точно" zh="细调"/>
   <translation tag="Fine-Tune" de="Feinabstimmung" en="Fine-Tune" es="Ajuste Fino" fr="Réglage fin" it="Regolazione fine" ja="微調整" pt="Ajuste Fino" ru="Тонкая настройка" zh="微调"/>
   <translation tag="Finish" de="Fertig" en="Finish" es="Finalizar" fr="Terminer" it="Fine" ja="完了" pt="Finalizar" ru="Завершить" zh="完成"/>
@@ -1062,6 +1066,10 @@
   <translation tag="Heated Bed PID Tuning" de="Heizbett PID-Abstimmung" en="Heated Bed PID Tuning" es="Ajuste PID de la cama caliente" fr="Réglage PID du plateau chauffant" it="Regolazione PID piano riscaldato" ja="ヒートベッド PIDチューニング" pt="Ajuste PID da Mesa Aquecida" ru="Настройка PID стола" zh="热床 PID 调优"/>
   <translation tag="Heater" de="Heizung" en="Heater" es="Calentador" fr="Chauffage" it="Riscaldatore" ja="ヒーター" pt="Aquecedor" ru="Нагреватель" zh="加热器"/>
   <translation tag="Heater Power" de="Heizleistung" en="Heater Power" es="Potencia del calentador" fr="Puissance du chauffage" it="Potenza riscaldatore" ja="ヒーター出力" pt="Potência do Aquecedor" ru="Мощность нагревателя" zh="加热器功率"/>
+  <translation tag="Heater connection lost" en="Heater connection lost"/>
+  <translation tag="Heater fault" en="Heater fault"/>
+  <translation tag="Heater over-temperature" en="Heater over-temperature"/>
+  <translation tag="Heater sensor fault" en="Heater sensor fault"/>
   <translation tag="HeaterSelect" de="Heizung auswählen" en="HeaterSelect" es="Seleccionar calentador" fr="Sélection du chauffage" it="Seleziona riscaldatore" ja="ヒーターを選択" pt="Selecionar Aquecedor" ru="Выбрать нагреватель" zh="选择加热器"/>
   <translation tag="Heaters off" de="Heizungen aus" en="Heaters off" es="Calentadores apagados" fr="Chauffages éteints" it="Riscaldatori spenti" ja="ヒーターをオフにしました" pt="Aquecedores desligados" ru="Нагреватели выключены" zh="加热器已关闭"/>
   <translation tag="Heating" de="Aufheizen" en="Heating" es="Calentando" fr="Chauffage" it="Riscaldamento" ja="加熱中" pt="Aquecendo" ru="Нагрев" zh="加热中"/>
