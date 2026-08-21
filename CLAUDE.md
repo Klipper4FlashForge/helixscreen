@@ -104,6 +104,7 @@ Features, refactors, new panels/widgets/managers — **scope AFTER investigating
 | **Observer factory** | Static callback + `lv_observer_get_user_data()` | `observe_int_sync<Panel>()` from `observer_factory.h` |
 | **Icon sync** | Add icon, forget fonts | `include/ui_icon_codepoints.h` + `make regen-fonts` + rebuild |
 | **Formatting** | Manual formatting | Let pre-commit hook (clang-format) fix |
+| **Arch-guide citations** | Hand-writing the markdown link, or editing a chapter and skipping the regen | Write the plain backticked citation (`src/printer/printer_state.cpp:622`), then `make regen-doc-links` — `scripts/gen_doc_links.py` derives every link in `docs/devel/architecture/` from the citation text, so a renamed target is fixed once. `quality-checks.sh` fails a chapter that is out of date with the generator. |
 | **No auto-mock** | `if(!start()) return Mock()` | Check `RuntimeConfig::should_mock_*()` |
 | **JSON include** | `#include <nlohmann/json.hpp>` | `#include "hv/json.hpp"` (libhv's bundled version) |
 | **Build system** | `cmake`, `ninja` | `make -j` (pure Makefile) |
