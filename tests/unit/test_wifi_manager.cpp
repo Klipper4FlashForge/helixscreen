@@ -877,6 +877,30 @@ TEST_CASE_METHOD(WiFiManagerTestFixture,
 // connected to wpa_supplicant" because there was nothing left to query.
 // set_enabled must now drive the radio directly and leave the backend
 // running so the connection survives a toggle.
+// init_self_reference() exists so async callbacks can check whether the
+// manager is still alive - ScanCallbackData and ConnectCallbackData both hold
+// a std::weak_ptr for exactly that. Storing the self-reference in an OWNING
+// shared_ptr instead makes the manager immortal: the only strong reference
+// that could ever drop is the one it holds to itself, so ~WiFiManager never
+// runs and the backend threads it stops there stay live for the life of the
+// process. In the test binary that is visible as the thread count climbing
+// across the [network] cases; on a device it is a permanent leak of a
+// wpa_supplicant/NM backend per manager built.
+TEST_CASE("a self-referencing WiFiManager is still destroyed when its owner drops",
+          "[wifi][manager][lifetime]") {
+    std::weak_ptr<WiFiManager> observer;
+    {
+        auto manager = std::make_shared<WiFiManager>(std::make_unique<WifiBackendMock>());
+        manager->init_self_reference(manager);
+        observer = manager;
+        REQUIRE_FALSE(observer.expired());
+    }
+    // The owning scope is gone. Anything still holding the manager alive here
+    // is a reference cycle, not a legitimate observer.
+    helix::ui::UpdateQueue::instance().drain();
+    CHECK(observer.expired());
+}
+
 TEST_CASE("set_enabled(false) turns the radio off without stopping the backend",
           "[wifi][manager][radio]") {
     auto backend = std::make_unique<WifiBackendMock>();

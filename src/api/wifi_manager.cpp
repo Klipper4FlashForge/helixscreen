@@ -1014,11 +1014,16 @@ void WiFiManager::handle_disconnected(const std::string& event_data) {
     // on). Without it the queued lambda can never resolve to a live manager
     // anyway — and skipping the enqueue matters concretely: backend_->stop()
     // in the destructor fires this same DISCONNECTED path synchronously,
-    // with scan_timer_ already torn down and self_ never set in tests that
-    // construct WiFiManager directly (self_ is singleton-only), so an
-    // unconditional enqueue there outlives the test with nothing left to
-    // drain it — an UpdateQueue isolation leak.
-    if (self_) {
+    // with scan_timer_ already torn down and self_ either never set (tests that
+    // construct WiFiManager directly) or already expired (the weak self-
+    // reference goes flat the moment refcount hits zero), so an unconditional
+    // enqueue there outlives the test with nothing left to drain it — an
+    // UpdateQueue isolation leak.
+    // std::weak_ptr::expired(), not LifetimeToken::expired(), so there is no
+    // TOCTOU on `this`: the backend thread running this handler is joined by
+    // backend_->stop() before ~WiFiManager returns, and the member access the
+    // gate sees is inside the queued lambda's weak_self.lock() on the main thread.
+    if (!self_.expired()) { // L081_OK: std::weak_ptr expiry, not a LifetimeToken
         std::weak_ptr<WiFiManager> weak_self = self_;
         helix::ui::queue_update("WiFiManager::handle_disconnected(scan_scheduler)", [weak_self]() {
             if (auto manager = weak_self.lock()) {
