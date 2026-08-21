@@ -440,9 +440,15 @@ TEST_CASE_METHOD(LVGLTestFixture, "AMS op-card color matches the loaded slot's c
         mock_ptr->set_slot_info(i, slot);
     }
 
-    // Load slot 1 (a non-zero, non-first slot to expose +1 indexing).
+    // Load slot 1 (a non-zero, non-first slot to expose +1 indexing). The mock
+    // constructs with slot 0 already loaded, so is_filament_loaded() is true
+    // before this load even starts -- polling on it returns on the first
+    // evaluation and leaves the assertion below racing the operation thread,
+    // which has not yet published the new slot. Join the thread and read the
+    // settled state instead.
     mock_ptr->load_filament(1);
-    REQUIRE(wait_until([&] { return mock_ptr->is_filament_loaded(); }));
+    mock_ptr->wait_for_operation_thread();
+    REQUIRE(mock_ptr->is_filament_loaded());
     REQUIRE(mock_ptr->get_current_slot() == 1);
 
     ams.sync_from_backend();
