@@ -429,22 +429,23 @@
                     style_flex_main_place="space_between" style_pad_gap="#space_xs">
               <bind_flag_if_eq subject="printer_has_chamber_heater" flag="hidden" ref_value="0"/>
               <ui_button name="chamber_preset_off"
-                         width="48%" text="Off" translation_tag="Off" variant="ghost" style_border_width="#border_width"
-                         style_border_color="#border" style_border_opa="255">
+                         width="48%" height="#button_height_tiny" text="Off" translation_tag="Off" variant="ghost"
+                         style_border_width="#border_width" style_border_color="#border" style_border_opa="255">
                 <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
               </ui_button>
-              <ui_button name="chamber_preset_1" width="48%" text="40°C">
+              <ui_button name="chamber_preset_1" width="48%" height="#button_height_tiny" text="40°C">
                 <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
               </ui_button>
-              <ui_button name="chamber_preset_2" width="48%" text="50°C">
+              <ui_button name="chamber_preset_2" width="48%" height="#button_height_tiny" text="50°C">
                 <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
               </ui_button>
-              <ui_button name="chamber_preset_3" width="48%" text="60°C">
+              <ui_button name="chamber_preset_3" width="48%" height="#button_height_tiny" text="60°C">
                 <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
               </ui_button>
             </lv_obj>
             <ui_button name="chamber_btn_custom"
-                       width="100%" text="Custom..." translation_tag="Custom..." variant="secondary">
+                       width="100%" height="#button_height_tiny" text="Custom..." translation_tag="Custom..."
+                       variant="secondary">
               <bind_flag_if_eq subject="printer_has_chamber_heater" flag="hidden" ref_value="0"/>
               <event_cb trigger="clicked" callback="on_temp_graph_custom_clicked"/>
             </ui_button>
