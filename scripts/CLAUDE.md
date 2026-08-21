@@ -14,6 +14,8 @@ Build, asset generation, deployment, and developer tooling for HelixScreen.
 | `bundle-uninstaller.sh` | Bundles uninstall modules → `uninstall.sh` |
 | `helix-launcher.sh` | Systemd-launched watchdog wrapper. Sources `helixscreen.env` for runtime config |
 | `check-deps.sh` | Validates build dependencies. `--minimal` for cross-compile environments |
+| `device-env-set.sh` | Idempotently set one `KEY=VALUE` in a deployed device's `helixscreen.env` over ssh. Every deploy target EXCLUDES that file so a redeploy never clobbers local settings — which also means nothing in a deploy can turn on a runtime switch, and a build flag like `ENABLE_REMOTE_CONTROL=yes` bought nothing on the device. `mk/cross.mk`'s `sync-device-features` calls this when `bin/.build-features` says the binary has the subsystem. Backs the file up once (`.helix-bak`), rewrites a commented-out key in place rather than appending a duplicate, and leaves a matching value alone so an explicit opt-out survives redeploys |
+| `device-env-set-remote.sh` | The half of the above that runs ON the printer, piped to `sh -s`. Separate file so it is testable without hardware (`tests/shell/test_device_env_set.bats`). POSIX sh — the K1/AD5M/CC1/K2 are BusyBox ash. Two hazards it exists to handle: `PI_DEPLOY_DIR` is `~/helixscreen` and a tilde inside a variable never expands, so `mkdir -p` would build a directory literally named `~`; and `sed -i` on a symlink writes a regular file OVER the link, which on the Snapmaker U1 would silently detach the device from its real config |
 
 ### Release & Packaging
 | Script | Purpose |
@@ -134,7 +136,7 @@ navigation recipe in `screenshot-recipes.sh` (the single source of truth).
 ### Developer Tools
 | Script | Purpose |
 |--------|---------|
-| `setup-worktree.sh` | Create/configure git worktrees in `.worktrees/`. Symlinks deps, builds fast |
+| `setup-worktree.sh` | Create/configure git worktrees in `.worktrees/`. Symlinks deps, builds fast. `lib/helix-xml` is the exception in `LIB_PRIVATE_SUBMODULES` — it is ours and edited directly (never patched), so a symlink would put every worktree's engine edits into the MAIN tree's submodule working copy; it gets a private ~2.6 MB checkout whose gitdir lands under `.git/worktrees/<name>/modules/`, and needs no `--unlink`/`--relink` since a real checkout is what git already expects. Gated by `tests/shell/test_worktree_setup.bats` |
 | `sync-worktree-mtimes.py` | Give worktree files the main tree's mtime **when the content is byte-identical**, so the cloned `build/obj/` is actually usable. Without it a fresh worktree recompiles 1945 of 1967 objects purely because `git worktree add` stamps the whole checkout `now` — the PCH prerequisite chain and the `.d` header lists invalidate everything independently, so fixing either one alone buys nothing. Content-conditional by design: files that differ keep their fresh mtime and rebuild. Called from `setup-worktree.sh` |
 | `git-stats.sh` | Comprehensive repo statistics with effort estimation |
 | `benchmark_hosts.sh` | Benchmark host performance for build optimization |
