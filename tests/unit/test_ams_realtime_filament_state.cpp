@@ -442,7 +442,14 @@ TEST_CASE_METHOD(LVGLTestFixture, "AMS op-card color matches the loaded slot's c
 
     // Load slot 1 (a non-zero, non-first slot to expose +1 indexing).
     mock_ptr->load_filament(1);
-    REQUIRE(wait_until([&] { return mock_ptr->is_filament_loaded(); }));
+    // Wait on the action, not on is_filament_loaded(): the mock constructs with
+    // slot 0 already loaded for demo realism, so that flag is ALREADY true here
+    // and the poll returns without waiting for anything, leaving current_slot at
+    // its initial 0. load_filament() sets action=LOADING synchronously before it
+    // returns, so IDLE is genuinely false at entry and only goes true once
+    // finalize_load_state() has published both the flag and the slot.
+    REQUIRE(wait_until([&] { return mock_ptr->get_current_action() == AmsAction::IDLE; }));
+    REQUIRE(mock_ptr->is_filament_loaded());
     REQUIRE(mock_ptr->get_current_slot() == 1);
 
     ams.sync_from_backend();
