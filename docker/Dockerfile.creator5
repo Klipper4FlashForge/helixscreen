@@ -1,0 +1,188 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# HelixScreen - FlashForge Creator 5 Pro (MIPS32r2, NaN2008, static musl) Toolchain
+#
+# Build: docker build -t helixscreen/toolchain-creator5 -f Dockerfile.creator5 .
+# Usage: docker run --rm -v $(pwd):/src -w /src helixscreen/toolchain-creator5 make PLATFORM_TARGET=creator5 -j$(nproc)
+#
+# Target: FlashForge Creator 5 Pro
+#   - CPU: Ingenic X2000 (XBurst2), MIPS32r2 dual-core @ 1.2 GHz
+#   - Display: 800x480 fbdev, evdev touch
+#   - Stock rootfs: glibc 2.33, NaN2008 (/lib/ld-linux-mipsn8.so.1)
+#   - Kernel REJECTS legacy-NaN executables (ENOEXEC) — the K1 toolchain's
+#     output does not run here, which is why this image exists.
+#
+# Strategy: crosstool-NG builds GCC 12 + musl with --with-nan=2008 /
+# -mnan=2008 as the default, then OpenSSL and zlib are cross-built into its
+# sysroot. HelixScreen links fully static against it (see mk/cross.mk).
+# Same two-stage shape as Dockerfile.k1-dynamic.
+
+# ==============================================================================
+# Stage 1: Build the crosstool-NG toolchain
+# ==============================================================================
+
+FROM debian:bookworm AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    autoconf \
+    automake \
+    libtool \
+    libtool-bin \
+    flex \
+    bison \
+    gawk \
+    texinfo \
+    help2man \
+    libncurses-dev \
+    python3 \
+    unzip \
+    rsync \
+    wget \
+    git \
+    gcc \
+    g++ \
+    make \
+    patch \
+    xz-utils \
+    bzip2 \
+    file \
+    gperf \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp/ct-ng-src
+RUN git clone --depth 1 --branch crosstool-ng-1.26.0 \
+    https://github.com/crosstool-ng/crosstool-ng.git . && \
+    ./bootstrap && \
+    ./configure --prefix=/tmp/ct-ng-install && \
+    make -j$(nproc) && \
+    make install
+
+ENV PATH="/tmp/ct-ng-install/bin:$PATH"
+
+# crosstool-NG refuses to run as root
+RUN useradd -m builder && \
+    mkdir -p /opt/creator5-toolchain /tmp/ct-ng-build && \
+    chown -R builder:builder /opt/creator5-toolchain /tmp/ct-ng-build
+
+USER builder
+WORKDIR /tmp/ct-ng-build
+COPY --chown=builder:builder creator5-ct-ng.config .config
+RUN ct-ng olddefconfig && \
+    ct-ng show-config && \
+    ct-ng build.$(nproc) || { tail -n 200 build.log; exit 1; }
+
+USER root
+
+# ==============================================================================
+# Stage 2: Runtime image
+# ==============================================================================
+
+FROM debian:bookworm-slim
+
+LABEL maintainer="HelixScreen <dev@helixscreen.io>"
+LABEL description="Cross-compilation toolchain for FlashForge Creator 5 Pro (MIPS32r2 NaN2008, static musl)"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries
+
+# NOTE: nlohmann-json is bundled with libhv (lib/libhv/cpputil/json.hpp)
+# DO NOT install nlohmann-json3-dev - it causes ABI mismatches
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    pkg-config \
+    ca-certificates \
+    make \
+    cmake \
+    python3 \
+    python3-yaml \
+    file \
+    wget \
+    xz-utils \
+    bzip2 \
+    autoconf \
+    automake \
+    libtool \
+    flex \
+    bison \
+    ccache \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY fetch.sh /usr/local/bin/fetch
+
+COPY --from=builder /opt/creator5-toolchain /opt/creator5-toolchain
+
+# ct-ng installs the prefix read-only; the OpenSSL/zlib installs below need to
+# write into the sysroot.
+RUN chmod -R u+w /opt/creator5-toolchain
+
+# ==============================================================================
+# OpenSSL 1.1.1w - static, NaN2008 (inherited from the compiler default)
+# ==============================================================================
+WORKDIR /tmp
+RUN export PATH="/opt/creator5-toolchain/bin:$PATH" && \
+    fetch https://www.openssl.org/source/openssl-1.1.1w.tar.gz && \
+    tar xzf openssl-1.1.1w.tar.gz && \
+    cd openssl-1.1.1w && \
+    ./Configure linux-mips32 no-shared \
+        --cross-compile-prefix=mipsel-creator5-linux-musl- \
+        --prefix=/opt/creator5-toolchain/mipsel-creator5-linux-musl/sysroot/usr && \
+    make -j$(nproc) && \
+    make install_sw && \
+    cd .. && \
+    rm -rf openssl-1.1.1w openssl-1.1.1w.tar.gz
+
+# ==============================================================================
+# zlib 1.3.2 - static
+# ==============================================================================
+WORKDIR /tmp
+RUN export PATH="/opt/creator5-toolchain/bin:$PATH" && \
+    fetch https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz && \
+    tar xzf zlib-1.3.2.tar.gz && \
+    cd zlib-1.3.2 && \
+    CHOST=mipsel-creator5-linux-musl ./configure --static \
+        --prefix=/opt/creator5-toolchain/mipsel-creator5-linux-musl/sysroot/usr && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf zlib-1.3.2 zlib-1.3.2.tar.gz
+
+# ==============================================================================
+# Cross-Compilation Environment
+# ==============================================================================
+
+ENV PATH="/opt/creator5-toolchain/bin:$PATH"
+ENV CROSS_COMPILE=mipsel-creator5-linux-musl-
+ENV CC=mipsel-creator5-linux-musl-gcc
+ENV CXX=mipsel-creator5-linux-musl-g++
+# Plain ar/ranlib: a static ct-ng toolchain ships no liblto_plugin.so, so the
+# gcc-ar/gcc-ranlib wrappers fail outright (and LTO is off for this target).
+ENV AR=mipsel-creator5-linux-musl-ar
+ENV STRIP=mipsel-creator5-linux-musl-strip
+ENV RANLIB=mipsel-creator5-linux-musl-ranlib
+ENV LD=mipsel-creator5-linux-musl-ld
+
+ENV TARGET_CFLAGS="-march=mips32r2 -mtune=mips32r2 -mnan=2008"
+ENV TARGET_LDFLAGS=""
+
+WORKDIR /src
+
+RUN git config --global --add safe.directory '*'
+
+# Verify: compiler works and the default output is NaN2008
+RUN mipsel-creator5-linux-musl-gcc --version && \
+    mipsel-creator5-linux-musl-g++ --version && \
+    mipsel-creator5-linux-musl-ar --version && \
+    echo 'int main(void){return 0;}' > /tmp/t.c && \
+    mipsel-creator5-linux-musl-gcc -static -o /tmp/t /tmp/t.c && \
+    readelf -h /tmp/t | grep -q nan2008 && \
+    echo "Toolchain verification passed: static NaN2008 MIPS32r2 executable" && \
+    rm -f /tmp/t /tmp/t.c
+
+CMD ["make", "PLATFORM_TARGET=creator5", "SKIP_OPTIONAL_DEPS=1", "-j"]
