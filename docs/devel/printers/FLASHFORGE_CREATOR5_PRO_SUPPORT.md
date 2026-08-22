@@ -148,3 +148,13 @@ make PLATFORM_TARGET=creator5 -j
    ~15 MB footprint is fine, but check `free` with the stock stack running.
 7. **Init** — no systemd; the stock stack is started from BusyBox init scripts. An init.d
    script modeled on the AD5X/ZMOD `S80guppyscreen` pattern is the likely shape.
+8. **Setup wizard calibration** — the preset sets
+   `initial_resonance_compensation_run: false`, so the Input Shaper step runs once on
+   first setup (the port's `SHAPER_CALIBRATE` wrapper grabs a tool first). The Tool
+   Offsets step (`src/ui/ui_wizard_tool_offset.cpp`) is generic: it appears when the
+   printer exposes klipper-toolchanger's `toolchanger` object plus a
+   `CALIBRATE_TOOL_OFFSETS` macro (the name from klipper-toolchanger's
+   `examples/calibrate-offsets.cfg`), runs it, mirrors the console, and offers
+   `SAVE_CONFIG`. The macro's `description:` is the on-screen instruction. On the
+   Creator 5 Pro the port defines it as `STATION_CALIBRATE` + `TOOL_OFFSET_CALIBRATE
+   TOOL=ALL` with `PLATE_REMOVED=1`.
