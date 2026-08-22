@@ -130,7 +130,7 @@ RUN export PATH="/opt/creator5-toolchain/bin:$PATH" && \
     fetch https://www.openssl.org/source/openssl-1.1.1w.tar.gz && \
     tar xzf openssl-1.1.1w.tar.gz && \
     cd openssl-1.1.1w && \
-    ./Configure linux-mips32 no-shared \
+    ./Configure linux-generic32 no-shared no-asm \
         --cross-compile-prefix=mipsel-creator5-linux-musl- \
         --prefix=/opt/creator5-toolchain/mipsel-creator5-linux-musl/sysroot/usr && \
     make -j$(nproc) && \
@@ -168,7 +168,7 @@ ENV STRIP=mipsel-creator5-linux-musl-strip
 ENV RANLIB=mipsel-creator5-linux-musl-ranlib
 ENV LD=mipsel-creator5-linux-musl-ld
 
-ENV TARGET_CFLAGS="-march=mips32r2 -mtune=mips32r2 -mnan=2008"
+ENV TARGET_CFLAGS="-march=mips32r2 -mtune=mips32r2 -mnan=2008 -mfp64"
 ENV TARGET_LDFLAGS=""
 
 WORKDIR /src
