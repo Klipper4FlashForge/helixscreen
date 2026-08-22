@@ -3,6 +3,8 @@
 #include "ui_wizard_tool_offset.h"
 
 #include "ui_emergency_stop.h"
+#include "ui_event_safety.h"
+#include "ui_modal.h"
 #include "ui_wizard_helpers.h"
 
 #include "app_globals.h"
@@ -103,9 +105,34 @@ void WizardToolOffsetStep::init_subjects() {
 static void on_start_tool_offset_clicked(lv_event_t* e) {
     (void)e;
     spdlog::debug("[Wizard Tool Offset] Start calibration clicked");
-    if (auto* step = get_wizard_tool_offset_step()) {
-        step->start_calibration();
+    auto* step = get_wizard_tool_offset_step();
+    if (!step) {
+        return;
     }
+    // The macro's description carries the printer's preconditions (remove the
+    // build plate, clean the nozzles, ...) — moves that can crash a nozzle
+    // deserve an explicit confirmation, not a muted hint line.
+    const char* hint = lv_subject_get_string(step->get_hint_subject());
+    if (!hint || !*hint) {
+        step->start_calibration();
+        return;
+    }
+    helix::ui::modal_show_confirmation(
+        lv_tr("Before calibrating"), hint, ModalSeverity::Warning, lv_tr("Start"),
+        [](lv_event_t* ev) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Wizard Tool Offset] confirm_start");
+            Modal::hide(Modal::get_top());
+            if (auto* s = get_wizard_tool_offset_step()) {
+                s->start_calibration();
+            }
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        [](lv_event_t* ev) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Wizard Tool Offset] cancel_start");
+            Modal::hide(Modal::get_top());
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        step);
 }
 
 static void on_cancel_tool_offset_clicked(lv_event_t* e) {
