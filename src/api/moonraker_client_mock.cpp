@@ -783,6 +783,8 @@ void MoonrakerClientMock::populate_capabilities() {
     // uses "tool TN" to match the established test convention (test_hardware_validator).
     if (is_mock_toolchanger()) {
         mock_objects.push_back("toolchanger");
+        // klipper-toolchanger's calibration entry point (wizard Tool Offsets step)
+        mock_objects.push_back("gcode_macro CALIBRATE_TOOL_OFFSETS");
         for (int i = 0; i < 4; ++i) {
             mock_objects.push_back("tool T" + std::to_string(i));
         }

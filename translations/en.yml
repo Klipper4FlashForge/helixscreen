@@ -370,6 +370,7 @@ translations:
   Calibrated: Calibrated
   'Calibrating Probe...': 'Calibrating Probe...'
   'Calibrating bed mesh...': 'Calibrating bed mesh...'
+  Calibrating tool offsets... {}s: Calibrating tool offsets... {}s
   Calibrating {} axis...: Calibrating {} axis...
   Calibrating...: Calibrating...
   Calibration & Tools: Calibration & Tools
@@ -381,6 +382,7 @@ translations:
   Calibration complete!: Calibration complete!
   Calibration complete! Press 'Next' to continue.: Calibration complete! Press 'Next'
     to continue.
+  Calibration failed: Calibration failed
   Calibration failed - touch targets more precisely.: Calibration failed - touch targets
     more precisely.
   Calibration kept timing out. Your previous settings were kept.: Calibration kept timing out. Your previous settings were kept.
@@ -497,6 +499,7 @@ translations:
   Choose what to power off or restart.: Choose what to power off or restart.
   Clean Brush: Clean Brush
   Clean Nozzle: Clean Nozzle
+  Clean every nozzle first. The printer will pick up each tool and probe it.: Clean every nozzle first. The printer will pick up each tool and probe it.
   Cleaning Nozzle...: Cleaning Nozzle...
   'Cleaning nozzle...': 'Cleaning nozzle...'
   Clear: Clear
@@ -1529,6 +1532,7 @@ translations:
   Maximum toolhead speed (mm/s): Maximum toolhead speed (mm/s)
   Measure and compare belt path frequencies: Measure and compare belt path frequencies
   Measure belt path frequencies: Measure belt path frequencies
+  'Measure each tool''s nozzle position so all tools print in the same place': 'Measure each tool''s nozzle position so all tools print in the same place'
   Measured (shaper off): Measured (shaper off)
   Measurement Failed: Measurement Failed
   Measuring Path A... %d%%: Measuring Path A... %d%%
@@ -1758,6 +1762,7 @@ translations:
   Objects: Objects
   'Off': 'Off'
   'Off:': 'Off:'
+  Offsets saved - Klipper is restarting: Offsets saved - Klipper is restarting
   "Old setting on today's data: {} residual - now: {}": "Old setting on today's data: {} residual - now: {}"
   'On': 'On'
   On and Off macros must be different: On and Off macros must be different
@@ -1980,6 +1985,7 @@ translations:
   'Printer Setup: Language': 'Printer Setup: Language'
   'Printer Setup: Network': 'Printer Setup: Network'
   'Printer Setup: Review': 'Printer Setup: Review'
+  'Printer Setup: Tool Offsets': 'Printer Setup: Tool Offsets'
   'Printer Setup: Touch Calibration': 'Printer Setup: Touch Calibration'
   Printer Shutdown: Printer Shutdown
   Printer Type: Printer Type
@@ -2274,6 +2280,7 @@ translations:
   Save & Restart: Save & Restart
   Save As New: Save As New
   Save Hardware: Save Hardware
+  Save Offsets: Save Offsets
   Save Printer Configuration: Save Printer Configuration
   Save Theme As: Save Theme As
   Save Z-Offset: Save Z-Offset
@@ -2282,6 +2289,7 @@ translations:
     restarts?
   'Save failed: {}': 'Save failed: {}'
   Save to Spoolman: Save to Spoolman
+  Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console.: Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console.
   Saved Z-Offset: Saved Z-Offset
   Saved to crash_report.txt (QR not available): Saved to crash_report.txt (QR not
     available)
@@ -3007,6 +3015,7 @@ translations:
   'Yes': 'Yes'
   ? "You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically."
   : "You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically."
+  You can skip this and calibrate later from the console.: You can skip this and calibrate later from the console.
   You can skip this and calibrate later in Settings.: You can skip this and calibrate
     later in Settings.
   You have unsaved changes. Discard them?: You have unsaved changes. Discard them?

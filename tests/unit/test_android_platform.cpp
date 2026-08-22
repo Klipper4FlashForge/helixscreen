@@ -20,7 +20,7 @@ using helix::wizard::StepId;
 
 // ----------------------------------------------------------------------------
 // Id-based navigation test helpers. The wizard uses a StepId registry; these
-// tests build a full 13-entry skip vector and flip named steps off, mirroring
+// tests build a full 14-entry skip vector and flip named steps off, mirroring
 // what the registry produces. `id()` is shorthand for StepId(int) so the
 // step-index comments below still read clearly.
 // ----------------------------------------------------------------------------
@@ -85,14 +85,14 @@ TEST_CASE("Platform override reset to -1 restores compile-time default", "[andro
 // Wizard Step Logic -- Total Steps (id-based registry navigation)
 // ============================================================================
 
-TEST_CASE("Wizard total steps with no skips is 13", "[android][wizard]") {
-    REQUIRE(wizard_visible_count(all_steps()) == 13);
+TEST_CASE("Wizard total steps with no skips is 14", "[android][wizard]") {
+    REQUIRE(wizard_visible_count(all_steps()) == 14);
 }
 
-TEST_CASE("Wizard total steps with wifi skipped is 12", "[android][wizard]") {
+TEST_CASE("Wizard total steps with wifi skipped is 13", "[android][wizard]") {
     auto v = all_steps();
     skip(v, StepId::Wifi);
-    REQUIRE(wizard_visible_count(v) == 12);
+    REQUIRE(wizard_visible_count(v) == 13);
 }
 
 TEST_CASE("Wizard total steps with wifi + touch_cal + language skipped is 10",
@@ -125,11 +125,11 @@ TEST_CASE("Display step calculation with wifi skipped", "[android][wizard]") {
     REQUIRE(wizard_display_number(StepId::PrinterIdentify, v) == 4);
 }
 
-TEST_CASE("Display step at telemetry (last) with wifi skipped is 12", "[android][wizard]") {
+TEST_CASE("Display step at telemetry (last) with wifi skipped is 13", "[android][wizard]") {
     auto v = all_steps();
     skip(v, StepId::Wifi);
-    // 12 steps before telemetry, one skipped (wifi) -> 11 non-skipped + 1 = 12
-    REQUIRE(wizard_display_number(StepId::Telemetry, v) == 12);
+    // 13 steps before telemetry, one skipped (wifi) -> 12 non-skipped + 1 = 13
+    REQUIRE(wizard_display_number(StepId::Telemetry, v) == 13);
 }
 
 // ============================================================================
@@ -223,8 +223,8 @@ TEST_CASE("Multiple skips: wifi + ams + led, display number at FilamentSensor",
     // Non-skipped before FilamentSensor: 6 -> display = 1 + 6 = 7
     REQUIRE(wizard_display_number(StepId::FilamentSensor, v) == 7);
 
-    // Total: 13 - 3 = 10
-    REQUIRE(wizard_visible_count(v) == 10);
+    // Total: 14 - 3 = 11
+    REQUIRE(wizard_visible_count(v) == 11);
 }
 
 // ============================================================================
@@ -244,7 +244,7 @@ TEST_CASE("Android scenario: wifi skipped when platform is Android",
         skip(v, StepId::Wifi);
 
     REQUIRE(android_skips_wifi == true);
-    REQUIRE(wizard_visible_count(v) == 12);
+    REQUIRE(wizard_visible_count(v) == 13);
 
     // Step after language should be connection, not wifi
     REQUIRE(wizard_next(StepId::Language, v) == StepId::Connection);

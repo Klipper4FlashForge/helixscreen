@@ -22,11 +22,12 @@ enum class StepId {
     AmsIdentify,
     LedSelect,
     FilamentSensor,
+    ToolOffset,
     InputShaper,
     Summary,
     Telemetry,
 };
-inline constexpr int STEP_COUNT = 13;
+inline constexpr int STEP_COUNT = 14;
 
 // Plain data needed to decide skips — no LVGL, constructible in tests.
 struct StepContext {
