@@ -82,6 +82,7 @@
         "label": "Bed Mesh",
         "gcode": "BED_MESH_CALIBRATE"
       }
-    }
+    },
+    "initial_resonance_compensation_run": false
   }
 }
