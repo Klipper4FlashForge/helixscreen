@@ -12,6 +12,7 @@
 #include "ui_wizard_printer_identify.h"
 #include "ui_wizard_summary.h"
 #include "ui_wizard_telemetry.h"
+#include "ui_wizard_tool_offset.h"
 #include "ui_wizard_touch_calibration.h"
 #include "ui_wizard_wifi.h"
 
@@ -41,6 +42,7 @@ std::vector<Step*> steps() {
     v.push_back(get_wizard_ams_identify_step());           // AmsIdentify
     v.push_back(get_wizard_led_select_step());             // LedSelect
     v.push_back(get_wizard_filament_sensor_select_step()); // FilamentSensor
+    v.push_back(get_wizard_tool_offset_step());            // ToolOffset
     v.push_back(get_wizard_input_shaper_step());           // InputShaper
     v.push_back(get_wizard_summary_step());                // Summary
     v.push_back(get_wizard_telemetry_step());              // Telemetry

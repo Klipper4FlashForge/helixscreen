@@ -1,0 +1,95 @@
+<?xml version="1.0"?>
+<!-- Copyright (C) 2025-2026 356C LLC -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<component>
+  <!-- First-Run Wizard: Tool Offset Calibration (tool changers, optional) -->
+  <!-- Runs the printer's CALIBRATE_TOOL_OFFSETS macro and mirrors its console output -->
+  <consts>
+    <!-- Step metadata (read by wizard orchestrator) -->
+    <str name="step_title" value="Printer Setup: Tool Offsets" value_tag="Printer Setup: Tool Offsets"/>
+    <str name="step_subtitle"
+         value="Measure each tool's nozzle position so all tools print in the same place"
+         value_tag="Measure each tool's nozzle position so all tools print in the same place"/>
+    <int name="step_order" value="9"/>
+  </consts>
+  <view name="wizard_tool_offset_root"
+        extends="lv_obj" width="100%" height="100%" style_bg_opa="0" style_border_width="0" style_pad_all="0"
+        flex_flow="column" style_flex_main_place="start" style_flex_cross_place="center">
+
+    <!-- Main content card -->
+    <ui_card width="100%"
+             flex_grow="1" style_radius="#border_radius" style_pad_all="#space_lg" style_pad_gap="#space_md"
+             flex_flow="column" style_flex_main_place="start" style_flex_cross_place="center">
+
+      <!-- Info section: generic text plus the macro's own description -->
+      <lv_obj width="100%" flex_flow="column" style_pad_all="0" style_pad_gap="#space_sm">
+        <text_body width="100%"
+                   text="Clean every nozzle first. The printer will pick up each tool and probe it."
+                   translation_tag="Clean every nozzle first. The printer will pick up each tool and probe it."
+                   style_text_align="center"/>
+        <text_small width="100%" bind_text="wizard_tool_offset_hint" style_text_align="center"
+                    style_text_color="#text_muted"/>
+      </lv_obj>
+
+      <!-- Status + console mirror -->
+      <lv_obj width="100%"
+              flex_flow="column" style_pad_all="0" style_pad_gap="#space_sm" style_flex_cross_place="center">
+        <text_body width="100%" bind_text="wizard_tool_offset_status" style_text_align="center"/>
+
+        <spinner size="lg">
+          <bind_flag_if_eq subject="wizard_tool_offset_active" flag="hidden" ref_value="0"/>
+        </spinner>
+
+        <text_small width="100%" bind_text="wizard_tool_offset_log" style_text_align="center"
+                    style_text_color="#text_muted">
+          <bind_flag_if_eq subject="wizard_tool_offset_started" flag="hidden" ref_value="0"/>
+        </text_small>
+
+        <!-- Completion help text -->
+        <text_small width="100%"
+                    text="Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console."
+                    translation_tag="Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console."
+                    style_text_align="center" style_text_color="#text_muted">
+          <bind_flag_if_eq subject="wizard_tool_offset_complete" flag="hidden" ref_value="0"/>
+        </text_small>
+      </lv_obj>
+
+      <!-- Spacer -->
+      <lv_obj flex_grow="1"/>
+
+      <!-- Start (hidden once started) -->
+      <ui_button name="start_tool_offset_btn"
+                 width="#wizard_button_width" height="#button_height" text="Start Calibration"
+                 translation_tag="Start Calibration">
+        <event_cb trigger="clicked" callback="on_start_tool_offset"/>
+        <bind_flag_if_eq subject="wizard_tool_offset_started" flag="hidden" ref_value="1"/>
+      </ui_button>
+
+      <!-- Cancel (only while the macro runs): M112 + firmware_restart, the
+           macro blocks the gcode queue so nothing softer stops it -->
+      <ui_button name="cancel_tool_offset_btn"
+                 width="#wizard_button_width" height="#button_height" text="Cancel" translation_tag="Cancel"
+                 variant="warning">
+        <event_cb trigger="clicked" callback="on_cancel_tool_offset"/>
+        <bind_flag_if_eq subject="wizard_tool_offset_active" flag="hidden" ref_value="0"/>
+      </ui_button>
+
+      <!-- Save (after success, until clicked) -->
+      <ui_button name="save_tool_offset_btn"
+                 width="#wizard_button_width" height="#button_height" text="Save Offsets"
+                 translation_tag="Save Offsets" variant="primary">
+        <event_cb trigger="clicked" callback="on_save_tool_offset"/>
+        <bind_flag_if cond="wizard_tool_offset_complete eq 0 or wizard_tool_offset_saved eq 1" flag="hidden"/>
+      </ui_button>
+
+      <!-- Help text (hidden once calibration starts) -->
+      <text_small width="100%"
+                  text="You can skip this and calibrate later from the console."
+                  translation_tag="You can skip this and calibrate later from the console." style_text_align="center"
+                  style_text_color="#text_muted">
+        <bind_flag_if_eq subject="wizard_tool_offset_started" flag="hidden" ref_value="1"/>
+      </text_small>
+
+    </ui_card>
+  </view>
+</component>
