@@ -16,7 +16,7 @@ Moonraker, first UI run) is open work.
 | SoC | Ingenic X2000 (XBurst2, MIPS32r2, 2× 1.2 GHz) — same family as the Creality K1's X2000E |
 | FPU / ABI | Hard float, 64-bit FPU (`-mfp64`), **NaN2008** (`/lib/ld-linux-mipsn8.so.1`) |
 | RAM | 128–256 MB |
-| Display | 800×480 panel; the framebuffer is exposed **portrait (480×800)**, so the preset sets `display.rotate = 270` (same as the K1's X2000E); fbdev `/dev/fb0`, no X11/Wayland/DRM |
+| Display | 800×480 panel; the framebuffer is exposed **portrait (480×800)**, so the preset sets `display.rotate = 90` (verified on the printer); fbdev `/dev/fb0`, no X11/Wayland/DRM |
 | Touch | evdev, `/dev/input/event2` (auto-detected; override with `HELIX_TOUCH_DEVICE`) |
 | Stock UI | `firmwareExe` — LVGL 8 on fbdev. **Also** hosts the port-8898 REST API, the MQTT cloud link, and the tool-pickup orchestration for UI-started prints |
 | C library | glibc 2.33, built with Ingenic "MIPS Linux Tools GCC12.1 Release6.0.1 xburst2" (`mips-gcc1210-glibc233`), min kernel 3.10.14 |
@@ -140,7 +140,7 @@ make PLATFORM_TARGET=creator5 -j
 5. **Detection + preset** — `printer_database.json` entry `flashforge_creator_5_pro`
    (fingerprint: `ff_toolchange` / `gcode_button extruder_grab1`, 4 extruders) and preset
    `creator5.json` (4 hotends, chamber heater, part/chamber fans, LED, `fd_ex*` runout
-   switches, rotate 270). Without it the detector picked the AD5X (same hostname, MIPS,
+   switches, rotate 90). Without it the detector picked the AD5X (same hostname, MIPS,
    4 tools); the AD5X entry now excludes on `MOTOR_GRAB`. Uses the `generic-corexy` image.
 6. **Memory** — 128–256 MB shared with Klipper, Moonraker, `firmwareExe`. HelixScreen's
    ~15 MB footprint is fine, but check `free` with the stock stack running.
