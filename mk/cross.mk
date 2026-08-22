@@ -2933,8 +2933,7 @@ release-ad5x: | build/ad5x/bin/helix-screen build/ad5x/bin/helix-splash
 	@echo "$(GREEN)✓ Created $(RELEASE_DIR)/helixscreen-ad5x-$(RELEASE_VERSION).tar.gz + helixscreen-ad5x.zip$(RESET)"
 	@ls -lh $(RELEASE_DIR)/helixscreen-ad5x-$(RELEASE_VERSION).tar.gz $(RELEASE_DIR)/helixscreen-ad5x.zip
 
-# Package Creator 5 Pro release (no preset yet: first run goes through the
-# hardware wizard, same as release-x86)
+# Package Creator 5 Pro release
 release-creator5: | build/creator5/bin/helix-screen build/creator5/bin/helix-splash
 	@echo "$(CYAN)$(BOLD)Packaging Creator 5 Pro release v$(VERSION)...$(RESET)"
 	@mkdir -p $(RELEASE_DIR)/helixscreen/bin
@@ -2942,8 +2941,11 @@ release-creator5: | build/creator5/bin/helix-screen build/creator5/bin/helix-spl
 	@if [ -f build/creator5/bin/helix-watchdog ]; then cp build/creator5/bin/helix-watchdog $(RELEASE_DIR)/helixscreen/bin/; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
 	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
-	@rm -f $(RELEASE_DIR)/helixscreen/config/settings.json $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
+	@# Install Creator 5 Pro preset as default config (skips hardware wizard on first run)
+	@rm -f $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
+	@cp assets/config/presets/creator5.json $(RELEASE_DIR)/helixscreen/config/settings.json
+	@echo "  $(DIM)Included pre-configured config/settings.json for Creator 5 Pro$(RESET)"
 	@cp scripts/$(INSTALLER_FILENAME) $(RELEASE_DIR)/helixscreen/
 	@chmod +x $(RELEASE_DIR)/helixscreen/$(INSTALLER_FILENAME)
 	@mkdir -p $(RELEASE_DIR)/helixscreen/scripts
