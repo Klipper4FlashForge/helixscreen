@@ -34,6 +34,21 @@ void register_server_handlers(std::unordered_map<std::string, MethodHandler>& re
         return true;
     };
 
+    // printer.gcode.help - command descriptions; the wizard Tool Offsets step
+    // shows CALIBRATE_TOOL_OFFSETS' description as its precondition prompt.
+    registry["printer.gcode.help"] = [](MoonrakerClientMock* /*self*/, const json& /*params*/,
+                                        std::function<void(const json&)> success_cb,
+                                        std::function<void(const MoonrakerError&)> /*error_cb*/)
+        -> bool {
+        json result = {{"CALIBRATE_TOOL_OFFSETS",
+                        "Remove the build plate and clean all nozzles first. Calibrates the "
+                        "station, then the nozzle offset of every tool."}};
+        if (success_cb) {
+            success_cb(json{{"result", result}});
+        }
+        return true;
+    };
+
     // server.info - Get Moonraker server information
     // https://moonraker.readthedocs.io/en/latest/web_api/#get-server-info
     registry["server.info"] = [](MoonrakerClientMock* self, const json& /*params*/,

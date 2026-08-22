@@ -276,6 +276,7 @@ translations:
   Bed target set to {}°C: Bed target set to {}°C
   Bed temp must be 0-200°C: Bed temp must be 0-200°C
   Bed warming timed out: Bed warming timed out
+  Before calibrating: Before calibrating
   Belt A frequency locked: Belt A frequency locked
   Belt B frequency locked: Belt B frequency locked
   Belt Tension: Belt Tension
