@@ -25,6 +25,8 @@ const char* to_string(StepId id) {
         return "LedSelect";
     case StepId::FilamentSensor:
         return "FilamentSensor";
+    case StepId::ToolOffset:
+        return "ToolOffset";
     case StepId::InputShaper:
         return "InputShaper";
     case StepId::Summary:
