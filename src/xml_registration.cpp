@@ -780,6 +780,7 @@ void register_xml_components() {
     register_xml("wizard_ams_identify.xml");
     register_xml("wizard_led_select.xml");
     register_xml("wizard_filament_sensor_select.xml");
+    register_xml("wizard_tool_offset.xml");
     register_xml("wizard_input_shaper.xml");
     register_xml("wizard_language_chooser.xml");
     register_xml("wizard_summary.xml");

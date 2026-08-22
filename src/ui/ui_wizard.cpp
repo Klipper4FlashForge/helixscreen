@@ -407,6 +407,7 @@ void ui_wizard_container_register_responsive_constants() {
         "wizard_ams_identify",
         "wizard_led_select",
         "wizard_filament_sensor_select",
+        "wizard_tool_offset",
         "wizard_input_shaper",
         "wizard_language_chooser",
         "wizard_summary",
