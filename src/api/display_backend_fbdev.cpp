@@ -358,6 +358,21 @@ lv_indev_t* DisplayBackendFbdev::create_input_pointer() {
                     spdlog::warn("[Fbdev Backend] ABS range is zero — LVGL cannot map "
                                  "coordinates to display ({}x{}), forcing calibration",
                                  screen_width_, screen_height_);
+                } else if (!needs_calibration_ && screen_width_ != screen_height_ &&
+                           !helix::is_generic_hid_abs_range(abs_x.maximum) &&
+                           !helix::has_abs_display_mismatch(abs_x.maximum, abs_y.maximum,
+                                                            screen_height_, screen_width_)) {
+                    // Advertised range is the display size transposed (Creator 5 Pro
+                    // Goodix: EVIOCGABS says 800x480 on a 480x800 framebuffer) while the
+                    // coordinates it emits span the framebuffer the normal way round —
+                    // the driver's absinfo has its axes swapped. Scaling by the
+                    // advertised range clamps half of each axis; scale by the display
+                    // size and leave rotation to LVGL. HELIX_TOUCH_MIN_X/... below
+                    // still override this.
+                    lv_evdev_set_calibration(touch_, 0, 0, screen_width_, screen_height_);
+                    spdlog::info("[Fbdev Backend] ABS range ({},{}) is the display ({}x{}) "
+                                 "transposed — absinfo axes swapped, scaling by display size",
+                                 abs_x.maximum, abs_y.maximum, screen_width_, screen_height_);
                 } else if (!needs_calibration_ &&
                            helix::has_abs_display_mismatch(abs_x.maximum, abs_y.maximum,
                                                            screen_width_, screen_height_)) {
