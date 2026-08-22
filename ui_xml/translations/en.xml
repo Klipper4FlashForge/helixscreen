@@ -347,6 +347,7 @@
   <translation tag="Calibrated" en="Calibrated"/>
   <translation tag="Calibrating Probe..." en="Calibrating Probe..."/>
   <translation tag="Calibrating bed mesh..." en="Calibrating bed mesh..."/>
+  <translation tag="Calibrating tool offsets... {}s" en="Calibrating tool offsets... {}s"/>
   <translation tag="Calibrating {} axis..." en="Calibrating {} axis..."/>
   <translation tag="Calibrating..." en="Calibrating..."/>
   <translation tag="Calibration &amp; Tools" en="Calibration &amp; Tools"/>
@@ -357,6 +358,7 @@
   <translation tag="Calibration complete" en="Calibration complete"/>
   <translation tag="Calibration complete!" en="Calibration complete!"/>
   <translation tag="Calibration complete! Press &apos;Next&apos; to continue." en="Calibration complete! Press &apos;Next&apos; to continue."/>
+  <translation tag="Calibration failed" en="Calibration failed"/>
   <translation tag="Calibration failed - touch targets more precisely." en="Calibration failed - touch targets more precisely."/>
   <translation tag="Calibration kept timing out. Your previous settings were kept." en="Calibration kept timing out. Your previous settings were kept."/>
   <translation tag="Calibration may still be running — response timed out" en="Calibration may still be running — response timed out"/>
@@ -452,6 +454,7 @@
   <translation tag="Choose what to power off or restart." en="Choose what to power off or restart."/>
   <translation tag="Clean Brush" en="Clean Brush"/>
   <translation tag="Clean Nozzle" en="Clean Nozzle"/>
+  <translation tag="Clean every nozzle first. The printer will pick up each tool and probe it." en="Clean every nozzle first. The printer will pick up each tool and probe it."/>
   <translation tag="Cleaning Nozzle..." en="Cleaning Nozzle..."/>
   <translation tag="Cleaning nozzle..." en="Cleaning nozzle..."/>
   <translation tag="Clear" en="Clear"/>
@@ -1399,6 +1402,7 @@
   <translation tag="Maximum toolhead speed (mm/s)" en="Maximum toolhead speed (mm/s)"/>
   <translation tag="Measure and compare belt path frequencies" en="Measure and compare belt path frequencies"/>
   <translation tag="Measure belt path frequencies" en="Measure belt path frequencies"/>
+  <translation tag="Measure each tool&apos;s nozzle position so all tools print in the same place" en="Measure each tool&apos;s nozzle position so all tools print in the same place"/>
   <translation tag="Measured (shaper off)" en="Measured (shaper off)"/>
   <translation tag="Measurement Failed" en="Measurement Failed"/>
   <translation tag="Measuring Path A... %d%%" en="Measuring Path A... %d%%"/>
@@ -1615,6 +1619,7 @@
   <translation tag="Objects" en="Objects"/>
   <translation tag="Off" en="Off"/>
   <translation tag="Off:" en="Off:"/>
+  <translation tag="Offsets saved - Klipper is restarting" en="Offsets saved - Klipper is restarting"/>
   <translation tag="Old setting on today&apos;s data: {} residual - now: {}" en="Old setting on today&apos;s data: {} residual - now: {}"/>
   <translation tag="On" en="On"/>
   <translation tag="On and Off macros must be different" en="On and Off macros must be different"/>
@@ -1821,6 +1826,7 @@
   <translation tag="Printer Setup: Language" en="Printer Setup: Language"/>
   <translation tag="Printer Setup: Network" en="Printer Setup: Network"/>
   <translation tag="Printer Setup: Review" en="Printer Setup: Review"/>
+  <translation tag="Printer Setup: Tool Offsets" en="Printer Setup: Tool Offsets"/>
   <translation tag="Printer Setup: Touch Calibration" en="Printer Setup: Touch Calibration"/>
   <translation tag="Printer Shutdown" en="Printer Shutdown"/>
   <translation tag="Printer Type" en="Printer Type"/>
@@ -2086,6 +2092,7 @@
   <translation tag="Save &amp; Restart" en="Save &amp; Restart"/>
   <translation tag="Save As New" en="Save As New"/>
   <translation tag="Save Hardware" en="Save Hardware"/>
+  <translation tag="Save Offsets" en="Save Offsets"/>
   <translation tag="Save Printer Configuration" en="Save Printer Configuration"/>
   <translation tag="Save Theme As" en="Save Theme As"/>
   <translation tag="Save Z-Offset" en="Save Z-Offset"/>
@@ -2093,6 +2100,7 @@
   <translation tag="Save changes to persist them across restarts?" en="Save changes to persist them across restarts?"/>
   <translation tag="Save failed: {}" en="Save failed: {}"/>
   <translation tag="Save to Spoolman" en="Save to Spoolman"/>
+  <translation tag="Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console." en="Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console."/>
   <translation tag="Saved Z-Offset" en="Saved Z-Offset"/>
   <translation tag="Saved to crash_report.txt (QR not available)" en="Saved to crash_report.txt (QR not available)"/>
   <translation tag="Saved to printer configuration." en="Saved to printer configuration."/>
@@ -2706,6 +2714,7 @@
   <translation tag="Year" en="Year"/>
   <translation tag="Yes" en="Yes"/>
   <translation tag="You can now skip these operations when starting prints.&#10;&#10;Look for the new options in the print details before starting each print.&#10;&#10;A backup of your config was saved automatically." en="You can now skip these operations when starting prints.&#10;&#10;Look for the new options in the print details before starting each print.&#10;&#10;A backup of your config was saved automatically."/>
+  <translation tag="You can skip this and calibrate later from the console." en="You can skip this and calibrate later from the console."/>
   <translation tag="You can skip this and calibrate later in Settings." en="You can skip this and calibrate later in Settings."/>
   <translation tag="You have unsaved changes. Discard them?" en="You have unsaved changes. Discard them?"/>
   <translation tag="Your PRINT_START macro will be updated to give you control over:&#10;&#10;" en="Your PRINT_START macro will be updated to give you control over:&#10;&#10;"/>
