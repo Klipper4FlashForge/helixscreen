@@ -58,8 +58,10 @@ and `ld` refuses to link mixed NaN encodings.
 NaN2008 is baked in as the compiler *default* (`--with-nan=2008`, `CT_TARGET_CFLAGS`), so
 OpenSSL, zlib, libnl and the wpa_supplicant client inherit it without per-project flag
 plumbing; `mk/cross.mk` still passes `-mnan=2008` explicitly so a wrong toolchain fails at
-link time rather than on the printer. FP mode is GCC's o32 default (fpxx, "Any FPU"),
-which the kernel runs under either FR mode.
+link time rather than on the printer. FP mode is `-mfp64` (FR=1) like every stock
+binary: the XBurst2 FPU does not run FR=0, so an fpxx/fp32 build ends up in the kernel's
+FPU emulator, which oopses in `mips_dsemul` (`readelf -A` must say
+`FP ABI: Hard float (32-bit CPU, 64-bit FPU)`).
 
 ## Building
 
@@ -109,7 +111,7 @@ make PLATFORM_TARGET=creator5 -j
 |---------|-------|
 | `PLATFORM_TARGET` | `creator5` |
 | Toolchain image | `helixscreen/toolchain-creator5` (`docker/Dockerfile.creator5`, crosstool-NG) |
-| Architecture | `-march=mips32r2 -mtune=mips32r2 -mnan=2008`, little-endian, hard-float (fpxx) |
+| Architecture | `-march=mips32r2 -mtune=mips32r2 -mnan=2008 -mfp64`, little-endian, hard-float FR=1 |
 | Linking | Fully static (musl), `-Os`, gc-sections. **No LTO**: the static crosstool-NG toolchain has no `liblto_plugin.so` (same as `k1-dynamic`), so `-flto` breaks every configure test and `gcc-ar` cannot start; plain `ar`/`ranlib` are used |
 | Display backend | fbdev (`/dev/fb0`, size auto-detected), no rotation (panel is native landscape) |
 | Input | evdev (auto-detect; `HELIX_TOUCH_DEVICE=/dev/input/event2` to pin) |
