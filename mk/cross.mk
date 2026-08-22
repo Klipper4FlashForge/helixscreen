@@ -463,7 +463,7 @@ else ifeq ($(PLATFORM_TARGET),creator5)
     # therefore ships no liblto_plugin.so — same constraint as k1-dynamic. With
     # -flto every configure test dies with "LTO support has not been enabled in
     # this configuration". gc-sections still strips unused code.
-    TARGET_CFLAGS := -march=mips32r2 -mtune=mips32r2 -mnan=2008 \
+    TARGET_CFLAGS := -march=mips32r2 -mtune=mips32r2 -mnan=2008 -mfp64 \
         -Os -ffunction-sections -fdata-sections \
         -fno-omit-frame-pointer -funwind-tables \
         -fmerge-all-constants -fno-ident \
