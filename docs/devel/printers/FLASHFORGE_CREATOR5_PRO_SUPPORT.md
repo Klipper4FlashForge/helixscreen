@@ -159,7 +159,7 @@ make PLATFORM_TARGET=creator5 -j
    Creator 5 Pro the port defines it as `STATION_CALIBRATE` + `TOOL_OFFSET_CALIBRATE
    TOOL=ALL` with `PLATE_REMOVED=1`. Both steps skip themselves when the printer already
    holds the result: shaper frequencies in `[input_shaper]`
-   (`PrinterDiscovery::has_input_shaper_config()`), or a non-zero gcode offset on any
-   tool but T0 (`ToolState`). The port's `[ff_legacy] auto_import` loads firmwareExe's
+   (`PrinterDiscovery::has_input_shaper_config()`), or a non-zero gcode offset on every
+   tool (`ToolState`). The port's `[ff_legacy] auto_import` loads firmwareExe's
    nozzle/station numbers at startup until something is saved, so a fresh install keeps
    the factory calibration and the wizard shows neither step.

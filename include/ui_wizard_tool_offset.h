@@ -71,8 +71,9 @@ class WizardToolOffsetStep : public helix::wizard::Step {
     /// Printer exposes a tool changer and the calibration macro
     static bool printer_supports_calibration();
 
-    /// Some tool other than the first already reports a non-zero gcode offset
-    /// (ToolState) — a calibration was saved before, by whatever software.
+    /// Every tool already reports a non-zero gcode offset (ToolState) — a full
+    /// calibration was saved before, by whatever software. A single zero tool
+    /// means the step is still worth offering.
     static bool tools_already_calibrated();
 
     /// Run CALIBRATE_TOOL_OFFSETS (no-op while one is in flight)

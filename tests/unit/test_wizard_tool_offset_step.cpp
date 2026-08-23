@@ -81,7 +81,7 @@ TEST_CASE_METHOD(WizardToolOffsetStepTestFixture, "WizardToolOffsetStep - should
         REQUIRE(step.should_skip(ctx) == false);
     }
 
-    SECTION("Skipped once a tool other than T0 carries an offset") {
+    SECTION("Skipped only once EVERY tool carries an offset") {
         PrinterDiscovery hardware;
         hardware.parse_objects({"extruder", "extruder1", "toolchanger", "tool T0", "tool T1",
                                 "gcode_macro CALIBRATE_TOOL_OFFSETS"});
@@ -90,12 +90,13 @@ TEST_CASE_METHOD(WizardToolOffsetStepTestFixture, "WizardToolOffsetStep - should
         UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
         REQUIRE(WizardToolOffsetStep::tools_already_calibrated() == false);
 
-        // T0 is the reference — its offset never counts
-        helix::ToolState::instance().update_from_status({{"tool T0", {{"gcode_x_offset", 0.25}}}});
+        // One tool measured, the other still zero: not calibrated
+        helix::ToolState::instance().update_from_status({{"tool T1", {{"gcode_y_offset", -0.12}}}});
         REQUIRE(WizardToolOffsetStep::tools_already_calibrated() == false);
         REQUIRE(step.should_skip(ctx) == false);
 
-        helix::ToolState::instance().update_from_status({{"tool T1", {{"gcode_y_offset", -0.12}}}});
+        // Absolute positions: T0 gets a value of its own too
+        helix::ToolState::instance().update_from_status({{"tool T0", {{"gcode_x_offset", 0.25}}}});
         REQUIRE(WizardToolOffsetStep::tools_already_calibrated() == true);
         REQUIRE(step.should_skip(ctx) == true);
     }

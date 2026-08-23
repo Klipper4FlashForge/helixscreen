@@ -241,18 +241,22 @@ bool WizardToolOffsetStep::printer_supports_calibration() {
 }
 
 bool WizardToolOffsetStep::tools_already_calibrated() {
-    // klipper-toolchanger semantics: the first tool is the reference (all
-    // zeros) and an uncalibrated printer reports zeros on every other tool
-    // too. Any non-zero offset on T1+ means a calibration was saved before —
-    // by this UI, the console, or the printer's previous software.
+    // An uncalibrated tool reports all-zero gcode offsets. Only when EVERY
+    // tool carries a non-zero offset was a full calibration saved before — by
+    // this UI, the console, or the printer's previous software. One zero tool
+    // is enough to offer the step: some firmwares report absolute per-tool
+    // positions (no zero reference tool), others leave T0 at zero and still
+    // need the rest measured.
     const auto& tools = helix::ToolState::instance().tools();
-    for (size_t i = 1; i < tools.size(); ++i) {
-        const auto& t = tools[i];
-        if (t.gcode_x_offset != 0.0f || t.gcode_y_offset != 0.0f || t.gcode_z_offset != 0.0f) {
-            return true;
+    if (tools.empty()) {
+        return false;
+    }
+    for (const auto& t : tools) {
+        if (t.gcode_x_offset == 0.0f && t.gcode_y_offset == 0.0f && t.gcode_z_offset == 0.0f) {
+            return false;
         }
     }
-    return false;
+    return true;
 }
 
 bool WizardToolOffsetStep::should_skip(const helix::wizard::StepContext& ctx) const {
