@@ -34,7 +34,10 @@
  *
  * ## Validation:
  *
- * Footer shows "Skip" until the macro succeeds, then "Next".
+ * Mandatory: no Skip, and Next unlocks only once the macro succeeded — a tool
+ * changer with unknown offsets drives nozzles into the plate. Back stays
+ * available; the "already calibrated" check in should_skip() removes the step
+ * on a printer that already holds offsets.
  */
 class WizardToolOffsetStep : public helix::wizard::Step {
   public:
