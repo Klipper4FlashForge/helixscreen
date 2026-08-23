@@ -607,6 +607,33 @@ class PrinterDiscovery {
         }
 
         for (const auto& [key, value] : config.items()) {
+            // [input_shaper] with a frequency on either axis = a calibration
+            // already saved (SAVE_CONFIG or factory). configfile.config carries
+            // numbers as strings.
+            if (key == "input_shaper" && value.is_object()) {
+                for (const char* field : {"shaper_freq_x", "shaper_freq_y"}) {
+                    if (!value.contains(field)) {
+                        continue;
+                    }
+                    const auto& f = value[field];
+                    double freq = 0.0;
+                    if (f.is_number()) {
+                        freq = f.get<double>();
+                    } else if (f.is_string()) {
+                        try {
+                            freq = std::stod(f.get<std::string>());
+                        } catch (...) {
+                        }
+                    }
+                    if (freq > 0.0) {
+                        has_input_shaper_config_ = true;
+                    }
+                }
+                if (has_input_shaper_config_) {
+                    spdlog::debug("[PrinterDiscovery] Input shaper already configured");
+                }
+            }
+
             if (key == "adxl345" || key.rfind("adxl345 ", 0) == 0 || key == "lis2dw" ||
                 key.rfind("lis2dw ", 0) == 0 || key == "mpu9250" || key.rfind("mpu9250 ", 0) == 0 ||
                 key == "lis3dh" || key.rfind("lis3dh ", 0) == 0 || key == "icm20948" ||
@@ -758,6 +785,7 @@ class PrinterDiscovery {
         has_led_effects_ = false;
         led_macros_.clear();
         has_accelerometer_ = false;
+        has_input_shaper_config_ = false;
         has_firmware_retraction_ = false;
         has_timelapse_ = false;
         has_exclude_object_ = false;
@@ -914,6 +942,12 @@ class PrinterDiscovery {
 
     [[nodiscard]] bool has_accelerometer() const {
         return has_accelerometer_;
+    }
+
+    /// [input_shaper] in the printer config already carries a frequency on
+    /// some axis — a resonance calibration was saved before (by any software).
+    [[nodiscard]] bool has_input_shaper_config() const {
+        return has_input_shaper_config_;
     }
 
     [[nodiscard]] bool has_filament_sensors() const {
@@ -1486,6 +1520,7 @@ class PrinterDiscovery {
     bool has_led_effects_ = false;
     std::vector<std::string> led_macros_;
     bool has_accelerometer_ = false;
+    bool has_input_shaper_config_ = false;
     bool has_firmware_retraction_ = false;
     bool has_timelapse_ = false;
     bool has_exclude_object_ = false;

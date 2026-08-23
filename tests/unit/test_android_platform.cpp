@@ -95,13 +95,13 @@ TEST_CASE("Wizard total steps with wifi skipped is 13", "[android][wizard]") {
     REQUIRE(wizard_visible_count(v) == 13);
 }
 
-TEST_CASE("Wizard total steps with wifi + touch_cal + language skipped is 10",
+TEST_CASE("Wizard total steps with wifi + touch_cal + language skipped is 11",
           "[android][wizard]") {
     auto v = all_steps();
     skip(v, StepId::Wifi);
     skip(v, StepId::TouchCalibration);
     skip(v, StepId::Language);
-    REQUIRE(wizard_visible_count(v) == 10);
+    REQUIRE(wizard_visible_count(v) == 11);
 }
 
 // ============================================================================

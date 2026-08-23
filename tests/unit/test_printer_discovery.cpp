@@ -1779,3 +1779,40 @@ TEST_CASE("PrinterDiscovery: build volume rejects unusable payloads",
         REQUIRE(discovery.build_volume().y_max == 0.0f);
     }
 }
+
+// ============================================================================
+// Input shaper config detection (a saved resonance calibration)
+// ============================================================================
+
+TEST_CASE("PrinterDiscovery detects a saved input shaper configuration", "[printer_discovery]") {
+    PrinterDiscovery hw;
+
+    SECTION("No [input_shaper] section") {
+        hw.parse_config_keys({{"printer", {{"kinematics", "corexy"}}}});
+        REQUIRE_FALSE(hw.has_input_shaper_config());
+    }
+
+    SECTION("Frequencies as strings (configfile.config shape)") {
+        json config;
+        config["input_shaper"] = {{"shaper_type_x", "zv"}, {"shaper_freq_x", "61.4"},
+                                  {"shaper_type_y", "mzv"}, {"shaper_freq_y", "71.4"}};
+        hw.parse_config_keys(config);
+        REQUIRE(hw.has_input_shaper_config());
+    }
+
+    SECTION("Section present but frequencies zero means nothing calibrated") {
+        json config;
+        config["input_shaper"] = {{"shaper_freq_x", "0"}, {"shaper_freq_y", 0}};
+        hw.parse_config_keys(config);
+        REQUIRE_FALSE(hw.has_input_shaper_config());
+    }
+
+    SECTION("Reset clears it") {
+        json config;
+        config["input_shaper"] = {{"shaper_freq_x", 55.0}};
+        hw.parse_config_keys(config);
+        REQUIRE(hw.has_input_shaper_config());
+        hw.clear();
+        REQUIRE_FALSE(hw.has_input_shaper_config());
+    }
+}

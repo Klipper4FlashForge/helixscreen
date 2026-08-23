@@ -589,6 +589,14 @@ bool WizardInputShaperStep::should_skip(const helix::wizard::StepContext& ctx) c
                           get_name());
             return true;
         }
+        // Values already in the printer config (saved by earlier software or a
+        // per-unit factory run) are the calibration the flag asks for — keep them.
+        if (get_printer_state().get_discovery().has_input_shaper_config()) {
+            spdlog::info("[{}] initial_resonance_compensation_run=false but [input_shaper] "
+                         "already has frequencies — skipping step",
+                         get_name());
+            return true;
+        }
         spdlog::info("[{}] Preset skip_hardware but initial_resonance_compensation_run=false — "
                      "forcing calibration step",
                      get_name());
