@@ -11,13 +11,15 @@
 
 #include "ui_wizard_tool_offset.h"
 
+#include "../../src/ui/wizard_step_registry.h"
+#include "../lvgl_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
-#include "../ui_test_utils.h"
+#include "../test_helpers/update_queue_test_access.h"
 #include "app_globals.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
 #include "runtime_config.h"
-#include "wizard_step_registry.h"
+#include "tool_state.h"
 
 #include "../catch_amalgamated.hpp"
 
@@ -25,29 +27,15 @@ using namespace helix;
 using namespace helix::ui;
 using helix::wizard::StepId;
 
-class WizardToolOffsetStepTestFixture {
+class WizardToolOffsetStepTestFixture : public LVGLTestFixture {
   public:
     WizardToolOffsetStepTestFixture() {
         get_runtime_config()->test_mode = true;
-        lv_init_safe();
-        if (!display_created_) {
-            display_ = lv_display_create(480, 320);
-            alignas(64) static lv_color_t buf[480 * 10];
-            lv_display_set_buffers(display_, buf, nullptr, sizeof(buf),
-                                   LV_DISPLAY_RENDER_MODE_PARTIAL);
-            lv_display_set_flush_cb(display_,
-                                    [](lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
-                                        (void)area;
-                                        (void)px_map;
-                                        lv_display_flush_ready(disp);
-                                    });
-            display_created_ = true;
-        }
         PrinterStateTestAccess::reset(state());
         state().init_subjects(true);
     }
 
-    ~WizardToolOffsetStepTestFixture() {
+    ~WizardToolOffsetStepTestFixture() override {
         PrinterStateTestAccess::reset(state());
     }
 
@@ -62,14 +50,7 @@ class WizardToolOffsetStepTestFixture {
         state().set_hardware(hardware);
         UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
     }
-
-  private:
-    static lv_display_t* display_;
-    static bool display_created_;
 };
-
-lv_display_t* WizardToolOffsetStepTestFixture::display_ = nullptr;
-bool WizardToolOffsetStepTestFixture::display_created_ = false;
 
 TEST_CASE_METHOD(WizardToolOffsetStepTestFixture, "WizardToolOffsetStep - should_skip",
                  "[wizard][tool-offset][skip]") {
@@ -98,6 +79,25 @@ TEST_CASE_METHOD(WizardToolOffsetStepTestFixture, "WizardToolOffsetStep - should
         ctx.preset.skip_hardware = true;
         ctx.preset.first_run = true;
         REQUIRE(step.should_skip(ctx) == false);
+    }
+
+    SECTION("Skipped once a tool other than T0 carries an offset") {
+        PrinterDiscovery hardware;
+        hardware.parse_objects({"extruder", "extruder1", "toolchanger", "tool T0", "tool T1",
+                                "gcode_macro CALIBRATE_TOOL_OFFSETS"});
+        state().set_hardware(hardware);
+        helix::ToolState::instance().init_tools(hardware);
+        UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+        REQUIRE(WizardToolOffsetStep::tools_already_calibrated() == false);
+
+        // T0 is the reference — its offset never counts
+        helix::ToolState::instance().update_from_status({{"tool T0", {{"gcode_x_offset", 0.25}}}});
+        REQUIRE(WizardToolOffsetStep::tools_already_calibrated() == false);
+        REQUIRE(step.should_skip(ctx) == false);
+
+        helix::ToolState::instance().update_from_status({{"tool T1", {{"gcode_y_offset", -0.12}}}});
+        REQUIRE(WizardToolOffsetStep::tools_already_calibrated() == true);
+        REQUIRE(step.should_skip(ctx) == true);
     }
 }
 

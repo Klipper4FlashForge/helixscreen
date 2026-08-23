@@ -74,6 +74,7 @@ TEST_CASE("Preset mode: skip hardware steps", "[wizard][step_logic][preset]") {
     skip_step(v, StepId::AmsIdentify);
     skip_step(v, StepId::LedSelect);
     skip_step(v, StepId::FilamentSensor);
+    skip_step(v, StepId::ToolOffset);
     skip_step(v, StepId::InputShaper);
     skip_step(v, StepId::Summary);
     // telemetry NOT skipped (shown in preset mode)
@@ -95,6 +96,7 @@ TEST_CASE("Preset mode: next skips hardware", "[wizard][step_logic][preset]") {
     skip_step(v, StepId::AmsIdentify);
     skip_step(v, StepId::LedSelect);
     skip_step(v, StepId::FilamentSensor);
+    skip_step(v, StepId::ToolOffset);
     skip_step(v, StepId::InputShaper);
     skip_step(v, StepId::Summary);
 
@@ -122,6 +124,7 @@ TEST_CASE("Preset mode: prev works", "[wizard][step_logic][preset]") {
     skip_step(v, StepId::AmsIdentify);
     skip_step(v, StepId::LedSelect);
     skip_step(v, StepId::FilamentSensor);
+    skip_step(v, StepId::ToolOffset);
     skip_step(v, StepId::InputShaper);
     skip_step(v, StepId::Summary);
 
@@ -141,6 +144,7 @@ TEST_CASE("Preset mode: connection also skipped", "[wizard][step_logic][preset]"
     skip_step(v, StepId::AmsIdentify);
     skip_step(v, StepId::LedSelect);
     skip_step(v, StepId::FilamentSensor);
+    skip_step(v, StepId::ToolOffset);
     skip_step(v, StepId::InputShaper);
     skip_step(v, StepId::Summary);
     // telemetry NOT skipped
@@ -218,6 +222,7 @@ TEST_CASE("Preset plan: secondary-printer flags navigate connection -> summary -
         skip_step(v, StepId::AmsIdentify);
         skip_step(v, StepId::LedSelect);
         skip_step(v, StepId::FilamentSensor);
+        skip_step(v, StepId::ToolOffset);
         skip_step(v, StepId::InputShaper);
     }
     // not first-run: summary shown, telemetry skipped
@@ -252,7 +257,7 @@ TEST_CASE("id-nav: non-contiguous skips are honored", "[wizard][step_logic][idna
     auto v = all_visible();
     for (auto& s : v)
         if (s.id == StepId::HeaterSelect || s.id == StepId::AmsIdentify ||
-            s.id == StepId::InputShaper)
+            s.id == StepId::InputShaper || s.id == StepId::ToolOffset)
             s.skipped = true;
     REQUIRE(helix::wizard_next(StepId::PrinterIdentify, v) == StepId::FanSelect);
     REQUIRE(helix::wizard_next(StepId::FanSelect, v) == StepId::LedSelect);
