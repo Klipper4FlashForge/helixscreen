@@ -14,6 +14,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
+#include "tool_state.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -239,14 +240,33 @@ bool WizardToolOffsetStep::printer_supports_calibration() {
     return hw.has_tool_changer() && hw.has_macro(CALIBRATE_MACRO);
 }
 
+bool WizardToolOffsetStep::tools_already_calibrated() {
+    // klipper-toolchanger semantics: the first tool is the reference (all
+    // zeros) and an uncalibrated printer reports zeros on every other tool
+    // too. Any non-zero offset on T1+ means a calibration was saved before —
+    // by this UI, the console, or the printer's previous software.
+    const auto& tools = helix::ToolState::instance().tools();
+    for (size_t i = 1; i < tools.size(); ++i) {
+        const auto& t = tools[i];
+        if (t.gcode_x_offset != 0.0f || t.gcode_y_offset != 0.0f || t.gcode_z_offset != 0.0f) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool WizardToolOffsetStep::should_skip(const helix::wizard::StepContext& ctx) const {
     (void)ctx; // capability-gated: the macro is the printer's declaration
-    const bool supported = printer_supports_calibration();
-    if (!supported) {
+    if (!printer_supports_calibration()) {
         spdlog::debug("[{}] No toolchanger + {} macro, skipping step", get_name(),
                       CALIBRATE_MACRO);
+        return true;
     }
-    return !supported;
+    if (!calibration_complete_ && tools_already_calibrated()) {
+        spdlog::info("[{}] Tools already carry offsets — skipping step", get_name());
+        return true;
+    }
+    return false;
 }
 
 // ============================================================================
