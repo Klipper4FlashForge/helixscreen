@@ -500,7 +500,7 @@ translations:
   Choose what to power off or restart.: Choose what to power off or restart.
   Clean Brush: Clean Brush
   Clean Nozzle: Clean Nozzle
-  Clean every nozzle first. The printer will pick up each tool and probe it.: Clean every nozzle first. The printer will pick up each tool and probe it.
+  Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position.: Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position.
   Cleaning Nozzle...: Cleaning Nozzle...
   'Cleaning nozzle...': 'Cleaning nozzle...'
   Clear: Clear

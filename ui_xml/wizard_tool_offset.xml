@@ -24,8 +24,8 @@
       <!-- Info section: generic text plus the macro's own description -->
       <lv_obj width="100%" flex_flow="column" style_pad_all="0" style_pad_gap="#space_sm">
         <text_body width="100%"
-                   text="Clean every nozzle first. The printer will pick up each tool and probe it."
-                   translation_tag="Clean every nozzle first. The printer will pick up each tool and probe it."
+                   text="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."
+                   translation_tag="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."
                    style_text_align="center"/>
         <text_small width="100%" bind_text="wizard_tool_offset_hint" style_text_align="center"
                     style_text_color="#text_muted"/>
