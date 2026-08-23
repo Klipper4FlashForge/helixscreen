@@ -167,8 +167,9 @@ lv_obj_t* WizardToolOffsetStep::create(lv_obj_t* parent) {
         return nullptr;
     }
 
-    // Footer: Skip until the macro has succeeded, Next afterwards (re-entry)
-    lv_subject_set_int(&wizard_show_skip, calibration_complete_ ? 0 : 1);
+    // Mandatory: a tool changer with unknown offsets rams nozzles into the
+    // plate, so there is no Skip and Next only unlocks once the macro succeeded.
+    lv_subject_set_int(&wizard_show_skip, 0);
     lv_subject_set_int(&connection_test_passed, calibration_complete_ ? 1 : 0);
 
     fetch_macro_description();
@@ -326,9 +327,9 @@ void WizardToolOffsetStep::on_calibration_finished(bool ok, const std::string& e
     spdlog::error("[{}] {} failed: {}", get_name(), CALIBRATE_MACRO, error);
     lv_subject_set_int(&started_, 0);
     lv_subject_copy_string(&status_, error.empty() ? lv_tr("Calibration failed") : error.c_str());
-    // Let the user retry (Start is visible again) or move on
-    lv_subject_set_int(&wizard_show_skip, 1);
-    lv_subject_set_int(&connection_test_passed, 1);
+    // Start is visible again for a retry; Next stays locked
+    lv_subject_set_int(&wizard_show_skip, 0);
+    lv_subject_set_int(&connection_test_passed, 0);
 }
 
 bool WizardToolOffsetStep::abort_in_progress_calibration() {
@@ -366,7 +367,7 @@ bool WizardToolOffsetStep::abort_in_progress_calibration() {
 
     reset_ui_state();
     lv_subject_copy_string(&status_, lv_tr("Cancelled"));
-    lv_subject_set_int(&wizard_show_skip, 1);
+    lv_subject_set_int(&wizard_show_skip, 0);
     lv_subject_set_int(&connection_test_passed, 0);
     return true;
 }

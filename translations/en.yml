@@ -3014,7 +3014,7 @@ translations:
   'Yes': 'Yes'
   ? "You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically."
   : "You can now skip these operations when starting prints.\n\nLook for the new options in the print details before starting each print.\n\nA backup of your config was saved automatically."
-  You can skip this and calibrate later from the console.: You can skip this and calibrate later from the console.
+  Setup continues once the tool offsets are known.: Setup continues once the tool offsets are known.
   You can skip this and calibrate later in Settings.: You can skip this and calibrate
     later in Settings.
   You have unsaved changes. Discard them?: You have unsaved changes. Discard them?
