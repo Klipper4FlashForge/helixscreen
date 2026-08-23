@@ -258,6 +258,25 @@ void ToolSwitcherWidget::rebuild_pills() {
         return;
     }
 
+    // Pill list: one per tool, plus a trailing Dock pill on a tool changer.
+    // Dock is the inverse of every other pill — tapping T<n> mounts it, tapping
+    // Dock parks whatever is mounted — and it is the only pill lit while the
+    // carriage is empty (tool_number == -1), which otherwise rendered as
+    // "nothing selected".
+    struct PillSpec {
+        int index;
+        const char* text;
+    };
+    std::vector<PillSpec> pills;
+    pills.reserve(tools.size() + 1);
+    for (size_t i = 0; i < tools.size(); ++i) {
+        pills.push_back({static_cast<int>(i), tools[i].name.c_str()});
+    }
+    const bool dock = can_dock();
+    if (dock) {
+        pills.push_back({DOCK_INDEX, lv_tr("Dock")});
+    }
+
     int space_xs = resolve_space_token("space_xs", 4);
     int btn_min_h = resolve_space_token("space_xl", 24);
     int btn_min_w = resolve_space_token("button_height_sm", 40);
@@ -268,7 +287,7 @@ void ToolSwitcherWidget::rebuild_pills() {
     //    is tall enough for two pill rows, split pills across 2 rows via a grid;
     //    otherwise keep the single flex row. Always horizontal-scroll for overflow.
     //  - Cap rows at 2: "split in two", not "stack like a virtual keyboard".
-    int total = static_cast<int>(tools.size());
+    int total = static_cast<int>(pills.size());
     int rows = 1;
     int cols = total;
     bool use_grid = false;
@@ -316,16 +335,18 @@ void ToolSwitcherWidget::rebuild_pills() {
     }
     lv_obj_set_style_pad_gap(container, space_xs, 0);
 
-    for (size_t i = 0; i < tools.size(); ++i) {
-        bool is_active = (static_cast<int>(i) == active);
+    for (size_t i = 0; i < pills.size(); ++i) {
+        const PillSpec& spec = pills[i];
+        // Dock lights up on -1, the firmware's "no tool mounted" value.
+        bool is_active = (spec.index == active);
 
         // Create pill button from XML ui_button widget — variant handles base styling
         const char* variant = is_active ? "primary" : "ghost";
-        const char* attrs[] = {"variant", variant, "text", tools[i].name.c_str(), nullptr};
+        const char* attrs[] = {"variant", variant, "text", spec.text, nullptr};
         lv_obj_t* btn = static_cast<lv_obj_t*>(lv_xml_create(container, "ui_button", attrs));
         if (!btn) {
             spdlog::error("[ToolSwitcher] lv_xml_create('ui_button') returned NULL for pill '{}'",
-                          tools[i].name);
+                          spec.text);
             continue;
         }
 
@@ -357,7 +378,7 @@ void ToolSwitcherWidget::rebuild_pills() {
                 s_active_instance->handle_tool_selected(idx);
                 LVGL_SAFE_EVENT_CB_END();
             },
-            LV_EVENT_CLICKED, reinterpret_cast<void*>(static_cast<intptr_t>(i)));
+            LV_EVENT_CLICKED, reinterpret_cast<void*>(static_cast<intptr_t>(spec.index)));
 
         pill_buttons_.push_back(btn);
     }
@@ -369,17 +390,25 @@ void ToolSwitcherWidget::rebuild_pills() {
         lv_obj_set_layout(container, LV_LAYOUT_GRID);
     }
 
-    // Scroll the active pill into view when the container overflows.
-    if (active >= 0 && active < static_cast<int>(pill_buttons_.size())) {
-        lv_obj_scroll_to_view(pill_buttons_[active], LV_ANIM_OFF);
+    // Scroll the active pill into view when the container overflows. The Dock
+    // pill is last, so an empty carriage scrolls to the end.
+    int active_pos = -1;
+    for (size_t i = 0; i < pills.size(); ++i) {
+        if (pills[i].index == active) {
+            active_pos = static_cast<int>(i);
+            break;
+        }
+    }
+    if (active_pos >= 0 && active_pos < static_cast<int>(pill_buttons_.size())) {
+        lv_obj_scroll_to_view(pill_buttons_[active_pos], LV_ANIM_OFF);
     }
 
     // Freshly created pills carry no state — apply the print gate to them here
     // as well as from the observer, or a rebuild silently re-enables them.
     refresh_print_gating();
 
-    spdlog::debug("[ToolSwitcher] Built {} pill buttons, active={}, layout={} ({}x{})",
-                  tools.size(), active, use_grid ? "grid" : "flex", rows, cols);
+    spdlog::debug("[ToolSwitcher] Built {} pill buttons (dock={}), active={}, layout={} ({}x{})",
+                  pills.size(), dock, active, use_grid ? "grid" : "flex", rows, cols);
 }
 
 void ToolSwitcherWidget::on_active_tool_changed(int tool_index) {
@@ -438,8 +467,14 @@ void ToolSwitcherWidget::rebuild_compact() {
 
     // Current tool label centered with larger font
     lv_obj_t* label = lv_label_create(container);
-    std::string tool_name =
-        (active >= 0 && active < static_cast<int>(tools.size())) ? tools[active].name : "T?";
+    std::string tool_name;
+    if (active >= 0 && active < static_cast<int>(tools.size())) {
+        tool_name = tools[active].name;
+    } else if (active == DOCK_INDEX && can_dock()) {
+        tool_name = lv_tr("Dock");
+    } else {
+        tool_name = "T?";
+    }
     lv_label_set_text(label, tool_name.c_str());
     compact_label_ = label;
     const lv_font_t* body_font = theme_manager_get_font("font_body");
@@ -519,12 +554,22 @@ void ToolSwitcherWidget::ToolPicker::on_created(lv_obj_t* backdrop) {
     const auto& tools = tool_state.tools();
     int active = tool_state.active_tool_index();
 
-    lv_obj_t* active_btn_in_picker = nullptr;
+    // Same list as the pills: every tool, then Dock on a tool changer.
+    std::vector<std::pair<int, const char*>> rows;
+    rows.reserve(tools.size() + 1);
     for (size_t i = 0; i < tools.size(); ++i) {
-        bool is_active = (static_cast<int>(i) == active);
+        rows.emplace_back(static_cast<int>(i), tools[i].name.c_str());
+    }
+    if (can_dock()) {
+        rows.emplace_back(DOCK_INDEX, lv_tr("Dock"));
+    }
+
+    lv_obj_t* active_btn_in_picker = nullptr;
+    for (const auto& [index, text] : rows) {
+        bool is_active = (index == active);
 
         // Create picker button from XML template
-        const char* btn_attrs[] = {"tool_text", tools[i].name.c_str(), nullptr};
+        const char* btn_attrs[] = {"tool_text", text, nullptr};
         lv_obj_t* picker_btn =
             static_cast<lv_obj_t*>(lv_xml_create(tool_list, "tool_picker_button", btn_attrs));
         if (!picker_btn) {
@@ -567,7 +612,7 @@ void ToolSwitcherWidget::ToolPicker::on_created(lv_obj_t* backdrop) {
                 owner.handle_tool_selected(idx);
                 LVGL_SAFE_EVENT_CB_END();
             },
-            LV_EVENT_CLICKED, reinterpret_cast<void*>(static_cast<intptr_t>(i)));
+            LV_EVENT_CLICKED, reinterpret_cast<void*>(static_cast<intptr_t>(index)));
     }
 
     // Scroll the active tool into view inside the capped list.
@@ -576,7 +621,7 @@ void ToolSwitcherWidget::ToolPicker::on_created(lv_obj_t* backdrop) {
         lv_obj_scroll_to_view(active_btn_in_picker, LV_ANIM_OFF);
     }
 
-    spdlog::debug("[ToolSwitcher] Picker built with {} tools", tools.size());
+    spdlog::debug("[ToolSwitcher] Picker built with {} rows", rows.size());
 }
 
 // ============================================================================
@@ -600,6 +645,11 @@ AmsError ToolSwitcherWidget::tool_change_refusal() const {
     return AmsErrorHelper::print_active(paused, /*pause_allows_ops=*/!self_homes);
 }
 
+bool ToolSwitcherWidget::can_dock() {
+    AmsBackend* backend = AmsState::instance().get_backend();
+    return backend && is_tool_changer(backend->get_type());
+}
+
 void ToolSwitcherWidget::refresh_print_gating() {
     const bool blocked = !tool_change_refusal().success();
 
@@ -620,6 +670,24 @@ void ToolSwitcherWidget::refresh_print_gating() {
 }
 
 void ToolSwitcherWidget::dispatch_tool_change(int tool_index) {
+    if (tool_index == DOCK_INDEX) {
+        // Park the mounted tool. unload_filament(-1) is the backend's
+        // "unmount whatever is on the carriage" form (bare UNSELECT_TOOL on
+        // klipper-toolchanger); it refuses with not_loaded() when the carriage
+        // is already empty, which the already-active check upstream prevents.
+        spdlog::info("[ToolSwitcher] Requesting tool dock");
+        AmsBackend* backend = AmsState::instance().get_backend();
+        if (!backend) {
+            NOTIFY_ERROR(lv_tr("Tool change failed: {}"), "No tool changer backend");
+            return;
+        }
+        const AmsError result = backend->unload_filament(DOCK_INDEX);
+        if (!result) {
+            NOTIFY_ERROR(lv_tr("Tool change failed: {}"), result.display_text());
+        }
+        return;
+    }
+
     spdlog::info("[ToolSwitcher] Requesting tool change to T{}", tool_index);
 
     // A null api is NOT a reason to skip the call: the AMS backend performs the
@@ -649,9 +717,13 @@ void ToolSwitcherWidget::dispatch_tool_change(int tool_index) {
 void ToolSwitcherWidget::handle_tool_selected(int tool_index) {
     auto& tool_state = ToolState::instance();
 
-    // Already on this tool
+    // Already on this tool (or already docked)
     if (tool_index == tool_state.active_tool_index()) {
         spdlog::debug("[ToolSwitcher] Tool T{} already active, ignoring", tool_index);
+        return;
+    }
+    if (tool_index == DOCK_INDEX && !can_dock()) {
+        spdlog::warn("[ToolSwitcher] Dock requested without a tool changer backend, ignoring");
         return;
     }
 

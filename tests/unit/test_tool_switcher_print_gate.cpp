@@ -62,6 +62,8 @@ class GateBackend : public AmsBackendMock {
     bool self_homes = false;
     bool tool_change_should_fail = false;
     int change_tool_calls = 0;
+    int unload_calls = 0;
+    int last_unload_slot = 0;
 
     bool filament_ops_self_home() const override {
         return self_homes;
@@ -73,6 +75,14 @@ class GateBackend : public AmsBackendMock {
             return AmsError(AmsResult::TOOL_CHANGE_FAILED, "forced failure",
                             "Tool change did not complete", "Check the filament path and retry");
         }
+        return AmsErrorHelper::success();
+    }
+
+    /// The Dock pill's path: -1 means "park whatever is mounted". Counted, not
+    /// chained, for the same teardown reason as change_tool().
+    AmsError unload_filament(int slot_index) override {
+        ++unload_calls;
+        last_unload_slot = slot_index;
         return AmsErrorHelper::success();
     }
 };
@@ -306,4 +316,66 @@ TEST_CASE_METHOD(ToolSwitcherGateFixture, "inactive print states never block a t
         CAPTURE(static_cast<int>(s));
         CHECK(ToolSwitcherTestAccess::refusal(widget).success());
     }
+}
+
+// ============================================================================
+// Dock: the inverse of every other pill
+// ============================================================================
+
+TEST_CASE_METHOD(ToolSwitcherGateFixture, "Dock parks the mounted tool through the backend",
+                 "[ams][tool-switcher][dock]") {
+    set_print_state(helix::PrintJobState::STANDBY);
+    REQUIRE(ToolState::instance().active_tool_index() == 0);
+
+    ToolSwitcherWidget widget(printer_state);
+    ToolSwitcherTestAccess::select_tool(widget, ToolSwitcherWidget::DOCK_INDEX);
+
+    // Bare UNSELECT_TOOL is the backend's slot -1 form; a tool index would
+    // have gone through change_tool() instead.
+    CHECK(backend->unload_calls == 1);
+    CHECK(backend->last_unload_slot == -1);
+    CHECK(backend->change_tool_calls == 0);
+    CHECK(errors.empty());
+    CHECK(warnings.empty());
+}
+
+TEST_CASE_METHOD(ToolSwitcherGateFixture, "Dock is a no-op while the carriage is already empty",
+                 "[ams][tool-switcher][dock]") {
+    set_print_state(helix::PrintJobState::STANDBY);
+    // toolchanger.tool_number == -1 is the firmware's "nothing mounted".
+    ToolState::instance().update_from_status({{"toolchanger", {{"tool_number", -1}}}});
+    REQUIRE(ToolState::instance().active_tool_index() == -1);
+
+    ToolSwitcherWidget widget(printer_state);
+    ToolSwitcherTestAccess::select_tool(widget, ToolSwitcherWidget::DOCK_INDEX);
+
+    CHECK(backend->unload_calls == 0);
+    CHECK(errors.empty());
+}
+
+TEST_CASE_METHOD(ToolSwitcherGateFixture, "PRINTING refuses docking with the same warning",
+                 "[ams][tool-switcher][dock][safety]") {
+    set_print_state(helix::PrintJobState::PRINTING);
+
+    ToolSwitcherWidget widget(printer_state);
+    ToolSwitcherTestAccess::select_tool(widget, ToolSwitcherWidget::DOCK_INDEX);
+
+    CHECK(backend->unload_calls == 0);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].find("Cannot run filament operation while printing") != std::string::npos);
+}
+
+TEST_CASE_METHOD(ToolSwitcherGateFixture, "Dock is ignored on a shared-toolhead backend",
+                 "[ams][tool-switcher][dock]") {
+    set_print_state(helix::PrintJobState::STANDBY);
+    // A filament-switching system always has a nozzle mounted: nothing to park.
+    backend->set_tool_changer_mode(false);
+    REQUIRE_FALSE(is_tool_changer(backend->get_type()));
+
+    ToolSwitcherWidget widget(printer_state);
+    ToolSwitcherTestAccess::select_tool(widget, ToolSwitcherWidget::DOCK_INDEX);
+
+    CHECK(backend->unload_calls == 0);
+    CHECK(backend->change_tool_calls == 0);
+    CHECK(errors.empty());
 }

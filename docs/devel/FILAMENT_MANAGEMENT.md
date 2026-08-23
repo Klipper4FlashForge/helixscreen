@@ -2622,9 +2622,16 @@ Klipper object `toolchanger` in `printer.objects.list` sets `AmsType::TOOL_CHANG
 
 | Command | Action |
 |---------|--------|
-| `SELECT_TOOL TOOL=T{n}` | Mount specified tool |
-| `UNSELECT_TOOL` | Unmount current tool (park it) |
+| `SELECT_TOOL T={n}` | Mount specified tool (the backend sends `T=`, not `TOOL=T{n}`, to bypass `ASSIGN_TOOL` remapping) |
+| `UNSELECT_TOOL T={n}` | Unmount that tool — only offered on the carriage tool (AMS panel Unload) |
+| `UNSELECT_TOOL` | Unmount whatever is mounted (park it) — the home-panel tool switcher's **Dock** pill |
 | `T{n}` | Tool change macro |
+
+The tool switcher widget lists every tool and, on a tool-changer backend only, a trailing
+**Dock** entry (`ToolSwitcherWidget::DOCK_INDEX == -1`). It is the inverse of the tool
+pills: tapping it calls `backend->unload_filament(-1)` (bare `UNSELECT_TOOL`), and it is the
+pill that lights up while `toolchanger.tool_number == -1`, which previously rendered as
+"nothing selected". It answers to the same print gate as the tool pills.
 
 ### Path Topology
 

@@ -35,6 +35,12 @@ class ToolSwitcherWidget : public PanelWidget {
     // Static instance tracker for callbacks from static event handlers
     static ToolSwitcherWidget* s_active_instance;
 
+    /// Pseudo tool index of the "Dock" entry: park the mounted tool so the
+    /// carriage is empty. Mirrors toolchanger.tool_number == -1, the firmware's
+    /// own "no tool" value, so the same comparison that highlights T<n> also
+    /// highlights Dock.
+    static constexpr int DOCK_INDEX = -1;
+
   private:
     friend class ToolSwitcherTestAccess;
 
@@ -115,6 +121,11 @@ class ToolSwitcherWidget : public PanelWidget {
     void show_tool_picker();
     void handle_tool_selected(int tool_index);
 
+    /// Whether a Dock entry is offered: only a physical tool changer can park
+    /// its tool and run with an empty carriage. Shared-toolhead systems (AMS,
+    /// AFC) always have a nozzle mounted, so there is nothing to dock.
+    [[nodiscard]] static bool can_dock();
+
     // Layout predicates over the cached granted size — shared by the readers
     // that fire from on_size_changed() itself and the ones that fire later
     // from observers (tool_count_observer_, on_active_tool_changed()).
@@ -144,6 +155,7 @@ class ToolSwitcherWidget : public PanelWidget {
 
     /// Issue the change and report any refusal. Static so the confirmation
     /// modal's stateless event callback shares the one on_error path.
+    /// DOCK_INDEX parks the mounted tool instead of mounting one.
     static void dispatch_tool_change(int tool_index);
 
     // Native SIZE_CHANGED hook on size_watch_container_ (tool_switcher_container)
