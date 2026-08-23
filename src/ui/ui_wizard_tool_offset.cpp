@@ -65,7 +65,6 @@ WizardToolOffsetStep::~WizardToolOffsetStep() {
         lv_subject_deinit(&started_);
         lv_subject_deinit(&active_);
         lv_subject_deinit(&complete_);
-        lv_subject_deinit(&saved_);
         subjects_initialized_ = false;
     }
     // NOTE: Do NOT log here - spdlog may be destroyed first
@@ -93,7 +92,6 @@ void WizardToolOffsetStep::init_subjects() {
     helix::ui::wizard::init_int_subject(&started_, 0, "wizard_tool_offset_started");
     helix::ui::wizard::init_int_subject(&active_, 0, "wizard_tool_offset_active");
     helix::ui::wizard::init_int_subject(&complete_, 0, "wizard_tool_offset_complete");
-    helix::ui::wizard::init_int_subject(&saved_, 0, "wizard_tool_offset_saved");
 
     subjects_initialized_ = true;
     spdlog::debug("[{}] Subjects initialized", get_name());
@@ -144,19 +142,10 @@ static void on_cancel_tool_offset_clicked(lv_event_t* e) {
     }
 }
 
-static void on_save_tool_offset_clicked(lv_event_t* e) {
-    (void)e;
-    spdlog::info("[Wizard Tool Offset] Save clicked");
-    if (auto* step = get_wizard_tool_offset_step()) {
-        step->save_config();
-    }
-}
-
 void WizardToolOffsetStep::register_callbacks() {
     spdlog::debug("[{}] Registering callbacks", get_name());
     lv_xml_register_event_cb(nullptr, "on_start_tool_offset", on_start_tool_offset_clicked);
     lv_xml_register_event_cb(nullptr, "on_cancel_tool_offset", on_cancel_tool_offset_clicked);
-    lv_xml_register_event_cb(nullptr, "on_save_tool_offset", on_save_tool_offset_clicked);
 }
 
 // ============================================================================
@@ -195,7 +184,6 @@ void WizardToolOffsetStep::reset_ui_state() {
     lv_subject_set_int(&started_, 0);
     lv_subject_set_int(&active_, 0);
     lv_subject_set_int(&complete_, 0);
-    lv_subject_set_int(&saved_, 0);
     log_lines_.clear();
     lv_subject_copy_string(&log_, "");
     lv_subject_copy_string(&status_, "Ready to calibrate");
@@ -294,7 +282,6 @@ void WizardToolOffsetStep::start_calibration() {
     lv_subject_set_int(&started_, 1);
     lv_subject_set_int(&active_, 1);
     lv_subject_set_int(&complete_, 0);
-    lv_subject_set_int(&saved_, 0);
 
     // Footer: neither Skip nor Next while the printer is busy
     lv_subject_set_int(&wizard_show_skip, 0);
@@ -382,29 +369,6 @@ bool WizardToolOffsetStep::abort_in_progress_calibration() {
     lv_subject_set_int(&wizard_show_skip, 1);
     lv_subject_set_int(&connection_test_passed, 0);
     return true;
-}
-
-void WizardToolOffsetStep::save_config() {
-    auto* api = get_moonraker_api();
-    if (!api || !calibration_complete_) {
-        return;
-    }
-    spdlog::info("[{}] Saving config (will restart Klipper)", get_name());
-    helix::ui::begin_expected_klippy_restart("Configuration saved - restarting");
-    lv_subject_set_int(&saved_, 1);
-    api->execute_gcode(
-        "SAVE_CONFIG",
-        lifetime_.bg_cb("WizardToolOffsetStep::save_config_done",
-                        [this]() {
-                            lv_subject_copy_string(&status_,
-                                                   lv_tr("Offsets saved - Klipper is restarting"));
-                        }),
-        lifetime_.bg_cb("WizardToolOffsetStep::save_config_error",
-                        [this](const MoonrakerError& err) {
-                            spdlog::error("[{}] SAVE_CONFIG failed: {}", get_name(), err.message);
-                            lv_subject_set_int(&saved_, 0);
-                            lv_subject_copy_string(&status_, err.message.c_str());
-                        }));
 }
 
 // ============================================================================

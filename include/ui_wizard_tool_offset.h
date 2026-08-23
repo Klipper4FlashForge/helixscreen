@@ -19,8 +19,10 @@
  * a `CALIBRATE_TOOL_OFFSETS` macro — the convention from klipper-toolchanger's
  * examples/calibrate-offsets.cfg. The macro owns the whole procedure (heating,
  * tool pickup, probing, storing each tool's gcode_x/y/z_offset); this step only
- * runs it, mirrors Klipper's console output while it runs, and offers
- * SAVE_CONFIG when it finishes. No printer-specific knowledge lives here: the
+ * runs it and mirrors Klipper's console output while it runs. The result is
+ * staged in Klipper's autosave and persisted by the wizard's SAVE_CONFIG at
+ * Finish (or by the Input Shaper step's own save, which persists everything
+ * pending). No printer-specific knowledge lives here: the
  * macro's `description:` (from printer.gcode.help) is the on-screen instruction.
  *
  * ## Subject Bindings:
@@ -28,7 +30,7 @@
  * - wizard_tool_offset_status (string) - one-line status
  * - wizard_tool_offset_log (string) - last few notify_gcode_response lines
  * - wizard_tool_offset_hint (string) - the macro's description
- * - wizard_tool_offset_started / _active / _complete / _saved (int) - visibility
+ * - wizard_tool_offset_started / _active / _complete (int) - visibility
  *
  * ## Validation:
  *
@@ -90,9 +92,6 @@ class WizardToolOffsetStep : public helix::wizard::Step {
      */
     bool abort_in_progress_calibration();
 
-    /// Persist the new offsets (SAVE_CONFIG restarts Klipper)
-    void save_config();
-
     /// Append one console line to the on-screen log (main thread only)
     void append_log_line(const std::string& line);
 
@@ -151,7 +150,6 @@ class WizardToolOffsetStep : public helix::wizard::Step {
     lv_subject_t started_;
     lv_subject_t active_;
     lv_subject_t complete_;
-    lv_subject_t saved_;
 
     std::deque<std::string> log_lines_;
     helix::ui::ElapsedLabelTimer elapsed_;

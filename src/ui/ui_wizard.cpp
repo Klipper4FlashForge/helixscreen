@@ -15,7 +15,9 @@
 #include "ui_wizard_fan_select.h"
 #include "ui_wizard_filament_sensor_select.h"
 #include "ui_wizard_heater_select.h"
+#include "ui_emergency_stop.h"
 #include "ui_wizard_input_shaper.h"
+#include "ui_wizard_tool_offset.h"
 #include "ui_wizard_language_chooser.h"
 #include "ui_wizard_led_select.h"
 #include "ui_wizard_printer_identify.h"
@@ -971,6 +973,21 @@ void ui_wizard_complete() {
 
         if (!config->save()) {
             NOTIFY_ERROR(lv_tr("Failed to save setup completion"));
+        }
+
+        // 1d. Calibrations made in the wizard sit in Klipper's autosave until a
+        // SAVE_CONFIG. The Input Shaper step saves (and restarts Klipper) on its
+        // own, which persists pending tool offsets too; cover the run where only
+        // the tool offsets were measured, once, on the way out.
+        if (api && get_wizard_tool_offset_step()->is_calibration_complete() &&
+            !get_wizard_input_shaper_step()->is_calibration_complete()) {
+            spdlog::info("[Wizard] Persisting tool offsets (SAVE_CONFIG)");
+            helix::ui::begin_expected_klippy_restart("Configuration saved - restarting");
+            api->execute_gcode(
+                "SAVE_CONFIG", []() {},
+                [](const MoonrakerError& err) {
+                    spdlog::error("[Wizard] SAVE_CONFIG failed: {}", err.message);
+                });
         }
     } else {
         LOG_ERROR_INTERNAL("[Wizard] Failed to get config instance to mark wizard complete");
