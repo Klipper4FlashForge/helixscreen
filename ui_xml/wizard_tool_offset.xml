@@ -76,8 +76,8 @@
 
       <!-- Help text (hidden once calibration starts) -->
       <text_small width="100%"
-                  text="You can skip this and calibrate later from the console."
-                  translation_tag="You can skip this and calibrate later from the console." style_text_align="center"
+                  text="Setup continues once the tool offsets are known."
+                  translation_tag="Setup continues once the tool offsets are known." style_text_align="center"
                   style_text_color="#text_muted">
         <bind_flag_if_eq subject="wizard_tool_offset_started" flag="hidden" ref_value="1"/>
       </text_small>
