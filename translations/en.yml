@@ -1763,7 +1763,6 @@ translations:
   Objects: Objects
   'Off': 'Off'
   'Off:': 'Off:'
-  Offsets saved - Klipper is restarting: Offsets saved - Klipper is restarting
   "Old setting on today's data: {} residual - now: {}": "Old setting on today's data: {} residual - now: {}"
   'On': 'On'
   On and Off macros must be different: On and Off macros must be different
@@ -2281,7 +2280,6 @@ translations:
   Save & Restart: Save & Restart
   Save As New: Save As New
   Save Hardware: Save Hardware
-  Save Offsets: Save Offsets
   Save Printer Configuration: Save Printer Configuration
   Save Theme As: Save Theme As
   Save Z-Offset: Save Z-Offset
@@ -2290,7 +2288,7 @@ translations:
     restarts?
   'Save failed: {}': 'Save failed: {}'
   Save to Spoolman: Save to Spoolman
-  Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console.: Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console.
+  The offsets are saved when setup finishes. Recalibrate anytime from the console.: The offsets are saved when setup finishes. Recalibrate anytime from the console.
   Saved Z-Offset: Saved Z-Offset
   Saved to crash_report.txt (QR not available): Saved to crash_report.txt (QR not
     available)

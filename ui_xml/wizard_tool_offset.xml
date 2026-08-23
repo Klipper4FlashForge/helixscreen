@@ -47,8 +47,8 @@
 
         <!-- Completion help text -->
         <text_small width="100%"
-                    text="Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console."
-                    translation_tag="Save to keep the offsets (Klipper restarts). Recalibrate anytime from the console."
+                    text="The offsets are saved when setup finishes. Recalibrate anytime from the console."
+                    translation_tag="The offsets are saved when setup finishes. Recalibrate anytime from the console."
                     style_text_align="center" style_text_color="#text_muted">
           <bind_flag_if_eq subject="wizard_tool_offset_complete" flag="hidden" ref_value="0"/>
         </text_small>
@@ -72,14 +72,6 @@
                  variant="warning">
         <event_cb trigger="clicked" callback="on_cancel_tool_offset"/>
         <bind_flag_if_eq subject="wizard_tool_offset_active" flag="hidden" ref_value="0"/>
-      </ui_button>
-
-      <!-- Save (after success, until clicked) -->
-      <ui_button name="save_tool_offset_btn"
-                 width="#wizard_button_width" height="#button_height" text="Save Offsets"
-                 translation_tag="Save Offsets" variant="primary">
-        <event_cb trigger="clicked" callback="on_save_tool_offset"/>
-        <bind_flag_if cond="wizard_tool_offset_complete eq 0 or wizard_tool_offset_saved eq 1" flag="hidden"/>
       </ui_button>
 
       <!-- Help text (hidden once calibration starts) -->
