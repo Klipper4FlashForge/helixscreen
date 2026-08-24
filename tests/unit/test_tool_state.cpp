@@ -440,6 +440,11 @@ TEST_CASE_METHOD(ToolStateFixture, "ToolState: detect_state parsed from status",
     ts.update_from_status(status2);
     REQUIRE(ts.tools()[0].detect_state == DetectState::ABSENT);
 
+    // Upstream klipper-toolchanger spells DETECT_PRESENT "mounted"
+    nlohmann::json status3 = {{"tool T0", {{"detect_state", "mounted"}}}};
+    ts.update_from_status(status3);
+    REQUIRE(ts.tools()[0].detect_state == DetectState::PRESENT);
+
     ts.deinit_subjects();
 }
 
