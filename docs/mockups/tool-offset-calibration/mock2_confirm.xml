@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!-- MOCK v2: confirmation before starting -->
+<component>
+  <view name="calibration_tool_offset_panel"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
+        style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" scrollable="false">
+    <header_bar name="overlay_header" title="Tool Offsets" title_tag="Tool Offsets"/>
+    <!-- dim scrim -->
+    <lv_obj name="mock_state_tagc" width="100%" height="100%" align="center"
+            style_bg_opa="160" style_bg_color="0x000000" style_border_width="0" style_radius="0"
+            scrollable="false">
+      <!-- dialog card -->
+      <lv_obj width="82%" height="content" align="center" flex_flow="column" style_pad_all="#space_lg"
+              style_pad_gap="#space_md" style_bg_opa="255" style_bg_color="#card_bg"
+              style_radius="#border_radius" style_border_width="1" style_border_color="#border"
+              scrollable="false">
+        <text_heading width="100%" text="Remove the build plate" style_text_align="center"/>
+        <text_body width="100%" style_text_align="center"
+                   text="The nozzle probes below plate level. Take the build plate off before starting, and make sure both nozzles are clean."/>
+        <lv_obj width="100%" height="content" flex_flow="row" style_pad_gap="#space_md" style_bg_opa="0"
+                style_border_width="0" style_flex_main_place="center" style_pad_all="0" scrollable="false">
+          <ui_button text="Cancel" variant="ghost" width="130"/>
+          <ui_button text="Plate Removed - Start" width="220"/>
+        </lv_obj>
+      </lv_obj>
+    </lv_obj>
+  </view>
+</component>
