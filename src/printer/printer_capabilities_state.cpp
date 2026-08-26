@@ -47,6 +47,7 @@ void PrinterCapabilitiesState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(printer_has_chamber_heater, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_chamber, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_screws_tilt, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(printer_has_tool_offset_cal, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_webcam, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_extra_fans, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(power_device_count, 0, subjects_, register_xml);
@@ -132,6 +133,13 @@ void PrinterCapabilitiesState::set_hardware(const PrinterDiscovery& hardware,
 
     // Screws tilt adjust capability
     lv_subject_set_int(&printer_has_screws_tilt_, hardware.has_screws_tilt() ? 1 : 0);
+
+    // Tool offset calibration — same gate as
+    // ToolOffsetCalibrationPanel::printer_supports_calibration()
+    lv_subject_set_int(&printer_has_tool_offset_cal_,
+                       (hardware.has_tool_changer() && hardware.has_macro("CALIBRATE_TOOL_OFFSETS"))
+                           ? 1
+                           : 0);
 
     // Spoolman requires async check - default to 0, updated separately via set_spoolman_available()
 
