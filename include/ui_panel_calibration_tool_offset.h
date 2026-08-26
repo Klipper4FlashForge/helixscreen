@@ -159,8 +159,11 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
      */
     bool abort_in_progress_calibration();
 
-    /// Send SAVE_CONFIG to persist a completed calibration (restarts Klipper)
+    /// Confirm, then persist a completed calibration (restarts Klipper)
     void save_calibration();
+
+    /// The SAVE_CONFIG itself, once the user has accepted the restart
+    void send_save_config();
 
     /// Run the reference pass on its own (TOOL_LOCATE_SENSOR)
     void start_locate_sensor();
