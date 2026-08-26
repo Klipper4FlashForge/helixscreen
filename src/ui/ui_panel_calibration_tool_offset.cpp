@@ -565,6 +565,14 @@ static void on_tool_offset_row_clicked(lv_event_t* e) {
     (void)e;
     LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] row_clicked");
     auto& panel = get_global_tool_offset_cal_panel();
+    // Subjects and callbacks MUST exist before the XML is built, or every
+    // bind_flag/event_cb in the component silently no-ops and the panel comes
+    // up with all buttons and spinners visible at once. Same order as
+    // helix::ui::lazy_create_and_push_overlay(), which the Controls entry uses.
+    if (!panel.are_subjects_initialized()) {
+        panel.init_subjects();
+    }
+    panel.register_callbacks();
     bool ready = panel.get_root() != nullptr;
     if (!ready) {
         lv_obj_t* screen = lv_display_get_screen_active(nullptr);
@@ -601,6 +609,9 @@ void ToolOffsetCalibrationPanel::fetch_macro_description() {
             const std::string desc = result[CALIBRATE_MACRO].get<std::string>();
             if (desc.empty() || desc == "G-Code macro") {
                 return; // Klipper's placeholder for a macro without description:
+            }
+            if (!subjects_initialized_) {
+                return; // reply outran init_subjects(); hint_ is not a subject yet
             }
             lv_subject_copy_string(&hint_, desc.c_str());
         }));
