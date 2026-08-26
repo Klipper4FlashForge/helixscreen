@@ -4,8 +4,30 @@
 <!-- Drives the sequence one step at a time: TOOL_LOCATE_SENSOR for the -->
 <!-- reference (empty carriage), then SELECT_TOOL T=<n> + -->
 <!-- TOOL_CALIBRATE_TOOL_OFFSET per tool. Stop is a clean between-steps cancel. -->
-<!-- Design: docs/mockups/tool-offset-calibration/ -->
+<!-- -->
+<!-- One layout for every state. The five entities are one flat list of -->
+<!-- identically shaped rows, and each row carries its own state, so a run -->
+<!-- needs no second screen: the measuring row highlights in place, later rows -->
+<!-- read Queued, finished rows show their numbers. The only global signals are -->
+<!-- the error card at the top and the amber Save in the footer, whose two -->
+<!-- slots never move under the finger. -->
+<!-- Design: docs/mockups/tool-offset-calibration/DESIGN_BRIEF.md -->
 <component>
+  <styles>
+    <!-- A row's fill comes from a bind_style pair, never an inline
+         style_bg_* — an inline attribute is a local style and would win over
+         the bound one, so the measuring highlight would never appear.
+         The highlight is a tint of #primary rather than a new token, so it
+         tracks the theme's accent in both light and dark. -->
+    <style name="row_idle" bg_color="#elevated_bg" bg_opa="255" border_color="#border"/>
+    <style name="row_measuring" bg_color="#primary" bg_opa="40" border_color="#primary"/>
+    <!-- Row state-text colours. The base label colour is #text; each of these
+         is added only while its state is current and removed again after. -->
+    <style name="state_attention" text_color="#warning"/>
+    <style name="state_running" text_color="#primary"/>
+    <style name="state_quiet" text_color="#text_muted"/>
+  </styles>
+
   <view name="calibration_tool_offset_panel"
         extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
         style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" scrollable="false" flex_flow="column">
@@ -18,94 +40,225 @@
       <!-- Disable content when printer not connected or klippy not ready -->
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
 
-      <!-- Status. long_mode wrap so a multi-sentence Klipper refusal is
-           readable instead of clipped at the right edge. -->
-      <text_small name="tool_offset_status_label" width="100%" bind_text="tool_offset_cal_status"
-                  long_mode="wrap" style_text_color="#text_muted"/>
-
-      <!-- Calibration-incomplete note; empty string hides it -->
-      <text_small name="tool_offset_warning_label" width="100%" bind_text="tool_offset_cal_warning"
-                  long_mode="wrap" style_text_color="#warning">
-        <bind_flag_if_eq subject="tool_offset_cal_has_warning" flag="hidden" ref_value="0"/>
-      </text_small>
-
-      <!-- Rows scroll; the action buttons below stay reachable. Five rows
-           (reference + four tools) plus a warning line overflow 480px. -->
-      <lv_obj name="tool_offset_rows" width="100%" flex_grow="1" style_pad_all="0"
-              style_pad_gap="#space_sm" flex_flow="column" style_bg_opa="0" style_border_width="0"
-              scrollable="true">
-
-      <!-- Reference row: TOOL_LOCATE_SENSOR, runs with an EMPTY carriage -->
-      <lv_obj name="tool_offset_row_station" width="100%" height="content" flex_flow="row"
-              style_flex_cross_place="center" style_pad_all="#space_sm" style_pad_gap="#space_sm"
-              style_bg_opa="255" style_bg_color="#elevated_bg" style_radius="#border_radius_small"
-              scrollable="false">
-        <lv_obj width="content" height="content" flex_flow="column" style_pad_all="0" style_pad_gap="2"
-                style_bg_opa="0" style_border_width="0" flex_grow="1" scrollable="false">
-          <text_body text="Reference" translation_tag="Reference"/>
-          <text_small bind_text="tool_offset_cal_station_text" style_text_color="#text_muted"/>
+      <!-- A refusal is the most valuable text on the screen when it happens:
+           Klipper's message is 100-200 characters and says exactly what went
+           wrong. It gets a card at the top, not a muted status line. A failed
+           run changes nothing, so the rows below stay truthful. -->
+      <lv_obj name="tool_offset_error_card" width="100%" height="content" flex_flow="row"
+              style_pad_all="#space_sm" style_pad_gap="#space_sm" style_bg_opa="40"
+              style_bg_color="#danger" style_border_width="1" style_border_color="#danger"
+              style_radius="#border_radius_small" scrollable="false">
+        <bind_flag_if_eq subject="tool_offset_cal_error" flag="hidden" ref_value="0"/>
+        <lv_label text="#icon_triangle_exclamation" style_text_font="mdi_icons_24"
+                  style_text_color="#danger"/>
+        <lv_obj flex_grow="1" height="content" flex_flow="column" style_pad_all="0"
+                style_pad_gap="#space_xxs" style_bg_opa="0" style_border_width="0" scrollable="false">
+          <text_body width="100%" bind_text="tool_offset_cal_error_title" long_mode="wrap"/>
+          <text_small width="100%" bind_text="tool_offset_cal_error_text" long_mode="wrap"/>
+          <text_small width="100%" bind_text="tool_offset_cal_error_fix" long_mode="wrap"
+                      style_text_color="#text_muted"/>
         </lv_obj>
+      </lv_obj>
+
+      <text_small text="Reference — the fixed point every tool is measured against"
+                  translation_tag="Reference — the fixed point every tool is measured against"
+                  style_text_color="#text_muted"/>
+
+      <!-- Reference row: TOOL_LOCATE_SENSOR, runs with an EMPTY carriage.
+           Same row shape as a tool, so the list reads as one thing. -->
+      <lv_obj name="tool_offset_row_station" width="100%" height="content" flex_flow="row"
+              style_flex_cross_place="center" style_pad_hor="#space_sm" style_pad_ver="#space_xxs"
+              style_pad_gap="#space_sm"
+              style_radius="#border_radius_small" style_border_width="1"
+              scrollable="false">
+        <bind_style_if_not_eq name="row_idle" subject="tool_offset_cal_station_state" ref_value="2"/>
+        <bind_style_if_eq name="row_measuring" subject="tool_offset_cal_station_state" ref_value="2"/>
+
+        <lv_obj width="46" height="34" style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg"
+                style_radius="#border_radius_small" style_border_width="1" style_border_color="#border"
+                flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center"
+                scrollable="false">
+          <text_small text="REF"/>
+        </lv_obj>
+
+        <!-- Measured: the station bore's machine coordinates -->
+        <lv_obj name="tool_offset_station_values" width="content" height="content" flex_flow="row"
+                style_pad_all="0" style_pad_gap="#space_md" style_bg_opa="0" style_border_width="0"
+                scrollable="false">
+          <bind_flag_if_not_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="3"/>
+          <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
+                  style_bg_opa="0" style_border_width="0" scrollable="false">
+            <text_small text="X" style_text_color="#text_muted"/>
+            <text_body bind_text="tool_offset_cal_station_x"/>
+          </lv_obj>
+          <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
+                  style_bg_opa="0" style_border_width="0" scrollable="false">
+            <text_small text="Y" style_text_color="#text_muted"/>
+            <text_body bind_text="tool_offset_cal_station_y"/>
+          </lv_obj>
+          <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
+                  style_bg_opa="0" style_border_width="0" scrollable="false">
+            <text_small text="Z" style_text_color="#text_muted"/>
+            <text_body bind_text="tool_offset_cal_station_z"/>
+          </lv_obj>
+        </lv_obj>
+
+        <!-- Not measured / measuring -->
+        <lv_obj name="tool_offset_station_state" width="content" height="content" flex_flow="row"
+                style_flex_cross_place="end"
+                style_pad_all="0" style_pad_gap="#space_sm" style_bg_opa="0" style_border_width="0"
+                scrollable="false">
+          <bind_flag_if_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="3"/>
+          <text_body name="tool_offset_station_state_label" bind_text="tool_offset_cal_station_state_text">
+            <bind_style_if_eq name="state_attention" subject="tool_offset_cal_station_state" ref_value="0"/>
+            <bind_style_if_eq name="state_quiet" subject="tool_offset_cal_station_state" ref_value="1"/>
+            <bind_style_if_eq name="state_running" subject="tool_offset_cal_station_state" ref_value="2"/>
+          </text_body>
+          <text_small bind_text="tool_offset_cal_station_sub" style_text_color="#text_muted"/>
+        </lv_obj>
+
+        <lv_obj flex_grow="1" height="1" style_pad_all="0" style_bg_opa="0" style_border_width="0"
+                scrollable="false"/>
+
         <spinner size="sm">
-          <bind_flag_if_eq subject="tool_offset_cal_station_spin" flag="hidden" ref_value="0"/>
+          <bind_flag_if_not_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="2"/>
         </spinner>
-        <ui_button name="tool_offset_cal_btn_station" text="Locate" translation_tag="Locate" width="110">
-          <bind_flag_if_eq subject="tool_offset_cal_station_spin" flag="hidden" ref_value="1"/>
+
+        <ui_button name="tool_offset_cal_btn_station" text="Measure" translation_tag="Measure" width="118" height="40">
+          <bind_flag_if cond="tool_offset_cal_station_state eq 3 or tool_offset_cal_station_state eq 2"
+                        flag="hidden"/>
+          <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
+          <event_cb trigger="clicked" callback="on_tool_offset_cal_locate"/>
+        </ui_button>
+        <ui_button name="tool_offset_cal_redo_station" text="Redo" translation_tag="Redo"
+                   variant="ghost" width="118" height="40">
+          <bind_flag_if_not_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="3"/>
           <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
           <event_cb trigger="clicked" callback="on_tool_offset_cal_locate"/>
         </ui_button>
       </lv_obj>
 
-      <!-- One row per tool slot; rows beyond the printer's tool count stay hidden -->
-      <repeat count="4">
-        <lv_obj name="tool_offset_row_${i}" width="100%" height="content" flex_flow="row"
-                style_flex_cross_place="center" style_pad_all="#space_sm" style_pad_gap="#space_sm"
-                style_bg_opa="255" style_bg_color="#elevated_bg" style_radius="#border_radius_small"
-                scrollable="false">
-          <bind_flag_if_eq subject="tool_offset_cal_row_visible_${i}" flag="hidden" ref_value="0"/>
-          <lv_obj width="content" height="content" flex_flow="column" style_pad_all="0" style_pad_gap="2"
-                  style_bg_opa="0" style_border_width="0" flex_grow="1" scrollable="false">
-            <text_body text="T${i}"/>
-            <text_small bind_text="tool_offset_cal_text_${i}" style_text_color="#text_muted"/>
+      <text_small text="Tools — each nozzle's measured position"
+                  translation_tag="Tools — each nozzle's measured position"
+                  style_text_color="#text_muted"/>
+
+      <!-- Rows scroll so the pinned footer stays reachable when the error card
+           is up. One row per tool slot; rows beyond the printer's tool count
+           stay hidden. -->
+      <lv_obj name="tool_offset_rows" width="100%" flex_grow="1" style_pad_all="0"
+              style_pad_gap="#space_sm" flex_flow="column" style_bg_opa="0" style_border_width="0"
+              scrollable="true">
+        <repeat count="4">
+          <lv_obj name="tool_offset_row_${i}" width="100%" height="content" flex_flow="row"
+                  style_flex_cross_place="center" style_pad_hor="#space_sm" style_pad_ver="#space_xxs"
+                  style_pad_gap="#space_sm"
+                  style_radius="#border_radius_small" style_border_width="1"
+                  scrollable="false">
+            <bind_flag_if_eq subject="tool_offset_cal_row_visible_${i}" flag="hidden" ref_value="0"/>
+            <bind_style_if_not_eq name="row_idle" subject="tool_offset_cal_state_${i}" ref_value="2"/>
+            <bind_style_if_eq name="row_measuring" subject="tool_offset_cal_state_${i}" ref_value="2"/>
+
+            <lv_obj width="46" height="34" style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg"
+                    style_radius="#border_radius_small" style_border_width="1" style_border_color="#border"
+                    flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center"
+                    scrollable="false">
+              <text_body text="T${i}"/>
+            </lv_obj>
+
+            <!-- Calibrated: the nozzle's own machine coordinates, so nothing
+                 reads as an unexplained zero. Compare against REF above. -->
+            <lv_obj name="tool_offset_values_${i}" width="content" height="content" flex_flow="row"
+                    style_pad_all="0" style_pad_gap="#space_md" style_bg_opa="0" style_border_width="0"
+                    scrollable="false">
+              <bind_flag_if_not_eq subject="tool_offset_cal_state_${i}" flag="hidden" ref_value="3"/>
+              <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
+                      style_bg_opa="0" style_border_width="0" scrollable="false">
+                <text_small text="X" style_text_color="#text_muted"/>
+                <text_body bind_text="tool_offset_cal_x_${i}"/>
+              </lv_obj>
+              <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
+                      style_bg_opa="0" style_border_width="0" scrollable="false">
+                <text_small text="Y" style_text_color="#text_muted"/>
+                <text_body bind_text="tool_offset_cal_y_${i}"/>
+              </lv_obj>
+              <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
+                      style_bg_opa="0" style_border_width="0" scrollable="false">
+                <text_small text="Z" style_text_color="#text_muted"/>
+                <text_body bind_text="tool_offset_cal_z_${i}">
+                  <!-- Z away from the expected gap is the one number the
+                       machine cannot judge for the user. -->
+                  <bind_style_if_eq name="state_attention" subject="tool_offset_cal_z_odd_${i}"
+                                    ref_value="1"/>
+                </text_body>
+              </lv_obj>
+            </lv_obj>
+
+            <!-- Not calibrated / queued / measuring -->
+            <lv_obj name="tool_offset_state_${i}" width="content" height="content" flex_flow="row"
+                    style_flex_cross_place="end"
+                    style_pad_all="0" style_pad_gap="#space_sm" style_bg_opa="0" style_border_width="0"
+                    scrollable="false">
+              <bind_flag_if_eq subject="tool_offset_cal_state_${i}" flag="hidden" ref_value="3"/>
+              <text_body name="tool_offset_state_label_${i}" bind_text="tool_offset_cal_state_text_${i}">
+                <bind_style_if_eq name="state_attention" subject="tool_offset_cal_state_${i}" ref_value="0"/>
+                <bind_style_if_eq name="state_quiet" subject="tool_offset_cal_state_${i}" ref_value="1"/>
+                <bind_style_if_eq name="state_running" subject="tool_offset_cal_state_${i}" ref_value="2"/>
+              </text_body>
+              <text_small bind_text="tool_offset_cal_sub_${i}" style_text_color="#text_muted"/>
+            </lv_obj>
+
+            <lv_obj flex_grow="1" height="1" style_pad_all="0" style_bg_opa="0" style_border_width="0"
+                    scrollable="false"/>
+
+            <spinner size="sm">
+              <bind_flag_if_not_eq subject="tool_offset_cal_state_${i}" flag="hidden" ref_value="2"/>
+            </spinner>
+
+            <ui_button name="tool_offset_cal_btn_${i}" text="Calibrate" translation_tag="Calibrate" width="118" height="40">
+              <bind_flag_if cond="tool_offset_cal_state_${i} eq 3 or tool_offset_cal_state_${i} eq 2"
+                            flag="hidden"/>
+              <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
+              <event_cb trigger="clicked" callback="on_tool_offset_cal_tool" user_data="$i"/>
+            </ui_button>
+            <ui_button name="tool_offset_cal_redo_${i}" text="Redo" translation_tag="Redo"
+                       variant="ghost" width="118" height="40">
+              <bind_flag_if_not_eq subject="tool_offset_cal_state_${i}" flag="hidden" ref_value="3"/>
+              <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
+              <event_cb trigger="clicked" callback="on_tool_offset_cal_tool" user_data="$i"/>
+            </ui_button>
           </lv_obj>
-          <spinner size="sm">
-            <bind_flag_if_eq subject="tool_offset_cal_spin_${i}" flag="hidden" ref_value="0"/>
-          </spinner>
-          <ui_button name="tool_offset_cal_btn_${i}" text="Calibrate" translation_tag="Calibrate" width="110">
-            <bind_flag_if_eq subject="tool_offset_cal_spin_${i}" flag="hidden" ref_value="1"/>
-            <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
-            <event_cb trigger="clicked" callback="on_tool_offset_cal_tool" user_data="$i"/>
-          </ui_button>
-        </lv_obj>
-      </repeat>
+        </repeat>
       </lv_obj>
 
-      <!-- Save: shown whenever Klipper has calibration staged but unsaved,
-           not only after a run in this session. SAVE_CONFIG restarts Klipper. -->
-      <ui_button name="tool_offset_save_btn"
-                 width="100%" text="Save Offsets" translation_tag="Save Offsets">
-        <event_cb trigger="clicked" callback="on_tool_offset_cal_save"/>
-        <bind_flag_if_eq subject="tool_offset_cal_save_pending" flag="hidden" ref_value="0"/>
-      </ui_button>
-      <text_small width="100%"
-                  text="Applied to this session already. Save persists across restarts (SAVE_CONFIG)."
-                  translation_tag="Applied to this session already. Save persists across restarts (SAVE_CONFIG)."
-                  long_mode="wrap" style_text_align="center" style_text_color="#text_muted">
-        <bind_flag_if_eq subject="tool_offset_cal_save_pending" flag="hidden" ref_value="0"/>
-      </text_small>
-
-      <!-- Calibrate All (hidden while a run is active) -->
-      <ui_button name="tool_offset_start_btn"
-                 width="100%" text="Calibrate All" translation_tag="Calibrate All">
-        <event_cb trigger="clicked" callback="on_tool_offset_cal_start"/>
-        <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="1"/>
-      </ui_button>
-
-      <!-- Stop (only while a run is active): clean stop after the current step -->
-      <ui_button name="tool_offset_cancel_btn"
-                 width="100%" text="Stop" translation_tag="Stop" variant="warning">
-        <event_cb trigger="clicked" callback="on_tool_offset_cal_cancel"/>
-        <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="0"/>
-      </ui_button>
+      <!-- Two fixed footer slots in every state — run action, then save — so
+           nothing moves under the finger. Save only turns amber (and only
+           becomes pressable) when Klipper actually has staged config; it is
+           the single global signal that work would be lost on a restart. -->
+      <lv_obj name="tool_offset_actions" width="100%" height="content" flex_flow="row"
+              style_pad_all="0" style_pad_gap="#space_sm" style_bg_opa="0" style_border_width="0"
+              scrollable="false">
+        <ui_button name="tool_offset_start_btn" flex_grow="3"
+                   text="Calibrate everything" translation_tag="Calibrate everything">
+          <event_cb trigger="clicked" callback="on_tool_offset_cal_start"/>
+          <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="1"/>
+        </ui_button>
+        <!-- Clean stop: finishes the row being measured, then stops. -->
+        <ui_button name="tool_offset_cancel_btn" flex_grow="3" variant="danger"
+                   text="Stop" translation_tag="Stop">
+          <event_cb trigger="clicked" callback="on_tool_offset_cal_cancel"/>
+          <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="0"/>
+        </ui_button>
+        <ui_button name="tool_offset_save_btn" flex_grow="2" variant="warning"
+                   text="Save offsets" translation_tag="Save offsets">
+          <event_cb trigger="clicked" callback="on_tool_offset_cal_save"/>
+          <bind_flag_if_eq subject="tool_offset_cal_save_pending" flag="hidden" ref_value="0"/>
+        </ui_button>
+        <ui_button name="tool_offset_save_idle_btn" flex_grow="2" variant="ghost"
+                   text="Save offsets" translation_tag="Save offsets">
+          <bind_flag_if_eq subject="tool_offset_cal_save_pending" flag="hidden" ref_value="1"/>
+          <bind_state_if_eq subject="tool_offset_cal_save_pending" state="disabled" ref_value="0"/>
+        </ui_button>
+      </lv_obj>
     </lv_obj>
   </view>
 </component>
