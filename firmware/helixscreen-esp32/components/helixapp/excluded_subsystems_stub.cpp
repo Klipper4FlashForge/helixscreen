@@ -46,6 +46,7 @@
 #include "ui_panel_bed_mesh.h"
 #include "ui_panel_belt_tension.h"
 #include "ui_panel_calibration_pid.h"
+#include "ui_panel_calibration_tool_offset.h"
 #include "ui_panel_calibration_zoffset.h"
 #include "ui_panel_input_shaper.h"
 #include "ui_panel_screws_tilt.h"
@@ -190,6 +191,20 @@ ZOffsetCalibrationPanel& get_global_zoffset_cal_panel() {
     alignas(ZOffsetCalibrationPanel)
         EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(ZOffsetCalibrationPanel)];
     return *reinterpret_cast<ZOffsetCalibrationPanel*>(storage);
+}
+
+// src/ui/ui_panel_calibration_tool_offset.cpp
+ToolOffsetCalibrationPanel& get_global_tool_offset_cal_panel() {
+    alignas(ToolOffsetCalibrationPanel)
+        EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(ToolOffsetCalibrationPanel)];
+    return *reinterpret_cast<ToolOffsetCalibrationPanel*>(storage);
+}
+
+// The capability gate in ControlsPanel::handle_calibration_zoffset() sits after
+// the ESP32 early-return toast, so this is link-only — but false is also the
+// honest answer: the tool-offset flow is not in the v1 cut.
+bool ToolOffsetCalibrationPanel::printer_supports_calibration() {
+    return false;
 }
 
 // Advanced-panel staged-calibration rows (Input Shaping / Belt Tension / Z-Offset)

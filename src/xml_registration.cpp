@@ -670,6 +670,7 @@ void register_xml_components() {
 
     // Calibration panels (overlays launched from settings)
     register_xml("calibration_zoffset_panel.xml");
+    register_xml("calibration_tool_offset_panel.xml");
     register_xml("calibration_pid_panel.xml");
 
     // Bed mesh modals (must be registered before bed_mesh_panel which uses them)

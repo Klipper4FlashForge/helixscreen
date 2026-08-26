@@ -282,6 +282,7 @@ class ControlsPanel : public PanelBase {
     lv_obj_t* fan_control_panel_ = nullptr;
     lv_obj_t* bed_mesh_panel_ = nullptr;
     lv_obj_t* zoffset_panel_ = nullptr;
+    lv_obj_t* tool_offset_panel_ = nullptr;
     lv_obj_t* screws_panel_ = nullptr;
 
     /// LED quick-toggle for the Calibration & Tools grid cell. Reuses the same

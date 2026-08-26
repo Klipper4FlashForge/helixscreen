@@ -217,6 +217,7 @@ src/ui/ui_overlay_timelapse_videos.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_bed_mesh.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_belt_tension.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_calibration_pid.cpp  # not in the v1 Core+AMS cut
+src/ui/ui_panel_calibration_tool_offset.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_calibration_zoffset.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_gcode_test.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_glyphs.cpp  # not in the v1 Core+AMS cut
@@ -251,6 +252,7 @@ src/ui/ui_wizard_led_select.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_wizard_printer_identify.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_wizard_summary.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_wizard_telemetry.cpp  # not in the v1 Core+AMS cut
+src/ui/ui_wizard_tool_offset.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_wizard_touch_calibration.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_wizard_wifi.cpp  # not in the v1 Core+AMS cut
 src/ui/upgrade_banner.cpp  # not in the v1 Core+AMS cut

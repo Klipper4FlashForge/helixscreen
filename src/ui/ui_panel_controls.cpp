@@ -14,6 +14,7 @@
 #include "ui_notification.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_bed_mesh.h"
+#include "ui_panel_calibration_tool_offset.h"
 #include "ui_panel_calibration_zoffset.h"
 #include "ui_panel_motion.h"
 #include "ui_panel_screws_tilt.h"
@@ -1825,6 +1826,15 @@ void ControlsPanel::handle_calibration_zoffset() {
     helix::ui::show_feature_unavailable_toast();
     return;
 #endif
+    // Tool changers whose CALIBRATE_TOOL_OFFSETS macro owns the whole
+    // procedure get the automatic flow; the paper-test panel does not apply
+    // to them (per-tool Z lives with the macro's own offsets).
+    if (ToolOffsetCalibrationPanel::printer_supports_calibration()) {
+        helix::ui::lazy_create_and_push_overlay<ToolOffsetCalibrationPanel>(
+            get_global_tool_offset_cal_panel, tool_offset_panel_, parent_screen_,
+            "Tool Offset Calibration", get_name());
+        return;
+    }
     // Set the Moonraker client before lazy creation so it's available when calibration starts
     get_global_zoffset_cal_panel().set_api(get_moonraker_api());
     helix::ui::lazy_create_and_push_overlay<ZOffsetCalibrationPanel>(

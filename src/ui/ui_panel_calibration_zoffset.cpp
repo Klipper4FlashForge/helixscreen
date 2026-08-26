@@ -6,6 +6,7 @@
 #include "ui_callback_helpers.h"
 #include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
+#include "ui_panel_calibration_tool_offset.h"
 #include "ui_event_safety.h"
 #include "ui_nav_manager.h"
 #include "ui_temperature_utils.h"
@@ -992,6 +993,19 @@ void init_zoffset_event_callbacks() {
 static void on_zoffset_row_clicked(lv_event_t* e) {
     (void)e;
     spdlog::debug("[ZOffsetCal] Z-Offset row clicked");
+
+    // Tool changers whose CALIBRATE_TOOL_OFFSETS macro owns the whole
+    // procedure get the automatic flow; the paper-test panel does not apply
+    // to them (per-tool Z lives with the macro's own offsets).
+    if (ToolOffsetCalibrationPanel::printer_supports_calibration()) {
+        auto& tool_overlay = get_global_tool_offset_cal_panel();
+        if (!tool_overlay.get_root()) {
+            tool_overlay.init_subjects();
+            tool_overlay.create(lv_display_get_screen_active(nullptr));
+        }
+        tool_overlay.show();
+        return;
+    }
 
     auto& overlay = get_global_zoffset_cal_panel();
 
