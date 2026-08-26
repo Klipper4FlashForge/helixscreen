@@ -1255,6 +1255,23 @@ HELIX_MOCK_PRINTER=multi_extruder ./build/bin/helix-screen --test -vv
 
 Confirm what you got from the log line: `[MoonrakerManager] Creating MOCK client (<printer>, <n>x speed)`.
 
+### `HELIX_MOCK_TOOL_CAL_FAIL`
+
+Make one step of tool-offset calibration refuse, with a message shaped like the firmware's own gap-guard rejection. Without it the mock always succeeds, so the Tool Offsets panel's refusal path — the state it handles most visibly — is unreachable.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `0`–`3` (that tool refuses) or `station` (the reference pass refuses) |
+| **Default** | unset — nothing fails |
+| **File** | `src/api/moonraker_client_mock.cpp` |
+
+```bash
+# T2 refuses; T0/T1 keep their results, T3 is never reached
+HELIX_MOCK_AMS=toolchanger HELIX_MOCK_TOOL_CAL_FAIL=2 ./build/bin/helix-screen --test -vv
+```
+
+Requires `HELIX_MOCK_AMS=toolchanger` — the panel is only reachable on a tool changer. Confirm from the log line: `[MoonrakerClientMock] tool cal step <n> refusing (HELIX_MOCK_TOOL_CAL_FAIL)`.
+
 ### `HELIX_MOCK_PROBE_TYPE`
 
 Choose which Z-probe the mock printer advertises. Controls both the Klipper object added to the mock object list and the probe status payload in the initial state dispatch.

@@ -31,7 +31,7 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
 
         // Tool offset calibration completes asynchronously (~1.5s per tool) so
         // the panel's per-tool spinner state is observable in mock mode.
-        if (self->simulate_tool_offset_calibration(script, success_cb)) {
+        if (self->simulate_tool_offset_calibration(script, success_cb, error_cb)) {
             return true;
         }
 

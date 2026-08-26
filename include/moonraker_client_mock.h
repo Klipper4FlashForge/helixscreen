@@ -842,8 +842,9 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      *
      * @return true if the script was handled here
      */
-    bool simulate_tool_offset_calibration(const std::string& script,
-                                          std::function<void(const nlohmann::json&)> success_cb);
+    bool simulate_tool_offset_calibration(
+        const std::string& script, std::function<void(const nlohmann::json&)> success_cb,
+        std::function<void(const MoonrakerError&)> error_cb);
 
     /// Mock tool-offset state, also served by printer.objects.query
     bool mock_station_calibrated() const;
@@ -862,7 +863,12 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         int tool;
         std::chrono::steady_clock::time_point due;
         std::function<void(const nlohmann::json&)> success_cb;
+        std::function<void(const MoonrakerError&)> error_cb;
     };
+    /// HELIX_MOCK_TOOL_CAL_FAIL=<n>: make tool <n> (or "station") refuse with a
+    /// realistic gap-guard message. The refusal path is otherwise unreachable
+    /// in mock mode, and it is the state the panel handles most visibly.
+    int mock_tool_cal_fail_step() const;
     std::vector<PendingToolCal> pending_tool_cals_;
     mutable std::mutex tool_cal_mutex_;
     /// Tool SELECT_TOOL last mounted; TOOL_CALIBRATE_TOOL_OFFSET measures it.

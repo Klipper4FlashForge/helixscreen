@@ -51,8 +51,9 @@
  * - tool_offset_cal_station_state_text / _sub (string) - same, for the reference
  * - tool_offset_cal_station_x / _y / _z (string) - the station bore's position
  * - tool_offset_cal_save_pending (int) - Klipper has unsaved calibration
- * - tool_offset_cal_error (int) - 1 while the refusal card is up
- * - tool_offset_cal_error_title / _text / _fix (string) - that card's content
+ *
+ * A refusal has no subject: it is a one-time event shown in a dismissible
+ * alert modal, not a panel state.
  *
  * ## Command contract
  *
@@ -202,8 +203,8 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     /// True while `step` still belongs to the run in flight — refreshed
     /// printer state must not overwrite a Queued or Measuring row.
     bool is_step_pending(int step) const;
+    /// Put a refusal in a dismissible modal (see the doc comment on show_error)
     void show_error(int step, const std::string& message);
-    void clear_error();
     void confirm_and_run(std::vector<int> steps);
     void fetch_macro_description();
     void subscribe_console();
@@ -265,15 +266,6 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     char station_x_buffer_[16] = "";
     char station_y_buffer_[16] = "";
     char station_z_buffer_[16] = "";
-
-    // Refusal card
-    lv_subject_t error_;
-    lv_subject_t error_title_;
-    lv_subject_t error_text_;
-    lv_subject_t error_fix_;
-    char error_title_buffer_[96] = "";
-    char error_text_buffer_[384] = "";
-    char error_fix_buffer_[128] = "";
 
     /// Per tool: nozzle_x, nozzle_y, and the Z gap over the station. Read from
     /// ff_tool/ff_tool_offset after every step. Valid iff values_valid_.

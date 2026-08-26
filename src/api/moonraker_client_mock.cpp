@@ -4772,8 +4772,20 @@ void MoonrakerClientMock::mock_clear_save_config_pending() {
     mock_save_config_pending_ = false;
 }
 
+int MoonrakerClientMock::mock_tool_cal_fail_step() const {
+    const char* env = std::getenv("HELIX_MOCK_TOOL_CAL_FAIL");
+    if (!env || !*env) {
+        return -2; // nothing fails
+    }
+    if (std::string(env) == "station") {
+        return MOCK_STATION_STEP;
+    }
+    return std::atoi(env);
+}
+
 bool MoonrakerClientMock::simulate_tool_offset_calibration(
-    const std::string& script, std::function<void(const nlohmann::json&)> success_cb) {
+    const std::string& script, std::function<void(const nlohmann::json&)> success_cb,
+    std::function<void(const MoonrakerError&)> error_cb) {
     // The panel sends the tool pass as one two-line script
     // ("SELECT_TOOL T=<n>\nTOOL_CALIBRATE_TOOL_OFFSET"), so match anywhere in
     // the script rather than only at its start. Word-boundary check keeps
@@ -4814,22 +4826,25 @@ bool MoonrakerClientMock::simulate_tool_offset_calibration(
     std::lock_guard<std::mutex> lock(tool_cal_mutex_);
     if (is_locate) {
         spdlog::info("[MoonrakerClientMock] TOOL_LOCATE_SENSOR: simulating (~1.5s)");
-        pending_tool_cals_.push_back({MOCK_STATION_STEP, due, std::move(success_cb)});
+        pending_tool_cals_.push_back(
+            {MOCK_STATION_STEP, due, std::move(success_cb), std::move(error_cb)});
         return true;
     }
     if (is_tool) {
         spdlog::info("[MoonrakerClientMock] TOOL_CALIBRATE_TOOL_OFFSET: simulating T{} (~1.5s)",
                      mock_selected_tool_);
-        pending_tool_cals_.push_back({mock_selected_tool_, due, std::move(success_cb)});
+        pending_tool_cals_.push_back(
+            {mock_selected_tool_, due, std::move(success_cb), std::move(error_cb)});
         return true;
     }
     // Macro: reference, then all four tools, each a step apart. Only the last
     // one carries the RPC callback, matching Klipper answering once at the end.
-    pending_tool_cals_.push_back({MOCK_STATION_STEP, due, nullptr});
+    pending_tool_cals_.push_back({MOCK_STATION_STEP, due, nullptr, nullptr});
     for (int t = 0; t < 4; ++t) {
         due += std::chrono::milliseconds(1500);
         pending_tool_cals_.push_back(
-            {t, due, t == 3 ? std::move(success_cb) : std::function<void(const nlohmann::json&)>()});
+            {t, due, t == 3 ? std::move(success_cb) : std::function<void(const nlohmann::json&)>(),
+             t == 3 ? std::move(error_cb) : std::function<void(const MoonrakerError&)>()});
     }
     return true;
 }
@@ -4848,7 +4863,35 @@ void MoonrakerClientMock::service_pending_tool_cals() {
             }
         }
     }
+    const int fail_step = mock_tool_cal_fail_step();
     for (auto& cal : due) {
+        if (cal.tool == fail_step) {
+            // Shaped like the firmware's own gap-guard refusal — the long,
+            // specific message the panel puts in front of the user.
+            const std::string msg =
+                cal.tool == MOCK_STATION_STEP
+                    ? fmt::format("plate check: station Z 1.240 is 2.919 mm above the calibrated"
+                                  " {:.3f} - is the build plate still on?",
+                                  MOCK_STATION_Z)
+                    : fmt::format("T{} nozzle_z 6.900 is {:.3f} above station_z {:.3f}, outside"
+                                  " gap_min/gap_max [1.50, 5.00] - probe mis-trigger suspected,"
+                                  " nothing saved",
+                                  cal.tool, 6.900 - MOCK_STATION_Z, MOCK_STATION_Z);
+            spdlog::info("[MoonrakerClientMock] tool cal step {} refusing"
+                         " (HELIX_MOCK_TOOL_CAL_FAIL)",
+                         cal.tool);
+            dispatch_gcode_response("!! " + msg);
+            if (cal.error_cb) {
+                // Klipper reports a refused gcode as a JSON-RPC error, which is
+                // the shape the panel's error path already expects.
+                MoonrakerError err;
+                err.type = MoonrakerErrorType::JSON_RPC_ERROR;
+                err.message = msg;
+                err.method = "printer.gcode.script";
+                cal.error_cb(err);
+            }
+            continue;
+        }
         if (cal.tool == MOCK_STATION_STEP) {
             {
                 std::lock_guard<std::mutex> lock(tool_cal_mutex_);
