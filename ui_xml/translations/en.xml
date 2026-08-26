@@ -1827,6 +1827,9 @@
   <translation tag="Printer Setup: Review" en="Printer Setup: Review"/>
   <translation tag="Printer Setup: Tool Offsets" en="Printer Setup: Tool Offsets"/>
   <translation tag="Tool Offsets" en="Tool Offsets"/>
+  <translation tag="Save Offsets" en="Save Offsets"/>
+  <translation tag="Measure each tool's nozzle position" en="Measure each tool's nozzle position"/>
+  <translation tag="Applied to this session already. Save persists across restarts (SAVE_CONFIG)." en="Applied to this session already. Save persists across restarts (SAVE_CONFIG)."/>
   <translation tag="Printer Setup: Touch Calibration" en="Printer Setup: Touch Calibration"/>
   <translation tag="Printer Shutdown" en="Printer Shutdown"/>
   <translation tag="Printer Type" en="Printer Type"/>

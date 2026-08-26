@@ -29,6 +29,12 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
             script = params["script"].get<std::string>();
         }
 
+        // Tool offset calibration completes asynchronously (~1.5s per tool) so
+        // the panel's per-tool spinner state is observable in mock mode.
+        if (self->simulate_tool_offset_calibration(script, success_cb)) {
+            return true;
+        }
+
         // Real Klipper executes a multi-line script line-by-line; the per-command
         // parsers in gcode_script() assume a SINGLE command (e.g. they `find('S')`
         // globally, which a multi-line script would point at the wrong token and

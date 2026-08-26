@@ -1,73 +1,73 @@
 <?xml version="1.0"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Tool Offset Calibration Panel -->
-<!-- Runs the printer's CALIBRATE_TOOL_OFFSETS macro and mirrors its console output. -->
-<!-- Overlay counterpart of the wizard's Tool Offsets step; replaces the paper-test -->
-<!-- Z-offset panel on tool changers whose macro owns the whole procedure. -->
+<!-- Per-tool list driving `CALIBRATE_TOOL_OFFSETS TOOL=<n> PLATE_REMOVED=1`, one -->
+<!-- tool at a time; between tools Stop is a clean cancel (no emergency stop). -->
+<!-- Design: docs/mockups/tool-offset-calibration/ -->
 <component>
   <view name="calibration_tool_offset_panel"
         extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
         style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" scrollable="false" flex_flow="column">
     <!-- Header Bar -->
-    <header_bar name="overlay_header" title="Tool Offset Calibration" title_tag="Tool Offset Calibration"/>
+    <header_bar name="overlay_header" title="Tool Offsets" title_tag="Tool Offsets"/>
     <!-- Content Area -->
     <lv_obj name="overlay_content"
-            width="100%" flex_grow="1" style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_md"
-            style_flex_cross_place="center" scrollable="false">
+            width="100%" flex_grow="1" style_pad_all="#space_md" flex_flow="column" style_pad_gap="#space_sm"
+            scrollable="false">
       <!-- Disable content when printer not connected or klippy not ready -->
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
 
-      <!-- Info: generic instruction plus the macro's own description -->
-      <lv_obj width="100%" style_pad_all="0" flex_flow="column" style_pad_gap="#space_sm">
-        <text_body width="100%"
-                   text="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."
-                   translation_tag="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."
-                   style_text_align="center"/>
-        <text_small width="100%" bind_text="tool_offset_cal_hint" style_text_align="center"
-                    style_text_color="#text_muted"/>
-      </lv_obj>
+      <text_small width="100%" bind_text="tool_offset_cal_status" style_text_color="#text_muted"/>
 
-      <!-- Status + console mirror -->
-      <text_body width="100%" bind_text="tool_offset_cal_status" style_text_align="center"/>
+      <!-- One row per tool slot; rows beyond the printer's tool count stay hidden -->
+      <repeat count="4">
+        <lv_obj name="tool_offset_row_${i}" width="100%" height="content" flex_flow="row"
+                style_flex_cross_place="center" style_pad_all="#space_sm" style_pad_gap="#space_sm"
+                style_bg_opa="255" style_bg_color="#elevated_bg" style_radius="#border_radius_small"
+                scrollable="false">
+          <bind_flag_if_eq subject="tool_offset_cal_row_visible_${i}" flag="hidden" ref_value="0"/>
+          <lv_obj width="content" height="content" flex_flow="column" style_pad_all="0" style_pad_gap="2"
+                  style_bg_opa="0" style_border_width="0" flex_grow="1" scrollable="false">
+            <text_body text="T${i}"/>
+            <text_small bind_text="tool_offset_cal_text_${i}" style_text_color="#text_muted"/>
+          </lv_obj>
+          <spinner size="sm">
+            <bind_flag_if_eq subject="tool_offset_cal_spin_${i}" flag="hidden" ref_value="0"/>
+          </spinner>
+          <ui_button name="tool_offset_cal_btn_${i}" text="Calibrate" translation_tag="Calibrate" width="110">
+            <bind_flag_if_eq subject="tool_offset_cal_spin_${i}" flag="hidden" ref_value="1"/>
+            <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
+            <event_cb trigger="clicked" callback="on_tool_offset_cal_tool" user_data="$i"/>
+          </ui_button>
+        </lv_obj>
+      </repeat>
 
-      <spinner size="lg">
-        <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="0"/>
-      </spinner>
+      <!-- Spacer -->
+      <lv_obj flex_grow="1" style_bg_opa="0" style_border_width="0"/>
 
-      <text_small width="100%" bind_text="tool_offset_cal_log" style_text_align="center"
-                  style_text_color="#text_muted">
-        <bind_flag_if_eq subject="tool_offset_cal_started" flag="hidden" ref_value="0"/>
-      </text_small>
-
-      <!-- Completion help text -->
+      <!-- Save (only after a successful run): SAVE_CONFIG persists + restarts -->
+      <ui_button name="tool_offset_save_btn"
+                 width="100%" text="Save Offsets" translation_tag="Save Offsets">
+        <event_cb trigger="clicked" callback="on_tool_offset_cal_save"/>
+        <bind_flag_if_eq subject="tool_offset_cal_complete" flag="hidden" ref_value="0"/>
+      </ui_button>
       <text_small width="100%"
-                  text="Offsets are applied now. Save persists them across restarts (Klipper restarts)."
-                  translation_tag="Offsets are applied now. Save persists them across restarts (Klipper restarts)."
+                  text="Applied to this session already. Save persists across restarts (SAVE_CONFIG)."
+                  translation_tag="Applied to this session already. Save persists across restarts (SAVE_CONFIG)."
                   style_text_align="center" style_text_color="#text_muted">
         <bind_flag_if_eq subject="tool_offset_cal_complete" flag="hidden" ref_value="0"/>
       </text_small>
 
-      <!-- Spacer -->
-      <lv_obj flex_grow="1"/>
-
-      <!-- Save (only after a successful run): SAVE_CONFIG persists + restarts -->
-      <ui_button name="tool_offset_save_btn"
-                 width="60%" text="Save Offsets" translation_tag="Save Offsets">
-        <event_cb trigger="clicked" callback="on_tool_offset_cal_save"/>
-        <bind_flag_if_eq subject="tool_offset_cal_complete" flag="hidden" ref_value="0"/>
-      </ui_button>
-
-      <!-- Start (hidden while the macro runs) -->
+      <!-- Calibrate All (hidden while a run is active) -->
       <ui_button name="tool_offset_start_btn"
-                 width="60%" text="Start Calibration" translation_tag="Start Calibration">
+                 width="100%" text="Calibrate All" translation_tag="Calibrate All">
         <event_cb trigger="clicked" callback="on_tool_offset_cal_start"/>
-        <bind_flag_if_eq subject="tool_offset_cal_started" flag="hidden" ref_value="1"/>
+        <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="1"/>
       </ui_button>
 
-      <!-- Cancel (only while the macro runs): M112 + firmware_restart, the
-           macro blocks the gcode queue so nothing softer stops it -->
+      <!-- Stop (only while a run is active): clean stop after the current tool -->
       <ui_button name="tool_offset_cancel_btn"
-                 width="60%" text="Cancel" translation_tag="Cancel" variant="warning">
+                 width="100%" text="Stop" translation_tag="Stop" variant="warning">
         <event_cb trigger="clicked" callback="on_tool_offset_cal_cancel"/>
         <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="0"/>
       </ui_button>

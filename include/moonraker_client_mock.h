@@ -830,7 +830,30 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      */
     void dispatch_gcode_response(const std::string& line);
 
+    /**
+     * @brief Simulate `CALIBRATE_TOOL_OFFSETS TOOL=<n> ...` asynchronously
+     *
+     * Schedules a per-tool completion ~1.5s out (serviced by the simulation
+     * loop): emits the macro-contract respond line
+     * `T<n>: offset = (<x>, <y>, <z>)` and then the RPC success callback, so
+     * the panel's spinner state is visible in mock mode.
+     *
+     * @return true if the script was handled here
+     */
+    bool simulate_tool_offset_calibration(const std::string& script,
+                                          std::function<void(const nlohmann::json&)> success_cb);
+
   private:
+    struct PendingToolCal {
+        int tool;
+        std::chrono::steady_clock::time_point due;
+        std::function<void(const nlohmann::json&)> success_cb;
+    };
+    std::vector<PendingToolCal> pending_tool_cals_;
+    std::mutex tool_cal_mutex_;
+
+    /// Fire due tool-offset completions (called from the simulation loop)
+    void service_pending_tool_cals();
     /**
      * @brief Populate hardware lists based on configured printer type
      *

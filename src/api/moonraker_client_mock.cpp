@@ -18,10 +18,12 @@
 #include "sensor_state.h"
 #include "shaper_response.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -4062,6 +4064,9 @@ void MoonrakerClientMock::temperature_simulation_loop() {
     while (simulation_running_.load()) {
         uint32_t tick = tick_count_.fetch_add(1);
 
+        // Fire any due mock tool-offset calibration completions
+        service_pending_tool_cals();
+
         // Get speedup factor and calculate effective time step
         double speedup = speedup_factor_.load();
         double effective_dt = base_dt * speedup; // Simulated time step
@@ -4741,6 +4746,54 @@ void MoonrakerClientMock::dispatch_manual_probe_update() {
 // ============================================================================
 // G-code Response Simulation (for PRINT_START progress tracking)
 // ============================================================================
+
+bool MoonrakerClientMock::simulate_tool_offset_calibration(
+    const std::string& script, std::function<void(const nlohmann::json&)> success_cb) {
+    if (script.rfind("CALIBRATE_TOOL_OFFSETS", 0) != 0) {
+        return false;
+    }
+    record_gcode_script(script);
+
+    int tool = 0;
+    size_t tool_pos = script.find("TOOL=");
+    if (tool_pos != std::string::npos) {
+        tool = std::atoi(script.c_str() + tool_pos + 5);
+    }
+    spdlog::info("[MoonrakerClientMock] CALIBRATE_TOOL_OFFSETS: simulating tool {} (~1.5s)", tool);
+
+    std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+    pending_tool_cals_.push_back(
+        {tool, std::chrono::steady_clock::now() + std::chrono::milliseconds(1500),
+         std::move(success_cb)});
+    return true;
+}
+
+void MoonrakerClientMock::service_pending_tool_cals() {
+    std::vector<PendingToolCal> due;
+    {
+        std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+        auto now = std::chrono::steady_clock::now();
+        for (auto it = pending_tool_cals_.begin(); it != pending_tool_cals_.end();) {
+            if (it->due <= now) {
+                due.push_back(std::move(*it));
+                it = pending_tool_cals_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    for (auto& cal : due) {
+        // Plausible per-tool values: T0 is the reference-ish near-zero tool
+        double x = cal.tool * 0.412 + 0.003 * cal.tool;
+        double y = cal.tool * -0.087;
+        double z = cal.tool * -0.044;
+        dispatch_gcode_response(
+            fmt::format("// T{}: offset = ({:.4f}, {:.4f}, {:.4f})", cal.tool, x, y, z));
+        if (cal.success_cb) {
+            cal.success_cb(nlohmann::json{{"result", "ok"}});
+        }
+    }
+}
 
 void MoonrakerClientMock::dispatch_gcode_response(const std::string& line) {
     // Build notify_gcode_response message format:
