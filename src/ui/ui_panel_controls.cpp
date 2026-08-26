@@ -253,6 +253,7 @@ void ControlsPanel::init_subjects() {
         // Calibration button event callbacks (direct buttons in card, no modal)
         {"on_calibration_bed_mesh", on_calibration_bed_mesh},
         {"on_calibration_zoffset", on_calibration_zoffset},
+        {"on_calibration_tool_offsets", on_calibration_tool_offsets},
         {"on_calibration_screws", on_calibration_screws},
         {"on_calibration_motors", on_calibration_motors},
 
@@ -1632,6 +1633,16 @@ void ControlsPanel::handle_calibration_zoffset() {
         get_name());
 }
 
+void ControlsPanel::handle_calibration_tool_offsets() {
+#if defined(HELIX_PLATFORM_ESP32)
+    helix::ui::show_feature_unavailable_toast();
+    return;
+#endif
+    helix::ui::lazy_create_and_push_overlay<ToolOffsetCalibrationPanel>(
+        get_global_tool_offset_cal_panel, tool_offset_panel_, parent_screen_,
+        "Tool Offset Calibration", get_name());
+}
+
 void ControlsPanel::handle_calibration_screws() {
 #if defined(HELIX_PLATFORM_ESP32)
     helix::ui::show_feature_unavailable_toast();
@@ -1668,6 +1679,7 @@ PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, chamber_target_edit)
 
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_bed_mesh)
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_zoffset)
+PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_tool_offsets)
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_screws)
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_motors)
 
