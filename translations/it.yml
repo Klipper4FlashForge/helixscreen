@@ -288,6 +288,7 @@ translations:
   Bed target set to {}°C: Obiettivo piano impostato a {}°C
   Bed temp must be 0-200°C: La temperatura del piano deve essere 0-200°C
   Bed warming timed out: Riscaldamento piano — tempo scaduto
+  Before calibrating: ''
   Belt A frequency locked: Frequenza cinghia A bloccata
   Belt B frequency locked: Frequenza cinghia B bloccata
   Belt Tension: Tensione cinghia
@@ -375,6 +376,7 @@ translations:
   Calibrate Gear: 'Calibra l''ingranaggio'
   Calibrate X: Calibra X
   Calibrate Y: Calibra Y
+  Calibrate everything: ''
   Calibrate input shaping to reduce ringing artifacts in prints: Calibra input shaping
     per ridurre artefatti di ringing nelle stampe
   Calibrate your touchscreen for accurate input: Calibra il touchscreen per un input
@@ -384,6 +386,8 @@ translations:
   Calibrated: Calibrato
   'Calibrating Probe...': ''
   'Calibrating bed mesh...': ''
+  Calibrating now: ''
+  Calibrating tool offsets... {}s: ''
   Calibrating {} axis...: 'Calibrazione dell''asse {}...'
   Calibrating...: Calibrazione in corso...
   Calibration & Tools: Calibrazione e Strumenti
@@ -395,6 +399,8 @@ translations:
   Calibration complete!: Calibrazione completata!
   Calibration complete! Press 'Next' to continue.: Calibrazione completata! Premi
     'Avanti' per continuare.
+  Calibration complete.: ''
+  Calibration failed: ''
   Calibration failed - touch targets more precisely.: Calibrazione fallita – tocca
     i bersagli con più precisione.
   Calibration kept timing out. Your previous settings were kept.: La calibrazione è scaduta più volte. Sono state mantenute le impostazioni precedenti.
@@ -1570,14 +1576,18 @@ translations:
   Maximum: Massimo
   Maximum acceleration (mm/s²): Accelerazione massima (mm/s²)
   Maximum toolhead speed (mm/s): Velocità massima testina (mm/s)
+  Measure: ''
   Measure and compare belt path frequencies: Misura e confronta le frequenze dei percorsi
     cinghia
   Measure belt path frequencies: Misura le frequenze dei percorsi cinghia
+  Measure each tool's nozzle position: ''
+  'Measure each tool''s nozzle position so all tools print in the same place': ''
   Measured (shaper off): Misurato (shaper disattivato)
   Measurement Failed: Misurazione fallita
   Measuring Path A... %d%%: Misurazione percorso A... %d%%
   Measuring Path B... %d%%: Misurazione percorso B... %d%%
   Measuring accelerometer noise...: 'Misurazione del rumore dell''accelerometro...'
+  Measuring now: ''
   Measuring vibrations... {}%: 'Misurazione delle vibrazioni... {}%'
   Memory: Memoria
   Memory (MB): Memoria (MB)
@@ -1764,12 +1774,15 @@ translations:
   Not found (strobe only): Non trovato (solo stroboscopio)
   Not found (use phone app): Non trovato (usa l’app del telefono)
   Not in your spools? Set it up: Non è tra le tue bobine? Configuralo
+  Not measured: ''
   Not now: Non ora
   Not yet available on this display: 'Non ancora disponibile su questo display'
   Not yet calibrated: Non ancora calibrato
   Notes: Note
   Notes (optional): Note (facoltativo)
   Nothing to remap: Niente da rimappare
+  Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed.: ''
+  Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed.: ''
   Notification: Notifica
   Notifications: Notifiche
   Notify when print finishes: Notifica al termine della stampa
@@ -1805,6 +1818,7 @@ translations:
   Objects: Oggetti
   'Off': 'Off'
   'Off:': 'Off:'
+  Offsets saved: ''
   "Old setting on today's data: {} residual - now: {}": 'Impostazione precedente sui dati di oggi: residuo {} - ora: {}'
   'On': 'On'
   On and Off macros must be different: Le macro On e Off devono essere diverse
@@ -2030,6 +2044,7 @@ translations:
   'Printer Setup: Language': 'Config. stampante: Lingua'
   'Printer Setup: Network': 'Config. stampante: Rete'
   'Printer Setup: Review': 'Config. stampante: Riepilogo'
+  'Printer Setup: Tool Offsets': ''
   'Printer Setup: Touch Calibration': 'Config. stampante: Calibrazione touch'
   Printer Shutdown: Arresto stampante
   Printer Type: Tipo stampante
@@ -2113,6 +2128,7 @@ translations:
   Quad Gantry Level started...: QGL avviato...
   'Queue: Paused': 'Coda: In pausa'
   'Queue: Ready': 'Coda: Pronta'
+  Queued: ''
   Queued print jobs: 'Lavori di stampa in coda'
   Queued {}h {}m ago: 'In coda da {} h {} min'
   Queued {}m ago: 'In coda da {} min'
@@ -2126,6 +2142,7 @@ translations:
   Quick preheat with material selection: 'Preriscaldamento rapido con selezione del materiale'
   Quick toggle, long press for full control: 'Alterna rapidamente, premi a lungo per il controllo completo'
   Quick tool switching for multi-tool printers: 'Cambio utensile rapido per stampanti multi-utensile'
+  REF: ''
   RFCOMM connect failed: Connessione RFCOMM fallita
   'RFCOMM connect failed: ': 'Connessione RFCOMM fallita: '
   RSS: RSS
@@ -2141,6 +2158,7 @@ translations:
   Ready: Pronto
   Ready for filament operations: Pronto per le operazioni filamento
   Ready to Apply: Pronto per applicare
+  Ready to calibrate: ''
   Reason: Motivo
   ? "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
   : "Motivo: {}\n\nLa stampante non può riprendere questa stampa. Ricominciare dall'inizio?"
@@ -2162,12 +2180,16 @@ translations:
   Recovery failed: Recupero fallito
   'Recovery failed: ': 'Recupero fallito: '
   'Recovery failed: {}': 'Recupero fallito: {}'
+  Redo: ''
   Reduce Sensitivity: Riduci sensibilità
   Reduce ringing and ghosting artifacts: Riduci artefatti di ringing e ghosting
   Reduce vibration artifacts like ringing and ghosting: Riduci artefatti da vibrazione
     come ringing e ghosting
   Refeeding filament — this may take a minute: Reinserimento filamento — può richiedere
     un minuto
+  Reference measurement was refused: ''
+  Reference — the fixed point every tool is measured against: ''
+  Reference — the fixed point every tool is measured against (mm): ''
   Refill the spool, then Resume.: Ricarica la bobina, poi premi Riprendi.
   Refresh: Aggiorna
   Refresh Interval: Intervallo aggiornamento
@@ -2186,6 +2208,7 @@ translations:
   Remove PIN: Rimuovi PIN
   Remove Spoolman?: Rimuovere Spoolman?
   Remove plugin from printer: Rimuovi plugin dalla stampante
+  Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position.: ''
   Rename: Rinomina
   Rename Fan: Rinomina ventola
   Rename Mesh Profile: Rinomina profilo mesh
@@ -2334,6 +2357,8 @@ translations:
   Save changes to persist them across restarts?: Salvare le modifiche per mantenerle
     dopo i riavvii?
   'Save failed: {}': 'Salvataggio fallito: {}'
+  Save offsets: ''
+  Save offsets?: ''
   Save to Spoolman: Salva su Spoolman
   Saved Z-Offset: Z-Offset Salvato
   Saved to crash_report.txt (QR not available): Salvato in crash_report.txt (QR non
@@ -2346,6 +2371,7 @@ translations:
   Saving config... Klipper will restart.: Salvataggio config... Klipper si riavvierà.
   Saving will restart Klipper and CANCEL any active print!: Il salvataggio riavvierà
     Klipper e ANNULLERÀ qualsiasi stampa attiva!
+  Saving — Klipper is restarting...: ''
   Scan: Scansiona
   Scan Cal: Cal. scan
   Scan QR Code: Scansiona codice QR
@@ -2461,6 +2487,7 @@ translations:
   Setup: 'Configurazione'
   Setup Complete!: Configurazione completata!
   Setup Timelapse: Configura timelapse
+  Setup continues once the tool offsets are known.: ''
   Shadow Intensity: Intensità ombra
   Share Usage Data: Condividi dati d'uso
   Share anonymous usage statistics to help us make HelixScreen better. No personal data is ever collected.: Condividi
@@ -2602,9 +2629,11 @@ translations:
   Stop failed: Arresto fallito
   ? "Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds."
   : "Interrompere la stampa di \"{}\"?\n\nNon sarà possibile annullare dopo 5 secondi."
+  Stopped: ''
   Stopped between Hub and Toolhead: Fermo tra Hub e testina
   Stopped between Lane and Hub: Fermo tra corsia e Hub
   Stopped between Spool and Lane: Fermo tra bobina e corsia
+  Stopping after the current step...: ''
   Stops all motion. Requires firmware restart.: Ferma tutto il movimento. Richiede
     riavvio firmware.
   Stow: Ritrai
@@ -2648,6 +2677,10 @@ translations:
   'TOGGLE: {}': 'COMMUTA: {}'
   TOOLS: STRUMENTI
   TPU: TPU
+  ? Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on.
+  : ''
+  ? Take the build plate off, and clean every nozzle. The printer checks the plate itself and will refuse if it is still on — but it cannot tell whether a nozzle is clean, so that part is on you. Tools must be cold and docked.
+  : ''
   Takes 3-5 min. Do not interrupt.: Richiede 3-5 min. Non interrompere.
   Tap + to add: Tocca + per aggiungere
   Tap again to confirm this orientation: Tocca di nuovo per confermare questo orientamento
@@ -2719,9 +2752,11 @@ translations:
   : La bobina caricata è {}, ma questo file è stato sezionato per {}. Il filamento con cariche richiede un flusso più basso e un ugello indurito.
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "Il motore fa vibrare la cinghia mentre una luce stroboscopica lampeggia alla stessa frequenza. Quando la cinghia sembra ferma (immobile), hai trovato la frequenza di risonanza.\n\nUsa i pulsanti della frequenza per scorrere i valori finché la cinghia non appare ferma, poi blocca la lettura."
+  The offsets are saved when setup finishes. Recalibrate anytime from the console.: ''
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   : La stampa è in pausa. Cambiare utensile ora muove la testina e sostituisce il
     filamento all'ugello. Riprendi la stampa al termine del cambio.
+  The printer gave no reason.: ''
   The printer halted this print and cannot resume it. Restart from the beginning?: La
     stampante ha interrotto questa stampa e non può riprenderla. Riavviare dall'inizio?
   The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: La stampante non ha eseguito l'homing. Continuando verrà eseguito l'homing di tutti gli assi, muovendo la testina. Assicurarsi che il piano sia libero.
@@ -2816,6 +2851,8 @@ translations:
   This will restart Klipper firmware. Any active operations will be interrupted.: Il
     firmware Klipper verrà riavviato. Le operazioni attive saranno interrotte.
   This will restart Klipper.: Questo riavvierà Klipper.
+  ? This writes the offsets to the printer's config and restarts its firmware, which takes a few seconds. Until then they apply only to this session.
+  : ''
   Thorough: Approfondito
   Thumbnail Only: Solo miniatura
   'Thumbnail: ': 'Miniatura: '
@@ -2856,18 +2893,22 @@ translations:
   Too humid: Troppo umido
   Tool: Strumento
   Tool Changer: Cambia utensile
+  Tool Offsets: ''
   Tool Switcher: 'Selettore utensile'
   'Tool change failed: {}': 'Cambio utensile fallito: {}'
   Tool mapping failed: Mappatura utensile fallita
   Tool swap: Cambio utensile
   'Tool {} → Lane {}: no filament loaded.': 'Strumento {} → Corsia {}: nessun filamento
     caricato.'
+  ToolOffset: ''
   Toolhead: 'Testina'
   Toolhead LED: 'LED della testina'
   Toolhead Style: Stile testina
   Toolhead jam: Inceppamento testina
   Toolhead, G-code, limits, and materials: Testina, G-code, limiti e materiali
   Tools Used: Utensili usati
+  Tools — each nozzle's measured position: ''
+  Tools — nozzle position, and Z height over the reference (mm): ''
   'Tools: ': 'Utensili: '
   Total Prints: Stampe totali
   Touch & Input: Tocco e input
@@ -2899,6 +2940,7 @@ translations:
   Type: Tipo
   Type to preview input field...: Digita per visualizzare anteprima campo input...
   'Type:': 'Tipo:'
+  T{} calibration was refused: ''
   T{} shares slot with T{}: T{} condivide lo slot con T{}
   UI Sounds: Suoni interfaccia
   USB: USB
@@ -3101,6 +3143,7 @@ translations:
   Z Offset: Z Offset
   Z Range: Intervallo Z
   Z Tilt Adjust...: Regolazione inclinazione Z...
+  Z gap: ''
   Z probes for bed leveling and mesh generation: Sonde Z per livellamento piano e
     generazione mesh
   'Z-Off:': 'Z-Off:'
@@ -3139,14 +3182,20 @@ translations:
   enable: abilita
   enabled: abilitato
   error: errore
+  every tool depends on this: ''
   extruder: estrusore
   extruder(s): estrusore/i
   extruders: estrusori
   fans: ventole
   heated bed: piano riscaldato
   idle: inattivo
+  last attempt was refused: ''
   layers: layer
   left: rimanente
+  locating the bore: ''
+  locating the bore... {}s: ''
+  locating the reference: ''
+  locating the reference... {}s: ''
   mm before clog: mm prima dell'intasamento
   needs: richiede
   not detected: non rilevato
@@ -3156,11 +3205,15 @@ translations:
   Monitor for print abnormalities (K2 Plus camera-based): Monitora le anomalie di stampa (basato sulla camera del K2 Plus)
   AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: remember_spool di AFC conserva le informazioni sulla bobina nel firmware; ha la precedenza su questa opzione
   AI detection: Rilevamento AI
+  printing with it will be refused: ''
   prints: stampe
+  probing nozzle: ''
+  probing nozzle... {}s: ''
   remaining: rimanente
   remaining before clog detection triggers: rimanente prima che si attivi il rilevamento
     intasamento
   rendering: rendering
+  skipped — stopping: ''
   slots): slot)
   started: avviato
   steppers: motori passo-passo

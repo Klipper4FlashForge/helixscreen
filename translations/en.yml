@@ -363,6 +363,7 @@ translations:
   Calibrate Gear: Calibrate Gear
   Calibrate X: Calibrate X
   Calibrate Y: Calibrate Y
+  Calibrate everything: Calibrate everything
   Calibrate input shaping to reduce ringing artifacts in prints: Calibrate input shaping
     to reduce ringing artifacts in prints
   Calibrate your touchscreen for accurate input: Calibrate your touchscreen for accurate
@@ -371,6 +372,7 @@ translations:
   Calibrated: Calibrated
   'Calibrating Probe...': 'Calibrating Probe...'
   'Calibrating bed mesh...': 'Calibrating bed mesh...'
+  Calibrating now: Calibrating now
   Calibrating tool offsets... {}s: Calibrating tool offsets... {}s
   Calibrating {} axis...: Calibrating {} axis...
   Calibrating...: Calibrating...
@@ -383,6 +385,7 @@ translations:
   Calibration complete!: Calibration complete!
   Calibration complete! Press 'Next' to continue.: Calibration complete! Press 'Next'
     to continue.
+  Calibration complete.: Calibration complete.
   Calibration failed: Calibration failed
   Calibration failed - touch targets more precisely.: Calibration failed - touch targets
     more precisely.
@@ -1531,14 +1534,17 @@ translations:
   Maximum: Maximum
   Maximum acceleration (mm/s²): Maximum acceleration (mm/s²)
   Maximum toolhead speed (mm/s): Maximum toolhead speed (mm/s)
+  Measure: Measure
   Measure and compare belt path frequencies: Measure and compare belt path frequencies
   Measure belt path frequencies: Measure belt path frequencies
+  Measure each tool's nozzle position: Measure each tool's nozzle position
   'Measure each tool''s nozzle position so all tools print in the same place': 'Measure each tool''s nozzle position so all tools print in the same place'
   Measured (shaper off): Measured (shaper off)
   Measurement Failed: Measurement Failed
   Measuring Path A... %d%%: Measuring Path A... %d%%
   Measuring Path B... %d%%: Measuring Path B... %d%%
   Measuring accelerometer noise...: Measuring accelerometer noise...
+  Measuring now: Measuring now
   Measuring vibrations... {}%: Measuring vibrations... {}%
   Memory: Memory
   Memory (MB): Memory (MB)
@@ -1722,12 +1728,15 @@ translations:
   Not found (strobe only): Not found (strobe only)
   Not found (use phone app): Not found (use phone app)
   Not in your spools? Set it up: Not in your spools? Set it up
+  Not measured: Not measured
   Not now: Not now
   Not yet available on this display: Not yet available on this display
   Not yet calibrated: Not yet calibrated
   Notes: Notes
   Notes (optional): Notes (optional)
   Nothing to remap: Nothing to remap
+  Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed.: Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed.
+  Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed.: Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed.
   Notification: Notification
   Notifications: Notifications
   Notify when print finishes: Notify when print finishes
@@ -1763,6 +1772,7 @@ translations:
   Objects: Objects
   'Off': 'Off'
   'Off:': 'Off:'
+  Offsets saved: Offsets saved
   "Old setting on today's data: {} residual - now: {}": "Old setting on today's data: {} residual - now: {}"
   'On': 'On'
   On and Off macros must be different: On and Off macros must be different
@@ -2068,6 +2078,7 @@ translations:
   Quad Gantry Level started...: Quad Gantry Level started...
   'Queue: Paused': 'Queue: Paused'
   'Queue: Ready': 'Queue: Ready'
+  Queued: Queued
   Queued print jobs: Queued print jobs
   Queued {}h {}m ago: Queued {}h {}m ago
   Queued {}m ago: Queued {}m ago
@@ -2081,6 +2092,7 @@ translations:
   Quick preheat with material selection: Quick preheat with material selection
   Quick toggle, long press for full control: Quick toggle, long press for full control
   Quick tool switching for multi-tool printers: Quick tool switching for multi-tool printers
+  REF: REF
   RFCOMM connect failed: RFCOMM connect failed
   'RFCOMM connect failed: ': 'RFCOMM connect failed: '
   RSS: RSS
@@ -2096,6 +2108,7 @@ translations:
   Ready: Ready
   Ready for filament operations: Ready for filament operations
   Ready to Apply: Ready to Apply
+  Ready to calibrate: Ready to calibrate
   Reason: Reason
   ? "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
   : "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
@@ -2117,12 +2130,16 @@ translations:
   Recovery failed: Recovery failed
   'Recovery failed: ': 'Recovery failed: '
   'Recovery failed: {}': 'Recovery failed: {}'
+  Redo: Redo
   Reduce Sensitivity: Reduce Sensitivity
   Reduce ringing and ghosting artifacts: Reduce ringing and ghosting artifacts
   Reduce vibration artifacts like ringing and ghosting: Reduce vibration artifacts
     like ringing and ghosting
   Refeeding filament — this may take a minute: Refeeding filament — this may take
     a minute
+  Reference measurement was refused: Reference measurement was refused
+  Reference — the fixed point every tool is measured against: Reference — the fixed point every tool is measured against
+  Reference — the fixed point every tool is measured against (mm): Reference — the fixed point every tool is measured against (mm)
   Refill the spool, then Resume.: Refill the spool, then Resume.
   Refresh: Refresh
   Refresh Interval: Refresh Interval
@@ -2287,6 +2304,8 @@ translations:
   Save changes to persist them across restarts?: Save changes to persist them across
     restarts?
   'Save failed: {}': 'Save failed: {}'
+  Save offsets: Save offsets
+  Save offsets?: Save offsets?
   Save to Spoolman: Save to Spoolman
   The offsets are saved when setup finishes. Recalibrate anytime from the console.: The offsets are saved when setup finishes. Recalibrate anytime from the console.
   Saved Z-Offset: Saved Z-Offset
@@ -2300,6 +2319,7 @@ translations:
   Saving config... Klipper will restart.: Saving config... Klipper will restart.
   Saving will restart Klipper and CANCEL any active print!: Saving will restart Klipper
     and CANCEL any active print!
+  Saving — Klipper is restarting...: Saving — Klipper is restarting...
   Scan: Scan
   Scan Cal: Scan Cal
   Scan QR Code: Scan QR Code
@@ -2546,9 +2566,11 @@ translations:
   Stop failed: Stop failed
   ? "Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds."
   : "Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds."
+  Stopped: Stopped
   Stopped between Hub and Toolhead: Stopped between Hub and Toolhead
   Stopped between Lane and Hub: Stopped between Lane and Hub
   Stopped between Spool and Lane: Stopped between Spool and Lane
+  Stopping after the current step...: Stopping after the current step...
   Stops all motion. Requires firmware restart.: Stops all motion. Requires firmware
     restart.
   Stow: Stow
@@ -2592,6 +2614,10 @@ translations:
   'TOGGLE: {}': 'TOGGLE: {}'
   TOOLS: TOOLS
   TPU: TPU
+  ? Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on.
+  : Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on.
+  ? Take the build plate off, and clean every nozzle. The printer checks the plate itself and will refuse if it is still on — but it cannot tell whether a nozzle is clean, so that part is on you. Tools must be cold and docked.
+  : Take the build plate off, and clean every nozzle. The printer checks the plate itself and will refuse if it is still on — but it cannot tell whether a nozzle is clean, so that part is on you. Tools must be cold and docked.
   Takes 3-5 min. Do not interrupt.: Takes 3-5 min. Do not interrupt.
   Tap + to add: Tap + to add
   Tap again to confirm this orientation: Tap again to confirm this orientation
@@ -2666,6 +2692,7 @@ translations:
   : "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   : The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
+  The printer gave no reason.: The printer gave no reason.
   The printer halted this print and cannot resume it. Restart from the beginning?: The
     printer halted this print and cannot resume it. Restart from the beginning?
   The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.
@@ -2750,6 +2777,8 @@ translations:
   This will restart Klipper firmware. Any active operations will be interrupted.: This
     will restart Klipper firmware. Any active operations will be interrupted.
   This will restart Klipper.: This will restart Klipper.
+  ? This writes the offsets to the printer's config and restarts its firmware, which takes a few seconds. Until then they apply only to this session.
+  : This writes the offsets to the printer's config and restarts its firmware, which takes a few seconds. Until then they apply only to this session.
   Thorough: Thorough
   Thumbnail Only: Thumbnail Only
   'Thumbnail: ': 'Thumbnail: '
@@ -2790,17 +2819,21 @@ translations:
   Too humid: Too humid
   Tool: Tool
   Tool Changer: Tool Changer
+  Tool Offsets: Tool Offsets
   Tool Switcher: Tool Switcher
   'Tool change failed: {}': 'Tool change failed: {}'
   Tool mapping failed: Tool mapping failed
   Tool swap: Tool swap
   'Tool {} → Lane {}: no filament loaded.': 'Tool {} → Lane {}: no filament loaded.'
+  ToolOffset: ToolOffset
   Toolhead: Toolhead
   Toolhead LED: Toolhead LED
   Toolhead Style: Toolhead Style
   Toolhead jam: Toolhead jam
   Toolhead, G-code, limits, and materials: Toolhead, G-code, limits, and materials
   Tools Used: Tools Used
+  Tools — each nozzle's measured position: Tools — each nozzle's measured position
+  Tools — nozzle position, and Z height over the reference (mm): Tools — nozzle position, and Z height over the reference (mm)
   'Tools: ': 'Tools: '
   Total Prints: Total Prints
   Touch & Input: Touch & Input
@@ -2832,6 +2865,7 @@ translations:
   Type: Type
   Type to preview input field...: Type to preview input field...
   'Type:': 'Type:'
+  T{} calibration was refused: T{} calibration was refused
   T{} shares slot with T{}: T{} shares slot with T{}
   UI Sounds: UI Sounds
   USB: USB
@@ -3032,6 +3066,7 @@ translations:
   Z Offset: Z Offset
   Z Range: Z Range
   Z Tilt Adjust...: Z Tilt Adjust...
+  Z gap: Z gap
   Z probes for bed leveling and mesh generation: Z probes for bed leveling and mesh
     generation
   'Z-Off:': 'Z-Off:'
@@ -3070,14 +3105,20 @@ translations:
   enable: enable
   enabled: enabled
   error: error
+  every tool depends on this: every tool depends on this
   extruder: extruder
   extruder(s): extruder(s)
   extruders: extruders
   fans: fans
   heated bed: heated bed
   idle: idle
+  last attempt was refused: last attempt was refused
   layers: layers
   left: left
+  locating the bore: locating the bore
+  locating the bore... {}s: locating the bore... {}s
+  locating the reference: locating the reference
+  locating the reference... {}s: locating the reference... {}s
   mm before clog: mm before clog
   needs: needs
   not detected: not detected
@@ -3087,10 +3128,14 @@ translations:
   Monitor for print abnormalities (K2 Plus camera-based): Monitor for print abnormalities (K2 Plus camera-based)
   AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle
   AI detection: AI detection
+  printing with it will be refused: printing with it will be refused
   prints: prints
+  probing nozzle: probing nozzle
+  probing nozzle... {}s: probing nozzle... {}s
   remaining: remaining
   remaining before clog detection triggers: remaining before clog detection triggers
   rendering: rendering
+  skipped — stopping: skipped — stopping
   slots): slots)
   started: started
   steppers: steppers

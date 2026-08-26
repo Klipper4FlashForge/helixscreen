@@ -342,12 +342,14 @@
   <translation tag="Calibrate Gear" en="Calibrate Gear"/>
   <translation tag="Calibrate X" en="Calibrate X"/>
   <translation tag="Calibrate Y" en="Calibrate Y"/>
+  <translation tag="Calibrate everything" en="Calibrate everything"/>
   <translation tag="Calibrate input shaping to reduce ringing artifacts in prints" en="Calibrate input shaping to reduce ringing artifacts in prints"/>
   <translation tag="Calibrate your touchscreen for accurate input" en="Calibrate your touchscreen for accurate input"/>
   <translation tag="Calibrate, tune jitter and scroll feel" en="Calibrate, tune jitter and scroll feel"/>
   <translation tag="Calibrated" en="Calibrated"/>
   <translation tag="Calibrating Probe..." en="Calibrating Probe..."/>
   <translation tag="Calibrating bed mesh..." en="Calibrating bed mesh..."/>
+  <translation tag="Calibrating now" en="Calibrating now"/>
   <translation tag="Calibrating tool offsets... {}s" en="Calibrating tool offsets... {}s"/>
   <translation tag="Calibrating {} axis..." en="Calibrating {} axis..."/>
   <translation tag="Calibrating..." en="Calibrating..."/>
@@ -359,6 +361,7 @@
   <translation tag="Calibration complete" en="Calibration complete"/>
   <translation tag="Calibration complete!" en="Calibration complete!"/>
   <translation tag="Calibration complete! Press &apos;Next&apos; to continue." en="Calibration complete! Press &apos;Next&apos; to continue."/>
+  <translation tag="Calibration complete." en="Calibration complete."/>
   <translation tag="Calibration failed" en="Calibration failed"/>
   <translation tag="Calibration failed - touch targets more precisely." en="Calibration failed - touch targets more precisely."/>
   <translation tag="Calibration kept timing out. Your previous settings were kept." en="Calibration kept timing out. Your previous settings were kept."/>
@@ -1400,14 +1403,17 @@
   <translation tag="Maximum" en="Maximum"/>
   <translation tag="Maximum acceleration (mm/s²)" en="Maximum acceleration (mm/s²)"/>
   <translation tag="Maximum toolhead speed (mm/s)" en="Maximum toolhead speed (mm/s)"/>
+  <translation tag="Measure" en="Measure"/>
   <translation tag="Measure and compare belt path frequencies" en="Measure and compare belt path frequencies"/>
   <translation tag="Measure belt path frequencies" en="Measure belt path frequencies"/>
+  <translation tag="Measure each tool&apos;s nozzle position" en="Measure each tool&apos;s nozzle position"/>
   <translation tag="Measure each tool&apos;s nozzle position so all tools print in the same place" en="Measure each tool&apos;s nozzle position so all tools print in the same place"/>
   <translation tag="Measured (shaper off)" en="Measured (shaper off)"/>
   <translation tag="Measurement Failed" en="Measurement Failed"/>
   <translation tag="Measuring Path A... %d%%" en="Measuring Path A... %d%%"/>
   <translation tag="Measuring Path B... %d%%" en="Measuring Path B... %d%%"/>
   <translation tag="Measuring accelerometer noise..." en="Measuring accelerometer noise..."/>
+  <translation tag="Measuring now" en="Measuring now"/>
   <translation tag="Measuring vibrations... {}%" en="Measuring vibrations... {}%"/>
   <translation tag="Memory" en="Memory"/>
   <translation tag="Memory (MB)" en="Memory (MB)"/>
@@ -1578,12 +1584,15 @@
   <translation tag="Not found (strobe only)" en="Not found (strobe only)"/>
   <translation tag="Not found (use phone app)" en="Not found (use phone app)"/>
   <translation tag="Not in your spools? Set it up" en="Not in your spools? Set it up"/>
+  <translation tag="Not measured" en="Not measured"/>
   <translation tag="Not now" en="Not now"/>
   <translation tag="Not yet available on this display" en="Not yet available on this display"/>
   <translation tag="Not yet calibrated" en="Not yet calibrated"/>
   <translation tag="Notes" en="Notes"/>
   <translation tag="Notes (optional)" en="Notes (optional)"/>
   <translation tag="Nothing to remap" en="Nothing to remap"/>
+  <translation tag="Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed." en="Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed."/>
+  <translation tag="Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed." en="Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed."/>
   <translation tag="Notification" en="Notification"/>
   <translation tag="Notifications" en="Notifications"/>
   <translation tag="Notify when print finishes" en="Notify when print finishes"/>
@@ -1619,6 +1628,7 @@
   <translation tag="Objects" en="Objects"/>
   <translation tag="Off" en="Off"/>
   <translation tag="Off:" en="Off:"/>
+  <translation tag="Offsets saved" en="Offsets saved"/>
   <translation tag="Old setting on today&apos;s data: {} residual - now: {}" en="Old setting on today&apos;s data: {} residual - now: {}"/>
   <translation tag="On" en="On"/>
   <translation tag="On and Off macros must be different" en="On and Off macros must be different"/>
@@ -1826,19 +1836,6 @@
   <translation tag="Printer Setup: Network" en="Printer Setup: Network"/>
   <translation tag="Printer Setup: Review" en="Printer Setup: Review"/>
   <translation tag="Printer Setup: Tool Offsets" en="Printer Setup: Tool Offsets"/>
-  <translation tag="Tool Offsets" en="Tool Offsets"/>
-  <translation tag="Reference" en="Reference"/>
-  <translation tag="Locate" en="Locate"/>
-  <translation tag="Station Z {:.3f}" en="Station Z {:.3f}"/>
-  <translation tag="Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on." en="Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on."/>
-  <translation tag="Locating the station — empty carriage... {}s" en="Locating the station — empty carriage... {}s"/>
-  <translation tag="Stopping after the current step..." en="Stopping after the current step..."/>
-  <translation tag="No station reference and uncalibrated tools — printing will be refused." en="No station reference and uncalibrated tools — printing will be refused."/>
-  <translation tag="No station reference yet — printing will be refused." en="No station reference yet — printing will be refused."/>
-  <translation tag="Some tools are not calibrated — printing with them will be refused." en="Some tools are not calibrated — printing with them will be refused."/>
-  <translation tag="Save Offsets" en="Save Offsets"/>
-  <translation tag="Measure each tool's nozzle position" en="Measure each tool's nozzle position"/>
-  <translation tag="Applied to this session already. Save persists across restarts (SAVE_CONFIG)." en="Applied to this session already. Save persists across restarts (SAVE_CONFIG)."/>
   <translation tag="Printer Setup: Touch Calibration" en="Printer Setup: Touch Calibration"/>
   <translation tag="Printer Shutdown" en="Printer Shutdown"/>
   <translation tag="Printer Type" en="Printer Type"/>
@@ -1910,6 +1907,7 @@
   <translation tag="Quad Gantry Level started..." en="Quad Gantry Level started..."/>
   <translation tag="Queue: Paused" en="Queue: Paused"/>
   <translation tag="Queue: Ready" en="Queue: Ready"/>
+  <translation tag="Queued" en="Queued"/>
   <translation tag="Queued print jobs" en="Queued print jobs"/>
   <translation tag="Queued {}h {}m ago" en="Queued {}h {}m ago"/>
   <translation tag="Queued {}m ago" en="Queued {}m ago"/>
@@ -1923,6 +1921,7 @@
   <translation tag="Quick preheat with material selection" en="Quick preheat with material selection"/>
   <translation tag="Quick toggle, long press for full control" en="Quick toggle, long press for full control"/>
   <translation tag="Quick tool switching for multi-tool printers" en="Quick tool switching for multi-tool printers"/>
+  <translation tag="REF" en="REF"/>
   <translation tag="RFCOMM connect failed" en="RFCOMM connect failed"/>
   <translation tag="RFCOMM connect failed: " en="RFCOMM connect failed: "/>
   <translation tag="RSS" en="RSS"/>
@@ -1937,6 +1936,7 @@
   <translation tag="Ready" en="Ready"/>
   <translation tag="Ready for filament operations" en="Ready for filament operations"/>
   <translation tag="Ready to Apply" en="Ready to Apply"/>
+  <translation tag="Ready to calibrate" en="Ready to calibrate"/>
   <translation tag="Reason" en="Reason"/>
   <translation tag="Reason: {}&#10;&#10;The printer cannot resume this print. Restart from the beginning?" en="Reason: {}&#10;&#10;The printer cannot resume this print. Restart from the beginning?"/>
   <translation tag="Reboot" en="Reboot"/>
@@ -1956,10 +1956,14 @@
   <translation tag="Recovery failed" en="Recovery failed"/>
   <translation tag="Recovery failed: " en="Recovery failed: "/>
   <translation tag="Recovery failed: {}" en="Recovery failed: {}"/>
+  <translation tag="Redo" en="Redo"/>
   <translation tag="Reduce Sensitivity" en="Reduce Sensitivity"/>
   <translation tag="Reduce ringing and ghosting artifacts" en="Reduce ringing and ghosting artifacts"/>
   <translation tag="Reduce vibration artifacts like ringing and ghosting" en="Reduce vibration artifacts like ringing and ghosting"/>
   <translation tag="Refeeding filament — this may take a minute" en="Refeeding filament — this may take a minute"/>
+  <translation tag="Reference measurement was refused" en="Reference measurement was refused"/>
+  <translation tag="Reference — the fixed point every tool is measured against" en="Reference — the fixed point every tool is measured against"/>
+  <translation tag="Reference — the fixed point every tool is measured against (mm)" en="Reference — the fixed point every tool is measured against (mm)"/>
   <translation tag="Refill the spool, then Resume." en="Refill the spool, then Resume."/>
   <translation tag="Refresh" en="Refresh"/>
   <translation tag="Refresh Interval" en="Refresh Interval"/>
@@ -2111,6 +2115,8 @@
   <translation tag="Save Z-Offset?" en="Save Z-Offset?"/>
   <translation tag="Save changes to persist them across restarts?" en="Save changes to persist them across restarts?"/>
   <translation tag="Save failed: {}" en="Save failed: {}"/>
+  <translation tag="Save offsets" en="Save offsets"/>
+  <translation tag="Save offsets?" en="Save offsets?"/>
   <translation tag="Save to Spoolman" en="Save to Spoolman"/>
   <translation tag="Saved Z-Offset" en="Saved Z-Offset"/>
   <translation tag="Saved to crash_report.txt (QR not available)" en="Saved to crash_report.txt (QR not available)"/>
@@ -2120,6 +2126,7 @@
   <translation tag="Saving Z-offset..." en="Saving Z-offset..."/>
   <translation tag="Saving config... Klipper will restart." en="Saving config... Klipper will restart."/>
   <translation tag="Saving will restart Klipper and CANCEL any active print!" en="Saving will restart Klipper and CANCEL any active print!"/>
+  <translation tag="Saving — Klipper is restarting..." en="Saving — Klipper is restarting..."/>
   <translation tag="Scan" en="Scan"/>
   <translation tag="Scan Cal" en="Scan Cal"/>
   <translation tag="Scan QR Code" en="Scan QR Code"/>
@@ -2342,9 +2349,11 @@
   <translation tag="Stop Print?" en="Stop Print?"/>
   <translation tag="Stop failed" en="Stop failed"/>
   <translation tag="Stop printing &quot;{}&quot;?&#10;&#10;This cannot be undone after 5 seconds." en="Stop printing &quot;{}&quot;?&#10;&#10;This cannot be undone after 5 seconds."/>
+  <translation tag="Stopped" en="Stopped"/>
   <translation tag="Stopped between Hub and Toolhead" en="Stopped between Hub and Toolhead"/>
   <translation tag="Stopped between Lane and Hub" en="Stopped between Lane and Hub"/>
   <translation tag="Stopped between Spool and Lane" en="Stopped between Spool and Lane"/>
+  <translation tag="Stopping after the current step..." en="Stopping after the current step..."/>
   <translation tag="Stops all motion. Requires firmware restart." en="Stops all motion. Requires firmware restart."/>
   <translation tag="Stow" en="Stow"/>
   <translation tag="Strobe LED" en="Strobe LED"/>
@@ -2380,6 +2389,8 @@
   <translation tag="TOGGLE: {}" en="TOGGLE: {}"/>
   <translation tag="TOOLS" en="TOOLS"/>
   <translation tag="TPU" en="TPU"/>
+  <translation tag="Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on." en="Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on."/>
+  <translation tag="Take the build plate off, and clean every nozzle. The printer checks the plate itself and will refuse if it is still on — but it cannot tell whether a nozzle is clean, so that part is on you. Tools must be cold and docked." en="Take the build plate off, and clean every nozzle. The printer checks the plate itself and will refuse if it is still on — but it cannot tell whether a nozzle is clean, so that part is on you. Tools must be cold and docked."/>
   <translation tag="Takes 3-5 min. Do not interrupt." en="Takes 3-5 min. Do not interrupt."/>
   <translation tag="Tap + to add" en="Tap + to add"/>
   <translation tag="Tap again to confirm this orientation" en="Tap again to confirm this orientation"/>
@@ -2438,6 +2449,7 @@
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." en="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."/>
   <translation tag="The offsets are saved when setup finishes. Recalibrate anytime from the console." en="The offsets are saved when setup finishes. Recalibrate anytime from the console."/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." en="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes."/>
+  <translation tag="The printer gave no reason." en="The printer gave no reason."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" en="The printer halted this print and cannot resume it. Restart from the beginning?"/>
   <translation tag="The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear." en="The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear."/>
   <translation tag="The printer lost power during a print. It can resume where it left off." en="The printer lost power during a print. It can resume where it left off."/>
@@ -2488,6 +2500,7 @@
   <translation tag="This will reset all settings to defaults. This action cannot be undone." en="This will reset all settings to defaults. This action cannot be undone."/>
   <translation tag="This will restart Klipper firmware. Any active operations will be interrupted." en="This will restart Klipper firmware. Any active operations will be interrupted."/>
   <translation tag="This will restart Klipper." en="This will restart Klipper."/>
+  <translation tag="This writes the offsets to the printer&apos;s config and restarts its firmware, which takes a few seconds. Until then they apply only to this session." en="This writes the offsets to the printer&apos;s config and restarts its firmware, which takes a few seconds. Until then they apply only to this session."/>
   <translation tag="Thorough" en="Thorough"/>
   <translation tag="Thumbnail Only" en="Thumbnail Only"/>
   <translation tag="Thumbnail: " en="Thumbnail: "/>
@@ -2527,17 +2540,21 @@
   <translation tag="Too humid" en="Too humid"/>
   <translation tag="Tool" en="Tool"/>
   <translation tag="Tool Changer" en="Tool Changer"/>
+  <translation tag="Tool Offsets" en="Tool Offsets"/>
   <translation tag="Tool Switcher" en="Tool Switcher"/>
   <translation tag="Tool change failed: {}" en="Tool change failed: {}"/>
   <translation tag="Tool mapping failed" en="Tool mapping failed"/>
   <translation tag="Tool swap" en="Tool swap"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." en="Tool {} → Lane {}: no filament loaded."/>
+  <translation tag="ToolOffset" en="ToolOffset"/>
   <translation tag="Toolhead" en="Toolhead"/>
   <translation tag="Toolhead LED" en="Toolhead LED"/>
   <translation tag="Toolhead Style" en="Toolhead Style"/>
   <translation tag="Toolhead jam" en="Toolhead jam"/>
   <translation tag="Toolhead, G-code, limits, and materials" en="Toolhead, G-code, limits, and materials"/>
   <translation tag="Tools Used" en="Tools Used"/>
+  <translation tag="Tools — each nozzle&apos;s measured position" en="Tools — each nozzle&apos;s measured position"/>
+  <translation tag="Tools — nozzle position, and Z height over the reference (mm)" en="Tools — nozzle position, and Z height over the reference (mm)"/>
   <translation tag="Tools: " en="Tools: "/>
   <translation tag="Total Prints" en="Total Prints"/>
   <translation tag="Touch &amp; Input" en="Touch &amp; Input"/>
@@ -2567,6 +2584,7 @@
   <translation tag="Type" en="Type"/>
   <translation tag="Type to preview input field..." en="Type to preview input field..."/>
   <translation tag="Type:" en="Type:"/>
+  <translation tag="T{} calibration was refused" en="T{} calibration was refused"/>
   <translation tag="T{} shares slot with T{}" en="T{} shares slot with T{}"/>
   <translation tag="UI Sounds" en="UI Sounds"/>
   <translation tag="USB" en="USB"/>
@@ -2741,6 +2759,7 @@
   <translation tag="Z Offset" en="Z Offset"/>
   <translation tag="Z Range" en="Z Range"/>
   <translation tag="Z Tilt Adjust..." en="Z Tilt Adjust..."/>
+  <translation tag="Z gap" en="Z gap"/>
   <translation tag="Z probes for bed leveling and mesh generation" en="Z probes for bed leveling and mesh generation"/>
   <translation tag="Z-Off:" en="Z-Off:"/>
   <translation tag="Z-Offset" en="Z-Offset"/>
@@ -2776,24 +2795,34 @@
   <translation tag="enable" en="enable"/>
   <translation tag="enabled" en="enabled"/>
   <translation tag="error" en="error"/>
+  <translation tag="every tool depends on this" en="every tool depends on this"/>
   <translation tag="extruder" en="extruder"/>
   <translation tag="extruder(s)" en="extruder(s)"/>
   <translation tag="extruders" en="extruders"/>
   <translation tag="fans" en="fans"/>
   <translation tag="heated bed" en="heated bed"/>
   <translation tag="idle" en="idle"/>
+  <translation tag="last attempt was refused" en="last attempt was refused"/>
   <translation tag="layers" en="layers"/>
   <translation tag="left" en="left"/>
+  <translation tag="locating the bore" en="locating the bore"/>
+  <translation tag="locating the bore... {}s" en="locating the bore... {}s"/>
+  <translation tag="locating the reference" en="locating the reference"/>
+  <translation tag="locating the reference... {}s" en="locating the reference... {}s"/>
   <translation tag="mm before clog" en="mm before clog"/>
   <translation tag="needs" en="needs"/>
   <translation tag="not detected" en="not detected"/>
   <translation tag="nozzle" en="nozzle"/>
   <translation tag="of" en="of"/>
   <translation tag="off" en="off"/>
+  <translation tag="printing with it will be refused" en="printing with it will be refused"/>
   <translation tag="prints" en="prints"/>
+  <translation tag="probing nozzle" en="probing nozzle"/>
+  <translation tag="probing nozzle... {}s" en="probing nozzle... {}s"/>
   <translation tag="remaining" en="remaining"/>
   <translation tag="remaining before clog detection triggers" en="remaining before clog detection triggers"/>
   <translation tag="rendering" en="rendering"/>
+  <translation tag="skipped — stopping" en="skipped — stopping"/>
   <translation tag="slots)" en="slots)"/>
   <translation tag="started" en="started"/>
   <translation tag="steppers" en="steppers"/>

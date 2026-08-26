@@ -260,6 +260,7 @@
   <translation tag="Bed target set to {}°C" ru="Целевая температура стола {}°C"/>
   <translation tag="Bed temp must be 0-200°C" ru="Температура стола должна быть 0-200°C"/>
   <translation tag="Bed warming timed out" ru="Нагрев стола — время ожидания истекло"/>
+  <translation tag="Before calibrating"/>
   <translation tag="Belt A frequency locked" ru="Частота ремня A зафиксирована"/>
   <translation tag="Belt B frequency locked" ru="Частота ремня B зафиксирована"/>
   <translation tag="Belt Tension" ru="Натяжение ремня"/>
@@ -341,12 +342,15 @@
   <translation tag="Calibrate Gear" ru="Калибровать шестерню"/>
   <translation tag="Calibrate X" ru="Калибровать X"/>
   <translation tag="Calibrate Y" ru="Калибровать Y"/>
+  <translation tag="Calibrate everything"/>
   <translation tag="Calibrate input shaping to reduce ringing artifacts in prints" ru="Калибровка компенсации вибраций для уменьшения артефактов звона"/>
   <translation tag="Calibrate your touchscreen for accurate input" ru="Калибровка сенсорного экрана для точного ввода"/>
   <translation tag="Calibrate, tune jitter and scroll feel" ru="Калибровка, настройка дрожания и поведения прокрутки"/>
   <translation tag="Calibrated" ru="Откалиброван"/>
   <translation tag="Calibrating Probe..."/>
   <translation tag="Calibrating bed mesh..."/>
+  <translation tag="Calibrating now"/>
+  <translation tag="Calibrating tool offsets... {}s"/>
   <translation tag="Calibrating {} axis..." ru="Калибровка оси {}..."/>
   <translation tag="Calibrating..." ru="Калибровка..."/>
   <translation tag="Calibration &amp; Tools" ru="Калибровка и инструменты"/>
@@ -357,6 +361,8 @@
   <translation tag="Calibration complete" ru="Калибровка завершена"/>
   <translation tag="Calibration complete!" ru="Калибровка завершена!"/>
   <translation tag="Calibration complete! Press &apos;Next&apos; to continue." ru="Калибровка завершена! Нажмите «Далее» для продолжения."/>
+  <translation tag="Calibration complete."/>
+  <translation tag="Calibration failed"/>
   <translation tag="Calibration failed - touch targets more precisely." ru="Калибровка не удалась – нажимайте на цели точнее."/>
   <translation tag="Calibration kept timing out. Your previous settings were kept." ru="Калибровка постоянно завершалась по тайм-ауту. Прежние настройки сохранены."/>
   <translation tag="Calibration may still be running — response timed out" ru="Калибровка может ещё выполняться — время ожидания истекло"/>
@@ -1397,13 +1403,17 @@
   <translation tag="Maximum" ru="Максимум"/>
   <translation tag="Maximum acceleration (mm/s²)" ru="Максимальное ускорение (мм/с²)"/>
   <translation tag="Maximum toolhead speed (mm/s)" ru="Максимальная скорость печатающей головки (мм/с)"/>
+  <translation tag="Measure"/>
   <translation tag="Measure and compare belt path frequencies" ru="Измерить и сравнить частоты путей ремня"/>
   <translation tag="Measure belt path frequencies" ru="Измерить частоты путей ремня"/>
+  <translation tag="Measure each tool&apos;s nozzle position"/>
+  <translation tag="Measure each tool&apos;s nozzle position so all tools print in the same place"/>
   <translation tag="Measured (shaper off)" ru="Измерено (шейпер выключен)"/>
   <translation tag="Measurement Failed" ru="Измерение не удалось"/>
   <translation tag="Measuring Path A... %d%%" ru="Измерение пути A... %d%%"/>
   <translation tag="Measuring Path B... %d%%" ru="Измерение пути B... %d%%"/>
   <translation tag="Measuring accelerometer noise..." ru="Измерение шума акселерометра..."/>
+  <translation tag="Measuring now"/>
   <translation tag="Measuring vibrations... {}%" ru="Измерение вибраций... {}%"/>
   <translation tag="Memory" ru="Память"/>
   <translation tag="Memory (MB)" ru="Память (МБ)"/>
@@ -1574,12 +1584,15 @@
   <translation tag="Not found (strobe only)" ru="Не найдено (только стробоскоп)"/>
   <translation tag="Not found (use phone app)" ru="Не найдено (используйте приложение на телефоне)"/>
   <translation tag="Not in your spools? Set it up" ru="Нет в ваших катушках? Настроить"/>
+  <translation tag="Not measured"/>
   <translation tag="Not now" ru="Не сейчас"/>
   <translation tag="Not yet available on this display" ru="Пока недоступно на этом дисплее"/>
   <translation tag="Not yet calibrated" ru="Ещё не откалибровано"/>
   <translation tag="Notes" ru="Заметки"/>
   <translation tag="Notes (optional)" ru="Заметки (необязательно)"/>
   <translation tag="Nothing to remap" ru="Нечего переназначать"/>
+  <translation tag="Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed."/>
+  <translation tag="Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed."/>
   <translation tag="Notification" ru="Уведомление"/>
   <translation tag="Notifications" ru="Уведомления"/>
   <translation tag="Notify when print finishes" ru="Уведомить о завершении печати"/>
@@ -1615,6 +1628,7 @@
   <translation tag="Objects" ru="Объекты"/>
   <translation tag="Off" ru="Выкл"/>
   <translation tag="Off:" ru="Выкл:"/>
+  <translation tag="Offsets saved"/>
   <translation tag="Old setting on today&apos;s data: {} residual - now: {}" ru="Прежняя настройка на сегодняшних данных: остаточная вибрация {} — сейчас: {}"/>
   <translation tag="On" ru="Вкл"/>
   <translation tag="On and Off macros must be different" ru="Макросы включения и выключения должны отличаться"/>
@@ -1821,6 +1835,7 @@
   <translation tag="Printer Setup: Language" ru="Настройка принтера: Язык"/>
   <translation tag="Printer Setup: Network" ru="Настройка принтера: Сеть"/>
   <translation tag="Printer Setup: Review" ru="Настройка принтера: Обзор"/>
+  <translation tag="Printer Setup: Tool Offsets"/>
   <translation tag="Printer Setup: Touch Calibration" ru="Настройка принтера: Калибровка сенсора"/>
   <translation tag="Printer Shutdown" ru="Остановка принтера"/>
   <translation tag="Printer Type" ru="Тип принтера"/>
@@ -1892,6 +1907,7 @@
   <translation tag="Quad Gantry Level started..." ru="QGL запущен..."/>
   <translation tag="Queue: Paused" ru="Очередь: Пауза"/>
   <translation tag="Queue: Ready" ru="Очередь: Готово"/>
+  <translation tag="Queued"/>
   <translation tag="Queued print jobs" ru="Задания печати в очереди"/>
   <translation tag="Queued {}h {}m ago" ru="В очереди {} ч {} мин"/>
   <translation tag="Queued {}m ago" ru="В очереди {} мин"/>
@@ -1905,6 +1921,7 @@
   <translation tag="Quick preheat with material selection" ru="Быстрый преднагрев с выбором материала"/>
   <translation tag="Quick toggle, long press for full control" ru="Быстрое переключение, долгое нажатие для полного управления"/>
   <translation tag="Quick tool switching for multi-tool printers" ru="Быстрое переключение инструментов для многоинструментальных принтеров"/>
+  <translation tag="REF"/>
   <translation tag="RFCOMM connect failed" ru="Не удалось подключиться по RFCOMM"/>
   <translation tag="RFCOMM connect failed: " ru="Не удалось подключиться по RFCOMM: "/>
   <translation tag="RSS" ru="RSS"/>
@@ -1919,6 +1936,7 @@
   <translation tag="Ready" ru="Готов"/>
   <translation tag="Ready for filament operations" ru="Готово к операциям с филаментом"/>
   <translation tag="Ready to Apply" ru="Готово к применению"/>
+  <translation tag="Ready to calibrate"/>
   <translation tag="Reason" ru="Причина"/>
   <translation tag="Reason: {}&#10;&#10;The printer cannot resume this print. Restart from the beginning?" ru="Причина: {}&#10;&#10;Принтер не может возобновить эту печать. Начать заново?"/>
   <translation tag="Reboot" ru="Перезагрузка"/>
@@ -1938,10 +1956,14 @@
   <translation tag="Recovery failed" ru="Восстановление не удалось"/>
   <translation tag="Recovery failed: " ru="Восстановление не удалось: "/>
   <translation tag="Recovery failed: {}" ru="Восстановление не удалось: {}"/>
+  <translation tag="Redo"/>
   <translation tag="Reduce Sensitivity" ru="Снизить чувствительность"/>
   <translation tag="Reduce ringing and ghosting artifacts" ru="Уменьшить артефакты звона и двоения"/>
   <translation tag="Reduce vibration artifacts like ringing and ghosting" ru="Уменьшить артефакты вибрации, такие как звон и двоение"/>
   <translation tag="Refeeding filament — this may take a minute" ru="Повторная подача филамента — это может занять минуту"/>
+  <translation tag="Reference measurement was refused"/>
+  <translation tag="Reference — the fixed point every tool is measured against"/>
+  <translation tag="Reference — the fixed point every tool is measured against (mm)"/>
   <translation tag="Refill the spool, then Resume." ru="Пополните катушку, затем нажмите «Продолжить»."/>
   <translation tag="Refresh" ru="Обновить"/>
   <translation tag="Refresh Interval" ru="Интервал обновления"/>
@@ -1959,6 +1981,7 @@
   <translation tag="Remove PIN" ru="Удалить PIN"/>
   <translation tag="Remove Spoolman?" ru="Удалить Spoolman?"/>
   <translation tag="Remove plugin from printer" ru="Удалить плагин с принтера"/>
+  <translation tag="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."/>
   <translation tag="Rename" ru="Переименовать"/>
   <translation tag="Rename Fan" ru="Переименовать вентилятор"/>
   <translation tag="Rename Mesh Profile" ru="Переименовать профиль сетки"/>
@@ -2092,6 +2115,8 @@
   <translation tag="Save Z-Offset?" ru="Сохранить Z-Offset?"/>
   <translation tag="Save changes to persist them across restarts?" ru="Сохранить изменения, чтобы они сохранились после перезапуска?"/>
   <translation tag="Save failed: {}" ru="Ошибка сохранения: {}"/>
+  <translation tag="Save offsets"/>
+  <translation tag="Save offsets?"/>
   <translation tag="Save to Spoolman" ru="Сохранить в Spoolman"/>
   <translation tag="Saved Z-Offset" ru="Сохранённый Z-Offset"/>
   <translation tag="Saved to crash_report.txt (QR not available)" ru="Сохранено в crash_report.txt (QR недоступен)"/>
@@ -2101,6 +2126,7 @@
   <translation tag="Saving Z-offset..." ru="Сохранение Z-offset..."/>
   <translation tag="Saving config... Klipper will restart." ru="Сохранение конфигурации... Klipper перезапустится."/>
   <translation tag="Saving will restart Klipper and CANCEL any active print!" ru="Сохранение перезапустит Klipper и ОТМЕНИТ любую активную печать!"/>
+  <translation tag="Saving — Klipper is restarting..."/>
   <translation tag="Scan" ru="Поиск"/>
   <translation tag="Scan Cal" ru="Кал. скана"/>
   <translation tag="Scan QR Code" ru="Сканировать QR-код"/>
@@ -2199,6 +2225,7 @@
   <translation tag="Setup" ru="Настройка"/>
   <translation tag="Setup Complete!" ru="Настройка завершена!"/>
   <translation tag="Setup Timelapse" ru="Настроить таймлапс"/>
+  <translation tag="Setup continues once the tool offsets are known."/>
   <translation tag="Shadow Intensity" ru="Интенсивность тени"/>
   <translation tag="Share Usage Data" ru="Делиться данными использования"/>
   <translation tag="Share anonymous usage statistics to help us make HelixScreen better. No personal data is ever collected." ru="Делитесь анонимной статистикой использования, чтобы помочь нам улучшить HelixScreen. Персональные данные никогда не собираются."/>
@@ -2322,9 +2349,11 @@
   <translation tag="Stop Print?" ru="Остановить печать?"/>
   <translation tag="Stop failed" ru="Ошибка остановки"/>
   <translation tag="Stop printing &quot;{}&quot;?&#10;&#10;This cannot be undone after 5 seconds." ru="Остановить печать &quot;{}&quot;?&#10;&#10;Это нельзя будет отменить через 5 секунд."/>
+  <translation tag="Stopped"/>
   <translation tag="Stopped between Hub and Toolhead" ru="Остановка между хабом и печатающей головкой"/>
   <translation tag="Stopped between Lane and Hub" ru="Остановка между слотом и хабом"/>
   <translation tag="Stopped between Spool and Lane" ru="Остановка между катушкой и слотом"/>
+  <translation tag="Stopping after the current step..."/>
   <translation tag="Stops all motion. Requires firmware restart." ru="Останавливает всё движение. Требуется перезапуск прошивки."/>
   <translation tag="Stow" ru="Убрать"/>
   <translation tag="Strobe LED" ru="Стробоскоп"/>
@@ -2360,6 +2389,8 @@
   <translation tag="TOGGLE: {}" ru="ПЕРЕКЛЮЧИТЬ: {}"/>
   <translation tag="TOOLS" ru="ИНСТРУМЕНТЫ"/>
   <translation tag="TPU" ru="TPU"/>
+  <translation tag="Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on."/>
+  <translation tag="Take the build plate off, and clean every nozzle. The printer checks the plate itself and will refuse if it is still on — but it cannot tell whether a nozzle is clean, so that part is on you. Tools must be cold and docked."/>
   <translation tag="Takes 3-5 min. Do not interrupt." ru="Занимает 3-5 мин. Не прерывайте."/>
   <translation tag="Tap + to add" ru="Нажмите +, чтобы добавить"/>
   <translation tag="Tap again to confirm this orientation" ru="Нажмите ещё раз для подтверждения ориентации"/>
@@ -2416,7 +2447,9 @@
   <translation tag="The heater will cycle on and off several times." ru="Нагреватель будет несколько раз включаться и выключаться."/>
   <translation tag="The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle." ru="Загружена катушка {}, но файл нарезан для {}. Филамент с наполнителем печатается с меньшим потоком и требует закалённого сопла."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." ru="Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень кажется неподвижным (застывшим), вы нашли резонансную частоту.&#10;&#10;Используйте кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным, затем зафиксируйте показание."/>
+  <translation tag="The offsets are saved when setup finishes. Recalibrate anytime from the console."/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." ru="Печать на паузе. Смена инструмента сейчас переместит печатающую головку и заменит филамент в сопле. Возобновите печать после завершения смены."/>
+  <translation tag="The printer gave no reason."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" ru="Принтер остановил эту печать и не может её возобновить. Начать с начала?"/>
   <translation tag="The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear." ru="Принтер не запаркован. Продолжение выполнит парковку всех осей, печатающая головка переместится. Убедитесь, что стол свободен."/>
   <translation tag="The printer lost power during a print. It can resume where it left off." ru="Принтер потерял питание во время печати. Он может продолжить с места остановки."/>
@@ -2467,6 +2500,7 @@
   <translation tag="This will reset all settings to defaults. This action cannot be undone." ru="Это сбросит все настройки к значениям по умолчанию. Это действие нельзя отменить."/>
   <translation tag="This will restart Klipper firmware. Any active operations will be interrupted." ru="Прошивка Klipper будет перезапущена. Активные операции будут прерваны."/>
   <translation tag="This will restart Klipper." ru="Это перезапустит Klipper."/>
+  <translation tag="This writes the offsets to the printer&apos;s config and restarts its firmware, which takes a few seconds. Until then they apply only to this session."/>
   <translation tag="Thorough" ru="Тщательно"/>
   <translation tag="Thumbnail Only" ru="Только миниатюра"/>
   <translation tag="Thumbnail: " ru="Миниатюра: "/>
@@ -2506,17 +2540,21 @@
   <translation tag="Too humid" ru="Слишком влажно"/>
   <translation tag="Tool" ru="Инструмент"/>
   <translation tag="Tool Changer" ru="Сменщик инструментов"/>
+  <translation tag="Tool Offsets"/>
   <translation tag="Tool Switcher" ru="Переключатель инструментов"/>
   <translation tag="Tool change failed: {}" ru="Ошибка смены инструмента: {}"/>
   <translation tag="Tool mapping failed" ru="Ошибка сопоставления инструмента"/>
   <translation tag="Tool swap" ru="Смена инструмента"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." ru="Инструмент {} → Слот {}: филамент не загружен."/>
+  <translation tag="ToolOffset"/>
   <translation tag="Toolhead" ru="Печатающая головка"/>
   <translation tag="Toolhead LED" ru="LED печатающей головки"/>
   <translation tag="Toolhead Style" ru="Стиль печатающей головки"/>
   <translation tag="Toolhead jam" ru="Замятие в печатающей головке"/>
   <translation tag="Toolhead, G-code, limits, and materials" ru="Печатающая головка, G-code, лимиты и материалы"/>
   <translation tag="Tools Used" ru="Использовано инструментов"/>
+  <translation tag="Tools — each nozzle&apos;s measured position"/>
+  <translation tag="Tools — nozzle position, and Z height over the reference (mm)"/>
   <translation tag="Tools: " ru="Инструменты: "/>
   <translation tag="Total Prints" ru="Всего печатей"/>
   <translation tag="Touch &amp; Input" ru="Касание и ввод"/>
@@ -2546,6 +2584,7 @@
   <translation tag="Type" ru="Тип"/>
   <translation tag="Type to preview input field..." ru="Введите для предпросмотра поля ввода..."/>
   <translation tag="Type:" ru="Тип:"/>
+  <translation tag="T{} calibration was refused"/>
   <translation tag="T{} shares slot with T{}" ru="T{} использует общий слот с T{}"/>
   <translation tag="UI Sounds" ru="Звуки интерфейса"/>
   <translation tag="USB" ru="USB"/>
@@ -2720,6 +2759,7 @@
   <translation tag="Z Offset" ru="Z Offset"/>
   <translation tag="Z Range" ru="Диапазон Z"/>
   <translation tag="Z Tilt Adjust..." ru="Регулировка наклона Z..."/>
+  <translation tag="Z gap"/>
   <translation tag="Z probes for bed leveling and mesh generation" ru="Z-зонды для выравнивания стола и создания сетки"/>
   <translation tag="Z-Off:" ru="Z-Off:"/>
   <translation tag="Z-Offset" ru="Z-Offset"/>
@@ -2755,24 +2795,34 @@
   <translation tag="enable" ru="включить"/>
   <translation tag="enabled" ru="включено"/>
   <translation tag="error" ru="ошибка"/>
+  <translation tag="every tool depends on this"/>
   <translation tag="extruder" ru="экструдер"/>
   <translation tag="extruder(s)" ru="экструдер(ы)"/>
   <translation tag="extruders" ru="экструдеры"/>
   <translation tag="fans" ru="вентиляторы"/>
   <translation tag="heated bed" ru="подогреваемый стол"/>
   <translation tag="idle" ru="простой"/>
+  <translation tag="last attempt was refused"/>
   <translation tag="layers" ru="слои"/>
   <translation tag="left" ru="осталось"/>
+  <translation tag="locating the bore"/>
+  <translation tag="locating the bore... {}s"/>
+  <translation tag="locating the reference"/>
+  <translation tag="locating the reference... {}s"/>
   <translation tag="mm before clog" ru="мм до засора"/>
   <translation tag="needs" ru="требуется"/>
   <translation tag="not detected" ru="не обнаружено"/>
   <translation tag="nozzle" ru="сопло"/>
   <translation tag="of" ru="из"/>
   <translation tag="off" ru="выкл"/>
+  <translation tag="printing with it will be refused"/>
   <translation tag="prints" ru="печатей"/>
+  <translation tag="probing nozzle"/>
+  <translation tag="probing nozzle... {}s"/>
   <translation tag="remaining" ru="осталось"/>
   <translation tag="remaining before clog detection triggers" ru="осталось до срабатывания обнаружения засора"/>
   <translation tag="rendering" ru="рендеринг"/>
+  <translation tag="skipped — stopping"/>
   <translation tag="slots)" ru="слотов)"/>
   <translation tag="started" ru="запущено"/>
   <translation tag="steppers" ru="шаговые двигатели"/>

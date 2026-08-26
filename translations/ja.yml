@@ -261,6 +261,7 @@ translations:
   Bed target set to {}°C: ベッド目標温度を {}°C に設定しました
   Bed temp must be 0-200°C: ベッド温度は 0〜200°C にしてください
   Bed warming timed out: ベッド加熱がタイムアウトしました
+  Before calibrating: ''
   Belt A frequency locked: ベルト A の周波数を固定しました
   Belt B frequency locked: ベルト B の周波数を固定しました
   Belt Tension: ベルトテンション
@@ -344,12 +345,15 @@ translations:
   Calibrate Gear: 'ギアをキャリブレート'
   Calibrate X: X軸をキャリブレート
   Calibrate Y: Y軸をキャリブレート
+  Calibrate everything: ''
   Calibrate input shaping to reduce ringing artifacts in prints: 入力シェーピングをキャリブレートして印刷のリンギングを軽減します
   Calibrate your touchscreen for accurate input: タッチスクリーンの入力精度をキャリブレートします
   Calibrate, tune jitter and scroll feel: キャリブレーション、ジッターとスクロール感度の調整
   Calibrated: キャリブレーション済み
   'Calibrating Probe...': ''
   'Calibrating bed mesh...': ''
+  Calibrating now: ''
+  Calibrating tool offsets... {}s: ''
   Calibrating {} axis...: '{} 軸をキャリブレーション中...'
   Calibrating...: キャリブレーション中...
   Calibration & Tools: キャリブレーションとツール
@@ -360,6 +364,8 @@ translations:
   Calibration complete: キャリブレーション完了
   Calibration complete!: キャリブレーション完了！
   Calibration complete! Press 'Next' to continue.: '"キャリブレーション完了！「次へ」を押して続行してください。"'
+  Calibration complete.: ''
+  Calibration failed: ''
   Calibration failed - touch targets more precisely.: キャリブレーション失敗 – ターゲットをより正確にタッチしてください。
   Calibration kept timing out. Your previous settings were kept.: キャリブレーションが繰り返しタイムアウトしました。以前の設定を維持しました。
   Calibration may still be running — response timed out: キャリブレーションがまだ実行中の可能性があります
@@ -1432,13 +1438,17 @@ translations:
   Maximum: 最大
   Maximum acceleration (mm/s²): 最大加速度 (mm/s²)
   Maximum toolhead speed (mm/s): ツールヘッドの最大速度 (mm/s)
+  Measure: ''
   Measure and compare belt path frequencies: ベルトパスの周波数を測定・比較
   Measure belt path frequencies: ベルトパスの周波数を測定
+  Measure each tool's nozzle position: ''
+  'Measure each tool''s nozzle position so all tools print in the same place': ''
   Measured (shaper off): 測定値（シェーパーオフ時）
   Measurement Failed: 測定失敗
   Measuring Path A... %d%%: パス A を測定中... %d%%
   Measuring Path B... %d%%: パス B を測定中... %d%%
   Measuring accelerometer noise...: '加速度センサーのノイズを測定中...'
+  Measuring now: ''
   Measuring vibrations... {}%: '振動を測定中... {}%'
   Memory: メモリ
   Memory (MB): メモリ (MB)
@@ -1614,12 +1624,15 @@ translations:
   Not found (strobe only): 見つかりません (ストロボのみ)
   Not found (use phone app): 見つかりません (スマホアプリを使用)
   Not in your spools? Set it up: スプールにない？登録する
+  Not measured: ''
   Not now: 後で
   Not yet available on this display: 'このディスプレイではまだ利用できません'
   Not yet calibrated: 未キャリブレーション
   Notes: メモ
   Notes (optional): メモ（オプション）
   Nothing to remap: リマップするものがありません
+  Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed.: ''
+  Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed.: ''
   Notification: 通知
   Notifications: 通知
   Notify when print finishes: 印刷完了時に通知
@@ -1655,6 +1668,7 @@ translations:
   Objects: オブジェクト
   'Off': オフ
   'Off:': 'オフ:'
+  Offsets saved: ''
   "Old setting on today's data: {} residual - now: {}": '旧設定を今日のデータに適用: 残留 {} - 現在: {}'
   'On': オン
   On and Off macros must be different: オンとオフのマクロは異なるものにしてください
@@ -1868,6 +1882,7 @@ translations:
   'Printer Setup: Language': 'プリンター設定: 言語'
   'Printer Setup: Network': 'プリンター設定: ネットワーク'
   'Printer Setup: Review': 'プリンター設定: 確認'
+  'Printer Setup: Tool Offsets': ''
   'Printer Setup: Touch Calibration': 'プリンター設定: タッチキャリブレーション'
   Printer Shutdown: プリンターシャットダウン
   Printer Type: プリンタータイプ
@@ -1943,6 +1958,7 @@ translations:
   Quad Gantry Level started...: QGL を開始しました...
   'Queue: Paused': 'キュー: 一時停止'
   'Queue: Ready': 'キュー: 準備完了'
+  Queued: ''
   Queued print jobs: 'キューに入った印刷ジョブ'
   Queued {}h {}m ago: '{} 時間 {} 分前にキューへ追加'
   Queued {}m ago: '{} 分前にキューへ追加'
@@ -1956,6 +1972,7 @@ translations:
   Quick preheat with material selection: '材料を選んで素早く予熱'
   Quick toggle, long press for full control: '素早く切り替え、長押しで詳細操作'
   Quick tool switching for multi-tool printers: 'マルチツールプリンター向けの高速ツール切り替え'
+  REF: ''
   RFCOMM connect failed: RFCOMM 接続に失敗しました
   'RFCOMM connect failed: ': 'RFCOMM 接続に失敗しました: '
   RSS: RSS
@@ -1970,6 +1987,7 @@ translations:
   Ready: 準備完了
   Ready for filament operations: フィラメント操作の準備ができています
   Ready to Apply: 適用の準備完了
+  Ready to calibrate: ''
   Reason: 理由
   ? "Reason: {}\n\nThe printer cannot resume this print. Restart from the beginning?"
   : "理由: {}\n\nプリンターはこの印刷を再開できません。最初からやり直しますか？"
@@ -1990,10 +2008,14 @@ translations:
   Recovery failed: 復旧失敗
   'Recovery failed: ': '復旧に失敗しました: '
   'Recovery failed: {}': '復旧に失敗しました: {}'
+  Redo: ''
   Reduce Sensitivity: 感度を下げる
   Reduce ringing and ghosting artifacts: リンギングとゴーストのアーティファクトを軽減
   Reduce vibration artifacts like ringing and ghosting: リンギングやゴーストなどの振動アーティファクトを軽減
   Refeeding filament — this may take a minute: フィラメントを再供給中 — 少々時間がかかる場合があります
+  Reference measurement was refused: ''
+  Reference — the fixed point every tool is measured against: ''
+  Reference — the fixed point every tool is measured against (mm): ''
   Refill the spool, then Resume.: スプールを補充してから再開してください。
   Refresh: 更新
   Refresh Interval: 更新間隔
@@ -2011,6 +2033,7 @@ translations:
   Remove PIN: PIN を削除
   Remove Spoolman?: Spoolman を削除しますか？
   Remove plugin from printer: プリンターからプラグインを削除
+  Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position.: ''
   Rename: 名前を変更
   Rename Fan: ファン名を変更
   Rename Mesh Profile: メッシュプロファイルの名前を変更
@@ -2148,6 +2171,8 @@ translations:
   Save Z-Offset?: Z-Offset を保存しますか？
   Save changes to persist them across restarts?: 再起動後も変更を保持するために保存しますか？
   'Save failed: {}': '保存に失敗しました: {}'
+  Save offsets: ''
+  Save offsets?: ''
   Save to Spoolman: Spoolman に保存
   Saved Z-Offset: 保存されたZ-Offset
   Saved to crash_report.txt (QR not available): crash_report.txt に保存しました（QR 利用不可）
@@ -2157,6 +2182,7 @@ translations:
   Saving Z-offset...: Zオフセットを保存中...
   Saving config... Klipper will restart.: 設定を保存中... Klipper が再起動します。
   Saving will restart Klipper and CANCEL any active print!: 保存すると Klipper が再起動し、アクティブな印刷がキャンセルされます！
+  Saving — Klipper is restarting...: ''
   Scan: スキャン
   Scan Cal: スキャンキャリブレーション
   Scan QR Code: QR コードをスキャン
@@ -2259,6 +2285,7 @@ translations:
   Setup: 'セットアップ'
   Setup Complete!: セットアップ完了！
   Setup Timelapse: タイムラプスを設定
+  Setup continues once the tool offsets are known.: ''
   Shadow Intensity: 影の強度
   Share Usage Data: 使用データを共有
   Share anonymous usage statistics to help us make HelixScreen better. No personal data is ever collected.: 匿名の使用統計を共有して、HelixScreen
@@ -2385,9 +2412,11 @@ translations:
   Stop failed: 停止に失敗
   ? "Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds."
   : "\"{}\" の印刷を停止しますか？\n\n5秒後は取り消せません。"
+  Stopped: ''
   Stopped between Hub and Toolhead: ハブとツールヘッドの間で停止
   Stopped between Lane and Hub: レーンとハブの間で停止
   Stopped between Spool and Lane: スプールとレーンの間で停止
+  Stopping after the current step...: ''
   Stops all motion. Requires firmware restart.: すべての動作を停止します。ファームウェアの再起動が必要です。
   Stow: 格納
   Strobe LED: ストロボLED
@@ -2424,6 +2453,10 @@ translations:
   'TOGGLE: {}': '切り替え: {}'
   TOOLS: ツール
   TPU: TPU
+  ? Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on.
+  : ''
+  ? Take the build plate off, and clean every nozzle. The printer checks the plate itself and will refuse if it is still on — but it cannot tell whether a nozzle is clean, so that part is on you. Tools must be cold and docked.
+  : ''
   Takes 3-5 min. Do not interrupt.: 3〜5分かかります。中断しないでください。
   Tap + to add: + をタップして追加
   Tap again to confirm this orientation: もう一度タップしてこの向きを確定
@@ -2491,8 +2524,10 @@ translations:
   : 装填中のスプールは {} ですが、このファイルは {} 用にスライスされています。充填材入りフィラメントはフローレートが低くなり、硬化ノズルが必要です。
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
   : "モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。"
+  The offsets are saved when setup finishes. Recalibrate anytime from the console.: ''
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   : 印刷は一時停止中です。ここでツールを交換すると、ツールヘッドが移動してノズルのフィラメントが入れ替わります。交換が完了したら印刷を再開してください。
+  The printer gave no reason.: ''
   The printer halted this print and cannot resume it. Restart from the beginning?: プリンターはこの印刷を停止し、再開できません。最初からやり直しますか？
   The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: プリンターがホーミングされていません。続行すると全軸がホーミングされ、ツールヘッドが移動します。ベッドに物がないことを確認してください。
   The printer lost power during a print. It can resume where it left off.: 印刷中にプリンターの電源が失われました。中断した箇所から再開できます。
@@ -2558,6 +2593,8 @@ translations:
   This will reset all settings to defaults. This action cannot be undone.: これはすべての設定をデフォルトにリセットします。この操作は元に戻せません。
   This will restart Klipper firmware. Any active operations will be interrupted.: Klipperファームウェアを再起動します。実行中の操作は中断されます。
   This will restart Klipper.: これにより Klipper が再起動します。
+  ? This writes the offsets to the printer's config and restarts its firmware, which takes a few seconds. Until then they apply only to this session.
+  : ''
   Thorough: 徹底的
   Thumbnail Only: サムネイルのみ
   'Thumbnail: ': 'サムネイル: '
@@ -2597,17 +2634,21 @@ translations:
   Too humid: 湿度が高すぎます
   Tool: ツール
   Tool Changer: ツールチェンジャー
+  Tool Offsets: ''
   Tool Switcher: 'ツール切り替え'
   'Tool change failed: {}': 'ツール変更に失敗しました: {}'
   Tool mapping failed: ツールマッピングに失敗しました
   Tool swap: ツール交換
   'Tool {} → Lane {}: no filament loaded.': 'ツール {} → レーン {}: フィラメントが装填されていません。'
+  ToolOffset: ''
   Toolhead: 'ツールヘッド'
   Toolhead LED: 'ツールヘッドLED'
   Toolhead Style: ツールヘッドスタイル
   Toolhead jam: ツールヘッドの詰まり
   Toolhead, G-code, limits, and materials: ツールヘッド、Gコード、制限、材料
   Tools Used: 使用したツール
+  Tools — each nozzle's measured position: ''
+  Tools — nozzle position, and Z height over the reference (mm): ''
   'Tools: ': 'ツール: '
   Total Prints: 総印刷数
   Touch & Input: タッチと入力
@@ -2638,6 +2679,7 @@ translations:
   Type: タイプ
   Type to preview input field...: 入力フィールドをプレビューするには入力してください...
   'Type:': 'タイプ:'
+  T{} calibration was refused: ''
   T{} shares slot with T{}: T{} は T{} とスロットを共有しています
   UI Sounds: UIサウンド
   USB: USB
@@ -2821,6 +2863,7 @@ translations:
   Z Offset: Zオフセット
   Z Range: Z 範囲
   Z Tilt Adjust...: Zチルト調整中...
+  Z gap: ''
   Z probes for bed leveling and mesh generation: ベッドレベリングとメッシュ生成用 Z プローブ
   'Z-Off:': 'Z-Off:'
   Z-Offset: Z-Offset
@@ -2857,14 +2900,20 @@ translations:
   enable: 有効化
   enabled: 有効
   error: エラー
+  every tool depends on this: ''
   extruder: エクストルーダー
   extruder(s): エクストルーダー
   extruders: エクストルーダー
   fans: ファン
   heated bed: ヒートベッド
   idle: アイドル
+  last attempt was refused: ''
   layers: レイヤー
   left: 残り
+  locating the bore: ''
+  locating the bore... {}s: ''
+  locating the reference: ''
+  locating the reference... {}s: ''
   mm before clog: 詰まりまでの距離 (mm)
   needs: 必要
   not detected: 未検出
@@ -2874,10 +2923,14 @@ translations:
   Monitor for print abnormalities (K2 Plus camera-based): 印刷異常を監視 (K2 Plus カメラベース)
   AFC's remember_spool is retaining spool info in firmware; that takes precedence over this toggle: AFC の remember_spool がファームウェア側でスプール情報を保持しているため、このトグル設定より優先されます
   AI detection: AI 検出
+  printing with it will be refused: ''
   prints: 印刷
+  probing nozzle: ''
+  probing nozzle... {}s: ''
   remaining: 残り
   remaining before clog detection triggers: 残りで詰まり検出が作動します
   rendering: レンダリング中
+  skipped — stopping: ''
   slots): スロット)
   started: 開始
   steppers: ステッパー
