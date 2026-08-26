@@ -53,8 +53,8 @@
               style_pad_gap="#space_sm" flex_flow="column" style_bg_opa="0" style_border_width="0"
               scrollable="true">
 
-      <text_small text="Reference — the fixed point every tool is measured against"
-                  translation_tag="Reference — the fixed point every tool is measured against"
+      <text_small text="Reference — the fixed point every tool is measured against (mm)"
+                  translation_tag="Reference — the fixed point every tool is measured against (mm)"
                   style_text_color="#text_muted"/>
 
       <!-- Reference row: TOOL_LOCATE_SENSOR, runs with an EMPTY carriage.
@@ -67,11 +67,11 @@
         <bind_style_if_not_eq name="row_idle" subject="tool_offset_cal_station_state" ref_value="2"/>
         <bind_style_if_eq name="row_measuring" subject="tool_offset_cal_station_state" ref_value="2"/>
 
-        <lv_obj width="46" height="34" style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg"
+        <lv_obj width="52" height="34" style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg"
                 style_radius="#border_radius_small" style_border_width="1" style_border_color="#border"
                 flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center"
                 scrollable="false">
-          <text_small text="REF"/>
+          <text_body text="REF" translation_tag="REF"/>
         </lv_obj>
 
         <!-- Measured: the station bore's machine coordinates -->
@@ -113,7 +113,7 @@
         <lv_obj flex_grow="1" height="1" style_pad_all="0" style_bg_opa="0" style_border_width="0"
                 scrollable="false"/>
 
-        <spinner size="sm">
+        <spinner size="sm" width="40" height="40">
           <bind_flag_if_not_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="2"/>
         </spinner>
 
@@ -131,8 +131,8 @@
         </ui_button>
       </lv_obj>
 
-      <text_small text="Tools — each nozzle's measured position"
-                  translation_tag="Tools — each nozzle's measured position"
+      <text_small text="Tools — nozzle position, and Z height over the reference (mm)"
+                  translation_tag="Tools — nozzle position, and Z height over the reference (mm)"
                   style_text_color="#text_muted"/>
 
       <!-- One row per tool slot; rows beyond the printer's tool count stay
@@ -151,7 +151,7 @@
             <bind_style_if_not_eq name="row_idle" subject="tool_offset_cal_state_${i}" ref_value="2"/>
             <bind_style_if_eq name="row_measuring" subject="tool_offset_cal_state_${i}" ref_value="2"/>
 
-            <lv_obj width="46" height="34" style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg"
+            <lv_obj width="52" height="34" style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg"
                     style_radius="#border_radius_small" style_border_width="1" style_border_color="#border"
                     flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center"
                     scrollable="false">
@@ -176,7 +176,7 @@
               </lv_obj>
               <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
                       style_bg_opa="0" style_border_width="0" scrollable="false">
-                <text_small text="Z" style_text_color="#text_muted"/>
+                <text_small text="Z gap" translation_tag="Z gap" style_text_color="#text_muted"/>
                 <text_body bind_text="tool_offset_cal_z_${i}">
                   <!-- Z away from the expected gap is the one number the
                        machine cannot judge for the user. -->
@@ -203,7 +203,7 @@
             <lv_obj flex_grow="1" height="1" style_pad_all="0" style_bg_opa="0" style_border_width="0"
                     scrollable="false"/>
 
-            <spinner size="sm">
+            <spinner size="sm" width="40" height="40">
               <bind_flag_if_not_eq subject="tool_offset_cal_state_${i}" flag="hidden" ref_value="2"/>
             </spinner>
 
@@ -246,8 +246,13 @@
                    text="Save offsets" translation_tag="Save offsets">
           <event_cb trigger="clicked" callback="on_tool_offset_cal_save"/>
           <bind_flag_if_eq subject="tool_offset_cal_save_pending" flag="hidden" ref_value="0"/>
+          <!-- Save restarts Klipper. Klipper stages config as soon as the
+               reference pass lands, so without this the button goes live
+               mid-run and a tap would restart the firmware underneath a
+               calibration that is still moving the machine. -->
+          <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
         </ui_button>
-        <ui_button name="tool_offset_save_idle_btn" flex_grow="2" variant="ghost"
+        <ui_button name="tool_offset_save_idle_btn" flex_grow="2" variant="outline"
                    text="Save offsets" translation_tag="Save offsets">
           <bind_flag_if_eq subject="tool_offset_cal_save_pending" flag="hidden" ref_value="1"/>
           <bind_state_if_eq subject="tool_offset_cal_save_pending" state="disabled" ref_value="0"/>

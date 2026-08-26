@@ -216,7 +216,9 @@ void ToolOffsetCalibrationPanel::set_row_state(int step, RowState state, const s
         text = lv_tr("Queued");
         break;
     case ROW_MEASURING:
-        text = lv_tr("Measuring now");
+        // The reference is measured, a tool is calibrated — one verb per
+        // object, matching each row's own button and its failure message.
+        text = is_station ? lv_tr("Measuring now") : lv_tr("Calibrating now");
         break;
     case ROW_OK:
         // The numbers replace the state line entirely in this state.
@@ -271,11 +273,15 @@ void ToolOffsetCalibrationPanel::show_error(int step, const std::string& message
         (step == STATION_STEP)
             ? std::string(lv_tr("Reference measurement was refused"))
             : fmt::format(fmt::runtime(lv_tr("T{} calibration was refused")), step);
-    std::string body = message.empty() ? std::string(lv_tr("The printer gave no reason."))
-                                       : message;
-    body += "\n\n";
-    body += lv_tr("Nothing was changed. Usually a dirty nozzle, or the build plate left on "
-                  "the bed.");
+    // Plain cause and remedy first — the firmware's own wording is precise but
+    // is snake_case internals, and it is the second thing the user needs.
+    std::string body =
+        lv_tr("Nothing was changed. This is usually a dirty nozzle, or the build plate left "
+              "on the bed.");
+    if (!message.empty()) {
+        body += "\n\n";
+        body += message;
+    }
     helix::ui::modal_show_alert(title.c_str(), body.c_str(), ModalSeverity::Error, lv_tr("Close"));
 }
 
@@ -352,8 +358,9 @@ void ToolOffsetCalibrationPanel::confirm_and_run(std::vector<int> tools) {
     // showing both just repeats itself. This text is the superset: it also
     // covers the two conditions the plate check cannot measure.
     const std::string msg =
-        lv_tr("Take the build plate off and clean every nozzle. Tools should be cold and "
-              "docked. The printer checks the plate itself and will refuse if it is still on.");
+        lv_tr("Take the build plate off, and clean every nozzle. The printer checks the plate "
+              "itself and will refuse if it is still on — but it cannot tell whether a nozzle "
+              "is clean, so that part is on you. Tools must be cold and docked.");
     helix::ui::modal_show_confirmation(
         lv_tr("Before calibrating"), msg.c_str(), ModalSeverity::Warning, lv_tr("Start"),
         [](lv_event_t* ev) {
@@ -488,6 +495,7 @@ void ToolOffsetCalibrationPanel::begin_run(std::vector<int> steps) {
     lv_subject_set_int(&started_, 1);
     lv_subject_set_int(&active_, 1);
     lv_subject_set_int(&complete_, 0);
+    last_failed_step_ = -2;
     // Every row in the run reads Queued from the outset, so the whole
     // sequence — not just the row being probed — is visible while it runs.
     for (int step : run_queue_) {
@@ -511,9 +519,9 @@ void ToolOffsetCalibrationPanel::send_next_step() {
     // The elapsed counter runs in the row's own second line, so the progress
     // and the thing making progress are the same object on screen.
     if (current_step_ == STATION_STEP) {
-        set_row_state(STATION_STEP, ROW_MEASURING, lv_tr("locating the bore"));
+        set_row_state(STATION_STEP, ROW_MEASURING, lv_tr("locating the reference"));
         elapsed_.begin(&station_sub_, [](uint32_t elapsed_seconds) {
-            return fmt::format(fmt::runtime(lv_tr("locating the bore... {}s")), elapsed_seconds);
+            return fmt::format(fmt::runtime(lv_tr("locating the reference... {}s")), elapsed_seconds);
         });
         cmd = LOCATE_CMD;
     } else {
@@ -640,6 +648,39 @@ void ToolOffsetCalibrationPanel::save_calibration() {
     // Klipper's own save_config_pending is the gate, not "this session ran a
     // calibration": offsets measured before the app opened are just as unsaved.
     if (!api || !subjects_initialized_ || !lv_subject_get_int(&save_pending_)) {
+        return;
+    }
+    // Never send SAVE_CONFIG under a run — it restarts Klipper mid-probe.
+    if (calibration_active_) {
+        spdlog::warn("[{}] Ignoring Save while a calibration is running", get_name());
+        return;
+    }
+    // The restart is the whole reason Save is a separate step, and nothing
+    // else on the screen says it happens.
+    helix::ui::modal_show_confirmation(
+        lv_tr("Save offsets?"),
+        lv_tr("This writes the offsets to the printer's config and restarts its firmware, "
+              "which takes a few seconds. Until then they apply only to this session."),
+        ModalSeverity::Warning, lv_tr("Save"),
+        [](lv_event_t* ev) {
+            (void)ev;
+            LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] confirm_save");
+            Modal::hide(Modal::get_top());
+            get_global_tool_offset_cal_panel().send_save_config();
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        [](lv_event_t* ev) {
+            (void)ev;
+            LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] cancel_save");
+            Modal::hide(Modal::get_top());
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        this);
+}
+
+void ToolOffsetCalibrationPanel::send_save_config() {
+    auto* api = get_moonraker_api();
+    if (!api) {
         return;
     }
     // SAVE_CONFIG restarts Klipper — an expected disconnect, not an error
@@ -817,8 +858,12 @@ void ToolOffsetCalibrationPanel::apply_printer_state(const nlohmann::json& statu
     }
     set_station_values();
     if (!is_step_pending(STATION_STEP)) {
-        set_row_state(STATION_STEP, station_known_ ? ROW_OK : ROW_NONE,
-                      station_known_ ? "" : lv_tr("every tool depends on this"));
+        const char* sub = "";
+        if (!station_known_) {
+            sub = (last_failed_step_ == STATION_STEP) ? lv_tr("last attempt was refused")
+                                                      : lv_tr("every tool depends on this");
+        }
+        set_row_state(STATION_STEP, station_known_ ? ROW_OK : ROW_NONE, sub);
     }
 
     for (int i = 0; i < MAX_TOOLS; ++i) {
@@ -850,8 +895,15 @@ void ToolOffsetCalibrationPanel::apply_printer_state(const nlohmann::json& statu
         // A row the run has not reached yet keeps its Queued/Measuring state;
         // everything else follows the printer.
         if (!is_step_pending(i)) {
-            set_row_state(i, values_valid_[i] ? ROW_OK : ROW_NONE,
-                          values_valid_[i] ? "" : lv_tr("printing with it will be refused"));
+            // A row the printer refused reads differently from one that was
+            // simply never attempted — otherwise, a minute later, nothing on
+            // screen says which tool actually failed.
+            const char* sub = "";
+            if (!values_valid_[i]) {
+                sub = (i == last_failed_step_) ? lv_tr("last attempt was refused")
+                                               : lv_tr("printing with it will be refused");
+            }
+            set_row_state(i, values_valid_[i] ? ROW_OK : ROW_NONE, sub);
         }
     }
 
