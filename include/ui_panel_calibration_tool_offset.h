@@ -32,18 +32,27 @@
  *
  * ## Subject Bindings:
  *
+ * Every row — the reference and each tool — is the same shape, and its whole
+ * appearance follows one int state subject (RowState below). That is what lets
+ * a run happen in place instead of on a second screen: the measuring row
+ * highlights, later rows read Queued, finished rows show their numbers.
+ *
  * - tool_offset_cal_status (string) - one-line status
  * - tool_offset_cal_log (string) - last few notify_gcode_response lines
  * - tool_offset_cal_hint (string) - the macro's description
- * - tool_offset_cal_active / _complete (int) - run in progress / Save visible
+ * - tool_offset_cal_active / _complete (int) - run in progress / run succeeded
  * - tool_offset_cal_row_visible_N (int, N=0..3) - row shown (tool exists)
- * - tool_offset_cal_text_N (string) - per-tool offsets line ("X --  Y --  Z --")
- * - tool_offset_cal_spin_N (int) - 1 while tool N is the one probing
- * - tool_offset_cal_station_text (string) - reference row's state line
- * - tool_offset_cal_station_spin (int) - 1 while the reference is probing
+ * - tool_offset_cal_state_N (int) - RowState for tool N
+ * - tool_offset_cal_state_text_N (string) - "Not calibrated" / "Queued" / ...
+ * - tool_offset_cal_sub_N (string) - second line under that ("probing... 12s")
+ * - tool_offset_cal_x_N / _y_N / _z_N (string) - the three measured numbers
+ * - tool_offset_cal_z_odd_N (int) - 1 when Z is outside the expected gap
+ * - tool_offset_cal_station_state (int) - RowState for the reference row
+ * - tool_offset_cal_station_state_text / _sub (string) - same, for the reference
+ * - tool_offset_cal_station_x / _y / _z (string) - the station bore's position
  * - tool_offset_cal_save_pending (int) - Klipper has unsaved calibration
- * - tool_offset_cal_warning (string) - incomplete-calibration note
- * - tool_offset_cal_has_warning (int) - 1 when that note is non-empty
+ * - tool_offset_cal_error (int) - 1 while the refusal card is up
+ * - tool_offset_cal_error_title / _text / _fix (string) - that card's content
  *
  * ## Command contract
  *
@@ -61,13 +70,14 @@
  * UI state, so stopping just means not sending the next command (the M112
  * abort remains the escape hatch for backing out mid-probe).
  *
- * Results are read from the console block the firmware prints at the end of
- * each pass — `T<n>: dX <x>  dY <y>  Z <z>`, the offsets a toolchange
- * actually applies. The earlier `T<n>: offset = (...)` line is the raw
- * station-bore centre in machine coordinates, NOT an offset, and is only
- * mirrored into the log. dX/dY are differences against the base tool (T0),
- * so its own are zero by definition; Z is absolute
- * (`nozzle_z - station_z + z_adjust`) and is not zero for the base tool.
+ * Results come from `ff_tool <n>` / `ff_tool_offset`, re-read after every step,
+ * rather than from parsing the console block the firmware prints. What the
+ * rows show is each nozzle's own machine position (`nozzle_x`, `nozzle_y`) and
+ * its height over the station (`nozzle_z - station_z + z_adjust`), against the
+ * reference row's `station_x/y/z` directly above. The differences a toolchange
+ * applies are `nozzle_x/y` minus the base tool's, which would put an
+ * unexplained pair of zeroes on T0's row; showing the positions themselves
+ * says the same thing without that trap.
  */
 class ToolOffsetCalibrationPanel : public OverlayBase {
   public:
@@ -89,6 +99,20 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     /// Toolchanger's `offset_base` — the tool dX/dY are measured against.
     /// Config-only in the firmware and defaulted to 0, so not queryable.
     static constexpr int BASE_TOOL = 0;
+
+    /// Everything a row looks like follows from this one int.
+    enum RowState : int {
+        ROW_NONE = 0,      ///< never measured, or the last attempt was refused
+        ROW_QUEUED = 1,    ///< part of the current run, not reached yet
+        ROW_MEASURING = 2, ///< the machine is probing this row right now
+        ROW_OK = 3         ///< measured; the row shows its three numbers
+    };
+
+    /// The gap guard the firmware itself applies, mirrored so a Z that passed
+    /// but sits at the edge still reads as suspicious. A healthy machine
+    /// measures about 3.15 mm.
+    static constexpr double GAP_MIN_MM = 1.5;
+    static constexpr double GAP_MAX_MM = 5.0;
 
     ToolOffsetCalibrationPanel();
     ~ToolOffsetCalibrationPanel() override;
@@ -170,7 +194,16 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     void finish_run(bool ok, const std::string& error);
     void refresh_tool_rows();
     void apply_printer_state(const nlohmann::json& status);
-    void set_row_text(int tool);
+    /// Paint one row's state text, sub-line and colour from a RowState
+    void set_row_state(int step, RowState state, const std::string& sub = "");
+    /// Copy a tool's stored numbers into its three value subjects
+    void set_row_values(int tool);
+    void set_station_values();
+    /// True while `step` still belongs to the run in flight — refreshed
+    /// printer state must not overwrite a Queued or Measuring row.
+    bool is_step_pending(int step) const;
+    void show_error(int step, const std::string& message);
+    void clear_error();
     void confirm_and_run(std::vector<int> steps);
     void fetch_macro_description();
     void subscribe_console();
@@ -190,6 +223,8 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     bool stop_requested_ = false;
     /// Step being executed: a tool index, or STATION_STEP, or -2 for none.
     int current_step_ = -2;
+    /// The step the refusal card is about (set when a step errors).
+    int last_failed_step_ = -2;
     std::vector<int> run_queue_;
 
     char status_buffer_[128] = "";
@@ -201,25 +236,52 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     lv_subject_t started_;
     lv_subject_t active_;
     lv_subject_t complete_;
-    lv_subject_t row_visible_[MAX_TOOLS];
-    lv_subject_t row_text_[MAX_TOOLS];
-    lv_subject_t row_spin_[MAX_TOOLS];
-    lv_subject_t station_spin_;
-    lv_subject_t station_text_;
     lv_subject_t save_pending_;
-    lv_subject_t warning_;
-    lv_subject_t has_warning_;
-    char row_text_buffer_[MAX_TOOLS][64];
-    char station_text_buffer_[96] = "";
-    char warning_buffer_[128] = "";
-    /// Offsets a toolchange applies, keyed by tool: dX, dY, absolute Z.
-    /// Sourced from the firmware's report block during a run, and from
-    /// ff_tool/ff_tool_offset on open. Valid iff applied_valid_.
-    double applied_[MAX_TOOLS][3] = {};
-    bool applied_valid_[MAX_TOOLS] = {false, false, false, false};
-    /// station_z from ff_tool_offset; the reference pass has run when set.
+
+    // Per-tool rows
+    lv_subject_t row_visible_[MAX_TOOLS];
+    lv_subject_t row_state_[MAX_TOOLS];
+    lv_subject_t row_state_text_[MAX_TOOLS];
+    lv_subject_t row_sub_[MAX_TOOLS];
+    lv_subject_t row_x_[MAX_TOOLS];
+    lv_subject_t row_y_[MAX_TOOLS];
+    lv_subject_t row_z_[MAX_TOOLS];
+    lv_subject_t row_z_odd_[MAX_TOOLS];
+    char row_state_text_buffer_[MAX_TOOLS][48];
+    char row_sub_buffer_[MAX_TOOLS][80];
+    char row_x_buffer_[MAX_TOOLS][16];
+    char row_y_buffer_[MAX_TOOLS][16];
+    char row_z_buffer_[MAX_TOOLS][16];
+
+    // Reference row — same shape, one instance
+    lv_subject_t station_state_;
+    lv_subject_t station_state_text_;
+    lv_subject_t station_sub_;
+    lv_subject_t station_x_;
+    lv_subject_t station_y_;
+    lv_subject_t station_z_;
+    char station_state_text_buffer_[48] = "";
+    char station_sub_buffer_[80] = "";
+    char station_x_buffer_[16] = "";
+    char station_y_buffer_[16] = "";
+    char station_z_buffer_[16] = "";
+
+    // Refusal card
+    lv_subject_t error_;
+    lv_subject_t error_title_;
+    lv_subject_t error_text_;
+    lv_subject_t error_fix_;
+    char error_title_buffer_[96] = "";
+    char error_text_buffer_[384] = "";
+    char error_fix_buffer_[128] = "";
+
+    /// Per tool: nozzle_x, nozzle_y, and the Z gap over the station. Read from
+    /// ff_tool/ff_tool_offset after every step. Valid iff values_valid_.
+    double values_[MAX_TOOLS][3] = {};
+    bool values_valid_[MAX_TOOLS] = {false, false, false, false};
+    /// station_x/y/z from ff_tool_offset; the reference pass has run when set.
     bool station_known_ = false;
-    double station_z_ = 0.0;
+    double station_pos_[3] = {};
     SubjectManager subjects_;
 
     std::deque<std::string> log_lines_;
