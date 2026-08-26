@@ -40,25 +40,18 @@
       <!-- Disable content when printer not connected or klippy not ready -->
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
 
-      <!-- A refusal is the most valuable text on the screen when it happens:
-           Klipper's message is 100-200 characters and says exactly what went
-           wrong. It gets a card at the top, not a muted status line. A failed
-           run changes nothing, so the rows below stay truthful. -->
-      <lv_obj name="tool_offset_error_card" width="100%" height="content" flex_flow="row"
-              style_pad_all="#space_sm" style_pad_gap="#space_sm" style_bg_opa="40"
-              style_bg_color="#danger" style_border_width="1" style_border_color="#danger"
-              style_radius="#border_radius_small" scrollable="false">
-        <bind_flag_if_eq subject="tool_offset_cal_error" flag="hidden" ref_value="0"/>
-        <lv_label text="#icon_triangle_exclamation" style_text_font="mdi_icons_24"
-                  style_text_color="#danger"/>
-        <lv_obj flex_grow="1" height="content" flex_flow="column" style_pad_all="0"
-                style_pad_gap="#space_xxs" style_bg_opa="0" style_border_width="0" scrollable="false">
-          <text_body width="100%" bind_text="tool_offset_cal_error_title" long_mode="wrap"/>
-          <text_small width="100%" bind_text="tool_offset_cal_error_text" long_mode="wrap"/>
-          <text_small width="100%" bind_text="tool_offset_cal_error_fix" long_mode="wrap"
-                      style_text_color="#text_muted"/>
-        </lv_obj>
-      </lv_obj>
+      <!-- A refusal goes to a modal (see show_error), not an inline card: it
+           is a one-time event with a verbatim 100-200 character message, and
+           an inline card had no way to be dismissed once read. -->
+
+      <!-- Everything above the footer scrolls as one region — labels, the
+           reference row and the tool rows together. Scrolling only the tool
+           list left too little travel to reach a row once anything else was
+           on screen. The footer stays pinned so Stop is always one tap away
+           mid-run and the two action slots never move under the finger. -->
+      <lv_obj name="tool_offset_scroll" width="100%" flex_grow="1" style_pad_all="0"
+              style_pad_gap="#space_sm" flex_flow="column" style_bg_opa="0" style_border_width="0"
+              scrollable="true">
 
       <text_small text="Reference — the fixed point every tool is measured against"
                   translation_tag="Reference — the fixed point every tool is measured against"
@@ -142,12 +135,12 @@
                   translation_tag="Tools — each nozzle's measured position"
                   style_text_color="#text_muted"/>
 
-      <!-- Rows scroll so the pinned footer stays reachable when the error card
-           is up. One row per tool slot; rows beyond the printer's tool count
-           stay hidden. -->
-      <lv_obj name="tool_offset_rows" width="100%" flex_grow="1" style_pad_all="0"
+      <!-- One row per tool slot; rows beyond the printer's tool count stay
+           hidden. Sized to content — the scrolling happens on the region
+           above, not here. -->
+      <lv_obj name="tool_offset_rows" width="100%" height="content" style_pad_all="0"
               style_pad_gap="#space_sm" flex_flow="column" style_bg_opa="0" style_border_width="0"
-              scrollable="true">
+              scrollable="false">
         <repeat count="4">
           <lv_obj name="tool_offset_row_${i}" width="100%" height="content" flex_flow="row"
                   style_flex_cross_place="center" style_pad_hor="#space_sm" style_pad_ver="#space_xxs"
@@ -228,6 +221,7 @@
             </ui_button>
           </lv_obj>
         </repeat>
+      </lv_obj>
       </lv_obj>
 
       <!-- Two fixed footer slots in every state — run action, then save — so

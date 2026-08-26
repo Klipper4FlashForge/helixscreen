@@ -115,14 +115,6 @@ void ToolOffsetCalibrationPanel::init_subjects() {
                               subjects_);
     UI_MANAGED_SUBJECT_INT(save_pending_, 0, "tool_offset_cal_save_pending", subjects_);
 
-    UI_MANAGED_SUBJECT_INT(error_, 0, "tool_offset_cal_error", subjects_);
-    UI_MANAGED_SUBJECT_STRING(error_title_, error_title_buffer_, "", "tool_offset_cal_error_title",
-                              subjects_);
-    UI_MANAGED_SUBJECT_STRING(error_text_, error_text_buffer_, "", "tool_offset_cal_error_text",
-                              subjects_);
-    UI_MANAGED_SUBJECT_STRING(error_fix_, error_fix_buffer_, "", "tool_offset_cal_error_fix",
-                              subjects_);
-
     subjects_initialized_ = true;
 
     register_xml_callbacks({
@@ -272,27 +264,19 @@ void ToolOffsetCalibrationPanel::set_station_values() {
 }
 
 void ToolOffsetCalibrationPanel::show_error(int step, const std::string& message) {
-    if (!subjects_initialized_) {
-        return;
-    }
+    // A refusal is a one-time event, so it belongs in something the user can
+    // dismiss once read. An inline card stayed on screen with nothing to
+    // close it and pushed the rows — the thing the message is about — down.
     const std::string title =
         (step == STATION_STEP)
-            ? std::string(lv_tr("Reference measurement was refused — nothing was changed"))
-            : fmt::format(fmt::runtime(lv_tr("T{} calibration was refused — nothing was changed")),
-                          step);
-    lv_subject_copy_string(&error_title_, title.c_str());
-    lv_subject_copy_string(&error_text_, message.empty() ? lv_tr("The printer gave no reason.")
-                                                         : message.c_str());
-    lv_subject_copy_string(
-        &error_fix_, lv_tr("Usually a dirty nozzle, or the build plate left on the bed."));
-    lv_subject_set_int(&error_, 1);
-}
-
-void ToolOffsetCalibrationPanel::clear_error() {
-    if (!subjects_initialized_) {
-        return;
-    }
-    lv_subject_set_int(&error_, 0);
+            ? std::string(lv_tr("Reference measurement was refused"))
+            : fmt::format(fmt::runtime(lv_tr("T{} calibration was refused")), step);
+    std::string body = message.empty() ? std::string(lv_tr("The printer gave no reason."))
+                                       : message;
+    body += "\n\n";
+    body += lv_tr("Nothing was changed. Usually a dirty nozzle, or the build plate left on "
+                  "the bed.");
+    helix::ui::modal_show_alert(title.c_str(), body.c_str(), ModalSeverity::Error, lv_tr("Close"));
 }
 
 void ToolOffsetCalibrationPanel::on_deactivate() {
@@ -327,7 +311,6 @@ void ToolOffsetCalibrationPanel::reset_ui_state() {
     lv_subject_set_int(&started_, 0);
     lv_subject_set_int(&active_, 0);
     lv_subject_set_int(&complete_, 0);
-    clear_error();
     // Rows fall back to what the printer actually has stored — a run that was
     // abandoned leaves the previous calibration valid.
     set_row_state(STATION_STEP, station_known_ ? ROW_OK : ROW_NONE);
@@ -505,8 +488,6 @@ void ToolOffsetCalibrationPanel::begin_run(std::vector<int> steps) {
     lv_subject_set_int(&started_, 1);
     lv_subject_set_int(&active_, 1);
     lv_subject_set_int(&complete_, 0);
-    // A new run supersedes the last refusal.
-    clear_error();
     // Every row in the run reads Queued from the outset, so the whole
     // sequence — not just the row being probed — is visible while it runs.
     for (int step : run_queue_) {
