@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!-- MOCK v2: running — same layout, T1 active (spinner), other buttons grayed -->
+<component>
+  <view name="calibration_tool_offset_panel"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
+        style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" scrollable="false" flex_flow="column">
+    <header_bar name="overlay_header" title="Tool Offsets" title_tag="Tool Offsets"/>
+    <lv_obj name="overlay_content"
+            width="100%" flex_grow="1" style_pad_all="#space_md" flex_flow="column" style_pad_gap="#space_sm"
+            scrollable="false">
+      <text_small name="mock_state_tag2" width="100%" text="Calibrating T1 - probing nozzle, sample 3 of 5"
+                  style_text_color="#text_muted"/>
+
+      <!-- T0 -->
+      <lv_obj width="100%" height="content" flex_flow="row" style_flex_cross_place="center"
+              style_pad_all="#space_sm" style_pad_gap="#space_sm" style_bg_opa="255"
+              style_bg_color="#elevated_bg" style_radius="#border_radius_small" scrollable="false">
+        <lv_obj width="14" height="14" style_radius="7" style_bg_opa="255" style_bg_color="0xE53935" style_border_width="0"/>
+        <lv_obj width="content" height="content" flex_flow="column" style_pad_all="0" style_pad_gap="2"
+                style_bg_opa="0" style_border_width="0" flex_grow="1" scrollable="false">
+          <text_body text="T0"/>
+          <text_small text="X +0.000   Y +0.000   Z +0.000" style_text_color="#text_muted"/>
+        </lv_obj>
+        <ui_button text="Calibrate" width="110" style_opa="90"/>
+      </lv_obj>
+
+      <!-- T1 active -->
+      <lv_obj width="100%" height="content" flex_flow="row" style_flex_cross_place="center"
+              style_pad_all="#space_sm" style_pad_gap="#space_sm" style_bg_opa="255"
+              style_bg_color="#elevated_bg" style_radius="#border_radius_small"
+              style_border_width="1" style_border_color="#primary" scrollable="false">
+        <lv_obj width="14" height="14" style_radius="7" style_bg_opa="255" style_bg_color="0x42A5F5" style_border_width="0"/>
+        <lv_obj width="content" height="content" flex_flow="column" style_pad_all="0" style_pad_gap="2"
+                style_bg_opa="0" style_border_width="0" flex_grow="1" scrollable="false">
+          <text_body text="T1"/>
+          <text_small text="X +0.412   Y -0.087   Z -0.135" style_text_color="#text_muted"/>
+        </lv_obj>
+        <spinner size="sm"/>
+      </lv_obj>
+
+      <!-- T2 -->
+      <lv_obj width="100%" height="content" flex_flow="row" style_flex_cross_place="center"
+              style_pad_all="#space_sm" style_pad_gap="#space_sm" style_bg_opa="255"
+              style_bg_color="#elevated_bg" style_radius="#border_radius_small" scrollable="false">
+        <lv_obj width="14" height="14" style_radius="7" style_bg_opa="255" style_bg_color="0x66BB6A" style_border_width="0"/>
+        <lv_obj width="content" height="content" flex_flow="column" style_pad_all="0" style_pad_gap="2"
+                style_bg_opa="0" style_border_width="0" flex_grow="1" scrollable="false">
+          <text_body text="T2"/>
+          <text_small text="X --   Y --   Z --" style_text_color="#text_muted"/>
+        </lv_obj>
+        <ui_button text="Calibrate" width="110" style_opa="90"/>
+      </lv_obj>
+
+      <lv_obj flex_grow="1" style_bg_opa="0" style_border_width="0"/>
+      <ui_button text="Stop" variant="warning" width="100%"/>
+    </lv_obj>
+  </view>
+</component>
