@@ -1,0 +1,76 @@
+<?xml version="1.0"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Tool Offset Calibration Panel -->
+<!-- Runs the printer's CALIBRATE_TOOL_OFFSETS macro and mirrors its console output. -->
+<!-- Overlay counterpart of the wizard's Tool Offsets step; replaces the paper-test -->
+<!-- Z-offset panel on tool changers whose macro owns the whole procedure. -->
+<component>
+  <view name="calibration_tool_offset_panel"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
+        style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" scrollable="false" flex_flow="column">
+    <!-- Header Bar -->
+    <header_bar name="overlay_header" title="Tool Offset Calibration" title_tag="Tool Offset Calibration"/>
+    <!-- Content Area -->
+    <lv_obj name="overlay_content"
+            width="100%" flex_grow="1" style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_md"
+            style_flex_cross_place="center" scrollable="false">
+      <!-- Disable content when printer not connected or klippy not ready -->
+      <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
+
+      <!-- Info: generic instruction plus the macro's own description -->
+      <lv_obj width="100%" style_pad_all="0" flex_flow="column" style_pad_gap="#space_sm">
+        <text_body width="100%"
+                   text="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."
+                   translation_tag="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."
+                   style_text_align="center"/>
+        <text_small width="100%" bind_text="tool_offset_cal_hint" style_text_align="center"
+                    style_text_color="#text_muted"/>
+      </lv_obj>
+
+      <!-- Status + console mirror -->
+      <text_body width="100%" bind_text="tool_offset_cal_status" style_text_align="center"/>
+
+      <spinner size="lg">
+        <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="0"/>
+      </spinner>
+
+      <text_small width="100%" bind_text="tool_offset_cal_log" style_text_align="center"
+                  style_text_color="#text_muted">
+        <bind_flag_if_eq subject="tool_offset_cal_started" flag="hidden" ref_value="0"/>
+      </text_small>
+
+      <!-- Completion help text -->
+      <text_small width="100%"
+                  text="Offsets are applied now. Save persists them across restarts (Klipper restarts)."
+                  translation_tag="Offsets are applied now. Save persists them across restarts (Klipper restarts)."
+                  style_text_align="center" style_text_color="#text_muted">
+        <bind_flag_if_eq subject="tool_offset_cal_complete" flag="hidden" ref_value="0"/>
+      </text_small>
+
+      <!-- Spacer -->
+      <lv_obj flex_grow="1"/>
+
+      <!-- Save (only after a successful run): SAVE_CONFIG persists + restarts -->
+      <ui_button name="tool_offset_save_btn"
+                 width="60%" text="Save Offsets" translation_tag="Save Offsets">
+        <event_cb trigger="clicked" callback="on_tool_offset_cal_save"/>
+        <bind_flag_if_eq subject="tool_offset_cal_complete" flag="hidden" ref_value="0"/>
+      </ui_button>
+
+      <!-- Start (hidden while the macro runs) -->
+      <ui_button name="tool_offset_start_btn"
+                 width="60%" text="Start Calibration" translation_tag="Start Calibration">
+        <event_cb trigger="clicked" callback="on_tool_offset_cal_start"/>
+        <bind_flag_if_eq subject="tool_offset_cal_started" flag="hidden" ref_value="1"/>
+      </ui_button>
+
+      <!-- Cancel (only while the macro runs): M112 + firmware_restart, the
+           macro blocks the gcode queue so nothing softer stops it -->
+      <ui_button name="tool_offset_cancel_btn"
+                 width="60%" text="Cancel" translation_tag="Cancel" variant="warning">
+        <event_cb trigger="clicked" callback="on_tool_offset_cal_cancel"/>
+        <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="0"/>
+      </ui_button>
+    </lv_obj>
+  </view>
+</component>

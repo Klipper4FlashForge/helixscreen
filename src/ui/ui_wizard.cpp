@@ -987,7 +987,8 @@ void ui_wizard_complete() {
                 "SAVE_CONFIG", []() {},
                 [](const MoonrakerError& err) {
                     spdlog::error("[Wizard] SAVE_CONFIG failed: {}", err.message);
-                });
+                },
+                0, false, nullptr, /*caller_surfaces_errors=*/false);
         }
     } else {
         LOG_ERROR_INTERNAL("[Wizard] Failed to get config instance to mark wizard complete");
