@@ -312,6 +312,43 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                     status_obj["configfile"]["settings"]["bed_mesh"] = {
                         {"probe_count", json::array({probe_count->first, probe_count->second})}};
                 }
+                // Staged-but-unsaved calibration; the tool-offset panel shows
+                // Save on this alone, not only after a run of its own.
+                status_obj["configfile"]["save_config_pending"] =
+                    self->mock_save_config_pending();
+            }
+
+            // ff_tool_offset / ff_tool <n> — the Creator 5 tool-offset state
+            // the calibration panel reads on open.
+            if (objects.contains("ff_tool_offset")) {
+                if (self->mock_station_calibrated()) {
+                    status_obj["ff_tool_offset"] = {{"station_x", 28.7918},
+                                                    {"station_y", 212.6393},
+                                                    {"station_z", MOCK_STATION_Z_VALUE}};
+                } else {
+                    status_obj["ff_tool_offset"] = {{"station_x", nullptr},
+                                                    {"station_y", nullptr},
+                                                    {"station_z", nullptr}};
+                }
+            }
+            for (int tool = 0; tool < 4; ++tool) {
+                const std::string key = "ff_tool " + std::to_string(tool);
+                if (!objects.contains(key)) {
+                    continue;
+                }
+                json entry = {{"index", tool}, {"z_adjust", 0.0}};
+                if (self->mock_tool_calibrated(tool)) {
+                    entry["calibrated"] = true;
+                    entry["nozzle_x"] = 16.5051 - tool * 0.2947;
+                    entry["nozzle_y"] = 212.7750 + tool * 0.0649;
+                    entry["nozzle_z"] = 1.4726 + tool * 0.0287;
+                } else {
+                    entry["calibrated"] = false;
+                    entry["nozzle_x"] = nullptr;
+                    entry["nozzle_y"] = nullptr;
+                    entry["nozzle_z"] = nullptr;
+                }
+                status_obj[key] = entry;
             }
 
             // toolhead (for get_machine_limits)

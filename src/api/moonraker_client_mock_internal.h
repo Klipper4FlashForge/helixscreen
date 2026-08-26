@@ -39,6 +39,11 @@ constexpr double MOCK_PROBE_MARGIN = 15.0;
 // the mock's SCREWS_TILT_CALCULATE output agrees with the config it reports.
 constexpr const char* MOCK_SCREW_THREAD = "CW-M3";
 
+// Tool-offset calibration station: a bore below the bed plane, so its
+// trigger height is negative. Matches the value the mock reports from
+// TOOL_LOCATE_SENSOR.
+constexpr double MOCK_STATION_Z_VALUE = -1.6788;
+
 // Derived mesh bounds (bed size minus probe margins)
 constexpr double MOCK_MESH_X_MIN = MOCK_BED_X_MIN + MOCK_PROBE_MARGIN;
 constexpr double MOCK_MESH_X_MAX = MOCK_BED_X_MAX - MOCK_PROBE_MARGIN;

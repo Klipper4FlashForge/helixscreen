@@ -1,8 +1,9 @@
 <?xml version="1.0"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Tool Offset Calibration Panel -->
-<!-- Per-tool list driving `CALIBRATE_TOOL_OFFSETS TOOL=<n> PLATE_REMOVED=1`, one -->
-<!-- tool at a time; between tools Stop is a clean cancel (no emergency stop). -->
+<!-- Drives the sequence one step at a time: TOOL_LOCATE_SENSOR for the -->
+<!-- reference (empty carriage), then SELECT_TOOL T=<n> + -->
+<!-- TOOL_CALIBRATE_TOOL_OFFSET per tool. Stop is a clean between-steps cancel. -->
 <!-- Design: docs/mockups/tool-offset-calibration/ -->
 <component>
   <view name="calibration_tool_offset_panel"
@@ -17,7 +18,42 @@
       <!-- Disable content when printer not connected or klippy not ready -->
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
 
-      <text_small width="100%" bind_text="tool_offset_cal_status" style_text_color="#text_muted"/>
+      <!-- Status. long_mode wrap so a multi-sentence Klipper refusal is
+           readable instead of clipped at the right edge. -->
+      <text_small name="tool_offset_status_label" width="100%" bind_text="tool_offset_cal_status"
+                  long_mode="wrap" style_text_color="#text_muted"/>
+
+      <!-- Calibration-incomplete note; empty string hides it -->
+      <text_small name="tool_offset_warning_label" width="100%" bind_text="tool_offset_cal_warning"
+                  long_mode="wrap" style_text_color="#warning">
+        <bind_flag_if_eq subject="tool_offset_cal_has_warning" flag="hidden" ref_value="0"/>
+      </text_small>
+
+      <!-- Rows scroll; the action buttons below stay reachable. Five rows
+           (reference + four tools) plus a warning line overflow 480px. -->
+      <lv_obj name="tool_offset_rows" width="100%" flex_grow="1" style_pad_all="0"
+              style_pad_gap="#space_sm" flex_flow="column" style_bg_opa="0" style_border_width="0"
+              scrollable="true">
+
+      <!-- Reference row: TOOL_LOCATE_SENSOR, runs with an EMPTY carriage -->
+      <lv_obj name="tool_offset_row_station" width="100%" height="content" flex_flow="row"
+              style_flex_cross_place="center" style_pad_all="#space_sm" style_pad_gap="#space_sm"
+              style_bg_opa="255" style_bg_color="#elevated_bg" style_radius="#border_radius_small"
+              scrollable="false">
+        <lv_obj width="content" height="content" flex_flow="column" style_pad_all="0" style_pad_gap="2"
+                style_bg_opa="0" style_border_width="0" flex_grow="1" scrollable="false">
+          <text_body text="Reference" translation_tag="Reference"/>
+          <text_small bind_text="tool_offset_cal_station_text" style_text_color="#text_muted"/>
+        </lv_obj>
+        <spinner size="sm">
+          <bind_flag_if_eq subject="tool_offset_cal_station_spin" flag="hidden" ref_value="0"/>
+        </spinner>
+        <ui_button name="tool_offset_cal_btn_station" text="Locate" translation_tag="Locate" width="110">
+          <bind_flag_if_eq subject="tool_offset_cal_station_spin" flag="hidden" ref_value="1"/>
+          <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
+          <event_cb trigger="clicked" callback="on_tool_offset_cal_locate"/>
+        </ui_button>
+      </lv_obj>
 
       <!-- One row per tool slot; rows beyond the printer's tool count stay hidden -->
       <repeat count="4">
@@ -41,21 +77,20 @@
           </ui_button>
         </lv_obj>
       </repeat>
+      </lv_obj>
 
-      <!-- Spacer -->
-      <lv_obj flex_grow="1" style_bg_opa="0" style_border_width="0"/>
-
-      <!-- Save (only after a successful run): SAVE_CONFIG persists + restarts -->
+      <!-- Save: shown whenever Klipper has calibration staged but unsaved,
+           not only after a run in this session. SAVE_CONFIG restarts Klipper. -->
       <ui_button name="tool_offset_save_btn"
                  width="100%" text="Save Offsets" translation_tag="Save Offsets">
         <event_cb trigger="clicked" callback="on_tool_offset_cal_save"/>
-        <bind_flag_if_eq subject="tool_offset_cal_complete" flag="hidden" ref_value="0"/>
+        <bind_flag_if_eq subject="tool_offset_cal_save_pending" flag="hidden" ref_value="0"/>
       </ui_button>
       <text_small width="100%"
                   text="Applied to this session already. Save persists across restarts (SAVE_CONFIG)."
                   translation_tag="Applied to this session already. Save persists across restarts (SAVE_CONFIG)."
-                  style_text_align="center" style_text_color="#text_muted">
-        <bind_flag_if_eq subject="tool_offset_cal_complete" flag="hidden" ref_value="0"/>
+                  long_mode="wrap" style_text_align="center" style_text_color="#text_muted">
+        <bind_flag_if_eq subject="tool_offset_cal_save_pending" flag="hidden" ref_value="0"/>
       </text_small>
 
       <!-- Calibrate All (hidden while a run is active) -->
@@ -65,7 +100,7 @@
         <bind_flag_if_eq subject="tool_offset_cal_active" flag="hidden" ref_value="1"/>
       </ui_button>
 
-      <!-- Stop (only while a run is active): clean stop after the current tool -->
+      <!-- Stop (only while a run is active): clean stop after the current step -->
       <ui_button name="tool_offset_cancel_btn"
                  width="100%" text="Stop" translation_tag="Stop" variant="warning">
         <event_cb trigger="clicked" callback="on_tool_offset_cal_cancel"/>

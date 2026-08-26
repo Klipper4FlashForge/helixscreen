@@ -2253,6 +2253,8 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
     // SAVE_CONFIG simulation
     if (gcode.find("SAVE_CONFIG") != std::string::npos) {
         spdlog::info("[MoonrakerClientMock] SAVE_CONFIG - simulating config save + restart");
+        // Staged calibration is now persisted; the panel's Save button hides.
+        mock_clear_save_config_pending();
         dispatch_gcode_response("ok");
         return 1;
     }
@@ -4747,24 +4749,88 @@ void MoonrakerClientMock::dispatch_manual_probe_update() {
 // G-code Response Simulation (for PRINT_START progress tracking)
 // ============================================================================
 
+bool MoonrakerClientMock::mock_station_calibrated() const {
+    std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+    return mock_station_calibrated_;
+}
+
+bool MoonrakerClientMock::mock_tool_calibrated(int tool) const {
+    if (tool < 0 || tool >= 4) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+    return mock_tool_calibrated_[tool];
+}
+
+bool MoonrakerClientMock::mock_save_config_pending() const {
+    std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+    return mock_save_config_pending_;
+}
+
+void MoonrakerClientMock::mock_clear_save_config_pending() {
+    std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+    mock_save_config_pending_ = false;
+}
+
 bool MoonrakerClientMock::simulate_tool_offset_calibration(
     const std::string& script, std::function<void(const nlohmann::json&)> success_cb) {
-    if (script.rfind("CALIBRATE_TOOL_OFFSETS", 0) != 0) {
+    // The panel sends the tool pass as one two-line script
+    // ("SELECT_TOOL T=<n>\nTOOL_CALIBRATE_TOOL_OFFSET"), so match anywhere in
+    // the script rather than only at its start. Word-boundary check keeps
+    // UNSELECT_TOOL from reading as SELECT_TOOL.
+    auto contains_command = [&script](const char* needle) {
+        for (size_t at = script.find(needle); at != std::string::npos;
+             at = script.find(needle, at + 1)) {
+            if (at == 0 || !(std::isalnum(static_cast<unsigned char>(script[at - 1])) ||
+                             script[at - 1] == '_')) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (contains_command("SELECT_TOOL")) {
+        size_t t_pos = script.find("T=");
+        if (t_pos != std::string::npos) {
+            std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+            mock_selected_tool_ = std::atoi(script.c_str() + t_pos + 2);
+        }
+        // SELECT_TOOL on its own is not an async step — fall through to the
+        // normal gcode path unless a calibration command rides along with it.
+    }
+
+    const bool is_locate = contains_command("TOOL_LOCATE_SENSOR");
+    const bool is_tool = contains_command("TOOL_CALIBRATE_TOOL_OFFSET");
+    // The all-in-one macro is not what the panel runs, but a console user
+    // might; treat it as the reference pass followed by every tool. Checked
+    // last because TOOL_CALIBRATE_TOOL_OFFSET shares most of its spelling.
+    const bool is_macro = !is_tool && contains_command("CALIBRATE_TOOL_OFFSETS");
+    if (!is_locate && !is_tool && !is_macro) {
         return false;
     }
     record_gcode_script(script);
 
-    int tool = 0;
-    size_t tool_pos = script.find("TOOL=");
-    if (tool_pos != std::string::npos) {
-        tool = std::atoi(script.c_str() + tool_pos + 5);
-    }
-    spdlog::info("[MoonrakerClientMock] CALIBRATE_TOOL_OFFSETS: simulating tool {} (~1.5s)", tool);
-
+    auto due = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
     std::lock_guard<std::mutex> lock(tool_cal_mutex_);
-    pending_tool_cals_.push_back(
-        {tool, std::chrono::steady_clock::now() + std::chrono::milliseconds(1500),
-         std::move(success_cb)});
+    if (is_locate) {
+        spdlog::info("[MoonrakerClientMock] TOOL_LOCATE_SENSOR: simulating (~1.5s)");
+        pending_tool_cals_.push_back({MOCK_STATION_STEP, due, std::move(success_cb)});
+        return true;
+    }
+    if (is_tool) {
+        spdlog::info("[MoonrakerClientMock] TOOL_CALIBRATE_TOOL_OFFSET: simulating T{} (~1.5s)",
+                     mock_selected_tool_);
+        pending_tool_cals_.push_back({mock_selected_tool_, due, std::move(success_cb)});
+        return true;
+    }
+    // Macro: reference, then all four tools, each a step apart. Only the last
+    // one carries the RPC callback, matching Klipper answering once at the end.
+    pending_tool_cals_.push_back({MOCK_STATION_STEP, due, nullptr});
+    for (int t = 0; t < 4; ++t) {
+        due += std::chrono::milliseconds(1500);
+        pending_tool_cals_.push_back(
+            {t, due, t == 3 ? std::move(success_cb) : std::function<void(const nlohmann::json&)>()});
+    }
     return true;
 }
 
@@ -4783,12 +4849,38 @@ void MoonrakerClientMock::service_pending_tool_cals() {
         }
     }
     for (auto& cal : due) {
-        // Plausible per-tool values: T0 is the reference-ish near-zero tool
-        double x = cal.tool * 0.412 + 0.003 * cal.tool;
-        double y = cal.tool * -0.087;
-        double z = cal.tool * -0.044;
-        dispatch_gcode_response(
-            fmt::format("// T{}: offset = ({:.4f}, {:.4f}, {:.4f})", cal.tool, x, y, z));
+        if (cal.tool == MOCK_STATION_STEP) {
+            {
+                std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+                mock_station_calibrated_ = true;
+                mock_save_config_pending_ = true;
+            }
+            dispatch_gcode_response(
+                fmt::format("// station = (28.7918, 212.6393, {:.4f})", MOCK_STATION_Z));
+            dispatch_gcode_response("// The SAVE_CONFIG command will update the printer config"
+                                    " file with the new station position and restart the printer.");
+        } else {
+            {
+                std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+                if (cal.tool >= 0 && cal.tool < 4) {
+                    mock_tool_calibrated_[cal.tool] = true;
+                }
+                mock_save_config_pending_ = true;
+            }
+            // Raw fit first (machine coordinates), then the report block the
+            // panel actually parses — same shape and order as the firmware.
+            const double nozzle_x = 16.5051 - cal.tool * 0.2947;
+            const double nozzle_y = 212.7750 + cal.tool * 0.0649;
+            const double nozzle_z = 1.4726 + cal.tool * 0.0287;
+            dispatch_gcode_response(fmt::format("// T{}: offset = ({:.4f}, {:.4f}, {:.4f})",
+                                                cal.tool, nozzle_x, nozzle_y, nozzle_z));
+            dispatch_gcode_response(
+                "// offsets a toolchange applies (X/Y vs T0; Z absolute:"
+                " nozzle_z - station_z + z_adjust):");
+            dispatch_gcode_response(fmt::format("//   T{}: dX {:+.4f}  dY {:+.4f}  Z {:+.4f}",
+                                                cal.tool, nozzle_x - 16.5051, nozzle_y - 212.7750,
+                                                nozzle_z - MOCK_STATION_Z));
+        }
         if (cal.success_cb) {
             cal.success_cb(nlohmann::json{{"result", "ok"}});
         }

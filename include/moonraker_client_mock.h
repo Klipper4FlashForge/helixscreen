@@ -831,26 +831,47 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     void dispatch_gcode_response(const std::string& line);
 
     /**
-     * @brief Simulate `CALIBRATE_TOOL_OFFSETS TOOL=<n> ...` asynchronously
+     * @brief Simulate the tool-offset calibration commands asynchronously
      *
-     * Schedules a per-tool completion ~1.5s out (serviced by the simulation
-     * loop): emits the macro-contract respond line
-     * `T<n>: offset = (<x>, <y>, <z>)` and then the RPC success callback, so
-     * the panel's spinner state is visible in mock mode.
+     * Handles `TOOL_LOCATE_SENSOR` (the reference pass, tool = STATION) and
+     * `TOOL_CALIBRATE_TOOL_OFFSET` (whatever `SELECT_TOOL T=<n>` last
+     * selected). Schedules a completion ~1.5s out, serviced by the simulation
+     * loop, which emits the same console block the firmware prints and then
+     * the RPC success callback — so the panel's per-step spinner and its
+     * result parsing are both exercised in mock mode.
      *
      * @return true if the script was handled here
      */
     bool simulate_tool_offset_calibration(const std::string& script,
                                           std::function<void(const nlohmann::json&)> success_cb);
 
+    /// Mock tool-offset state, also served by printer.objects.query
+    bool mock_station_calibrated() const;
+    bool mock_tool_calibrated(int tool) const;
+    bool mock_save_config_pending() const;
+    /// SAVE_CONFIG persisted everything staged so far
+    void mock_clear_save_config_pending();
+
   private:
+    /// Sentinel for the reference pass in the pending queue.
+    static constexpr int MOCK_STATION_STEP = -1;
+    /// Plausible station Z for the mock (below the bed plane).
+    static constexpr double MOCK_STATION_Z = -1.6788;
+
     struct PendingToolCal {
         int tool;
         std::chrono::steady_clock::time_point due;
         std::function<void(const nlohmann::json&)> success_cb;
     };
     std::vector<PendingToolCal> pending_tool_cals_;
-    std::mutex tool_cal_mutex_;
+    mutable std::mutex tool_cal_mutex_;
+    /// Tool SELECT_TOOL last mounted; TOOL_CALIBRATE_TOOL_OFFSET measures it.
+    int mock_selected_tool_ = 0;
+    /// Which tools have been measured this session, and the station pass.
+    bool mock_tool_calibrated_[4] = {false, false, false, false};
+    bool mock_station_calibrated_ = false;
+    /// Set once anything is staged; cleared by SAVE_CONFIG.
+    bool mock_save_config_pending_ = false;
 
     /// Fire due tool-offset completions (called from the simulation loop)
     void service_pending_tool_cals();

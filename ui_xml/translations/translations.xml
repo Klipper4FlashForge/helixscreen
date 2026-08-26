@@ -1827,6 +1827,17 @@
   <translation tag="Printer Setup: Review" de="Druckereinrichtung: Überprüfung" en="Printer Setup: Review" es="Config. Impresora: Revisión" fr="Config. imprimante : Récapitulatif" it="Config. stampante: Riepilogo" ja="プリンター設定: 確認" pt="Config. Impressora: Revisão" ru="Настройка принтера: Обзор" zh="打印机设置：检查"/>
   <translation tag="Printer Setup: Tool Offsets" en="Printer Setup: Tool Offsets"/>
   <translation tag="Tool Offsets" en="Tool Offsets"/>
+  <translation tag="Reference" en="Reference"/>
+  <translation tag="Locate" en="Locate"/>
+  <translation tag="Not calibrated" en="Not calibrated"/>
+  <translation tag="Station Z {:.3f}" en="Station Z {:.3f}"/>
+  <translation tag="Start" en="Start"/>
+  <translation tag="Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on." en="Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on."/>
+  <translation tag="Locating the station — empty carriage... {}s" en="Locating the station — empty carriage... {}s"/>
+  <translation tag="Stopping after the current step..." en="Stopping after the current step..."/>
+  <translation tag="No station reference and uncalibrated tools — printing will be refused." en="No station reference and uncalibrated tools — printing will be refused."/>
+  <translation tag="No station reference yet — printing will be refused." en="No station reference yet — printing will be refused."/>
+  <translation tag="Some tools are not calibrated — printing with them will be refused." en="Some tools are not calibrated — printing with them will be refused."/>
   <translation tag="Save Offsets" en="Save Offsets"/>
   <translation tag="Measure each tool's nozzle position" en="Measure each tool's nozzle position"/>
   <translation tag="Applied to this session already. Save persists across restarts (SAVE_CONFIG)." en="Applied to this session already. Save persists across restarts (SAVE_CONFIG)."/>
