@@ -29,13 +29,19 @@ void MoonrakerJobAPI::start_print(const std::string& filename, SuccessCallback o
 
     spdlog::debug("[Moonraker API] Starting print: {}", filename);
 
+    // Moonraker only confirms once Klipper acknowledges SDCARD_PRINT_FILE, and
+    // a firmware whose print-start macro heats synchronously (e.g. the Creator 5
+    // fork's FF_BEFORE_PRINT_START) holds that ack well past the 60s default —
+    // the print then starts fine while HelixScreen reports a timeout. 10 min
+    // covers a cold heat-up; a genuinely lost request still surfaces.
+    constexpr uint32_t PRINT_START_TIMEOUT_MS = 600000;
     client_.send_jsonrpc(
         "printer.print.start", params,
         [on_success](json) {
             spdlog::debug("[Moonraker API] Print started successfully");
             on_success();
         },
-        on_error);
+        on_error, PRINT_START_TIMEOUT_MS);
 }
 
 void MoonrakerJobAPI::pause_print(SuccessCallback on_success, ErrorCallback on_error) {
