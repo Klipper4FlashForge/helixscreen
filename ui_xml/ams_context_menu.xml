@@ -38,8 +38,18 @@
           <lv_obj name="col_heading"
                   width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="column"
                   scrollable="false" clickable="false">
+            <!-- Two headings, one binding: a backend that splits the axes (a tool
+                 changer) labels this column "Tool", every other backend keeps
+                 "Filament". Bound rather than rewritten from C++ so the label
+                 text stays in XML. -->
             <text_small name="col_filament_label"
-                        text="Filament" translation_tag="Filament" style_text_color="#text_muted"/>
+                        text="Filament" translation_tag="Filament" style_text_color="#text_muted">
+              <bind_flag_if_eq subject="ams_slot_material_ops" flag="hidden" ref_value="1"/>
+            </text_small>
+            <text_small name="col_tool_label"
+                        text="Tool" translation_tag="Tool" style_text_color="#text_muted">
+              <bind_flag_if_eq subject="ams_slot_material_ops" flag="hidden" ref_value="0"/>
+            </text_small>
             <lv_obj width="100%"
                     height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0" scrollable="false"
                     clickable="false"/>
@@ -77,6 +87,53 @@
                      variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
             <event_cb trigger="clicked" callback="ams_context_gate_check_cb"/>
           </ui_button>
+        </lv_obj>
+        <!-- Material actions for the mounted tool. Shown only when the backend
+             says the slot action and the material in the extruder are separate
+             axes (AmsBackend::has_separate_material_ops() — tool changers).
+             These do NOT route to the backend: its load_filament() means "mount"
+             there. They go to the standard LOAD_FILAMENT / UNLOAD_FILAMENT /
+             purge macro tier, scoped to the tool on the carriage. -->
+        <lv_obj name="col_material"
+                width="content" height="content" style_pad_all="0" style_pad_gap="#space_md" flex_flow="column"
+                style_flex_main_place="start" scrollable="false" hidden="true">
+          <bind_flag_if_eq subject="ams_slot_material_ops" flag="hidden" ref_value="0"/>
+          <!-- DUPLICATE_NAME_OK: ContextMenu searches per column, lv_obj_find_by_name(col, ...) — the base class iterates arbitrary columns and cannot know per-column names -->
+          <lv_obj name="col_heading"
+                  width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="column"
+                  scrollable="false" clickable="false">
+            <text_small name="col_material_label"
+                        text="Filament" translation_tag="Filament" style_text_color="#text_muted"/>
+            <lv_obj width="100%"
+                    height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0" scrollable="false"
+                    clickable="false"/>
+          </lv_obj>
+          <ui_button name="btn_material_load"
+                     height="#button_height_sm" icon="z_closer" text="Load" translation_tag="Load" variant="ghost"
+                     clickable="true" style_flex_main_place="start">
+            <bind_state_if_eq subject="ams_slot_tool_mounted" state="disabled" ref_value="0"/>
+            <event_cb trigger="clicked" callback="ams_context_material_load_cb"/>
+          </ui_button>
+          <ui_button name="btn_material_unload"
+                     height="#button_height_sm" icon="z_farther" text="Unload" translation_tag="Unload"
+                     variant="ghost" clickable="true" style_flex_main_place="start">
+            <bind_state_if_eq subject="ams_slot_tool_mounted" state="disabled" ref_value="0"/>
+            <event_cb trigger="clicked" callback="ams_context_material_unload_cb"/>
+          </ui_button>
+          <ui_button name="btn_material_purge"
+                     height="#button_height_sm" icon="trash_can_outline" text="Purge" translation_tag="Purge"
+                     variant="ghost" clickable="true" style_flex_main_place="start">
+            <bind_state_if_eq subject="ams_slot_tool_mounted" state="disabled" ref_value="0"/>
+            <event_cb trigger="clicked" callback="ams_context_material_purge_cb"/>
+          </ui_button>
+          <!-- Why the three above are greyed: the macros act on the ACTIVE
+               extruder, so the tool has to be on the carriage first. Revealed
+               from C++ rather than left as a dead button with no explanation. -->
+          <text_small name="material_mount_hint"
+                      width="100%" long_mode="wrap" text="Mount this tool first"
+                      translation_tag="Mount this tool first" style_text_color="#text_muted" hidden="true">
+            <bind_flag_if_eq subject="ams_slot_tool_mounted" flag="hidden" ref_value="1"/>
+          </text_small>
         </lv_obj>
         <!-- Spool identity / Spoolman actions -->
         <lv_obj name="col_spool"

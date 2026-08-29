@@ -71,6 +71,20 @@ class AmsBackendMock : public AmsBackend {
     [[nodiscard]] int get_current_slot() const override;
     [[nodiscard]] bool is_filament_loaded() const override;
 
+    // In tool-changer mode the mock stands in for AmsBackendToolChanger, so it
+    // has to answer the vocabulary questions the same way — otherwise the
+    // simulator shows lane wording for a machine that mounts toolheads.
+    [[nodiscard]] SlotActionVocabulary slot_action_vocabulary() const override {
+        if (tool_changer_mode_) {
+            return {"Mount", "toolbox_outline", "Park", "eject", "Tool"};
+        }
+        return {};
+    }
+
+    [[nodiscard]] bool has_separate_material_ops() const override {
+        return tool_changer_mode_;
+    }
+
     // Capability flag (overridable in tests; production mock returns default false)
     [[nodiscard]] bool tracks_consumption_natively() const override {
         return tracks_consumption_natively_;

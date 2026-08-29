@@ -27,6 +27,8 @@ bool AmsContextMenu::callbacks_registered_ = false;
 bool AmsContextMenu::subjects_initialized_ = false;
 lv_subject_t AmsContextMenu::slot_is_loaded_subject_;
 lv_subject_t AmsContextMenu::slot_can_load_subject_;
+lv_subject_t AmsContextMenu::slot_material_ops_subject_;
+lv_subject_t AmsContextMenu::slot_tool_mounted_subject_;
 
 // ============================================================================
 // Construction / Destruction
@@ -41,6 +43,11 @@ void AmsContextMenu::init_subjects() {
 
     lv_xml_register_subject(nullptr, "ams_slot_is_loaded", &slot_is_loaded_subject_);
     lv_xml_register_subject(nullptr, "ams_slot_can_load", &slot_can_load_subject_);
+
+    lv_subject_init_int(&slot_material_ops_subject_, 0);
+    lv_subject_init_int(&slot_tool_mounted_subject_, 0);
+    lv_xml_register_subject(nullptr, "ams_slot_material_ops", &slot_material_ops_subject_);
+    lv_xml_register_subject(nullptr, "ams_slot_tool_mounted", &slot_tool_mounted_subject_);
 
     subjects_initialized_ = true;
 }
@@ -336,6 +343,28 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
                       print_blocks_op);
     }
 
+    // Re-gate the slot action on MOUNT state where that is what it means.
+    //
+    // Everything above answers "is there filament here, and is it at the head" —
+    // the right question for a lane, and the wrong one for a toolhead. Every
+    // tool on a tool changer carries its own filament permanently, so the
+    // filament-presence rules read every slot as loaded: Park came out enabled
+    // on all four and Mount greyed on all four, including the three tools that
+    // were not on the carriage. Which tool is mounted is the only term that
+    // matters for this axis.
+    if (backend_ && backend_->has_separate_material_ops()) {
+        const AmsSystemInfo tool_info = backend_->get_system_info();
+        const bool mounted = tool_info.current_slot == slot_index;
+        const bool ops_allowed = !system_busy && !print_blocks_op;
+        // Mount an unmounted tool; park the one that is on the carriage. Mirrors
+        // plan_load()'s FilamentRefusal::AlreadyMounted, which already refuses a
+        // SELECT_TOOL on the mounted tool as a firmware no-op.
+        lv_subject_set_int(&slot_can_load_subject_, (!mounted && ops_allowed) ? 1 : 0);
+        lv_subject_set_int(&slot_is_loaded_subject_, (mounted && ops_allowed) ? 1 : 0);
+        spdlog::debug("[AmsContextMenu] Tool column for slot {}: mounted={}, ops_allowed={}",
+                      slot_index, mounted, ops_allowed);
+    }
+
     // Show Select Gate button if backend supports it (e.g. Happy Hare)
     if (backend_ && backend_->supports_gate_select()) {
         lv_obj_t* btn_gate_select = lv_obj_find_by_name(menu_obj, "btn_gate_select");
@@ -394,8 +423,91 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
 #endif
     }
 
+    // Let the backend name its own verbs. On a tool changer the slot action
+    // mounts a toolhead and moves no filament, so "Load"/"Unload" described the
+    // wrong axis entirely — same seam decide_unload_mode() uses above, applied
+    // to the axis rather than the mode. Skipped when decide_unload_mode() has
+    // already claimed the Unload button for Recover/Eject.
+    if (backend_) {
+        const auto vocab = backend_->slot_action_vocabulary();
+        lv_obj_t* btn_load_v = lv_obj_find_by_name(menu_obj, "btn_load");
+        if (btn_load_v) {
+            ui_button_set_text(btn_load_v, lv_tr(vocab.load_text));
+            ui_button_set_icon(btn_load_v, vocab.load_icon);
+        }
+        if (btn_unload && unload_mode_ != UnloadMode::Eject &&
+            unload_mode_ != UnloadMode::RecoverPosition && unload_mode_ != UnloadMode::ForceEject) {
+            ui_button_set_text(btn_unload, lv_tr(vocab.unload_text));
+            ui_button_set_icon(btn_unload, vocab.unload_icon);
+        }
+    }
+
+    configure_material_column(menu_obj, slot_index, system_busy, print_blocks_op);
+
     // Configure dropdowns based on backend capabilities
     configure_dropdowns();
+}
+
+// ============================================================================
+// Material ops — the second axis, for backends where a slot action does not
+// move filament (tool changers). These never reach the AMS backend: its
+// load_filament() means "mount" there. They run the standard macro tier
+// against the tool currently on the carriage.
+// ============================================================================
+
+void AmsContextMenu::configure_material_column(lv_obj_t* menu_obj, int slot_index,
+                                               bool system_busy, bool print_blocks_op) {
+    (void)menu_obj;
+    if (!backend_ || !backend_->has_separate_material_ops()) {
+        // Stays hidden, and tidy_column_groups() drops the empty column. The
+        // subject is static and shared across menus, so clear it rather than
+        // inheriting whatever the last slot on a different backend left behind.
+        lv_subject_set_int(&slot_material_ops_subject_, 0);
+        lv_subject_set_int(&slot_tool_mounted_subject_, 0);
+        return;
+    }
+
+    // The macros act on the ACTIVE extruder, so this tool has to be mounted
+    // first. Deliberately NOT auto-chaining a mount: allows_implicit_chaining()
+    // is the project's rule for that, and an unasked-for toolhead swap is
+    // exactly the harm it exists to prevent (#1229). Say what is missing
+    // instead.
+    const AmsSystemInfo info = backend_->get_system_info();
+    const bool mounted = info.current_slot == slot_index;
+    const bool enabled = mounted && !system_busy && !print_blocks_op;
+
+    // Column visibility, the three buttons' disabled state, the mount hint and
+    // the two group headings are all bound to these in ams_context_menu.xml.
+    lv_subject_set_int(&slot_material_ops_subject_, 1);
+    lv_subject_set_int(&slot_tool_mounted_subject_, enabled ? 1 : 0);
+
+    spdlog::debug("[AmsContextMenu] Material column for slot {}: mounted={}, enabled={}",
+                  slot_index, mounted, enabled);
+}
+
+void AmsContextMenu::handle_material_op(StandardMacroSlot slot, const char* label) {
+    IMoonrakerAPI* api = get_moonraker_api();
+    if (!api) {
+        NOTIFY_WARNING(lv_tr("Printer not connected"));
+        return;
+    }
+
+    const auto& info = StandardMacros::instance().get(slot);
+    if (info.is_empty()) {
+        spdlog::warn("[AmsContextMenu] No {} macro configured", label);
+        NOTIFY_WARNING(lv_tr("No macro configured — set one in Settings"));
+        return;
+    }
+
+    spdlog::info("[AmsContextMenu] Material {} for mounted tool via macro '{}'", label,
+                 info.get_macro());
+    hide();
+    StandardMacros::instance().execute(
+        slot, api, {}, [label]() { spdlog::info("[AmsContextMenu] {} macro started", label); },
+        [](const MoonrakerError& err) {
+            spdlog::error("[AmsContextMenu] Material macro failed: {}", err.message);
+            NOTIFY_ERROR(lv_tr("Filament operation failed: {}"), err.user_message());
+        });
 }
 
 // ============================================================================
@@ -556,6 +668,9 @@ void AmsContextMenu::register_callbacks() {
     register_xml_callbacks({
         {"ams_context_load_cb", on_load_cb},
         {"ams_context_unload_cb", on_unload_cb},
+        {"ams_context_material_load_cb", on_material_load_cb},
+        {"ams_context_material_unload_cb", on_material_unload_cb},
+        {"ams_context_material_purge_cb", on_material_purge_cb},
         {"ams_context_gate_select_cb", on_gate_select_cb},
         {"ams_context_gate_check_cb", on_gate_check_cb},
         {"ams_context_edit_cb", on_edit_cb},
@@ -593,6 +708,24 @@ void AmsContextMenu::on_unload_cb(lv_event_t* /*e*/) {
     auto* self = get_active_instance();
     if (self) {
         self->handle_unload();
+    }
+}
+
+void AmsContextMenu::on_material_load_cb(lv_event_t* /*e*/) {
+    if (auto* self = get_active_instance()) {
+        self->handle_material_op(StandardMacroSlot::LoadFilament, "Load");
+    }
+}
+
+void AmsContextMenu::on_material_unload_cb(lv_event_t* /*e*/) {
+    if (auto* self = get_active_instance()) {
+        self->handle_material_op(StandardMacroSlot::UnloadFilament, "Unload");
+    }
+}
+
+void AmsContextMenu::on_material_purge_cb(lv_event_t* /*e*/) {
+    if (auto* self = get_active_instance()) {
+        self->handle_material_op(StandardMacroSlot::Purge, "Purge");
     }
 }
 

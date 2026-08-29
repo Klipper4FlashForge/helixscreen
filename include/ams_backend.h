@@ -1171,6 +1171,44 @@ class AmsBackend {
     }
 
     /**
+     * @brief How this backend names the two slot actions.
+     *
+     * The AMS surfaces default to "Load"/"Unload" because on a lane-fed system
+     * the two axes genuinely collapse: there is one extruder, so picking a lane
+     * IS loading material. A tool changer is the case where they do not — its
+     * slot action mounts a whole toolhead, and the material inside that toolhead
+     * is a separate question (see has_separate_material_ops()). Labelling both
+     * "Load" made a mount look like a purge.
+     *
+     * Same seam AmsContextMenu::decide_unload_mode() already uses to relabel
+     * Unload as "Recover"/"Eject": the vocabulary lives with the backend that
+     * owns the verb, so generic UI asks rather than branching on AmsType.
+     */
+    struct SlotActionVocabulary {
+        const char* load_text = "Load";
+        const char* load_icon = "z_closer";
+        const char* unload_text = "Unload";
+        const char* unload_icon = "z_farther";
+        const char* group_heading = "Filament";
+    };
+
+    [[nodiscard]] virtual SlotActionVocabulary slot_action_vocabulary() const {
+        return {};
+    }
+
+    /**
+     * @brief Whether material ops are a separate axis from the slot action.
+     *
+     * True only where selecting a slot does NOT put filament in the nozzle, so
+     * the UI must offer load / unload / purge for the mounted tool as their own
+     * actions. These do not route to the backend — load_filament() already means
+     * "mount" there — they route to the standard macro tier.
+     */
+    [[nodiscard]] virtual bool has_separate_material_ops() const {
+        return false;
+    }
+
+    /**
      * @brief Whether the backend can position the selector at a gate without loading.
      * @return true if select_gate() is implemented (selector-based systems only).
      */

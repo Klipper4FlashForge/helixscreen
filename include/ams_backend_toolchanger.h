@@ -85,6 +85,19 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     [[nodiscard]] bool should_hide_slot_tool_badge() const override {
         return true;
     }
+    // A slot action here mounts or parks a whole toolhead — it moves no
+    // filament. "Load"/"Unload" described the wrong axis and left users looking
+    // for a purge button that did not exist.
+    [[nodiscard]] SlotActionVocabulary slot_action_vocabulary() const override {
+        return {"Mount", "toolbox_outline", "Park", "eject", "Tool"};
+    }
+
+    // SELECT_TOOL puts a toolhead on the carriage; what is in that toolhead's
+    // extruder is a separate question with its own load / unload / purge.
+    [[nodiscard]] bool has_separate_material_ops() const override {
+        return true;
+    }
+
     // Marker for tool-changer expected-hardware recording during wizard setup.
     [[nodiscard]] const char* get_klipper_object_name() const override {
         return "toolchanger";
