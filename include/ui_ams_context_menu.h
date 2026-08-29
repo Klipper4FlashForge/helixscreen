@@ -6,6 +6,7 @@
 #include "ui_context_menu.h"
 
 #include "ams_types.h"
+#include "standard_macros.h"
 
 #include <functional>
 #include <lvgl.h>
@@ -186,6 +187,12 @@ class AmsContextMenu : public ContextMenu {
     static lv_subject_t slot_unload_hint_subject_;
     static lv_subject_t slot_unload_hint_visible_subject_;
     static char slot_unload_hint_buf_[128];
+    /// 1 = this backend splits the slot action from material ops (tool changers).
+    /// Drives the material column's visibility and the Tool/Filament headings.
+    static lv_subject_t slot_material_ops_subject_;
+    /// 1 = the open slot's tool is on the carriage. Enables the material ops and
+    /// hides the "Mount this tool first" hint.
+    static lv_subject_t slot_tool_mounted_subject_;
     static bool subjects_initialized_;
 
     // === Backend reference for dropdown operations ===
@@ -219,6 +226,7 @@ class AmsContextMenu : public ContextMenu {
     // === Event Handlers ===
     void handle_load();
     void handle_unload();
+    void handle_material_op(StandardMacroSlot slot, const char* label);
     void handle_gate_select();
     void handle_gate_check();
     void handle_edit();
@@ -347,6 +355,14 @@ class AmsContextMenu : public ContextMenu {
                                          bool recovery_attributed, bool supports_eject,
                                          bool slot_has_filament, bool supports_force_eject,
                                          bool slot_empty);
+
+    static void on_material_load_cb(lv_event_t* e);
+    static void on_material_unload_cb(lv_event_t* e);
+    static void on_material_purge_cb(lv_event_t* e);
+
+    /// Configure the material-ops column (tool changers). No-op elsewhere.
+    void configure_material_column(lv_obj_t* menu_obj, int slot_index, bool system_busy,
+                                   bool print_blocks_op);
 
     // Pure: whether the Load button is offered for the open slot.
     //
