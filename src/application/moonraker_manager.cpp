@@ -351,7 +351,7 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
 #ifdef HELIX_ENABLE_MOCKS
     if (runtime_config.should_mock_moonraker()) {
         double speedup = runtime_config.sim_speedup;
-        // HELIX_MOCK_PRINTER=voron_24|voron_trident|k1|ad5m|generic_corexy|
+        // HELIX_MOCK_PRINTER=voron_24|voron_trident|k1|ad5m|creator5|generic_corexy|
         // generic_bedslinger|multi_extruder — defaults to Voron 2.4. K2 and
         // CC1 don't have dedicated mock types yet; they fall through to the
         // default with a warning.
@@ -372,6 +372,9 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
             } else if (t == "ad5m") {
                 type = MoonrakerClientMock::PrinterType::FLASHFORGE_AD5M;
                 type_name = "Flashforge AD5M";
+            } else if (t == "creator5") {
+                type = MoonrakerClientMock::PrinterType::FLASHFORGE_CREATOR5;
+                type_name = "FlashForge Creator 5 Pro";
             } else if (t == "generic_corexy") {
                 type = MoonrakerClientMock::PrinterType::GENERIC_COREXY;
                 type_name = "Generic CoreXY";
@@ -381,7 +384,8 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
             } else if (t != "voron_24") {
                 spdlog::warn("[MoonrakerManager] HELIX_MOCK_PRINTER='{}' not recognised "
                              "— falling back to Voron 2.4. Valid: voron_24, voron_trident, "
-                             "k1, ad5m, generic_corexy, generic_bedslinger, multi_extruder.",
+                             "k1, ad5m, creator5, generic_corexy, generic_bedslinger, "
+                             "multi_extruder.",
                              t);
             }
         }
