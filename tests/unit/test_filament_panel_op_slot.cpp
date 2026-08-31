@@ -172,16 +172,14 @@ struct OpSlotHarness {
         // Flush deferred observer callbacks (active-tool sync, gating recompute).
         fx.process_lvgl(30);
 
-        // Ensure the dropdown carries every tool so a T3 selection is reachable
-        // (setup() already calls this, but the topology publish may have raced).
-        TA::populate_extruder_dropdown(*panel);
+        // Re-seed the selection now the topology has published, so a T3
+        // selection is reachable (setup() already seeded, but it may have raced).
+        TA::seed_selected_tool(*panel);
     }
 
     void select_tool(int idx) {
-        lv_obj_t* dd = TA::extruder_dropdown(*panel);
-        REQUIRE(dd != nullptr);
-        REQUIRE(lv_dropdown_get_option_count(dd) >= static_cast<uint32_t>(idx + 1));
-        lv_dropdown_set_selected(dd, static_cast<uint32_t>(idx));
+        REQUIRE(idx < helix::ToolState::instance().tool_count());
+        TA::set_selected_tool(*panel, idx);
     }
 
     ~OpSlotHarness() {
@@ -333,7 +331,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     h.mock->topology_ = PathTopology::HUB;
     h.select_tool(1); // != active T0
 
-    TA::handle_extruder_changed(*h.panel);
+    TA::handle_selected_tool_changed(*h.panel);
 
     CHECK(h.mock->change_tool_calls == 0); // no cut/unload/load swap
 }
@@ -345,7 +343,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     h.mock->topology_ = PathTopology::LINEAR;
     h.select_tool(2); // != active T0
 
-    TA::handle_extruder_changed(*h.panel);
+    TA::handle_selected_tool_changed(*h.panel);
 
     CHECK(h.mock->change_tool_calls == 0);
 }
@@ -357,7 +355,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     h.mock->topology_ = PathTopology::PARALLEL;
     h.select_tool(1); // != active T0
 
-    TA::handle_extruder_changed(*h.panel);
+    TA::handle_selected_tool_changed(*h.panel);
 
     REQUIRE(h.mock->change_tool_calls == 1);
     CHECK(h.mock->last_change_tool == 1);
@@ -639,7 +637,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
     h.select_tool(3); // T3 == the loaded lane
-    TA::handle_extruder_changed(*h.panel);
+    TA::handle_selected_tool_changed(*h.panel);
     process_lvgl(10);
 
     // Baseline, no print: slot 3 is loaded, so Load is greyed and Unload is live.
@@ -709,7 +707,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     SECTION("a lane the backend reports EMPTY cannot be loaded from") {
         h.mock->slot_status_ = SlotStatus::EMPTY;
         h.select_tool(0); // an unloaded lane
-        TA::handle_extruder_changed(*h.panel);
+        TA::handle_selected_tool_changed(*h.panel);
         process_lvgl(10);
         CHECK(read("filament_load_disabled") == 1);
     }
@@ -717,7 +715,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     SECTION("a lane with filament stays loadable") {
         h.mock->slot_status_ = SlotStatus::AVAILABLE;
         h.select_tool(0);
-        TA::handle_extruder_changed(*h.panel);
+        TA::handle_selected_tool_changed(*h.panel);
         process_lvgl(10);
         CHECK(read("filament_load_disabled") == 0);
     }
@@ -725,7 +723,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     SECTION("UNKNOWN presence does not grey Load") {
         h.mock->slot_status_ = SlotStatus::UNKNOWN;
         h.select_tool(0);
-        TA::handle_extruder_changed(*h.panel);
+        TA::handle_selected_tool_changed(*h.panel);
         process_lvgl(10);
         CHECK(read("filament_load_disabled") == 0);
     }
@@ -747,7 +745,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "Filament panel greys Load/Unload while the 
 
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
     h.select_tool(3);
-    TA::handle_extruder_changed(*h.panel);
+    TA::handle_selected_tool_changed(*h.panel);
     process_lvgl(10);
     REQUIRE(read("filament_unload_disabled") == 0);
 
