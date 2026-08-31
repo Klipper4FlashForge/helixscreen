@@ -143,15 +143,13 @@ struct TimeoutHarness {
         panel->setup(root, fx.test_screen());
         fx.process_lvgl(30);
 
-        TA::populate_extruder_dropdown(*panel);
+        TA::seed_selected_tool(*panel);
         select_tool(0);
     }
 
     void select_tool(int idx) {
-        lv_obj_t* dd = TA::extruder_dropdown(*panel);
-        REQUIRE(dd != nullptr);
-        REQUIRE(lv_dropdown_get_option_count(dd) >= static_cast<uint32_t>(idx + 1));
-        lv_dropdown_set_selected(dd, static_cast<uint32_t>(idx));
+        REQUIRE(idx < helix::ToolState::instance().tool_count());
+        TA::set_selected_tool(*panel, idx);
     }
 
     /// Fire the guard's armed timer now instead of at the 120s budget.

@@ -137,7 +137,6 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
         // Cooldown button
         {"on_filament_cooldown", on_cooldown_clicked},
         // Extruder selector dropdown
-        {"on_extruder_dropdown_changed", on_extruder_dropdown_changed},
         // External spool edit
         {"on_external_spool_edit", on_external_spool_edit_clicked},
     });
@@ -187,8 +186,11 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
         helix::ToolState::instance().get_active_tool_subject(), this,
         [](FilamentPanel* self, int tool_idx) {
             self->update_nozzle_label();
-            if (self->extruder_dropdown_ && tool_idx >= 0) {
-                lv_dropdown_set_selected(self->extruder_dropdown_, static_cast<uint32_t>(tool_idx));
+            // Follow the machine: a tool change the printer made itself moves the
+            // selection with it, so the panel never acts on a tool that is no
+            // longer at the plate.
+            if (tool_idx >= 0) {
+                lv_subject_set_int(&self->selected_tool_subject_, tool_idx);
             }
             if (self->temp_control_panel_) {
                 const auto* tool = helix::ToolState::instance().active_tool();
@@ -314,6 +316,23 @@ void FilamentPanel::init_subjects() {
         // Cooldown button visibility (1 when nozzle or bed target > 0)
         UI_MANAGED_SUBJECT_INT(nozzle_heating_subject_, 0, "filament_nozzle_heating", subjects_);
 
+        // Tool the panel's verbs act on. Seeded to the active tool in setup();
+        // the tool row writes it and highlights from it.
+        UI_MANAGED_SUBJECT_INT(selected_tool_subject_, 0, "filament_selected_tool", subjects_);
+        UI_MANAGED_SUBJECT_INT(has_tool_subject_, 1, "filament_has_tool", subjects_);
+
+        // Heat-block state (0 cold, 1 heating, 2 at temp, 3 changing, 4 refused).
+        UI_MANAGED_SUBJECT_INT(heat_state_subject_, 0, "filament_heat_state", subjects_);
+
+        // Verb emphasis (0 inert, 1 the one thing to do, 2 consequential).
+        // Cold with nothing loaded, Load is the only lit verb on the panel.
+        UI_MANAGED_SUBJECT_INT(load_emphasis_subject_, 1, "filament_load_emphasis", subjects_);
+        UI_MANAGED_SUBJECT_INT(unload_emphasis_subject_, 0, "filament_unload_emphasis", subjects_);
+        UI_MANAGED_SUBJECT_INT(purge_emphasis_subject_, 0, "filament_purge_emphasis", subjects_);
+        std::strncpy(load_label_buf_, lv_tr("Load"), sizeof(load_label_buf_) - 1);
+        UI_MANAGED_SUBJECT_STRING(load_label_subject_, load_label_buf_, load_label_buf_,
+                                  "filament_load_label", subjects_);
+
         // Extrude length button active states (boolean: 0=inactive, 1=active)
         // Using separate subjects because bind_style doesn't work well with multiple ref_values
         UI_MANAGED_SUBJECT_INT(extrude_length_5mm_active_subject_, 0,
@@ -417,10 +436,6 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     // Find spool card widgets (serves both Multi-Filament and External Spool modes)
     spool_card_ = lv_obj_find_by_name(panel_, "spool_card");
     spool_card_header_row_ = lv_obj_find_by_name(panel_, "spool_card_header_row");
-    extruder_selector_group_ = lv_obj_find_by_name(panel_, "extruder_selector_group");
-    extruder_dropdown_ = lv_obj_find_by_name(panel_, "extruder_dropdown");
-    btn_manage_slots_ = lv_obj_find_by_name(panel_, "btn_manage_slots");
-    ams_manage_row_ = lv_obj_find_by_name(panel_, "ams_manage_row");
 
     // Find external spool row widgets
     external_spool_row_ = lv_obj_find_by_name(panel_, "external_spool_row");
@@ -440,21 +455,28 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     // Setup spool preset button (show if active material doesn't match standard presets)
     update_spool_preset();
 
-    // Populate extruder dropdown and set card visibility
-    populate_extruder_dropdown();
+    // Point the tool row at the active tool, then set card visibility.
+    seed_selected_tool();
     update_multi_filament_card_visibility();
 
     // Seed Load/Unload/Purge gating from current live load state (Task 5).
     update_filament_op_buttons();
 
-    // Rebuild dropdown if tool list changes
+    // A rebuilt tool list can leave the selection pointing past the end of the
+    // row, so re-seed it before anything reads it again.
     tools_version_observer_ = observe_int_sync<FilamentPanel>(
         helix::ToolState::instance().get_tools_version_subject(), this,
         [](FilamentPanel* self, int) {
-            self->populate_extruder_dropdown();
+            self->seed_selected_tool();
             self->update_multi_filament_card_visibility();
         },
         helix::ToolState::instance().get_subjects_lifetime());
+
+    // The tool row is the only writer of the selection; everything the panel
+    // does with a tool hangs off this one observer.
+    selected_tool_observer_ = observe_int_sync<FilamentPanel>(
+        &selected_tool_subject_, this,
+        [](FilamentPanel* self, int) { self->handle_selected_tool_changed(); });
 
     // Subscribe to AMS type to update card row visibility. Graph vs spool
     // sizing is owned by apply_left_column_sizing() (called from
@@ -757,6 +779,11 @@ void FilamentPanel::update_all_temps() {
 
     // Check if pending preheat target has been reached
     check_pending_preheat();
+
+    // The heat block's appearance is a function of the temperatures that just
+    // moved and of any preheat still pending, so it settles after both.
+    update_heat_state();
+    update_verb_emphasis();
 }
 
 // ============================================================================
@@ -1023,14 +1050,24 @@ void FilamentPanel::update_chamber_temp_display() {
 }
 
 void FilamentPanel::update_left_card_temps() {
-    // Update current temps
-    std::snprintf(nozzle_current_buf_, sizeof(nozzle_current_buf_), "%d°C", nozzle_current_);
+    // The nozzle reading belongs to a tool. With every head docked there is no
+    // nozzle for it to be about, so it says so rather than reporting the last
+    // tool's temperature as if it were still the subject. Bed and chamber are
+    // machine-wide and keep reading normally.
+    const bool has_tool = selected_tool_index() >= 0;
+
+    if (has_tool) {
+        std::snprintf(nozzle_current_buf_, sizeof(nozzle_current_buf_), "%d°C", nozzle_current_);
+        format_target_or_off(nozzle_target_, nozzle_target_buf_, sizeof(nozzle_target_buf_));
+    } else {
+        std::snprintf(nozzle_current_buf_, sizeof(nozzle_current_buf_), "—");
+        std::snprintf(nozzle_target_buf_, sizeof(nozzle_target_buf_), "%s", lv_tr("no tool"));
+    }
     std::snprintf(bed_current_buf_, sizeof(bed_current_buf_), "%d°C", bed_current_);
     lv_subject_copy_string(&nozzle_current_subject_, nozzle_current_buf_);
     lv_subject_copy_string(&bed_current_subject_, bed_current_buf_);
 
     // Update target temps using centralized formatting with em dash for heater-off state
-    format_target_or_off(nozzle_target_, nozzle_target_buf_, sizeof(nozzle_target_buf_));
     format_target_or_off(bed_target_, bed_target_buf_, sizeof(bed_target_buf_));
     lv_subject_copy_string(&nozzle_target_subject_, nozzle_target_buf_);
     lv_subject_copy_string(&bed_target_subject_, bed_target_buf_);
@@ -1038,7 +1075,9 @@ void FilamentPanel::update_left_card_temps() {
     // Update temperature label colors using 4-state heating logic
     // (matches temp_display widget: gray=off, red=heating, green=at-temp, blue=cooling)
     if (nozzle_current_label_) {
-        lv_color_t nozzle_color = get_heating_state_color(nozzle_current_, nozzle_target_);
+        lv_color_t nozzle_color = has_tool
+                                      ? get_heating_state_color(nozzle_current_, nozzle_target_)
+                                      : theme_manager_get_color("text_subtle");
         lv_obj_set_style_text_color(nozzle_current_label_, nozzle_color, LV_PART_MAIN);
     }
     if (bed_current_label_) {
@@ -1619,19 +1658,16 @@ void FilamentPanel::update_multi_filament_card_visibility() {
     bool has_ams = (lv_subject_get_int(AmsState::instance().get_ams_type_subject()) != 0);
     bool multi_tool = helix::ToolState::instance().is_multi_tool();
 
-    // Card is ALWAYS visible
-    lv_obj_remove_flag(spool_card_, LV_OBJ_FLAG_HIDDEN);
-
-    // AMS manage row visible when AMS or multi-tool
-    if (ams_manage_row_) {
-        if (has_ams || multi_tool) {
-            lv_obj_remove_flag(ams_manage_row_, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(ams_manage_row_, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-
     bool external_spool_mode = !has_ams && !multi_tool;
+
+    // The tool row above carries every tool's material and spool, so this card
+    // is now only the external-spool presentation for a printer that has no
+    // tools to put in that row.
+    if (external_spool_mode) {
+        lv_obj_remove_flag(spool_card_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(spool_card_, LV_OBJ_FLAG_HIDDEN);
+    }
 
     // External spool row visible when no AMS and no multi-tool
     if (external_spool_row_) {
@@ -1788,43 +1824,25 @@ void FilamentPanel::on_external_spool_edit_clicked(lv_event_t* /*e*/) {
     get_global_filament_panel().show_external_spool_edit_modal();
 }
 
-void FilamentPanel::populate_extruder_dropdown() {
-    if (!extruder_dropdown_)
-        return;
+int FilamentPanel::selected_tool_index() const {
+    const int selected = lv_subject_get_int(
+        const_cast<lv_subject_t*>(&selected_tool_subject_));
+    const int count = helix::ToolState::instance().tool_count();
+    // -1 is a real answer (every head docked), not an error: the caller decides
+    // whether it has anything to act on. Anything past the end is stale.
+    if (selected < -1 || selected >= count) {
+        return -1;
+    }
+    return selected;
+}
 
+void FilamentPanel::seed_selected_tool() {
     auto& ts = helix::ToolState::instance();
-    bool has_ams = (lv_subject_get_int(AmsState::instance().get_ams_type_subject()) != 0);
-    if (!ts.is_multi_tool() || !has_ams) {
-        if (extruder_selector_group_)
-            lv_obj_add_flag(extruder_selector_group_, LV_OBJ_FLAG_HIDDEN);
-        if (btn_manage_slots_)
-            lv_obj_remove_flag(btn_manage_slots_, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-
-    // Multi-tool with AMS: show dropdown group, hide Manage button
-    if (extruder_selector_group_)
-        lv_obj_remove_flag(extruder_selector_group_, LV_OBJ_FLAG_HIDDEN);
-    if (btn_manage_slots_)
-        lv_obj_add_flag(btn_manage_slots_, LV_OBJ_FLAG_HIDDEN);
-
-    // Build options string ("T0\nT1\nT2")
-    std::string options;
-    for (const auto& tool : ts.tools()) {
-        if (!options.empty())
-            options += '\n';
-        options += tool.name;
-    }
-    lv_dropdown_set_options(extruder_dropdown_, options.c_str());
-
-    // Sync selection to active tool
-    int active = ts.active_tool_index();
-    if (active >= 0 && active < ts.tool_count()) {
-        lv_dropdown_set_selected(extruder_dropdown_, static_cast<uint32_t>(active));
-    }
-
-    spdlog::debug("[{}] Extruder dropdown populated: {} tools, active=T{}", get_name(),
-                  ts.tool_count(), active);
+    const int active = ts.active_tool_index();
+    const int count = ts.tool_count();
+    const int seeded = (active >= 0 && active < count) ? active : (count > 0 ? 0 : -1);
+    lv_subject_set_int(&selected_tool_subject_, seeded);
+    spdlog::debug("[{}] Tool row seeded to {} of {} tools", get_name(), seeded, count);
 }
 
 int FilamentPanel::selected_op_slot() const {
@@ -1838,9 +1856,12 @@ int FilamentPanel::selected_op_slot() const {
         return -1;
     }
     AmsSystemInfo sys = backend->get_system_info();
-    int selected_tool = helix::ToolState::instance().active_tool_index();
-    if (extruder_dropdown_) {
-        selected_tool = static_cast<int>(lv_dropdown_get_selected(extruder_dropdown_));
+    int selected_tool = selected_tool_index();
+    if (selected_tool < 0) {
+        // Nothing is selected, so no slot is being acted on. Falling back to the
+        // active tool here would quietly give the verbs a target the row is not
+        // showing as chosen.
+        return -1;
     }
     return helix::ui::resolve_op_button_slot(sys, selected_tool,
                                              helix::ToolState::instance().tool_count());
@@ -1860,6 +1881,7 @@ void FilamentPanel::update_filament_op_buttons() {
     if (!backend) {
         lv_subject_set_int(&load_disabled_subject_, 0);
         lv_subject_set_int(&unload_disabled_subject_, 0);
+        update_verb_emphasis();
         return;
     }
 
@@ -1917,14 +1939,80 @@ void FilamentPanel::update_filament_op_buttons() {
                   state.slot_has_filament ? (*state.slot_has_filament ? "yes" : "no") : "unknown",
                   state.system_busy, print_blocks_op, static_cast<int>(lifecycle),
                   backend->filament_ops_self_home(), gating.load_disabled, gating.unload_disabled);
+    update_verb_emphasis();
 }
 
-void FilamentPanel::handle_extruder_changed() {
-    if (!extruder_dropdown_)
-        return;
+void FilamentPanel::update_verb_emphasis() {
+    // Load, Unload and Purge never move and never disappear — only their state
+    // changes, and exactly one of them is ever the lit one. Emphasis values:
+    // 0 inert, 1 the one thing to do here, 2 consequential, 3 available.
+    const bool has_tool = selected_tool_index() >= 0;
+    const bool load_off = !has_tool || lv_subject_get_int(&load_disabled_subject_) != 0;
+    const bool unload_off = !has_tool || lv_subject_get_int(&unload_disabled_subject_) != 0;
 
-    int selected = static_cast<int>(lv_dropdown_get_selected(extruder_dropdown_));
+    // A load that has to raise the nozzle first is the "you are changing
+    // something" case the amber state exists for: it costs a heat-up and a
+    // purge, so it should not look like the plain one-tap load.
+    const bool change_pending = pending_preheat_op_ != PreheatOp::NONE;
+
+    int load = 0;
+    if (!load_off) {
+        load = change_pending ? 2 : 1;
+    }
+    // With something already in the tool there is nothing to load, so unloading
+    // it is the step that moves the user forward.
+    const int unload = unload_off ? 0 : (load == 0 ? 1 : 3);
+    // Purge acts on what is in the melt zone, so it follows unload's precondition
+    // but is never the headline action.
+    const int purge = unload_off ? 0 : 3;
+
+    lv_subject_set_int(&load_emphasis_subject_, load);
+    lv_subject_set_int(&unload_emphasis_subject_, unload);
+    lv_subject_set_int(&purge_emphasis_subject_, purge);
+
+    // Naming the material turns "heat, wait, then load" into one labelled step.
+    std::string label = lv_tr("Load");
+    if (load != 0 && selected_material_ >= 0) {
+        const std::string material = helix::presets::display_label(selected_material_);
+        if (!material.empty()) {
+            label = fmt::format("{} {}", lv_tr("Load"), material);
+        }
+    }
+    std::strncpy(load_label_buf_, label.c_str(), sizeof(load_label_buf_) - 1);
+    load_label_buf_[sizeof(load_label_buf_) - 1] = '\0';
+    lv_subject_notify(&load_label_subject_);
+}
+
+void FilamentPanel::update_heat_state() {
+    // One state, not a set of overlapping booleans — the heat block has exactly
+    // one appearance at a time and this is what picks it.
+    int state = 0; // cold / off
+    if (selected_tool_index() < 0) {
+        // No tool, no heat state to report — the block is a plain readout then.
+        lv_subject_set_int(&heat_state_subject_, 0);
+        return;
+    }
+    if (pending_preheat_op_ != PreheatOp::NONE) {
+        state = 3; // changing: a target was raised for an operation that follows
+    } else if (nozzle_target_ > 0) {
+        state = (nozzle_current_ >= nozzle_target_ - HEAT_AT_TEMP_TOLERANCE_C) ? 2 : 1;
+    }
+    lv_subject_set_int(&heat_state_subject_, state);
+}
+
+void FilamentPanel::handle_selected_tool_changed() {
+    const int selected = selected_tool_index();
     auto& ts = helix::ToolState::instance();
+
+    // Preheat and the filament verbs have nothing to act on with every head
+    // docked, so the right column swaps to a line asking for a tool instead.
+    lv_subject_set_int(&has_tool_subject_, selected >= 0 ? 1 : 0);
+    update_verb_emphasis();
+    update_left_card_temps();
+    update_heat_state();
+    if (selected < 0) {
+        return;
+    }
 
     // Re-evaluate button gating for the newly-selected tool immediately, even if
     // it's already the active tool (no tool change issued below).
@@ -1952,6 +2040,18 @@ void FilamentPanel::handle_extruder_changed() {
         return;
     }
 
+    // A tool change already owns the toolhead. Queueing a second one behind it
+    // is a guaranteed refusal from check_preconditions(), which is what turned a
+    // quick T0 -> T2 -> T3 into a run of "AMS busy" errors. The tool row already
+    // ignores taps while busy; this catches the programmatic writers too, and
+    // puts the selection back where the machine actually is.
+    if (backend && backend->get_system_info().is_busy()) {
+        spdlog::info("[{}] T{} selection ignored — an AMS operation is already running",
+                     get_name(), selected);
+        seed_selected_tool();
+        return;
+    }
+
     spdlog::info("[{}] User selected tool T{}", get_name(), selected);
 
     ts.request_tool_change(
@@ -1960,25 +2060,8 @@ void FilamentPanel::handle_extruder_changed() {
             NOTIFY_ERROR(lv_tr("Tool change failed: {}"), error);
             // Revert dropdown to actual active tool on UI thread
             helix::ui::async_call(
-                [](void* ctx) {
-                    auto* panel = static_cast<FilamentPanel*>(ctx);
-                    if (panel->extruder_dropdown_) {
-                        int active = helix::ToolState::instance().active_tool_index();
-                        if (active >= 0) {
-                            lv_dropdown_set_selected(panel->extruder_dropdown_,
-                                                     static_cast<uint32_t>(active));
-                        }
-                    }
-                },
-                this);
+                [](void* ctx) { static_cast<FilamentPanel*>(ctx)->seed_selected_tool(); }, this);
         });
-}
-
-void FilamentPanel::on_extruder_dropdown_changed(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[FilamentPanel] on_extruder_dropdown_changed");
-    LV_UNUSED(e);
-    get_global_filament_panel().handle_extruder_changed();
-    LVGL_SAFE_EVENT_CB_END();
 }
 
 // ============================================================================

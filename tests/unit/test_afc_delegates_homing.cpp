@@ -268,9 +268,8 @@ struct PanelPrePromptHarness {
         panel->setup(root, fx.test_screen());
         fx.process_lvgl(30);
 
-        TA::populate_extruder_dropdown(*panel);
-        lv_obj_t* dd = TA::extruder_dropdown(*panel);
-        REQUIRE(dd != nullptr);
+        TA::seed_selected_tool(*panel);
+        REQUIRE(TA::selected_tool(*panel) >= 0);
     }
 
     void install_stub(bool delegating) {

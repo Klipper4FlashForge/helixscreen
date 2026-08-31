@@ -137,6 +137,7 @@
 #include "ui_temp_display.h"
 #include "ui_theme_editor_overlay.h"
 #include "ui_toast_manager.h"
+#include "ui_tool_chip.h"
 #include "ui_touch_calibration_overlay.h"
 #include "ui_utils.h"
 #include "ui_wizard.h"
@@ -1744,6 +1745,7 @@ void Application::run_rotation_probe_and_layout() {
 bool Application::register_widgets() {
     ui_icon_register_widget();
     ui_status_pill_register_widget();
+    ui_tool_chip_register_widget();
     ui_switch_register();
     ui_card_register();
     setting_group_register();

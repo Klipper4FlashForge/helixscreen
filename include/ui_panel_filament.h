@@ -271,6 +271,34 @@ class FilamentPanel : public PanelBase {
     // Cooldown button visibility (1 when nozzle target > 0, 0 otherwise)
     lv_subject_t nozzle_heating_subject_;
 
+    // Heat-block state, which drives the block's fill and edge rather than any
+    // text: 0 = cold/idle, 1 = heating, 2 = at temperature, 3 = target changed
+    // (a material swap is in flight), 4 = the last operation was refused.
+    // One subject rather than four booleans, so the states cannot overlap.
+    lv_subject_t heat_state_subject_;
+
+    // 1 while a tool is selected. Preheat and the filament verbs cannot apply
+    // without one, so with every head docked the whole block is replaced by a
+    // line telling the user to pick a tool instead of offering dead buttons.
+    lv_subject_t has_tool_subject_;
+
+    // Emphasis of each verb: 0 = inert, 1 = the one thing to do here,
+    // 2 = doable but consequential (a hotter nozzle and a purge). Only one verb
+    // is ever 1, and its position never moves — only its state changes.
+    lv_subject_t load_emphasis_subject_;
+    lv_subject_t unload_emphasis_subject_;
+    lv_subject_t purge_emphasis_subject_;
+    /// "Load", or "Load PLA" once a material is picked — picking a material
+    /// cold makes Load a single step that heats and then loads.
+    lv_subject_t load_label_subject_;
+    char load_label_buf_[32] = {};
+    void update_verb_emphasis();
+    void update_heat_state();
+    /// How close to target still reads as "at temperature" for the heat block.
+    /// Klipper holds a heater within a couple of degrees of target, so a tighter
+    /// band would make a settled nozzle flicker between heating and at-temp.
+    static constexpr int HEAT_AT_TEMP_TOLERANCE_C = 3;
+
     // Extrude length button active subjects (boolean: 0=inactive, 1=active)
     // Using separate subjects because bind_style doesn't work with multiple ref_values
     lv_subject_t extrude_length_5mm_active_subject_;
@@ -402,17 +430,21 @@ class FilamentPanel : public PanelBase {
     // External Spool presentations; C++ swaps the visible rows.
     lv_obj_t* spool_card_ = nullptr;
     lv_obj_t* spool_card_header_row_ = nullptr;
-    lv_obj_t* extruder_selector_group_ = nullptr;
-    lv_obj_t* extruder_dropdown_ = nullptr;
-    lv_obj_t* btn_manage_slots_ = nullptr;
-    lv_obj_t* ams_manage_row_ = nullptr;
     ObserverGuard tools_version_observer_;
 
-    void populate_extruder_dropdown();
+    // Tool the panel acts on. The tool row of <tool_chip>s both writes and
+    // highlights from this; it replaced a pill row plus a dropdown, which were
+    // two controls for one choice. -1 = nothing selected (every head docked),
+    // which the row reaches by tapping the selected chip again — so the panel
+    // needs no separate Dock control.
+    lv_subject_t selected_tool_subject_;
+    ObserverGuard selected_tool_observer_;
+    [[nodiscard]] int selected_tool_index() const;
+    void seed_selected_tool(); ///< Point the selection at the active tool
+
     void update_multi_filament_card_visibility();
     void apply_left_column_sizing(bool external_spool_mode);
-    void handle_extruder_changed();
-    static void on_extruder_dropdown_changed(lv_event_t* e);
+    void handle_selected_tool_changed();
 
     // External spool display (no-AMS mode)
     lv_obj_t* external_spool_row_ = nullptr;

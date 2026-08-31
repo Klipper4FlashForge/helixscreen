@@ -30,21 +30,28 @@ struct FilamentPanelTestAccess {
         p.handle_load_button();
     }
 
-    static void populate_extruder_dropdown(FilamentPanel& p) {
-        p.populate_extruder_dropdown();
+    static void seed_selected_tool(FilamentPanel& p) {
+        p.seed_selected_tool();
     }
 
-    static void handle_extruder_changed(FilamentPanel& p) {
-        p.handle_extruder_changed();
+    static void handle_selected_tool_changed(FilamentPanel& p) {
+        p.handle_selected_tool_changed();
+    }
+
+    /// Point the panel at a tool the way the tool row does — by writing the
+    /// selection subject. The panel observes it, so this drives the real path.
+    static void set_selected_tool(FilamentPanel& p, int index) {
+        lv_subject_set_int(&p.selected_tool_subject_, index);
+    }
+
+    static int selected_tool(FilamentPanel& p) {
+        return p.selected_tool_index();
     }
 
     static void restore_heater_after_preheat(FilamentPanel& p) {
         p.restore_heater_after_preheat();
     }
 
-    static lv_obj_t* extruder_dropdown(FilamentPanel& p) {
-        return p.extruder_dropdown_;
-    }
 
     // --- Operation timeout / on-button op state (#1183) ---------------------
     // The op-state subjects are the ones filament_panel.xml binds to each op
