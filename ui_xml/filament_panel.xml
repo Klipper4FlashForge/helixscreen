@@ -391,6 +391,7 @@
               <bind_style name="extrude_length_btn_selected" subject="filament_extrude_length_5mm_active" ref_value="1"/>
               <bind_style name="extrude_length_btn_unselected" subject="filament_extrude_length_5mm_active" ref_value="0"/>
               <bind_state_if_eq subject="filament_extrusion_allowed" state="disabled" ref_value="0"/>
+              <bind_state_if_eq subject="filament_tool_is_active" state="disabled" ref_value="0"/>
               <event_cb trigger="clicked" callback="on_filament_extrude_length_5mm"/>
             </ui_button>
             <ui_button name="extrude_length_10mm"
@@ -398,6 +399,7 @@
               <bind_style name="extrude_length_btn_selected" subject="filament_extrude_length_10mm_active" ref_value="1"/>
               <bind_style name="extrude_length_btn_unselected" subject="filament_extrude_length_10mm_active" ref_value="0"/>
               <bind_state_if_eq subject="filament_extrusion_allowed" state="disabled" ref_value="0"/>
+              <bind_state_if_eq subject="filament_tool_is_active" state="disabled" ref_value="0"/>
               <event_cb trigger="clicked" callback="on_filament_extrude_length_10mm"/>
             </ui_button>
             <ui_button name="extrude_length_25mm"
@@ -405,6 +407,7 @@
               <bind_style name="extrude_length_btn_selected" subject="filament_extrude_length_25mm_active" ref_value="1"/>
               <bind_style name="extrude_length_btn_unselected" subject="filament_extrude_length_25mm_active" ref_value="0"/>
               <bind_state_if_eq subject="filament_extrusion_allowed" state="disabled" ref_value="0"/>
+              <bind_state_if_eq subject="filament_tool_is_active" state="disabled" ref_value="0"/>
               <event_cb trigger="clicked" callback="on_filament_extrude_length_25mm"/>
             </ui_button>
           </lv_obj>
@@ -418,6 +421,7 @@
                        bind_op_state="filament_op_retract_state">
               <bind_state_if_eq subject="filament_operation_in_progress" state="disabled" ref_value="1"/>
               <bind_state_if_eq subject="filament_extrusion_allowed" state="disabled" ref_value="0"/>
+              <bind_state_if_eq subject="filament_tool_is_active" state="disabled" ref_value="0"/>
               <event_cb trigger="clicked" callback="on_filament_retract"/>
             </ui_button>
             <ui_button name="btn_extrude"
@@ -426,6 +430,7 @@
                        bind_op_state="filament_op_extrude_state">
               <bind_state_if_eq subject="filament_operation_in_progress" state="disabled" ref_value="1"/>
               <bind_state_if_eq subject="filament_extrusion_allowed" state="disabled" ref_value="0"/>
+              <bind_state_if_eq subject="filament_tool_is_active" state="disabled" ref_value="0"/>
               <event_cb trigger="clicked" callback="on_filament_extrude"/>
             </ui_button>
           </lv_obj>
