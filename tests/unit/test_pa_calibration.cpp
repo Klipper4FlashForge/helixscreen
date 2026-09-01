@@ -151,9 +151,10 @@ class PACalibrateTestFixture {
                 captured_error_ = err.message;
                 error_received_.store(true);
             },
-            [this](int attempt, int expected) {
+            [this](int attempt, int expected, float k_so_far) {
                 attempts_.push_back(attempt);
                 expected_ = expected;
+                last_k_so_far_ = k_so_far;
             });
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -175,6 +176,7 @@ class PACalibrateTestFixture {
     std::string captured_error_;
     std::vector<int> attempts_;
     int expected_ = 0;
+    float last_k_so_far_ = 0.0f;
 };
 
 TEST_CASE_METHOD(PACalibrateTestFixture, "PA collector reads the measured value off the console",
