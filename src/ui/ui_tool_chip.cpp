@@ -115,6 +115,9 @@ struct ChipData {
     /// reading a different hotend rather than watching a stale one forever.
     std::string bound_heater;
     ObserverGuard heat_target_obs;
+    // The heater's target subject belongs to its extruder entry, not to
+    // PrinterState as a whole, so the guard holds that subject's own lifetime.
+    SubjectLifetime heat_target_lifetime;
 
     bool compact = false;
 
@@ -357,8 +360,8 @@ void bind_heat_observers(lv_obj_t* chip, ChipData* d, const std::string& heater)
     // second per hotend and changes nothing the chip draws, so observing it
     // would wake every chip on the row for nothing.
     d->heat_target_obs = helix::ui::observe_int_sync<lv_obj_t>(
-        get_printer_state().get_extruder_target_subject(heater), chip,
-        [](lv_obj_t* c, int) { refresh_heat_only(c); }, d->alive);
+        get_printer_state().get_extruder_target_subject(heater, d->heat_target_lifetime), chip,
+        [](lv_obj_t* c, int) { refresh_heat_only(c); }, d->heat_target_lifetime);
 }
 
 void refresh(lv_obj_t* chip) {
