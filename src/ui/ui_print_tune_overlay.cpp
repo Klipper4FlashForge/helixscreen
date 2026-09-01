@@ -16,6 +16,8 @@
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
+#include "tool_state.h"
+#include "tool_z_offset.h"
 #include "z_offset_utils.h"
 
 #include <spdlog/spdlog.h>
@@ -82,6 +84,14 @@ static void on_tune_z_adjust_cb(lv_event_t* e) {
     if (!dir_str)
         return;
     get_print_tune_overlay().handle_z_adjust(atoi(dir_str));
+}
+
+// Which offset the Z buttons move (user_data = "0" all tools, "1" active tool)
+static void on_tune_z_target_cb(lv_event_t* e) {
+    const char* target_str = static_cast<const char*>(lv_event_get_user_data(e));
+    if (!target_str)
+        return;
+    get_print_tune_overlay().handle_z_target_select(atoi(target_str));
 }
 
 static void on_tune_save_z_offset_cb(lv_event_t* /*e*/) {
@@ -194,6 +204,17 @@ void PrintTuneOverlay::init_subjects_internal() {
     UI_MANAGED_SUBJECT_STRING(z_farther_icon_subject_, z_farther_icon_buf_, "arrow_up",
                               "tune_z_farther_icon", subjects_);
 
+    // Z-offset target selector. Same radio shape as the step buttons: one
+    // boolean per chip, plus an availability flag that hides the whole row on
+    // printers with only the global offset.
+    UI_MANAGED_SUBJECT_INT(z_target_available_subject_, 0, "tune_z_target_available", subjects_);
+    UI_MANAGED_SUBJECT_INT(z_target_global_active_subject_, 1, "tune_z_target_global_active",
+                           subjects_);
+    UI_MANAGED_SUBJECT_INT(z_target_tool_active_subject_, 0, "tune_z_target_tool_active",
+                           subjects_);
+    UI_MANAGED_SUBJECT_STRING(z_target_tool_label_subject_, z_target_tool_label_buf_, "T0",
+                              "tune_z_target_tool_label", subjects_);
+
     // Z-offset step amount boolean subjects (L040: one per button for bind_style radio pattern)
     UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[0], 0, "z_step_0_active", subjects_);
     UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[1], 0, "z_step_1_active", subjects_);
@@ -208,6 +229,7 @@ void PrintTuneOverlay::init_subjects_internal() {
         {"on_tune_save_z_offset", on_tune_save_z_offset_cb},
         {"on_tune_z_step", on_tune_z_step_cb},
         {"on_tune_z_adjust", on_tune_z_adjust_cb},
+        {"on_tune_z_target", on_tune_z_target_cb},
     });
 
     subjects_initialized_ = true;
@@ -275,19 +297,21 @@ void PrintTuneOverlay::sync_to_state() {
     flow_percent_ = flow;
     update_display();
 
-    // Sync Z offset from PrinterState. Firmware that persists the offset itself
-    // (ZMOD) zeroes the live one outside a print, so adjusting from it while idle
-    // would baby-step away from a phantom zero.
-    int z_offset_microns = helix::zoffset::displayed_z_offset_microns(*printer_state_);
-    update_z_offset_display(z_offset_microns);
-    // Opening the overlay starts a new tuning session; travel is bounded from here.
-    session_base_z_offset_ = current_z_offset_;
-
-    // Sync the visual indicator
-    lv_obj_t* indicator = lv_obj_find_by_name(tune_panel_, "z_offset_indicator");
-    if (indicator) {
-        ui_z_offset_indicator_set_value(indicator, z_offset_microns);
+    // Offer the per-tool axis only where the firmware actually has one AND
+    // there is more than one tool to tell apart. On anything else the selector
+    // is not shown and the target stays global, which is what every printer
+    // did before this existed.
+    auto& tools = helix::ToolState::instance();
+    const bool per_tool_available =
+        tools.per_tool_z_offset_supported() && tools.has_multiple_extruders();
+    lv_subject_set_int(&z_target_available_subject_, per_tool_available ? 1 : 0);
+    if (!per_tool_available && z_target_per_tool_) {
+        // The printer changed under us (reconnect, different machine). Fall
+        // back rather than leave the buttons pointed at an axis that is gone.
+        z_target_per_tool_ = false;
     }
+
+    sync_z_target();
 
     // Update actual speed/flow displays
     update_actual_speed_display();
@@ -462,6 +486,140 @@ void PrintTuneOverlay::handle_reset() {
     }
 }
 
+// ============================================================================
+// Z-OFFSET TARGET (global vs per-tool)
+// ============================================================================
+
+int PrintTuneOverlay::current_target_microns() const {
+    if (z_target_per_tool_) {
+        // Unknown is 0 here rather than a refusal: the value arrives with the
+        // next status frame, and a baby step is relative anyway, so the worst a
+        // stale base costs is a display that catches up one frame later.
+        auto& tools = helix::ToolState::instance();
+        return tools.tool_z_offset_microns(tools.active_tool_index()).value_or(0);
+    }
+    if (!printer_state_) {
+        return 0;
+    }
+    // Firmware that persists the offset itself (ZMOD) zeroes the live one
+    // outside a print, so adjusting from it while idle would baby-step away
+    // from a phantom zero.
+    return helix::zoffset::displayed_z_offset_microns(*printer_state_);
+}
+
+void PrintTuneOverlay::sync_z_target() {
+    const int microns = current_target_microns();
+    update_z_offset_display(microns);
+    // Switching target, like opening the overlay, starts a new tuning session:
+    // travel is bounded from the offset now on screen, not from the other
+    // axis's, which would let one target's history bound the other's.
+    session_base_z_offset_ = current_z_offset_;
+
+    lv_subject_set_int(&z_target_global_active_subject_, z_target_per_tool_ ? 0 : 1);
+    lv_subject_set_int(&z_target_tool_active_subject_, z_target_per_tool_ ? 1 : 0);
+
+    auto& tools = helix::ToolState::instance();
+    const helix::ToolInfo* active = tools.active_tool();
+    lv_subject_copy_string(&z_target_tool_label_subject_, active ? active->name.c_str() : "T0");
+
+    if (tune_panel_) {
+        lv_obj_t* indicator = lv_obj_find_by_name(tune_panel_, "z_offset_indicator");
+        if (indicator) {
+            ui_z_offset_indicator_set_value(indicator, microns);
+        }
+    }
+}
+
+void PrintTuneOverlay::handle_z_target_select(int per_tool) {
+    const bool want_per_tool = per_tool != 0;
+    if (want_per_tool && !helix::ToolState::instance().per_tool_z_offset_supported()) {
+        spdlog::warn("[PrintTuneOverlay] Per-tool Z offset requested but unsupported");
+        return;
+    }
+    if (want_per_tool == z_target_per_tool_) {
+        return;
+    }
+    z_target_per_tool_ = want_per_tool;
+    spdlog::info("[PrintTuneOverlay] Z-offset target: {}",
+                 z_target_per_tool_ ? "active tool" : "all tools");
+    sync_z_target();
+}
+
+void PrintTuneOverlay::send_per_tool_adjust(int delta_microns) {
+    if (!api_ || !printer_state_) {
+        return;
+    }
+    auto& tools = helix::ToolState::instance();
+    const int tool = tools.active_tool_index();
+    const std::string gcode = helix::zoffset::build_tool_adjust_gcode(printer_state_->get_discovery(),
+                                                                     tool, delta_microns);
+    if (gcode.empty()) {
+        spdlog::error("[PrintTuneOverlay] No per-tool Z offset command for this printer");
+        NOTIFY_ERROR(lv_tr("This printer has no per-tool Z-offset"));
+        return;
+    }
+    api_->execute_gcode(
+        gcode,
+        [tool, delta_microns]() {
+            spdlog::debug("[PrintTuneOverlay] T{} Z adjusted {:+}um", tool, delta_microns);
+        },
+        [](const MoonrakerError& err) {
+            spdlog::error("[PrintTuneOverlay] Per-tool Z-offset adjust failed: {}", err.message);
+            NOTIFY_ERROR(lv_tr("Z-offset failed: {}"), err.user_message());
+        });
+}
+
+void PrintTuneOverlay::save_per_tool_offset() {
+    if (!api_ || !printer_state_) {
+        return;
+    }
+    const auto& hw = printer_state_->get_discovery();
+    auto& tools = helix::ToolState::instance();
+    const int tool = tools.active_tool_index();
+    const int microns = static_cast<int>(std::lround(current_z_offset_ * 1000.0));
+    const std::vector<std::string> commands =
+        helix::zoffset::build_tool_save_gcode(hw, tool, microns);
+    if (commands.empty()) {
+        return;
+    }
+
+    // Persisting ends in SAVE_CONFIG on every provider that needs a config
+    // write, and SAVE_CONFIG restarts Klipper - which mid-print is not on
+    // offer. The adjustment itself is already live and survives to the end of
+    // the job either way, so refusing costs the user nothing but the restart.
+    const bool printing = lv_subject_get_int(printer_state_->get_print_active_subject()) != 0;
+    if (printing && helix::zoffset::per_tool_save_restarts_klipper(hw)) {
+        NOTIFY_WARNING(lv_tr("Save after the print - it restarts Klipper"));
+        return;
+    }
+
+    // Sequential, not fire-and-forget in parallel: the SAVE_CONFIG must not
+    // race ahead of the value it is meant to persist.
+    api_->execute_gcode(
+        commands[0],
+        [this, commands, tool]() {
+            spdlog::info("[PrintTuneOverlay] T{} per-tool Z offset staged", tool);
+            if (commands.size() < 2 || !api_) {
+                return;
+            }
+            api_->execute_gcode(
+                commands[1],
+                []() {
+                    ToastManager::instance().show(
+                        ToastSeverity::WARNING,
+                        lv_tr("Z-offset saved - Klipper restarting..."), 5000);
+                },
+                [](const MoonrakerError& err) {
+                    spdlog::error("[PrintTuneOverlay] Per-tool save failed: {}", err.message);
+                    NOTIFY_ERROR(lv_tr("Save failed: {}"), err.user_message());
+                });
+        },
+        [](const MoonrakerError& err) {
+            spdlog::error("[PrintTuneOverlay] Per-tool Z offset staging failed: {}", err.message);
+            NOTIFY_ERROR(lv_tr("Save failed: {}"), err.user_message());
+        });
+}
+
 void PrintTuneOverlay::handle_z_offset_changed(double delta) {
     // Bound how far one session may travel from the offset it opened on, so a
     // stuck button cannot walk the nozzle into the bed. Clamping the absolute
@@ -491,6 +649,24 @@ void PrintTuneOverlay::handle_z_offset_changed(double delta) {
 
     const int delta_microns = static_cast<int>(std::lround(delta * 1000.0));
     const int current_microns = static_cast<int>(std::lround(current_z_offset_ * 1000.0));
+
+    // The per-tool axis shares the buttons, the step size and the travel guard
+    // with the global one, and NOTHING else: it is a different number, in a
+    // different place, that the global bookkeeping below would corrupt.
+    // add_pending_z_offset_delta() in particular drives the Controls panel's
+    // "unsaved global offset" notice, which a per-tool tweak must not raise.
+    if (z_target_per_tool_) {
+        if (tune_panel_) {
+            lv_obj_t* indicator = lv_obj_find_by_name(tune_panel_, "z_offset_indicator");
+            if (indicator) {
+                ui_z_offset_indicator_set_value(indicator, current_microns);
+                ui_z_offset_indicator_flash_direction(indicator, delta > 0 ? 1 : -1);
+            }
+        }
+        send_per_tool_adjust(delta_microns);
+        return;
+    }
+
     const int base_microns = current_microns - delta_microns;
     // Read the live offset before the optimistic write below overwrites it.
     const int live_microns =
@@ -577,6 +753,10 @@ void PrintTuneOverlay::handle_z_adjust(int direction) {
 }
 
 void PrintTuneOverlay::handle_save_z_offset() {
+    if (z_target_per_tool_) {
+        save_per_tool_offset();
+        return;
+    }
     if (printer_state_) {
         auto strategy = printer_state_->get_z_offset_calibration_strategy();
         if (helix::zoffset::is_auto_saved(strategy))

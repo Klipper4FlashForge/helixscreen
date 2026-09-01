@@ -867,6 +867,20 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         std::function<void(const MoonrakerError&)> error_cb);
 
     /**
+     * @brief Simulate TOOL_Z_ADJUST — the per-tool baby step
+     *
+     * Synchronous, like the firmware: the value is in force the moment the
+     * command returns (Klipper's own SET_GCODE_OFFSET Z_ADJUST is too). SAVE=1
+     * only stages it, so it sets save_config_pending rather than persisting.
+     * The updated value is served back through `ff_tool <n>`.z_adjust, which is
+     * the whole point — the UI reads its own effect from status, not from what
+     * it just sent.
+     *
+     * @return true if the script was handled here
+     */
+    bool simulate_tool_z_adjust(const std::string& script);
+
+    /**
      * @brief Simulate an automatic pressure-advance run
      *
      * Mirrors what a measuring firmware does on the console: a few candidate
@@ -883,6 +897,8 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
 
     /// Mock tool-offset state, also served by printer.objects.query
     bool mock_station_calibrated() const;
+    /// Per-tool Z correction in mm, as TOOL_Z_ADJUST has left it.
+    double mock_tool_z_adjust(int tool) const;
     bool mock_tool_calibrated(int tool) const;
     bool mock_save_config_pending() const;
     /// SAVE_CONFIG persisted everything staged so far
@@ -925,6 +941,8 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     int mock_selected_tool_ = 0;
     /// Which tools have been measured this session, and the station pass.
     bool mock_tool_calibrated_[4] = {false, false, false, false};
+    /// Per-tool Z correction (mm), moved by TOOL_Z_ADJUST.
+    double mock_tool_z_adjust_[4] = {0.0, 0.0, 0.0, 0.0};
     bool mock_station_calibrated_ = false;
     /// Set once anything is staged; cleared by SAVE_CONFIG.
     bool mock_save_config_pending_ = false;

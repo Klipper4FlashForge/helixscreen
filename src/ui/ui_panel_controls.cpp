@@ -14,6 +14,7 @@
 #include "ui_notification.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_bed_mesh.h"
+#include "ui_panel_calibration_pa.h"
 #include "ui_panel_calibration_tool_offset.h"
 #include "ui_panel_calibration_zoffset.h"
 #include "ui_panel_motion.h"
@@ -1907,6 +1908,7 @@ PANEL_TRAMPOLINE_USERDATA(ControlsPanel, save_z_offset_cancel)
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_bed_mesh)
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_zoffset)
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_tool_offsets)
+PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_pa)
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_screws)
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, calibration_motors)
 

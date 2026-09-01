@@ -4850,6 +4850,65 @@ bool MoonrakerClientMock::mock_tool_calibrated(int tool) const {
     return mock_tool_calibrated_[tool];
 }
 
+double MoonrakerClientMock::mock_tool_z_adjust(int tool) const {
+    if (tool < 0 || tool >= 4) {
+        return 0.0;
+    }
+    std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+    return mock_tool_z_adjust_[tool];
+}
+
+bool MoonrakerClientMock::simulate_tool_z_adjust(const std::string& script) {
+    // TOOL_Z_ADJUST TOOL=<n> (ADJUST=<+/-mm> | VALUE=<mm>) [SAVE=1]
+    if (script.find("TOOL_Z_ADJUST") == std::string::npos) {
+        return false;
+    }
+    auto param = [&script](const char* key) -> std::optional<double> {
+        const std::string needle = std::string(key) + "=";
+        size_t at = script.find(needle);
+        if (at == std::string::npos) {
+            return std::nullopt;
+        }
+        try {
+            return std::stod(script.substr(at + needle.size()));
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+    };
+
+    // TOOL= must be read before ADJUST=/VALUE=, and TOOL is a prefix of nothing
+    // else here, so a plain find is enough.
+    auto tool_param = param("TOOL");
+    const int tool = tool_param ? static_cast<int>(*tool_param) : -1;
+    if (tool < 0 || tool >= 4) {
+        spdlog::warn("[MoonrakerClientMock] TOOL_Z_ADJUST: bad TOOL= in '{}'", script);
+        return true; // handled: the firmware would reject it too
+    }
+
+    auto adjust = param("ADJUST");
+    auto value = param("VALUE");
+    const bool save = script.find("SAVE=1") != std::string::npos;
+
+    std::lock_guard<std::mutex> lock(tool_cal_mutex_);
+    const double previous = mock_tool_z_adjust_[tool];
+    if (value) {
+        mock_tool_z_adjust_[tool] = *value;
+    } else if (adjust) {
+        mock_tool_z_adjust_[tool] = previous + *adjust;
+    } else {
+        spdlog::warn("[MoonrakerClientMock] TOOL_Z_ADJUST: neither ADJUST= nor VALUE=");
+        return true;
+    }
+    if (save) {
+        // Staged, not written: SAVE_CONFIG is what persists it, exactly as in
+        // the firmware, so the panel's save-pending state is exercised.
+        mock_save_config_pending_ = true;
+    }
+    spdlog::info("[MoonrakerClientMock] TOOL_Z_ADJUST T{} {:.3f} -> {:.3f}{}", tool, previous,
+                 mock_tool_z_adjust_[tool], save ? " (staged for SAVE_CONFIG)" : "");
+    return true;
+}
+
 bool MoonrakerClientMock::mock_save_config_pending() const {
     std::lock_guard<std::mutex> lock(tool_cal_mutex_);
     return mock_save_config_pending_;

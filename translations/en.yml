@@ -153,6 +153,7 @@ translations:
     stay active until restart. Save after print completes.
   Adjusts individual characteristics of your heaters for optimal control: Adjusts
     individual characteristics of your heaters for optimal control
+  Adjusts this tool only - other tools keep their own offset: Adjusts this tool only - other tools keep their own offset
   After running the commands, tap Check Again below.: After running the commands,
     tap Check Again below.
   Alert: Alert
@@ -163,6 +164,7 @@ translations:
   All extruder temperatures with progress bars: All extruder temperatures with progress bars
   All fields are required: All fields are required
   All plugins loaded successfully: All plugins loaded successfully
+  All tools: All tools
   Allow Home Screen Editing: Allow Home Screen Editing
   Allow cold load/unload: Allow cold load/unload
   Allow display to sleep during active prints: Allow display to sleep during active
@@ -2301,6 +2303,7 @@ translations:
   Save Theme As: Save Theme As
   Save Z-Offset: Save Z-Offset
   Save Z-Offset?: Save Z-Offset?
+  Save after the print - it restarts Klipper: Save after the print - it restarts Klipper
   Save changes to persist them across restarts?: Save changes to persist them across
     restarts?
   'Save failed: {}': 'Save failed: {}'
@@ -2749,6 +2752,7 @@ translations:
     print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
   : This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
+  This printer has no per-tool Z-offset: This printer has no per-tool Z-offset
   This tool probes each bed screw and tells you how much to adjust.: This tool probes
     each bed screw and tells you how much to adjust.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.

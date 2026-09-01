@@ -40,6 +40,16 @@ struct ToolInfo {
     float gcode_x_offset = 0.0f;
     float gcode_y_offset = 0.0f;
     float gcode_z_offset = 0.0f;
+
+    /// The operator's own per-tool Z correction, in microns, on firmwares that
+    /// keep one beside Klipper's global baby step (helix::zoffset::
+    /// read_tool_offset_microns). Independent of gcode_z_offset, which is the
+    /// derived total the tool change applies. `z_adjust_known` stays false
+    /// until a status frame has actually carried the value: 0 is a legal
+    /// correction, so it cannot double as "unknown".
+    int z_adjust_microns = 0;
+    bool z_adjust_known = false;
+
     bool active = false;
     bool mounted = false;
     DetectState detect_state = DetectState::UNAVAILABLE;
@@ -183,8 +193,31 @@ class ToolState {
         return config_dir_;
     }
 
+    /// Per-tool Z correction for @p tool_index in microns, or nullopt when this
+    /// printer has none or no frame has carried it yet.
+    [[nodiscard]] std::optional<int> tool_z_offset_microns(int tool_index) const;
+
+    /// Whether this printer can baby-step one tool independently of the others.
+    /// Set from PrinterDiscovery in init_tools(); see helix::zoffset::
+    /// supports_per_tool_offset().
+    [[nodiscard]] bool per_tool_z_offset_supported() const {
+        return has_per_tool_z_offset_;
+    }
+
     lv_subject_t* get_active_tool_subject() {
         return &active_tool_;
+    }
+
+    /// The active tool's own Z correction, in microns. 0 when unsupported or
+    /// not yet known — bind alongside per_tool_z_offset_supported.
+    lv_subject_t* get_active_tool_z_offset_subject() {
+        return &active_tool_z_offset_;
+    }
+
+    /// 1 when this printer has a per-tool Z offset at all. Drives whether the
+    /// UI offers the global/per-tool choice.
+    lv_subject_t* get_per_tool_z_offset_supported_subject() {
+        return &per_tool_z_offset_supported_;
     }
 
     /**
@@ -230,6 +263,8 @@ class ToolState {
     /// subjects it protects; also invalidated by deinit_subjects() (#1165, #1146).
     helix::AsyncLifetimeGuard async_lifetime_;
     lv_subject_t active_tool_{};
+    lv_subject_t active_tool_z_offset_{};
+    lv_subject_t per_tool_z_offset_supported_{};
     lv_subject_t tool_count_{};
     lv_subject_t tools_version_{};
 
@@ -241,6 +276,7 @@ class ToolState {
 
     std::vector<ToolInfo> tools_;
     int active_tool_index_ = 0;
+    bool has_per_tool_z_offset_ = false;
     std::string config_dir_ = "config";     ///< Directory for local JSON persistence
     bool config_dir_explicit_ = false;      ///< set_config_dir() pinned it; don't re-derive
     bool spool_dirty_ = false;              ///< True when spool data changed since last save
@@ -253,6 +289,9 @@ class ToolState {
     int ams_topology_tool_count_ = 0;
     std::vector<int> ams_topology_tool_to_slot_;
     std::string ams_topology_tool_name_prefix_ = "T";
+
+    /// Push the active tool's per-tool Z correction into its subject.
+    void publish_active_tool_z_offset();
 
     /// Save spool assignments to local JSON file
     void save_spool_json() const;

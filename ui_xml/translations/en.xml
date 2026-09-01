@@ -149,6 +149,7 @@
   <translation tag="Adjust until belt appears frozen" en="Adjust until belt appears frozen"/>
   <translation tag="Adjustments stay active until restart. Save after print completes." en="Adjustments stay active until restart. Save after print completes."/>
   <translation tag="Adjusts individual characteristics of your heaters for optimal control" en="Adjusts individual characteristics of your heaters for optimal control"/>
+  <translation tag="Adjusts this tool only - other tools keep their own offset" en="Adjusts this tool only - other tools keep their own offset"/>
   <translation tag="Advanced" en="Advanced"/>
   <translation tag="After running the commands, tap Check Again below." en="After running the commands, tap Check Again below."/>
   <translation tag="Alert" en="Alert"/>
@@ -159,6 +160,7 @@
   <translation tag="All extruder temperatures with progress bars" en="All extruder temperatures with progress bars"/>
   <translation tag="All fields are required" en="All fields are required"/>
   <translation tag="All plugins loaded successfully" en="All plugins loaded successfully"/>
+  <translation tag="All tools" en="All tools"/>
   <translation tag="Allow Home Screen Editing" en="Allow Home Screen Editing"/>
   <translation tag="Allow cold load/unload" en="Allow cold load/unload"/>
   <translation tag="Allow display to sleep during active prints" en="Allow display to sleep during active prints"/>
@@ -2113,6 +2115,7 @@
   <translation tag="Save Theme As" en="Save Theme As"/>
   <translation tag="Save Z-Offset" en="Save Z-Offset"/>
   <translation tag="Save Z-Offset?" en="Save Z-Offset?"/>
+  <translation tag="Save after the print - it restarts Klipper" en="Save after the print - it restarts Klipper"/>
   <translation tag="Save changes to persist them across restarts?" en="Save changes to persist them across restarts?"/>
   <translation tag="Save failed: {}" en="Save failed: {}"/>
   <translation tag="Save offsets" en="Save offsets"/>
@@ -2488,6 +2491,7 @@
   <translation tag="This may take up to 30 seconds" en="This may take up to 30 seconds"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." en="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" en="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?"/>
+  <translation tag="This printer has no per-tool Z-offset" en="This printer has no per-tool Z-offset"/>
   <translation tag="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets." en="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets."/>
   <translation tag="This tool probes each bed screw and tells you how much to adjust." en="This tool probes each bed screw and tells you how much to adjust."/>
   <translation tag="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect." en="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect."/>

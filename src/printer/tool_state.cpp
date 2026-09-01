@@ -22,6 +22,7 @@
 #include "printer_discovery.h"
 #include "state/subject_macros.h"
 #include "static_subject_registry.h"
+#include "tool_z_offset.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -57,6 +58,8 @@ void ToolState::init_subjects(bool register_xml) {
     spdlog::trace("[ToolState] Initializing subjects (register_xml={})", register_xml);
 
     INIT_SUBJECT_INT(active_tool, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(active_tool_z_offset, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(per_tool_z_offset_supported, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(tool_count, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(tools_version, 0, subjects_, register_xml);
     INIT_SUBJECT_STRING(tool_badge_text, "", subjects_, register_xml);
@@ -94,6 +97,7 @@ void ToolState::deinit_subjects() {
 
     tools_.clear();
     active_tool_index_ = 0;
+    has_per_tool_z_offset_ = false;
     spool_assignments_loaded_ = false;
 
     // Drop any AMS-backend override so the next init_subjects() / init_tools()
@@ -203,7 +207,17 @@ void ToolState::init_tools(const helix::PrinterDiscovery& hardware) {
 
     active_tool_index_ = 0;
 
+    // Per-tool baby stepping is a firmware capability, not a tool-count one:
+    // ask the provider table rather than assuming every tool changer has it.
+    has_per_tool_z_offset_ = helix::zoffset::supports_per_tool_offset(hardware);
+    if (has_per_tool_z_offset_) {
+        spdlog::info("[ToolState] Per-tool Z offset available ({})",
+                     helix::zoffset::per_tool_provider_name(hardware));
+    }
+
     // Update subjects
+    lv_subject_set_int(&per_tool_z_offset_supported_, has_per_tool_z_offset_ ? 1 : 0);
+    publish_active_tool_z_offset();
     lv_subject_set_int(&tool_count_, static_cast<int>(tools_.size()));
     lv_subject_set_int(&active_tool_, active_tool_index_);
     int version = lv_subject_get_int(&tools_version_) + 1;
@@ -411,6 +425,27 @@ void ToolState::update_from_status(const nlohmann::json& status) {
         }
     }
 
+    // Per-tool Z correction, on firmwares that keep one beside the global baby
+    // step. Its object is the firmware's own, so the schema question goes to
+    // the module rather than being spelled out here.
+    if (has_per_tool_z_offset_) {
+        for (auto& tool : tools_) {
+            auto microns = helix::zoffset::read_tool_offset_microns(status, tool.index);
+            if (!microns) {
+                continue; // no news in this frame — not "cleared"
+            }
+            if (!tool.z_adjust_known || tool.z_adjust_microns != *microns) {
+                tool.z_adjust_microns = *microns;
+                tool.z_adjust_known = true;
+                changed = true;
+            }
+        }
+    }
+
+    // Cheap and idempotent: the active tool may have changed above even when no
+    // correction did, and the subject has to follow the tool as well as the value.
+    publish_active_tool_z_offset();
+
     if (changed) {
         // Tool badge formatting handled by UI-layer observer on tools_version_
         int version = lv_subject_get_int(&tools_version_) + 1;
@@ -434,6 +469,28 @@ const ToolInfo* ToolState::active_tool() const {
         return nullptr;
     }
     return &tools_[active_tool_index_];
+}
+
+std::optional<int> ToolState::tool_z_offset_microns(int tool_index) const {
+    if (!has_per_tool_z_offset_ || tool_index < 0 ||
+        tool_index >= static_cast<int>(tools_.size())) {
+        return std::nullopt;
+    }
+    const ToolInfo& tool = tools_[tool_index];
+    if (!tool.z_adjust_known) {
+        return std::nullopt;
+    }
+    return tool.z_adjust_microns;
+}
+
+void ToolState::publish_active_tool_z_offset() {
+    // Unknown reads as 0 rather than as a sentinel: the subject feeds a
+    // displayed millimetre value, and per_tool_z_offset_supported already tells
+    // the UI whether to show it at all.
+    int microns = tool_z_offset_microns(active_tool_index_).value_or(0);
+    if (lv_subject_get_int(&active_tool_z_offset_) != microns) {
+        lv_subject_set_int(&active_tool_z_offset_, microns);
+    }
 }
 
 std::string ToolState::nozzle_label() const {

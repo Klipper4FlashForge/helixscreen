@@ -95,6 +95,28 @@
           <text_heading name="z_offset_display" bind_text="tune_z_offset_display"/>
         </lv_obj>
 
+        <!-- Target selector: which offset the buttons below move. Built on
+             every printer but hidden unless the firmware has a per-tool offset
+             AND there is more than one tool, so single-nozzle machines see the
+             section exactly as before. -->
+        <lv_obj name="z_target_row"
+                width="100%" height="content" style_pad_all="0" flex_flow="row"
+                style_pad_gap="#space_xxs" scrollable="false" hidden="true">
+          <bind_flag_if_eq subject="tune_z_target_available" flag="hidden" ref_value="0"/>
+          <ui_button name="btn_z_target_global" height="#button_height_sm" flex_grow="1"
+                     text="All tools" translation_tag="All tools">
+            <bind_style name="z_step_selected" subject="tune_z_target_global_active" ref_value="1"/>
+            <bind_style name="z_step_unselected" subject="tune_z_target_global_active" ref_value="0"/>
+            <event_cb trigger="clicked" callback="on_tune_z_target" user_data="0"/>
+          </ui_button>
+          <ui_button name="btn_z_target_tool" height="#button_height_sm" flex_grow="1"
+                     bind_text="tune_z_target_tool_label">
+            <bind_style name="z_step_selected" subject="tune_z_target_tool_active" ref_value="1"/>
+            <bind_style name="z_step_unselected" subject="tune_z_target_tool_active" ref_value="0"/>
+            <event_cb trigger="clicked" callback="on_tune_z_target" user_data="1"/>
+          </ui_button>
+        </lv_obj>
+
         <!-- Indicator (left) + Controls (right) side-by-side -->
         <lv_obj width="100%"
                 height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_sm" scrollable="false">
@@ -156,12 +178,21 @@
                     width="100%" long_mode="wrap"
                     text="Temporary adjustment for this print, unless saved on Controls panel"
                     translation_tag="Temporary adjustment for this print, unless saved on Controls panel" hidden="true">
-          <bind_flag_if_eq subject="z_offset_can_save" flag="hidden" ref_value="0"/>
+          <bind_flag_if cond="z_offset_can_save eq 0 or tune_z_target_tool_active eq 1"
+                        flag="hidden"/>
+        </text_small>
+        <text_small name="z_offset_help_text_per_tool"
+                    width="100%" long_mode="wrap"
+                    text="Adjusts this tool only - other tools keep their own offset"
+                    translation_tag="Adjusts this tool only - other tools keep their own offset"
+                    hidden="true">
+          <bind_flag_if_eq subject="tune_z_target_tool_active" flag="hidden" ref_value="0"/>
         </text_small>
         <text_small name="z_offset_help_text_auto"
                     width="100%" long_mode="wrap" text="Z-offset is auto-saved by firmware"
                     translation_tag="Z-offset is auto-saved by firmware">
-          <bind_flag_if_eq subject="z_offset_can_save" flag="hidden" ref_value="1"/>
+          <bind_flag_if cond="z_offset_can_save eq 1 or tune_z_target_tool_active eq 1"
+                        flag="hidden"/>
         </text_small>
       </lv_obj>
     </lv_obj>

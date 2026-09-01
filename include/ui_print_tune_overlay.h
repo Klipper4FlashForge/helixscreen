@@ -23,7 +23,10 @@ class PrinterState;
  * Manages the tune overlay panel that allows adjusting:
  * - Print speed (M220 command)
  * - Flow rate (M221 command)
- * - Z-offset / baby stepping (SET_GCODE_OFFSET command)
+ * - Z-offset / baby stepping, on one of two independent axes:
+ *     - all tools  (SET_GCODE_OFFSET, Klipper's global offset), and
+ *     - the active tool alone, on firmwares that keep a per-tool correction
+ *       (see include/tool_z_offset.h). The selector only appears there.
  *
  * Accessed via get_print_tune_overlay() singleton. Can be shown from:
  * - PrintStatusPanel (Tune button during active print)
@@ -78,6 +81,16 @@ class PrintTuneOverlay : public OverlayBase {
      * @param direction -1 for closer (more squish), +1 for farther (less squish)
      */
     void handle_z_adjust(int direction);
+
+    /**
+     * @brief Choose which offset the Z buttons move
+     *
+     * Only reachable on printers with a per-tool offset; elsewhere the
+     * selector is not built and the target stays global.
+     *
+     * @param per_tool 0 = all tools (global), 1 = the active tool alone
+     */
+    void handle_z_target_select(int per_tool);
 
     /**
      * @brief Handle save Z-offset button click
@@ -180,6 +193,15 @@ class PrintTuneOverlay : public OverlayBase {
   private:
     void init_subjects_internal();
     void setup_panel();
+    /// Re-read whichever offset the current target names, and re-base the
+    /// session travel guard on it. Switching targets is starting a new session.
+    void sync_z_target();
+    /// The offset the current target is showing, in microns.
+    int current_target_microns() const;
+    /// Send a per-tool baby step. Split out because it shares nothing with the
+    /// global path but the button that triggered it.
+    void send_per_tool_adjust(int delta_microns);
+    void save_per_tool_offset();
     void update_display();
     void sync_to_state();
     void update_actual_speed_display();
@@ -211,6 +233,14 @@ class PrintTuneOverlay : public OverlayBase {
     lv_subject_t tune_actual_speed_subject_;
     lv_subject_t tune_actual_flow_subject_;
 
+    // Z-offset target (global vs per-tool). Only meaningful on printers whose
+    // firmware has a per-tool offset; tune_z_target_available gates the whole
+    // selector so single-nozzle printers see exactly what they saw before.
+    lv_subject_t z_target_available_subject_;
+    lv_subject_t z_target_global_active_subject_;
+    lv_subject_t z_target_tool_active_subject_;
+    lv_subject_t z_target_tool_label_subject_;
+
     // Subject storage buffers
     char tune_speed_buf_[16] = "100%";
     char tune_flow_buf_[16] = "100%";
@@ -219,6 +249,7 @@ class PrintTuneOverlay : public OverlayBase {
     char z_farther_icon_buf_[24] = "arrow_up";
     char tune_actual_speed_buf_[32] = "";
     char tune_actual_flow_buf_[32] = "";
+    char z_target_tool_label_buf_[16] = "T0";
 
     //
     // === State ===
@@ -233,6 +264,10 @@ class PrintTuneOverlay : public OverlayBase {
     /// offsets past this, and clamping the absolute value snapped them toward
     /// zero on the first tap and drove the nozzle into the print.
     static constexpr double Z_OFFSET_MAX_SESSION_TRAVEL = 2.0;
+
+    /// Which offset the buttons move. False = Klipper's global one (every
+    /// printer), true = the active tool's own (per-tool firmwares only).
+    bool z_target_per_tool_ = false;
 
     double current_z_offset_ = 0.0;
     /// Offset the overlay opened on; session travel is measured from here.

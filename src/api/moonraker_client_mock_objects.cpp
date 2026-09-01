@@ -336,7 +336,9 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                 if (!objects.contains(key)) {
                     continue;
                 }
-                json entry = {{"index", tool}, {"z_adjust", 0.0}};
+                // z_adjust is live state, not a constant: TOOL_Z_ADJUST moves
+                // it, and the tune overlay reads its own effect back from here.
+                json entry = {{"index", tool}, {"z_adjust", self->mock_tool_z_adjust(tool)}};
                 if (self->mock_tool_calibrated(tool)) {
                     entry["calibrated"] = true;
                     entry["nozzle_x"] = 16.5051 - tool * 0.2947;

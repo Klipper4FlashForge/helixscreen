@@ -42,6 +42,13 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
             return true;
         }
 
+        // Per-tool baby step. Synchronous, like the firmware's: it answers
+        // immediately and the new value shows up in the next status frame.
+        if (self->simulate_tool_z_adjust(script)) {
+            success_cb(json{{"result", "ok"}});
+            return true;
+        }
+
         // Real Klipper executes a multi-line script line-by-line; the per-command
         // parsers in gcode_script() assume a SINGLE command (e.g. they `find('S')`
         // globally, which a multi-line script would point at the wrong token and

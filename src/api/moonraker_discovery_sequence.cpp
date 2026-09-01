@@ -21,6 +21,7 @@
 #include "probe_sensor_manager.h"
 #include "sensor_state.h"
 #include "unit_conversions.h"
+#include "tool_z_offset.h"
 #include "z_offset_persistence.h"
 
 #include <algorithm>
@@ -1438,6 +1439,15 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
         for (const auto& tool_name : hw.tool_names()) {
             subscription_objects["tool " + tool_name] = tool_fields;
         }
+
+        // Per-tool Z correction, where the firmware keeps one beside Klipper's
+        // global baby step. Which object carries it is the provider's business,
+        // not ours — see include/tool_z_offset.h. Subscribed whole: the field
+        // name is the provider's too.
+        for (const auto& obj : helix::zoffset::per_tool_status_objects(
+                 hw, static_cast<int>(hw.tool_names().size()))) {
+            subscription_objects[obj] = nullptr;
+        }
     }
 
     // Firmware retraction. PrinterCalibrationState reads the four tunable
@@ -1527,6 +1537,10 @@ void MoonrakerDiscoverySequence::complete_discovery_subscription(uint64_t seq) {
     if (hw.has_tool_changer()) {
         spdlog::info("[Moonraker Client] Subscribing to toolchanger + {} tool objects",
                      hw.tool_names().size());
+        if (helix::zoffset::supports_per_tool_offset(hw)) {
+            spdlog::info("[Moonraker Client] Per-tool Z offset provider: {}",
+                         helix::zoffset::per_tool_provider_name(hw));
+        }
     }
 
     json subscribe_params = {{"objects", subscription_objects}};
