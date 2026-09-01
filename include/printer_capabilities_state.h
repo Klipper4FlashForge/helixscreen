@@ -296,6 +296,10 @@ class PrinterCapabilitiesState {
         return const_cast<lv_subject_t*>(&printer_has_tool_offset_cal_);
     }
 
+    lv_subject_t* get_printer_has_pa_cal_subject() const {
+        return const_cast<lv_subject_t*>(&printer_has_pa_cal_);
+    }
+
     /// 1 if printer has an enabled webcam configured
     lv_subject_t* get_printer_has_webcam_subject() const {
         return const_cast<lv_subject_t*>(&printer_has_webcam_);
@@ -424,6 +428,7 @@ class PrinterCapabilitiesState {
     lv_subject_t printer_has_chamber_{};            // combined: sensor OR heater
     lv_subject_t printer_has_screws_tilt_{};        // screws_tilt_adjust
     lv_subject_t printer_has_tool_offset_cal_{};    // tool changer + calibration macro
+    lv_subject_t printer_has_pa_cal_{};             // firmware measures pressure advance
     lv_subject_t printer_has_webcam_{};             // enabled webcam configured
     lv_subject_t webcam_count_{};                   // named webcams in webcams_
     std::vector<WebcamInfo> webcams_;               // every enabled webcam, Moonraker order
