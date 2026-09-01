@@ -402,6 +402,14 @@ void FilamentPanel::deinit_subjects() {
     // Watches PrinterState's print_state_enum, a subject tests deinit between
     // cases — must be released alongside the AmsState guards above.
     print_active_observer_.reset();
+    // Watches selected_tool_subject_, which deinit_subjects_base() below frees
+    // along with the rest of subjects_. The guard has to let go first: removing
+    // an observer whose subject is already gone walks freed memory.
+    selected_tool_observer_.reset();
+    // Bound to the selected tool's own extruder subjects, which outlive the
+    // panel but are re-created when the extruder list is re-registered.
+    nozzle_temp_observer_.reset();
+    nozzle_target_observer_.reset();
     temp_observers_.clear();
     deinit_subjects_base(subjects_);
 }
@@ -833,24 +841,24 @@ void FilamentPanel::rebind_nozzle_observers() {
     }
 
     nozzle_temp_observer_ = observe_int_sync<FilamentPanel>(
-        printer_state_.get_extruder_temp_subject(heater), this,
+        printer_state_.get_extruder_temp_subject(heater, nozzle_temp_lifetime_), this,
         [](FilamentPanel* self, int raw) {
             self->nozzle_current_ = deci_to_degrees(raw);
             if (self->are_subjects_initialized()) {
                 self->update_all_temps();
             }
         },
-        printer_state_.get_subjects_lifetime());
+        nozzle_temp_lifetime_);
 
     nozzle_target_observer_ = observe_int_sync<FilamentPanel>(
-        printer_state_.get_extruder_target_subject(heater), this,
+        printer_state_.get_extruder_target_subject(heater, nozzle_target_lifetime_), this,
         [](FilamentPanel* self, int raw) {
             self->nozzle_target_ = deci_to_degrees(raw);
             if (self->are_subjects_initialized()) {
                 self->update_all_temps();
             }
         },
-        printer_state_.get_subjects_lifetime());
+        nozzle_target_lifetime_);
 
     // The graph sits directly under the reading, so it follows the same tool —
     // otherwise the number and the curve beneath it describe different hotends.
@@ -2126,6 +2134,14 @@ void FilamentPanel::update_heat_state() {
 }
 
 void FilamentPanel::handle_selected_tool_changed() {
+    // observe_int_sync defers this through the update queue, so a selection made
+    // just before the subtree is torn down lands here with panel_ pointing at
+    // freed widgets. Every updater below writes one, so there is nothing to do
+    // once the tree is gone.
+    if (!panel_ || !lv_obj_is_valid(panel_)) {
+        return;
+    }
+
     const int selected = selected_tool_index();
     auto& ts = helix::ToolState::instance();
 

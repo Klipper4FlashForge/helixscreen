@@ -248,6 +248,12 @@ class FilamentPanel : public PanelBase {
     // the rebind idempotent so a repeated selection does not churn observers.
     ObserverGuard nozzle_temp_observer_;
     ObserverGuard nozzle_target_observer_;
+    // Each extruder owns its temp/target subjects on the heap, so the guard has
+    // to hold THAT subject's lifetime: re-registering the extruder list frees
+    // them, and a guard still holding the global PrinterState lifetime would
+    // dereference freed memory when it removes the observer.
+    SubjectLifetime nozzle_temp_lifetime_;
+    SubjectLifetime nozzle_target_lifetime_;
     std::string bound_nozzle_heater_;
     void rebind_nozzle_observers();
 
