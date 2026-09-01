@@ -15,16 +15,17 @@
  * verb on the panel act on the selected tool.
  *
  * ```
- *  +===========================+   border = heat: amber heating, green at
- *  | * T0              PETG    |   temperature, red still-hot; thicker when
- *  | [========-----]     480g  |   this is the selected tool
- *  +===========================+   dot = material colour, filled when loaded
- * ```                              bar = spool remaining
+ *  +===========================+   border = amber while this tool's heater has a
+ *  | * T0              PETG    |   target; thicker when it is the selected tool
+ *  | [========-----]     480g  |   dot = material colour, filled when loaded
+ *  +===========================+   bar = spool remaining
+ * ```
  *
- * A toolchanger can hold several heads hot at once, which the single nozzle
- * reading on the left cannot express — so heat is per-chip, and it rides the
- * border rather than another dot, because the chip already spends its dot on
- * "which filament is loaded".
+ * The border answers "which heads is the printer holding hot", from the target
+ * rather than the current temperature — a toolchanger can hold several at
+ * temperature at once, and the single nozzle reading on the left only ever
+ * speaks for the active tool. It rides the border rather than another dot
+ * because the chip already spends its dot on "which filament is loaded".
  *
  * A row of these replaces both the AMS pill row and the tool dropdown the panel
  * used to carry, which were two controls for one choice. Past four tools the

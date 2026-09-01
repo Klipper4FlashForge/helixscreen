@@ -1699,23 +1699,41 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
             target = std::stod(gcode.substr(target_pos + 7));
         }
 
-        if (gcode.find("HEATER=extruder") != std::string::npos) {
+        // Klipper matches the heater by its exact object name. Read the whole
+        // HEATER= token rather than testing for a prefix: "HEATER=extruder"
+        // is a prefix of "HEATER=extruder2", so a substring test sends every
+        // toolchanger hotend's command to T0.
+        std::string heater_name;
+        if (size_t heater_pos = gcode.find("HEATER="); heater_pos != std::string::npos) {
+            size_t begin = heater_pos + 7;
+            size_t end = gcode.find_first_of(" \t\r\n", begin);
+            heater_name = gcode.substr(begin, end == std::string::npos ? end : end - begin);
+        }
+
+        if (heater_name == "extruder") {
             set_extruder_target(target);
             reset_idle_timeout();
             spdlog::info("[MoonrakerClientMock] Extruder target set to {}°C", target);
             dispatch_status_update({{"extruder", {{"target", target}}}});
-        } else if (gcode.find("HEATER=heater_bed") != std::string::npos) {
+        } else if (heater_name == "extruder1" || heater_name == "extruder2" ||
+                   heater_name == "extruder3") {
+            const int slot = heater_name.back() - '1';
+            extra_extruder_target_[slot].store(target);
+            reset_idle_timeout();
+            spdlog::info("[MoonrakerClientMock] {} target set to {}°C", heater_name, target);
+            dispatch_status_update({{heater_name, {{"target", target}}}});
+        } else if (heater_name == "heater_bed") {
             set_bed_target(target);
             reset_idle_timeout();
             spdlog::info("[MoonrakerClientMock] Bed target set to {}°C", target);
             dispatch_status_update({{"heater_bed", {{"target", target}}}});
-        } else if (gcode.find("HEATER=heater_generic ") != std::string::npos) {
+        } else if (heater_name == "heater_generic") {
             // Reject invalid format: Klipper expects bare object name, not "heater_generic chamber"
             spdlog::error(
                 "[MoonrakerClientMock] Invalid SET_HEATER_TEMPERATURE: HEATER must use bare object "
                 "name (e.g. HEATER=chamber), not prefixed type (HEATER=heater_generic chamber)");
             return 1;
-        } else if (gcode.find("HEATER=chamber") != std::string::npos) {
+        } else if (heater_name == "chamber") {
             set_chamber_target(target);
             reset_idle_timeout();
             spdlog::info("[MoonrakerClientMock] Chamber target set to {}°C", target);
@@ -4507,14 +4525,26 @@ void MoonrakerClientMock::temperature_simulation_loop() {
             {"Diameter", 1.75}, {"Raw", 500.0}, {"is_active", true}};
 
         // Toolchanger mock mode: keep the 3 extra extruder temps on the live
-        // subscription stream so they don't go stale. Static values (matching the
-        // initial query response) chosen for easy heating-state color eyeballing:
-        // extruder1 HEATING (150/250), extruder2 AT-TEMP (248/250),
-        // extruder3 COOLING (200/0). Not wired into the ramping atomics by design.
+        // subscription stream so they don't go stale. They seed as extruder1
+        // HEATING (150/250), extruder2 AT-TEMP (248/250) and extruder3 COOLING
+        // (200/0) so every heat state is on screen at startup, then follow
+        // whatever SET_HEATER_TEMPERATURE aims at them.
         if (is_mock_toolchanger()) {
-            status_obj["extruder1"] = {{"temperature", 150.0}, {"target", 250.0}};
-            status_obj["extruder2"] = {{"temperature", 248.0}, {"target", 250.0}};
-            status_obj["extruder3"] = {{"temperature", 200.0}, {"target", 0.0}};
+            static constexpr const char* kExtraExtruders[] = {"extruder1", "extruder2",
+                                                              "extruder3"};
+            for (int slot = 0; slot < 3; ++slot) {
+                // Crawl toward the target so a preheat aimed at this hotend is
+                // visible on its own chip: rising while it climbs, at-temp once
+                // it arrives, falling back to ambient when the target is 0.
+                const double target = extra_extruder_target_[slot].load();
+                const double temp = extra_extruder_temp_[slot].load();
+                const double goal = target > 0.0 ? target : 25.0;
+                const double step = std::clamp(goal - temp, -3.0, 3.0);
+                const double next = std::abs(goal - temp) < 0.5 ? goal : temp + step;
+                extra_extruder_temp_[slot].store(next);
+                status_obj[kExtraExtruders[slot]] = {{"temperature", next},
+                                                     {"target", target}};
+            }
         }
 
         // Add klippy state if not ready (only send when abnormal)

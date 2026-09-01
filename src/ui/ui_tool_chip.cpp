@@ -51,15 +51,6 @@ constexpr int32_t DOT_COMPACT_PX = 7;
 /// visible before it bites rather than after.
 constexpr float LOW_SPOOL_FRACTION = 0.15f;
 
-/// Within this of target still reads as "at temperature" — the same band the
-/// panel's heat block uses, so a chip and the big reading cannot disagree.
-constexpr int HEAT_AT_TARGET_TOLERANCE_C = 3;
-
-/// Above this a hotend with no target is still a burn, and the chip says so.
-/// Klipper's own min_extrude_temp is far higher; this is a safety threshold,
-/// not an extrusion one.
-constexpr int HOT_TO_TOUCH_C = 50;
-
 /// Border width for the selected chip. Selection owns the WIDTH and the fill;
 /// heat owns the border COLOUR. Splitting the two means a heating tool still
 /// reads as heating when it is not the selected one, and the selected tool is
@@ -93,11 +84,11 @@ struct ChipModel {
     /// a second one is a guaranteed refusal, so the row goes inert instead.
     bool busy = false;
 
-    /// Heat on this tool's own hotend: 0 cold and off, 1 heating, 2 at target,
-    /// 3 hot with no target (cooling, still a burn). A toolchanger can hold
-    /// several heads hot at once, so this is per-chip and not something the
-    /// single nozzle reading on the left can express.
-    int heat = 0;
+    /// This tool's hotend is being held hot - it has a target set. A toolchanger
+    /// can hold several heads at temperature at once, and the single nozzle
+    /// reading on the left only ever speaks for the active tool, so which heads
+    /// are live has to be answered per chip.
+    bool heating = false;
     std::string heater; ///< Heater this tool reads, for (re)binding observers
 };
 
@@ -123,7 +114,6 @@ struct ChipData {
     /// rebuilt under us (AMS topology), so a chip re-binds when its tool starts
     /// reading a different hotend rather than watching a stale one forever.
     std::string bound_heater;
-    ObserverGuard heat_temp_obs;
     ObserverGuard heat_target_obs;
 
     bool compact = false;
@@ -158,8 +148,8 @@ lv_subject_t* selected_subject() {
  * same resolver the panel's Load/Unload gating uses — so a chip can never
  * disagree with the buttons about which lane a tool feeds.
  */
-int heat_for_heater(const std::string& heater);
-void paint_heat_border(lv_obj_t* chip, ChipData* d, int heat, bool selected);
+bool heater_is_on(const std::string& heater);
+void paint_heat_border(lv_obj_t* chip, bool heating, bool selected);
 
 ChipModel build_model(int index) {
     ChipModel m;
@@ -218,7 +208,7 @@ ChipModel build_model(int index) {
     }
 
     m.heater = tool.effective_heater();
-    m.heat = heat_for_heater(m.heater);
+    m.heating = heater_is_on(m.heater);
     return m;
 }
 
@@ -237,7 +227,7 @@ void apply_model(lv_obj_t* chip, ChipData* d, const ChipModel& m) {
     // row reads as one selected thing among several without the two signals
     // competing for the same channel.
     d->selected = m.selected;
-    paint_heat_border(chip, d, m.heat, m.selected);
+    paint_heat_border(chip, m.heating, m.selected);
     if (m.selected) {
         lv_obj_set_style_bg_color(chip, theme_manager_get_color("elevated_bg"), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, LV_PART_MAIN);
@@ -312,86 +302,63 @@ void apply_model(lv_obj_t* chip, ChipData* d, const ChipModel& m) {
 }
 
 /**
- * @brief Heat state of one hotend: 0 cold/off, 1 heating, 2 at target,
- *        3 hot with no target.
+ * @brief Does this hotend have a target set — is it being held hot?
  *
- * The single rule both callers use — the full rebuild and the per-tick pip
- * repaint — so a chip's pip and its model can never disagree.
+ * The target, not the current temperature. A tool the printer is keeping at
+ * temperature is the one that matters here, whether it is still ramping up or
+ * already sitting there; a head with its heater off is on its way to cold and
+ * is not what this mark is for.
+ *
+ * The single rule both callers use — the full rebuild and the per-tick edge
+ * repaint — so a chip's border and its model can never disagree.
  */
-int heat_for_heater(const std::string& heater) {
+bool heater_is_on(const std::string& heater) {
     if (heater.empty()) {
-        return 0;
+        return false;
     }
-    auto& ps = get_printer_state();
-    lv_subject_t* cur = ps.get_extruder_temp_subject(heater);
-    if (!cur) {
-        return 0;
-    }
-    const int temp = helix::ui::temperature::deci_to_degrees(lv_subject_get_int(cur));
-    int target = 0;
-    if (lv_subject_t* tgt = ps.get_extruder_target_subject(heater)) {
-        target = helix::ui::temperature::deci_to_degrees(lv_subject_get_int(tgt));
-    }
-    if (target > 0) {
-        return (temp >= target - HEAT_AT_TARGET_TOLERANCE_C) ? 2 : 1;
-    }
-    return (temp >= HOT_TO_TOUCH_C) ? 3 : 0;
+    lv_subject_t* tgt = get_printer_state().get_extruder_target_subject(heater);
+    return tgt && helix::ui::temperature::deci_to_degrees(lv_subject_get_int(tgt)) > 0;
 }
 
 /**
  * @brief Colour the chip's edge from its hotend.
  *
- * The border is the heat channel: amber while a tool is coming up to
- * temperature, green once it is there, red for a hotend still hot with no
- * target (no longer heating, still a burn). A cold tool falls back to the
- * neutral edge, brightened when it is the selected one.
+ * The border is the heat channel and it says exactly one thing: amber when this
+ * tool's heater is driven. Anything else takes the neutral edge, brightened
+ * when it is the selected one.
  */
-void paint_heat_border(lv_obj_t* chip, ChipData* d, int heat, bool selected) {
-    const char* token = nullptr;
-    switch (heat) {
-    case 1:
-        token = "warning";
-        break;
-    case 2:
-        token = "success";
-        break;
-    case 3:
-        token = "danger";
-        break;
-    default:
-        token = selected ? "text_subtle" : "border";
-        break;
-    }
+void paint_heat_border(lv_obj_t* chip, bool heating, bool selected) {
+    const char* token = heating ? "warning" : (selected ? "text_subtle" : "border");
     lv_obj_set_style_border_color(chip, theme_manager_get_color(token), LV_PART_MAIN);
     lv_obj_set_style_border_width(chip, selected ? BORDER_W_SELECTED_PX : BORDER_W_PX,
                                   LV_PART_MAIN);
 }
 
-/// Repaint just the edge. A temperature tick arrives about once a second per
-/// hotend and changes nothing else on the chip, so it must not drag the AMS
-/// system-info read (and its mutex) along with it.
+/// Repaint just the edge. A heater-target change touches nothing else on the
+/// chip, so it must not drag the AMS system-info read (and its mutex) along
+/// with it.
 void refresh_heat_only(lv_obj_t* chip) {
     ChipData* d = chip_data(chip);
     if (!d) {
         return;
     }
-    paint_heat_border(chip, d, heat_for_heater(d->bound_heater), d->selected);
+    paint_heat_border(chip, heater_is_on(d->bound_heater), d->selected);
 }
 
-/// Point the heat observers at @p heater, when it is not what they already
-/// watch. Called from refresh(), which is also where the heater name is
-/// resolved, so the two cannot drift.
+/// Point the heater-target observer at @p heater, when it is not what it
+/// already watches. Called from refresh(), which is also where the heater name
+/// is resolved, so the two cannot drift.
 void bind_heat_observers(lv_obj_t* chip, ChipData* d, const std::string& heater) {
     if (heater.empty() || heater == d->bound_heater) {
         return;
     }
     d->bound_heater = heater;
-    auto& ps = get_printer_state();
-    auto on_change = [](lv_obj_t* c, int) { refresh_heat_only(c); };
-    d->heat_temp_obs = helix::ui::observe_int_sync<lv_obj_t>(ps.get_extruder_temp_subject(heater),
-                                                             chip, on_change, d->alive);
+    // Only the TARGET is watched. The current temperature ticks about once a
+    // second per hotend and changes nothing the chip draws, so observing it
+    // would wake every chip on the row for nothing.
     d->heat_target_obs = helix::ui::observe_int_sync<lv_obj_t>(
-        ps.get_extruder_target_subject(heater), chip, on_change, d->alive);
+        get_printer_state().get_extruder_target_subject(heater), chip,
+        [](lv_obj_t* c, int) { refresh_heat_only(c); }, d->alive);
 }
 
 void refresh(lv_obj_t* chip) {
@@ -498,7 +465,6 @@ void chip_event_cb(lv_event_t* e) {
         d->ams_revision_obs.reset();
         d->ams_action_obs.reset();
         d->selected_obs.reset();
-        d->heat_temp_obs.reset();
         d->heat_target_obs.reset();
         lv_obj_set_user_data(chip, nullptr);
         delete d;

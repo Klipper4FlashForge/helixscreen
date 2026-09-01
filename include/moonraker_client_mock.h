@@ -1335,6 +1335,13 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     // Temperature simulation state
     std::atomic<double> extruder_temp_{25.0};  // Current temperature
     std::atomic<double> extruder_target_{0.0}; // Target temperature (0 = off)
+
+    // Toolchanger mock: extruder1/2/3 (T1..T3). Index 0 == extruder1. The seed
+    // values give one hotend heating, one at temp and one cooling so the tool
+    // chips show every heat state on a fresh start; a SET_HEATER_TEMPERATURE
+    // aimed at one of these heaters overwrites its own entry and nothing else.
+    std::atomic<double> extra_extruder_temp_[3]{{150.0}, {248.0}, {200.0}};
+    std::atomic<double> extra_extruder_target_[3]{{250.0}, {250.0}, {0.0}};
     std::atomic<double> bed_temp_{25.0};       // Current temperature
     std::atomic<double> bed_target_{0.0};      // Target temperature (0 = off)
     std::atomic<double> chamber_temp_{25.0};   // Chamber temp (25-45°C, passive sensor)

@@ -262,7 +262,7 @@
         "last_snapshot": {}
       },
       "default_macros": {
-        "cooldown": "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=0\nSET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=0",
+        "cooldown": "SET_HEATER_TEMPERATURE HEATER={nozzle} TARGET=0\nSET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=0",
         "load_filament": {
           "label": "Load",
           "gcode": "LOAD_FILAMENT"

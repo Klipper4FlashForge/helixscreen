@@ -13,6 +13,7 @@
 #include "macro_param_modal.h"
 #include "operation_timeout_guard.h"
 #include "subject_managed_panel.h"
+#include "temperature_controller.h" // helix::SendOptions (by value in set_nozzle_target)
 #include "ui/temperature_observer_bundle.h"
 
 #include <array>
@@ -241,6 +242,30 @@ class FilamentPanel : public PanelBase {
     ObserverGuard active_tool_observer_;
     void update_nozzle_label();
 
+    // The nozzle reading follows the SELECTED tool, not the active one — it sits
+    // directly under the row where the tool is chosen. These are rebound to that
+    // tool's own heater whenever the selection moves; bound_nozzle_heater_ makes
+    // the rebind idempotent so a repeated selection does not churn observers.
+    ObserverGuard nozzle_temp_observer_;
+    ObserverGuard nozzle_target_observer_;
+    std::string bound_nozzle_heater_;
+    void rebind_nozzle_observers();
+
+    /// Send a nozzle target for the SELECTED tool. Every nozzle target this
+    /// panel sends goes through here: HeaterType::Nozzle resolves to the ACTIVE
+    /// extruder, so on a toolchanger a preheat from this panel heated whichever
+    /// tool was mounted rather than the one the user picked. Still routed via
+    /// TemperatureController, which remains the single authority for sends.
+    void set_nozzle_target(double celsius, helix::SendOptions opts = {});
+
+    /// 1 when the selected tool is the one actually mounted. Extrude/Retract
+    /// send a bare `G1 E`, which Klipper applies to the ACTIVE extruder — there
+    /// is no tool in that command — so they are only honest while the two agree.
+    /// Load/Unload/Purge do not need this: they resolve the selected tool to its
+    /// slot through resolve_op_button_slot() and act on that.
+    lv_subject_t tool_is_active_subject_;
+    void update_tool_is_active();
+
     // Left card temperature subjects (current and target for nozzle/bed)
     lv_subject_t nozzle_current_subject_;
     lv_subject_t nozzle_target_subject_;
@@ -440,7 +465,9 @@ class FilamentPanel : public PanelBase {
     lv_subject_t selected_tool_subject_;
     ObserverGuard selected_tool_observer_;
     [[nodiscard]] int selected_tool_index() const;
-    void seed_selected_tool(); ///< Point the selection at the active tool
+    /// Point the selection at the active tool. Preserves a still-valid choice
+    /// unless @p force — the machine must not overwrite a deliberate pick.
+    void seed_selected_tool(bool force = false);
 
     void update_multi_filament_card_visibility();
     void apply_left_column_sizing(bool external_spool_mode);

@@ -144,10 +144,14 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     // Subscribe to PrinterState temperatures using bundle pattern
     // NOTE: Observers must defer UI updates via ui_queue_update() to avoid render-phase assertions
     // [L029]
+    // Bed only from the bundle. Its nozzle half follows the ACTIVE extruder,
+    // which is the wrong tool for this panel: the reading sits directly under a
+    // row where you pick a tool, so it has to be about the tool you picked.
+    // rebind_nozzle_observers() owns nozzle_current_/nozzle_target_ instead, and
+    // these two handlers must stay no-ops or the two sources would fight over
+    // the same fields and flicker between tools.
     temp_observers_.setup_async(
-        this, printer_state_,
-        [](FilamentPanel* self, int raw) { self->nozzle_current_ = deci_to_degrees(raw); },
-        [](FilamentPanel* self, int raw) { self->nozzle_target_ = deci_to_degrees(raw); },
+        this, printer_state_, [](FilamentPanel*, int) {}, [](FilamentPanel*, int) {},
         [](FilamentPanel* self, int raw) { self->bed_current_ = deci_to_degrees(raw); },
         [](FilamentPanel* self, int raw) { self->bed_target_ = deci_to_degrees(raw); },
         [](FilamentPanel* self) { self->update_all_temps(); });
@@ -186,10 +190,13 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
         helix::ToolState::instance().get_active_tool_subject(), this,
         [](FilamentPanel* self, int tool_idx) {
             self->update_nozzle_label();
-            // Follow the machine: a tool change the printer made itself moves the
-            // selection with it, so the panel never acts on a tool that is no
-            // longer at the plate.
-            if (tool_idx >= 0) {
+            // Adopt the machine's tool ONLY when the row has no valid choice of
+            // its own. "Follow the machine" unconditionally was wrong: active_tool
+            // is re-published with an unchanged value, so every such notification
+            // yanked a deliberate pick back to the mounted tool a few seconds
+            // later — you picked T2, preheated T2 correctly, the row silently
+            // reverted to T0, and the next action heated T0.
+            if (tool_idx >= 0 && self->selected_tool_index() < 0) {
                 lv_subject_set_int(&self->selected_tool_subject_, tool_idx);
             }
             if (self->temp_control_panel_) {
@@ -199,6 +206,7 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
                 }
             }
             // Re-evaluate Load/Unload/Purge gating for the newly-selected tool.
+            self->update_tool_is_active();
             self->update_filament_op_buttons();
         },
         helix::ToolState::instance().get_subjects_lifetime());
@@ -320,6 +328,7 @@ void FilamentPanel::init_subjects() {
         // the tool row writes it and highlights from it.
         UI_MANAGED_SUBJECT_INT(selected_tool_subject_, 0, "filament_selected_tool", subjects_);
         UI_MANAGED_SUBJECT_INT(has_tool_subject_, 1, "filament_has_tool", subjects_);
+        UI_MANAGED_SUBJECT_INT(tool_is_active_subject_, 1, "filament_tool_is_active", subjects_);
 
         // Heat-block state (0 cold, 1 heating, 2 at temp, 3 changing, 4 refused).
         UI_MANAGED_SUBJECT_INT(heat_state_subject_, 0, "filament_heat_state", subjects_);
@@ -383,9 +392,7 @@ void FilamentPanel::deinit_subjects() {
         }
         // Don't schedule delayed cooldown during teardown — just cool down immediately
         if (prior_nozzle_target_ == 0) {
-            if (auto* c = get_temperature_controller()) {
-                c->set_target(helix::HeaterType::Nozzle, 0.0, {.toast = false});
-            }
+            set_nozzle_target(0.0, {.toast = false});
         }
         prior_nozzle_target_ = 0;
     }
@@ -457,6 +464,8 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
 
     // Point the tool row at the active tool, then set card visibility.
     seed_selected_tool();
+    rebind_nozzle_observers();
+    update_nozzle_label();
     update_multi_filament_card_visibility();
 
     // Seed Load/Unload/Purge gating from current live load state (Task 5).
@@ -738,11 +747,118 @@ void FilamentPanel::check_and_auto_select_preset() {
 }
 
 void FilamentPanel::update_nozzle_label() {
-    auto label = helix::ToolState::instance().nozzle_label();
+    auto& ts = helix::ToolState::instance();
+    // ToolState::nozzle_label() names the ACTIVE tool, which is right for every
+    // other surface but not here: this label sits on the reading that follows
+    // the SELECTED tool, so it has to name the same one the number is about.
+    // The has_multiple_extruders() gate is kept — on a single-hotend printer
+    // every lane feeds the same nozzle and naming a lane would say nothing.
+    std::string label = lv_tr("Nozzle");
+    const int selected = selected_tool_index();
+    if (ts.has_multiple_extruders() && selected >= 0 &&
+        selected < static_cast<int>(ts.tools().size())) {
+        label += " " + ts.tools()[static_cast<size_t>(selected)].name;
+    }
     std::snprintf(nozzle_label_buf_, sizeof(nozzle_label_buf_), "%s", label.c_str());
     if (subjects_initialized_) {
         lv_subject_copy_string(&nozzle_label_subject_, nozzle_label_buf_);
     }
+}
+
+void FilamentPanel::update_tool_is_active() {
+    const int selected = selected_tool_index();
+    const int active = helix::ToolState::instance().active_tool_index();
+    // A single-tool printer always agrees with itself; -1 (all docked) already
+    // hides the whole block, so treat it as "no mismatch" rather than flapping
+    // the disabled state on the way there.
+    const bool agrees = selected < 0 || selected == active;
+    lv_subject_set_int(&tool_is_active_subject_, agrees ? 1 : 0);
+}
+
+void FilamentPanel::set_nozzle_target(double celsius, helix::SendOptions opts) {
+    auto* c = get_temperature_controller();
+    if (!c) {
+        return;
+    }
+    // Every nozzle target this panel sends belongs to the tool the user picked,
+    // not to whichever tool happens to be active. HeaterType::Nozzle resolves to
+    // the ACTIVE extruder, so on a toolchanger picking T3 and preheating heated
+    // T0 — the panel showed one tool's temperature and heated another's.
+    // The named overload is still TemperatureController, so this keeps the single
+    // authority for target sends intact.
+    if (!bound_nozzle_heater_.empty()) {
+        c->set_target(bound_nozzle_heater_, celsius, opts);
+        return;
+    }
+
+    // No resolved heater: send NOTHING. The old fallback here was
+    // HeaterType::Nozzle, which resolves to the ACTIVE extruder — so any moment
+    // the binding was not established (panel rebuilt, tool list briefly empty,
+    // selection out of range) quietly routed the user's heat to tool 0. Refusing
+    // is the only safe default: heating the wrong hotend is worse than heating
+    // none, and the caller's toast still tells the user nothing happened.
+    const bool multi_tool = helix::ToolState::instance().is_multi_tool();
+    if (multi_tool) {
+        spdlog::warn("[{}] Nozzle target {}C dropped — no heater resolved for the selected tool",
+                     get_name(), celsius);
+        return;
+    }
+    // Single-hotend printer: "the nozzle" is unambiguous, so the generic path is
+    // still correct there and stays available.
+    c->set_target(helix::HeaterType::Nozzle, celsius, opts);
+}
+
+void FilamentPanel::rebind_nozzle_observers() {
+    auto& ts = helix::ToolState::instance();
+    const int selected = selected_tool_index();
+
+    std::string heater;
+    if (selected >= 0 && selected < static_cast<int>(ts.tools().size())) {
+        heater = ts.tools()[static_cast<size_t>(selected)].effective_heater();
+    }
+    if (heater == bound_nozzle_heater_) {
+        return;
+    }
+    bound_nozzle_heater_ = heater;
+
+    if (heater.empty()) {
+        // Every head docked: nothing to read. Drop the observers rather than
+        // leave them on the last tool, so the panel cannot report a temperature
+        // it is no longer showing a tool for.
+        nozzle_temp_observer_.reset();
+        nozzle_target_observer_.reset();
+        nozzle_current_ = 0;
+        nozzle_target_ = 0;
+        return;
+    }
+
+    nozzle_temp_observer_ = observe_int_sync<FilamentPanel>(
+        printer_state_.get_extruder_temp_subject(heater), this,
+        [](FilamentPanel* self, int raw) {
+            self->nozzle_current_ = deci_to_degrees(raw);
+            if (self->are_subjects_initialized()) {
+                self->update_all_temps();
+            }
+        },
+        printer_state_.get_subjects_lifetime());
+
+    nozzle_target_observer_ = observe_int_sync<FilamentPanel>(
+        printer_state_.get_extruder_target_subject(heater), this,
+        [](FilamentPanel* self, int raw) {
+            self->nozzle_target_ = deci_to_degrees(raw);
+            if (self->are_subjects_initialized()) {
+                self->update_all_temps();
+            }
+        },
+        printer_state_.get_subjects_lifetime());
+
+    // The graph sits directly under the reading, so it follows the same tool —
+    // otherwise the number and the curve beneath it describe different hotends.
+    if (temp_control_panel_) {
+        temp_control_panel_->switch_active_extruder(heater);
+    }
+
+    spdlog::debug("[{}] Nozzle reading now follows {} (tool {})", get_name(), heater, selected);
 }
 
 void FilamentPanel::update_all_temps() {
@@ -814,12 +930,12 @@ void FilamentPanel::handle_preset_button(int material_id) {
         if (auto* c = get_temperature_controller()) {
             // Switching material: hold the previous filament's temp if hotter so
             // the old material still purges cleanly (keep_previous_hot).
-            c->set_target(helix::HeaterType::Nozzle, static_cast<double>(nozzle_target_),
-                          {.toast = true,
-                           .keep_previous_hot = true,
-                           .on_success = [target = nozzle_target_]() {
-                               NOTIFY_SUCCESS(lv_tr("Nozzle target set to {}°C"), target);
-                           }});
+            set_nozzle_target(static_cast<double>(nozzle_target_),
+                              {.toast = true,
+                               .keep_previous_hot = true,
+                               .on_success = [target = nozzle_target_]() {
+                                   NOTIFY_SUCCESS(lv_tr("Nozzle target set to {}°C"), target);
+                               }});
             c->set_target(helix::HeaterType::Bed, static_cast<double>(bed_target_),
                           {.toast = true, .on_success = [target = bed_target_]() {
                                NOTIFY_SUCCESS(lv_tr("Bed target set to {}°C"), target);
@@ -997,12 +1113,10 @@ void FilamentPanel::handle_custom_nozzle_confirmed(float value) {
     update_status();
 
     // Send temperature command to printer
-    if (auto* c = get_temperature_controller()) {
-        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(nozzle_target_),
+    set_nozzle_target(static_cast<double>(nozzle_target_),
                       {.toast = true, .on_success = [target = nozzle_target_]() {
                            NOTIFY_SUCCESS(lv_tr("Nozzle target set to {}°C"), target);
                        }});
-    }
 }
 
 void FilamentPanel::handle_custom_bed_confirmed(float value) {
@@ -1836,10 +1950,21 @@ int FilamentPanel::selected_tool_index() const {
     return selected;
 }
 
-void FilamentPanel::seed_selected_tool() {
+void FilamentPanel::seed_selected_tool(bool force) {
     auto& ts = helix::ToolState::instance();
     const int active = ts.active_tool_index();
     const int count = ts.tool_count();
+
+    // Keep a selection that is still valid. This runs on every tools_version
+    // bump (an AMS topology republish is enough), and re-seeding unconditionally
+    // threw away the user's pick just as the active-tool observer used to.
+    // force=true is for the one caller that must override: a tool change that
+    // FAILED, where the row is showing a tool the machine never reached.
+    const int current = selected_tool_index();
+    if (!force && current >= 0 && current < count) {
+        return;
+    }
+
     const int seeded = (active >= 0 && active < count) ? active : (count > 0 ? 0 : -1);
     lv_subject_set_int(&selected_tool_subject_, seeded);
     spdlog::debug("[{}] Tool row seeded to {} of {} tools", get_name(), seeded, count);
@@ -2007,6 +2132,9 @@ void FilamentPanel::handle_selected_tool_changed() {
     // Preheat and the filament verbs have nothing to act on with every head
     // docked, so the right column swaps to a line asking for a tool instead.
     lv_subject_set_int(&has_tool_subject_, selected >= 0 ? 1 : 0);
+    rebind_nozzle_observers();
+    update_nozzle_label();
+    update_tool_is_active();
     update_verb_emphasis();
     update_left_card_temps();
     update_heat_state();
@@ -2060,7 +2188,12 @@ void FilamentPanel::handle_selected_tool_changed() {
             NOTIFY_ERROR(lv_tr("Tool change failed: {}"), error);
             // Revert dropdown to actual active tool on UI thread
             helix::ui::async_call(
-                [](void* ctx) { static_cast<FilamentPanel*>(ctx)->seed_selected_tool(); }, this);
+                [](void* ctx) {
+                    // The change failed, so the row must go back to the tool the
+                    // machine is actually on, even though its pick is "valid".
+                    static_cast<FilamentPanel*>(ctx)->seed_selected_tool(/*force=*/true);
+                },
+                this);
         });
 }
 
@@ -2202,8 +2335,8 @@ void FilamentPanel::handle_spool_preset_button() {
     if (auto* c = get_temperature_controller()) {
         // Switching material via spool preset: hold the previous filament's temp
         // if hotter so the old material still purges cleanly (keep_previous_hot).
-        c->set_target(
-            helix::HeaterType::Nozzle, static_cast<double>(nozzle_target_),
+        set_nozzle_target(
+            static_cast<double>(nozzle_target_),
             {.toast = true, .keep_previous_hot = true, .on_success = [t = nozzle_target_]() {
                  NOTIFY_SUCCESS(lv_tr("Nozzle target set to {}°C"), t);
              }});
@@ -2351,8 +2484,15 @@ void FilamentPanel::handle_cooldown() {
     spdlog::info("[{}] Cooldown requested - turning off heaters", get_name());
 
     if (api_) {
-        // Build default cooldown gcode, including chamber if printer has one
-        std::string default_gcode = "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=0\n"
+        // Cool the SELECTED tool's hotend, not a hardcoded "extruder" — that
+        // literal is tool 0, so on a toolchanger picking T2 and cooling down
+        // turned off T0 and left T2 hot. Bed and chamber stay machine-wide.
+        // Note this only shapes the DEFAULT gcode: a user-configured "cooldown"
+        // macro is still used verbatim below, since its intent is unknowable.
+        const std::string nozzle_heater =
+            bound_nozzle_heater_.empty() ? std::string("extruder") : bound_nozzle_heater_;
+        std::string default_gcode = "SET_HEATER_TEMPERATURE HEATER=" + nozzle_heater +
+                                    " TARGET=0\n"
                                     "SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=0";
 
         const auto& discovery = printer_state_.get_discovery();
@@ -2369,6 +2509,24 @@ void FilamentPanel::handle_cooldown() {
         auto* cfg = helix::Config::get_instance();
         helix::MacroConfig default_cooldown{"Cool Down", default_gcode};
         auto cooldown = cfg ? cfg->get_macro("cooldown", default_cooldown) : default_cooldown;
+
+        // The macro decides WHICH heater, and it cannot know the selected tool.
+        // "{nozzle}" is the supported placeholder (settings.json.template ships
+        // it). The literal "HEATER=extruder" is also rewritten, because every
+        // settings.json seeded before that template change carries the hardcoded
+        // form — without this, an existing install keeps cooling tool 0 no matter
+        // which tool is selected. On a single-tool printer the replacement is
+        // "extruder" anyway, so nothing changes there.
+        auto substitute = [](std::string& text, const std::string& from, const std::string& to) {
+            for (size_t at = text.find(from); at != std::string::npos;
+                 at = text.find(from, at + to.size())) {
+                text.replace(at, from.size(), to);
+            }
+        };
+        substitute(cooldown.gcode, "{nozzle}", nozzle_heater);
+        if (nozzle_heater != "extruder") {
+            substitute(cooldown.gcode, "HEATER=extruder ", "HEATER=" + nozzle_heater + " ");
+        }
 
         api_->execute_gcode(
             cooldown.gcode, []() { NOTIFY_SUCCESS(lv_tr("Heaters off")); },
@@ -2561,6 +2719,15 @@ const char* FilamentPanel::preheat_op_name(PreheatOp op) {
 // nozzle_target_ member — set_material() overwrites nozzle_target_ with
 // the preset's preview temperature, so it's unreliable here.
 int FilamentPanel::current_extruder_target() const {
+    // The SELECTED tool's target, matching what this panel displays and sends.
+    // Reading the active extruder here made the preheat snapshot and the
+    // restore-after-preheat decision belong to a different tool than the one
+    // the operation was for.
+    if (!bound_nozzle_heater_.empty()) {
+        if (auto* named = printer_state_.get_extruder_target_subject(bound_nozzle_heater_)) {
+            return deci_to_degrees(lv_subject_get_int(named));
+        }
+    }
     auto* subj = printer_state_.get_active_extruder_target_subject();
     return subj ? deci_to_degrees(lv_subject_get_int(subj)) : 0;
 }
@@ -2585,10 +2752,7 @@ void FilamentPanel::start_preheat_for_op(PreheatOp op) {
     // that a naive lower would cause, while the prior_nozzle_target_ snapshot
     // guarantees the heater isn't turned off when the op completes.
     const int real_target = current_extruder_target();
-    if (auto* c = get_temperature_controller()) {
-        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target),
-                      {.toast = false, .keep_previous_hot = true});
-    }
+    set_nozzle_target(static_cast<double>(target), {.toast = false, .keep_previous_hot = true});
 
     if (material_name.empty()) {
         NOTIFY_INFO(lv_tr("Heating to {}°C..."), target);
@@ -2660,9 +2824,7 @@ void FilamentPanel::cancel_pending_preheat() {
 
     // Restore heater to prior state immediately (no delay for cancel)
     if (prior_nozzle_target_ == 0) {
-        if (auto* c = get_temperature_controller()) {
-            c->set_target(helix::HeaterType::Nozzle, 0.0, {.toast = false});
-        }
+        set_nozzle_target(0.0, {.toast = false});
     }
     prior_nozzle_target_ = 0;
 
