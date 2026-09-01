@@ -92,6 +92,7 @@ ControlsPanel::~ControlsPanel() {
     safe_delete_obj(motion_panel_);
     safe_delete_obj(fan_control_panel_);
     safe_delete_obj(bed_mesh_panel_);
+    safe_delete_obj(pa_cal_panel_);
     safe_delete_obj(zoffset_panel_);
     safe_delete_obj(screws_panel_);
     // Modal dialogs: ModalGuard handles cleanup automatically via RAII
@@ -257,6 +258,7 @@ void ControlsPanel::init_subjects() {
         {"on_calibration_bed_mesh", on_calibration_bed_mesh},
         {"on_calibration_zoffset", on_calibration_zoffset},
         {"on_calibration_tool_offsets", on_calibration_tool_offsets},
+        {"on_calibration_pa", on_calibration_pa},
         {"on_calibration_screws", on_calibration_screws},
         {"on_calibration_motors", on_calibration_motors},
 
@@ -1851,6 +1853,16 @@ void ControlsPanel::handle_calibration_tool_offsets() {
     helix::ui::lazy_create_and_push_overlay<ToolOffsetCalibrationPanel>(
         get_global_tool_offset_cal_panel, tool_offset_panel_, parent_screen_,
         "Tool Offset Calibration", get_name());
+}
+
+void ControlsPanel::handle_calibration_pa() {
+#if defined(HELIX_PLATFORM_ESP32)
+    helix::ui::show_feature_unavailable_toast();
+    return;
+#endif
+    get_global_pa_cal_panel().set_api(get_moonraker_api());
+    helix::ui::lazy_create_and_push_overlay<PACalibrationPanel>(
+        get_global_pa_cal_panel, pa_cal_panel_, parent_screen_, "Pressure Advance", get_name());
 }
 
 void ControlsPanel::handle_calibration_screws() {

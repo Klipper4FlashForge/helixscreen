@@ -866,6 +866,21 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         const std::string& script, std::function<void(const nlohmann::json&)> success_cb,
         std::function<void(const MoonrakerError&)> error_cb);
 
+    /**
+     * @brief Simulate an automatic pressure-advance run
+     *
+     * Mirrors what a measuring firmware does on the console: a few candidate
+     * probes a beat apart, then the applied value echoed the way Klipper's own
+     * SET_PRESSURE_ADVANCE echoes it. Asynchronous, so the panel's phase list,
+     * attempt counter and progress bar are all exercised in mock mode rather
+     * than jumping straight to a result.
+     *
+     * @return true if the script was handled here
+     */
+    bool simulate_pa_calibration(const std::string& script,
+                                 std::function<void(const nlohmann::json&)> success_cb,
+                                 std::function<void(const MoonrakerError&)> error_cb);
+
     /// Mock tool-offset state, also served by printer.objects.query
     bool mock_station_calibrated() const;
     bool mock_tool_calibrated(int tool) const;
@@ -891,6 +906,21 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     int mock_tool_cal_fail_step() const;
     std::vector<PendingToolCal> pending_tool_cals_;
     mutable std::mutex tool_cal_mutex_;
+
+    /// One console line the pressure-advance simulation still owes, and when.
+    struct PendingPaLine {
+        std::chrono::steady_clock::time_point due;
+        std::string line;
+        bool is_final;
+        std::function<void(const nlohmann::json&)> success_cb;
+        std::function<void(const MoonrakerError&)> error_cb;
+    };
+    /// HELIX_MOCK_PA_FAIL=1 makes the run refuse with a realistic runout
+    /// message. The refusal path is otherwise unreachable in mock mode, and it
+    /// is one of the states the panel handles most visibly.
+    std::vector<PendingPaLine> pending_pa_lines_;
+    mutable std::mutex pa_cal_mutex_;
+    void service_pending_pa_lines();
     /// Tool SELECT_TOOL last mounted; TOOL_CALIBRATE_TOOL_OFFSET measures it.
     int mock_selected_tool_ = 0;
     /// Which tools have been measured this session, and the station pass.

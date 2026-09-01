@@ -10,6 +10,8 @@
 
 #include "printer_capabilities_state.h"
 
+#include "pa_calibration.h"
+
 #include "ui_update_queue.h"
 
 #include "sound_manager.h"
@@ -48,6 +50,7 @@ void PrinterCapabilitiesState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(printer_has_chamber, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_screws_tilt, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_tool_offset_cal, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(printer_has_pa_cal, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_webcam, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_extra_fans, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(power_device_count, 0, subjects_, register_xml);
@@ -140,6 +143,10 @@ void PrinterCapabilitiesState::set_hardware(const PrinterDiscovery& hardware,
                        (hardware.has_tool_changer() && hardware.has_macro("CALIBRATE_TOOL_OFFSETS"))
                            ? 1
                            : 0);
+
+    // Automatic pressure advance calibration. Which firmwares can measure it,
+    // and how, belongs to helix::pacal — this only asks whether one matched.
+    lv_subject_set_int(&printer_has_pa_cal_, helix::pacal::is_supported(hardware) ? 1 : 0);
 
     // Spoolman requires async check - default to 0, updated separately via set_spoolman_available()
 
