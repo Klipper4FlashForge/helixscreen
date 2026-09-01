@@ -304,7 +304,7 @@ void PACalibrationPanel::update_temp_display() {
     lv_subject_copy_string(&temp_display_, fmt::format("{}°", target_temp_).c_str());
     lv_subject_copy_string(&temp_note_, state_ == IDLE || state_ == COMPLETE || state_ == ERROR
                                             ? lv_tr("170-300 °C")
-                                            : lv_tr("locked while running"));
+                                            : lv_tr("locked"));
 }
 
 // ============================================================================
