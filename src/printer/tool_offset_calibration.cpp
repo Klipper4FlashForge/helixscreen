@@ -23,10 +23,8 @@ struct Provider {
                                         const std::string& tool_name);
     /// The reference fixture's numbers, or nullopt when there is no such row.
     std::optional<Reading> (*read_reference)(const nlohmann::json& status);
-    /// Establish the reference the tools are measured against.
-    std::vector<std::string> (*locate)(const PrinterDiscovery& hw);
-    /// Measure one tool, in send order.
-    std::vector<std::string> (*calibrate)(const PrinterDiscovery& hw, int tool_index);
+    /// Run the whole calibration, in send order.
+    std::vector<std::string> (*calibrate)(const PrinterDiscovery& hw);
     /// Persist a finished calibration for @p tools, in send order.
     std::vector<std::string> (*save)(const PrinterDiscovery& hw, const std::vector<int>& tools);
     /// Whether save() only stages the change, awaiting SAVE_CONFIG.
@@ -34,6 +32,11 @@ struct Provider {
     /// Command whose `description:` is the on-screen instruction, or nullptr.
     const char* hint_command;
 };
+
+/// The wrapper macro klipper-toolchanger ships as a printer.cfg example. It is
+/// both the capability gate and the whole command surface - see
+/// detect_toolchanger() for why we gate on the macro rather than the extra.
+constexpr const char* CALIBRATE_MACRO = "CALIBRATE_TOOL_OFFSETS";
 
 /// status.<object> as an object, or nullptr.
 const nlohmann::json* status_object(const nlohmann::json& status, const std::string& object) {
@@ -45,11 +48,6 @@ const nlohmann::json* status_object(const nlohmann::json& status, const std::str
         return nullptr;
     }
     return &(*it);
-}
-
-bool has_object(const PrinterDiscovery& hw, const std::string& name) {
-    const auto& objects = hw.printer_objects();
-    return std::find(objects.begin(), objects.end(), name) != objects.end();
 }
 
 // --- viesturz/klipper-toolchanger, [tools_calibrate] -------------------------
@@ -90,11 +88,19 @@ bool has_object(const PrinterDiscovery& hw, const std::string& name) {
 // That separation is precisely why measuring lives in this module and the
 // adjustable value lives in helix::tool_offsets.
 bool detect_toolchanger(const PrinterDiscovery& hw) {
-    // Both halves matter. [tools_calibrate] alone is meaningless without tools
-    // to measure, and a toolchanger without it has no probing hardware - its
-    // offsets are typed in by hand, and offering a Calibrate button would run
-    // a command Klipper rejects.
-    return hw.has_tool_changer() && has_object(hw, "tools_calibrate");
+    // The MACRO, not the [tools_calibrate] extra underneath it.
+    //
+    // We gate on what we actually send. CALIBRATE_TOOL_OFFSETS is the wrapper
+    // klipper-toolchanger ships as a printer.cfg example: it owns the whole
+    // procedure - the reference pass, heating, which tools exist and in what
+    // order - and reads the tool list off the toolchanger itself, so it is
+    // right on a 2-head or a 5-head machine without us modelling either.
+    //
+    // The tradeoff is deliberate: because it is config rather than part of the
+    // extra, a machine running tools_calibrate WITHOUT that macro reads as
+    // unsupported here. That is the honest answer - we have no command to send
+    // such a printer that we could promise anything about.
+    return hw.has_tool_changer() && hw.has_macro(CALIBRATE_MACRO);
 }
 
 std::vector<std::string> status_objects_toolchanger(const PrinterDiscovery& hw) {
@@ -146,15 +152,13 @@ std::optional<Reading> read_reference_none(const nlohmann::json& /*status*/) {
     return std::nullopt;
 }
 
-std::vector<std::string> locate_toolchanger(const PrinterDiscovery& /*hw*/) {
-    return {"TOOL_LOCATE_SENSOR"};
-}
-
-std::vector<std::string> calibrate_toolchanger(const PrinterDiscovery& /*hw*/, int tool_index) {
-    // TOOL_CALIBRATE_TOOL_OFFSET takes no arguments - it measures whatever is
-    // on the carriage - so the selection has to lead or it measures the tool
-    // that happened to be mounted.
-    return {"SELECT_TOOL T=" + std::to_string(tool_index), "TOOL_CALIBRATE_TOOL_OFFSET"};
+std::vector<std::string> calibrate_toolchanger(const PrinterDiscovery& /*hw*/) {
+    // One command for the whole machine. Everything the stepwise form had to
+    // assume - whether a reference pass must lead, what state the machine must
+    // be in, whether a tool must be selected before it can be measured, what
+    // temperature to measure at, which tools exist - is the macro's business
+    // and it does not need us to agree with it.
+    return {CALIBRATE_MACRO};
 }
 
 std::vector<std::string> save_toolchanger(const PrinterDiscovery& /*hw*/,
@@ -196,9 +200,11 @@ const std::vector<Provider>& providers() {
     static const std::vector<Provider> table = {
         // No hint command: the calibration is a Python extra registering bare
         // commands, not a macro with a written description.
+        // The macro carries a written procedure in its `description:`, so the
+        // panel shows the firmware's own words rather than anything generic.
         {"klipper-toolchanger", &detect_toolchanger, &status_objects_toolchanger,
          &presentation_toolchanger, &read_tool_toolchanger, &read_reference_none,
-         &locate_toolchanger, &calibrate_toolchanger, &save_toolchanger, true, nullptr},
+         &calibrate_toolchanger, &save_toolchanger, true, CALIBRATE_MACRO},
     };
     return table;
 }
@@ -257,19 +263,11 @@ std::optional<Reading> read_reference(const nlohmann::json& status) {
     return std::nullopt;
 }
 
-std::vector<std::string> locate_reference_gcode(const PrinterDiscovery& hw) {
+std::vector<std::string> calibrate_gcode(const PrinterDiscovery& hw) {
     if (const Provider* p = match(hw)) {
-        return p->locate(hw);
+        return p->calibrate(hw);
     }
     return {};
-}
-
-std::vector<std::string> calibrate_tool_gcode(const PrinterDiscovery& hw, int tool_index) {
-    const Provider* p = match(hw);
-    if (!p || tool_index < 0) {
-        return {};
-    }
-    return p->calibrate(hw, tool_index);
 }
 
 bool persist_requires_save_config(const PrinterDiscovery& hw) {

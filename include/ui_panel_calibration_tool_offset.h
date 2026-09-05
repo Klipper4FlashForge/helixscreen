@@ -78,8 +78,14 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     /// Fixed subject slots; rows beyond the printer's tool count stay hidden.
     static constexpr int MAX_TOOLS = 4;
 
-    /// Queue sentinel for the reference pass (it is not a tool index).
+    /// Queue sentinel for the reference pass, on firmwares that show one as a
+    /// row of its own (see Presentation::has_reference_row).
     static constexpr int STATION_STEP = -1;
+
+    /// Queue sentinel for "the whole machine". The calibration is one firmware
+    /// command covering every tool, so a run is a single step rather than a
+    /// pass per tool.
+    static constexpr int RUN_STEP = -3;
 
     /// Toolchanger's `offset_base` — the tool dX/dY are measured against.
     /// Config-only in the firmware and defaulted to 0, so not queryable.
@@ -127,10 +133,9 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     /// Calibrate every tool in sequence (no-op while a run is in flight)
     void start_calibration();
 
-    /// Calibrate a single tool (no-op while a run is in flight)
-    void start_calibration_for_tool(int tool);
-
-    /// Stop after the tool currently probing finishes (clean, no M112)
+    /// Halt a run. There is no graceful form - the run is one firmware
+    /// command that blocks Klipper's queue - so this IS the emergency stop,
+    /// and it restarts the firmware. See the definition.
     void request_stop();
 
     /**
@@ -151,9 +156,6 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
 
     /// The durable write itself, once the user has accepted the restart
     void send_save_config();
-
-    /// Run the reference pass on its own
-    void start_locate_sensor();
 
     /// Re-read the printer's offsets and configfile, and repaint the rows
     void refresh_from_printer();
@@ -203,8 +205,6 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
 
     // XML event trampolines
     static void on_start_clicked(lv_event_t* e);
-    static void on_tool_clicked(lv_event_t* e);
-    static void on_locate_clicked(lv_event_t* e);
     static void on_cancel_clicked(lv_event_t* e);
     static void on_save_clicked(lv_event_t* e);
 

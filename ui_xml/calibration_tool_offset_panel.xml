@@ -116,19 +116,6 @@
         <spinner size="sm" width="40" height="40">
           <bind_flag_if_not_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="2"/>
         </spinner>
-
-        <ui_button name="tool_offset_cal_btn_station" text="Measure" translation_tag="Measure" width="118" height="40">
-          <bind_flag_if cond="tool_offset_cal_station_state eq 3 or tool_offset_cal_station_state eq 2"
-                        flag="hidden"/>
-          <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
-          <event_cb trigger="clicked" callback="on_tool_offset_cal_locate"/>
-        </ui_button>
-        <ui_button name="tool_offset_cal_redo_station" text="Redo" translation_tag="Redo"
-                   variant="ghost" width="118" height="40">
-          <bind_flag_if_not_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="3"/>
-          <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
-          <event_cb trigger="clicked" callback="on_tool_offset_cal_locate"/>
-        </ui_button>
       </lv_obj>
 
       <text_small text="Tools — nozzle position, and Z height over the reference (mm)"
@@ -206,19 +193,6 @@
             <spinner size="sm" width="40" height="40">
               <bind_flag_if_not_eq subject="tool_offset_cal_state_${i}" flag="hidden" ref_value="2"/>
             </spinner>
-
-            <ui_button name="tool_offset_cal_btn_${i}" text="Calibrate" translation_tag="Calibrate" width="118" height="40">
-              <bind_flag_if cond="tool_offset_cal_state_${i} eq 3 or tool_offset_cal_state_${i} eq 2"
-                            flag="hidden"/>
-              <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
-              <event_cb trigger="clicked" callback="on_tool_offset_cal_tool" user_data="$i"/>
-            </ui_button>
-            <ui_button name="tool_offset_cal_redo_${i}" text="Redo" translation_tag="Redo"
-                       variant="ghost" width="118" height="40">
-              <bind_flag_if_not_eq subject="tool_offset_cal_state_${i}" flag="hidden" ref_value="3"/>
-              <bind_state_if_eq subject="tool_offset_cal_active" state="disabled" ref_value="1"/>
-              <event_cb trigger="clicked" callback="on_tool_offset_cal_tool" user_data="$i"/>
-            </ui_button>
           </lv_obj>
         </repeat>
       </lv_obj>

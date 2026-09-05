@@ -28,7 +28,10 @@ namespace {
 json toolchanger_objects(int tool_count, bool with_calibrate) {
     json objects = json::array({"gcode_move", "toolhead", "extruder", "toolchanger"});
     if (with_calibrate) {
+        // The extra AND the wrapper macro. The app gates on the macro, because
+        // the macro is what it sends.
         objects.push_back("tools_calibrate");
+        objects.push_back("gcode_macro CALIBRATE_TOOL_OFFSETS");
     }
     for (int i = 0; i < tool_count; ++i) {
         objects.push_back("tool T" + std::to_string(i));
@@ -79,13 +82,28 @@ TEST_CASE("tool offset calibration: a probe-equipped tool changer supports it",
     CHECK(toc::provider_name(hw) == "klipper-toolchanger");
 }
 
-TEST_CASE("tool offset calibration: a tool changer without the probe does not",
+TEST_CASE("tool offset calibration: a tool changer without the macro does not",
           "[tool_offset_calibration]") {
-    // [tools_calibrate] is the probing hardware. Without it the Calibrate
-    // button would send TOOL_LOCATE_SENSOR, which Klipper rejects as an unknown
-    // command - the offsets on such a machine are typed in by hand.
+    // We gate on what we SEND. Without CALIBRATE_TOOL_OFFSETS the Calibrate
+    // button would issue a command Klipper rejects as unknown.
     CHECK_FALSE(toc::supported(manual_printer()));
     CHECK(toc::provider_name(manual_printer()).empty());
+}
+
+TEST_CASE("tool offset calibration: the extra without its wrapper macro is unsupported",
+          "[tool_offset_calibration]") {
+    // A deliberate, and lossy, tradeoff. CALIBRATE_TOOL_OFFSETS is shipped as a
+    // printer.cfg EXAMPLE rather than as part of the extra, so a machine can run
+    // tools_calibrate and still not have it. Gating on the macro means such a
+    // printer reads as unsupported - which is the honest answer, because the
+    // alternative is driving the extra's primitives ourselves and guessing at
+    // every precondition the wrapper exists to own.
+    PrinterDiscovery hw;
+    hw.parse_objects(json::array(
+        {"gcode_move", "toolhead", "extruder", "toolchanger", "tools_calibrate", "tool T0",
+         "tool T1"}));
+
+    CHECK_FALSE(toc::supported(hw));
 }
 
 TEST_CASE("tool offset calibration: a single-toolhead printer does not",
@@ -232,19 +250,21 @@ TEST_CASE("tool offset calibration: an unnamed tool reads nothing",
 // Commands
 // ============================================================================
 
-TEST_CASE("tool offset calibration: the reference pass is a single command",
+TEST_CASE("tool offset calibration: the whole run is one command",
           "[tool_offset_calibration]") {
-    CHECK(toc::locate_reference_gcode(calibrating_printer()) ==
-          std::vector<std::string>{"TOOL_LOCATE_SENSOR"});
+    // The wrapper owns the reference pass, the machine state it needs, the
+    // temperature, and which tools exist - so there is nothing for us to
+    // sequence, and no per-tool form to offer.
+    CHECK(toc::calibrate_gcode(calibrating_printer()) ==
+          std::vector<std::string>{"CALIBRATE_TOOL_OFFSETS"});
 }
 
-TEST_CASE("tool offset calibration: measuring a tool selects it first",
+TEST_CASE("tool offset calibration: the macro is also the instruction text",
           "[tool_offset_calibration]") {
-    // TOOL_CALIBRATE_TOOL_OFFSET takes no arguments - it measures whatever is
-    // on the carriage. Without the SELECT_TOOL leading, it measures the tool
-    // that happened to be mounted and writes the result to the wrong one.
-    CHECK(toc::calibrate_tool_gcode(calibrating_printer(), 2) ==
-          std::vector<std::string>{"SELECT_TOOL T=2", "TOOL_CALIBRATE_TOOL_OFFSET"});
+    // Its `description:` is the firmware's own words for its own hardware,
+    // which beats anything we could write generically.
+    CHECK(toc::hint_command(calibrating_printer()) == "CALIBRATE_TOOL_OFFSETS");
+    CHECK(toc::hint_command(manual_printer()).empty());
 }
 
 TEST_CASE("tool offset calibration: persisting stages every axis, then commits",
@@ -288,13 +308,9 @@ TEST_CASE("tool offset calibration: an unsupported printer emits no commands",
     // sent it blindly would inject a bare newline.
     PrinterDiscovery hw = manual_printer();
 
-    CHECK(toc::locate_reference_gcode(hw).empty());
-    CHECK(toc::calibrate_tool_gcode(hw, 0).empty());
+    CHECK(toc::calibrate_gcode(hw).empty());
     CHECK(toc::save_gcode(hw, {0}).empty());
     CHECK_FALSE(toc::persist_requires_save_config(hw));
 }
 
-TEST_CASE("tool offset calibration: a negative tool index emits no commands",
-          "[tool_offset_calibration]") {
-    CHECK(toc::calibrate_tool_gcode(calibrating_printer(), -1).empty());
-}
+

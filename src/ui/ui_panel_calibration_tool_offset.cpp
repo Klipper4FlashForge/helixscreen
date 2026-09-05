@@ -136,8 +136,6 @@ void ToolOffsetCalibrationPanel::init_subjects() {
 
     register_xml_callbacks({
         {"on_tool_offset_cal_start", on_start_clicked},
-        {"on_tool_offset_cal_tool", on_tool_clicked},
-        {"on_tool_offset_cal_locate", on_locate_clicked},
         {"on_tool_offset_cal_cancel", on_cancel_clicked},
         {"on_tool_offset_cal_save", on_save_clicked},
     });
@@ -398,30 +396,11 @@ void ToolOffsetCalibrationPanel::on_start_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_END();
 }
 
-void ToolOffsetCalibrationPanel::on_tool_clicked(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] on_tool_clicked");
-    // user_data carries the tool index as a string ("0".."3"), the same
-    // convention as the wizard language chooser buttons.
-    const char* arg = static_cast<const char*>(lv_event_get_user_data(e));
-    if (arg && *arg) {
-        get_global_tool_offset_cal_panel().start_calibration_for_tool(std::atoi(arg));
-    }
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void ToolOffsetCalibrationPanel::on_locate_clicked(lv_event_t* e) {
-    (void)e;
-    LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] on_locate_clicked");
-    get_global_tool_offset_cal_panel().start_locate_sensor();
-    LVGL_SAFE_EVENT_CB_END();
-}
-
 void ToolOffsetCalibrationPanel::on_cancel_clicked(lv_event_t* e) {
     (void)e;
     LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] on_cancel_clicked");
-    // Between tools this is pure UI state, so Stop is clean: finish the tool
-    // currently probing, then stop issuing commands. (Backing out of the
-    // overlay mid-probe still goes through the M112 abort in on_deactivate.)
+    // The only halt available mid-run - see request_stop(). Backing out of the
+    // overlay takes the same path from on_deactivate().
     get_global_tool_offset_cal_panel().request_stop();
     LVGL_SAFE_EVENT_CB_END();
 }
@@ -441,51 +420,23 @@ void ToolOffsetCalibrationPanel::start_calibration() {
     if (calibration_active_) {
         return;
     }
-    // The reference first, then every tool. Driving the passes here rather
-    // than firing an all-in-one command is what keeps Stop clean and the
-    // per-row progress honest.
-    std::vector<int> steps{STATION_STEP};
-    for (int i = 0; i < MAX_TOOLS; ++i) {
-        if (lv_subject_get_int(&row_visible_[i])) {
-            steps.push_back(i);
-        }
-    }
-    confirm_and_run(std::move(steps));
-}
-
-void ToolOffsetCalibrationPanel::start_locate_sensor() {
-    if (calibration_active_) {
-        return;
-    }
-    confirm_and_run({STATION_STEP});
-}
-
-void ToolOffsetCalibrationPanel::start_calibration_for_tool(int tool) {
-    if (calibration_active_ || tool < 0 || tool >= MAX_TOOLS) {
-        return;
-    }
-    // A tool pass without a station reference still runs, but loses the gap
-    // guard that catches a mis-triggered Z. Fold the reference in when the
-    // printer has never had one.
-    if (!station_known_) {
-        spdlog::info("[{}] No reference yet — locating it first", get_name());
-        confirm_and_run({STATION_STEP, tool});
-        return;
-    }
-    confirm_and_run({tool});
+    // One run, the whole machine. The firmware's own command owns the order it
+    // measures in and which tools exist, so there is nothing to queue - the
+    // single sentinel step keeps the run/finish machinery below unchanged.
+    confirm_and_run({RUN_STEP});
 }
 
 void ToolOffsetCalibrationPanel::request_stop() {
-    if (!calibration_active_ || stop_requested_) {
+    if (!calibration_active_) {
         return;
     }
-    stop_requested_ = true;
-    lv_subject_copy_string(&status_, lv_tr("Stopping after the current step..."));
-    // Say so on the rows that will now never run, rather than leaving them
-    // reading Queued for a queue that has been abandoned.
-    for (int step : run_queue_) {
-        set_row_state(step, ROW_QUEUED, lv_tr("skipped — stopping"));
-    }
+    // There is no graceful stop to offer. The run is ONE firmware command that
+    // blocks Klipper's gcode queue until it finishes, so nothing on our side is
+    // between passes waiting to not be sent - the only thing that actually
+    // halts a probing toolhead is the emergency stop, which restarts the
+    // firmware. Offering a soft "Stop" that cannot deliver would be a lie told
+    // while a nozzle is moving.
+    abort_in_progress_calibration();
 }
 
 void ToolOffsetCalibrationPanel::begin_run(std::vector<int> steps) {
@@ -527,33 +478,23 @@ void ToolOffsetCalibrationPanel::send_next_step() {
     current_step_ = run_queue_.front();
     run_queue_.erase(run_queue_.begin());
 
-    std::string cmd;
-    // The elapsed counter runs in the row's own second line, so the progress
-    // and the thing making progress are the same object on screen.
-    if (current_step_ == STATION_STEP) {
-        set_row_state(STATION_STEP, ROW_MEASURING, lv_tr("locating the reference"));
-        elapsed_.begin(&station_sub_, [](uint32_t elapsed_seconds) {
-            return fmt::format(fmt::runtime(lv_tr("locating the reference... {}s")), elapsed_seconds);
-        });
-        cmd = join_gcode(helix::tool_offset_calibration::locate_reference_gcode(
-            get_printer_state().get_discovery()));
-    } else {
-        set_row_state(current_step_, ROW_MEASURING, lv_tr("probing nozzle"));
-        elapsed_.begin(&row_sub_[current_step_], [](uint32_t elapsed_seconds) {
-            return fmt::format(fmt::runtime(lv_tr("probing nozzle... {}s")), elapsed_seconds);
-        });
-        // The provider returns the pass in send order - typically a select
-        // followed by a measurement, because the measuring command takes no
-        // arguments and probes whatever is on the carriage. Klipper runs a
-        // multi-line script line by line.
-        cmd = join_gcode(helix::tool_offset_calibration::calibrate_tool_gcode(
-            get_printer_state().get_discovery(), current_step_));
+    // One command for the whole machine. The firmware owns the order it
+    // measures in, so there is no per-row progress to show: every row runs
+    // together and repopulates from the query when the macro returns.
+    const std::string cmd = join_gcode(
+        helix::tool_offset_calibration::calibrate_gcode(get_printer_state().get_discovery()));
+    if (cmd.empty()) {
+        finish_run(false, lv_tr("This printer has no tool offset calibration"));
+        return;
     }
+    elapsed_.begin(&status_, [](uint32_t elapsed_seconds) {
+        return fmt::format(fmt::runtime(lv_tr("Calibrating... {}s")), elapsed_seconds);
+    });
 
     spdlog::info("[{}] Running {}", get_name(), cmd);
     // Moonraker's printer.gcode.script answers when the script finishes, so the
-    // success callback IS the completion signal. A single pass can still run
-    // past the 5-minute macro ceiling.
+    // success callback IS the completion signal. The whole run is one call and
+    // can sit well past the 5-minute macro ceiling.
     api->execute_gcode(
         cmd,
         lifetime_.bg_cb("ToolOffsetCalPanel::calibrate_done",

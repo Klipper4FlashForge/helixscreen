@@ -276,3 +276,63 @@ TEST_CASE_METHOD(ToolCalibrateFixture,
 
     CHECK(client.tool_offset(2).z != Catch::Approx(measured.z));
 }
+
+// ============================================================================
+// The wrapper macro - the only command the app actually sends
+// ============================================================================
+
+TEST_CASE_METHOD(ToolCalibrateFixture, "mock: CALIBRATE_TOOL_OFFSETS measures every tool",
+                 "[mock][toolchanger][tool_offset_calibration]") {
+    // One command, the whole machine - no SELECT_TOOL, no reference pass from
+    // us. That is the point of gating on the macro: the firmware owns the
+    // order, the preconditions and the tool list.
+    REQUIRE(gcode("CALIBRATE_TOOL_OFFSETS"));
+
+    // Every tool now holds a measurement, not just the one that was mounted.
+    CHECK(client.tool_offset(1).x != Catch::Approx(0.0));
+    CHECK(client.tool_offset(2).x != Catch::Approx(0.0));
+    CHECK(client.tool_offset(3).x != Catch::Approx(0.0));
+}
+
+TEST_CASE_METHOD(ToolCalibrateFixture, "mock: the macro needs no reference pass from us",
+                 "[mock][toolchanger][tool_offset_calibration]") {
+    // The bare TOOL_CALIBRATE_TOOL_OFFSET refuses without a located sensor.
+    // The wrapper does not, because locating is part of what it owns - which is
+    // exactly the assumption we stopped making.
+    REQUIRE_FALSE(client.tools_calibrate_located());
+
+    CHECK(gcode("CALIBRATE_TOOL_OFFSETS"));
+}
+
+TEST_CASE_METHOD(ToolCalibrateFixture, "mock: the macro stages nothing durable on its own",
+                 "[mock][toolchanger][tool_offset_calibration]") {
+    // Whether the real macro persists as it measures is the thing we could not
+    // verify, so the mock models the WEAKER case. If it staged here, a save
+    // path that forgot to persist would still pass its tests - and then lose
+    // the calibration on the restart SAVE_CONFIG causes.
+    gcode("CALIBRATE_TOOL_OFFSETS");
+
+    CHECK_FALSE(client.save_config_pending());
+}
+
+TEST_CASE_METHOD(ToolCalibrateFixture,
+                 "mock: macro then explicit save survives a restart on every axis",
+                 "[mock][toolchanger][tool_offset_calibration]") {
+    // End to end, exactly what the panel drives.
+    gcode("CALIBRATE_TOOL_OFFSETS");
+    const auto measured = client.tool_offset(3);
+
+    for (int tool : {0, 1, 2, 3}) {
+        for (const char* axis : {"gcode_x_offset", "gcode_y_offset", "gcode_z_offset"}) {
+            gcode("SAVE_TOOL_PARAMETER T=" + std::to_string(tool) + " PARAMETER=" + axis);
+        }
+    }
+    REQUIRE(client.save_config_pending());
+    gcode("SAVE_CONFIG");
+    client.trigger_restart(/*is_firmware=*/false);
+
+    const auto after = client.tool_offset(3);
+    CHECK(after.x == Catch::Approx(measured.x));
+    CHECK(after.y == Catch::Approx(measured.y));
+    CHECK(after.z == Catch::Approx(measured.z));
+}

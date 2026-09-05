@@ -921,11 +921,13 @@ void MoonrakerClientMock::populate_capabilities() {
     // uses "tool TN" to match the established test convention (test_hardware_validator).
     if (is_mock_toolchanger()) {
         mock_objects.push_back("toolchanger");
-        // [tools_calibrate] is klipper-toolchanger's nozzle-touch probe. Its
-        // presence is what tells the app this machine can MEASURE its own tool
-        // offsets rather than having them typed in, so without it the
-        // calibration entry point stays hidden.
+        // [tools_calibrate] is klipper-toolchanger's nozzle-touch probe, and
+        // CALIBRATE_TOOL_OFFSETS the printer.cfg wrapper that drives it. The
+        // MACRO is what the app gates on, because it is what the app sends -
+        // a machine with the extra but no wrapper has no command we could
+        // promise anything about.
         mock_objects.push_back("tools_calibrate");
+        mock_objects.push_back("gcode_macro CALIBRATE_TOOL_OFFSETS");
         for (int i = 0; i < 4; ++i) {
             mock_objects.push_back("tool T" + std::to_string(i));
         }
@@ -3164,6 +3166,34 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
             }
             return 0;
         }
+    }
+
+    // CALIBRATE_TOOL_OFFSETS - the wrapper macro klipper-toolchanger ships as a
+    // printer.cfg example, and the only command the app sends. It owns the whole
+    // procedure: locate the reference, then measure every tool the toolchanger
+    // reports. Modelled as exactly that, so the app's single call produces the
+    // same end state a real machine would reach.
+    //
+    // Matched before the bare TOOL_CALIBRATE_TOOL_OFFSET handler below, whose
+    // name is a substring of nothing here but whose semantics differ: that one
+    // measures only what is mounted.
+    if (gcode.find("CALIBRATE_TOOL_OFFSETS") != std::string::npos) {
+        tools_calibrate_located_.store(true);
+        const int tools = is_mock_toolchanger() ? 4 : 1;
+        for (int tool = 0; tool < tools; ++tool) {
+            const ToolOffset measured{0.412 * tool, -0.085 * tool, -0.028 * tool};
+            {
+                std::lock_guard<std::mutex> lock(tool_offsets_mutex_);
+                tool_offsets_[tool] = measured;
+            }
+            dispatch_tool_update(tool, /*all_axes=*/true);
+        }
+        // Deliberately does NOT stage a config change. Whether the real macro
+        // persists as it measures is exactly what we could not verify, so the
+        // mock models the weaker case - nothing durable until the app stages it
+        // itself. A mock that staged here would let a broken save path pass.
+        spdlog::info("[MoonrakerClientMock] CALIBRATE_TOOL_OFFSETS - measured {} tool(s)", tools);
+        return 0;
     }
 
     // TOOL_LOCATE_SENSOR establishes the reference every tool is then measured

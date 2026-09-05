@@ -106,16 +106,20 @@ std::optional<Reading> read_tool(const nlohmann::json& status, int tool_index,
 /// Always nullopt when presentation().has_reference_row is false.
 std::optional<Reading> read_reference(const nlohmann::json& status);
 
-/// Gcode establishing the reference, run once before any tool is measured.
-/// Empty when the printer has no provider.
+/// Gcode calibrating EVERY tool, in send order. Empty when the printer has no
+/// provider.
 ///
-/// What state the machine must be in for this to succeed is the firmware's
-/// business - it refuses on its own terms and the refusal is surfaced as-is.
-std::vector<std::string> locate_reference_gcode(const PrinterDiscovery& hw);
-
-/// Gcode measuring one tool, in send order. Empty when the printer has no
-/// provider or @p tool_index is negative.
-std::vector<std::string> calibrate_tool_gcode(const PrinterDiscovery& hw, int tool_index);
+/// The whole machine at once, not one tool: the firmwares here wrap the
+/// procedure in a single command that owns the reference pass, the machine
+/// state it needs, the temperature to measure at, and which tools exist. That
+/// last one is why there is no per-tool form - the wrapper reads the tool list
+/// off the toolchanger, so it is right on a 2-head or a 5-head machine, and a
+/// caller asking for "just T2" would be asking for something no firmware here
+/// exposes.
+///
+/// What state the machine must be in is the firmware's business - it refuses on
+/// its own terms and the refusal is surfaced as-is.
+std::vector<std::string> calibrate_gcode(const PrinterDiscovery& hw);
 
 /// Whether the measured offsets are only staged and need a SAVE_CONFIG to
 /// commit - which restarts Klipper, so the caller must drive it through the
