@@ -680,6 +680,21 @@ void ToolOffsetCalibrationPanel::save_calibration() {
         {.owner_token = lifetime_.token()});
 }
 
+std::vector<int> ToolOffsetCalibrationPanel::calibrated_tools() const {
+    // Every tool that currently HOLDS an offset, not merely the ones this run
+    // touched. The durable write persists what the tool holds, so restricting
+    // it to this run would leave a previously measured tool staged-but-unsaved
+    // on the next SAVE_CONFIG - and SAVE_CONFIG restarts Klipper, which is the
+    // one moment an unsaved value is lost.
+    std::vector<int> tools;
+    for (int i = 0; i < MAX_TOOLS; ++i) {
+        if (lv_subject_get_int(const_cast<lv_subject_t*>(&row_visible_[i])) && values_valid_[i]) {
+            tools.push_back(i);
+        }
+    }
+    return tools;
+}
+
 void ToolOffsetCalibrationPanel::send_save_config() {
     auto* api = get_moonraker_api();
     if (!api) {
@@ -696,7 +711,8 @@ void ToolOffsetCalibrationPanel::send_save_config() {
     lv_subject_copy_string(&status_, lv_tr("Saving — Klipper is restarting..."));
     spdlog::info("[{}] Sending SAVE_CONFIG", get_name());
     api->execute_gcode(
-        join_gcode(helix::tool_offset_calibration::save_gcode(get_printer_state().get_discovery())),
+        join_gcode(helix::tool_offset_calibration::save_gcode(get_printer_state().get_discovery(),
+                                                             calibrated_tools())),
         lifetime_.bg_cb("ToolOffsetCalPanel::save_done",
                         [this]() { lv_subject_copy_string(&status_, lv_tr("Offsets saved")); }),
         lifetime_.bg_cb("ToolOffsetCalPanel::save_error",

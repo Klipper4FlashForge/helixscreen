@@ -75,8 +75,13 @@ TEST_CASE_METHOD(ToolCalibrateFixture,
     CHECK_FALSE(client.save_config_pending());
 }
 
-TEST_CASE_METHOD(ToolCalibrateFixture, "mock: calibrating with an empty carriage is refused",
+TEST_CASE_METHOD(ToolCalibrateFixture, "mock: calibrating with nothing mounted is refused",
                  "[mock][toolchanger][tool_offset_calibration]") {
+    // The mock's own rule, not a transcription of firmware behaviour: the
+    // measuring command takes no arguments, so with nothing on the carriage
+    // there is no tool the result could belong to. Refusing keeps a caller that
+    // skipped SELECT_TOOL visible instead of writing onto whichever tool was
+    // mounted last.
     gcode("TOOL_LOCATE_SENSOR");
     gcode("UNSELECT_TOOL");
 
@@ -225,4 +230,49 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: SET_TOOL_PARAMETER writes one axis
     CHECK(after.x == Catch::Approx(1.5));
     CHECK(after.y == Catch::Approx(before.y));
     CHECK(after.z == Catch::Approx(before.z));
+}
+
+// ============================================================================
+// The persist path the panel actually drives
+// ============================================================================
+
+TEST_CASE_METHOD(ToolCalibrateFixture,
+                 "mock: the explicit save persists a calibration across a restart",
+                 "[mock][toolchanger][tool_offset_calibration]") {
+    // The whole sequence helix::tool_offset_calibration::save_gcode() emits,
+    // end to end. This is the test that would fail if SAVE_TOOL_PARAMETER did
+    // not persist what the CALIBRATION wrote - which is the assumption the
+    // explicit staging exists to avoid making.
+    calibrate(2);
+    const auto measured = client.tool_offset(2);
+    REQUIRE(measured.x != Catch::Approx(0.0)); // a real measurement landed
+
+    for (const char* axis : {"gcode_x_offset", "gcode_y_offset", "gcode_z_offset"}) {
+        gcode(std::string("SAVE_TOOL_PARAMETER T=2 PARAMETER=") + axis);
+    }
+    REQUIRE(client.save_config_pending());
+
+    gcode("SAVE_CONFIG");
+    client.trigger_restart(/*is_firmware=*/false);
+
+    // Survived, on all three axes.
+    const auto after = client.tool_offset(2);
+    CHECK(after.x == Catch::Approx(measured.x));
+    CHECK(after.y == Catch::Approx(measured.y));
+    CHECK(after.z == Catch::Approx(measured.z));
+}
+
+TEST_CASE_METHOD(ToolCalibrateFixture,
+                 "mock: a calibration nobody saved does not survive a restart",
+                 "[mock][toolchanger][tool_offset_calibration]") {
+    // The other half, and the reason the mock keeps a separate durable map: if
+    // an unsaved calibration survived, no test could tell a working save from a
+    // forgotten one.
+    calibrate(2);
+    const auto measured = client.tool_offset(2);
+    REQUIRE(measured.z != Catch::Approx(0.0));
+
+    client.trigger_restart(/*is_firmware=*/false);
+
+    CHECK(client.tool_offset(2).z != Catch::Approx(measured.z));
 }

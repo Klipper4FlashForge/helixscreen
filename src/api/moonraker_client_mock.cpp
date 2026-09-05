@@ -3097,22 +3097,31 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
     // name, self.params[name]): it persists whatever the tool ALREADY holds and
     // takes no VALUE=. So this stages the current runtime value and changes
     // nothing live - the change only lands when SAVE_CONFIG writes it out.
-    if (gcode.find("SAVE_TOOL_PARAMETER") != std::string::npos &&
-        gcode.find("PARAMETER=gcode_z_offset") != std::string::npos) {
+    if (gcode.find("SAVE_TOOL_PARAMETER") != std::string::npos) {
+        double MoonrakerClientMock::ToolOffset::*save_member = nullptr;
+        const char* save_axis = nullptr;
+        if (gcode.find("PARAMETER=gcode_x_offset") != std::string::npos) {
+            save_member = &ToolOffset::x;
+            save_axis = "gcode_x_offset";
+        } else if (gcode.find("PARAMETER=gcode_y_offset") != std::string::npos) {
+            save_member = &ToolOffset::y;
+            save_axis = "gcode_y_offset";
+        } else if (gcode.find("PARAMETER=gcode_z_offset") != std::string::npos) {
+            save_member = &ToolOffset::z;
+            save_axis = "gcode_z_offset";
+        }
         auto t_pos = gcode.find("T=");
-        if (t_pos != std::string::npos) {
+        if (save_member && t_pos != std::string::npos) {
             try {
                 int tool = std::stoi(gcode.substr(t_pos + 2));
                 char value[32];
-                std::snprintf(value, sizeof(value), "%.6g", tool_z_offset(tool));
-                // NOTE: only the Z form is staged here. Calibration persists
-                // through SAVE_CONFIG on the whole staged set instead.
+                std::snprintf(value, sizeof(value), "%.6g", tool_offset(tool).*save_member);
                 // Section is Klipper's config section verbatim, which for
                 // [tool T1] is "tool T1" - the same key the status object uses.
-                stage_config_change("tool T" + std::to_string(tool), "gcode_z_offset", value);
-                spdlog::info("[MoonrakerClientMock] SAVE_TOOL_PARAMETER T={} gcode_z_offset={} "
+                stage_config_change("tool T" + std::to_string(tool), save_axis, value);
+                spdlog::info("[MoonrakerClientMock] SAVE_TOOL_PARAMETER T={} {}={} "
                              "- staged, awaiting SAVE_CONFIG",
-                             tool, value);
+                             tool, save_axis, value);
             } catch (...) {
             }
         }
@@ -3157,10 +3166,15 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
         }
     }
 
-    // TOOL_LOCATE_SENSOR finds the nozzle-touch probe with an EMPTY carriage.
-    // It establishes the zero every tool is then measured against, so it must
-    // run first; TOOL_CALIBRATE_TOOL_OFFSET refuses until it has, as the real
-    // extra does.
+    // TOOL_LOCATE_SENSOR establishes the reference every tool is then measured
+    // against. What state the machine must be in for it to succeed is the
+    // firmware's business, so nothing is asserted about that here.
+    //
+    // The ordering refusal below IS a modelling choice, not a transcription of
+    // observed firmware behaviour: measuring against a reference that was never
+    // established cannot produce a meaningful number, and making the mock
+    // refuse keeps that dependency visible to a test instead of silently
+    // returning plausible values.
     if (gcode.find("TOOL_LOCATE_SENSOR") != std::string::npos) {
         tools_calibrate_located_.store(true);
         spdlog::info("[MoonrakerClientMock] TOOL_LOCATE_SENSOR - probe located");
@@ -3187,10 +3201,15 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
             last_gcode_error_ = "No tool mounted";
             return 1;
         }
+            // Writes the SAME three fields SET_TOOL_PARAMETER writes, because on
+        // this firmware the measured offset and the operator's own per-tool
+        // adjustment are one store - so a calibration pass legitimately
+        // discards a nudge. Splitting them here would model a firmware that
+        // does not exist and hide that from every test.
+        //
         // A measurement, not a reset: perturb the seed by a small repeatable
         // amount per tool so a calibrated row differs visibly from an
-        // uncalibrated one, while tool 0 stays the zero the others are deltas
-        // from.
+        // uncalibrated one.
         const ToolOffset measured{0.412 * tool, -0.085 * tool, -0.028 * tool};
         {
             std::lock_guard<std::mutex> lock(tool_offsets_mutex_);

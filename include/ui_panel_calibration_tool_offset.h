@@ -146,7 +146,10 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     /// Confirm, then persist a completed calibration (restarts Klipper)
     void save_calibration();
 
-    /// The SAVE_CONFIG itself, once the user has accepted the restart
+    /// Tools that currently hold an offset worth persisting
+    [[nodiscard]] std::vector<int> calibrated_tools() const;
+
+    /// The durable write itself, once the user has accepted the restart
     void send_save_config();
 
     /// Run the reference pass on its own

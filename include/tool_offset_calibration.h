@@ -14,6 +14,13 @@
 // there is a reference fixture at all, what the resulting numbers MEAN, and
 // therefore what the screen should call them.
 //
+// They also disagree on whether the measured value and the adjustable one are
+// even the same storage. One firmware writes a measurement into the very field
+// the tune panel nudges - two layers, and re-measuring discards the nudge.
+// Another keeps measured geometry, a per-tool adjustment, and the global
+// baby-step as three separate things. Each Provider names the objects its own
+// firmware uses, and nothing above them depends on which shape it is.
+//
 // That last one is why Presentation exists. What the numbers MEAN is the
 // firmware's business, not the panel's: one machine reports each tool against a
 // base tool, another against a fixed fixture it probes first and shows that
@@ -99,8 +106,11 @@ std::optional<Reading> read_tool(const nlohmann::json& status, int tool_index,
 /// Always nullopt when presentation().has_reference_row is false.
 std::optional<Reading> read_reference(const nlohmann::json& status);
 
-/// Gcode establishing the reference, run once with an EMPTY carriage before
-/// any tool is measured. Empty when the printer has no provider.
+/// Gcode establishing the reference, run once before any tool is measured.
+/// Empty when the printer has no provider.
+///
+/// What state the machine must be in for this to succeed is the firmware's
+/// business - it refuses on its own terms and the refusal is surfaced as-is.
 std::vector<std::string> locate_reference_gcode(const PrinterDiscovery& hw);
 
 /// Gcode measuring one tool, in send order. Empty when the printer has no
@@ -112,9 +122,13 @@ std::vector<std::string> calibrate_tool_gcode(const PrinterDiscovery& hw, int to
 /// same save-and-restart handling a probe calibration uses.
 bool persist_requires_save_config(const PrinterDiscovery& hw);
 
-/// Gcode persisting a completed calibration, in send order. Empty when the
-/// firmware writes durably as it measures and nothing further is needed.
-std::vector<std::string> save_gcode(const PrinterDiscovery& hw);
+/// Gcode persisting the calibration of @p tools, in send order. Empty when the
+/// firmware writes durably as it measures, when @p tools is empty, or when the
+/// printer has no provider.
+///
+/// Takes the tools rather than persisting wholesale because the durable write
+/// is per tool on every firmware here, and a run may have measured only one.
+std::vector<std::string> save_gcode(const PrinterDiscovery& hw, const std::vector<int>& tools);
 
 /// The gcode command whose `description:` the panel shows as its on-screen
 /// instruction, or empty when this firmware has none.

@@ -247,15 +247,39 @@ TEST_CASE("tool offset calibration: measuring a tool selects it first",
           std::vector<std::string>{"SELECT_TOOL T=2", "TOOL_CALIBRATE_TOOL_OFFSET"});
 }
 
-TEST_CASE("tool offset calibration: persisting stages a config change",
+TEST_CASE("tool offset calibration: persisting stages every axis, then commits",
           "[tool_offset_calibration]") {
-    // The measurement goes through configfile.set(), so nothing survives a
-    // restart until SAVE_CONFIG commits it - and that restarts Klipper, which
-    // the caller has to drive through its save-and-restart handling.
+    // SAVE_TOOL_PARAMETER takes no value - it persists whatever the tool
+    // currently HOLDS. Staging explicitly is what makes this correct without
+    // knowing where the calibration pass put its result; a bare SAVE_CONFIG
+    // would be a bet that the pass had already staged a pending config change,
+    // and would persist nothing if it had not.
     PrinterDiscovery hw = calibrating_printer();
 
     CHECK(toc::persist_requires_save_config(hw));
-    CHECK(toc::save_gcode(hw) == std::vector<std::string>{"SAVE_CONFIG"});
+    CHECK(toc::save_gcode(hw, {1}) ==
+          std::vector<std::string>{"SAVE_TOOL_PARAMETER T=1 PARAMETER=gcode_x_offset",
+                                   "SAVE_TOOL_PARAMETER T=1 PARAMETER=gcode_y_offset",
+                                   "SAVE_TOOL_PARAMETER T=1 PARAMETER=gcode_z_offset",
+                                   "SAVE_CONFIG"});
+}
+
+TEST_CASE("tool offset calibration: the commit comes once, after every tool",
+          "[tool_offset_calibration]") {
+    // SAVE_CONFIG restarts Klipper. One per tool would restart it three times
+    // and lose the tools staged after the first restart.
+    const auto lines = toc::save_gcode(calibrating_printer(), {0, 2});
+
+    CHECK(std::count(lines.begin(), lines.end(), std::string("SAVE_CONFIG")) == 1);
+    CHECK(lines.back() == "SAVE_CONFIG");
+    CHECK(lines.size() == 7); // 3 axes x 2 tools + the commit
+}
+
+TEST_CASE("tool offset calibration: nothing to persist emits nothing",
+          "[tool_offset_calibration]") {
+    // A bare SAVE_CONFIG with no staged tool would restart Klipper for nothing.
+    CHECK(toc::save_gcode(calibrating_printer(), {}).empty());
+    CHECK(toc::save_gcode(calibrating_printer(), {-1}).empty());
 }
 
 TEST_CASE("tool offset calibration: an unsupported printer emits no commands",
@@ -266,7 +290,7 @@ TEST_CASE("tool offset calibration: an unsupported printer emits no commands",
 
     CHECK(toc::locate_reference_gcode(hw).empty());
     CHECK(toc::calibrate_tool_gcode(hw, 0).empty());
-    CHECK(toc::save_gcode(hw).empty());
+    CHECK(toc::save_gcode(hw, {0}).empty());
     CHECK_FALSE(toc::persist_requires_save_config(hw));
 }
 

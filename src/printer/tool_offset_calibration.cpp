@@ -23,12 +23,12 @@ struct Provider {
                                         const std::string& tool_name);
     /// The reference fixture's numbers, or nullopt when there is no such row.
     std::optional<Reading> (*read_reference)(const nlohmann::json& status);
-    /// Establish the reference - empty carriage.
+    /// Establish the reference the tools are measured against.
     std::vector<std::string> (*locate)(const PrinterDiscovery& hw);
     /// Measure one tool, in send order.
     std::vector<std::string> (*calibrate)(const PrinterDiscovery& hw, int tool_index);
-    /// Persist a finished calibration, in send order.
-    std::vector<std::string> (*save)(const PrinterDiscovery& hw);
+    /// Persist a finished calibration for @p tools, in send order.
+    std::vector<std::string> (*save)(const PrinterDiscovery& hw, const std::vector<int>& tools);
     /// Whether save() only stages the change, awaiting SAVE_CONFIG.
     bool persist_needs_save_config;
     /// Command whose `description:` is the on-screen instruction, or nullptr.
@@ -56,9 +56,15 @@ bool has_object(const PrinterDiscovery& hw, const std::string& name) {
 //
 // The tools_calibrate extra drives a nozzle-touch probe:
 //
-//   TOOL_LOCATE_SENSOR          once, with an EMPTY carriage - finds the probe
+//   TOOL_LOCATE_SENSOR          once - establishes the reference
 //   SELECT_TOOL T=<n>           pick the tool up
 //   TOOL_CALIBRATE_TOOL_OFFSET  measure whatever is mounted against that probe
+//
+// What state the machine must be in for each of those - what is on the
+// carriage, whether it is homed, whether the plate is off - is the firmware's
+// business, and it refuses on its own terms. We send the passes in order and
+// report what comes back; we do not restate its preconditions here, because a
+// stale copy of them is worse than none.
 //
 // The result is folded straight into the tool's own gcode_x/y/z_offset, which
 // is why there is no reference row: the probe position is not a second set of
@@ -71,6 +77,18 @@ bool has_object(const PrinterDiscovery& hw, const std::string& name) {
 // only, so they say nothing about the other three tools and go stale the moment
 // the next tool is measured; the tool objects always carry the offset actually
 // in effect. ToolState already parses these same three fields.
+//
+// NOTE, and it is load-bearing: on this firmware the measured offset and the
+// operator's own per-tool adjustment are THE SAME FIELD. helix::tool_offsets
+// writes gcode_z_offset for the tune panel's per-tool nudge, and a calibration
+// pass writes the same three. So re-calibrating a tool discards whatever the
+// operator had nudged it to, and a nudge moves what this panel displays. That
+// is the firmware's model, not a defect here - but it is NOT general. A
+// firmware that keeps the measured geometry and the operator's adjustment in
+// separate stores (a station bore plus a per-tool z_adjust, say) has three
+// layers where this has two, and its Provider reads different objects for each.
+// That separation is precisely why measuring lives in this module and the
+// adjustable value lives in helix::tool_offsets.
 bool detect_toolchanger(const PrinterDiscovery& hw) {
     // Both halves matter. [tools_calibrate] alone is meaningless without tools
     // to measure, and a toolchanger without it has no probing hardware - its
@@ -139,11 +157,39 @@ std::vector<std::string> calibrate_toolchanger(const PrinterDiscovery& /*hw*/, i
     return {"SELECT_TOOL T=" + std::to_string(tool_index), "TOOL_CALIBRATE_TOOL_OFFSET"};
 }
 
-std::vector<std::string> save_toolchanger(const PrinterDiscovery& /*hw*/) {
-    // The measurement goes through configfile.set(), i.e. a pending config
-    // change. Nothing survives a restart until SAVE_CONFIG commits it - and
-    // SAVE_CONFIG itself restarts Klipper.
-    return {"SAVE_CONFIG"};
+std::vector<std::string> save_toolchanger(const PrinterDiscovery& /*hw*/,
+                                          const std::vector<int>& tools) {
+    // Persist EXPLICITLY rather than trusting a bare SAVE_CONFIG to pick the
+    // measurement up.
+    //
+    // SAVE_TOOL_PARAMETER takes no value: it persists whatever the tool
+    // currently HOLDS (klipper-toolchanger's Tool.save_parameter() is
+    // configfile.set(self.name, name, self.params[name])). That property is
+    // what makes this correct without knowing where the calibration pass put
+    // its result - if it wrote the tool's offsets, this stages exactly those;
+    // if it staged them itself already, this stages the same values again.
+    // Either way what lands in printer.cfg is the offset the machine is
+    // actually printing with, which is the only value worth persisting.
+    //
+    // A bare SAVE_CONFIG would instead be a bet that the pass had already
+    // staged a pending config change, and would silently persist nothing if it
+    // had not.
+    std::vector<std::string> lines;
+    for (int tool : tools) {
+        if (tool < 0) {
+            continue;
+        }
+        const std::string t = std::to_string(tool);
+        for (const char* axis : {"gcode_x_offset", "gcode_y_offset", "gcode_z_offset"}) {
+            lines.push_back("SAVE_TOOL_PARAMETER T=" + t + " PARAMETER=" + axis);
+        }
+    }
+    if (lines.empty()) {
+        return {};
+    }
+    // Staging alone changes nothing durable; SAVE_CONFIG commits, and restarts.
+    lines.emplace_back("SAVE_CONFIG");
+    return lines;
 }
 
 const std::vector<Provider>& providers() {
@@ -231,9 +277,9 @@ bool persist_requires_save_config(const PrinterDiscovery& hw) {
     return p && p->persist_needs_save_config;
 }
 
-std::vector<std::string> save_gcode(const PrinterDiscovery& hw) {
+std::vector<std::string> save_gcode(const PrinterDiscovery& hw, const std::vector<int>& tools) {
     if (const Provider* p = match(hw)) {
-        return p->save(hw);
+        return p->save(hw, tools);
     }
     return {};
 }

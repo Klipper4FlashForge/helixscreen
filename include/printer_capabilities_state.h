@@ -163,6 +163,12 @@ class PrinterCapabilitiesState {
     // ========================================================================
 
     /// 1 if printer has quad_gantry_level
+    /// 1 when the printer can MEASURE its own tool offsets, i.e. it has the
+    /// probing hardware - not merely that it carries per-tool offsets.
+    lv_subject_t* get_printer_has_tool_offset_cal_subject() const {
+        return const_cast<lv_subject_t*>(&printer_has_tool_offset_cal_);
+    }
+
     lv_subject_t* get_printer_has_qgl_subject() const {
         return const_cast<lv_subject_t*>(&printer_has_qgl_);
     }
@@ -367,6 +373,7 @@ class PrinterCapabilitiesState {
     int stepper_z_endstop_microns_ = 0;
 
     // Printer capability subjects (all integer: 0=no, 1=yes)
+    lv_subject_t printer_has_tool_offset_cal_{}; // probing hardware for tool offsets
     lv_subject_t printer_has_qgl_{};                 // quad_gantry_level
     lv_subject_t printer_has_z_tilt_{};              // z_tilt_adjust
     lv_subject_t printer_has_bed_mesh_{};            // bed_mesh calibration
