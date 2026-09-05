@@ -441,7 +441,10 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                     std::isdigit(static_cast<unsigned char>(tool_suffix[1]))) {
                     tool_number = tool_suffix[1] - '0';
                 }
-                status_obj[key] = {{"gcode_z_offset", self->tool_z_offset(tool_number)}};
+                const auto offset = self->tool_offset(tool_number);
+                status_obj[key] = {{"gcode_x_offset", offset.x},
+                                   {"gcode_y_offset", offset.y},
+                                   {"gcode_z_offset", offset.z}};
             }
         }
 
@@ -660,8 +663,9 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
             // Toolchanger + per-tool objects — emit when discovered so
             // ToolState parsers can populate AmsState.
             if (objects.contains("toolchanger")) {
-                status_obj["toolchanger"] = {
-                    {"status", "ready"}, {"tool_number", 0}, {"tool_numbers", json::array({0})}};
+                status_obj["toolchanger"] = {{"status", "ready"},
+                                             {"tool_number", self->toolchanger_current_tool()},
+                                             {"tool_numbers", json::array({0})}};
             }
             for (auto it = objects.begin(); it != objects.end(); ++it) {
                 if (it.key().rfind("tool ", 0) == 0) {
@@ -686,17 +690,19 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                         std::isdigit(static_cast<unsigned char>(tool_suffix[1]))) {
                         tool_number = tool_suffix[1] - '0';
                     }
+                    const auto tool_gcode_offset = self->tool_offset(tool_number);
                     status_obj[it.key()] = {{"active", false},
                                             {"mounted", true},
                                             {"detect_state", "OK"},
-                                            {"gcode_x_offset", 0.0},
-                                            {"gcode_y_offset", 0.0},
                                             // Distinct per tool, and live: a
-                                            // SET_TOOL_PARAMETER earlier in the
+                                            // SET_TOOL_PARAMETER or a
+                                            // calibration pass earlier in the
                                             // session must be reflected here,
                                             // or a reconnect would silently
                                             // revert what the user set.
-                                            {"gcode_z_offset", self->tool_z_offset(tool_number)},
+                                            {"gcode_x_offset", tool_gcode_offset.x},
+                                            {"gcode_y_offset", tool_gcode_offset.y},
+                                            {"gcode_z_offset", tool_gcode_offset.z},
                                             {"extruder", extruder_for_tool},
                                             {"fan", "fan"}};
                 }

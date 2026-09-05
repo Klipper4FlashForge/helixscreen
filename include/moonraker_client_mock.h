@@ -926,12 +926,38 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      */
     std::string chamber_filter_pin_object() const;
 
-    /// Current mock z-offset for a tool, in mm. Seeded distinct per tool and
-    /// updated by SET_TOOL_PARAMETER, so a value set earlier in the session
-    /// survives into a later status snapshot instead of silently reverting.
+    /// One tool's three gcode offsets, in mm.
+    ///
+    /// klipper-toolchanger treats all three alike - SET_TOOL_PARAMETER writes
+    /// any of them, SAVE_TOOL_PARAMETER persists any of them - so they share
+    /// one record. Only Z had a UI for a long time, which is why the z-only
+    /// accessor below still exists.
+    struct ToolOffset {
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+    };
+
+    /// All three current mock offsets for a tool, in mm. Seeded distinct per
+    /// tool and updated by SET_TOOL_PARAMETER / TOOL_CALIBRATE_TOOL_OFFSET, so
+    /// a value set earlier in the session survives into a later status snapshot
+    /// instead of silently reverting.
     /// Public because the object handlers are free-function lambdas taking a
     /// MoonrakerClientMock*, not members.
+    ToolOffset tool_offset(int tool) const;
+
+    /// Just the Z of tool_offset(), for the callers that only ever wanted that.
     double tool_z_offset(int tool) const;
+
+    /// Tool currently on the carriage in toolchanger mode, -1 when empty.
+    /// Public for the same reason tool_offset() is - the object handlers are
+    /// free-function lambdas taking a MoonrakerClientMock*.
+    int toolchanger_current_tool() const;
+
+    /// Whether TOOL_LOCATE_SENSOR has run this session, i.e. whether the
+    /// nozzle-touch probe's position is known. TOOL_CALIBRATE_TOOL_OFFSET
+    /// refuses until it has - the real extra has nothing to measure against.
+    bool tools_calibrate_located() const;
 
     /// Klipper's configfile.save_config_pending - whether a SAVE_CONFIG is owed.
     /// Set by anything routed through configfile.set() (here:
@@ -1188,7 +1214,13 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      */
     void dispatch_gcode_move_update();
     /// Republish one tool's gcode_z_offset after SET_TOOL_PARAMETER.
-    void dispatch_tool_update(int tool);
+    /// Republish one tool's offsets. @p all_axes false publishes only
+    /// gcode_z_offset (a baby-step moved Z alone); true publishes all three (a
+    /// calibration pass moved all of them).
+    void dispatch_tool_update(int tool, bool all_axes = false);
+
+    /// Republish the toolchanger object after a SELECT_TOOL / UNSELECT_TOOL.
+    void dispatch_toolchanger_update();
 
     /// Klipper's configfile.set(): stage one option for the next SAVE_CONFIG.
     /// Does NOT change any runtime value - on a real printer the runtime write
@@ -1563,8 +1595,8 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     /// SET_TOOL_PARAMETER. Seeded DISTINCT rather than all-zero: an all-zero
     /// seed makes "every tool reads the same value" — the exact bug a per-tool
     /// display can have — look correct.
-    mutable std::mutex tool_z_offsets_mutex_;
-    std::map<int, double> tool_z_offsets_;
+    mutable std::mutex tool_offsets_mutex_;
+    std::map<int, ToolOffset> tool_offsets_;
     /// The durable copy - what printer.cfg holds, i.e. what the tool comes back
     /// with after a restart. SAVE_CONFIG commits the staged values into here.
     ///
@@ -1572,7 +1604,17 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     /// it an offset that was set and never saved survived a restart too, so the
     /// mock could not tell a persisted save from a forgotten one and no test of
     /// the persist path could fail.
-    std::map<int, double> tool_z_offsets_saved_;
+    std::map<int, ToolOffset> tool_offsets_saved_;
+
+    /// TOOL_LOCATE_SENSOR has run - see tools_calibrate_located().
+    std::atomic<bool> tools_calibrate_located_{false};
+
+    /// Tool on the carriage in HELIX_MOCK_AMS=toolchanger mode, -1 when empty.
+    /// Driven by SELECT_TOOL / UNSELECT_TOOL, published as the toolchanger
+    /// object's tool_number, and read by TOOL_CALIBRATE_TOOL_OFFSET - which
+    /// takes no arguments and measures whatever is mounted.
+    /// (MedusaHC has its own medusa_current_tool_.)
+    std::atomic<int> toolchanger_current_tool_{0};
 
     /// Klipper's configfile.save_config_pending_items - {section: {option:
     /// value}}, values stringified as configfile.set() does.
