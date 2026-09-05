@@ -2,8 +2,6 @@
 
 #include "ui_panel_calibration_tool_offset.h"
 
-#include "tool_offset_calibration.h"
-
 #include "ui_callback_helpers.h"
 #include "ui_emergency_stop.h"
 #include "ui_event_safety.h"
@@ -16,14 +14,14 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
+#include "tool_offset_calibration.h"
 #include "tool_state.h"
-
-#include <algorithm>
-#include <cstdlib>
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cstdlib>
 #include <memory>
 
 namespace {
@@ -55,8 +53,8 @@ static std::unique_ptr<ToolOffsetCalibrationPanel> g_tool_offset_cal_panel;
 ToolOffsetCalibrationPanel& get_global_tool_offset_cal_panel() {
     if (!g_tool_offset_cal_panel) {
         g_tool_offset_cal_panel = std::make_unique<ToolOffsetCalibrationPanel>();
-        StaticPanelRegistry::instance().register_destroy(
-            "ToolOffsetCalibrationPanel", []() { g_tool_offset_cal_panel.reset(); });
+        StaticPanelRegistry::instance().register_destroy("ToolOffsetCalibrationPanel",
+                                                         []() { g_tool_offset_cal_panel.reset(); });
     }
     return *g_tool_offset_cal_panel;
 }
@@ -100,8 +98,7 @@ void ToolOffsetCalibrationPanel::init_subjects() {
     // engine copies the registration name, so fmt-built names are safe here.
     for (int i = 0; i < MAX_TOOLS; ++i) {
         UI_MANAGED_SUBJECT_INT(row_visible_[i], 0,
-                               fmt::format("tool_offset_cal_row_visible_{}", i).c_str(),
-                               subjects_);
+                               fmt::format("tool_offset_cal_row_visible_{}", i).c_str(), subjects_);
         UI_MANAGED_SUBJECT_INT(row_state_[i], ROW_NONE,
                                fmt::format("tool_offset_cal_state_{}", i).c_str(), subjects_);
         UI_MANAGED_SUBJECT_STRING(row_state_text_[i], row_state_text_buffer_[i], "Not calibrated",
@@ -115,15 +112,15 @@ void ToolOffsetCalibrationPanel::init_subjects() {
                                   fmt::format("tool_offset_cal_y_{}", i).c_str(), subjects_);
         UI_MANAGED_SUBJECT_STRING(row_z_[i], row_z_buffer_[i], "--",
                                   fmt::format("tool_offset_cal_z_{}", i).c_str(), subjects_);
-        UI_MANAGED_SUBJECT_INT(row_z_odd_[i], 0,
-                               fmt::format("tool_offset_cal_z_odd_{}", i).c_str(), subjects_);
+        UI_MANAGED_SUBJECT_INT(row_z_odd_[i], 0, fmt::format("tool_offset_cal_z_odd_{}", i).c_str(),
+                               subjects_);
     }
 
     UI_MANAGED_SUBJECT_INT(station_state_, ROW_NONE, "tool_offset_cal_station_state", subjects_);
     UI_MANAGED_SUBJECT_STRING(station_state_text_, station_state_text_buffer_, "Not measured",
                               "tool_offset_cal_station_state_text", subjects_);
-    UI_MANAGED_SUBJECT_STRING(station_sub_, station_sub_buffer_, "",
-                              "tool_offset_cal_station_sub", subjects_);
+    UI_MANAGED_SUBJECT_STRING(station_sub_, station_sub_buffer_, "", "tool_offset_cal_station_sub",
+                              subjects_);
     UI_MANAGED_SUBJECT_STRING(station_x_, station_x_buffer_, "--", "tool_offset_cal_station_x",
                               subjects_);
     UI_MANAGED_SUBJECT_STRING(station_y_, station_y_buffer_, "--", "tool_offset_cal_station_y",
@@ -385,8 +382,7 @@ void ToolOffsetCalibrationPanel::confirm_and_run(std::vector<int> tools) {
     helix::ui::modal_confirm(
         lv_tr("Before calibrating"), msg.c_str(), ModalSeverity::Warning, lv_tr("Start"),
         [this]() { begin_run(std::move(g_pending_tools)); },
-        {.on_dismiss = []() { g_pending_tools.clear(); },
-         .owner_token = lifetime_.token()});
+        {.on_dismiss = []() { g_pending_tools.clear(); }, .owner_token = lifetime_.token()});
 }
 
 void ToolOffsetCalibrationPanel::on_start_clicked(lv_event_t* e) {
@@ -495,13 +491,14 @@ void ToolOffsetCalibrationPanel::send_next_step() {
     // Moonraker's printer.gcode.script answers when the script finishes, so the
     // success callback IS the completion signal. The whole run is one call and
     // can sit well past the 5-minute macro ceiling.
-    api->execute_gcode(
-        cmd,
-        lifetime_.bg_cb("ToolOffsetCalPanel::calibrate_done",
-                        [this]() { on_step_finished(true, ""); }),
-        lifetime_.bg_cb("ToolOffsetCalPanel::calibrate_error",
-                        [this](const MoonrakerError& err) { on_step_finished(false, err.message); }),
-        IMoonrakerAPI::PRE_START_MACRO_TIMEOUT_MS);
+    api->execute_gcode(cmd,
+                       lifetime_.bg_cb("ToolOffsetCalPanel::calibrate_done",
+                                       [this]() { on_step_finished(true, ""); }),
+                       lifetime_.bg_cb("ToolOffsetCalPanel::calibrate_error",
+                                       [this](const MoonrakerError& err) {
+                                           on_step_finished(false, err.message);
+                                       }),
+                       IMoonrakerAPI::PRE_START_MACRO_TIMEOUT_MS);
 }
 
 void ToolOffsetCalibrationPanel::on_step_finished(bool ok, const std::string& error) {
@@ -585,9 +582,11 @@ bool ToolOffsetCalibrationPanel::abort_in_progress_calibration() {
         api->emergency_stop(
             [api]() {
                 spdlog::debug("[ToolOffsetCal] M112 sent, restarting firmware");
-                api->restart_firmware([]() {}, [](const MoonrakerError& err) {
-                    spdlog::error("[ToolOffsetCal] Firmware restart failed: {}", err.message);
-                });
+                api->restart_firmware(
+                    []() {},
+                    [](const MoonrakerError& err) {
+                        spdlog::error("[ToolOffsetCal] Firmware restart failed: {}", err.message);
+                    });
             },
             [](const MoonrakerError& err) {
                 spdlog::error("[ToolOffsetCal] Emergency stop failed: {}", err.message);
@@ -653,7 +652,7 @@ void ToolOffsetCalibrationPanel::send_save_config() {
     spdlog::info("[{}] Sending SAVE_CONFIG", get_name());
     api->execute_gcode(
         join_gcode(helix::tool_offset_calibration::save_gcode(get_printer_state().get_discovery(),
-                                                             calibrated_tools())),
+                                                              calibrated_tools())),
         lifetime_.bg_cb("ToolOffsetCalPanel::save_done",
                         [this]() { lv_subject_copy_string(&status_, lv_tr("Offsets saved")); }),
         lifetime_.bg_cb("ToolOffsetCalPanel::save_error",
@@ -884,8 +883,8 @@ void ToolOffsetCalibrationPanel::fetch_macro_description() {
     // `description:` is the instruction text ("remove the build plate", ...).
     client->send_jsonrpc(
         "printer.gcode.help", nlohmann::json::object(),
-        lifetime_.bg_cb("ToolOffsetCalPanel::gcode_help", [this, command](
-                                                              const nlohmann::json& resp) {
+        lifetime_.bg_cb("ToolOffsetCalPanel::gcode_help", [this,
+                                                           command](const nlohmann::json& resp) {
             const nlohmann::json& result = resp.contains("result") ? resp["result"] : resp;
             if (!result.is_object() || !result.contains(command) || !result[command].is_string()) {
                 return;

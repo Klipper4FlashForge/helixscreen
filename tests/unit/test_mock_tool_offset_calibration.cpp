@@ -60,8 +60,7 @@ struct ToolCalibrateFixture : public HelixTestFixture {
 // Preconditions - the two refusals a driver must handle
 // ============================================================================
 
-TEST_CASE_METHOD(ToolCalibrateFixture,
-                 "mock: calibrating before locating the sensor is refused",
+TEST_CASE_METHOD(ToolCalibrateFixture, "mock: calibrating before locating the sensor is refused",
                  "[mock][toolchanger][tool_offset_calibration]") {
     // The probe position is the zero every tool is measured against. Without
     // it there is nothing to measure, and the real extra errors rather than

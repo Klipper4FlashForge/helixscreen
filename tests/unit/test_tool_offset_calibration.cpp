@@ -63,8 +63,7 @@ PrinterDiscovery plain_printer() {
 /// A status frame carrying one tool's three offsets.
 json tool_frame(const std::string& name, double x, double y, double z) {
     json status;
-    status["tool " + name] = {
-        {"gcode_x_offset", x}, {"gcode_y_offset", y}, {"gcode_z_offset", z}};
+    status["tool " + name] = {{"gcode_x_offset", x}, {"gcode_y_offset", y}, {"gcode_z_offset", z}};
     return status;
 }
 
@@ -99,9 +98,8 @@ TEST_CASE("tool offset calibration: the extra without its wrapper macro is unsup
     // alternative is driving the extra's primitives ourselves and guessing at
     // every precondition the wrapper exists to own.
     PrinterDiscovery hw;
-    hw.parse_objects(json::array(
-        {"gcode_move", "toolhead", "extruder", "toolchanger", "tools_calibrate", "tool T0",
-         "tool T1"}));
+    hw.parse_objects(json::array({"gcode_move", "toolhead", "extruder", "toolchanger",
+                                  "tools_calibrate", "tool T0", "tool T1"}));
 
     CHECK_FALSE(toc::supported(hw));
 }
@@ -161,8 +159,7 @@ TEST_CASE("tool offset calibration: the panel queries every tool object",
     std::vector<std::string> objects = toc::required_status_objects(calibrating_printer());
     std::sort(objects.begin(), objects.end());
 
-    CHECK(objects ==
-          std::vector<std::string>{"tool T0", "tool T1", "tool T2", "tool T3"});
+    CHECK(objects == std::vector<std::string>{"tool T0", "tool T1", "tool T2", "tool T3"});
 }
 
 TEST_CASE("tool offset calibration: an unsupported printer asks for nothing",
@@ -185,8 +182,7 @@ TEST_CASE("tool offset calibration: a tool's three offsets read off its own obje
     CHECK(r->z == Catch::Approx(-0.135));
 }
 
-TEST_CASE("tool offset calibration: zero is a value, not an absence",
-          "[tool_offset_calibration]") {
+TEST_CASE("tool offset calibration: zero is a value, not an absence", "[tool_offset_calibration]") {
     // A reported 0.000 is a number the firmware reported, and gets shown as
     // one. Only the ABSENCE of the field is "no news". Conflating the two would
     // blank a row whose offset genuinely is zero - and on the firmwares that
@@ -237,8 +233,7 @@ TEST_CASE("tool offset calibration: a negative tool index reads nothing",
     CHECK_FALSE(toc::read_tool(status, -1, "T0").has_value());
 }
 
-TEST_CASE("tool offset calibration: an unnamed tool reads nothing",
-          "[tool_offset_calibration]") {
+TEST_CASE("tool offset calibration: an unnamed tool reads nothing", "[tool_offset_calibration]") {
     // klipper-toolchanger keys the status object off the tool's NAME, so an
     // empty name would query the object literally called "tool ".
     json status = tool_frame("T0", 0.0, 0.0, 0.0);
@@ -250,8 +245,7 @@ TEST_CASE("tool offset calibration: an unnamed tool reads nothing",
 // Commands
 // ============================================================================
 
-TEST_CASE("tool offset calibration: the whole run is one command",
-          "[tool_offset_calibration]") {
+TEST_CASE("tool offset calibration: the whole run is one command", "[tool_offset_calibration]") {
     // The wrapper owns the reference pass, the machine state it needs, the
     // temperature, and which tools exist - so there is nothing for us to
     // sequence, and no per-tool form to offer.
@@ -312,5 +306,3 @@ TEST_CASE("tool offset calibration: an unsupported printer emits no commands",
     CHECK(toc::save_gcode(hw, {0}).empty());
     CHECK_FALSE(toc::persist_requires_save_config(hw));
 }
-
-

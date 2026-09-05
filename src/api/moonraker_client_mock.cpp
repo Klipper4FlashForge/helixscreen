@@ -3055,7 +3055,7 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
     // tool-offset calibration writes all three. Other tool parameters are not
     // read back anywhere in the app.
     if (gcode.find("SET_TOOL_PARAMETER") != std::string::npos) {
-        double MoonrakerClientMock::ToolOffset::*member = nullptr;
+        double MoonrakerClientMock::ToolOffset::* member = nullptr;
         const char* axis_name = nullptr;
         if (gcode.find("PARAMETER=gcode_x_offset") != std::string::npos) {
             member = &ToolOffset::x;
@@ -3100,7 +3100,7 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
     // takes no VALUE=. So this stages the current runtime value and changes
     // nothing live - the change only lands when SAVE_CONFIG writes it out.
     if (gcode.find("SAVE_TOOL_PARAMETER") != std::string::npos) {
-        double MoonrakerClientMock::ToolOffset::*save_member = nullptr;
+        double MoonrakerClientMock::ToolOffset::* save_member = nullptr;
         const char* save_axis = nullptr;
         if (gcode.find("PARAMETER=gcode_x_offset") != std::string::npos) {
             save_member = &ToolOffset::x;
@@ -3231,7 +3231,7 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
             last_gcode_error_ = "No tool mounted";
             return 1;
         }
-            // Writes the SAME three fields SET_TOOL_PARAMETER writes, because on
+        // Writes the SAME three fields SET_TOOL_PARAMETER writes, because on
         // this firmware the measured offset and the operator's own per-tool
         // adjustment are one store - so a calibration pass legitimately
         // discards a nudge. Splitting them here would model a firmware that

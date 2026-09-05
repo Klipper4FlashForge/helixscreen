@@ -2,15 +2,16 @@
 
 #pragma once
 
-#include "overlay_base.h"
 #include "ui_timer_guard.h"
 
-#include "hv/json.hpp"
 #include "lvgl/lvgl.h"
+#include "overlay_base.h"
 
 #include <deque>
 #include <string>
 #include <vector>
+
+#include "hv/json.hpp"
 
 /**
  * @file ui_panel_calibration_tool_offset.h
