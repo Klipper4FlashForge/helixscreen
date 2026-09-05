@@ -61,7 +61,7 @@ struct ToolCalibrateFixture : public HelixTestFixture {
 // ============================================================================
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: calibrating before locating the sensor is refused",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // The probe position is the zero every tool is measured against. Without
     // it there is nothing to measure, and the real extra errors rather than
     // returning a meaningless number.
@@ -75,7 +75,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: calibrating before locating the se
 }
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: calibrating with nothing mounted is refused",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // The mock's own rule, not a transcription of firmware behaviour: the
     // measuring command takes no arguments, so with nothing on the carriage
     // there is no tool the result could belong to. Refusing keeps a caller that
@@ -89,7 +89,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: calibrating with nothing mounted i
 }
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: TOOL_LOCATE_SENSOR sets the located flag",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     REQUIRE_FALSE(client.tools_calibrate_located());
 
     CHECK(gcode("TOOL_LOCATE_SENSOR"));
@@ -101,7 +101,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: TOOL_LOCATE_SENSOR sets the locate
 // ============================================================================
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: SELECT_TOOL is what the calibration measures",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // TOOL_CALIBRATE_TOOL_OFFSET carries no tool argument, so the selection is
     // the ONLY thing that decides which tool gets written. Modelling that
     // literally is the point: a driver that forgets the SELECT_TOOL must be
@@ -116,7 +116,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: SELECT_TOOL is what the calibratio
 }
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: UNSELECT_TOOL empties the carriage",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     gcode("SELECT_TOOL T=3");
     REQUIRE(client.toolchanger_current_tool() == 3);
 
@@ -129,7 +129,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: UNSELECT_TOOL empties the carriage
 // ============================================================================
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: a calibration writes all three axes",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     calibrate(1);
 
     const auto offset = client.tool_offset(1);
@@ -141,7 +141,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: a calibration writes all three axe
 }
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: the base tool is zero on every axis",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // Every other tool's offset is a delta FROM tool 0, so a non-zero base tool
     // is not a different number - it is a contradiction. True both before and
     // after measuring it.
@@ -159,7 +159,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: the base tool is zero on every axi
 }
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: tools seed distinct, not all-zero",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // An all-zero seed makes "every tool shows the same number" - the
     // characteristic per-tool display bug - look correct.
     CHECK(client.tool_offset(1).x != Catch::Approx(client.tool_offset(2).x));
@@ -171,7 +171,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: tools seed distinct, not all-zero"
 // ============================================================================
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: a calibration is staged, not durable",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // klipper-toolchanger writes the measurement through configfile.set(). A
     // mock that persisted it here would hide a panel that never sends the
     // SAVE_CONFIG at all.
@@ -188,7 +188,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: a calibration is staged, not durab
 }
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: an uncommitted calibration is lost on restart",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     calibrate(1);
     REQUIRE(client.tool_offset(1).x == Catch::Approx(0.412));
 
@@ -199,7 +199,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: an uncommitted calibration is lost
 }
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: SAVE_CONFIG commits all three axes",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     calibrate(1);
     REQUIRE(client.save_config_pending());
 
@@ -218,7 +218,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: SAVE_CONFIG commits all three axes
 // ============================================================================
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: SET_TOOL_PARAMETER writes one axis and only that one",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // The tune overlay writes Z alone. Writing it must not disturb X and Y,
     // which a whole-record overwrite would silently zero.
     const auto before = client.tool_offset(1);
@@ -237,8 +237,8 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: SET_TOOL_PARAMETER writes one axis
 
 TEST_CASE_METHOD(ToolCalibrateFixture,
                  "mock: the explicit save persists a calibration across a restart",
-                 "[mock][toolchanger][tool_offset_calibration]") {
-    // The whole sequence helix::tool_offset_calibration::save_gcode() emits,
+                 "[mock][toolchanger][calibration]") {
+    // The whole sequence helix::tool_offsets::save_calibration_gcode() emits,
     // end to end. This is the test that would fail if SAVE_TOOL_PARAMETER did
     // not persist what the CALIBRATION wrote - which is the assumption the
     // explicit staging exists to avoid making.
@@ -263,7 +263,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture,
 
 TEST_CASE_METHOD(ToolCalibrateFixture,
                  "mock: a calibration nobody saved does not survive a restart",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // The other half, and the reason the mock keeps a separate durable map: if
     // an unsaved calibration survived, no test could tell a working save from a
     // forgotten one.
@@ -281,7 +281,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture,
 // ============================================================================
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: CALIBRATE_TOOL_OFFSETS measures every tool",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // One command, the whole machine - no SELECT_TOOL, no reference pass from
     // us. That is the point of gating on the macro: the firmware owns the
     // order, the preconditions and the tool list.
@@ -294,7 +294,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: CALIBRATE_TOOL_OFFSETS measures ev
 }
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: the macro needs no reference pass from us",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // The bare TOOL_CALIBRATE_TOOL_OFFSET refuses without a located sensor.
     // The wrapper does not, because locating is part of what it owns - which is
     // exactly the assumption we stopped making.
@@ -304,7 +304,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: the macro needs no reference pass 
 }
 
 TEST_CASE_METHOD(ToolCalibrateFixture, "mock: the macro stages nothing durable on its own",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // Whether the real macro persists as it measures is the thing we could not
     // verify, so the mock models the WEAKER case. If it staged here, a save
     // path that forgot to persist would still pass its tests - and then lose
@@ -316,7 +316,7 @@ TEST_CASE_METHOD(ToolCalibrateFixture, "mock: the macro stages nothing durable o
 
 TEST_CASE_METHOD(ToolCalibrateFixture,
                  "mock: macro then explicit save survives a restart on every axis",
-                 "[mock][toolchanger][tool_offset_calibration]") {
+                 "[mock][toolchanger][calibration]") {
     // End to end, exactly what the panel drives.
     gcode("CALIBRATE_TOOL_OFFSETS");
     const auto measured = client.tool_offset(3);

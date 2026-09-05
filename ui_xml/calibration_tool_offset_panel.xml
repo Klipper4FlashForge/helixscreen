@@ -54,73 +54,8 @@
               style_pad_gap="#space_sm" flex_flow="column" style_bg_opa="0" style_border_width="0"
               scrollable="true">
 
-      <text_small text="Reference — the fixed point every tool is measured against (mm)"
-                  translation_tag="Reference — the fixed point every tool is measured against (mm)"
-                  style_text_color="#text_muted"/>
-
-      <!-- Reference row: runs with an EMPTY carriage. Shown only on the
-           Same row shape as a tool, so the list reads as one thing. -->
-      <lv_obj name="tool_offset_row_station" width="100%" height="content" flex_flow="row"
-              style_flex_cross_place="center" style_pad_hor="#space_sm" style_pad_ver="#space_xxs"
-              style_pad_gap="#space_sm"
-              style_radius="#border_radius_small" style_border_width="1"
-              scrollable="false">
-        <bind_style_if_not_eq name="row_idle" subject="tool_offset_cal_station_state" ref_value="2"/>
-        <bind_style_if_eq name="row_measuring" subject="tool_offset_cal_station_state" ref_value="2"/>
-
-        <lv_obj width="52" height="34" style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg"
-                style_radius="#border_radius_small" style_border_width="1" style_border_color="#border"
-                flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center"
-                scrollable="false">
-          <text_body text="REF" translation_tag="REF"/>
-        </lv_obj>
-
-        <!-- Measured: the station bore's machine coordinates -->
-        <lv_obj name="tool_offset_station_values" width="content" height="content" flex_flow="row"
-                style_pad_all="0" style_pad_gap="#space_md" style_bg_opa="0" style_border_width="0"
-                scrollable="false">
-          <bind_flag_if_not_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="3"/>
-          <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
-                  style_bg_opa="0" style_border_width="0" scrollable="false">
-            <text_small text="X" style_text_color="#text_muted"/>
-            <text_body bind_text="tool_offset_cal_station_x"/>
-          </lv_obj>
-          <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
-                  style_bg_opa="0" style_border_width="0" scrollable="false">
-            <text_small text="Y" style_text_color="#text_muted"/>
-            <text_body bind_text="tool_offset_cal_station_y"/>
-          </lv_obj>
-          <lv_obj width="112" height="content" flex_flow="row" style_flex_cross_place="end" style_pad_all="0" style_pad_gap="#space_xs"
-                  style_bg_opa="0" style_border_width="0" scrollable="false">
-            <text_small text="Z" style_text_color="#text_muted"/>
-            <text_body bind_text="tool_offset_cal_station_z"/>
-          </lv_obj>
-        </lv_obj>
-
-        <!-- Not measured / measuring -->
-        <lv_obj name="tool_offset_station_state" width="content" height="content" flex_flow="row"
-                style_flex_cross_place="end"
-                style_pad_all="0" style_pad_gap="#space_sm" style_bg_opa="0" style_border_width="0"
-                scrollable="false">
-          <bind_flag_if_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="3"/>
-          <text_body name="tool_offset_station_state_label" bind_text="tool_offset_cal_station_state_text">
-            <bind_style_if_eq name="state_attention" subject="tool_offset_cal_station_state" ref_value="0"/>
-            <bind_style_if_eq name="state_quiet" subject="tool_offset_cal_station_state" ref_value="1"/>
-            <bind_style_if_eq name="state_running" subject="tool_offset_cal_station_state" ref_value="2"/>
-          </text_body>
-          <text_small bind_text="tool_offset_cal_station_sub" style_text_color="#text_muted"/>
-        </lv_obj>
-
-        <lv_obj flex_grow="1" height="1" style_pad_all="0" style_bg_opa="0" style_border_width="0"
-                scrollable="false"/>
-
-        <spinner size="sm" width="40" height="40">
-          <bind_flag_if_not_eq subject="tool_offset_cal_station_state" flag="hidden" ref_value="2"/>
-        </spinner>
-      </lv_obj>
-
-      <text_small text="Tools — nozzle position, and Z height over the reference (mm)"
-                  translation_tag="Tools — nozzle position, and Z height over the reference (mm)"
+      <text_small text="Offsets are measured against the base tool (mm)"
+                  translation_tag="Offsets are measured against the base tool (mm)"
                   style_text_color="#text_muted"/>
 
       <!-- One row per tool slot; rows beyond the printer's tool count stay

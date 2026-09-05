@@ -385,3 +385,249 @@ TEST_CASE("tool offsets: a negative tool index emits nothing", "[tool_offsets]")
     CHECK(to_::save_tool_z_gcode(hw, -1, -50).empty());
     CHECK(to_::set_tool_z_gcode(tool_offset_macro_printer(), -1, -50).empty());
 }
+
+// ============================================================================
+// Calibration - measuring the offsets rather than carrying them
+// ============================================================================
+
+namespace {
+
+/// A klipper-toolchanger machine that can measure its own offsets: the extra
+/// AND the wrapper macro the app actually sends.
+PrinterDiscovery calibrating_printer() {
+    PrinterDiscovery hw;
+    json objects = json::array({"gcode_move", "toolhead", "extruder", "toolchanger",
+                                "tools_calibrate", "gcode_macro CALIBRATE_TOOL_OFFSETS"});
+    for (int i = 0; i < 4; ++i) {
+        objects.push_back("tool T" + std::to_string(i));
+    }
+    hw.parse_objects(objects);
+    return hw;
+}
+
+/// The same machine with no calibration macro - offsets typed in by hand.
+PrinterDiscovery manual_printer() {
+    PrinterDiscovery hw;
+    hw.parse_objects(toolchanger_objects(4));
+    return hw;
+}
+
+/// A status frame carrying one tool's three offsets.
+json tool_frame(const std::string& name, double x, double y, double z) {
+    json status;
+    status["tool " + name] = {{"gcode_x_offset", x}, {"gcode_y_offset", y}, {"gcode_z_offset", z}};
+    return status;
+}
+
+} // namespace
+
+// ============================================================================
+// Capability gating
+// ============================================================================
+
+TEST_CASE("tool offset calibration: a probe-equipped tool changer supports it",
+          "[tool_offsets][calibration]") {
+    PrinterDiscovery hw = calibrating_printer();
+
+    CHECK(to_::calibration_supported(hw));
+    CHECK(to_::provider_name(hw) == "klipper-toolchanger");
+}
+
+TEST_CASE("tool offset calibration: a tool changer without the macro does not",
+          "[tool_offsets][calibration]") {
+    // We gate on what we SEND. Without CALIBRATE_TOOL_OFFSETS the Calibrate
+    // button would issue a command Klipper rejects as unknown.
+    CHECK_FALSE(to_::calibration_supported(manual_printer()));
+    // The row still MATCHES - this machine carries per-tool offsets and can be
+    // nudged, it just cannot measure them. That is the whole point of the two
+    // questions sharing one provider.
+    CHECK(to_::provider_name(manual_printer()) == "klipper-toolchanger");
+    CHECK(to_::supports_per_tool_z(manual_printer()));
+}
+
+TEST_CASE("tool offset calibration: the extra without its wrapper macro is unsupported",
+          "[tool_offsets][calibration]") {
+    // A deliberate, and lossy, tradeoff. CALIBRATE_TOOL_OFFSETS is shipped as a
+    // printer.cfg EXAMPLE rather than as part of the extra, so a machine can run
+    // tools_calibrate and still not have it. Gating on the macro means such a
+    // printer reads as unsupported - which is the honest answer, because the
+    // alternative is driving the extra's primitives ourselves and guessing at
+    // every precondition the wrapper exists to own.
+    PrinterDiscovery hw;
+    hw.parse_objects(json::array({"gcode_move", "toolhead", "extruder", "toolchanger",
+                                  "tools_calibrate", "tool T0", "tool T1"}));
+
+    CHECK_FALSE(to_::calibration_supported(hw));
+}
+
+TEST_CASE("tool offset calibration: a single-toolhead printer does not",
+          "[tool_offsets][calibration]") {
+    // [tools_calibrate] with no toolchanger is meaningless - there is no second
+    // tool to measure against the first.
+    CHECK_FALSE(to_::calibration_supported(plain_printer()));
+}
+
+// ============================================================================
+// Presentation - the seam that lets a second firmware show different numbers
+// ============================================================================
+
+TEST_CASE("tool offset calibration: the panel queries every tool object",
+          "[tool_offsets][calibration]") {
+    // The panel does a one-shot query rather than riding the tool-changer
+    // subscription, so the objects have to be named here or the rows never
+    // populate.
+    std::vector<std::string> objects = to_::calibration_status_objects(calibrating_printer());
+    std::sort(objects.begin(), objects.end());
+
+    CHECK(objects == std::vector<std::string>{"tool T0", "tool T1", "tool T2", "tool T3"});
+}
+
+TEST_CASE("tool offset calibration: an unsupported printer asks for nothing",
+          "[tool_offsets][calibration]") {
+    CHECK(to_::calibration_status_objects(manual_printer()).empty());
+}
+
+// ============================================================================
+// Reading results
+// ============================================================================
+
+TEST_CASE("tool offset calibration: a tool's three offsets read off its own object",
+          "[tool_offsets][calibration]") {
+    json status = tool_frame("T1", 0.412, -0.087, -0.135);
+
+    auto r = to_::read_tool_offsets_microns(status, 1, "T1");
+    REQUIRE(r.has_value());
+    CHECK(r->x == 412);
+    CHECK(r->y == -87);
+    CHECK(r->z == -135);
+}
+
+TEST_CASE("tool offset calibration: zero is a value, not an absence",
+          "[tool_offsets][calibration]") {
+    // A reported 0.000 is a number the firmware reported, and gets shown as
+    // one. Only the ABSENCE of the field is "no news". Conflating the two would
+    // blank a row whose offset genuinely is zero - and on the firmwares that
+    // express tools against a base tool, that is a row the operator sees every
+    // session.
+    json status = tool_frame("T0", 0.0, 0.0, 0.0);
+
+    auto r = to_::read_tool_offsets_microns(status, 0, "T0");
+    REQUIRE(r.has_value());
+    CHECK(r->x == 0);
+}
+
+TEST_CASE("tool offset calibration: a frame with no news about the tool is nullopt",
+          "[tool_offsets][calibration]") {
+    // Moonraker republishes only what CHANGED, so a frame about T1 carrying
+    // nothing for T2 is routine. Answering zero would silently wipe T2's row.
+    json status = tool_frame("T1", 0.4, -0.08, -0.13);
+
+    CHECK_FALSE(to_::read_tool_offsets_microns(status, 2, "T2").has_value());
+}
+
+TEST_CASE("tool offset calibration: a partial tool object is not a reading",
+          "[tool_offsets][calibration]") {
+    // Two real numbers beside a fabricated zero would read as a measured axis
+    // that was never measured.
+    json status;
+    status["tool T1"] = {{"gcode_x_offset", 0.4}, {"gcode_y_offset", -0.08}};
+
+    CHECK_FALSE(to_::read_tool_offsets_microns(status, 1, "T1").has_value());
+}
+
+TEST_CASE("tool offset calibration: a malformed or empty frame is ignored",
+          "[tool_offsets][calibration]") {
+    CHECK_FALSE(to_::read_tool_offsets_microns(json::object(), 0, "T0").has_value());
+    CHECK_FALSE(to_::read_tool_offsets_microns(json::array(), 0, "T0").has_value());
+    CHECK_FALSE(to_::read_tool_offsets_microns(json(nullptr), 0, "T0").has_value());
+
+    json wrong_type;
+    wrong_type["tool T0"] = "not an object";
+    CHECK_FALSE(to_::read_tool_offsets_microns(wrong_type, 0, "T0").has_value());
+}
+
+TEST_CASE("tool offset calibration: a negative tool index reads nothing",
+          "[tool_offsets][calibration]") {
+    // -1 is ToolState's "no active tool".
+    json status = tool_frame("T0", 0.0, 0.0, 0.0);
+
+    CHECK_FALSE(to_::read_tool_offsets_microns(status, -1, "T0").has_value());
+}
+
+TEST_CASE("tool offset calibration: an unnamed tool reads nothing", "[tool_offsets][calibration]") {
+    // klipper-toolchanger keys the status object off the tool's NAME, so an
+    // empty name would query the object literally called "tool ".
+    json status = tool_frame("T0", 0.0, 0.0, 0.0);
+
+    CHECK_FALSE(to_::read_tool_offsets_microns(status, 0, "").has_value());
+}
+
+// ============================================================================
+// Commands
+// ============================================================================
+
+TEST_CASE("tool offset calibration: the whole run is one command", "[tool_offsets][calibration]") {
+    // The wrapper owns the reference pass, the machine state it needs, the
+    // temperature, and which tools exist - so there is nothing for us to
+    // sequence, and no per-tool form to offer.
+    CHECK(to_::calibrate_gcode(calibrating_printer()) ==
+          std::vector<std::string>{"CALIBRATE_TOOL_OFFSETS"});
+}
+
+TEST_CASE("tool offset calibration: the macro is also the instruction text",
+          "[tool_offsets][calibration]") {
+    // Its `description:` is the firmware's own words for its own hardware,
+    // which beats anything we could write generically.
+    CHECK(to_::calibration_hint_command(calibrating_printer()) == "CALIBRATE_TOOL_OFFSETS");
+    CHECK(to_::calibration_hint_command(manual_printer()).empty());
+}
+
+TEST_CASE("tool offset calibration: persisting stages every axis, then commits",
+          "[tool_offsets][calibration]") {
+    // SAVE_TOOL_PARAMETER takes no value - it persists whatever the tool
+    // currently HOLDS. Staging explicitly is what makes this correct without
+    // knowing where the calibration pass put its result; a bare SAVE_CONFIG
+    // would be a bet that the pass had already staged a pending config change,
+    // and would persist nothing if it had not.
+    PrinterDiscovery hw = calibrating_printer();
+
+    CHECK(to_::persist_requires_save_config(hw));
+    CHECK(to_::save_calibration_gcode(hw, {1}) ==
+          std::vector<std::string>{"SAVE_TOOL_PARAMETER T=1 PARAMETER=gcode_x_offset",
+                                   "SAVE_TOOL_PARAMETER T=1 PARAMETER=gcode_y_offset",
+                                   "SAVE_TOOL_PARAMETER T=1 PARAMETER=gcode_z_offset",
+                                   "SAVE_CONFIG"});
+}
+
+TEST_CASE("tool offset calibration: the commit comes once, after every tool",
+          "[tool_offsets][calibration]") {
+    // SAVE_CONFIG restarts Klipper. One per tool would restart it three times
+    // and lose the tools staged after the first restart.
+    const auto lines = to_::save_calibration_gcode(calibrating_printer(), {0, 2});
+
+    CHECK(std::count(lines.begin(), lines.end(), std::string("SAVE_CONFIG")) == 1);
+    CHECK(lines.back() == "SAVE_CONFIG");
+    CHECK(lines.size() == 7); // 3 axes x 2 tools + the commit
+}
+
+TEST_CASE("tool offset calibration: nothing to persist emits nothing",
+          "[tool_offsets][calibration]") {
+    // A bare SAVE_CONFIG with no staged tool would restart Klipper for nothing.
+    CHECK(to_::save_calibration_gcode(calibrating_printer(), {}).empty());
+    CHECK(to_::save_calibration_gcode(calibrating_printer(), {-1}).empty());
+}
+
+TEST_CASE("tool offset calibration: an unsupported printer emits no commands",
+          "[tool_offsets][calibration]") {
+    // Empty is the "this printer needs no such call" answer. A caller that
+    // sent it blindly would inject a bare newline.
+    PrinterDiscovery hw = manual_printer();
+
+    CHECK(to_::calibrate_gcode(hw).empty());
+    CHECK(to_::save_calibration_gcode(hw, {0}).empty());
+    // persist_requires_save_config() belongs to the VALUE capability, which
+    // this printer HAS - it can be nudged and the nudge persisted, it just
+    // cannot measure. Asserting it false here would be asserting the two
+    // questions are one.
+    CHECK(to_::persist_requires_save_config(hw));
+}

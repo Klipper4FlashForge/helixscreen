@@ -33,6 +33,15 @@ struct Provider {
     /// Whether this provider's store appears in the frame at all, regardless of
     /// the tool asked for. Guards the by-schema fallthrough above.
     bool (*store_present)(const nlohmann::json& status);
+    /// The macro that measures every tool's offsets, or nullptr where this
+    /// firmware carries offsets but cannot measure them (they are typed in).
+    /// Both the capability gate and the whole command surface - see
+    /// calibration_supported().
+    const char* calibrate_macro;
+    /// Read all three axes at once, for the calibration screen. nullptr where
+    /// the firmware publishes only Z.
+    std::optional<Offsets> (*read_all)(const nlohmann::json& status, int tool_index,
+                                       const std::string& tool_name);
 };
 
 /// Render a double as a bare decimal literal - the form every firmware here
@@ -229,6 +238,36 @@ std::vector<std::string> status_objects_none(const PrinterDiscovery& /*hw*/) {
     return {};
 }
 
+std::optional<Offsets> read_all_toolchanger(const nlohmann::json& status, int /*tool_index*/,
+                                            const std::string& tool_name) {
+    if (tool_name.empty()) {
+        return std::nullopt;
+    }
+    const nlohmann::json* tool = status_object(status, "tool " + tool_name);
+    if (!tool) {
+        return std::nullopt;
+    }
+    // All three or nothing - see read_tool_offsets_microns().
+    Offsets out;
+    const auto pull = [&tool](const char* key, int& into) {
+        auto it = tool->find(key);
+        if (it == tool->end()) {
+            return false;
+        }
+        auto microns = to_microns(*it);
+        if (!microns) {
+            return false;
+        }
+        into = *microns;
+        return true;
+    };
+    if (!pull("gcode_x_offset", out.x) || !pull("gcode_y_offset", out.y) ||
+        !pull("gcode_z_offset", out.z)) {
+        return std::nullopt;
+    }
+    return out;
+}
+
 std::string set_toolchanger(const PrinterDiscovery& /*hw*/, int tool_index, int microns) {
     return "SET_TOOL_PARAMETER T=" + std::to_string(tool_index) +
            " PARAMETER=gcode_z_offset VALUE=" + mm_literal(microns);
@@ -247,11 +286,15 @@ const std::vector<Provider>& providers() {
     // FIRST: it is a klipper-toolchanger printer too, so it matches both rows,
     // and the second one would write a store its macros never read.
     static const std::vector<Provider> table = {
+        // MedusaHC carries per-tool offsets but ships no macro to measure them,
+        // and publishes only Z - so it answers the value questions and declines
+        // the calibration ones.
         {"TOOL_OFFSET macro", &detect_tool_offset_macro, &status_objects_tool_offset_macro,
          &read_tool_offset_macro, &set_tool_offset_macro, &save_tool_offset_macro, false,
-         &tool_offset_macro_present},
+         &tool_offset_macro_present, nullptr, nullptr},
         {"klipper-toolchanger", &detect_toolchanger, &status_objects_none, &read_toolchanger,
-         &set_toolchanger, &save_toolchanger, true, nullptr},
+         &set_toolchanger, &save_toolchanger, true, nullptr, "CALIBRATE_TOOL_OFFSETS",
+         &read_all_toolchanger},
     };
     return table;
 }
@@ -325,6 +368,78 @@ std::string save_tool_z_gcode(const PrinterDiscovery& hw, int tool_index, int mi
 bool persist_requires_save_config(const PrinterDiscovery& hw) {
     const Provider* p = match(hw);
     return p && p->persist_needs_save_config;
+}
+
+std::optional<Offsets> read_tool_offsets_microns(const nlohmann::json& status, int tool_index,
+                                                 const std::string& tool_name) {
+    // By schema, like read_tool_z_microns(): this runs off a status frame,
+    // which has no PrinterDiscovery to hand.
+    if (tool_index < 0) {
+        return std::nullopt;
+    }
+    for (const auto& p : providers()) {
+        if (!p.read_all) {
+            continue;
+        }
+        if (auto offsets = p.read_all(status, tool_index, tool_name)) {
+            return offsets;
+        }
+    }
+    return std::nullopt;
+}
+
+bool calibration_supported(const PrinterDiscovery& hw) {
+    const Provider* p = match(hw);
+    // Gate on what we SEND. A machine whose firmware could measure but whose
+    // config carries no such macro has no command we could promise anything
+    // about, so it reads as unsupported - which is the honest answer.
+    return p && p->calibrate_macro && hw.has_macro(p->calibrate_macro);
+}
+
+std::vector<std::string> calibrate_gcode(const PrinterDiscovery& hw) {
+    if (!calibration_supported(hw)) {
+        return {};
+    }
+    return {match(hw)->calibrate_macro};
+}
+
+std::vector<std::string> save_calibration_gcode(const PrinterDiscovery& hw,
+                                                const std::vector<int>& tools) {
+    if (!calibration_supported(hw)) {
+        return {};
+    }
+    std::vector<std::string> lines;
+    for (int tool : tools) {
+        if (tool < 0) {
+            continue;
+        }
+        const std::string t = std::to_string(tool);
+        for (const char* axis : {"gcode_x_offset", "gcode_y_offset", "gcode_z_offset"}) {
+            lines.push_back("SAVE_TOOL_PARAMETER T=" + t + " PARAMETER=" + axis);
+        }
+    }
+    if (lines.empty()) {
+        return {};
+    }
+    // One commit, at the end: SAVE_CONFIG restarts Klipper, so one per tool
+    // would lose every tool staged after the first restart.
+    lines.emplace_back("SAVE_CONFIG");
+    return lines;
+}
+
+std::vector<std::string> calibration_status_objects(const PrinterDiscovery& hw) {
+    if (!calibration_supported(hw)) {
+        return {};
+    }
+    std::vector<std::string> objects;
+    for (const auto& name : hw.tool_names()) {
+        objects.push_back("tool " + name);
+    }
+    return objects;
+}
+
+std::string calibration_hint_command(const PrinterDiscovery& hw) {
+    return calibration_supported(hw) ? match(hw)->calibrate_macro : std::string{};
 }
 
 std::string provider_name(const PrinterDiscovery& hw) {

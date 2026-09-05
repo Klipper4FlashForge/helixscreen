@@ -14,7 +14,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
-#include "tool_offset_calibration.h"
+#include "tool_offsets.h"
 #include "tool_state.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -116,17 +116,6 @@ void ToolOffsetCalibrationPanel::init_subjects() {
                                subjects_);
     }
 
-    UI_MANAGED_SUBJECT_INT(station_state_, ROW_NONE, "tool_offset_cal_station_state", subjects_);
-    UI_MANAGED_SUBJECT_STRING(station_state_text_, station_state_text_buffer_, "Not measured",
-                              "tool_offset_cal_station_state_text", subjects_);
-    UI_MANAGED_SUBJECT_STRING(station_sub_, station_sub_buffer_, "", "tool_offset_cal_station_sub",
-                              subjects_);
-    UI_MANAGED_SUBJECT_STRING(station_x_, station_x_buffer_, "--", "tool_offset_cal_station_x",
-                              subjects_);
-    UI_MANAGED_SUBJECT_STRING(station_y_, station_y_buffer_, "--", "tool_offset_cal_station_y",
-                              subjects_);
-    UI_MANAGED_SUBJECT_STRING(station_z_, station_z_buffer_, "--", "tool_offset_cal_station_z",
-                              subjects_);
     UI_MANAGED_SUBJECT_INT(save_pending_, 0, "tool_offset_cal_save_pending", subjects_);
 
     subjects_initialized_ = true;
@@ -211,26 +200,22 @@ void ToolOffsetCalibrationPanel::set_row_state(int step, RowState state, const s
     if (!subjects_initialized_) {
         return;
     }
-    const bool is_station = (step == STATION_STEP);
-    if (!is_station && (step < 0 || step >= MAX_TOOLS)) {
-        return;
-    }
-    lv_subject_t* state_subject = is_station ? &station_state_ : &row_state_[step];
-    lv_subject_t* text_subject = is_station ? &station_state_text_ : &row_state_text_[step];
-    lv_subject_t* sub_subject = is_station ? &station_sub_ : &row_sub_[step];
+    lv_subject_t* state_subject = &row_state_[step];
+    lv_subject_t* text_subject = &row_state_text_[step];
+    lv_subject_t* sub_subject = &row_sub_[step];
 
     const char* text = "";
     switch (state) {
     case ROW_NONE:
-        text = is_station ? lv_tr("Not measured") : lv_tr("Not calibrated");
+        text = lv_tr("Not calibrated");
         break;
     case ROW_QUEUED:
         text = lv_tr("Queued");
         break;
     case ROW_MEASURING:
-        // The reference is measured, a tool is calibrated — one verb per
-        // object, matching each row's own button and its failure message.
-        text = is_station ? lv_tr("Measuring now") : lv_tr("Calibrating now");
+        // Every row reads this together: one command calibrates the whole
+        // machine, so there is no single row being probed to single out.
+        text = lv_tr("Calibrating now");
         break;
     case ROW_OK:
         // The numbers replace the state line entirely in this state.
@@ -262,29 +247,15 @@ void ToolOffsetCalibrationPanel::set_row_values(int tool) {
     lv_subject_set_int(&row_z_odd_[tool], (z < GAP_MIN_MM || z > GAP_MAX_MM) ? 1 : 0);
 }
 
-void ToolOffsetCalibrationPanel::set_station_values() {
-    if (!subjects_initialized_) {
-        return;
-    }
-    if (!station_known_) {
-        lv_subject_copy_string(&station_x_, "--");
-        lv_subject_copy_string(&station_y_, "--");
-        lv_subject_copy_string(&station_z_, "--");
-        return;
-    }
-    lv_subject_copy_string(&station_x_, fmt::format("{:.3f}", station_pos_[0]).c_str());
-    lv_subject_copy_string(&station_y_, fmt::format("{:.3f}", station_pos_[1]).c_str());
-    lv_subject_copy_string(&station_z_, fmt::format("{:.3f}", station_pos_[2]).c_str());
-}
-
 void ToolOffsetCalibrationPanel::show_error(int step, const std::string& message) {
     // A refusal is a one-time event, so it belongs in something the user can
     // dismiss once read. An inline card stayed on screen with nothing to
     // close it and pushed the rows — the thing the message is about — down.
+    // One run covers the whole machine, so a refusal is about the run, not a
+    // row - RUN_STEP is what reaches here.
     const std::string title =
-        (step == STATION_STEP)
-            ? std::string(lv_tr("Reference measurement was refused"))
-            : fmt::format(fmt::runtime(lv_tr("T{} calibration was refused")), step);
+        (step < 0) ? std::string(lv_tr("Calibration was refused"))
+                   : fmt::format(fmt::runtime(lv_tr("T{} calibration was refused")), step);
     // Plain cause and remedy first — the firmware's own wording is precise but
     // is snake_case internals, and it is the second thing the user needs.
     std::string body =
@@ -332,7 +303,6 @@ void ToolOffsetCalibrationPanel::reset_ui_state() {
     lv_subject_set_int(&complete_, 0);
     // Rows fall back to what the printer actually has stored — a run that was
     // abandoned leaves the previous calibration valid.
-    set_row_state(STATION_STEP, station_known_ ? ROW_OK : ROW_NONE);
     for (int i = 0; i < MAX_TOOLS; ++i) {
         set_row_state(i, values_valid_[i] ? ROW_OK : ROW_NONE);
     }
@@ -346,7 +316,7 @@ void ToolOffsetCalibrationPanel::reset_ui_state() {
 // ============================================================================
 
 bool ToolOffsetCalibrationPanel::printer_supports_calibration() {
-    return helix::tool_offset_calibration::supported(get_printer_state().get_discovery());
+    return helix::tool_offsets::calibration_supported(get_printer_state().get_discovery());
 }
 
 // ============================================================================
@@ -477,8 +447,8 @@ void ToolOffsetCalibrationPanel::send_next_step() {
     // One command for the whole machine. The firmware owns the order it
     // measures in, so there is no per-row progress to show: every row runs
     // together and repopulates from the query when the macro returns.
-    const std::string cmd = join_gcode(
-        helix::tool_offset_calibration::calibrate_gcode(get_printer_state().get_discovery()));
+    const std::string cmd =
+        join_gcode(helix::tool_offsets::calibrate_gcode(get_printer_state().get_discovery()));
     if (cmd.empty()) {
         finish_run(false, lv_tr("This printer has no tool offset calibration"));
         return;
@@ -651,8 +621,8 @@ void ToolOffsetCalibrationPanel::send_save_config() {
     lv_subject_copy_string(&status_, lv_tr("Saving — Klipper is restarting..."));
     spdlog::info("[{}] Sending SAVE_CONFIG", get_name());
     api->execute_gcode(
-        join_gcode(helix::tool_offset_calibration::save_gcode(get_printer_state().get_discovery(),
-                                                              calibrated_tools())),
+        join_gcode(helix::tool_offsets::save_calibration_gcode(get_printer_state().get_discovery(),
+                                                               calibrated_tools())),
         lifetime_.bg_cb("ToolOffsetCalPanel::save_done",
                         [this]() { lv_subject_copy_string(&status_, lv_tr("Offsets saved")); }),
         lifetime_.bg_cb("ToolOffsetCalPanel::save_error",
@@ -779,8 +749,8 @@ void ToolOffsetCalibrationPanel::refresh_from_printer() {
     // needs these objects. WHICH objects is the capability module's business -
     // nothing here names a firmware.
     nlohmann::json objects = nlohmann::json::object();
-    for (const auto& name : helix::tool_offset_calibration::required_status_objects(
-             get_printer_state().get_discovery())) {
+    for (const auto& name :
+         helix::tool_offsets::calibration_status_objects(get_printer_state().get_discovery())) {
         objects[name] = nullptr;
     }
     objects["configfile"] = nlohmann::json::array({"save_config_pending"});
@@ -799,33 +769,9 @@ void ToolOffsetCalibrationPanel::refresh_from_printer() {
 }
 
 void ToolOffsetCalibrationPanel::apply_printer_state(const nlohmann::json& status) {
-    namespace toc = helix::tool_offset_calibration;
     const auto& hw = get_printer_state().get_discovery();
-
-    // The reference row exists only where the firmware has a fixture to show.
-    // On a firmware that folds the reference into the tool numbers there is no
-    // second set of numbers, and the row stays hidden rather than showing "--"
-    // forever.
-    if (toc::presentation(hw).has_reference_row) {
-        const auto reference = toc::read_reference(status);
-        station_known_ = reference.has_value();
-        if (reference) {
-            station_pos_[0] = reference->x;
-            station_pos_[1] = reference->y;
-            station_pos_[2] = reference->z;
-        }
-        set_station_values();
-        if (!is_step_pending(STATION_STEP)) {
-            const char* sub = "";
-            if (!station_known_) {
-                sub = (last_failed_step_ == STATION_STEP) ? lv_tr("last attempt was refused")
-                                                          : lv_tr("every tool depends on this");
-            }
-            set_row_state(STATION_STEP, station_known_ ? ROW_OK : ROW_NONE, sub);
-        }
-    }
-
     const auto& tool_names = hw.tool_names();
+
     for (int i = 0; i < MAX_TOOLS; ++i) {
         if (!lv_subject_get_int(&row_visible_[i])) {
             continue;
@@ -834,14 +780,13 @@ void ToolOffsetCalibrationPanel::apply_printer_state(const nlohmann::json& statu
         // status object off it rather than off the index.
         const std::string tool_name =
             (i < static_cast<int>(tool_names.size())) ? tool_names[static_cast<size_t>(i)] : "";
-        // Whatever the firmware reports for this tool, shown as reported. What
-        // the three numbers MEAN is stated once, in the provider's caption.
-        const auto reading = toc::read_tool(status, i, tool_name);
+        // Whatever the firmware reports for this tool, shown as reported.
+        const auto reading = helix::tool_offsets::read_tool_offsets_microns(status, i, tool_name);
         values_valid_[i] = reading.has_value();
         if (reading) {
-            values_[i][0] = reading->x;
-            values_[i][1] = reading->y;
-            values_[i][2] = reading->z;
+            values_[i][0] = reading->x / 1000.0;
+            values_[i][1] = reading->y / 1000.0;
+            values_[i][2] = reading->z / 1000.0;
         }
         set_row_values(i);
         // A row the run has not reached yet keeps its Queued/Measuring state;
@@ -875,7 +820,7 @@ void ToolOffsetCalibrationPanel::fetch_macro_description() {
     // procedure. Where there is none the panel keeps its own text, and asking
     // Moonraker for a description nothing will match is pure round trip.
     const std::string command =
-        helix::tool_offset_calibration::hint_command(get_printer_state().get_discovery());
+        helix::tool_offsets::calibration_hint_command(get_printer_state().get_discovery());
     if (command.empty()) {
         return;
     }

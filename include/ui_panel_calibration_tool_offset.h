@@ -17,54 +17,51 @@
  * @file ui_panel_calibration_tool_offset.h
  * @brief On-demand tool offset calibration overlay for tool changers
  *
- * Shown from the Controls / Advanced calibration entry points on a printer
- * that can MEASURE its own tool offsets - helix::tool_offset_calibration
+ * Shown from the Controls / Advanced calibration entry points on a printer that
+ * can MEASURE its own tool offsets - helix::tool_offsets::calibration_supported()
  * decides which those are. The paper-test Z-offset panel does not apply to a
- * tool changer, so the calibration buttons open this overlay instead.
+ * tool changer, so the calibration button opens this overlay instead.
  *
- * This file names no firmware. The commands to send, the objects to read, the
- * numbers those objects yield, and the words describing them all come from
- * helix::tool_offset_calibration; adding a second firmware must not touch this
- * panel. What the numbers MEAN is likewise not this panel's business - it
- * renders them under the captions the provider supplies and interprets
- * neither.
+ * This file names no firmware. The command to send, the objects to read, the
+ * numbers those objects yield, and how they are persisted all come from
+ * helix::tool_offsets; adding a firmware must not touch this panel. What the
+ * numbers MEAN is likewise not this panel's business - it renders what the
+ * printer reports and interprets none of it.
  *
- * ## Why the panel drives the steps
+ * ## One command, not a sequence
  *
- * The provider hands back one pass at a time (a reference pass, then a pass
- * per tool) rather than an all-in-one command, and the panel runs them in
- * sequence. That is what keeps Stop clean: between passes this is plain UI
- * state, so stopping means simply not sending the next one. The M112 abort
- * remains the escape hatch for backing out mid-probe, because a probing macro
- * blocks Klipper's gcode queue.
+ * The firmware's own macro calibrates every tool in one call. It owns the
+ * reference pass, the machine state it needs, the temperature to measure at,
+ * and which tools exist - it reads its tool list off the toolchanger, so it is
+ * right on a 2-head or a 5-head machine without this panel modelling either.
  *
- * Results are re-read from the printer after every pass rather than parsed out
- * of the console text the firmware prints.
+ * The cost is that a run cannot be interrupted gently: it is one command that
+ * blocks Klipper's gcode queue, so nothing on this side sits between passes
+ * waiting to not be sent. request_stop() is therefore the EMERGENCY stop, and
+ * it restarts the firmware. A soft Stop that could not halt a moving nozzle
+ * would be a lie.
+ *
+ * Results are re-read from the printer when the run returns, rather than parsed
+ * out of the console text the firmware prints.
  *
  * ## Subject Bindings
  *
- * Every row - the reference and each tool - is the same shape, and its whole
- * appearance follows one int state subject (RowState below). That is what lets
- * a run happen in place instead of on a second screen: the measuring row
- * highlights, later rows read Queued, finished rows show their numbers.
+ * Every tool row is the same shape, and its whole appearance follows one int
+ * state subject (RowState below). One command calibrates the whole machine, so
+ * the rows read Calibrating together rather than one at a time, and repopulate
+ * from the query when it returns.
  *
- * - tool_offset_cal_status (string) - one-line status
+ * - tool_offset_cal_status (string) - one-line status, and the elapsed counter
  * - tool_offset_cal_log (string) - last few notify_gcode_response lines
- * - tool_offset_cal_hint (string) - the firmware's own instruction, when it
- *   publishes one (see tool_offset_calibration::hint_command)
+ * - tool_offset_cal_hint (string) - the firmware's own instruction, from the
+ *   calibration macro's `description:` (helix::tool_offsets::
+ *   calibration_hint_command)
  * - tool_offset_cal_active / _complete (int) - run in progress / run succeeded
- * - tool_offset_cal_caption (string) - what the numbers mean, from the provider
- * - tool_offset_cal_has_reference (int) - 1 when this firmware shows a
- *   reference row; 0 hides that whole section
  * - tool_offset_cal_row_visible_N (int, N=0..3) - row shown (tool exists)
  * - tool_offset_cal_state_N (int) - RowState for tool N
- * - tool_offset_cal_state_text_N (string) - "Not calibrated" / "Queued" / ...
- * - tool_offset_cal_sub_N (string) - second line under that ("probing... 12s")
+ * - tool_offset_cal_state_text_N (string) - "Not calibrated" / "Calibrating now"
+ * - tool_offset_cal_sub_N (string) - second line under that
  * - tool_offset_cal_x_N / _y_N / _z_N (string) - the three measured numbers
- * - tool_offset_cal_col_x / _col_y / _col_z (string) - column captions
- * - tool_offset_cal_station_state (int) - RowState for the reference row
- * - tool_offset_cal_station_state_text / _sub (string) - same, for the reference
- * - tool_offset_cal_station_x / _y / _z (string) - the reference's position
  * - tool_offset_cal_save_pending (int) - Klipper has unsaved calibration
  *
  * A refusal has no subject: it is a one-time event shown in a dismissible
@@ -78,10 +75,6 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
 
     /// Fixed subject slots; rows beyond the printer's tool count stay hidden.
     static constexpr int MAX_TOOLS = 4;
-
-    /// Queue sentinel for the reference pass, on firmwares that show one as a
-    /// row of its own (see Presentation::has_reference_row).
-    static constexpr int STATION_STEP = -1;
 
     /// Queue sentinel for "the whole machine". The calibration is one firmware
     /// command covering every tool, so a run is a single step rather than a
@@ -192,7 +185,6 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     void set_row_state(int step, RowState state, const std::string& sub = "");
     /// Copy a tool's stored numbers into its three value subjects
     void set_row_values(int tool);
-    void set_station_values();
     /// True while `step` still belongs to the run in flight — refreshed
     /// printer state must not overwrite a Queued or Measuring row.
     bool is_step_pending(int step) const;
@@ -213,7 +205,7 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     bool calibration_complete_ = false;
     bool console_subscribed_ = false;
     bool stop_requested_ = false;
-    /// Step being executed: a tool index, or STATION_STEP, or -2 for none.
+    /// Step being executed: RUN_STEP while calibrating, -2 for none.
     int current_step_ = -2;
     /// The step the refusal card is about (set when a step errors).
     int last_failed_step_ = -2;
@@ -246,25 +238,12 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     char row_z_buffer_[MAX_TOOLS][16];
 
     // Reference row — same shape, one instance
-    lv_subject_t station_state_;
-    lv_subject_t station_state_text_;
-    lv_subject_t station_sub_;
-    lv_subject_t station_x_;
-    lv_subject_t station_y_;
-    lv_subject_t station_z_;
-    char station_state_text_buffer_[48] = "";
-    char station_sub_buffer_[80] = "";
-    char station_x_buffer_[16] = "";
-    char station_y_buffer_[16] = "";
-    char station_z_buffer_[16] = "";
 
     /// Per tool: nozzle_x, nozzle_y, and the Z gap over the station. Read from
     /// the printer after every step. Valid iff values_valid_.
     double values_[MAX_TOOLS][3] = {};
     bool values_valid_[MAX_TOOLS] = {false, false, false, false};
     /// The reference fixture's position; the reference pass has run when set.
-    bool station_known_ = false;
-    double station_pos_[3] = {};
     SubjectManager subjects_;
 
     std::deque<std::string> log_lines_;

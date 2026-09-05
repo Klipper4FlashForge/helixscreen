@@ -92,4 +92,67 @@ bool persist_requires_save_config(const PrinterDiscovery& hw);
 /// none.
 std::string provider_name(const PrinterDiscovery& hw);
 
+// ---------------------------------------------------------------------------
+// Calibration - measuring the offsets rather than carrying them
+// ---------------------------------------------------------------------------
+//
+// A printer can carry per-tool offsets and have no way to measure them: on such
+// a machine the numbers are typed in by hand. So this is a SECOND question
+// about the same firmware, answered by the same Provider row - which is what
+// keeps one firmware in one place.
+
+/// One tool's three offsets, in microns.
+struct Offsets {
+    int x = 0;
+    int y = 0;
+    int z = 0;
+};
+
+/// All three of a tool's offsets, read out of a Moonraker status frame.
+///
+/// nullopt means "no news", never "reset to zero" - Moonraker republishes only
+/// what CHANGED. All three axes or nothing: a frame carrying a partial tool
+/// object would otherwise render two real numbers beside a fabricated zero.
+std::optional<Offsets> read_tool_offsets_microns(const nlohmann::json& status, int tool_index,
+                                                 const std::string& tool_name);
+
+/// Whether this printer can measure its own tool offsets, i.e. it carries the
+/// macro that drives the procedure. False on every printer whose offsets are
+/// typed in, which is what gates the calibration entry point.
+bool calibration_supported(const PrinterDiscovery& hw);
+
+/// Gcode calibrating EVERY tool, in send order. Empty when the printer cannot
+/// measure its own offsets.
+///
+/// The whole machine at once, not one tool: the macro owns the reference pass,
+/// the machine state it needs, the temperature to measure at, and which tools
+/// exist - it reads its tool list off the toolchanger, so it is right on a
+/// 2-head or a 5-head machine without us modelling either. There is no
+/// per-tool form because no firmware here exposes one.
+std::vector<std::string> calibrate_gcode(const PrinterDiscovery& hw);
+
+/// Gcode persisting the calibration of @p tools, in send order. Empty when the
+/// printer cannot calibrate, or @p tools is empty.
+///
+/// Stages explicitly rather than trusting SAVE_CONFIG to pick a measurement up:
+/// SAVE_TOOL_PARAMETER takes no value and persists whatever the tool currently
+/// HOLDS, which is correct whether the calibration wrote the tool's offsets or
+/// staged them itself, and idempotent if both.
+std::vector<std::string> save_calibration_gcode(const PrinterDiscovery& hw,
+                                                const std::vector<int>& tools);
+
+/// Status objects the CALIBRATION screen must query for
+/// read_tool_offsets_microns() to answer.
+///
+/// Distinct from required_status_objects(), which lists what the printer needs
+/// SUBSCRIBED: the offsets ride on objects the tool-changer subscription
+/// already requests, so that answer is empty here. The calibration screen does
+/// a one-shot query instead and has to name them itself.
+std::vector<std::string> calibration_status_objects(const PrinterDiscovery& hw);
+
+/// The command whose `description:` the calibration screen shows as its
+/// instruction - the firmware's own words for its own hardware. Empty when the
+/// printer cannot calibrate.
+std::string calibration_hint_command(const PrinterDiscovery& hw);
+
 } // namespace helix::tool_offsets
