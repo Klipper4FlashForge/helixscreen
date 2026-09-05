@@ -60,9 +60,9 @@ bool has_object(const PrinterDiscovery& hw, const std::string& name) {
 //
 // The result is folded straight into the tool's own gcode_x/y/z_offset, which
 // is why there is no reference row: the probe position is not a second set of
-// numbers the operator reads, it is the zero the tool numbers are already
-// expressed against. Each tool's offset is therefore a DELTA from the base
-// tool, and the base tool reads 0.000 by definition.
+// numbers the operator reads, it is absorbed into the tool numbers themselves.
+// How those numbers relate to each other is the firmware's model, stated once
+// in the caption below and nowhere else - nothing here interprets them.
 //
 // Reading the results off `tool T<n>` rather than off tools_calibrate's own
 // last_x/y/z_result is deliberate. Those report the most recent measurement

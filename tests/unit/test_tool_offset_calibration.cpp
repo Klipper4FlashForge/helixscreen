@@ -169,9 +169,11 @@ TEST_CASE("tool offset calibration: a tool's three offsets read off its own obje
 
 TEST_CASE("tool offset calibration: zero is a value, not an absence",
           "[tool_offset_calibration]") {
-    // The base tool is 0.000 on all three axes BY DEFINITION - every other
-    // tool's offset is a delta from it. Reading that as "not measured" would
-    // leave T0 permanently blank.
+    // A reported 0.000 is a number the firmware reported, and gets shown as
+    // one. Only the ABSENCE of the field is "no news". Conflating the two would
+    // blank a row whose offset genuinely is zero - and on the firmwares that
+    // express tools against a base tool, that is a row the operator sees every
+    // session.
     json status = tool_frame("T0", 0.0, 0.0, 0.0);
 
     auto r = toc::read_tool(status, 0, "T0");

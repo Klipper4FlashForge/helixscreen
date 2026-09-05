@@ -14,13 +14,12 @@
 // there is a reference fixture at all, what the resulting numbers MEAN, and
 // therefore what the screen should call them.
 //
-// That last one is why Presentation exists. klipper-toolchanger reports each
-// tool's offset relative to the base tool, so its columns are deltas and T0 is
-// 0.000 by definition. A station-bore machine measures each nozzle's own
-// position against a fixed reference it probes first, so its columns are
-// absolute positions and it has a reference row above the tools. Baking either
-// reading into the panel would make the other one wrong, so the provider hands
-// the panel its captions along with its numbers.
+// That last one is why Presentation exists. What the numbers MEAN is the
+// firmware's business, not the panel's: one machine reports each tool against a
+// base tool, another against a fixed fixture it probes first and shows that
+// fixture as a row of its own. The panel renders numbers and captions and
+// interprets neither - it does not know which model it is showing, and must not
+// need to. So the provider hands it both.
 //
 // Generic code (the calibration panel, its entry point) asks these functions
 // and never names a firmware. Adding one means adding a Provider to the table
