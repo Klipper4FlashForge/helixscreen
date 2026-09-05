@@ -1,9 +1,10 @@
 <?xml version="1.0"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Tool Offset Calibration Panel -->
-<!-- Drives the sequence one pass at a time: the reference pass (empty -->
-<!-- carriage) first, then one pass per tool. The commands themselves -->
-<!-- TOOL_CALIBRATE_TOOL_OFFSET per tool. Stop is a clean between-steps cancel. -->
+<!-- One run covers the whole machine: the firmware's own command owns the -->
+<!-- order, the preconditions and which tools exist, so there is no per-tool -->
+<!-- action and no per-row progress. Stop is the emergency stop - the run -->
+<!-- blocks Klipper's queue, so nothing gentler can halt a moving nozzle. -->
 <!-- -->
 <!-- One layout for every state. The five entities are one flat list of -->
 <!-- identically shaped rows, and each row carries its own state, so a run -->
