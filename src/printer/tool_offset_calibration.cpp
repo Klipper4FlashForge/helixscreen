@@ -31,6 +31,8 @@ struct Provider {
     std::vector<std::string> (*save)(const PrinterDiscovery& hw);
     /// Whether save() only stages the change, awaiting SAVE_CONFIG.
     bool persist_needs_save_config;
+    /// Command whose `description:` is the on-screen instruction, or nullptr.
+    const char* hint_command;
 };
 
 /// status.<object> as an object, or nullptr.
@@ -146,9 +148,11 @@ std::vector<std::string> save_toolchanger(const PrinterDiscovery& /*hw*/) {
 
 const std::vector<Provider>& providers() {
     static const std::vector<Provider> table = {
+        // No hint command: the calibration is a Python extra registering bare
+        // commands, not a macro with a written description.
         {"klipper-toolchanger", &detect_toolchanger, &status_objects_toolchanger,
          &presentation_toolchanger, &read_tool_toolchanger, &read_reference_none,
-         &locate_toolchanger, &calibrate_toolchanger, &save_toolchanger, true},
+         &locate_toolchanger, &calibrate_toolchanger, &save_toolchanger, true, nullptr},
     };
     return table;
 }
@@ -232,6 +236,11 @@ std::vector<std::string> save_gcode(const PrinterDiscovery& hw) {
         return p->save(hw);
     }
     return {};
+}
+
+std::string hint_command(const PrinterDiscovery& hw) {
+    const Provider* p = match(hw);
+    return (p && p->hint_command) ? p->hint_command : std::string{};
 }
 
 std::string provider_name(const PrinterDiscovery& hw) {

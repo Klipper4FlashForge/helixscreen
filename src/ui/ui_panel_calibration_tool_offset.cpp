@@ -1,0 +1,945 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include "ui_panel_calibration_tool_offset.h"
+
+#include "tool_offset_calibration.h"
+
+#include "ui_callback_helpers.h"
+#include "ui_emergency_stop.h"
+#include "ui_event_safety.h"
+#include "ui_modal.h"
+#include "ui_nav_manager.h"
+
+#include "app_globals.h"
+#include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
+#include "lvgl/src/others/translation/lv_translation.h"
+#include "printer_state.h"
+#include "static_panel_registry.h"
+#include "tool_state.h"
+
+#include <algorithm>
+#include <cstdlib>
+
+#include <spdlog/fmt/fmt.h>
+#include <spdlog/spdlog.h>
+
+#include <memory>
+
+namespace {
+
+/// One gcode script from a provider's ordered command list. Klipper runs a
+/// multi-line script line by line, and Moonraker answers when the LAST line
+/// finishes - which is what makes a whole pass a single completion signal.
+std::string join_gcode(const std::vector<std::string>& lines) {
+    std::string out;
+    for (const auto& line : lines) {
+        if (!out.empty()) {
+            out += "\n";
+        }
+        out += line;
+    }
+    return out;
+}
+
+constexpr const char* CONSOLE_HANDLER = "ToolOffsetCalPanel";
+constexpr size_t LOG_LINES = 6;
+} // namespace
+
+// ============================================================================
+// GLOBAL INSTANCE
+// ============================================================================
+
+static std::unique_ptr<ToolOffsetCalibrationPanel> g_tool_offset_cal_panel;
+
+ToolOffsetCalibrationPanel& get_global_tool_offset_cal_panel() {
+    if (!g_tool_offset_cal_panel) {
+        g_tool_offset_cal_panel = std::make_unique<ToolOffsetCalibrationPanel>();
+        StaticPanelRegistry::instance().register_destroy(
+            "ToolOffsetCalibrationPanel", []() { g_tool_offset_cal_panel.reset(); });
+    }
+    return *g_tool_offset_cal_panel;
+}
+
+// ============================================================================
+// CONSTRUCTOR / DESTRUCTOR
+// ============================================================================
+
+ToolOffsetCalibrationPanel::ToolOffsetCalibrationPanel() {
+    spdlog::debug("[{}] Instance created", get_name());
+}
+
+ToolOffsetCalibrationPanel::~ToolOffsetCalibrationPanel() {
+    elapsed_.cancel();
+    unsubscribe_console();
+    if (subjects_initialized_) {
+        subjects_.deinit_all();
+        subjects_initialized_ = false;
+    }
+}
+
+// ============================================================================
+// SUBJECTS / CALLBACKS
+// ============================================================================
+
+void ToolOffsetCalibrationPanel::init_subjects() {
+    if (subjects_initialized_) {
+        spdlog::debug("[{}] Subjects already initialized", get_name());
+        return;
+    }
+
+    UI_MANAGED_SUBJECT_STRING(status_, status_buffer_, "Ready to calibrate",
+                              "tool_offset_cal_status", subjects_);
+    UI_MANAGED_SUBJECT_STRING(log_, log_buffer_, "", "tool_offset_cal_log", subjects_);
+    UI_MANAGED_SUBJECT_STRING(hint_, hint_buffer_, "", "tool_offset_cal_hint", subjects_);
+    UI_MANAGED_SUBJECT_INT(started_, 0, "tool_offset_cal_started", subjects_);
+    UI_MANAGED_SUBJECT_INT(active_, 0, "tool_offset_cal_active", subjects_);
+    UI_MANAGED_SUBJECT_INT(complete_, 0, "tool_offset_cal_complete", subjects_);
+
+    // Per-tool row slots (fixed MAX_TOOLS, extra rows stay hidden). The XML
+    // engine copies the registration name, so fmt-built names are safe here.
+    for (int i = 0; i < MAX_TOOLS; ++i) {
+        UI_MANAGED_SUBJECT_INT(row_visible_[i], 0,
+                               fmt::format("tool_offset_cal_row_visible_{}", i).c_str(),
+                               subjects_);
+        UI_MANAGED_SUBJECT_INT(row_state_[i], ROW_NONE,
+                               fmt::format("tool_offset_cal_state_{}", i).c_str(), subjects_);
+        UI_MANAGED_SUBJECT_STRING(row_state_text_[i], row_state_text_buffer_[i], "Not calibrated",
+                                  fmt::format("tool_offset_cal_state_text_{}", i).c_str(),
+                                  subjects_);
+        UI_MANAGED_SUBJECT_STRING(row_sub_[i], row_sub_buffer_[i], "",
+                                  fmt::format("tool_offset_cal_sub_{}", i).c_str(), subjects_);
+        UI_MANAGED_SUBJECT_STRING(row_x_[i], row_x_buffer_[i], "--",
+                                  fmt::format("tool_offset_cal_x_{}", i).c_str(), subjects_);
+        UI_MANAGED_SUBJECT_STRING(row_y_[i], row_y_buffer_[i], "--",
+                                  fmt::format("tool_offset_cal_y_{}", i).c_str(), subjects_);
+        UI_MANAGED_SUBJECT_STRING(row_z_[i], row_z_buffer_[i], "--",
+                                  fmt::format("tool_offset_cal_z_{}", i).c_str(), subjects_);
+        UI_MANAGED_SUBJECT_INT(row_z_odd_[i], 0,
+                               fmt::format("tool_offset_cal_z_odd_{}", i).c_str(), subjects_);
+    }
+
+    UI_MANAGED_SUBJECT_INT(station_state_, ROW_NONE, "tool_offset_cal_station_state", subjects_);
+    UI_MANAGED_SUBJECT_STRING(station_state_text_, station_state_text_buffer_, "Not measured",
+                              "tool_offset_cal_station_state_text", subjects_);
+    UI_MANAGED_SUBJECT_STRING(station_sub_, station_sub_buffer_, "",
+                              "tool_offset_cal_station_sub", subjects_);
+    UI_MANAGED_SUBJECT_STRING(station_x_, station_x_buffer_, "--", "tool_offset_cal_station_x",
+                              subjects_);
+    UI_MANAGED_SUBJECT_STRING(station_y_, station_y_buffer_, "--", "tool_offset_cal_station_y",
+                              subjects_);
+    UI_MANAGED_SUBJECT_STRING(station_z_, station_z_buffer_, "--", "tool_offset_cal_station_z",
+                              subjects_);
+    UI_MANAGED_SUBJECT_INT(save_pending_, 0, "tool_offset_cal_save_pending", subjects_);
+
+    subjects_initialized_ = true;
+
+    register_xml_callbacks({
+        {"on_tool_offset_cal_start", on_start_clicked},
+        {"on_tool_offset_cal_tool", on_tool_clicked},
+        {"on_tool_offset_cal_locate", on_locate_clicked},
+        {"on_tool_offset_cal_cancel", on_cancel_clicked},
+        {"on_tool_offset_cal_save", on_save_clicked},
+    });
+
+    spdlog::debug("[{}] Subjects and callbacks registered", get_name());
+}
+
+// ============================================================================
+// CREATE / SHOW / LIFECYCLE
+// ============================================================================
+
+lv_obj_t* ToolOffsetCalibrationPanel::create(lv_obj_t* parent) {
+    if (overlay_root_) {
+        spdlog::debug("[{}] Overlay already created", get_name());
+        return overlay_root_;
+    }
+    if (!create_overlay_from_xml(parent, "calibration_tool_offset_panel")) {
+        return nullptr;
+    }
+    spdlog::info("[{}] Overlay created", get_name());
+    return overlay_root_;
+}
+
+void ToolOffsetCalibrationPanel::show() {
+    if (!overlay_root_) {
+        spdlog::error("[{}] Cannot show: overlay not created", get_name());
+        return;
+    }
+    NavigationManager::instance().register_overlay_instance(overlay_root_, this);
+    NavigationManager::instance().push_overlay(overlay_root_);
+}
+
+void ToolOffsetCalibrationPanel::on_activate() {
+    OverlayBase::on_activate();
+    // Refresh the macro's description each open — config may have changed
+    fetch_macro_description();
+    refresh_tool_rows();
+    // Rows show what the printer actually has stored, not just what this
+    // session measured — a tool calibrated last week is already valid.
+    refresh_from_printer();
+    if (!calibration_active_ && !calibration_complete_) {
+        reset_ui_state();
+    }
+}
+
+void ToolOffsetCalibrationPanel::refresh_tool_rows() {
+    if (!subjects_initialized_) {
+        return;
+    }
+    int count = lv_subject_get_int(helix::ToolState::instance().get_tool_count_subject());
+    // A tool changer without a reported tool list still has at least two tools
+    // (otherwise this overlay is unreachable); clamp into the row range.
+    if (count < 2) {
+        count = 2;
+    }
+    if (count > MAX_TOOLS) {
+        count = MAX_TOOLS;
+    }
+    for (int i = 0; i < MAX_TOOLS; ++i) {
+        lv_subject_set_int(&row_visible_[i], i < count ? 1 : 0);
+        set_row_values(i);
+    }
+}
+
+bool ToolOffsetCalibrationPanel::is_step_pending(int step) const {
+    if (!calibration_active_) {
+        return false;
+    }
+    if (step == current_step_) {
+        return true;
+    }
+    return std::find(run_queue_.begin(), run_queue_.end(), step) != run_queue_.end();
+}
+
+void ToolOffsetCalibrationPanel::set_row_state(int step, RowState state, const std::string& sub) {
+    if (!subjects_initialized_) {
+        return;
+    }
+    const bool is_station = (step == STATION_STEP);
+    if (!is_station && (step < 0 || step >= MAX_TOOLS)) {
+        return;
+    }
+    lv_subject_t* state_subject = is_station ? &station_state_ : &row_state_[step];
+    lv_subject_t* text_subject = is_station ? &station_state_text_ : &row_state_text_[step];
+    lv_subject_t* sub_subject = is_station ? &station_sub_ : &row_sub_[step];
+
+    const char* text = "";
+    switch (state) {
+    case ROW_NONE:
+        text = is_station ? lv_tr("Not measured") : lv_tr("Not calibrated");
+        break;
+    case ROW_QUEUED:
+        text = lv_tr("Queued");
+        break;
+    case ROW_MEASURING:
+        // The reference is measured, a tool is calibrated — one verb per
+        // object, matching each row's own button and its failure message.
+        text = is_station ? lv_tr("Measuring now") : lv_tr("Calibrating now");
+        break;
+    case ROW_OK:
+        // The numbers replace the state line entirely in this state.
+        text = "";
+        break;
+    }
+    lv_subject_set_int(state_subject, state);
+    lv_subject_copy_string(text_subject, text);
+    lv_subject_copy_string(sub_subject, sub.c_str());
+}
+
+void ToolOffsetCalibrationPanel::set_row_values(int tool) {
+    if (!subjects_initialized_ || tool < 0 || tool >= MAX_TOOLS) {
+        return;
+    }
+    if (!values_valid_[tool]) {
+        lv_subject_copy_string(&row_x_[tool], "--");
+        lv_subject_copy_string(&row_y_[tool], "--");
+        lv_subject_copy_string(&row_z_[tool], "--");
+        lv_subject_set_int(&row_z_odd_[tool], 0);
+        return;
+    }
+    // The nozzle's own position, so the reference row directly above is the
+    // comparison — no relative zero that reads as a bug.
+    lv_subject_copy_string(&row_x_[tool], fmt::format("{:.3f}", values_[tool][0]).c_str());
+    lv_subject_copy_string(&row_y_[tool], fmt::format("{:.3f}", values_[tool][1]).c_str());
+    lv_subject_copy_string(&row_z_[tool], fmt::format("{:.3f}", values_[tool][2]).c_str());
+    const double z = values_[tool][2];
+    lv_subject_set_int(&row_z_odd_[tool], (z < GAP_MIN_MM || z > GAP_MAX_MM) ? 1 : 0);
+}
+
+void ToolOffsetCalibrationPanel::set_station_values() {
+    if (!subjects_initialized_) {
+        return;
+    }
+    if (!station_known_) {
+        lv_subject_copy_string(&station_x_, "--");
+        lv_subject_copy_string(&station_y_, "--");
+        lv_subject_copy_string(&station_z_, "--");
+        return;
+    }
+    lv_subject_copy_string(&station_x_, fmt::format("{:.3f}", station_pos_[0]).c_str());
+    lv_subject_copy_string(&station_y_, fmt::format("{:.3f}", station_pos_[1]).c_str());
+    lv_subject_copy_string(&station_z_, fmt::format("{:.3f}", station_pos_[2]).c_str());
+}
+
+void ToolOffsetCalibrationPanel::show_error(int step, const std::string& message) {
+    // A refusal is a one-time event, so it belongs in something the user can
+    // dismiss once read. An inline card stayed on screen with nothing to
+    // close it and pushed the rows — the thing the message is about — down.
+    const std::string title =
+        (step == STATION_STEP)
+            ? std::string(lv_tr("Reference measurement was refused"))
+            : fmt::format(fmt::runtime(lv_tr("T{} calibration was refused")), step);
+    // Plain cause and remedy first — the firmware's own wording is precise but
+    // is snake_case internals, and it is the second thing the user needs.
+    std::string body =
+        lv_tr("Nothing was changed. This is usually a dirty nozzle, or the build plate left "
+              "on the bed.");
+    if (!message.empty()) {
+        body += "\n\n";
+        body += message;
+    }
+    helix::ui::modal_alert(title.c_str(), body.c_str(), ModalSeverity::Error, lv_tr("Close"),
+                           nullptr, {.owner_token = lifetime_.token()});
+}
+
+void ToolOffsetCalibrationPanel::on_deactivate() {
+    // Backing out mid-calibration: the macro keeps running the printer
+    // otherwise (it blocks the gcode queue) — same policy as the wizard step
+    // and the PID panel.
+    if (calibration_active_) {
+        spdlog::info("[{}] Aborting calibration on deactivate", get_name());
+        abort_in_progress_calibration();
+    }
+    elapsed_.cancel();
+    unsubscribe_console();
+    OverlayBase::on_deactivate();
+}
+
+void ToolOffsetCalibrationPanel::cleanup() {
+    if (calibration_active_) {
+        abort_in_progress_calibration();
+    }
+    elapsed_.cancel();
+    unsubscribe_console();
+    if (overlay_root_) {
+        NavigationManager::instance().unregister_overlay_instance(overlay_root_);
+    }
+    OverlayBase::cleanup();
+}
+
+void ToolOffsetCalibrationPanel::reset_ui_state() {
+    if (!subjects_initialized_) {
+        return;
+    }
+    lv_subject_set_int(&started_, 0);
+    lv_subject_set_int(&active_, 0);
+    lv_subject_set_int(&complete_, 0);
+    // Rows fall back to what the printer actually has stored — a run that was
+    // abandoned leaves the previous calibration valid.
+    set_row_state(STATION_STEP, station_known_ ? ROW_OK : ROW_NONE);
+    for (int i = 0; i < MAX_TOOLS; ++i) {
+        set_row_state(i, values_valid_[i] ? ROW_OK : ROW_NONE);
+    }
+    log_lines_.clear();
+    lv_subject_copy_string(&log_, "");
+    lv_subject_copy_string(&status_, lv_tr("Ready to calibrate"));
+}
+
+// ============================================================================
+// CAPABILITY GATE
+// ============================================================================
+
+bool ToolOffsetCalibrationPanel::printer_supports_calibration() {
+    return helix::tool_offset_calibration::supported(get_printer_state().get_discovery());
+}
+
+// ============================================================================
+// XML EVENT TRAMPOLINES
+// ============================================================================
+
+// The queue for the pending confirmation — set before the modal opens, read by
+// its confirm callback. Main-thread only, so a plain member-free static is fine.
+static std::vector<int> g_pending_tools;
+
+void ToolOffsetCalibrationPanel::confirm_and_run(std::vector<int> tools) {
+    // Probing runs below plate level: an explicit build-plate confirmation
+    // guards every start, with the macro's own description appended when the
+    // printer provides one.
+    g_pending_tools = std::move(tools);
+    // The firmware measures whether the plate is off and refuses on its own,
+    // so this is no longer a promise the operator makes. What it CANNOT check
+    // is the part that decides how good the result is — a blob of filament on
+    // a nozzle gets measured as part of the nozzle.
+    // The macro's own description says the same thing in fewer words, so
+    // showing both just repeats itself. This text is the superset: it also
+    // covers the two conditions the plate check cannot measure.
+    const std::string msg =
+        lv_tr("Take the build plate off, and clean every nozzle. The printer checks the plate "
+              "itself and will refuse if it is still on — but it cannot tell whether a nozzle "
+              "is clean, so that part is on you. Tools must be cold and docked.");
+    // The dialog closes itself and the callbacks touch no widget, so there is
+    // no Modal::hide() here and nothing of ours is attached as user_data
+    // (prestonbrown/helixscreen#1383). owner_token gates every callback: the
+    // dialog outlives its exit animation, and this panel can be gone by then.
+    // on_dismiss clears the pending set, which the buttons would otherwise be
+    // the only thing to resolve - a backdrop tap would leak it into the next run.
+    helix::ui::modal_confirm(
+        lv_tr("Before calibrating"), msg.c_str(), ModalSeverity::Warning, lv_tr("Start"),
+        [this]() { begin_run(std::move(g_pending_tools)); },
+        {.on_dismiss = []() { g_pending_tools.clear(); },
+         .owner_token = lifetime_.token()});
+}
+
+void ToolOffsetCalibrationPanel::on_start_clicked(lv_event_t* e) {
+    (void)e;
+    LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] on_start_clicked");
+    get_global_tool_offset_cal_panel().start_calibration();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void ToolOffsetCalibrationPanel::on_tool_clicked(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] on_tool_clicked");
+    // user_data carries the tool index as a string ("0".."3"), the same
+    // convention as the wizard language chooser buttons.
+    const char* arg = static_cast<const char*>(lv_event_get_user_data(e));
+    if (arg && *arg) {
+        get_global_tool_offset_cal_panel().start_calibration_for_tool(std::atoi(arg));
+    }
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void ToolOffsetCalibrationPanel::on_locate_clicked(lv_event_t* e) {
+    (void)e;
+    LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] on_locate_clicked");
+    get_global_tool_offset_cal_panel().start_locate_sensor();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void ToolOffsetCalibrationPanel::on_cancel_clicked(lv_event_t* e) {
+    (void)e;
+    LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] on_cancel_clicked");
+    // Between tools this is pure UI state, so Stop is clean: finish the tool
+    // currently probing, then stop issuing commands. (Backing out of the
+    // overlay mid-probe still goes through the M112 abort in on_deactivate.)
+    get_global_tool_offset_cal_panel().request_stop();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void ToolOffsetCalibrationPanel::on_save_clicked(lv_event_t* e) {
+    (void)e;
+    LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] on_save_clicked");
+    get_global_tool_offset_cal_panel().save_calibration();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+// ============================================================================
+// CALIBRATION FLOW
+// ============================================================================
+
+void ToolOffsetCalibrationPanel::start_calibration() {
+    if (calibration_active_) {
+        return;
+    }
+    // The reference first, then every tool. Driving the passes here rather
+    // than firing an all-in-one command is what keeps Stop clean and the
+    // per-row progress honest.
+    std::vector<int> steps{STATION_STEP};
+    for (int i = 0; i < MAX_TOOLS; ++i) {
+        if (lv_subject_get_int(&row_visible_[i])) {
+            steps.push_back(i);
+        }
+    }
+    confirm_and_run(std::move(steps));
+}
+
+void ToolOffsetCalibrationPanel::start_locate_sensor() {
+    if (calibration_active_) {
+        return;
+    }
+    confirm_and_run({STATION_STEP});
+}
+
+void ToolOffsetCalibrationPanel::start_calibration_for_tool(int tool) {
+    if (calibration_active_ || tool < 0 || tool >= MAX_TOOLS) {
+        return;
+    }
+    // A tool pass without a station reference still runs, but loses the gap
+    // guard that catches a mis-triggered Z. Fold the reference in when the
+    // printer has never had one.
+    if (!station_known_) {
+        spdlog::info("[{}] No reference yet — locating it first", get_name());
+        confirm_and_run({STATION_STEP, tool});
+        return;
+    }
+    confirm_and_run({tool});
+}
+
+void ToolOffsetCalibrationPanel::request_stop() {
+    if (!calibration_active_ || stop_requested_) {
+        return;
+    }
+    stop_requested_ = true;
+    lv_subject_copy_string(&status_, lv_tr("Stopping after the current step..."));
+    // Say so on the rows that will now never run, rather than leaving them
+    // reading Queued for a queue that has been abandoned.
+    for (int step : run_queue_) {
+        set_row_state(step, ROW_QUEUED, lv_tr("skipped — stopping"));
+    }
+}
+
+void ToolOffsetCalibrationPanel::begin_run(std::vector<int> steps) {
+    if (calibration_active_ || steps.empty()) {
+        return;
+    }
+    auto* api = get_moonraker_api();
+    if (!api) {
+        spdlog::warn("[{}] No API - cannot start calibration", get_name());
+        return;
+    }
+
+    calibration_active_ = true;
+    calibration_complete_ = false;
+    stop_requested_ = false;
+    run_queue_ = std::move(steps);
+    log_lines_.clear();
+    lv_subject_copy_string(&log_, "");
+    lv_subject_set_int(&started_, 1);
+    lv_subject_set_int(&active_, 1);
+    lv_subject_set_int(&complete_, 0);
+    last_failed_step_ = -2;
+    // Every row in the run reads Queued from the outset, so the whole
+    // sequence — not just the row being probed — is visible while it runs.
+    for (int step : run_queue_) {
+        set_row_state(step, ROW_QUEUED);
+    }
+
+    subscribe_console();
+    send_next_step();
+}
+
+void ToolOffsetCalibrationPanel::send_next_step() {
+    auto* api = get_moonraker_api();
+    if (!api || run_queue_.empty()) {
+        finish_run(true, "");
+        return;
+    }
+    current_step_ = run_queue_.front();
+    run_queue_.erase(run_queue_.begin());
+
+    std::string cmd;
+    // The elapsed counter runs in the row's own second line, so the progress
+    // and the thing making progress are the same object on screen.
+    if (current_step_ == STATION_STEP) {
+        set_row_state(STATION_STEP, ROW_MEASURING, lv_tr("locating the reference"));
+        elapsed_.begin(&station_sub_, [](uint32_t elapsed_seconds) {
+            return fmt::format(fmt::runtime(lv_tr("locating the reference... {}s")), elapsed_seconds);
+        });
+        cmd = join_gcode(helix::tool_offset_calibration::locate_reference_gcode(
+            get_printer_state().get_discovery()));
+    } else {
+        set_row_state(current_step_, ROW_MEASURING, lv_tr("probing nozzle"));
+        elapsed_.begin(&row_sub_[current_step_], [](uint32_t elapsed_seconds) {
+            return fmt::format(fmt::runtime(lv_tr("probing nozzle... {}s")), elapsed_seconds);
+        });
+        // The provider returns the pass in send order - typically a select
+        // followed by a measurement, because the measuring command takes no
+        // arguments and probes whatever is on the carriage. Klipper runs a
+        // multi-line script line by line.
+        cmd = join_gcode(helix::tool_offset_calibration::calibrate_tool_gcode(
+            get_printer_state().get_discovery(), current_step_));
+    }
+
+    spdlog::info("[{}] Running {}", get_name(), cmd);
+    // Moonraker's printer.gcode.script answers when the script finishes, so the
+    // success callback IS the completion signal. A single pass can still run
+    // past the 5-minute macro ceiling.
+    api->execute_gcode(
+        cmd,
+        lifetime_.bg_cb("ToolOffsetCalPanel::calibrate_done",
+                        [this]() { on_step_finished(true, ""); }),
+        lifetime_.bg_cb("ToolOffsetCalPanel::calibrate_error",
+                        [this](const MoonrakerError& err) { on_step_finished(false, err.message); }),
+        IMoonrakerAPI::PRE_START_MACRO_TIMEOUT_MS);
+}
+
+void ToolOffsetCalibrationPanel::on_step_finished(bool ok, const std::string& error) {
+    elapsed_.cancel();
+    const int finished = current_step_;
+    current_step_ = -2;
+
+    if (!ok) {
+        last_failed_step_ = finished;
+        finish_run(false, error);
+        return;
+    }
+    // The row stays Measuring until the re-read lands (a few tens of ms), so
+    // it never blinks through "Not calibrated" on the way to its numbers.
+    // is_step_pending() no longer covers it, so apply_printer_state() will.
+    refresh_from_printer();
+
+    if (stop_requested_ || run_queue_.empty()) {
+        finish_run(true, "");
+        return;
+    }
+    send_next_step();
+}
+
+void ToolOffsetCalibrationPanel::finish_run(bool ok, const std::string& error) {
+    elapsed_.cancel();
+    unsubscribe_console();
+    const bool stopped = stop_requested_;
+    calibration_active_ = false;
+    stop_requested_ = false;
+    // Cleared before the re-read so rows left Queued by a Stop are repainted
+    // from what the printer actually has, not held in a state nothing will
+    // advance.
+    run_queue_.clear();
+    lv_subject_set_int(&active_, 0);
+    lv_subject_set_int(&started_, 0);
+
+    if (ok) {
+        spdlog::info("[{}] Calibration run finished{}", get_name(), stopped ? " (stopped)" : "");
+        calibration_complete_ = true;
+        lv_subject_set_int(&complete_, 1);
+        lv_subject_copy_string(&status_,
+                               stopped ? lv_tr("Stopped") : lv_tr("Calibration complete."));
+        // Picks up save_config_pending and the rows this run did not reach.
+        refresh_from_printer();
+        return;
+    }
+    // A refused run leaves the previous calibration intact, and the refusal
+    // itself is the interesting output — re-read so the rows stay truthful,
+    // and give the message the card at the top rather than a muted line.
+    refresh_from_printer();
+
+    spdlog::error("[{}] Calibration failed: {}", get_name(), error);
+    lv_subject_copy_string(&status_, error.empty() ? lv_tr("Calibration failed") : error.c_str());
+    show_error(last_failed_step_, error);
+}
+
+bool ToolOffsetCalibrationPanel::abort_in_progress_calibration() {
+    if (!calibration_active_) {
+        return false;
+    }
+    spdlog::info("[{}] Aborting in-progress calibration (M112 + firmware_restart)", get_name());
+
+    // Expected reconnect — keep the shutdown/disconnect modals quiet
+    EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::LONG);
+    auto* api = get_moonraker_api();
+    if (api) {
+        api->suppress_disconnect_modal(15000);
+    }
+
+    // Drop the in-flight execute_gcode callbacks (they report the M112 shutdown)
+    lifetime_.invalidate();
+    elapsed_.cancel();
+    unsubscribe_console();
+    calibration_active_ = false;
+    stop_requested_ = false;
+    current_step_ = -2;
+    run_queue_.clear();
+
+    if (api) {
+        api->emergency_stop(
+            [api]() {
+                spdlog::debug("[ToolOffsetCal] M112 sent, restarting firmware");
+                api->restart_firmware([]() {}, [](const MoonrakerError& err) {
+                    spdlog::error("[ToolOffsetCal] Firmware restart failed: {}", err.message);
+                });
+            },
+            [](const MoonrakerError& err) {
+                spdlog::error("[ToolOffsetCal] Emergency stop failed: {}", err.message);
+            });
+    }
+
+    reset_ui_state();
+    lv_subject_copy_string(&status_, lv_tr("Cancelled"));
+    return true;
+}
+
+void ToolOffsetCalibrationPanel::save_calibration() {
+    auto* api = get_moonraker_api();
+    // Klipper's own save_config_pending is the gate, not "this session ran a
+    // calibration": offsets measured before the app opened are just as unsaved.
+    if (!api || !subjects_initialized_ || !lv_subject_get_int(&save_pending_)) {
+        return;
+    }
+    // Never send SAVE_CONFIG under a run — it restarts Klipper mid-probe.
+    if (calibration_active_) {
+        spdlog::warn("[{}] Ignoring Save while a calibration is running", get_name());
+        return;
+    }
+    // The restart is the whole reason Save is a separate step, and nothing
+    // else on the screen says it happens.
+    helix::ui::modal_confirm(
+        lv_tr("Save offsets?"),
+        lv_tr("This writes the offsets to the printer's config and restarts its firmware, "
+              "which takes a few seconds. Until then they apply only to this session."),
+        ModalSeverity::Warning, lv_tr("Save"), [this]() { send_save_config(); },
+        {.owner_token = lifetime_.token()});
+}
+
+void ToolOffsetCalibrationPanel::send_save_config() {
+    auto* api = get_moonraker_api();
+    if (!api) {
+        return;
+    }
+    // SAVE_CONFIG restarts Klipper — an expected disconnect, not an error
+    api->suppress_disconnect_modal(15000);
+    calibration_complete_ = false;
+    lv_subject_set_int(&complete_, 0);
+    // Klipper restarts before it would answer a fresh query, so the amber Save
+    // has to stand down here rather than waiting for a refresh that cannot
+    // arrive until the reconnect.
+    lv_subject_set_int(&save_pending_, 0);
+    lv_subject_copy_string(&status_, lv_tr("Saving — Klipper is restarting..."));
+    spdlog::info("[{}] Sending SAVE_CONFIG", get_name());
+    api->execute_gcode(
+        join_gcode(helix::tool_offset_calibration::save_gcode(get_printer_state().get_discovery())),
+        lifetime_.bg_cb("ToolOffsetCalPanel::save_done",
+                        [this]() { lv_subject_copy_string(&status_, lv_tr("Offsets saved")); }),
+        lifetime_.bg_cb("ToolOffsetCalPanel::save_error",
+                        [this](const MoonrakerError& err) {
+                            // The restart usually swallows the response; the save
+                            // itself has already happened by then. A genuine
+                            // refusal (e.g. "conflicts with included value")
+                            // reaches the user via Klipper's !! console router —
+                            // caller_surfaces_errors=false keeps it armed.
+                            spdlog::debug("[ToolOffsetCal] SAVE_CONFIG response lost: {}",
+                                          err.message);
+                            lv_subject_copy_string(&status_, lv_tr("Offsets saved"));
+                        }),
+        0, false, nullptr, /*caller_surfaces_errors=*/false);
+}
+
+// ============================================================================
+// CONSOLE MIRROR + MACRO DESCRIPTION
+// ============================================================================
+
+void ToolOffsetCalibrationPanel::append_log_line(const std::string& raw) {
+    std::string line = raw;
+    if (line.rfind("// ", 0) == 0) {
+        line.erase(0, 3); // Klipper's respond_info prefix
+    }
+    if (line.empty()) {
+        return;
+    }
+    // Purely a mirror. The numbers on screen come from the printer's objects
+    // after each step, so there is no report-block format to keep in step
+    // with the firmware — only Klipper's refusals, which reach the error card
+    // through execute_gcode's own error path.
+    log_lines_.push_back(line);
+    while (log_lines_.size() > LOG_LINES) {
+        log_lines_.pop_front();
+    }
+    std::string joined;
+    for (const auto& l : log_lines_) {
+        if (!joined.empty()) {
+            joined += '\n';
+        }
+        joined += l;
+    }
+    lv_subject_copy_string(&log_, joined.c_str());
+}
+
+void ToolOffsetCalibrationPanel::subscribe_console() {
+    auto* client = get_moonraker_client();
+    if (!client || console_subscribed_) {
+        return;
+    }
+    // WS thread → bg_cb queues the body to the main thread (threading rule 1)
+    client->register_method_callback(
+        "notify_gcode_response", CONSOLE_HANDLER,
+        lifetime_.bg_cb("ToolOffsetCalPanel::console", [this](const nlohmann::json& msg) {
+            if (!msg.contains("params") || !msg["params"].is_array()) {
+                return;
+            }
+            for (const auto& p : msg["params"]) {
+                if (p.is_string()) {
+                    append_log_line(p.get<std::string>());
+                } else if (p.is_array()) {
+                    for (const auto& line : p) {
+                        if (line.is_string()) {
+                            append_log_line(line.get<std::string>());
+                        }
+                    }
+                }
+            }
+        }));
+    console_subscribed_ = true;
+}
+
+void ToolOffsetCalibrationPanel::unsubscribe_console() {
+    if (!console_subscribed_) {
+        return;
+    }
+    if (auto* client = get_moonraker_client()) {
+        client->unregister_method_callback("notify_gcode_response", CONSOLE_HANDLER);
+    }
+    console_subscribed_ = false;
+}
+
+// ============================================================================
+// ADVANCED-PANEL ROW ENTRY
+// ============================================================================
+
+static void on_tool_offset_row_clicked(lv_event_t* e) {
+    (void)e;
+    LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] row_clicked");
+    auto& panel = get_global_tool_offset_cal_panel();
+    // Subjects and callbacks MUST exist before the XML is built, or every
+    // bind_flag/event_cb in the component silently no-ops and the panel comes
+    // up with all buttons and spinners visible at once. Same order as
+    // helix::ui::lazy_create_and_push_overlay(), which the Controls entry uses.
+    if (!panel.are_subjects_initialized()) {
+        panel.init_subjects();
+    }
+    panel.register_callbacks();
+    bool ready = panel.get_root() != nullptr;
+    if (!ready) {
+        lv_obj_t* screen = lv_display_get_screen_active(nullptr);
+        ready = panel.create(screen) != nullptr;
+        if (!ready) {
+            spdlog::error("[ToolOffsetCal] Failed to create calibration_tool_offset_panel");
+        }
+    }
+    if (ready) {
+        panel.show();
+    }
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void init_tool_offset_row_handler() {
+    lv_xml_register_event_cb(nullptr, "on_tool_offset_row_clicked", on_tool_offset_row_clicked);
+}
+
+void ToolOffsetCalibrationPanel::refresh_from_printer() {
+    auto* client = get_moonraker_client();
+    if (!client) {
+        return;
+    }
+    // One-shot read rather than a subscription: this is the only place that
+    // needs these objects. WHICH objects is the capability module's business -
+    // nothing here names a firmware.
+    nlohmann::json objects = nlohmann::json::object();
+    for (const auto& name : helix::tool_offset_calibration::required_status_objects(
+             get_printer_state().get_discovery())) {
+        objects[name] = nullptr;
+    }
+    objects["configfile"] = nlohmann::json::array({"save_config_pending"});
+
+    client->send_jsonrpc(
+        "printer.objects.query", nlohmann::json{{"objects", objects}},
+        lifetime_.bg_cb("ToolOffsetCalPanel::objects_query", [this](const nlohmann::json& resp) {
+            if (!subjects_initialized_) {
+                return;
+            }
+            const nlohmann::json& result = resp.contains("result") ? resp["result"] : resp;
+            if (result.is_object() && result.contains("status")) {
+                apply_printer_state(result["status"]);
+            }
+        }));
+}
+
+void ToolOffsetCalibrationPanel::apply_printer_state(const nlohmann::json& status) {
+    namespace toc = helix::tool_offset_calibration;
+    const auto& hw = get_printer_state().get_discovery();
+
+    // The reference row exists only where the firmware has a fixture to show.
+    // On a firmware that folds the reference into the tool numbers there is no
+    // second set of numbers, and the row stays hidden rather than showing "--"
+    // forever.
+    if (toc::presentation(hw).has_reference_row) {
+        const auto reference = toc::read_reference(status);
+        station_known_ = reference.has_value();
+        if (reference) {
+            station_pos_[0] = reference->x;
+            station_pos_[1] = reference->y;
+            station_pos_[2] = reference->z;
+        }
+        set_station_values();
+        if (!is_step_pending(STATION_STEP)) {
+            const char* sub = "";
+            if (!station_known_) {
+                sub = (last_failed_step_ == STATION_STEP) ? lv_tr("last attempt was refused")
+                                                          : lv_tr("every tool depends on this");
+            }
+            set_row_state(STATION_STEP, station_known_ ? ROW_OK : ROW_NONE, sub);
+        }
+    }
+
+    const auto& tool_names = hw.tool_names();
+    for (int i = 0; i < MAX_TOOLS; ++i) {
+        if (!lv_subject_get_int(&row_visible_[i])) {
+            continue;
+        }
+        // Klipper's own name for the tool, for the firmwares that key their
+        // status object off it rather than off the index.
+        const std::string tool_name =
+            (i < static_cast<int>(tool_names.size())) ? tool_names[static_cast<size_t>(i)] : "";
+        // Whatever the firmware reports for this tool, shown as reported. What
+        // the three numbers MEAN is stated once, in the provider's caption.
+        const auto reading = toc::read_tool(status, i, tool_name);
+        values_valid_[i] = reading.has_value();
+        if (reading) {
+            values_[i][0] = reading->x;
+            values_[i][1] = reading->y;
+            values_[i][2] = reading->z;
+        }
+        set_row_values(i);
+        // A row the run has not reached yet keeps its Queued/Measuring state;
+        // everything else follows the printer.
+        if (!is_step_pending(i)) {
+            // A row the printer refused reads differently from one that was
+            // simply never attempted - otherwise, a minute later, nothing on
+            // screen says which tool actually failed.
+            const char* sub = "";
+            if (!values_valid_[i]) {
+                sub = (i == last_failed_step_) ? lv_tr("last attempt was refused")
+                                               : lv_tr("printing with it will be refused");
+            }
+            set_row_state(i, values_valid_[i] ? ROW_OK : ROW_NONE, sub);
+        }
+    }
+
+    bool pending = false;
+    if (status.contains("configfile") && status["configfile"].is_object()) {
+        pending = status["configfile"].value("save_config_pending", false);
+    }
+    lv_subject_set_int(&save_pending_, pending ? 1 : 0);
+}
+
+void ToolOffsetCalibrationPanel::fetch_macro_description() {
+    auto* client = get_moonraker_client();
+    if (!client) {
+        return;
+    }
+    // Only for firmwares that ship a wrapper macro carrying a written
+    // procedure. Where there is none the panel keeps its own text, and asking
+    // Moonraker for a description nothing will match is pure round trip.
+    const std::string command =
+        helix::tool_offset_calibration::hint_command(get_printer_state().get_discovery());
+    if (command.empty()) {
+        return;
+    }
+    // printer.gcode.help → {"CMD": "description", ...}; the macro's own
+    // `description:` is the instruction text ("remove the build plate", ...).
+    client->send_jsonrpc(
+        "printer.gcode.help", nlohmann::json::object(),
+        lifetime_.bg_cb("ToolOffsetCalPanel::gcode_help", [this, command](
+                                                              const nlohmann::json& resp) {
+            const nlohmann::json& result = resp.contains("result") ? resp["result"] : resp;
+            if (!result.is_object() || !result.contains(command) || !result[command].is_string()) {
+                return;
+            }
+            const std::string desc = result[command].get<std::string>();
+            if (desc.empty() || desc == "G-Code macro") {
+                return; // Klipper's placeholder for a macro without description:
+            }
+            if (!subjects_initialized_) {
+                return; // reply outran init_subjects(); hint_ is not a subject yet
+            }
+            lv_subject_copy_string(&hint_, desc.c_str());
+        }));
+}

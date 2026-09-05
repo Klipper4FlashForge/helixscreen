@@ -116,6 +116,17 @@ bool persist_requires_save_config(const PrinterDiscovery& hw);
 /// firmware writes durably as it measures and nothing further is needed.
 std::vector<std::string> save_gcode(const PrinterDiscovery& hw);
 
+/// The gcode command whose `description:` the panel shows as its on-screen
+/// instruction, or empty when this firmware has none.
+///
+/// Some firmwares ship an all-in-one wrapper macro carrying a written
+/// procedure ("take the build plate off, ..."). Where one exists it is the
+/// firmware's own words for its own hardware, which beats anything we could
+/// write generically. klipper-toolchanger's calibration is a Python extra
+/// registering bare commands, so it has no description to read and the panel
+/// falls back to its own text.
+std::string hint_command(const PrinterDiscovery& hw);
+
 /// Human-readable name of the matched provider, for logging. Empty when none.
 std::string provider_name(const PrinterDiscovery& hw);
 
