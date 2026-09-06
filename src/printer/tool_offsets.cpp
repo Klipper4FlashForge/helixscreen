@@ -145,9 +145,13 @@ std::vector<std::string> status_objects_tool_offset_macro(const PrinterDiscovery
     return {"gcode_macro " + name};
 }
 
-// Z only. The macro's variables are t<n>_off_z / t<n>_gcode_z_offset; whether
-// it keeps an X/Y pair in the same shape has not been verified against a
-// machine, and guessing the variable name would write a value nothing reads.
+// Z only - NOT because the machine cannot do X/Y. Only the Z variable names
+// (t<n>_off_z / t<n>_gcode_z_offset) are confirmed against a machine; MedusaHC's
+// docs say the durable store holds t<n>_gcode_{x,y,z}_offset, so an X/Y pair
+// very likely exists in the same shape. A guessed runtime name would write a
+// value nothing reads, so the axes stay declined until someone checks them.
+// Extending this to X/Y is a matter of confirming those names and flipping this
+// predicate; nothing else in the row is Z-specific by design.
 bool supports_axis_tool_offset_macro(Axis axis) {
     return axis == Axis::Z;
 }
