@@ -52,6 +52,7 @@ void PrinterCapabilitiesState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(printer_has_chamber, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_screws_tilt, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_tool_offset_cal, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(hide_manual_z_calibration, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_webcam, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(webcam_count, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_extra_fans, 0, subjects_, register_xml);
@@ -266,6 +267,11 @@ void PrinterCapabilitiesState::set_timelapse_available(bool available) {
 void PrinterCapabilitiesState::set_purge_line(bool has_purge_line) {
     set_capability_int(printer_has_purge_line_, has_purge_line ? 1 : 0);
     spdlog::debug("[PrinterCapabilitiesState] Purge line capability set: {}", has_purge_line);
+}
+
+void PrinterCapabilitiesState::set_hide_manual_z_calibration(bool hide) {
+    set_capability_int(hide_manual_z_calibration_, hide ? 1 : 0);
+    spdlog::debug("[PrinterCapabilitiesState] Hide manual Z calibration: {}", hide);
 }
 
 void PrinterCapabilitiesState::set_bed_moves(bool bed_moves) {
