@@ -64,9 +64,9 @@ differs - the unmount, which a machine whose tools are plain extruders does not 
 |----------|------|-------------|
 | `active` | bool | Is this tool selected? |
 | `mounted` | bool | Is this tool mounted on carriage? |
-| `gcode_x_offset` | float | X offset |
-| `gcode_y_offset` | float | Y offset |
-| `gcode_z_offset` | float | Z offset |
+| `gcode_x_offset` | float | X offset — settable at runtime with `SET_TOOL_PARAMETER T=<n> PARAMETER=gcode_x_offset VALUE=<mm>`, persisted with `SAVE_TOOL_PARAMETER T=<n> PARAMETER=gcode_x_offset` + `SAVE_CONFIG` (see `include/tool_offsets.h`) |
+| `gcode_y_offset` | float | Y offset — same, `PARAMETER=gcode_y_offset` |
+| `gcode_z_offset` | float | Z offset — same, `PARAMETER=gcode_z_offset` |
 | `extruder` | string | Associated extruder name |
 | `fan` | string | Associated fan name |
 
