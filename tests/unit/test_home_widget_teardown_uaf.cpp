@@ -34,6 +34,7 @@
 #include "../test_helpers/camera_widget_test_access.h"
 #include "src/ui/panel_widgets/camera_widget.h"
 #endif
+#include "../test_helpers/print_stats_test_access.h"
 #include "../test_helpers/tool_switcher_test_access.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "helix-xml/src/xml/lv_xml.h"
@@ -41,6 +42,7 @@
 #include "printer_discovery.h"
 #include "printer_state.h"
 #include "src/ui/panel_widgets/nozzle_temps_widget.h"
+#include "src/ui/panel_widgets/print_stats_widget.h"
 #include "src/ui/panel_widgets/thermistor_widget.h"
 #include "src/ui/panel_widgets/tool_switcher_widget.h"
 #include "temperature_sensor_manager.h"
@@ -705,3 +707,57 @@ TEST_CASE_METHOD(HomeWidgetTeardownFixture, "camera ignores a replaced root's la
 }
 
 #endif // HELIX_HAS_CAMERA
+
+// --------------------------------------------------------------------------
+// PrintStatsWidget
+//
+// This one publishes through static lv_subject_t values rather than into its
+// tile tree, so a drained totals callback is harmless by itself and the visible
+// UI state cannot tell a dropped pointer from a dangling one. The exposure is
+// the cached root: detach() calls lv_obj_set_user_data(widget_obj_, nullptr),
+// so a widget_obj_ that outlives its object writes into freed memory on the
+// next teardown.
+// --------------------------------------------------------------------------
+
+TEST_CASE_METHOD(HomeWidgetTeardownFixture,
+                 "print_stats drops its cached root when the page tree is deleted raw",
+                 "[print_stats][teardown][uaf]") {
+    auto widget = std::make_unique<PrintStatsWidget>();
+    lv_obj_t* page = make_page();
+    lv_obj_t* tile = make_tile(page, "panel_widget_print_stats");
+    widget->attach(tile, test_screen());
+    UpdateQueue::instance().drain();
+
+    // Or a null read below would prove nothing.
+    REQUIRE(PrintStatsTestAccess::widget_obj(*widget) == tile);
+
+    lv_obj_delete(page);
+    UpdateQueue::instance().drain();
+
+    CHECK(PrintStatsTestAccess::widget_obj(*widget) == nullptr);
+    CHECK(PrintStatsTestAccess::parent_screen(*widget) == nullptr);
+
+    // The path that would have written into the freed tile.
+    widget->detach();
+    SUCCEED("detach after a raw page delete touched no freed memory");
+}
+
+TEST_CASE_METHOD(HomeWidgetTeardownFixture,
+                 "print_stats uninstalls its delete hook when destroyed before its tree",
+                 "[print_stats][teardown][uaf]") {
+    auto widget = std::make_unique<PrintStatsWidget>();
+    lv_obj_t* page = make_page();
+    lv_obj_t* tile = make_tile(page, "panel_widget_print_stats");
+    widget->attach(tile, test_screen());
+    UpdateQueue::instance().drain();
+
+    REQUIRE(delete_hook_installed(tile, widget.get()));
+
+    const void* dead = widget.get();
+    widget.reset();
+    CHECK_FALSE(delete_hook_installed(tile, dead));
+
+    lv_obj_delete(tile);
+    UpdateQueue::instance().drain();
+    SUCCEED("tile torn down after the widget without touching freed memory");
+}

@@ -38,6 +38,11 @@ class PrintStatsWidget : public PanelWidget {
     /// next to that panel's own bands.
     static int mode_for_size(int width_px, int height_px, UiBreakpoint bp);
 
+  protected:
+    /// Drop the cached tile pointers and expire the in-flight totals fetch when
+    /// the tile tree dies without a detach() — screen teardown.
+    void on_hooked_root_deleted() override;
+
   private:
     void update_stats();
     void handle_clicked();
@@ -48,6 +53,8 @@ class PrintStatsWidget : public PanelWidget {
     /// cannot answer "all time" on a printer with a longer history. Same source
     /// HistoryDashboardPanel uses for its ALL_TIME filter.
     void fetch_lifetime_totals();
+
+    friend class PrintStatsTestAccess;
 
     lv_obj_t* widget_obj_ = nullptr;
     lv_obj_t* parent_screen_ = nullptr;

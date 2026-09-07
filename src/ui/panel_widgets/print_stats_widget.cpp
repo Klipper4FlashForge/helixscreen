@@ -142,6 +142,8 @@ void PrintStatsWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     // Pressed feedback: dim on touch
     lv_obj_set_style_opa(widget_obj_, LV_OPA_70, LV_PART_MAIN | LV_STATE_PRESSED);
 
+    install_delete_hook(widget_obj_);
+
     // Register history observer for live updates.
     // NOTE: Do NOT call fetch() or update_stats() here — attach() runs inside
     // a ScopedFreeze (rebuild_widget_grid), so queue_update() callbacks are
@@ -209,6 +211,8 @@ void PrintStatsWidget::detach() {
     }
     history_observer_ = nullptr;
 
+    uninstall_delete_hook();
+
     if (widget_obj_) {
         lv_obj_set_user_data(widget_obj_, nullptr);
         widget_obj_ = nullptr;
@@ -216,6 +220,19 @@ void PrintStatsWidget::detach() {
     parent_screen_ = nullptr;
 
     spdlog::debug("[PrintStatsWidget] Detached");
+}
+
+void PrintStatsWidget::on_hooked_root_deleted() {
+    // Runs inside LVGL's delete event: drop pointers and expire the guard only.
+    //
+    // update_stats() publishes through static lv_subject_t values rather than
+    // into the tile tree, so a drained totals callback is harmless on its own.
+    // What is not harmless is widget_obj_ outliving the object it names: a
+    // later detach() would call lv_obj_set_user_data() on freed memory.
+    lifetime_.invalidate();
+    lifetime_totals_in_flight_ = false;
+    widget_obj_ = nullptr;
+    parent_screen_ = nullptr;
 }
 
 int PrintStatsWidget::mode_for_size(int width_px, int height_px) {
