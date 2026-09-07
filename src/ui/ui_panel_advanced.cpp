@@ -4,6 +4,7 @@
 #include "ui_panel_advanced.h"
 
 #include "ui_callback_helpers.h"
+#include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_overlay_timelapse_install.h"
 #include "ui_overlay_timelapse_videos.h"
@@ -315,8 +316,40 @@ void AdvancedPanel::handle_helix_plugin_install_clicked() {
 
 void AdvancedPanel::handle_helix_plugin_uninstall_clicked() {
     spdlog::debug("[{}] HelixPrint Plugin Uninstall clicked", get_name());
-    // TODO: Implement uninstall functionality
-    ToastManager::instance().show(ToastSeverity::INFO, lv_tr("Uninstall: Coming soon"), 2000);
+
+    helix::ui::ConfirmOptions opts;
+    opts.owner_token = lifetime_.token();
+    helix::ui::modal_confirm(
+        lv_tr("Uninstall HelixPrint Plugin?"),
+        lv_tr("This removes the plugin's macros and its Moonraker component from the printer "
+              "and restarts Klipper."),
+        ModalSeverity::Error, lv_tr("Uninstall"), [this]() { run_helix_plugin_uninstall(); }, opts);
+}
+
+void AdvancedPanel::run_helix_plugin_uninstall() {
+    // Update installer's websocket URL for local/remote detection
+    if (api_) {
+        plugin_installer_.set_websocket_url(api_->get_websocket_url());
+    }
+
+    auto on_done = [this](bool success, const std::string& message) {
+        spdlog::info("[{}] Plugin uninstall {}: {}", get_name(), success ? "succeeded" : "failed",
+                     message);
+        if (success) {
+            printer_state_.set_helix_plugin_installed(false);
+        }
+        ToastManager::instance().show(success ? ToastSeverity::SUCCESS : ToastSeverity::ERROR,
+                                      message.c_str(), success ? 2000 : 4000);
+    };
+
+    // The installer forks the bundled script and waits for it right here, on the
+    // LVGL thread — the same blocking call the install modal makes, and for the
+    // same reason (see PluginInstallModal::on_install_clicked).
+    if (uninstall_runner_) {
+        uninstall_runner_(on_done);
+    } else {
+        plugin_installer_.uninstall_local(on_done);
+    }
 }
 
 void AdvancedPanel::handle_phase_tracking_changed(bool enabled) {

@@ -43,7 +43,8 @@ class TelemetryManagerTestAccess {
 
     /// Move the send clock so a test can choose how long ago the last attempt
     /// was without waiting.
-    static void set_last_send_time(TelemetryManager& t, std::chrono::steady_clock::time_point when) {
+    static void set_last_send_time(TelemetryManager& t,
+                                   std::chrono::steady_clock::time_point when) {
         t.last_send_time_ = when;
     }
 

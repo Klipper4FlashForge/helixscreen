@@ -2874,6 +2874,7 @@ translations:
     starten?
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
   : Dieser Drucker sieht aus wie ein {} ({}% Konfidenz), ist aber als {} eingerichtet. Ein falscher Typ wendet falsche Optionen und Voreinstellungen für die Druckvorbereitung an.
+  This removes the plugin's macros and its Moonraker component from the printer and restarts Klipper.: Entfernt die Makros des Plugins und seine Moonraker-Komponente vom Drucker und startet Klipper neu.
   This tool probes each bed screw and tells you how much to adjust.: Dieses Werkzeug
     tastet jede Bettschraube ab und zeigt Ihnen, wie viel Sie einstellen müssen.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
@@ -3003,7 +3004,9 @@ translations:
   Understanding Results: Ergebnisse verstehen
   ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
   : "Ungleichmäßige Riemenspannung verursacht Druckartefakte wie Schichtverschiebungen, VFAs (vertikale feine Artefakte) und Ringing.\n\nDieses Werkzeug lässt jeden Riemenpfad vibrieren und misst die Resonanzfrequenz — übereinstimmende Frequenzen bedeuten ausgewogene Spannung.\n\nBei CoreXY sollten Pfad A und B nur wenige Hz voneinander entfernt sein."
+  Uninstall: Deinstallieren
   Uninstall HelixPrint Plugin: HelixPrint-Plugin deinstallieren
+  Uninstall HelixPrint Plugin?: HelixPrint-Plugin deinstallieren?
   Uninstall script not found.: Deinstallationsskript nicht gefunden.
   'Uninstall: Coming soon': 'Deinstallieren: Demnächst verfügbar'
   Uninstallation failed. Check logs for details.: Deinstallation fehlgeschlagen. Details

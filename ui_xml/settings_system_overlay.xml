@@ -42,22 +42,6 @@
                             description="Calibrate and tune scroll feel"
                             description_tag="Calibrate and tune scroll feel" callback="on_touch_input_clicked"/>
         <!-- ================================================================== -->
-        <!-- PLUGINS (gated by beta_features config flag) -->
-        <!-- ================================================================== -->
-        <beta_feature>
-          <setting_action_row name="row_plugins"
-                              label="Plugins" label_tag="Plugins" icon="puzzle_outline"
-                              description="View installed plugins and status"
-                              description_tag="View installed plugins and status" callback="on_plugins_clicked">
-            <!-- Hidden on the v1 (ESP32/K-Touch) cut — the plugin system is
-                 compiled out (HELIX_HAS_PLUGINS=0); show_beta_features alone
-                 would still show this row (and an inert tap) whenever beta
-                 features are on. Desktop (platform_extras_available==1) renders
-                 it exactly as before. -->
-            <bind_flag_if_eq subject="platform_extras_available" flag="hidden" ref_value="0"/>
-          </setting_action_row>
-        </beta_feature>
-        <!-- ================================================================== -->
         <!-- PERFORMANCE (live host CPU/memory + per-MCU load) -->
         <!-- ================================================================== -->
         <lv_obj name="container_performance" width="100%" style_pad_all="0" scrollable="false">

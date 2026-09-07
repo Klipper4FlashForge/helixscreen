@@ -861,8 +861,7 @@ TEST_CASE("Send delay: retries lengthen as the backoff grows", "[telemetry][send
     REQUIRE(TelemetryManager::next_attempt_delay(4) < TelemetryManager::next_attempt_delay(64));
 }
 
-TEST_CASE("Send delay: the backoff ceiling still reaches seven days",
-          "[telemetry][send][1476]") {
+TEST_CASE("Send delay: the backoff ceiling still reaches seven days", "[telemetry][send][1476]") {
     // RETRY_INTERVAL is the base, so the multiplier has to be able to climb far
     // enough that the ceiling is still a week rather than a few hours.
     REQUIRE(TelemetryManager::next_attempt_delay(TelemetryManager::MAX_BACKOFF_MULTIPLIER) ==
