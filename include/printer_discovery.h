@@ -14,8 +14,9 @@
  */
 
 #include "ams_types.h"
-#include "chamber_heater_backend.h" // For chamber::match — heater candidate scoring
-#include "macro_patterns.h"         // Shared macro-name tables (nozzle clean, ...)
+#include "chamber_heater_backend.h"   // For chamber::match — heater candidate scoring
+#include "klipper_extruder_naming.h" // is_extruder_name: one hot end per numbered extruder
+#include "macro_patterns.h"           // Shared macro-name tables (nozzle clean, ...)
 #include "printer_detector.h"       // For BuildVolume struct
 
 #include <spdlog/spdlog.h>
@@ -615,20 +616,25 @@ class PrinterDiscovery {
             std::sort(tool_names_.begin(), tool_names_.end());
         }
 
-        // A hotend changer that runs without klipper-toolchanger has no [tool N]
-        // objects to name its tools: the swap is driven by the extra's own T<n>
-        // macros. One hot end per extruder heater is what a hotend changer IS,
-        // so enumerate those and keep the G-code tool numbers as the names.
+        // [tool N] objects come from klipper-toolchanger, so a machine that does
+        // not run it has none: a hotend changer driven by its own extra, or a
+        // plain multi-extruder printer whose T<n> macros are the whole story.
+        // What is left to count is the hot ends, and one heater and extruder
+        // motor per tool is exactly what those machines are. The names are the
+        // G-code tool numbers their own T<n> commands use.
+        //
+        // is_extruder_name() is the same predicate ToolState::init_tools() maps
+        // these heaters through, so the count here can never disagree with the
+        // tools it builds. It rejects extruder_stepper, which is how a mixing
+        // hotend stays one tool.
+        //
         // Never overwrites real tool objects - a klipper-toolchanger name is
         // arbitrary, and ASSIGN_TOOL can remap it.
-        if (tool_names_.empty() && has_medusahc_) {
-            int extruders = 0;
-            for (const auto& heater : heaters_) {
-                if (heater.rfind("extruder", 0) == 0 && heater.rfind("extruder_stepper", 0) != 0) {
-                    ++extruders;
-                }
-            }
-            for (int i = 0; i < extruders; ++i) {
+        const auto extruder_heater_count = std::count_if(
+            heaters_.begin(), heaters_.end(),
+            [](const std::string& heater) { return helix::is_extruder_name(heater); });
+        if (tool_names_.empty() && extruder_heater_count > 1) {
+            for (int i = 0; i < extruder_heater_count; ++i) {
                 tool_names_.push_back("T" + std::to_string(i));
             }
         }
@@ -660,10 +666,13 @@ class PrinterDiscovery {
             // Native Snapmaker filament system (no aftermarket MMU)
             detected_ams_systems_.push_back({AmsType::SNAPMAKER, "Snapmaker"});
             mmu_type_ = AmsType::SNAPMAKER;
-        } else if ((has_tool_changer_ || has_medusahc_) && !tool_names_.empty()) {
-            // Standalone tool changer with no MMU — show parallel topology.
-            // Either klipper-toolchanger, or a hotend changer whose own extra
-            // does the swapping; the tools above came from whichever it is.
+        } else if (!tool_names_.empty() && (has_tool_changer_ || tool_names_.size() > 1)) {
+            // More than one hot end, and no filament system managing them:
+            // parallel topology, one slot per tool. Registering it is what gives
+            // these printers slots, per-tool spool identity and the filament
+            // panel's tool selector instead of the single-extruder UI
+            // (prestonbrown/helixscreen#1350). klipper-toolchanger is a changer
+            // on its own word even with a single tool declared.
             // Still last in the chain, so a real MMU always keeps its backend.
             detected_ams_systems_.push_back({AmsType::TOOL_CHANGER, "Tool Changer"});
             mmu_type_ = AmsType::TOOL_CHANGER;

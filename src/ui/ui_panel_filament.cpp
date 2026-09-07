@@ -1321,15 +1321,20 @@ void FilamentPanel::handle_load_button() {
 
     snapshot_prior_heater_target();
 
-    if (needs_ui_preheat(current_load_plan(), StandardMacroSlot::LoadFilament)) {
+    // One plan for both questions below: they are about the same dispatch, and a
+    // second call could answer them against different backend state.
+    const helix::ui::FilamentOpPlan plan = current_load_plan();
+
+    if (needs_ui_preheat(plan, StandardMacroSlot::LoadFilament)) {
         // Ask "home printer first?" BEFORE the preheat, not after: the
         // physical G28 still fires later, inside
         // AmsSubscriptionBackend::ensure_homed_then() right before the tier-1
         // dispatch (unchanged) -- only the confirmation moves earlier, so a
         // decline never wastes a preheat cycle (#1235-adjacent).
         AmsBackend* delegating_backend = AmsState::instance().get_backend();
-        if (!helix::toolhead_is_homed(printer_state_) &&
-            !(delegating_backend && delegating_backend->delegates_homing_to_printer())) {
+        if (helix::ui::needs_home_confirmation(plan, StandardMacroSlot::LoadFilament,
+                                               delegating_backend,
+                                               helix::toolhead_is_homed(printer_state_))) {
             spdlog::info("[{}] Toolhead not homed -- asking before starting preheat for load",
                          get_name());
             // FilamentPanel is an immortal singleton [L012] -- capturing
@@ -2820,7 +2825,6 @@ helix::ui::FilamentOpPlan FilamentPanel::current_load_plan() const {
 
 void FilamentPanel::execute_load() {
     AmsBackend* backend = AmsState::instance().get_backend();
-    const int target_slot = selected_op_slot();
 
     const auto& info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
     const helix::ui::FilamentOpPlan plan = current_load_plan();

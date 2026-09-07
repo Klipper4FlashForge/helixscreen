@@ -47,4 +47,21 @@ namespace helix::filament_macros {
  */
 [[nodiscard]] bool macro_heats_hotend(const std::string& macro_name);
 
+/**
+ * @brief Does @p macro_name home the printer itself when the toolhead is unhomed?
+ *
+ * The macro-tier counterpart to AmsBackend::delegates_homing_to_printer(): when
+ * true, both the "home printer first?" confirmation and any G28 a caller would
+ * synthesize are redundant, because the macro's own guard runs first.
+ *
+ * Answered from the name for the same reason macro_heats_hotend() is, with the
+ * same consequence for a wrong answer inverted: claiming a macro homes when it
+ * does not moves an unreferenced toolhead. Only firmware-specific spellings whose
+ * bodies are known belong here.
+ *
+ * @param macro_name Resolved macro name, e.g. StandardMacroInfo::get_macro()
+ * @return true when the macro carries its own conditional home
+ */
+[[nodiscard]] bool macro_homes_if_needed(const std::string& macro_name);
+
 } // namespace helix::filament_macros

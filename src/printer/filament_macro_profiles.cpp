@@ -11,14 +11,26 @@
 namespace helix::filament_macros {
 namespace {
 
-/// One stock macro that drives the hotend itself.
-struct SelfHeatingMacro {
+std::string to_upper(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    return s;
+}
+
+/// One stock macro, and what it does for itself.
+struct MacroProfile {
     /// Uppercase macro name. Must be a spelling that carries no meaning in
     /// stock Klipper - a generic name proves nothing about the body.
     const char* name;
     /// Which firmware ships it, for the reader deciding whether a new row
     /// belongs beside this one.
     const char* firmware;
+    /// Drives the hotend to temperature and waits, so a UI preheat in front of
+    /// it is a second wait at a temperature the macro then overrides.
+    bool heats_hotend;
+    /// Carries its own conditional home, so a "home first?" prompt and any
+    /// synthesized G28 are redundant.
+    bool homes_if_needed;
 };
 
 // QIDI's stock screen drives M604 to load and M603 to unload. Both take the
@@ -32,26 +44,44 @@ struct SelfHeatingMacro {
 // Neither spelling means anything in Marlin either (M603 there configures a
 // filament change and there is no M604), so a Klipper config defining them is
 // running QIDI's convention.
-constexpr std::array<SelfHeatingMacro, 2> SELF_HEATING_MACROS{{
-    {"M604", "QIDI stock"},
-    {"M603", "QIDI stock"},
+//
+// Both also open with `_CG28`, QIDI's conditional home
+// (`{% if "xyz" not in printer.toolhead.homed_axes %} G28 {% endif %}`), so on
+// the macro tier neither needs a home asked for in front of it.
+//
+// That is a claim about these macros run ALONE. AmsBackendQidi composes them
+// with CLEAR_NOZZLE, which has no `_CG28` and reaches Z through MOVE_TO_TRASH's
+// XY-only guard - which is why the backend still answers
+// delegates_homing_to_printer() false and routes through ensure_homed_then().
+constexpr std::array<MacroProfile, 2> MACRO_PROFILES{{
+    {"M604", "QIDI stock", /*heats_hotend=*/true, /*homes_if_needed=*/true},
+    {"M603", "QIDI stock", /*heats_hotend=*/true, /*homes_if_needed=*/true},
 }};
 
-std::string to_upper(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-    return s;
+/// The row for @p macro_name, or nullptr when no firmware we know ships it.
+const MacroProfile* find_profile(const std::string& macro_name) {
+    if (macro_name.empty()) {
+        return nullptr;
+    }
+    const std::string upper = to_upper(macro_name);
+    for (const MacroProfile& p : MACRO_PROFILES) {
+        if (upper == p.name) {
+            return &p;
+        }
+    }
+    return nullptr;
 }
 
 } // namespace
 
 bool macro_heats_hotend(const std::string& macro_name) {
-    if (macro_name.empty()) {
-        return false;
-    }
-    const std::string upper = to_upper(macro_name);
-    return std::any_of(SELF_HEATING_MACROS.begin(), SELF_HEATING_MACROS.end(),
-                       [&upper](const SelfHeatingMacro& m) { return upper == m.name; });
+    const MacroProfile* p = find_profile(macro_name);
+    return p && p->heats_hotend;
+}
+
+bool macro_homes_if_needed(const std::string& macro_name) {
+    const MacroProfile* p = find_profile(macro_name);
+    return p && p->homes_if_needed;
 }
 
 } // namespace helix::filament_macros
