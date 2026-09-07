@@ -949,6 +949,11 @@ void PrinterState::set_webcam_available(bool available, const std::string& strea
                                              target_fps);
 }
 
+void PrinterState::set_webcams(std::vector<WebcamInfo> cams) {
+    // Delegate to capabilities_state_ component (handles thread-safety)
+    capabilities_state_.set_webcams(std::move(cams));
+}
+
 void PrinterState::set_timelapse_available(bool available) {
     // Delegate to capabilities_state_ component (handles thread-safety internally)
     capabilities_state_.set_timelapse_available(available);

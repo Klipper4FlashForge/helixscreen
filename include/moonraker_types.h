@@ -365,12 +365,19 @@ struct FileMetadata {
 
 /// Webcam information from Moonraker
 struct WebcamInfo {
-    std::string name;         ///< Webcam name/identifier
-    std::string service;      ///< Service type (e.g., "mjpegstreamer")
-    std::string snapshot_url; ///< URL for snapshot image
-    std::string stream_url;   ///< URL for MJPEG stream
-    std::string uid;          ///< Unique identifier
-    bool enabled = true;      ///< Whether the webcam is enabled
+    std::string name;             ///< Webcam name/identifier
+    std::string service;          ///< Service type (e.g., "mjpegstreamer")
+    std::string snapshot_url;     ///< URL for snapshot image
+    std::string stream_url;       ///< URL for MJPEG stream
+    std::string uid;              ///< Unique identifier
+    bool enabled = true;          ///< Whether the webcam is enabled
+    bool flip_horizontal = false; ///< Moonraker's own flip, applied before any user transform
+    bool flip_vertical = false;
+    int target_fps = 15; ///< Configured frame rate (Moonraker default 15)
+    /// Empty when the camera can be shown. Otherwise why discovery ruled it
+    /// out — its serving process is not running, or its absolute snapshot URL
+    /// did not answer — so the auto-pick skips it and a picker can say so.
+    std::string unavailable_reason;
 };
 
 // ============================================================================

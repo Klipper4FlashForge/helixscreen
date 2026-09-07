@@ -774,6 +774,12 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         return mock_spoolman_enabled_;
     }
 
+    /// HELIX_MOCK_WEBCAMS: "Name[:service],Name[:service],..." -> the webcam
+    /// list discovery publishes. Unset or empty -> empty (one unnamed feed).
+    /// Entry N streams from /webcamN/ (the first from /webcam/); a service
+    /// omitted is an MJPEG one.
+    [[nodiscard]] static std::vector<WebcamInfo> parse_mock_webcams(const char* spec);
+
     // ========== Internal API (for use by method handler modules) ==========
 
     /**
@@ -1662,9 +1668,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     static constexpr int NOTIFICATION_INTERVAL_TICKS = 4; // Dispatch every 4 ticks (~1s)
 
     // Mock service availability flags (initialized from env vars in constructor)
-    bool mock_spoolman_enabled_{true};   ///< Controlled by HELIX_MOCK_SPOOLMAN env var
-    bool accelerometer_available_{true}; ///< Accelerometer available for input shaper tests
-    bool input_shaper_configured_{true}; ///< Input shaper configured for config query tests
+    bool mock_spoolman_enabled_{true};     ///< Controlled by HELIX_MOCK_SPOOLMAN env var
+    std::vector<WebcamInfo> mock_webcams_; ///< Published at discovery; HELIX_MOCK_WEBCAMS
+    bool accelerometer_available_{true};   ///< Accelerometer available for input shaper tests
+    bool input_shaper_configured_{true};   ///< Input shaper configured for config query tests
     /// Staged input shaper values served while configured (see
     /// set_input_shaper_values); defaults mirror the mock's original payload.
     std::string shaper_type_x_{"mzv"};

@@ -5,6 +5,7 @@
 
 #include "json_fwd.h"
 #include "printer_discovery.h"
+#include "webcam_selection.h"
 
 #include <atomic>
 #include <functional>
@@ -347,26 +348,6 @@ class MoonrakerDiscoverySequence {
     std::function<void(const json&)> bed_mesh_callback_;
     std::mutex callbacks_mutex_;
 };
-
-/**
- * @brief Decide whether a webcam snapshot_url is a usable image endpoint.
- *
- * Moonraker webcam entries advertise a snapshot_url, but some "services"
- * (e.g. the Creality K2's "iframe" service) point it at an HTML WebRTC viewer
- * page such as "/snapshot.html" or "/camera.html" instead of a real JPEG/PNG.
- * CameraStream would poll such a URL forever and never decode a frame.
- *
- * Accept a URL when it looks like a genuine image/snapshot endpoint:
- *   - contains "action=snapshot" (mjpeg-streamer style), or
- *   - ends in .jpg / .jpeg / .png (case-insensitive)
- * Reject when the path ends in ".html" (case-insensitive) — an HTML page, not
- * an image. (A bare-host or query-only URL with none of these markers is treated
- * conservatively as usable, preserving prior behavior for atypical real endpoints.)
- *
- * @param snapshot_url The snapshot_url from a Moonraker webcam entry.
- * @return true if the URL is a plausible image endpoint, false if it's an HTML page.
- */
-[[nodiscard]] bool is_usable_snapshot_url(const std::string& snapshot_url);
 
 /// Seconds allowed for the TCP connect phase of a snapshot reachability probe.
 /// This is the budget that decides "is anything listening at this address" —
