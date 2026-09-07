@@ -69,8 +69,28 @@ APT_PACKAGES=(
     curl
 )
 
+# Launchpad PPAs are unreachable through the platform's network policy, and
+# the base image ships sources that point there: apt-get update aborts on the
+# first 403 and nothing installs. Those sources are set aside under $1 (kept,
+# not deleted) before the first update; Ubuntu's own sources stay.
+# HELIX_APT_SOURCES_DIR lets a test point this at a scratch directory.
+disable_blocked_apt_sources() {
+    local kept="$1" dir="${HELIX_APT_SOURCES_DIR:-/etc/apt/sources.list.d}" f
+    mkdir -p "$kept" 2>/dev/null || true
+    for f in "$dir"/*.sources "$dir"/*.list; do
+        [ -f "$f" ] || continue
+        if grep -qiE 'launchpad(content)?\.net' "$f"; then
+            log "apt: setting aside $(basename "$f") (Launchpad PPA, unreachable here)"
+            mv "$f" "$kept/" 2>/dev/null || rm -f "$f"
+        fi
+    done
+}
+
 install_apt_packages() {
-    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${APT_PACKAGES[@]}"
+    disable_blocked_apt_sources "${STATE_DIR:-/opt/helix-cloud-env}/disabled-apt-sources"
+    # A failed update still leaves the image's package lists usable.
+    apt-get update || log "apt-get update failed; installing from the lists already on disk"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${APT_PACKAGES[@]}"
 }
 
 if [ "$DEPS_ONLY" = "1" ]; then
