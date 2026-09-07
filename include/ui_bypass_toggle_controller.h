@@ -7,6 +7,8 @@
 
 #include "ams_types.h"
 
+#include <functional>
+
 namespace helix {
 class AmsBackend;
 } // namespace helix
@@ -35,6 +37,20 @@ class BypassToggleController {
     /// call (or arms the unload→enable chain), toasts outcomes.
     void toggle();
 
+    /// Engage bypass if it is not already engaged, then run @p on_ready.
+    ///
+    /// Takes toggle()'s enable path verbatim — the print guard, the hardware
+    /// sensor refusal and the #1229 unload-first chain — so a caller that needs
+    /// bypass engaged before dispatching an op never grows a second copy of that
+    /// discipline. An already-engaged backend runs @p on_ready inline.
+    ///
+    /// @p on_ready runs ONLY on a successful engage; every refusal and every
+    /// failure has already told the user why, and dispatching an op behind one
+    /// would act on a path the filament is not on. It may run after an async
+    /// unload, so a caller that can be torn down must wrap it in its own
+    /// lifetime guard.
+    void ensure_engaged_then(std::function<void()> on_ready);
+
     /// Feed an ams_action subject change (UNLOADING→IDLE/ERROR chain step).
     /// Still public for direct unit-driving; production feed is the
     /// controller's own ams_action observer, which computes prev from
@@ -50,13 +66,25 @@ class BypassToggleController {
     }
 
   private:
-    void enable_now(AmsBackend* backend);
+    /// @return true when bypass is engaged afterwards.
+    bool enable_now(AmsBackend* backend);
+
+    /// Run and clear the pending ensure_engaged_then() continuation.
+    void fire_on_ready();
+
+    /// Shared by toggle() and ensure_engaged_then(): the guards, then either the
+    /// unload→enable chain or an immediate enable. @return true when bypass is
+    /// engaged by the time this returns (so an inline continuation may run).
+    bool begin_engage();
     /// Subscribe to the ams_action subject for the pending chain (idempotent).
     void arm_action_observer();
     /// Detach the ams_action observer (chain settled or cancelled).
     void disarm_action_observer();
 
     bool pending_bypass_enable_ = false;
+    /// Continuation armed by ensure_engaged_then(), cleared as soon as it runs
+    /// or the chain gives up — never left armed for the next unrelated toggle().
+    std::function<void()> on_ready_;
     /// Last action seen by our own ams_action observer; re-seeded from the
     /// live subject each time the observer arms so a mid-action subscribe
     /// still computes the right edge.

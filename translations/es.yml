@@ -93,6 +93,7 @@ translations:
   = Loosen: = Aflojar
   = Tighten: = Apretar
   A: A
+  A backup of %s is created before applying: 'Se crea una copia de seguridad de %s antes de aplicar'
   A picture of your printer: Una imagen de tu impresora
   ABS: ABS
   ACCELEROMETERS: ACELERÓMETROS
@@ -577,6 +578,7 @@ translations:
   Completed {}m ago: 'Completado hace {} min'
   Computing calibration...: Calculando calibración...
   Config Dir: Directorio de Configuración
+  Config Edit Failed: 'Error al editar la configuración'
   Config-defined (read-only): Definido en configuración (solo lectura)
   Configuration added successfully.: Configuración añadida correctamente.
   Configuration already present.: Configuración ya presente.
@@ -750,9 +752,11 @@ translations:
   Define macros in your printer.cfg: Defina macros en su printer.cfg
   Delete: Eliminar
   Delete File?: ¿Eliminar Archivo?
+  Delete Print Record: 'Eliminar registro de impresión'
   Delete Profile?: ¿Eliminar Perfil?
   Delete Spool?: ¿Eliminar bobina?
   Delete Video: Eliminar vídeo
+  Delete the history record for {}?: '¿Eliminar el registro del historial de {}?'
   Delete {}?: ¿Eliminar {}?
   'Delta:': 'Delta:'
   Density: Densidad
@@ -1286,6 +1290,7 @@ translations:
   Homing Z...: Posicionando Z...
   Homing all axes...: Posicionando todos los ejes...
   Homing axes...: Posicionando ejes...
+  Homing complete: Posicionamiento completado
   'Homing failed: ': 'Falló el homing: '
   'Homing failed: {}': 'Error en posicionamiento: {}'
   Homing first...: Posicionando primero...
@@ -1790,6 +1795,7 @@ translations:
   No temperature sensors detected: 'No se detectaron sensores de temperatura'
   No timelapse videos found: No se encontraron videos timelapse
   No vendors found: No se encontraron proveedores
+  No video player installed - showing the timelapse library: 'No hay reproductor de vídeo instalado: se muestra la biblioteca de timelapse'
   ? "No webcam detected.\nA webcam is required for timelapse."
   : "No se detectó webcam.\nSe necesita webcam para timelapse."
   No width sensor detected: 'No se detectó sensor de ancho'
@@ -2096,6 +2102,7 @@ translations:
     el servicio esperado — ¿dispositivo equivocado?
   Printer hardware detected: Hardware de impresora detectado
   Printer image set to auto-detect: Imagen de impresora configurada en auto-detectar
+  Printer is busy - {} stays in the queue: 'La impresora está ocupada: {} permanece en la cola'
   Printer is not paired — pair it first: La impresora no está emparejada — empareja
     primero
   Printer name: Nombre de impresora
@@ -2869,6 +2876,7 @@ translations:
     %.0fg restantes. ¿Iniciar de todos modos?
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
   : Esta impresora parece una {} ({}% de confianza), pero está configurada como {}. Un tipo erróneo aplica opciones y preajustes de preimpresión incorrectos.
+  This removes the plugin's macros and its Moonraker component from the printer and restarts Klipper.: Elimina los macros del plugin y su componente de Moonraker de la impresora y reinicia Klipper.
   This tool probes each bed screw and tells you how much to adjust.: Esta herramienta
     sondea cada tornillo de cama y le indica cuánto ajustar.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
@@ -2996,7 +3004,9 @@ translations:
   Understanding Results: Entender resultados
   ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
   : "La tensión desigual de la correa causa defectos de impresión como desplazamientos de capa, VFA (artefactos verticales finos) y ringing.\n\nEsta herramienta hace vibrar cada trayectoria de correa y mide la frecuencia de resonancia — frecuencias iguales significan tensión equilibrada.\n\nPara CoreXY, las trayectorias A y B deben estar dentro de unos pocos Hz entre sí."
+  Uninstall: Desinstalar
   Uninstall HelixPrint Plugin: Desinstalar Plugin HelixPrint
+  Uninstall HelixPrint Plugin?: ¿Desinstalar Plugin HelixPrint?
   Uninstall script not found.: Script de desinstalación no encontrado.
   'Uninstall: Coming soon': 'Desinstalar: Próximamente'
   Uninstallation failed. Check logs for details.: Desinstalación fallida. Revise los

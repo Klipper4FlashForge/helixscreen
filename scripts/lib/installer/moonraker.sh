@@ -646,9 +646,8 @@ configure_moonraker_updates() {
         log_error "Moonraker's type:web updater replaces the whole root on update, destroying"
         log_error "the config/ and platform/ preservation the payload contract provides."
         log_error "Re-run with --payload-root outside the mod's tree (e.g. /usr/data/helixscreen)."
-        # TODO(OD2): a persistent-files-aware stanza shape could make the
-        # mod-owned root safe for --auto-update - open decision 2 in
-        # docs/devel/plans/2026-08-31-forgex-ad5x-installer-rework.md.
+        # TODO(#1505): a persistent_files-aware stanza could make a mod-owned
+        # root safe for --auto-update; refused until that is decided.
         return 0
     fi
 

@@ -991,8 +991,9 @@ void TelemetryManager::do_send(const nlohmann::json& batch) {
             if (!resp || status_code < 200 || status_code >= 300) {
                 // Failure: keep events, increase backoff
                 int new_backoff = std::min(backoff_multiplier_.load() * 2, MAX_BACKOFF_MULTIPLIER);
-                spdlog::warn("[TelemetryManager] Send failed (HTTP {}), will retry with backoff={}x",
-                             status_code, new_backoff);
+                spdlog::warn(
+                    "[TelemetryManager] Send failed (HTTP {}), will retry with backoff={}x",
+                    status_code, new_backoff);
                 backoff_multiplier_.store(new_backoff);
                 return;
             }

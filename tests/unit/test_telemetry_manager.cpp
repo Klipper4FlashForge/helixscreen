@@ -861,8 +861,7 @@ TEST_CASE("Send delay: retries lengthen as the backoff grows", "[telemetry][send
     REQUIRE(TelemetryManager::next_attempt_delay(4) < TelemetryManager::next_attempt_delay(64));
 }
 
-TEST_CASE("Send delay: the backoff ceiling still reaches seven days",
-          "[telemetry][send][1476]") {
+TEST_CASE("Send delay: the backoff ceiling still reaches seven days", "[telemetry][send][1476]") {
     // RETRY_INTERVAL is the base, so the multiplier has to be able to climb far
     // enough that the ceiling is still a week rather than a few hours.
     REQUIRE(TelemetryManager::next_attempt_delay(TelemetryManager::MAX_BACKOFF_MULTIPLIER) ==
@@ -908,13 +907,21 @@ TEST_CASE_METHOD(TelemetryTestFixture, "Send window: a healthy sender still wait
     // Backoff 1 means the last send succeeded, so the 24h cadence applies and
     // three hours is not yet due. Without this the shorter retry spacing could
     // widen to every send and quietly become an hourly upload.
-    const auto three_hours_ago = std::chrono::steady_clock::now() - std::chrono::hours{3};
-    TelemetryManagerTestAccess::set_last_send_time(tm, three_hours_ago);
+    // steady_clock counts from boot, so a stamp older than the box is a
+    // negative time point and try_send() reads it as never sent. Age the stamp
+    // three hours, or just inside uptime, whichever is shorter: both sit
+    // inside the 24 h cadence this case is about.
+    const auto now = std::chrono::steady_clock::now();
+    const auto age = std::min<std::chrono::steady_clock::duration>(
+        std::chrono::hours{3}, now.time_since_epoch() - std::chrono::seconds{1});
+    REQUIRE(age.count() > 0);
+    const auto earlier = now - age;
+    TelemetryManagerTestAccess::set_last_send_time(tm, earlier);
     TelemetryManagerTestAccess::set_backoff(tm, 1);
 
     tm.try_send();
 
-    REQUIRE(TelemetryManagerTestAccess::last_send_time(tm) == three_hours_ago);
+    REQUIRE(TelemetryManagerTestAccess::last_send_time(tm) == earlier);
 }
 
 // ============================================================================

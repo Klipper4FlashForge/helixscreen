@@ -20,9 +20,8 @@ namespace {
 constexpr uint32_t PERSIST_INTERVAL_MS = 60'000;
 constexpr float DELTA_WRITE_THRESHOLD_G = 0.05f;
 constexpr float REBASELINE_THRESHOLD_G = 0.5f;
-// TODO(filament-diameter): SlotInfo/external-spool don't carry filament
-// diameter yet. 1.75 mm is correct for ~99% of hobbyist setups; wire from
-// a per-spool field once Spoolman exposes it.
+// TODO(#1504): neither SlotInfo nor the external spool carries a diameter, so
+// every gram here assumes 1.75 mm; 2.85 mm machines under-count by 2.65x.
 constexpr float DEFAULT_DIAMETER_MM = 1.75f;
 } // namespace
 

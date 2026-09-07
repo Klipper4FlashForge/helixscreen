@@ -1536,8 +1536,9 @@ void GridEditMode::handle_drag_end(lv_event_t* /*e*/) {
             spdlog::debug("[GridEditMode] Drag end: occupant_cfg_idx={}", occupant_cfg_idx);
 
             if (occupant_cfg_idx >= 0) {
-                // Target occupied — reject drop (swap logic disabled for now)
-                // TODO: re-enable swap when UX is polished
+                // TODO(#1503): an occupied target rejects the drop (the widget
+                // snaps back); swapping the two widgets needs the preview and
+                // re-validation described there before it is turned on.
                 spdlog::debug("[GridEditMode] Drag end: target occupied by '{}', rejecting drop",
                               entries[static_cast<size_t>(occupant_cfg_idx)].id);
             } else {

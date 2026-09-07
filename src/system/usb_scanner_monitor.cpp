@@ -263,8 +263,9 @@ void UsbScannerMonitor::start(ScanCallback on_scan) {
     // Load scanner keymap layout from settings. Scanners emit evdev keycodes
     // according to a layout programmed into the scanner hardware; without the
     // right layout selected here, characters get mis-mapped (e.g. an AZERTY
-    // scanner producing 'q' when the barcode actually contains 'a').
-    // TODO: optionally seed default from app language.
+    // scanner producing 'q' when the barcode actually contains 'a'). The app
+    // language does not pick the default: it says nothing about which layout
+    // the scanner was programmed with, so the setting is explicit.
     std::string keymap_str = helix::SettingsManager::instance().get_scanner_keymap();
     layout_.store(parse_keymap(keymap_str), std::memory_order_relaxed);
     spdlog::info("UsbScannerMonitor: keymap layout: {}", keymap_str);

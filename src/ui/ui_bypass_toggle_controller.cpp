@@ -59,8 +59,58 @@ void BypassToggleController::toggle() {
         return;
     }
 
-    // Enable path: #1229 chaining discipline — unload first when the backend
-    // allows implicit chaining, enable on UNLOADING->IDLE, disarm on ERROR.
+    begin_engage();
+}
+
+void BypassToggleController::ensure_engaged_then(std::function<void()> on_ready) {
+    AmsBackend* backend = AmsState::instance().get_backend();
+    if (backend && backend->is_bypass_active()) {
+        // Already on the bypass path: nothing to arm, and nothing to wait for.
+        if (on_ready) {
+            on_ready();
+        }
+        return;
+    }
+
+    // Armed before begin_engage() because an enable that succeeds without an
+    // unload settles inside that call and fires the continuation from there.
+    on_ready_ = std::move(on_ready);
+    if (!begin_engage()) {
+        // Either a guard refused (already toasted) or the unload chain is now
+        // running, and on_ams_action_changed() owns the continuation from here.
+        // Only the refusal case needs clearing, and it is the one where the
+        // chain is not armed.
+        if (!pending_bypass_enable_) {
+            on_ready_ = nullptr;
+        }
+    }
+}
+
+bool BypassToggleController::begin_engage() {
+    // Print guard — see toggle(). Repeated here rather than hoisted because
+    // ensure_engaged_then() reaches this path without going through toggle().
+    const PrintState state = get_printer_state().get_print_lifecycle();
+    if (job_holds_machine(state)) {
+        NOTIFY_WARNING(lv_tr("Bypass cannot be changed while printing"));
+        spdlog::info("[BypassToggle] Refused — print active ({})", static_cast<int>(state));
+        return false;
+    }
+
+    AmsBackend* backend = AmsState::instance().get_backend();
+    if (!backend) {
+        NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
+        return false;
+    }
+
+    AmsSystemInfo info = backend->get_system_info();
+    if (info.has_hardware_bypass_sensor) {
+        NOTIFY_WARNING(lv_tr("Bypass controlled by sensor"));
+        spdlog::warn("[BypassToggle] Blocked — hardware sensor controls bypass");
+        return false;
+    }
+
+    // #1229 chaining discipline — unload first when the backend allows implicit
+    // chaining, enable on UNLOADING->IDLE, disarm on ERROR.
     if (should_unload_before_bypass(info, backend->allows_implicit_chaining())) {
         spdlog::info("[BypassToggle] Unloading slot {} before enabling bypass", info.current_slot);
         pending_bypass_enable_ = true;
@@ -75,17 +125,30 @@ void BypassToggleController::toggle() {
             cancel_pending();
             helix::ui::notify_ams_error(error);
         }
-        return;
+        return false;
     }
-    enable_now(backend);
+    return enable_now(backend);
 }
 
-void BypassToggleController::enable_now(AmsBackend* backend) {
+bool BypassToggleController::enable_now(AmsBackend* backend) {
     AmsError error = backend->enable_bypass();
     if (error.result == AmsResult::SUCCESS) {
         NOTIFY_INFO(lv_tr("Bypass enabled"));
-    } else {
-        helix::ui::notify_ams_error(error, lv_tr("Bypass failed"));
+        fire_on_ready();
+        return true;
+    }
+    helix::ui::notify_ams_error(error, lv_tr("Bypass failed"));
+    on_ready_ = nullptr;
+    return false;
+}
+
+void BypassToggleController::fire_on_ready() {
+    // Moved out before the call: the continuation dispatches a filament op that
+    // can re-enter this controller, and a still-armed slot would run twice.
+    auto ready = std::move(on_ready_);
+    on_ready_ = nullptr;
+    if (ready) {
+        ready();
     }
 }
 
@@ -102,6 +165,7 @@ bool BypassToggleController::on_ams_action_changed(AmsAction prev, AmsAction nex
     disarm_action_observer();
     if (next == AmsAction::ERROR) {
         spdlog::warn("[BypassToggle] Unload failed — cancelling pending bypass enable");
+        on_ready_ = nullptr;
         return true;
     }
     spdlog::info("[BypassToggle] Unload complete — enabling bypass");
@@ -113,6 +177,9 @@ bool BypassToggleController::on_ams_action_changed(AmsAction prev, AmsAction nex
 
 void BypassToggleController::cancel_pending() {
     pending_bypass_enable_ = false;
+    // The continuation belongs to the chain being abandoned. Leaving it armed
+    // would run it against whatever the NEXT engage settles on.
+    on_ready_ = nullptr;
     disarm_action_observer();
 }
 

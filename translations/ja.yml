@@ -89,6 +89,7 @@ translations:
   = Loosen: = 緩める
   = Tighten: = 締める
   A: A
+  A backup of %s is created before applying: '適用前に %s のバックアップを作成します'
   A picture of your printer: プリンターの画像
   ABS: ABS
   ACCELEROMETERS: 加速度センサー
@@ -517,6 +518,7 @@ translations:
   Completed {}m ago: '{} 分前に完了'
   Computing calibration...: キャリブレーション計算中...
   Config Dir: 設定ディレクトリ
+  Config Edit Failed: '設定の編集に失敗しました'
   Config-defined (read-only): 設定で定義済み（読み取り専用）
   Configuration added successfully.: 設定が正常に追加されました。
   Configuration already present.: 設定は既に存在します。
@@ -677,9 +679,11 @@ translations:
   Define macros in your printer.cfg: printer.cfg でマクロを定義してください
   Delete: 削除
   Delete File?: ファイルを削除しますか？
+  Delete Print Record: '印刷記録を削除'
   Delete Profile?: プロファイルを削除しますか？
   Delete Spool?: スプールを削除しますか？
   Delete Video: 動画を削除
+  Delete the history record for {}?: '{} の履歴記録を削除しますか？'
   Delete {}?: '{} を削除しますか?'
   'Delta:': '差分:'
   Density: 密度
@@ -1183,6 +1187,7 @@ translations:
   Homing Z...: Z軸をホーミング中...
   Homing all axes...: 全軸をホーミング中...
   Homing axes...: 軸をホーミング中...
+  Homing complete: ホーミング完了
   'Homing failed: ': 'ホーミングに失敗: '
   'Homing failed: {}': 'ホーミングに失敗しました: {}'
   Homing first...: ホーミング中...
@@ -1644,6 +1649,7 @@ translations:
   No temperature sensors detected: '温度センサーが検出されません'
   No timelapse videos found: タイムラプス動画が見つかりません
   No vendors found: ベンダーが見つかりません
+  No video player installed - showing the timelapse library: '動画プレーヤーがありません – タイムラプス一覧を表示します'
   ? "No webcam detected.\nA webcam is required for timelapse."
   : "ウェブカメラが検出されませんでした。\nタイムラプスにはウェブカメラが必要です。"
   No width sensor detected: '幅センサーが検出されません'
@@ -1934,6 +1940,7 @@ translations:
     — デバイスが違う可能性があります
   Printer hardware detected: プリンターのハードウェアを検出
   Printer image set to auto-detect: プリンター画像を自動検出に設定しました
+  Printer is busy - {} stays in the queue: 'プリンターは使用中です – {} はキューに残ります'
   Printer is not paired — pair it first: プリンターがペアリングされていません — 先にペアリングしてください
   Printer name: プリンター名
   Printer not ready: プリンターの準備ができていません
@@ -2623,6 +2630,7 @@ translations:
     %.0fg 必要ですが、スプールの残量は約 %.0fg です。それでも開始しますか？
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
   : このプリンターは {} のようです（信頼度 {}%）が、{} として設定されています。誤ったタイプでは不正確な印刷前オプションとプリセットが適用されます。
+  This removes the plugin's macros and its Moonraker component from the printer and restarts Klipper.: プラグインのマクロと Moonraker コンポーネントをプリンターから削除し、Klipper を再起動します。
   This tool probes each bed screw and tells you how much to adjust.: このツールは各ベッドネジをプローブし、どのくらい調整が必要かを教えます。
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
     The printer will briefly disconnect.
@@ -2737,7 +2745,9 @@ translations:
   Understanding Results: 結果の理解
   ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
   : "ベルト張力が不均一だと、レイヤーシフトや VFA(垂直微細アーティファクト)、リンギングなどの印刷不良が発生します。\n\nこのツールは各ベルトパスを振動させて共振周波数を測定します — 周波数が一致していれば張力が均等であることを意味します。\n\nCoreXY では、パス A と B は数 Hz 以内に収まっている必要があります。"
+  Uninstall: アンインストール
   Uninstall HelixPrint Plugin: HelixPrint プラグインをアンインストール
+  Uninstall HelixPrint Plugin?: HelixPrint プラグインをアンインストールしますか？
   Uninstall script not found.: アンインストールスクリプトが見つかりません。
   'Uninstall: Coming soon': 'アンインストール: 近日公開'
   Uninstallation failed. Check logs for details.: アンインストールに失敗しました。詳細はログを確認してください。

@@ -88,6 +88,7 @@
   <translation tag="= Loosen" es="= Aflojar"/>
   <translation tag="= Tighten" es="= Apretar"/>
   <translation tag="A" es="A"/>
+  <translation tag="A backup of %s is created before applying" es="Se crea una copia de seguridad de %s antes de aplicar"/>
   <translation tag="A picture of your printer" es="Una imagen de tu impresora"/>
   <translation tag="ABS" es="ABS"/>
   <translation tag="ACCELEROMETERS" es="ACELERÓMETROS"/>
@@ -509,6 +510,7 @@
   <translation tag="Completed {}m ago" es="Completado hace {} min"/>
   <translation tag="Computing calibration..." es="Calculando calibración..."/>
   <translation tag="Config Dir" es="Directorio de Configuración"/>
+  <translation tag="Config Edit Failed" es="Error al editar la configuración"/>
   <translation tag="Config-defined (read-only)" es="Definido en configuración (solo lectura)"/>
   <translation tag="Configuration added successfully." es="Configuración añadida correctamente."/>
   <translation tag="Configuration already present." es="Configuración ya presente."/>
@@ -664,9 +666,11 @@
   <translation tag="Define macros in your printer.cfg" es="Defina macros en su printer.cfg"/>
   <translation tag="Delete" es="Eliminar"/>
   <translation tag="Delete File?" es="¿Eliminar Archivo?"/>
+  <translation tag="Delete Print Record" es="Eliminar registro de impresión"/>
   <translation tag="Delete Profile?" es="¿Eliminar Perfil?"/>
   <translation tag="Delete Spool?" es="¿Eliminar bobina?"/>
   <translation tag="Delete Video" es="Eliminar vídeo"/>
+  <translation tag="Delete the history record for {}?" es="¿Eliminar el registro del historial de {}?"/>
   <translation tag="Delete {}?" es="¿Eliminar {}?"/>
   <translation tag="Delta:" es="Delta:"/>
   <translation tag="Density" es="Densidad"/>
@@ -1154,6 +1158,7 @@
   <translation tag="Homing Z..." es="Posicionando Z..."/>
   <translation tag="Homing all axes..." es="Posicionando todos los ejes..."/>
   <translation tag="Homing axes..." es="Posicionando ejes..."/>
+  <translation tag="Homing complete" es="Posicionamiento completado"/>
   <translation tag="Homing failed: " es="Falló el homing: "/>
   <translation tag="Homing failed: {}" es="Error en posicionamiento: {}"/>
   <translation tag="Homing first..." es="Posicionando primero..."/>
@@ -1596,6 +1601,7 @@
   <translation tag="No temperature sensors detected" es="No se detectaron sensores de temperatura"/>
   <translation tag="No timelapse videos found" es="No se encontraron videos timelapse"/>
   <translation tag="No vendors found" es="No se encontraron proveedores"/>
+  <translation tag="No video player installed - showing the timelapse library" es="No hay reproductor de vídeo instalado: se muestra la biblioteca de timelapse"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." es="No se detectó webcam.&#10;Se necesita webcam para timelapse."/>
   <translation tag="No width sensor detected" es="No se detectó sensor de ancho"/>
   <translation tag="None" es="Ninguno"/>
@@ -1875,6 +1881,7 @@
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" es="La impresora no expone el servicio esperado — ¿dispositivo equivocado?"/>
   <translation tag="Printer hardware detected" es="Hardware de impresora detectado"/>
   <translation tag="Printer image set to auto-detect" es="Imagen de impresora configurada en auto-detectar"/>
+  <translation tag="Printer is busy - {} stays in the queue" es="La impresora está ocupada: {} permanece en la cola"/>
   <translation tag="Printer is not paired — pair it first" es="La impresora no está emparejada — empareja primero"/>
   <translation tag="Printer name" es="Nombre de impresora"/>
   <translation tag="Printer not ready" es="Impresora no lista"/>
@@ -2529,6 +2536,7 @@
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." es="Este plugin permite que HelixScreen controle opciones de inicio de impresión como malla de cama y QGL. Una vez instalado, use Configurar PRINT_START abajo para habilitar pasos opcionales."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" es="Esta impresión necesita aproximadamente %.0fg pero la bobina tiene aproximadamente %.0fg restantes. ¿Iniciar de todos modos?"/>
   <translation tag="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets." es="Esta impresora parece una {} ({}% de confianza), pero está configurada como {}. Un tipo erróneo aplica opciones y preajustes de preimpresión incorrectos."/>
+  <translation tag="This removes the plugin&apos;s macros and its Moonraker component from the printer and restarts Klipper." es="Elimina los macros del plugin y su componente de Moonraker de la impresora y reinicia Klipper."/>
   <translation tag="This tool probes each bed screw and tells you how much to adjust." es="Esta herramienta sondea cada tornillo de cama y le indica cuánto ajustar."/>
   <translation tag="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect." es="Esto aplicará el Z-offset a su endstop y reiniciará Klipper para guardar la configuración. La impresora se desconectará brevemente."/>
   <translation tag="This will apply the Z-offset to your probe and restart Klipper to save the configuration. The printer will briefly disconnect." es="Esto aplicará el Z-offset a su sonda y reiniciará Klipper para guardar la configuración. La impresora se desconectará brevemente."/>
@@ -2634,7 +2642,9 @@
   <translation tag="Unavailable" es="No disponible"/>
   <translation tag="Understanding Results" es="Entender resultados"/>
   <translation tag="Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.&#10;&#10;This tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.&#10;&#10;For CoreXY, Path A and B should be within a few Hz of each other." es="La tensión desigual de la correa causa defectos de impresión como desplazamientos de capa, VFA (artefactos verticales finos) y ringing.&#10;&#10;Esta herramienta hace vibrar cada trayectoria de correa y mide la frecuencia de resonancia — frecuencias iguales significan tensión equilibrada.&#10;&#10;Para CoreXY, las trayectorias A y B deben estar dentro de unos pocos Hz entre sí."/>
+  <translation tag="Uninstall" es="Desinstalar"/>
   <translation tag="Uninstall HelixPrint Plugin" es="Desinstalar Plugin HelixPrint"/>
+  <translation tag="Uninstall HelixPrint Plugin?" es="¿Desinstalar Plugin HelixPrint?"/>
   <translation tag="Uninstall script not found." es="Script de desinstalación no encontrado."/>
   <translation tag="Uninstall: Coming soon" es="Desinstalar: Próximamente"/>
   <translation tag="Uninstallation failed. Check logs for details." es="Desinstalación fallida. Revise los registros para más detalles."/>

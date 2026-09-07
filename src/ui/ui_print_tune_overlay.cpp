@@ -16,15 +16,14 @@
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
+#include "tool_offsets.h"
+#include "tool_state.h"
 #include "tune_controller.h"
 #include "z_offset_utils.h"
 
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include "tool_offsets.h"
-#include "tool_state.h"
-
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -438,8 +437,8 @@ void PrintTuneOverlay::update_actual_flow_display() {
     int vel_centimm = lv_subject_get_int(printer_state_->get_live_extruder_velocity_subject());
 
     // Volumetric flow = extruder_velocity * pi * (d/2)^2
-    // For 1.75mm filament: cross-section area = 2.405 mm^2
-    // TODO: support 2.85mm filament (area = 6.379 mm^2) via printer config
+    // TODO(#1504): 1.75 mm cross-section (2.405 mm^2) until the extruder's
+    // filament_diameter reaches PrinterState; 2.85 mm reads 2.65x low.
     static constexpr double FILAMENT_AREA_175 = 2.405;
     double flow_mm3_s = (vel_centimm / 100.0) * FILAMENT_AREA_175;
 

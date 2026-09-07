@@ -96,6 +96,7 @@ translations:
   = Loosen: = Lösen
   = Tighten: = Anziehen
   A: A
+  A backup of %s is created before applying: 'Vor dem Anwenden wird eine Sicherung von %s erstellt'
   A picture of your printer: Ein Bild Ihres Druckers
   ABS: ABS
   ACCELEROMETERS: BESCHLEUNIGUNGSSENSOREN
@@ -584,6 +585,7 @@ translations:
   Completed {}m ago: 'Vor {} Min. abgeschlossen'
   Computing calibration...: Kalibrierung wird berechnet...
   Config Dir: Konfig-Verzeichnis
+  Config Edit Failed: 'Konfigurationsänderung fehlgeschlagen'
   Config-defined (read-only): Konfigurationsdefiniert (schreibgeschützt)
   Configuration added successfully.: Konfiguration erfolgreich hinzugefügt.
   Configuration already present.: Konfiguration bereits vorhanden.
@@ -755,9 +757,11 @@ translations:
   Define macros in your printer.cfg: Makros in Ihrer printer.cfg definieren
   Delete: Löschen
   Delete File?: Datei löschen?
+  Delete Print Record: 'Druckeintrag löschen'
   Delete Profile?: Profil löschen?
   Delete Spool?: Spule löschen?
   Delete Video: Video löschen
+  Delete the history record for {}?: 'Verlaufseintrag für {} löschen?'
   Delete {}?: '{} löschen?'
   'Delta:': 'Delta:'
   Density: Dichte
@@ -1296,6 +1300,7 @@ translations:
   Homing Z...: Referenzfahrt Z...
   Homing all axes...: Referenzfahrt alle Achsen...
   Homing axes...: Achsen referenzieren...
+  Homing complete: Referenzfahrt abgeschlossen
   'Homing failed: ': 'Referenzfahrt fehlgeschlagen: '
   'Homing failed: {}': 'Referenzfahrt fehlgeschlagen: {}'
   Homing first...: Referenzfahrt zuerst...
@@ -1799,6 +1804,7 @@ translations:
   No temperature sensors detected: 'Keine Temperatursensoren erkannt'
   No timelapse videos found: Keine Zeitraffer-Videos gefunden
   No vendors found: Keine Hersteller gefunden
+  No video player installed - showing the timelapse library: 'Kein Videoplayer installiert – Zeitraffer-Bibliothek wird angezeigt'
   ? "No webcam detected.\nA webcam is required for timelapse."
   : "Keine Webcam erkannt.\nEine Webcam wird für Zeitraffer benötigt."
   No width sensor detected: 'Kein Breitensensor erkannt'
@@ -2105,6 +2111,7 @@ translations:
     den erwarteten Dienst — falsches Gerät?
   Printer hardware detected: Druckerhardware erkannt
   Printer image set to auto-detect: Druckerbild auf Auto-Erkennung gesetzt
+  Printer is busy - {} stays in the queue: 'Drucker ist beschäftigt – {} bleibt in der Warteschlange'
   Printer is not paired — pair it first: Drucker ist nicht gekoppelt — zuerst koppeln
   Printer name: Druckername
   Printer not ready: Drucker nicht bereit
@@ -2874,6 +2881,7 @@ translations:
     starten?
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
   : Dieser Drucker sieht aus wie ein {} ({}% Konfidenz), ist aber als {} eingerichtet. Ein falscher Typ wendet falsche Optionen und Voreinstellungen für die Druckvorbereitung an.
+  This removes the plugin's macros and its Moonraker component from the printer and restarts Klipper.: Entfernt die Makros des Plugins und seine Moonraker-Komponente vom Drucker und startet Klipper neu.
   This tool probes each bed screw and tells you how much to adjust.: Dieses Werkzeug
     tastet jede Bettschraube ab und zeigt Ihnen, wie viel Sie einstellen müssen.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
@@ -3003,7 +3011,9 @@ translations:
   Understanding Results: Ergebnisse verstehen
   ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
   : "Ungleichmäßige Riemenspannung verursacht Druckartefakte wie Schichtverschiebungen, VFAs (vertikale feine Artefakte) und Ringing.\n\nDieses Werkzeug lässt jeden Riemenpfad vibrieren und misst die Resonanzfrequenz — übereinstimmende Frequenzen bedeuten ausgewogene Spannung.\n\nBei CoreXY sollten Pfad A und B nur wenige Hz voneinander entfernt sein."
+  Uninstall: Deinstallieren
   Uninstall HelixPrint Plugin: HelixPrint-Plugin deinstallieren
+  Uninstall HelixPrint Plugin?: HelixPrint-Plugin deinstallieren?
   Uninstall script not found.: Deinstallationsskript nicht gefunden.
   'Uninstall: Coming soon': 'Deinstallieren: Demnächst verfügbar'
   Uninstallation failed. Check logs for details.: Deinstallation fehlgeschlagen. Details

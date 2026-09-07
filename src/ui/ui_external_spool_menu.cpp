@@ -16,7 +16,7 @@ namespace helix::ui {
 
 void show_external_spool_menu(lv_obj_t* parent_screen, lv_obj_t* anchor_widget,
                               std::unique_ptr<AmsContextMenu>& context_menu,
-                              std::function<void(bool open_on_picker)> on_edit_action) {
+                              ExternalSpoolMenuHooks hooks) {
     if (!parent_screen || !anchor_widget) {
         return;
     }
@@ -30,45 +30,57 @@ void show_external_spool_menu(lv_obj_t* parent_screen, lv_obj_t* anchor_widget,
         context_menu = std::make_unique<AmsContextMenu>();
     }
 
-    context_menu->set_action_callback([parent_screen, edit = std::move(on_edit_action)](
-                                          AmsContextMenu::MenuAction action, int /*slot*/) {
-        switch (action) {
-        case AmsContextMenu::MenuAction::EDIT:
-            if (edit) {
-                edit(/*open_on_picker=*/false);
-            }
-            break;
+    context_menu->set_action_callback(
+        [parent_screen, h = std::move(hooks)](AmsContextMenu::MenuAction action, int /*slot*/) {
+            switch (action) {
+            case AmsContextMenu::MenuAction::LOAD:
+                if (h.on_load) {
+                    h.on_load();
+                }
+                break;
 
-        case AmsContextMenu::MenuAction::SPOOLMAN:
-            if (edit) {
-                edit(/*open_on_picker=*/true);
-            }
-            break;
+            case AmsContextMenu::MenuAction::UNLOAD:
+                if (h.on_unload) {
+                    h.on_unload();
+                }
+                break;
 
-        case AmsContextMenu::MenuAction::SCAN_QR: {
+            case AmsContextMenu::MenuAction::EDIT:
+                if (h.on_edit) {
+                    h.on_edit(/*open_on_picker=*/false);
+                }
+                break;
+
+            case AmsContextMenu::MenuAction::SPOOLMAN:
+                if (h.on_edit) {
+                    h.on_edit(/*open_on_picker=*/true);
+                }
+                break;
+
+            case AmsContextMenu::MenuAction::SCAN_QR: {
 #if HELIX_HAS_CAMERA
-            auto& scanner = get_qr_scanner_overlay();
-            scanner.show_for_active_spool(parent_screen, [](const SpoolInfo& spool) {
-                SlotInfo info;
-                apply_spool_to_slot(info, spool);
-                helix::AmsState::instance().commit_external_spool_edit(info);
-                spdlog::info("[ExternalSpoolMenu] QR scan assigned spool #{} to external spool",
-                             spool.id);
-            });
+                auto& scanner = get_qr_scanner_overlay();
+                scanner.show_for_active_spool(parent_screen, [](const SpoolInfo& spool) {
+                    SlotInfo info;
+                    apply_spool_to_slot(info, spool);
+                    helix::AmsState::instance().commit_external_spool_edit(info);
+                    spdlog::info("[ExternalSpoolMenu] QR scan assigned spool #{} to external spool",
+                                 spool.id);
+                });
 #endif // HELIX_HAS_CAMERA
-            break;
-        }
+                break;
+            }
 
-        case AmsContextMenu::MenuAction::CLEAR_SPOOL:
-            helix::AmsState::instance().commit_external_spool_edit(SlotInfo{});
-            NOTIFY_INFO(lv_tr("External spool cleared"));
-            break;
+            case AmsContextMenu::MenuAction::CLEAR_SPOOL:
+                helix::AmsState::instance().commit_external_spool_edit(SlotInfo{});
+                NOTIFY_INFO(lv_tr("External spool cleared"));
+                break;
 
-        case AmsContextMenu::MenuAction::CANCELLED:
-        default:
-            break;
-        }
-    });
+            case AmsContextMenu::MenuAction::CANCELLED:
+            default:
+                break;
+            }
+        });
 
     context_menu->set_click_point(click_pt);
     context_menu->show_for_external_spool(parent_screen, anchor_widget);

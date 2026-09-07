@@ -88,6 +88,7 @@
   <translation tag="= Loosen" ja="= 緩める"/>
   <translation tag="= Tighten" ja="= 締める"/>
   <translation tag="A" ja="A"/>
+  <translation tag="A backup of %s is created before applying" ja="適用前に %s のバックアップを作成します"/>
   <translation tag="A picture of your printer" ja="プリンターの画像"/>
   <translation tag="ABS" ja="ABS"/>
   <translation tag="ACCELEROMETERS" ja="加速度センサー"/>
@@ -509,6 +510,7 @@
   <translation tag="Completed {}m ago" ja="{} 分前に完了"/>
   <translation tag="Computing calibration..." ja="キャリブレーション計算中..."/>
   <translation tag="Config Dir" ja="設定ディレクトリ"/>
+  <translation tag="Config Edit Failed" ja="設定の編集に失敗しました"/>
   <translation tag="Config-defined (read-only)" ja="設定で定義済み（読み取り専用）"/>
   <translation tag="Configuration added successfully." ja="設定が正常に追加されました。"/>
   <translation tag="Configuration already present." ja="設定は既に存在します。"/>
@@ -664,9 +666,11 @@
   <translation tag="Define macros in your printer.cfg" ja="printer.cfg でマクロを定義してください"/>
   <translation tag="Delete" ja="削除"/>
   <translation tag="Delete File?" ja="ファイルを削除しますか？"/>
+  <translation tag="Delete Print Record" ja="印刷記録を削除"/>
   <translation tag="Delete Profile?" ja="プロファイルを削除しますか？"/>
   <translation tag="Delete Spool?" ja="スプールを削除しますか？"/>
   <translation tag="Delete Video" ja="動画を削除"/>
+  <translation tag="Delete the history record for {}?" ja="{} の履歴記録を削除しますか？"/>
   <translation tag="Delete {}?" ja="{} を削除しますか?"/>
   <translation tag="Delta:" ja="差分:"/>
   <translation tag="Density" ja="密度"/>
@@ -1154,6 +1158,7 @@
   <translation tag="Homing Z..." ja="Z軸をホーミング中..."/>
   <translation tag="Homing all axes..." ja="全軸をホーミング中..."/>
   <translation tag="Homing axes..." ja="軸をホーミング中..."/>
+  <translation tag="Homing complete" ja="ホーミング完了"/>
   <translation tag="Homing failed: " ja="ホーミングに失敗: "/>
   <translation tag="Homing failed: {}" ja="ホーミングに失敗しました: {}"/>
   <translation tag="Homing first..." ja="ホーミング中..."/>
@@ -1596,6 +1601,7 @@
   <translation tag="No temperature sensors detected" ja="温度センサーが検出されません"/>
   <translation tag="No timelapse videos found" ja="タイムラプス動画が見つかりません"/>
   <translation tag="No vendors found" ja="ベンダーが見つかりません"/>
+  <translation tag="No video player installed - showing the timelapse library" ja="動画プレーヤーがありません – タイムラプス一覧を表示します"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." ja="ウェブカメラが検出されませんでした。&#10;タイムラプスにはウェブカメラが必要です。"/>
   <translation tag="No width sensor detected" ja="幅センサーが検出されません"/>
   <translation tag="None" ja="なし"/>
@@ -1875,6 +1881,7 @@
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" ja="プリンターが想定されるサービスを公開していません — デバイスが違う可能性があります"/>
   <translation tag="Printer hardware detected" ja="プリンターのハードウェアを検出"/>
   <translation tag="Printer image set to auto-detect" ja="プリンター画像を自動検出に設定しました"/>
+  <translation tag="Printer is busy - {} stays in the queue" ja="プリンターは使用中です – {} はキューに残ります"/>
   <translation tag="Printer is not paired — pair it first" ja="プリンターがペアリングされていません — 先にペアリングしてください"/>
   <translation tag="Printer name" ja="プリンター名"/>
   <translation tag="Printer not ready" ja="プリンターの準備ができていません"/>
@@ -2529,6 +2536,7 @@
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." ja="このプラグインにより、HelixScreen がベッドメッシュや QGL などの印刷開始オプションを制御できます。インストール後、以下の「PRINT_START を設定」を使用してオプションの手順を有効にしてください。"/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" ja="この印刷には約 %.0fg 必要ですが、スプールの残量は約 %.0fg です。それでも開始しますか？"/>
   <translation tag="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets." ja="このプリンターは {} のようです（信頼度 {}%）が、{} として設定されています。誤ったタイプでは不正確な印刷前オプションとプリセットが適用されます。"/>
+  <translation tag="This removes the plugin&apos;s macros and its Moonraker component from the printer and restarts Klipper." ja="プラグインのマクロと Moonraker コンポーネントをプリンターから削除し、Klipper を再起動します。"/>
   <translation tag="This tool probes each bed screw and tells you how much to adjust." ja="このツールは各ベッドネジをプローブし、どのくらい調整が必要かを教えます。"/>
   <translation tag="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect." ja="Z-offset をエンドストップに適用し、設定を保存するために Klipper を再起動します。プリンターは一時的に切断されます。"/>
   <translation tag="This will apply the Z-offset to your probe and restart Klipper to save the configuration. The printer will briefly disconnect." ja="Z-offset をプローブに適用し、設定を保存するために Klipper を再起動します。プリンターは一時的に切断されます。"/>
@@ -2634,7 +2642,9 @@
   <translation tag="Unavailable" ja="利用不可"/>
   <translation tag="Understanding Results" ja="結果の理解"/>
   <translation tag="Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.&#10;&#10;This tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.&#10;&#10;For CoreXY, Path A and B should be within a few Hz of each other." ja="ベルト張力が不均一だと、レイヤーシフトや VFA(垂直微細アーティファクト)、リンギングなどの印刷不良が発生します。&#10;&#10;このツールは各ベルトパスを振動させて共振周波数を測定します — 周波数が一致していれば張力が均等であることを意味します。&#10;&#10;CoreXY では、パス A と B は数 Hz 以内に収まっている必要があります。"/>
+  <translation tag="Uninstall" ja="アンインストール"/>
   <translation tag="Uninstall HelixPrint Plugin" ja="HelixPrint プラグインをアンインストール"/>
+  <translation tag="Uninstall HelixPrint Plugin?" ja="HelixPrint プラグインをアンインストールしますか？"/>
   <translation tag="Uninstall script not found." ja="アンインストールスクリプトが見つかりません。"/>
   <translation tag="Uninstall: Coming soon" ja="アンインストール: 近日公開"/>
   <translation tag="Uninstallation failed. Check logs for details." ja="アンインストールに失敗しました。詳細はログを確認してください。"/>

@@ -220,6 +220,7 @@ class HistoryListPanel : public OverlayBase {
     bool jobs_received_ = false;                     ///< True if jobs were set externally
     bool is_active_ = false;                         ///< True if panel is currently visible
     bool detail_overlay_open_ = false;               ///< True while detail overlay is showing
+    lv_obj_t* delete_confirmation_dialog_ = nullptr; ///< Live delete confirmation, or null
     bool history_changed_while_detail_open_ = false; ///< True if history changed while detail open
 
     // Connection state observer to auto-refresh when connected (ObserverGuard handles cleanup)

@@ -1101,6 +1101,22 @@ void AmsOperationSidebar::handle_unload() {
     handle_unload(-1);
 }
 
+void AmsOperationSidebar::handle_bypass_load() {
+    spdlog::info("[AmsSidebar] Bypass spool load requested");
+    // The continuation can land after an unload round trip, by which time the
+    // AMS panel that owns this sidebar may be gone.
+    auto tok = lifetime_.token();
+    bypass_toggle_.ensure_engaged_then([this, tok]() {
+        tok.defer("AmsOperationSidebar::bypass_load",
+                  [this]() { handle_load_with_preheat(helix::ui::EXTERNAL_SPOOL_SLOT); });
+    });
+}
+
+void AmsOperationSidebar::handle_bypass_unload() {
+    spdlog::info("[AmsSidebar] Bypass spool unload requested");
+    handle_unload(helix::ui::EXTERNAL_SPOOL_SLOT);
+}
+
 void AmsOperationSidebar::handle_unload(int slot_index) {
     spdlog::info("[AmsSidebar] Unload requested (slot={})", slot_index);
 
@@ -1147,8 +1163,8 @@ void AmsOperationSidebar::handle_unload(int slot_index) {
     // asymmetric with plan_load(), because bypass unload stays on the backend:
     // AFC calls the user's unload macro itself when bypass is enabled, and
     // routing it to tier 2 here would run that macro twice.
-    const bool loaded = helix::ui::read_unload_target_loaded(AmsState::instance().get_backend(),
-                                                             info, target_slot);
+    const bool loaded =
+        helix::ui::read_unload_target_loaded(AmsState::instance().get_backend(), info, target_slot);
 
     const helix::ui::FilamentOpPlan plan = helix::ui::plan_live_unload(caps, target_slot, loaded);
 
@@ -1346,8 +1362,8 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
     // telling us their macros heat. Both terms live in preheat_skip_reason(), so
     // this surface cannot honor one and ignore the other
     // (prestonbrown/helixscreen#1494).
-    if (const auto skip = helix::ui::preheat_skip_reason(plan, StandardMacroSlot::LoadFilament,
-                                                         backend);
+    if (const auto skip =
+            helix::ui::preheat_skip_reason(plan, StandardMacroSlot::LoadFilament, backend);
         skip != helix::ui::PreheatSkip::None) {
         spdlog::info("[AmsSidebar] Skipping preheat for slot {} load — {}", slot_index,
                      helix::ui::preheat_skip_name(skip));
@@ -1402,7 +1418,7 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
     // right before the tier-1 dispatch (unchanged) -- only the confirmation
     // moves earlier, so a decline never wastes a preheat cycle.
     if (helix::ui::needs_home_confirmation(plan, StandardMacroSlot::LoadFilament, backend,
-                                          helix::toolhead_is_homed(printer_state_))) {
+                                           helix::toolhead_is_homed(printer_state_))) {
         spdlog::info("[AmsSidebar] Toolhead not homed -- asking before starting preheat for "
                      "slot {} load",
                      slot_index);
@@ -1456,8 +1472,7 @@ void AmsOperationSidebar::check_pending_load() {
         // while the nozzle came up to temperature, which flips load-vs-swap.
         AmsSystemInfo preheat_info;
         const helix::ui::BackendCaps caps = read_backend_caps(preheat_info, slot);
-        const helix::ui::FilamentOpPlan plan =
-            helix::ui::plan_live_load(preheat_info, caps, slot);
+        const helix::ui::FilamentOpPlan plan = helix::ui::plan_live_load(preheat_info, caps, slot);
 
         if (plan.tier != helix::ui::FilamentTier::AmsBackend) {
             // The preheat only ever starts on the tier-1 path, so anything else
@@ -1519,7 +1534,6 @@ namespace {
 constexpr const char* LOAD_MACRO_TAG = "AmsOperationSidebar::load_macro";
 constexpr const char* UNLOAD_MACRO_TAG = "AmsOperationSidebar::unload_macro";
 } // namespace
-
 
 void AmsOperationSidebar::dispatch_unload_outside_backend(const helix::ui::FilamentOpPlan& plan) {
     if (plan.tier == helix::ui::FilamentTier::RawGcode) {
