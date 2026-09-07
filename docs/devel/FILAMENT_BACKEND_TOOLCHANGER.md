@@ -11,7 +11,32 @@ Physical tool changers have multiple complete toolheads that are swapped on the 
 
 ### Detection
 
-Klipper object `toolchanger` in `printer.objects.list` sets `AmsType::TOOL_CHANGER`. Individual tool names come from `tool T*` objects (e.g., `tool T0`, `tool T1`).
+Tool counts come from three sources, in descending authority
+(`include/printer_discovery.h#PrinterDiscovery::parse_objects`):
+
+1. **`tool T*` objects** - created by klipper-toolchanger, and authoritative: a
+   klipper-toolchanger name is arbitrary and `ASSIGN_TOOL` can remap it, so real objects
+   are never overwritten by anything below.
+2. **The changer extra's own count** - for a changer running *without*
+   klipper-toolchanger. Only MedusaHC exposes one today
+   (`docs/devel/FILAMENT_BACKEND_MEDUSAHC.md`).
+3. **Extruder heaters** - the fallback for a machine presenting one heater and one
+   extruder motor per tool. Names become the G-code tool numbers `T0`, `T1`, ... Counted
+   through `helix::is_extruder_name()`, so `extruder_stepper` sections do not inflate it
+   and a Chimera/cyclops mixing hotend stays one tool.
+
+`AmsType::TOOL_CHANGER` is registered whenever the printer has tools and either the
+`toolchanger` object or more than one of them - a multi-extruder machine with no filament
+system is a parallel-topology multi-tool printer whether or not anything calls itself a
+changer, and registering it is what gives it slots, per-tool spool identity and the
+filament panel's tool selector (prestonbrown/helixscreen#1350). A real MMU always wins:
+the tool-changer arm is last in the detection chain.
+
+Swap commands follow from the same fact. `SELECT_TOOL`/`UNSELECT_TOOL` exist only where
+klipper-toolchanger does; without it the swap is plain `T<n>`, which Klipper maps to
+`ACTIVATE_EXTRUDER` and a changer extra overrides with its own. `toolchanger_addon::
+resolve_tool_commands()` answers this, and the provider table only has to name what
+differs - the unmount, which a machine whose tools are plain extruders does not have.
 
 ### Key Differences from Filament Systems
 

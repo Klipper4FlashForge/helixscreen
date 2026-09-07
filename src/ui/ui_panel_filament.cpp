@@ -1321,40 +1321,53 @@ void FilamentPanel::handle_load_button() {
 
     snapshot_prior_heater_target();
 
-    // One plan for both questions below: they are about the same dispatch, and a
+    // One plan for both questions: they are about the same dispatch, and a
     // second call could answer them against different backend state.
     const helix::ui::FilamentOpPlan plan = current_load_plan();
+    const bool preheat = needs_ui_preheat(plan, StandardMacroSlot::LoadFilament);
 
-    if (needs_ui_preheat(plan, StandardMacroSlot::LoadFilament)) {
-        // Ask "home printer first?" BEFORE the preheat, not after: the
-        // physical G28 still fires later, inside
-        // AmsSubscriptionBackend::ensure_homed_then() right before the tier-1
-        // dispatch (unchanged) -- only the confirmation moves earlier, so a
-        // decline never wastes a preheat cycle (#1235-adjacent).
-        AmsBackend* delegating_backend = AmsState::instance().get_backend();
-        if (helix::ui::needs_home_confirmation(plan, StandardMacroSlot::LoadFilament,
-                                               delegating_backend,
-                                               helix::toolhead_is_homed(printer_state_))) {
-            spdlog::info("[{}] Toolhead not homed -- asking before starting preheat for load",
-                         get_name());
-            // FilamentPanel is an immortal singleton [L012] -- capturing
-            // [this] directly is safe with no AsyncLifetimeGuard token.
-            helix::ui::request_home_confirmation(
-                [this]() {
-                    if (AmsBackend* backend = AmsState::instance().get_backend()) {
-                        backend->arm_home_preconfirmed();
-                    }
+    // Asked INDEPENDENTLY of the preheat. They coincided while a cold nozzle was
+    // the only reason to pause before dispatch, but a backend or macro that heats
+    // for us removes that reason without homing anything — and skipping the ask
+    // here also skips arm_home_preconfirmed(), leaving the backend to raise its
+    // own prompt whose decline reads to ams_action_observer_ as a completed load.
+    AmsBackend* backend = AmsState::instance().get_backend();
+    if (helix::ui::needs_home_confirmation(plan, StandardMacroSlot::LoadFilament, backend,
+                                           helix::toolhead_is_homed(printer_state_))) {
+        spdlog::info("[{}] Toolhead not homed -- asking before load", get_name());
+        // Ask BEFORE the preheat, not after: the physical G28 still fires later,
+        // inside AmsSubscriptionBackend::ensure_homed_then() right before the
+        // tier-1 dispatch, so only the confirmation moves earlier and a decline
+        // never wastes a heat cycle.
+        //
+        // FilamentPanel is an immortal singleton [L012] -- capturing [this]
+        // directly is safe with no AsyncLifetimeGuard token.
+        helix::ui::request_home_confirmation(
+            [this, preheat]() {
+                if (AmsBackend* b = AmsState::instance().get_backend()) {
+                    b->arm_home_preconfirmed();
+                }
+                if (preheat) {
                     start_preheat_for_op(PreheatOp::LOAD);
-                },
-                [this]() {
-                    spdlog::info("[{}] User declined pre-load home; no heat commanded", get_name());
-                });
-            return;
-        }
+                } else {
+                    continue_load_after_checks();
+                }
+            },
+            [this]() {
+                spdlog::info("[{}] User declined pre-load home; no heat commanded", get_name());
+            });
+        return;
+    }
+
+    if (preheat) {
         start_preheat_for_op(PreheatOp::LOAD);
         return;
     }
 
+    continue_load_after_checks();
+}
+
+void FilamentPanel::continue_load_after_checks() {
     // Check if toolhead sensor shows filament already present
     auto& sensor_mgr = helix::FilamentSensorManager::instance();
     if (sensor_mgr.is_master_enabled() &&
@@ -2823,126 +2836,75 @@ helix::ui::FilamentOpPlan FilamentPanel::current_load_plan() const {
     return helix::ui::plan_live_load(sys, caps, target_slot);
 }
 
+helix::ui::FilamentOpSurface FilamentPanel::op_surface(FilamentOp op) {
+    helix::ui::FilamentOpSurface surface;
+    surface.log_tag = "[FilamentPanel]";
+    // The user pressed a button on this panel and is looking at it, so a
+    // parameter modal belongs on top rather than being suppressed.
+    surface.param_policy = helix::ui::ParamPolicy::Prompt;
+
+    surface.on_begin = [this, op](const helix::ui::FilamentOpPlan& plan) {
+        begin_operation_guard();
+        // backend_op_active_ gates ams_action_observer_ so it completes ONLY
+        // backend ops; a macro or fallback finishes on its own reply instead,
+        // and letting the observer claim those would end the guard on an
+        // unrelated AmsAction edge.
+        backend_op_active_ = plan.tier == helix::ui::FilamentTier::AmsBackend;
+        op_in_flight_ = op;
+        op_started(op); // on-button spinner replaces the start toast
+    };
+
+    surface.on_failed = [this, op](const helix::ui::FilamentOpPlan&, const AmsError&,
+                                   bool& /*reported*/) {
+        operation_guard_.end();
+        backend_op_active_ = false;
+        op_in_flight_.reset();
+        op_failed(op);
+        // reported stays false: the executor raises the AMS-error toast, which
+        // is the same one this panel used to raise itself.
+    };
+
+    surface.on_async_failed = [this, op](const helix::ui::FilamentOpPlan&) {
+        operation_guard_.end();
+        op_in_flight_.reset();
+        op_failed(op);
+    };
+
+    surface.on_async_success = [this, op]() {
+        operation_guard_.end();
+        // Only on success: a failed op leaves the heater where the user can see
+        // what happened rather than dropping it out from under a retry.
+        restore_heater_after_preheat();
+        op_in_flight_.reset();
+        op_succeeded(op);
+    };
+
+    // No guard: FilamentPanel is an immortal singleton [L012], so a macro
+    // parameter modal answered arbitrarily later still finds a live panel.
+    return surface;
+}
+
 void FilamentPanel::execute_load() {
     AmsBackend* backend = AmsState::instance().get_backend();
+    const int target_slot = selected_op_slot();
 
-    const auto& info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
-    const helix::ui::FilamentOpPlan plan = current_load_plan();
-    // What to DO with the plan — the backend entry point, the refusal copy, the
-    // slot-picker redirect — is named once in panel_load_outcome(), so the panel
-    // and anything that checks the panel answer it from the same place.
-    const helix::ui::FilamentPanelOutcome outcome = helix::ui::panel_load_outcome(plan);
-
-    switch (plan.tier) {
-    case helix::ui::FilamentTier::AmsBackend: {
-        // Backend load is fire-and-forget: completion is signaled by
-        // ams_action_observer_ when AmsAction reaches IDLE or ERROR. Start the
-        // guard + on-button spinner here; backend_op_active_ gates the observer
-        // so it only completes backend ops (never gcode/macro ops).
-        begin_operation_guard();
-        backend_op_active_ = true;
-        op_in_flight_ = FilamentOp::Load;
-        op_started(FilamentOp::Load);
-        AmsError err;
-        switch (outcome.call) {
-        case helix::ui::AmsCall::ChangeTool:
-            spdlog::info("[{}] Filament seated — swapping to selected slot via tool change T{}",
-                         get_name(), outcome.arg);
-            err = backend->change_tool(outcome.arg);
-            break;
-        case helix::ui::AmsCall::Load:
-        default: // plan_load yields no other tier-1 call
-            spdlog::info("[{}] Loading filament directly into selected slot {} (no redirect)",
-                         get_name(), outcome.arg);
-            err = backend->load_filament(outcome.arg);
-            break;
-        }
-        if (!err.success()) {
-            operation_guard_.end();
-            backend_op_active_ = false;
-            op_in_flight_.reset();
-            op_failed(FilamentOp::Load);
-            helix::ui::notify_ams_error(err);
-        }
-        return;
-    }
-
-    case helix::ui::FilamentTier::Refused:
-        // The copy and the redirect come from panel_load_outcome(); these lines
-        // only record what the app saw, which is what differs per refusal. Guard
-        // and spinner stay unarmed either way — that is the fix for 9KRXZ62P.
-        switch (plan.refusal) {
-        case helix::ui::FilamentRefusal::AlreadyMounted:
-            spdlog::info("[{}] Selected tool is already mounted — refusing load", get_name());
-            break;
-        case helix::ui::FilamentRefusal::BypassLoaded:
-            spdlog::info("[{}] Bypass spool still at the toolhead — refusing lane load",
-                         get_name());
-            break;
-        case helix::ui::FilamentRefusal::SelectSlot:
-        default:
-            spdlog::info("[{}] AMS backend active ({}), no active slot — redirecting to AMS panel",
-                         get_name(), ams_type_to_string(backend->get_type()));
-            break;
-        }
+    helix::ui::FilamentOpSurface surface = op_surface(FilamentOp::Load);
+    // The refusal copy and the slot-picker redirect are this panel's, and only
+    // this panel's: the surfaces layered under a live dialog must not navigate
+    // out from under it. panel_load_outcome() still owns which is which.
+    surface.on_refused = [this](const helix::ui::FilamentOpPlan& refused) {
+        const helix::ui::FilamentPanelOutcome outcome = helix::ui::panel_load_outcome(refused);
+        spdlog::info("[{}] Load refused ({})", get_name(), static_cast<int>(refused.refusal));
         NOTIFY_INFO(fmt::runtime(outcome.toast.c_str()));
         if (outcome.navigate_to_ams) {
             navigate_to_ams_panel();
         }
-        return;
+    };
 
-    case helix::ui::FilamentTier::Macro: {
-        std::string macro_name = info.get_macro();
-        // FilamentPanel is a global singleton, so `this` survives any modal
-        // dismissal the shared param modal outlives [L012]. Surfaces with a
-        // bounded lifetime must guard this callback with a LifetimeToken.
-        helix::ui::dispatch_filament_macro(macro_name, helix::ui::ParamPolicy::Prompt,
-                                           [this, macro_name](const MacroParamResult& result) {
-                                               run_filament_macro(macro_name, "Load", result);
-                                           });
-        return;
-    }
-
-    case helix::ui::FilamentTier::RawGcode:
-        break;
-    }
-
-    // Fallback: the shared tier-3 load sequence (bowden fast move + slow melt-zone push).
-    begin_operation_guard();
-    std::string gcode = filament_load_fallback_gcode();
-    spdlog::info("[{}] Load fallback: {}", get_name(), gcode);
-    op_started(FilamentOp::Load); // on-button spinner replaces the start toast
-
-    api_->execute_gcode(
-        gcode,
-        [this]() {
-            helix::ui::async_call(
-                [](void* ud) {
-                    auto* self = static_cast<FilamentPanel*>(ud);
-                    self->operation_guard_.end();
-                    self->restore_heater_after_preheat();
-                    self->op_succeeded(FilamentOp::Load);
-                },
-                this);
-        },
-        [this](const MoonrakerError& error) {
-            helix::ui::async_call(
-                [](void* ud) {
-                    auto* self = static_cast<FilamentPanel*>(ud);
-                    self->operation_guard_.end();
-                    self->op_failed(FilamentOp::Load);
-                },
-                this);
-            if (error.type == MoonrakerErrorType::TIMEOUT) {
-                NOTIFY_WARNING(lv_tr("Load may still be running — response timed out"));
-            } else {
-                NOTIFY_ERROR(lv_tr("Filament load failed: {}"), error.user_message());
-            }
-        },
-        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+    helix::ui::execute_filament_load(backend, target_slot, surface);
 }
 
-helix::ui::FilamentOpPlan FilamentPanel::current_unload_plan() const {
+FilamentPanel::UnloadContext FilamentPanel::current_unload_context() const {
     // When an AMS backend is active, route unload through it so the backend's
     // tool change sequence runs (retract, cut, purge) instead of raw extrusion.
     // plan_unload() gates tier 1 on the backend merely existing — deliberately
@@ -2962,8 +2924,12 @@ helix::ui::FilamentOpPlan FilamentPanel::current_unload_plan() const {
     helix::ui::BackendCaps caps;
     caps.present = backend != nullptr;
 
-    return helix::ui::plan_live_unload(
-        caps, slot, helix::ui::read_unload_target_loaded(backend, sys, slot));
+    const bool loaded = helix::ui::read_unload_target_loaded(backend, sys, slot);
+    return {helix::ui::plan_live_unload(caps, slot, loaded), loaded};
+}
+
+helix::ui::FilamentOpPlan FilamentPanel::current_unload_plan() const {
+    return current_unload_context().plan;
 }
 
 void FilamentPanel::execute_unload() {
@@ -2974,101 +2940,27 @@ void FilamentPanel::execute_unload() {
 
     AmsBackend* backend = AmsState::instance().get_backend();
     const int slot = selected_op_slot();
-
-    const auto& info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
-    const helix::ui::FilamentOpPlan plan = current_unload_plan();
-    // See execute_load(): what the panel does with the plan is named once, in
-    // panel_unload_outcome().
+    // One system-info read for the whole dispatch: the plan, the loaded answer
+    // and the manual-pull question are all about the same instant.
+    const UnloadContext ctx = current_unload_context();
     const helix::ui::FilamentPanelOutcome outcome =
-        helix::ui::panel_unload_outcome(plan, backend != nullptr, slot);
+        helix::ui::panel_unload_outcome(ctx.plan, backend != nullptr, slot);
 
     // Armed before dispatch so the toolhead sensor's clear edge is already being
-    // watched when the retract starts; op_succeeded/op_failed close it out for
-    // every tier below.
+    // watched when the retract starts; the op hooks close it out for every tier.
     if (outcome.arm_manual_pull) {
         helix::ui::arm_manual_pull_prompt();
     }
 
-    switch (plan.tier) {
-    case helix::ui::FilamentTier::AmsBackend: {
-        begin_operation_guard();
-        spdlog::info("[{}] Unloading filament from selected slot {} via AMS backend ({})",
-                     get_name(), outcome.arg, ams_type_to_string(backend->get_type()));
-        // On-button spinner replaces the start toast. Completion is signaled by
-        // ams_action_observer_ when AmsAction reaches IDLE or ERROR;
-        // backend_op_active_ gates that observer to backend ops only.
-        backend_op_active_ = true;
-        op_in_flight_ = FilamentOp::Unload;
-        op_started(FilamentOp::Unload);
-        // Pass the panel's single-source selected_op_slot() explicitly rather than
-        // letting the backend re-resolve current_slot: the callsite's intended slot
-        // is authoritative, so the unload can never diverge from the gating or the
-        // "is anything loaded?" guard above. Re-reading current_slot in the backend
-        // was the U1 Filament-panel-unload wrong-tool bug.
-        AmsError err = backend->unload_filament(outcome.arg);
-        if (!err.success()) {
-            operation_guard_.end();
-            backend_op_active_ = false;
-            op_in_flight_.reset();
-            op_failed(FilamentOp::Unload);
-            helix::ui::notify_ams_error(err);
-        }
-        // Guard ends via ams_action_observer_ (AmsAction IDLE/ERROR) or timeout.
-        return;
-    }
+    helix::ui::FilamentOpSurface surface = op_surface(FilamentOp::Unload);
+    surface.on_refused = [this](const helix::ui::FilamentOpPlan& refused) {
+        const helix::ui::FilamentPanelOutcome refusal =
+            helix::ui::panel_unload_outcome(refused, false, -1);
+        spdlog::info("[{}] Unload refused — nothing loaded", get_name());
+        NOTIFY_WARNING(fmt::runtime(refusal.toast.c_str()));
+    };
 
-    case helix::ui::FilamentTier::Refused:
-        NOTIFY_WARNING(fmt::runtime(outcome.toast.c_str()));
-        return;
-
-    case helix::ui::FilamentTier::Macro: {
-        std::string macro_name = info.get_macro();
-        // See execute_load(): [this] is safe here only because the panel is
-        // immortal [L012].
-        helix::ui::dispatch_filament_macro(macro_name, helix::ui::ParamPolicy::Prompt,
-                                           [this, macro_name](const MacroParamResult& result) {
-                                               run_filament_macro(macro_name, "Unload", result);
-                                           });
-        return;
-    }
-
-    case helix::ui::FilamentTier::RawGcode:
-        break;
-    }
-
-    // Fallback: the shared tier-3 unload sequence (tip-shape then long retract).
-    begin_operation_guard();
-    std::string gcode = filament_unload_fallback_gcode();
-    spdlog::info("[{}] Unload fallback: {}", get_name(), gcode);
-    op_started(FilamentOp::Unload); // on-button spinner replaces the start toast
-
-    api_->execute_gcode(
-        gcode,
-        [this]() {
-            helix::ui::async_call(
-                [](void* ud) {
-                    auto* self = static_cast<FilamentPanel*>(ud);
-                    self->operation_guard_.end();
-                    self->restore_heater_after_preheat();
-                    self->op_succeeded(FilamentOp::Unload);
-                },
-                this);
-        },
-        [this](const MoonrakerError& error) {
-            helix::ui::async_call(
-                [](void* ud) {
-                    auto* self = static_cast<FilamentPanel*>(ud);
-                    self->operation_guard_.end();
-                    self->op_failed(FilamentOp::Unload);
-                },
-                this);
-            if (error.type == MoonrakerErrorType::TIMEOUT) {
-                NOTIFY_WARNING(lv_tr("Unload may still be running — response timed out"));
-            } else {
-                NOTIFY_ERROR(lv_tr("Filament unload failed: {}"), error.user_message());
-            }
-        },
-        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+    helix::ui::execute_filament_unload(backend, slot, ctx.target_loaded, surface);
 }
 
 void FilamentPanel::run_filament_macro(const std::string& macro_name, const std::string& op_label,

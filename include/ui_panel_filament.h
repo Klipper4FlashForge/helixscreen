@@ -13,6 +13,7 @@
 #include "async_lifetime_guard.h"
 #include "config.h"
 #include "filament_op_dispatch.h"
+#include "filament_op_execute.h"
 #include "macro_param_modal.h"
 #include "operation_timeout_guard.h"
 #include "standard_macros.h"
@@ -631,7 +632,32 @@ class FilamentPanel : public PanelBase {
     /// during, so each asks fresh — the same reason
     /// AmsOperationSidebar::check_pending_load() re-plans after its preheat.
     [[nodiscard]] helix::ui::FilamentOpPlan current_load_plan() const;
+
+    /// An unload plan and the loaded answer it was built from, which the
+    /// dispatch needs as well — read together so both describe one instant.
+    struct UnloadContext {
+        helix::ui::FilamentOpPlan plan;
+        bool target_loaded = false;
+    };
+    [[nodiscard]] UnloadContext current_unload_context() const;
     [[nodiscard]] helix::ui::FilamentOpPlan current_unload_plan() const;
+
+    /**
+     * @brief This panel's half of a shared dispatch.
+     *
+     * The guard, the on-button spinner and the heater restore are what make this
+     * panel's dispatch look different from every other surface's; the ladder
+     * underneath is the same one. @p op names which button the spinner drives.
+     *
+     * Every hook is safe to capture [this] in: FilamentPanel is an immortal
+     * singleton [L012], which is also why the surface needs no lifetime guard.
+     */
+    [[nodiscard]] helix::ui::FilamentOpSurface op_surface(FilamentOp op);
+
+    /// The load path from the toolhead-sensor check onward. Reached both
+    /// directly and from the home-confirmation callback, which is why it is not
+    /// inline in handle_load_button().
+    void continue_load_after_checks();
 
     void execute_load();
     void execute_unload();

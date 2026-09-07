@@ -1552,9 +1552,8 @@ helix::ui::FilamentOpSurface AmsOperationSidebar::op_surface(const char* tag) {
         fail_started_operation(err);
         reported = true;
     };
-    surface.on_async_failed = [this](const helix::ui::FilamentOpPlan&) {
-        AmsState::instance().sync_from_backend();
-    };
+    // No on_async_failed: this surface arms its stepper only on the backend
+    // tier, so a failed macro has nothing here to unwind.
 
     // MacroParamModal stores its on_execute_ callback and does NOT clear it on
     // dismiss, while this sidebar dies with the AMS panel. token.defer()
