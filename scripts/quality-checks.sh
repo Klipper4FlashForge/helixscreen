@@ -1058,12 +1058,10 @@ src/printer/filament_mapper.cpp
 src/system/pwm_sound_backend.cpp
 src/system/update_checker.cpp
 src/ui/filament_op_execute.cpp
-src/ui/panel_widget_manager.cpp
 src/ui/ui_ams_context_menu.cpp
 src/ui/ui_ams_sidebar.cpp
 src/ui/ui_icon.cpp
 src/ui/ui_panel_filament.cpp
-src/ui/ui_print_tune_overlay.cpp
 src/ui/ui_settings_about.cpp
 "
 CF_OK=false
