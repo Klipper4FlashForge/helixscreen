@@ -2248,11 +2248,3 @@ PrinterDetector::classify_type_mismatch(const std::string& saved_type,
     return classify_type_mismatch(saved_type, detected.type_name, detected.confidence, flag_value,
                                   detected.margin());
 }
-
-bool PrinterDetector::should_warn_type_mismatch(const std::string& saved_type,
-                                                const std::string& detected_type,
-                                                int detected_confidence,
-                                                const std::string& flag_value) {
-    return classify_type_mismatch(saved_type, detected_type, detected_confidence, flag_value) ==
-           MismatchDecision::Warn;
-}

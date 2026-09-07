@@ -645,23 +645,25 @@ class PrinterDetector {
      * re-arms the warning once).
      *
      * @param detected_margin PrinterDetectionResult::margin() for the detection
-     *        being classified. Callers that hold no candidate field - a bare
-     *        confidence from a stored verdict - leave it at the default, which
-     *        asserts nothing about rivals rather than inventing an ambiguity.
+     *        being classified. Every caller states it: a margin left implicit
+     *        is a tie that reaches the decision as a separation, and the whole
+     *        Ambiguous branch goes dark without a compile error. A caller that
+     *        holds no candidate field - a bare confidence from a stored
+     *        verdict - passes DETECT_MIN_MARGIN, asserting nothing about rivals
+     *        rather than inventing an ambiguity.
      */
     static MismatchDecision classify_type_mismatch(const std::string& saved_type,
                                                    const std::string& detected_type,
                                                    int detected_confidence,
                                                    const std::string& flag_value,
-                                                   int detected_margin = DETECT_MIN_MARGIN);
+                                                   int detected_margin);
 
     /**
      * @brief Classify a detection result against the saved type.
      *
      * The overload callers holding a whole result should use: it reads the
-     * fields the decision depends on - including the margin, which the scalar
-     * form defaults away when a caller does not supply one - so a caller cannot
-     * silently drop one and still compile.
+     * fields the decision depends on - the margin included - off the result,
+     * so a caller cannot silently drop one and still compile.
      *
      * @param detected A result from detect()/auto_detect(). A result that
      *        identified nothing classifies as NoDetection.
@@ -669,15 +671,6 @@ class PrinterDetector {
     static MismatchDecision classify_type_mismatch(const std::string& saved_type,
                                                    const PrinterDetectionResult& detected,
                                                    const std::string& flag_value);
-
-    /**
-     * @brief Decide whether to show the one-time saved-vs-detected type warning.
-     *
-     * Convenience wrapper over classify_type_mismatch().
-     */
-    static bool should_warn_type_mismatch(const std::string& saved_type,
-                                          const std::string& detected_type, int detected_confidence,
-                                          const std::string& flag_value);
 
     /**
      * @brief Decide whether a detection result is solid enough to persist.
