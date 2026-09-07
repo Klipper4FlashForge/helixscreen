@@ -104,6 +104,35 @@ enum class PreheatSkip {
 /// Short name for @p reason, for log lines. Never null.
 [[nodiscard]] const char* preheat_skip_name(PreheatSkip reason);
 
+// ============================================================================
+// Homing
+// ============================================================================
+
+/**
+ * @brief Must the user be asked to home before this op is dispatched?
+ *
+ * Same shape as preheat_skip_reason(), for the other thing a surface would
+ * otherwise do redundantly. Two ways the question is already answered:
+ * AmsBackend::delegates_homing_to_printer() on tier 1, and a macro carrying its
+ * own conditional home on tier 2.
+ *
+ * Both are read against the TIER, which is what makes them safe. A backend's
+ * claim is about the gcode that backend emits, so it says nothing once bypass
+ * has dropped the op to the user's macro; a macro's claim is about that macro
+ * run alone, so it says nothing about a backend that merely composes it with
+ * unguarded moves of its own.
+ *
+ * The false answer is the safe one in both directions: an unneeded prompt is
+ * friction, while a skipped one moves a toolhead with no reference.
+ *
+ * @param plan           The plan about to be dispatched.
+ * @param slot           Which StandardMacros slot @p plan resolves against.
+ * @param backend        May be null.
+ * @param toolhead_homed helix::toolhead_is_homed() — already homed asks nobody.
+ */
+[[nodiscard]] bool needs_home_confirmation(const FilamentOpPlan& plan, StandardMacroSlot slot,
+                                           AmsBackend* backend, bool toolhead_homed);
+
 /// @note **`log_tag` must have static storage duration.** All three functions
 /// capture the raw pointer in lambdas that outlive the call — the macro-tier
 /// and raw-gcode paths hand their success/error callbacks to Moonraker and

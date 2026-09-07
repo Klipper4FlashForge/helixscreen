@@ -120,6 +120,35 @@ const char* preheat_skip_name(PreheatSkip reason) {
 }
 
 // ============================================================================
+// Homing
+// ============================================================================
+
+bool needs_home_confirmation(const FilamentOpPlan& plan, StandardMacroSlot slot,
+                             AmsBackend* backend, bool toolhead_homed) {
+    if (toolhead_homed) {
+        return false;
+    }
+
+    switch (plan.tier) {
+    case FilamentTier::AmsBackend:
+        return !(backend && backend->delegates_homing_to_printer());
+
+    case FilamentTier::Macro:
+        return !filament_macros::macro_homes_if_needed(
+            StandardMacros::instance().get(slot).get_macro());
+
+    case FilamentTier::RawGcode:
+        // Bare extrude/retract moves E only, but the surfaces ask before the
+        // whole op, and a caller may still synthesize a home around it.
+        return true;
+
+    case FilamentTier::Refused:
+        return false;
+    }
+    return true;
+}
+
+// ============================================================================
 // Load
 // ============================================================================
 
