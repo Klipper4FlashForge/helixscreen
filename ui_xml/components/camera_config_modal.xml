@@ -45,7 +45,8 @@
                     style_radius="#border_radius_small" style_border_width="0">
               <bind_style name="cam_btn_selected" subject="cam_source_${i}_active" ref_value="1"/>
               <bind_style name="cam_btn_unselected" subject="cam_source_${i}_active" ref_value="0"/>
-              <text_small name="cam_source_${i}_name" bind_text="cam_source_${i}_name" flex_grow="1" long_mode="dot" style_text_color="#text"/>
+              <text_small name="cam_source_${i}_name"
+                          bind_text="cam_source_${i}_name" flex_grow="1" long_mode="dot" style_text_color="#text"/>
               <text_xs name="cam_source_${i}_note" bind_text="cam_source_${i}_note" style_text_color="#text_muted"/>
               <event_cb trigger="clicked" callback="on_cam_source_clicked" user_data="${i}"/>
             </lv_obj>
