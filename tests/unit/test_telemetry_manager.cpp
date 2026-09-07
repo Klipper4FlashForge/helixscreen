@@ -15,6 +15,7 @@
 #include "ui_update_queue.h"
 
 #include "../lvgl_test_fixture.h"
+#include "../test_helpers/telemetry_manager_test_access.h"
 #include "app_globals.h"
 #include "async_lifetime_guard.h"
 #include "config.h"
@@ -804,6 +805,99 @@ TEST_CASE_METHOD(TelemetryTestFixture, "Persistence: saved file is valid JSON",
 
 TEST_CASE("MAX_QUEUE_SIZE is 100", "[telemetry][queue]") {
     REQUIRE(TelemetryManager::MAX_QUEUE_SIZE == 100);
+}
+
+// ============================================================================
+// Drain capacity and retry spacing [telemetry][send][1476]
+// ============================================================================
+
+TEST_CASE("Drain: one send window can empty a full queue", "[telemetry][send][1476]") {
+    // The periodic producers enqueue faster than a single batch per window
+    // drains, so a window that cannot clear a full queue leaves it saturated
+    // and enqueue_event() discards the oldest events unsent.
+    REQUIRE(TelemetryManager::MAX_BATCHES_PER_SEND * TelemetryManager::MAX_BATCH_SIZE >=
+            TelemetryManager::MAX_QUEUE_SIZE);
+}
+
+TEST_CASE("Drain: the hourly producer alone outruns a single batch per window",
+          "[telemetry][send][1476]") {
+    // record_memory_snapshot("hourly") fires from the auto-send timer, so a
+    // day enqueues one event per hour with nobody touching the device. A drain
+    // capped at one batch per SEND_INTERVAL is below that rate on its own.
+    constexpr int hourly_events_per_send_interval =
+        static_cast<int>(TelemetryManager::SEND_INTERVAL.count());
+    REQUIRE(hourly_events_per_send_interval > static_cast<int>(TelemetryManager::MAX_BATCH_SIZE));
+
+    // The drain has to cover that rate, which is what the batch bound buys.
+    REQUIRE(static_cast<int>(TelemetryManager::MAX_BATCHES_PER_SEND *
+                             TelemetryManager::MAX_BATCH_SIZE) > hourly_events_per_send_interval);
+}
+
+TEST_CASE("Send delay: a healthy sender waits the full send interval", "[telemetry][send][1476]") {
+    REQUIRE(TelemetryManager::next_attempt_delay(1) == TelemetryManager::SEND_INTERVAL);
+}
+
+TEST_CASE("Send delay: a failed send retries in hours, not a day", "[telemetry][send][1476]") {
+    // A backoff above 1 means the previous attempt failed. Spacing that retry
+    // off the full send interval would leave the queue filling for days over a
+    // server that was unreachable for a moment.
+    for (int backoff = 2; backoff <= 7; ++backoff) {
+        INFO("backoff = " << backoff);
+        REQUIRE(TelemetryManager::next_attempt_delay(backoff) < TelemetryManager::SEND_INTERVAL);
+    }
+}
+
+TEST_CASE("Send delay: retries lengthen as the backoff grows", "[telemetry][send][1476]") {
+    REQUIRE(TelemetryManager::next_attempt_delay(2) < TelemetryManager::next_attempt_delay(4));
+    REQUIRE(TelemetryManager::next_attempt_delay(4) < TelemetryManager::next_attempt_delay(7));
+}
+
+TEST_CASE("Send delay: never exceeds seven days", "[telemetry][send][1476]") {
+    REQUIRE(TelemetryManager::next_attempt_delay(1000) <= std::chrono::hours{24 * 7});
+}
+
+// try_send() has to actually consult next_attempt_delay(). Pinning the helper
+// alone leaves the call site free to keep its own spacing rule, so these drive
+// the gate: it stamps last_send_time_ when it passes and leaves it when it
+// skips, which is the only outward sign of the decision.
+
+TEST_CASE_METHOD(TelemetryTestFixture, "Send window: a backed-off sender retries within hours",
+                 "[telemetry][send][1476]") {
+    auto& tm = TelemetryManager::instance();
+    TelemetryManagerTestAccess::disable_network(tm);
+    tm.set_enabled(true);
+    tm.record_session();
+    REQUIRE(tm.queue_size() > 0); // an empty queue returns before the gate
+
+    // The previous attempt failed (backoff 2) three hours ago. Spaced off
+    // RETRY_INTERVAL that is a 2h wait, so this attempt is due.
+    const auto three_hours_ago = std::chrono::steady_clock::now() - std::chrono::hours{3};
+    TelemetryManagerTestAccess::set_last_send_time(tm, three_hours_ago);
+    TelemetryManagerTestAccess::set_backoff(tm, 2);
+
+    tm.try_send();
+
+    REQUIRE(TelemetryManagerTestAccess::last_send_time(tm) > three_hours_ago);
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture, "Send window: a healthy sender still waits the full day",
+                 "[telemetry][send][1476]") {
+    auto& tm = TelemetryManager::instance();
+    TelemetryManagerTestAccess::disable_network(tm);
+    tm.set_enabled(true);
+    tm.record_session();
+    REQUIRE(tm.queue_size() > 0);
+
+    // Backoff 1 means the last send succeeded, so the 24h cadence applies and
+    // three hours is not yet due. Without this the shorter retry spacing could
+    // widen to every send and quietly become an hourly upload.
+    const auto three_hours_ago = std::chrono::steady_clock::now() - std::chrono::hours{3};
+    TelemetryManagerTestAccess::set_last_send_time(tm, three_hours_ago);
+    TelemetryManagerTestAccess::set_backoff(tm, 1);
+
+    tm.try_send();
+
+    REQUIRE(TelemetryManagerTestAccess::last_send_time(tm) == three_hours_ago);
 }
 
 // ============================================================================
