@@ -444,7 +444,7 @@ else
 
   if [ "$XML_CONST_DELETED" = false ] && [ "$SCHEMA_INPUT_STAGED" = false ] && \
      run_xml_linter >/tmp/lint_xml.out 2>&1; then
-    echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+    qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
   else
     # The lint failed, a const was deleted, or a schema input the lint cannot
     # see is staged. Refresh the snapshot and retry — `make` here (not the raw
@@ -472,7 +472,7 @@ else
 
       if run_xml_linter >/tmp/lint_xml.out 2>&1; then
         if [ "$SCHEMA_WAS_STALE" = false ] && [ "$SCHEMA_DIRTY_BEFORE" = false ]; then
-          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+          qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
         elif [ "$SCHEMA_WAS_STALE" = false ]; then
           # Regeneration changed nothing: the snapshot is already correct and
           # merely unstaged. Nothing to fix, and nothing this hook may stage —
@@ -481,7 +481,7 @@ else
           # file. Not a commit blocker: the committer cannot resolve it from
           # inside this commit without absorbing someone else's content. Say it
           # plainly instead, because CI lints the COMMITTED copy.
-          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+          qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
           echo "ℹ️  $XML_LINTER_SCHEMA_PATH is already up to date but unstaged"
           echo "   CI's XML Lint job lints the committed copy — commit it:"
           echo "   git add $XML_LINTER_SCHEMA_PATH"
@@ -491,7 +491,7 @@ else
         elif [ "$AUTO_FIX" = true ] && [ "$STAGED_ONLY" = true ] && [ "$SCHEMA_DIRTY_BEFORE" = false ]; then
           git add "$XML_LINTER_SCHEMA_PATH"
           echo "   ✓ Regenerated and staged $XML_LINTER_SCHEMA_PATH"
-          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+          qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
         else
           echo "⚠️  $XML_LINTER_SCHEMA_PATH was stale — regenerated in place"
           echo "   Commit it or CI's XML Lint job will fail:"
@@ -510,7 +510,7 @@ else
       cat /tmp/regen_xml_schema.out
       echo "⚠️  Schema regeneration failed — linting against the snapshot on disk"
       if run_xml_linter >/tmp/lint_xml.out 2>&1; then
-        echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+        qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
       else
         cat /tmp/lint_xml.out
         echo "   Run 'make lint-xml-all' to see warnings too"
@@ -1126,6 +1126,7 @@ if [ -n "$FILES" ]; then
             echo "   git add$FORMAT_ISSUES"
           fi
         else
+          qc_note "⚠️  clang-format: $CF_EXAMINED file(s) checked, $(grep -c . "$CF_DIRTY" 2>/dev/null || echo '?') may need formatting"
           echo "⚠️  Files may need formatting (version differences may cause false positives):"
           echo "$FORMAT_ISSUES" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
           echo ""
@@ -1135,7 +1136,7 @@ if [ -n "$FILES" ]; then
           # EXIT_CODE=1
         fi
       elif [ "$CF_EXAMINED" -eq "$CF_TOTAL" ]; then
-        echo "✅ All files properly formatted ($CF_EXAMINED file(s) checked)"
+        qc_count "✅ All files properly formatted ($CF_EXAMINED file(s) checked)"
       fi
     else
       echo "ℹ️  No .clang-format file found - skipping format check"
@@ -2317,7 +2318,7 @@ if [ "$TOKEN_EXIT" -eq 0 ]; then
   if [ "$HEX_COUNT" -lt "$HEX_BASELINE" ]; then
     echo "✅ Design tokens: $HEX_COUNT hardcoded colors (baseline $HEX_BASELINE — ratchet down)"
   else
-    echo "✅ Design tokens: $HEX_COUNT == baseline ($HEX_BASELINE), no private LVGL APIs"
+    qc_count "✅ Design tokens: $HEX_COUNT == baseline ($HEX_BASELINE), no private LVGL APIs"
   fi
 else
   echo ""
@@ -2786,9 +2787,9 @@ if [ -n "$SHELL_FILES" ]; then
       EXIT_CODE=1
     elif [ $SHELL_ERRORS -eq 0 ]; then
       if [ $SHELL_BASELINED -gt 0 ]; then
-        echo "✅ shellcheck clean ($SHELL_BASELINED baselined file(s) still dirty, $SHELL_TOTAL linted)"
+        qc_count "✅ shellcheck clean ($SHELL_BASELINED baselined file(s) still dirty, $SHELL_TOTAL linted)"
       else
-        echo "✅ All shell scripts pass shellcheck ($SHELL_TOTAL file(s) linted)"
+        qc_count "✅ All shell scripts pass shellcheck ($SHELL_TOTAL file(s) linted)"
       fi
     else
       echo "❌ shellcheck found issues in $SHELL_ERRORS file(s)"
@@ -2970,18 +2971,50 @@ qc_state_hash() {
     git ls-files --others --exclude-standard 2>/dev/null | sort || true
   } | sha256sum 2>/dev/null | cut -d' ' -f1
 }
+# A cached pass replays the counts the full run recorded (qc_count above), so a
+# green that examined nothing cannot hide behind the cache: the stamp's first
+# line names the run, the rest are its counted verdicts.
+qc_stamp_write() {
+  # $1 = stamp path, $2 = counts file
+  mkdir -p "$(dirname "$1")" 2>/dev/null || true
+  {
+    echo "run: $(git rev-parse --short HEAD 2>/dev/null || echo no-head) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    [ -f "$2" ] && cat "$2"
+  } > "$1" 2>/dev/null || true
+}
+qc_stamp_replay() {
+  # $1 = stamp path
+  local first
+  first="$(head -n 1 "$1" 2>/dev/null)"
+  case "$first" in
+    run:*)
+      echo "✅ Quality checks passed! (cached: working tree unchanged since the full ${first#run: })"
+      tail -n +2 "$1" | sed 's/^/   /'
+      ;;
+    *)
+      echo "✅ Quality checks passed! (cached - working tree unchanged since the last full run)"
+      echo "   (that run recorded no counts; QC_NO_CACHE=1 runs a counted sweep)"
+      ;;
+  esac
+  echo "   Force a re-run with QC_NO_CACHE=1"
+}
 QC_STAMP=""
 if [ "$STAGED_ONLY" != true ] && [ -z "${QC_NO_CACHE:-}" ]; then
   QC_STAMP="$QC_STAMP_DIR/$(qc_state_hash)"
   if [ -n "$QC_STAMP" ] && [ -f "$QC_STAMP" ]; then
-    echo "✅ Quality checks passed! (cached - working tree unchanged since the last full run)"
-    echo "   Force a re-run with QC_NO_CACHE=1"
+    qc_stamp_replay "$QC_STAMP"
     exit 0
   fi
 fi
 
 QC_TMP="$(mktemp -d)"
 trap 'rm -rf "$QC_TMP"' EXIT
+# Verdicts that carry a count are recorded here as well as printed, so a cached
+# pass can replay what the full run examined. Gates run in parallel subshells,
+# and a one-line append is atomic, so one file serves them all.
+QC_COUNTS="$QC_TMP/counts"
+qc_note() { printf '%s\n' "$1" >> "$QC_COUNTS" 2>/dev/null || true; }
+qc_count() { echo "$1"; qc_note "$1"; }
 QC_JOBS="${QC_JOBS:-$(nproc 2>/dev/null || echo 4)}"
 
 qc_run_buffered() {
@@ -3132,8 +3165,7 @@ TOTAL_SEC=$((SCRIPT_END - SCRIPT_START))
 if [ $EXIT_CODE -eq 0 ]; then
   # Only a pass is cached; a failure must always re-run.
   if [ -n "$QC_STAMP" ]; then
-    mkdir -p "$QC_STAMP_DIR" 2>/dev/null || true
-    : > "$QC_STAMP" 2>/dev/null || true
+    qc_stamp_write "$QC_STAMP" "$QC_COUNTS"
   fi
   echo "✅ Quality checks passed! (${TOTAL_SEC}s total)"
   exit 0
