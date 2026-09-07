@@ -61,6 +61,18 @@ class CameraWidgetTestAccess {
     static helix::LifetimeToken stream_token(const CameraWidget& w) {
         return w.lifetime_.token();
     }
+
+    /// The `source` (webcam name) the widget's config asks for; "" = auto.
+    static std::string configured_source(const CameraWidget& w) {
+        return w.configured_source();
+    }
+    /// The feed the running stream shows (name is "" for the auto-pick).
+    static const WebcamInfo& current_feed(const CameraWidget& w) {
+        return w.current_feed_;
+    }
+    static bool has_stream(const CameraWidget& w) {
+        return w.stream_ != nullptr;
+    }
 };
 
 } // namespace helix

@@ -162,6 +162,14 @@ void CameraWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             });
     }
 
+    // A change in the list itself — has_webcam may stay 1 while the camera
+    // this widget is configured to show appears or disappears.
+    lv_subject_t* list = lv_xml_get_subject(nullptr, "webcam_count");
+    if (list) {
+        webcam_list_observer_ = helix::ui::observe_int_sync<CameraWidget>(
+            list, this, [](CameraWidget* self, int /*count*/) { self->resync_source(); });
+    }
+
     spdlog::debug("[CameraWidget] Attached");
 }
 
@@ -182,6 +190,7 @@ void CameraWidget::detach() {
     // detach→reattach gap. Frame callbacks check camera_image_ (null
     // after detach) and safely no-op until re-attach.
     webcam_observer_.reset();
+    webcam_list_observer_.reset();
     edit_mode_observer_.reset();
     if (fps_recheck_timer_) {
         lv_timer_delete(fps_recheck_timer_);
@@ -343,13 +352,15 @@ void CameraWidget::start_stream() {
     // No action needed — lifetime_ is always valid (invalidate() just bumps
     // the generation counter; new tokens from token() are automatically valid).
 
-    stream_ = std::make_unique<CameraStream>();
-    std::string stream_url, snapshot_url;
-    if (!stream_->configure_from_printer(stream_url, snapshot_url)) {
+    auto feed = CameraStream::resolve_from_printer(configured_source());
+    if (!feed) {
         spdlog::debug("[CameraWidget] start_stream: no URLs available yet, waiting for observer");
-        stream_.reset();
         return;
     }
+    current_feed_ = *feed;
+    const std::string& stream_url = current_feed_.stream_url;
+    const std::string& snapshot_url = current_feed_.snapshot_url;
+    stream_ = std::make_unique<CameraStream>();
 
     // Apply user rotation/flip config (XOR'd with Moonraker values)
     apply_transform();
@@ -362,8 +373,8 @@ void CameraWidget::start_stream() {
                                  lv_display_get_vertical_resolution(disp));
     }
 
-    // Read target_fps from printer state and apply initial fps gate
-    target_fps_ = get_printer_state().get_webcam_target_fps();
+    // The chosen camera's configured fps gates the stream
+    target_fps_ = current_feed_.target_fps;
     if (target_fps_ <= 0)
         target_fps_ = 15;
     update_stream_fps();
@@ -414,7 +425,8 @@ void CameraWidget::start_stream() {
                         [this, status]() { set_status_text(status.c_str()); });
         });
 
-    spdlog::info("[CameraWidget] Stream started (stream={}, snapshot={})", stream_url,
+    spdlog::info("[CameraWidget] Stream started (camera='{}', stream={}, snapshot={})",
+                 current_feed_.name.empty() ? "<auto>" : current_feed_.name, stream_url,
                  snapshot_url);
 }
 
@@ -467,6 +479,34 @@ void CameraWidget::stop_stream() {
 
 void CameraWidget::set_config(const nlohmann::json& config) {
     config_ = config;
+    resync_source();
+}
+
+std::string CameraWidget::configured_source() const {
+    if (config_.contains("source") && config_["source"].is_string())
+        return config_["source"].get<std::string>();
+    return "";
+}
+
+void CameraWidget::resync_source() {
+    if (!stream_)
+        return; // Nothing running: start_stream() reads the config when it does
+    auto feed = CameraStream::resolve_from_printer(configured_source());
+    if (feed && feed->stream_url == current_feed_.stream_url &&
+        feed->snapshot_url == current_feed_.snapshot_url) {
+        return;
+    }
+    spdlog::info("[CameraWidget] Camera feed changed to '{}' — restarting stream",
+                 !feed ? "<none>" : (feed->name.empty() ? "<auto>" : feed->name));
+    bool keep_running = fullscreen_overlay_ || (active_ && !compact_);
+    stop_stream();
+    if (!feed) {
+        set_status_text(lv_tr("No Camera"));
+        return;
+    }
+    if (keep_running) {
+        start_stream();
+    }
 }
 
 bool CameraWidget::on_edit_configure() {
@@ -475,6 +515,7 @@ bool CameraWidget::on_edit_configure() {
         std::make_unique<CameraConfigModal>(id(), panel_id(), [this](const nlohmann::json& config) {
             config_ = config;
             apply_transform();
+            resync_source();
         });
     config_modal_->show(lv_screen_active());
     return false;
@@ -512,9 +553,8 @@ void CameraWidget::apply_transform() {
     stream_->set_rotation(cam_rotation);
 
     // XOR user flip with Moonraker flip — toggling when Moonraker already flips = undo
-    auto& state = get_printer_state();
-    bool moonraker_flip_h = state.get_webcam_flip_horizontal();
-    bool moonraker_flip_v = state.get_webcam_flip_vertical();
+    bool moonraker_flip_h = current_feed_.flip_horizontal;
+    bool moonraker_flip_v = current_feed_.flip_vertical;
     stream_->set_flip(moonraker_flip_h != user_flip_h, moonraker_flip_v != user_flip_v);
 
     spdlog::debug("[CameraWidget] Transform: rotation={}, flip_h={} (moon={} ^ user={}), "
