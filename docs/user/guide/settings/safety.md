@@ -51,9 +51,13 @@ Enable this if you have macros that move the toolhead, heat the printer, or perf
 | State | Behavior |
 |-------|----------|
 | **Off** (default) | Filament load/unload is blocked when the nozzle is below the minimum extrude temperature |
-| **On** | Allows load/unload to run even when the nozzle is cold |
+| **On** | Load/unload run on a cold nozzle, and HelixScreen never heats it for you first |
 
 By default, HelixScreen won't run a filament load or unload while the nozzle is too cold to extrude, matching Klipper's cold-extrude safety check. Turn this on if your load/unload macros heat the nozzle themselves before extruding, so the operation isn't blocked before your macro gets a chance to warm up.
+
+With it on, HelixScreen also stops running its own preheat before the operation — your macro is dispatched immediately and owns the temperature from there. This applies wherever you start a load or unload, including the Filament panel and the filament system's own panel.
+
+You don't need this for a printer whose stock macros HelixScreen already recognizes as self-heating (QIDI's `M604` / `M603`, for instance), or for a filament system whose firmware heats as part of loading (AFC, CFS, QIDI Box, AD5X IFS). Those are detected, and the preheat is skipped for them whatever this setting says.
 
 ---
 

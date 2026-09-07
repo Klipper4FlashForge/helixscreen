@@ -7,10 +7,12 @@
 
 #include "ams_backend.h"
 #include "app_globals.h"
+#include "filament_macro_profiles.h"
 #include "filament_op_dispatch.h"
 #include "filament_op_router.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
+#include "safety_settings_manager.h"
 #include "standard_macros.h"
 
 #include <spdlog/spdlog.h>
@@ -18,6 +20,104 @@
 #include <string>
 
 namespace helix::ui {
+
+// ============================================================================
+// Live-state half of the decision
+// ============================================================================
+
+BackendCaps read_backend_caps(AmsBackend* backend, AmsSystemInfo& info_out, int target_slot) {
+    BackendCaps caps;
+    if (!backend) {
+        return caps;
+    }
+    info_out = backend->get_system_info();
+    caps.present = true;
+    caps.requires_slot_selection_for_load = backend->requires_slot_selection_for_load();
+    caps.needs_unload_before_load = backend->needs_unload_before_load(info_out, target_slot);
+    caps.is_tool_changer = backend->get_type() == AmsType::TOOL_CHANGER;
+    // Distinct from !requires_slot_selection_for_load(): plan_load() needs to
+    // tell "bypass is suppressing the lane tier" apart from "this backend
+    // never wanted a slot", because a named lane wants opposite treatment.
+    caps.bypass_active = backend->is_bypass_active();
+    return caps;
+}
+
+FilamentOpPlan plan_live_load(const AmsSystemInfo& info, const BackendCaps& caps, int target_slot) {
+    const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
+    return plan_load(info, caps, target_slot, !macro_info.is_empty(),
+                     macro_info.get_source() == MacroSource::CONFIGURED);
+}
+
+bool read_unload_target_loaded(AmsBackend* backend, const AmsSystemInfo& info, int target_slot) {
+    if (!backend) {
+        return false;
+    }
+    return unload_target_is_loaded(target_slot, backend->slot_is_actively_loaded(target_slot),
+                                   backend->slot_has_filament_at_toolhead(target_slot),
+                                   info.current_slot == target_slot, info.filament_loaded);
+}
+
+FilamentOpPlan plan_live_unload(const BackendCaps& caps, int target_slot, bool target_is_loaded) {
+    const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
+    return plan_unload(caps, target_slot, target_is_loaded, !macro_info.is_empty(),
+                       macro_info.get_source() == MacroSource::CONFIGURED);
+}
+
+// ============================================================================
+// Preheat
+// ============================================================================
+
+PreheatSkip preheat_skip_reason(const FilamentOpPlan& plan, StandardMacroSlot slot,
+                                AmsBackend* backend) {
+    // The user's claim outranks both detections: they are telling us their own
+    // macros heat, or that they want a deliberate cold pull (#978). It holds on
+    // every tier, including the raw-gcode fallback that no detection covers.
+    if (SafetySettingsManager::instance().get_allow_cold_extrude()) {
+        return PreheatSkip::UserOverride;
+    }
+
+    switch (plan.tier) {
+    case FilamentTier::AmsBackend:
+        // supports_auto_heat_on_load() is a claim about LOADS only. ChangeTool
+        // counts as one — a seated machine loads by swapping, and the backend
+        // heats for that the same way — but AmsCall::Unload does not, and no
+        // backend claims to heat for it.
+        if (backend && (plan.ams_call == AmsCall::Load || plan.ams_call == AmsCall::ChangeTool) &&
+            backend->supports_auto_heat_on_load()) {
+            return PreheatSkip::BackendSelfHeats;
+        }
+        return PreheatSkip::None;
+
+    case FilamentTier::Macro:
+        if (filament_macros::macro_heats_hotend(StandardMacros::instance().get(slot).get_macro())) {
+            return PreheatSkip::MacroSelfHeats;
+        }
+        return PreheatSkip::None;
+
+    case FilamentTier::RawGcode:
+        // A bare G1 E move needs the hotend above min_extrude_temp or Klipper
+        // rejects it outright. Nothing here heats but us.
+        return PreheatSkip::None;
+
+    case FilamentTier::Refused:
+        return PreheatSkip::None;
+    }
+    return PreheatSkip::None;
+}
+
+const char* preheat_skip_name(PreheatSkip reason) {
+    switch (reason) {
+    case PreheatSkip::None:
+        return "none";
+    case PreheatSkip::UserOverride:
+        return "allow-cold-load/unload setting";
+    case PreheatSkip::BackendSelfHeats:
+        return "AMS backend heats on load";
+    case PreheatSkip::MacroSelfHeats:
+        return "macro heats the hotend itself";
+    }
+    return "none";
+}
 
 // ============================================================================
 // Load
@@ -30,22 +130,10 @@ namespace helix::ui {
 // generalize to every future caller.
 void execute_filament_load(AmsBackend* backend, int slot, const char* log_tag) {
     AmsSystemInfo sys;
-    helix::ui::BackendCaps caps;
-    if (backend) {
-        sys = backend->get_system_info();
-        caps.present = true;
-        caps.requires_slot_selection_for_load = backend->requires_slot_selection_for_load();
-        caps.needs_unload_before_load = backend->needs_unload_before_load(sys, slot);
-        caps.is_tool_changer = backend->get_type() == AmsType::TOOL_CHANGER;
-        // Distinct from !requires_slot_selection_for_load(): plan_load() needs to
-        // tell "bypass is suppressing the lane tier" apart from "this backend
-        // never wanted a slot", because a named lane wants opposite treatment.
-        caps.bypass_active = backend->is_bypass_active();
-    }
+    const helix::ui::BackendCaps caps = read_backend_caps(backend, sys, slot);
 
     const auto& load_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
-    const helix::ui::FilamentOpPlan plan = helix::ui::plan_load(
-        sys, caps, slot, !load_info.is_empty(), load_info.get_source() == MacroSource::CONFIGURED);
+    const helix::ui::FilamentOpPlan plan = plan_live_load(sys, caps, slot);
 
     switch (plan.tier) {
     case helix::ui::FilamentTier::AmsBackend: {
@@ -128,15 +216,14 @@ void execute_filament_load(AmsBackend* backend, int slot, const char* log_tag) {
 // three existing callers must not each answer that question inline.
 void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loaded,
                              const char* log_tag) {
+    // plan_unload() reads only `present`, so the full read_backend_caps() call
+    // (whose needs_unload_before_load() is a per-lane backend query) buys
+    // nothing here.
     helix::ui::BackendCaps caps;
-    if (backend) {
-        caps.present = true;
-    }
+    caps.present = backend != nullptr;
 
     const auto& unload_info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
-    const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_unload(caps, slot, target_is_loaded, !unload_info.is_empty(),
-                               unload_info.get_source() == MacroSource::CONFIGURED);
+    const helix::ui::FilamentOpPlan plan = plan_live_unload(caps, slot, target_is_loaded);
 
     switch (plan.tier) {
     case helix::ui::FilamentTier::AmsBackend: {
