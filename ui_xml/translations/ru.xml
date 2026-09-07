@@ -1154,6 +1154,7 @@
   <translation tag="Homing Z..." ru="Парковка Z..."/>
   <translation tag="Homing all axes..." ru="Парковка всех осей..."/>
   <translation tag="Homing axes..." ru="Парковка осей..."/>
+  <translation tag="Homing complete" ru="Парковка завершена"/>
   <translation tag="Homing failed: " ru="Парковка не удалась: "/>
   <translation tag="Homing failed: {}" ru="Ошибка парковки: {}"/>
   <translation tag="Homing first..." ru="Парковка..."/>

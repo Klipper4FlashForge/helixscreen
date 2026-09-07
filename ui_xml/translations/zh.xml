@@ -1154,6 +1154,7 @@
   <translation tag="Homing Z..." zh="正在归位 Z..."/>
   <translation tag="Homing all axes..." zh="正在归位所有轴..."/>
   <translation tag="Homing axes..." zh="正在归位各轴..."/>
+  <translation tag="Homing complete" zh="归位完成"/>
   <translation tag="Homing failed: " zh="回零失败: "/>
   <translation tag="Homing failed: {}" zh="归位失败: {}"/>
   <translation tag="Homing first..." zh="正在先归位..."/>

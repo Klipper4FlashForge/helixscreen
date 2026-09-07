@@ -1154,6 +1154,7 @@
   <translation tag="Homing Z..." de="Referenzfahrt Z..."/>
   <translation tag="Homing all axes..." de="Referenzfahrt alle Achsen..."/>
   <translation tag="Homing axes..." de="Achsen referenzieren..."/>
+  <translation tag="Homing complete" de="Referenzfahrt abgeschlossen"/>
   <translation tag="Homing failed: " de="Referenzfahrt fehlgeschlagen: "/>
   <translation tag="Homing failed: {}" de="Referenzfahrt fehlgeschlagen: {}"/>
   <translation tag="Homing first..." de="Referenzfahrt zuerst..."/>
