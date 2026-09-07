@@ -2247,18 +2247,12 @@ bool Application::init_plugins() {
                 },
                 ctx, 8000);
         } else {
-            // Multiple failures: Show [Manage] button to open Settings > Plugins
+            // Multiple failures: the per-plugin errors are in the log above
             char toast_msg[64];
             snprintf(toast_msg, sizeof(toast_msg), lv_tr("%zu plugins failed to load"),
                      errors.size());
 
-            ToastManager::instance().show_with_action(
-                ToastSeverity::WARNING, toast_msg, lv_tr("Manage"),
-                [](void* /*user_data*/) {
-                    NavigationManager::instance().set_active(PanelId::Settings);
-                    get_global_settings_panel().handle_plugins_clicked();
-                },
-                nullptr, 8000);
+            ToastManager::instance().show(ToastSeverity::WARNING, toast_msg, 8000);
         }
     }
 

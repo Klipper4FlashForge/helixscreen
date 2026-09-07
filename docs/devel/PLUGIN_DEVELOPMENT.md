@@ -248,8 +248,7 @@ Plugins must be **explicitly enabled** in the configuration file. Simply placing
 
 **Disable a plugin:**
 Remove it from the `enabled` array, or use the UI:
-- If a plugin fails to load, a toast notification appears with a **[Disable]** button
-- Go to **Settings > Plugins** to see all plugins and disable failed ones
+- If a single plugin fails to load, a toast notification appears with a **[Disable]** button
 
 **Why explicit enable?**
 - Security: prevents accidentally running unknown code
@@ -300,14 +299,9 @@ When an enabled plugin fails to load:
 
 1. **Toast notification** appears:
    - Single failure: `"plugin-id" failed to load [Disable]`
-   - Multiple failures: `N plugins failed to load [Manage]`
+   - Multiple failures: `N plugins failed to load` (each failure is logged with its error)
 
 2. **[Disable] button** removes the plugin from config's enabled list (no restart needed)
-
-3. **Settings > Plugins** shows all plugins organized by state:
-   - ✅ **Loaded** - Running plugins
-   - ⚠️ **Disabled** - Discovered but not enabled
-   - ❌ **Failed** - Enabled but couldn't load (with error details and disable button)
 
 ### Entry Point Contract
 

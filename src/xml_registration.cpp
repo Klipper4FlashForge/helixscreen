@@ -752,8 +752,6 @@ void register_xml_components() {
     register_xml("timelapse_install_overlay.xml");
     register_xml("timelapse_video_card.xml");
     register_xml("timelapse_videos_overlay.xml");
-    register_xml("plugin_card.xml");
-    register_xml("settings_plugins_overlay.xml");
     register_xml("touch_calibration_overlay.xml");
     register_xml("printer_image_list_item.xml");
     register_xml("printer_image_overlay.xml");

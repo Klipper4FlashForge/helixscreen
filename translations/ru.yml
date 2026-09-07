@@ -1271,6 +1271,7 @@ translations:
   Homing Z...: Парковка Z...
   Homing all axes...: Парковка всех осей...
   Homing axes...: Парковка осей...
+  Homing complete: Парковка завершена
   'Homing failed: ': 'Парковка не удалась: '
   'Homing failed: {}': 'Ошибка парковки: {}'
   Homing first...: Парковка...
@@ -2837,6 +2838,7 @@ translations:
     этой печати нужно около %.0fг, но на катушке осталось около %.0fг. Всё равно начать?
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
   : Этот принтер похож на {} (уверенность {}%), но настроен как {}. Неверный тип применяет неправильные параметры перед печатью и пресеты.
+  This removes the plugin's macros and its Moonraker component from the printer and restarts Klipper.: Удаляет макросы плагина и его компонент Moonraker с принтера и перезапускает Klipper.
   This tool probes each bed screw and tells you how much to adjust.: Этот инструмент
     проверяет каждый винт стола и показывает, насколько его нужно отрегулировать.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
@@ -2962,7 +2964,9 @@ translations:
   Understanding Results: Понимание результатов
   ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
   : "Неравномерное натяжение ремня вызывает дефекты печати, такие как смещения слоёв, VFA (вертикальные мелкие артефакты) и ringing.\n\nЭтот инструмент вибрирует каждый путь ремня и измеряет резонансную частоту — совпадающие частоты означают сбалансированное натяжение.\n\nДля CoreXY пути A и B должны отличаться на несколько Гц."
+  Uninstall: Удалить
   Uninstall HelixPrint Plugin: Удалить плагин HelixPrint
+  Uninstall HelixPrint Plugin?: Удалить плагин HelixPrint?
   Uninstall script not found.: Скрипт удаления не найден.
   'Uninstall: Coming soon': 'Удаление: Скоро появится'
   Uninstallation failed. Check logs for details.: Ошибка удаления. Подробности смотрите

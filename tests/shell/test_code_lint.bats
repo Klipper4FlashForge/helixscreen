@@ -588,6 +588,37 @@ EOF
   [[ "$output" == *"^src/"* ]]
 }
 
+# A missing .venv used to turn this gate into a warning in every mode. The full
+# sweep is what pre-push and CI run, and a fresh clone (a cloud session, a new
+# box) has no .venv until someone runs `make venv-setup`, so the last gate before
+# main read as green over an untranslated lv_tr() key (prestonbrown/helixscreen#1507).
+# Staged mode keeps the skip: pre-commit on a box without the venv must stay usable.
+
+run_coverage_gate_without_venv() {
+  # $1 = STAGED_ONLY value. Runs the real function body with the venv pointed
+  # at a path that does not exist, and the timing helper stubbed out.
+  bash -c '
+    section_time() { :; }
+    STAGED_ONLY="$1"
+    VENV_PYTHON="/nonexistent/helix-venv/bin/python"
+    eval "$(sed -n "/^qc_translation_coverage() {/,/^}/p" scripts/quality-checks.sh)"
+    qc_translation_coverage
+  ' _ "$1"
+}
+
+@test "a missing .venv fails the full translation coverage sweep" {
+  run run_coverage_gate_without_venv false
+  [ "$status" -eq 1 ]
+  contains "make venv-setup" "$output"
+  lacks "skipping" "$output"
+}
+
+@test "a missing .venv is still only a skip in staged mode" {
+  run run_coverage_gate_without_venv true
+  [ "$status" -eq 0 ]
+  contains "skipping" "$output"
+}
+
 # --- Global RuntimeConfig::test_mode must be restored by whoever sets it ---
 #
 # test_mode is the master switch behind every should_mock_*() predicate, so a

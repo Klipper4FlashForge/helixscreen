@@ -135,6 +135,36 @@ TRANS_FMT_PY="${VENV_PYTHON:-python3}"
 # ====================================================================
 # Phase 1: Critical Checks
 # ====================================================================
+# One clang-format formats this tree: the wheel pinned in requirements.txt,
+# installed into .venv by `make venv-setup`. CLANG_FORMAT may name another
+# binary, but only one that reports the pinned version; nothing on PATH is
+# ever consulted. Sets CF_PIN and CF_BIN on success and CF_RESOLVE_ERR on
+# failure.
+qc_resolve_clang_format() {
+  CF_PIN="$(grep -oE '^clang-format==[0-9.]+' "$REPO_ROOT/requirements.txt" 2>/dev/null | cut -d= -f3)"
+  CF_BIN=""; CF_RESOLVE_ERR=""
+  if [ -z "$CF_PIN" ]; then
+    CF_RESOLVE_ERR="requirements.txt does not pin clang-format (clang-format==X.Y.Z)"
+    return 1
+  fi
+  local cand="${CLANG_FORMAT:-$REPO_ROOT/.venv/bin/clang-format}" ver
+  if [ ! -x "$cand" ] && ! command -v "$cand" >/dev/null 2>&1; then
+    if [ -n "${CLANG_FORMAT:-}" ]; then
+      CF_RESOLVE_ERR="CLANG_FORMAT=$cand is not an executable"
+    else
+      CF_RESOLVE_ERR="pinned clang-format $CF_PIN not found (.venv/bin/clang-format is missing)"
+    fi
+    return 1
+  fi
+  ver="$("$cand" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  if [ "$ver" != "$CF_PIN" ]; then
+    CF_RESOLVE_ERR="$cand is clang-format ${ver:-unknown}, the pin is $CF_PIN"
+    return 1
+  fi
+  CF_BIN="$cand"
+  return 0
+}
+
 qc_phase1() {
   local EXIT_CODE=0
 
@@ -444,7 +474,7 @@ else
 
   if [ "$XML_CONST_DELETED" = false ] && [ "$SCHEMA_INPUT_STAGED" = false ] && \
      run_xml_linter >/tmp/lint_xml.out 2>&1; then
-    echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+    qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
   else
     # The lint failed, a const was deleted, or a schema input the lint cannot
     # see is staged. Refresh the snapshot and retry — `make` here (not the raw
@@ -472,7 +502,7 @@ else
 
       if run_xml_linter >/tmp/lint_xml.out 2>&1; then
         if [ "$SCHEMA_WAS_STALE" = false ] && [ "$SCHEMA_DIRTY_BEFORE" = false ]; then
-          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+          qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
         elif [ "$SCHEMA_WAS_STALE" = false ]; then
           # Regeneration changed nothing: the snapshot is already correct and
           # merely unstaged. Nothing to fix, and nothing this hook may stage —
@@ -481,7 +511,7 @@ else
           # file. Not a commit blocker: the committer cannot resolve it from
           # inside this commit without absorbing someone else's content. Say it
           # plainly instead, because CI lints the COMMITTED copy.
-          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+          qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
           echo "ℹ️  $XML_LINTER_SCHEMA_PATH is already up to date but unstaged"
           echo "   CI's XML Lint job lints the committed copy — commit it:"
           echo "   git add $XML_LINTER_SCHEMA_PATH"
@@ -491,7 +521,7 @@ else
         elif [ "$AUTO_FIX" = true ] && [ "$STAGED_ONLY" = true ] && [ "$SCHEMA_DIRTY_BEFORE" = false ]; then
           git add "$XML_LINTER_SCHEMA_PATH"
           echo "   ✓ Regenerated and staged $XML_LINTER_SCHEMA_PATH"
-          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+          qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
         else
           echo "⚠️  $XML_LINTER_SCHEMA_PATH was stale — regenerated in place"
           echo "   Commit it or CI's XML Lint job will fail:"
@@ -510,7 +540,7 @@ else
       cat /tmp/regen_xml_schema.out
       echo "⚠️  Schema regeneration failed — linting against the snapshot on disk"
       if run_xml_linter >/tmp/lint_xml.out 2>&1; then
-        echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+        qc_count "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
       else
         cat /tmp/lint_xml.out
         echo "   Run 'make lint-xml-all' to see warnings too"
@@ -997,31 +1027,49 @@ echo ""
 qc_phase2() {
   local EXIT_CODE=0
 
-# Code Formatting Check (clang-format) - WARNING ONLY
-# NOTE: clang-format versions differ between local (macOS Homebrew) and CI (Ubuntu)
-# which can cause false positives. Use pre-commit hook for local enforcement.
+# Code Formatting Check (clang-format)
+#
+# The pinned wheel (qc_resolve_clang_format) is the only formatter this tree
+# accepts, on every machine and in CI, so its verdict is byte-identical
+# everywhere and a difference is a real one. A distro or Homebrew
+# clang-format, even another 18.x, reflows differently, and two formatters
+# taking turns on one file is how files ping-pong between commits; a tree
+# that cannot resolve the pin fails here instead of formatting with whatever
+# it has.
+#
+# Files that were unformatted when this gate started blocking are carried in
+# CLANG_FORMAT_BASELINE: still-unformatted entries are reported, not failed,
+# until they are next staged - the pre-commit auto-format cleans them then
+# - and a full sweep refuses an entry that has come clean, so the list only
+# shrinks.
 echo "🎨 Checking code formatting (clang-format)..."
-# Resolve clang-format to the EXACT pinned wheel (clang-format==18.1.8 in
-# requirements.txt, installed into .venv by `make deps`). Preference order:
-# $CLANG_FORMAT override, then the project .venv (the single source of truth —
-# byte-identical on every OS + CI), then a system clang-format-18, then bare
-# clang-format. The .venv wins over the system binary so a machine's Homebrew
-# (newer) or distro (older 18.1.x patch) clang-format never affects formatting.
-# Auto-fix only runs when the resolved binary is v18, so a non-18 fallback can
-# never reflow whole files.
-CF_BIN=""
-CF_VER=""
-for cf_cand in "${CLANG_FORMAT:-}" "$REPO_ROOT/.venv/bin/clang-format" clang-format-18 clang-format; do
-  [ -n "$cf_cand" ] || continue
-  command -v "$cf_cand" >/dev/null 2>&1 || [ -x "$cf_cand" ] || continue
-  cf_v="$("$cf_cand" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-  [ -n "$cf_v" ] || continue
-  CF_BIN="$cf_cand"
-  CF_VER="$cf_v"
-  case "$cf_v" in 18.*) break ;; esac
-done
+# Unformatted when the gate started blocking; each entry leaves when it is
+# next staged and auto-formatted.
+CLANG_FORMAT_BASELINE="
+include/print_history_manager.h
+include/printer_discovery.h
+include/tool_state.h
+include/ui_icon.h
+src/print/print_history_manager.cpp
+src/printer/ams_backend_cfs.cpp
+src/printer/ams_backend_happy_hare.cpp
+src/printer/ams_subscription_backend.cpp
+src/printer/filament_mapper.cpp
+src/system/pwm_sound_backend.cpp
+src/system/update_checker.cpp
+src/ui/filament_op_execute.cpp
+src/ui/panel_widget_manager.cpp
+src/ui/ui_ams_context_menu.cpp
+src/ui/ui_ams_sidebar.cpp
+src/ui/ui_icon.cpp
+src/ui/ui_panel_filament.cpp
+src/ui/ui_print_tune_overlay.cpp
+src/ui/ui_settings_about.cpp
+"
+CF_OK=false
+if qc_resolve_clang_format; then CF_OK=true; fi
 if [ -n "$FILES" ]; then
-  if [ -n "$CF_BIN" ]; then
+  if [ "$CF_OK" = true ]; then
     if [ -f ".clang-format" ]; then
       # This probe was the single slowest thing in the script - 41s of a 44s
       # run - because it spawned one clang-format (plus one head+grep) per
@@ -1031,19 +1079,30 @@ if [ -n "$FILES" ]; then
       FORMAT_ISSUES=""
       CF_CAND="$(mktemp)"
       CF_DIRTY="$(mktemp)"
+      CF_SEEN="$(mktemp)"
       printf '%s
 ' $FILES > "$CF_CAND"
+      CF_TOTAL=$(grep -c . "$CF_CAND")
       # Skipping auto-generated sources is part of the parallel pass: their
       # on-disk format is owned by the generator (e.g.
       # src/generated/lv_i18n_translations.c from generate_translations.py), and
       # reformatting them fights the generator on every build.
-      xargs -a "$CF_CAND" -P "${QC_JOBS:-4}" -I{} sh -c '
+      #
+      # The candidate list arrives on stdin: reading it with the -a flag is a
+      # GNU xargs extension that BSD xargs rejects outright, and this pipeline treats no output as
+      # no findings, so a fan-out that never ran would read as every file
+      # clean. Each worker records the file it looked at in CF_SEEN, and the
+      # verdict below refuses a probe that covered fewer files than it was
+      # given. xargs's own stderr stays visible for the same reason.
+      < "$CF_CAND" xargs -P "${QC_JOBS:-4}" -I{} sh -c '
         f="$1"
+        printf "%s\n" "$f" >> "$2"
         [ -f "$f" ] || exit 0
         head -5 "$f" | grep -qiE "auto-generated|DO NOT EDIT" && exit 0
         "$0" --dry-run --Werror "$f" >/dev/null 2>&1 || printf "%s
 " "$f"
-      ' "$CF_BIN" {} 2>/dev/null | sort > "$CF_DIRTY"
+      ' "$CF_BIN" {} "$CF_SEEN" | sort > "$CF_DIRTY"
+      CF_EXAMINED=$(grep -c . "$CF_SEEN")
       # Leading space is load-bearing: a message below prints "git add$FORMAT_ISSUES".
       FORMAT_ISSUES="$(sed 's|^| |' "$CF_DIRTY" | tr -d '
 ')"
@@ -1059,23 +1118,34 @@ if [ -n "$FILES" ]; then
         done < "$CF_DIRTY"
       fi
       if [ -n "$FORMAT_ISSUES" ] && [ "$AUTO_FIX" = true ]; then
-        case "$CF_VER" in
-          18.*)
-            while IFS= read -r file; do
-              [ -n "$file" ] || continue
-              "$CF_BIN" -i "$file"
-              echo "   ✓ Auto-formatted: $file"
-            done < "$CF_DIRTY"
-            ;;
-          *)
-            echo "   ⚠️  Skipping auto-format: resolved clang-format $CF_VER != 18"
-            echo "       (auto-formatting with a non-CI version would reflow whole files)"
-            echo "       Install v18: pip install 'clang-format==18.1.8' into .venv, or set CLANG_FORMAT=clang-format-18"
-            ;;
-        esac
+        while IFS= read -r file; do
+          [ -n "$file" ] || continue
+          "$CF_BIN" -i "$file"
+          echo "   ✓ Auto-formatted: $file"
+        done < "$CF_DIRTY"
       fi
-      rm -f "$CF_CAND" "$CF_DIRTY"
+      rm -f "$CF_CAND" "$CF_DIRTY" "$CF_SEEN"
 
+      if [ "$CF_EXAMINED" -ne "$CF_TOTAL" ]; then
+        echo "❌ clang-format probe covered $CF_EXAMINED of $CF_TOTAL file(s): the fan-out did not run them"
+        echo "   (an xargs that rejects GNU options does this - prestonbrown/helixscreen#1488)"
+        EXIT_CODE=1
+      fi
+      # Split the dirty list against the baseline, and find baseline entries
+      # that were examined this run and came back clean.
+      CF_NEW=""; CF_BASELINED=""; CF_RETIRE=""
+      for cf_f in $FORMAT_ISSUES; do
+        if printf '%s\n' $CLANG_FORMAT_BASELINE | grep -Fxq "$cf_f"; then
+          CF_BASELINED="$CF_BASELINED $cf_f"
+        else
+          CF_NEW="$CF_NEW $cf_f"
+        fi
+      done
+      for cf_f in $CLANG_FORMAT_BASELINE; do
+        printf '%s\n' $FILES | grep -Fxq "$cf_f" || continue
+        case "$FORMAT_ISSUES " in *" $cf_f "*) continue ;; esac
+        CF_RETIRE="$CF_RETIRE $cf_f"
+      done
       if [ -n "$FORMAT_ISSUES" ]; then
         if [ "$AUTO_FIX" = true ]; then
           # Auto-stage formatted files when in pre-commit mode (--staged-only)
@@ -1099,8 +1169,17 @@ if [ -n "$FILES" ]; then
               echo "$CF_RESTAGE" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
             fi
             if [ -n "$CF_HELD" ]; then
-              echo "⚠️  Formatted but NOT re-staged (partially staged):$CF_HELD"
-              echo "ℹ️  This commit still carries unformatted C++. Stage it with: git add$CF_HELD"
+              CF_HELD_NEW=""
+              for cf_f in $CF_HELD; do
+                printf '%s\n' $CLANG_FORMAT_BASELINE | grep -Fxq "$cf_f" || CF_HELD_NEW="$CF_HELD_NEW $cf_f"
+              done
+              if [ -n "$CF_HELD_NEW" ]; then
+                echo "❌ Formatted on disk but NOT re-staged (partially staged):$CF_HELD_NEW"
+                echo "   This commit would carry unformatted C++. Stage it with: git add$CF_HELD_NEW"
+                EXIT_CODE=1
+              else
+                echo "⚠️  Formatted on disk but NOT re-staged (partially staged, baselined):$CF_HELD"
+              fi
             fi
           else
             echo "✅ Auto-formatted files - re-stage them before committing:"
@@ -1110,23 +1189,38 @@ if [ -n "$FILES" ]; then
             echo "   git add$FORMAT_ISSUES"
           fi
         else
-          echo "⚠️  Files may need formatting (version differences may cause false positives):"
-          echo "$FORMAT_ISSUES" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
-          echo ""
-          echo "ℹ️  Fix with: clang-format -i <file>"
-          echo "ℹ️  Or run: ./scripts/quality-checks.sh --auto-fix"
-          # NOTE: Don't fail CI for formatting - version differences cause issues
-          # EXIT_CODE=1
+          if [ -n "$CF_NEW" ]; then
+            echo "❌ Unformatted C++ (clang-format $CF_PIN, the pinned wheel, disagrees):"
+            echo "$CF_NEW" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
+            echo "   Fix with: ./scripts/quality-checks.sh --auto-fix   (then git add the files it names)"
+            EXIT_CODE=1
+          fi
+          if [ -n "$CF_BASELINED" ]; then
+            echo "⚠️  Baselined and still unformatted (auto-formatted when next staged):"
+            echo "$CF_BASELINED" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
+          fi
+          if [ -z "$CF_NEW" ] && [ "$CF_EXAMINED" -eq "$CF_TOTAL" ]; then
+            qc_count "✅ clang-format: $CF_EXAMINED file(s) checked, $(echo "$CF_BASELINED" | wc -w | tr -d ' ') baselined still unformatted"
+          fi
         fi
-      else
-        echo "✅ All files properly formatted"
+      elif [ "$CF_EXAMINED" -eq "$CF_TOTAL" ]; then
+        qc_count "✅ All files properly formatted ($CF_EXAMINED file(s) checked)"
+      fi
+      if [ -n "$CF_RETIRE" ]; then
+        if [ "$STAGED_ONLY" = true ]; then
+          echo "ℹ️  Formatted now; retire from CLANG_FORMAT_BASELINE (scripts/quality-checks.sh) before pushing:$CF_RETIRE"
+        else
+          echo "❌ Formatted now but still listed in CLANG_FORMAT_BASELINE (scripts/quality-checks.sh); retire:$CF_RETIRE"
+          EXIT_CODE=1
+        fi
       fi
     else
       echo "ℹ️  No .clang-format file found - skipping format check"
     fi
   else
-    echo "⚠️  clang-format not found - skipping format check"
-    echo "   Install with: brew install clang-format (macOS) or apt install clang-format (Linux)"
+    echo "❌ $CF_RESOLVE_ERR"
+    echo "   Run: make venv-setup   (installs the pinned wheel into .venv)"
+    EXIT_CODE=1
   fi
 else
   echo "ℹ️  No files to check"
@@ -2313,7 +2407,7 @@ if [ "$TOKEN_EXIT" -eq 0 ]; then
   if [ "$HEX_COUNT" -lt "$HEX_BASELINE" ]; then
     echo "✅ Design tokens: $HEX_COUNT hardcoded colors (baseline $HEX_BASELINE — ratchet down)"
   else
-    echo "✅ Design tokens: $HEX_COUNT == baseline ($HEX_BASELINE), no private LVGL APIs"
+    qc_count "✅ Design tokens: $HEX_COUNT == baseline ($HEX_BASELINE), no private LVGL APIs"
   fi
 else
   echo ""
@@ -2647,10 +2741,21 @@ if [ -x "$VENV_PYTHON" ] && [ -f "scripts/translation_sync.py" ]; then
     echo "   '// i18n: do not translate' on its line or the line above."
     EXIT_CODE=1
   fi
-else
+elif [ "$STAGED_ONLY" = true ]; then
   section_time $SECTION_START
   echo ""
   echo "⚠️  .venv not set up — skipping (run 'make venv-setup')"
+else
+  # The full sweep is the last gate before main (pre-push, CI mode). A skip
+  # here reads as green in the hook output while an untranslated lv_tr() key
+  # sails through to break Code Quality and the BATS job on the same head
+  # (prestonbrown/helixscreen#1507). Only the staged-mode pre-commit pass may
+  # treat a missing venv as "not my problem".
+  section_time $SECTION_START
+  echo ""
+  echo "❌ .venv not set up — the translation-coverage gate cannot run"
+  echo "   Fix: make venv-setup   (once per clone; the full sweep refuses to guess)"
+  EXIT_CODE=1
 fi
 
 echo ""
@@ -2731,18 +2836,27 @@ if [ -n "$SHELL_FILES" ]; then
     SC_DIR="$QC_TMP/shellcheck"
     mkdir -p "$SC_DIR"
     printf '%s\n' $SHELL_FILES > "$SC_DIR/files"
+    SHELL_TOTAL=$(grep -c . "$SC_DIR/files")
     # scripts/ is linted at warning severity minus the two excluded codes;
     # config/ keeps the stricter default.
-    xargs -a "$SC_DIR/files" -P "${QC_JOBS:-4}" -I{} sh -c '
+    #
+    # The list arrives on stdin: reading it with the -a flag is a GNU xargs
+    # extension that BSD xargs rejects outright, and the loop below counts findings, not files,
+    # so a fan-out that never ran would report every script clean. Every
+    # worker leaves a marker (.out, or .skip for a listed file that is not on
+    # disk), and the verdict refuses a run that examined fewer files than it
+    # was given.
+    < "$SC_DIR/files" xargs -P "${QC_JOBS:-4}" -I{} sh -c '
       f="$1"
-      [ -f "$f" ] || exit 0
+      out="$2/$(printf "%s" "$f" | tr "/" "_")"
+      if [ ! -f "$f" ]; then : > "$out.skip"; exit 0; fi
       case "$f" in
         scripts/*) flags="-S warning -e $3" ;;
         *)         flags="" ;;
       esac
-      out="$2/$(printf "%s" "$f" | tr "/" "_")"
       shellcheck $flags "$f" > "$out.out" 2>/dev/null || : > "$out.bad"
     ' _ {} "$SC_DIR" "$SHELLCHECK_SCRIPTS_EXCLUDE"
+    SHELL_EXAMINED=$(find "$SC_DIR" \( -name '*.out' -o -name '*.skip' \) | wc -l | tr -d ' ')
     for script in $SHELL_FILES; do
       sc_stem="$SC_DIR/$(printf '%s' "$script" | tr '/' '_')"
       [ -f "$sc_stem.bad" ] || continue
@@ -2756,11 +2870,15 @@ if [ -n "$SHELL_FILES" ]; then
     done
     section_time $SECTION_START
     echo ""
-    if [ $SHELL_ERRORS -eq 0 ]; then
+    if [ "$SHELL_EXAMINED" -ne "$SHELL_TOTAL" ]; then
+      echo "❌ shellcheck examined $SHELL_EXAMINED of $SHELL_TOTAL shell script(s): the fan-out did not run them"
+      echo "   (an xargs that rejects GNU options does this - prestonbrown/helixscreen#1488)"
+      EXIT_CODE=1
+    elif [ $SHELL_ERRORS -eq 0 ]; then
       if [ $SHELL_BASELINED -gt 0 ]; then
-        echo "✅ shellcheck clean ($SHELL_BASELINED baselined file(s) still dirty)"
+        qc_count "✅ shellcheck clean ($SHELL_BASELINED baselined file(s) still dirty, $SHELL_TOTAL linted)"
       else
-        echo "✅ All shell scripts pass shellcheck"
+        qc_count "✅ All shell scripts pass shellcheck ($SHELL_TOTAL file(s) linted)"
       fi
     else
       echo "❌ shellcheck found issues in $SHELL_ERRORS file(s)"
@@ -2942,18 +3060,50 @@ qc_state_hash() {
     git ls-files --others --exclude-standard 2>/dev/null | sort || true
   } | sha256sum 2>/dev/null | cut -d' ' -f1
 }
+# A cached pass replays the counts the full run recorded (qc_count above), so a
+# green that examined nothing cannot hide behind the cache: the stamp's first
+# line names the run, the rest are its counted verdicts.
+qc_stamp_write() {
+  # $1 = stamp path, $2 = counts file
+  mkdir -p "$(dirname "$1")" 2>/dev/null || true
+  {
+    echo "run: $(git rev-parse --short HEAD 2>/dev/null || echo no-head) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    [ -f "$2" ] && cat "$2"
+  } > "$1" 2>/dev/null || true
+}
+qc_stamp_replay() {
+  # $1 = stamp path
+  local first
+  first="$(head -n 1 "$1" 2>/dev/null)"
+  case "$first" in
+    run:*)
+      echo "✅ Quality checks passed! (cached: working tree unchanged since the full ${first#run: })"
+      tail -n +2 "$1" | sed 's/^/   /'
+      ;;
+    *)
+      echo "✅ Quality checks passed! (cached - working tree unchanged since the last full run)"
+      echo "   (that run recorded no counts; QC_NO_CACHE=1 runs a counted sweep)"
+      ;;
+  esac
+  echo "   Force a re-run with QC_NO_CACHE=1"
+}
 QC_STAMP=""
 if [ "$STAGED_ONLY" != true ] && [ -z "${QC_NO_CACHE:-}" ]; then
   QC_STAMP="$QC_STAMP_DIR/$(qc_state_hash)"
   if [ -n "$QC_STAMP" ] && [ -f "$QC_STAMP" ]; then
-    echo "✅ Quality checks passed! (cached - working tree unchanged since the last full run)"
-    echo "   Force a re-run with QC_NO_CACHE=1"
+    qc_stamp_replay "$QC_STAMP"
     exit 0
   fi
 fi
 
 QC_TMP="$(mktemp -d)"
 trap 'rm -rf "$QC_TMP"' EXIT
+# Verdicts that carry a count are recorded here as well as printed, so a cached
+# pass can replay what the full run examined. Gates run in parallel subshells,
+# and a one-line append is atomic, so one file serves them all.
+QC_COUNTS="$QC_TMP/counts"
+qc_note() { printf '%s\n' "$1" >> "$QC_COUNTS" 2>/dev/null || true; }
+qc_count() { echo "$1"; qc_note "$1"; }
 QC_JOBS="${QC_JOBS:-$(nproc 2>/dev/null || echo 4)}"
 
 qc_run_buffered() {
@@ -3105,8 +3255,7 @@ TOTAL_SEC=$((SCRIPT_END - SCRIPT_START))
 if [ $EXIT_CODE -eq 0 ]; then
   # Only a pass is cached; a failure must always re-run.
   if [ -n "$QC_STAMP" ]; then
-    mkdir -p "$QC_STAMP_DIR" 2>/dev/null || true
-    : > "$QC_STAMP" 2>/dev/null || true
+    qc_stamp_write "$QC_STAMP" "$QC_COUNTS"
   fi
   echo "✅ Quality checks passed! (${TOTAL_SEC}s total)"
   exit 0

@@ -1255,6 +1255,7 @@ translations:
   Homing Z...: Homing Z...
   Homing all axes...: Homing all axes...
   'Homing axes...': 'Homing axes...'
+  Homing complete: Homing complete
   'Homing failed: ': 'Homing failed: '
   'Homing failed: {}': 'Homing failed: {}'
   Homing first...: Homing first...
@@ -2803,6 +2804,7 @@ translations:
     print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
   : This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
+  This removes the plugin's macros and its Moonraker component from the printer and restarts Klipper.: This removes the plugin's macros and its Moonraker component from the printer and restarts Klipper.
   This tool probes each bed screw and tells you how much to adjust.: This tool probes
     each bed screw and tells you how much to adjust.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
@@ -2930,7 +2932,9 @@ translations:
   Understanding Results: Understanding Results
   ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
   : "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
+  Uninstall: Uninstall
   Uninstall HelixPrint Plugin: Uninstall HelixPrint Plugin
+  Uninstall HelixPrint Plugin?: Uninstall HelixPrint Plugin?
   Uninstall script not found.: Uninstall script not found.
   'Uninstall: Coming soon': 'Uninstall: Coming soon'
   Uninstallation failed. Check logs for details.: Uninstallation failed. Check logs

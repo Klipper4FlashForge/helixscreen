@@ -12,6 +12,7 @@
 
 #include "async_lifetime_guard.h"
 #include "config.h"
+#include "i_moonraker_api.h"
 #include "operation_timeout_guard.h"
 #include "save_config_restart.h"
 #include "standard_macros.h"
@@ -20,8 +21,10 @@
 #include "ui/temperature_observer_bundle.h"
 #include "ui/ui_modal_guard.h"
 
+#include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 
 // Forward declaration
 class TemperatureService;
@@ -481,6 +484,52 @@ class ControlsPanel : public PanelBase {
     //
     // === Quick Action Button Handlers ===
     //
+
+    /**
+     * @brief The words one quick action shows the user, start to finish.
+     *
+     * Every field is already translated — the call site runs lv_tr(), which
+     * keeps the literals where the translation sweep can see them. Holding the
+     * whole lifecycle in one struct is what stops the next quick action from
+     * shipping with a start toast and no completion toast.
+     */
+    struct QuickActionText {
+        std::string started;         ///< As the command is dispatched
+        std::string completed;       ///< Once the printer acknowledges it
+        std::string guard_timed_out; ///< The timeout guard gave up waiting
+        std::string rpc_timed_out;   ///< The rpc timed out; the printer may still be working
+        std::string failed_fmt;      ///< Failure, with one {} for the error detail
+    };
+
+    /// Hands the shared success/error callbacks to whichever API entry point
+    /// runs this quick action's command.
+    using QuickActionDispatch =
+        std::function<void(IMoonrakerAPI::SuccessCallback, IMoonrakerAPI::ErrorCallback)>;
+
+    /**
+     * @brief Run one guarded quick action end to end.
+     *
+     * Homing, QGL and Z-Tilt differ only in the command they send and the words
+     * around it. Sharing the body is what keeps the parts the user sees from
+     * drifting apart between them: the busy check, the toast on every outcome,
+     * and the answer when there is no printer to talk to.
+     *
+     * @param timeout_ms How long the guard waits before declaring the op hung.
+     *                   Pass the same constant the API applies to the rpc.
+     * @param text       What the user is told at each outcome.
+     * @param dispatch   Called once, only after the guard is armed and only with
+     *                   a live api_.
+     */
+    void run_quick_action(uint32_t timeout_ms, const QuickActionText& text,
+                          const QuickActionDispatch& dispatch);
+
+    /// The QuickActionText the five homing buttons share, with @p started as the
+    /// one line that names an axis.
+    static QuickActionText homing_text(const char* started);
+
+    /// Home @p axes ("" for all) as a quick action. The axis spelling is the
+    /// same one MoonrakerMotionAPI::home_axes() validates.
+    void home_axes_action(const char* axes, const char* started_toast);
 
     void handle_home_all();
     void handle_home_x();
