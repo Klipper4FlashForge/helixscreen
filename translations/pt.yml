@@ -94,6 +94,7 @@ translations:
   = Loosen: = Afrouxar
   = Tighten: = Apertar
   A: A
+  A backup of %s is created before applying: 'Um backup de %s é criado antes de aplicar'
   A picture of your printer: Uma imagem da sua impressora
   ABS: ABS
   ACCELEROMETERS: ACELERÔMETROS
@@ -577,6 +578,7 @@ translations:
   Completed {}m ago: 'Concluído há {} min'
   Computing calibration...: Calculando calibração...
   Config Dir: Diretório de Configuração
+  Config Edit Failed: 'Falha ao Editar a Configuração'
   Config-defined (read-only): Definido na configuração (somente leitura)
   Configuration added successfully.: Configuração adicionada com sucesso.
   Configuration already present.: Configuração já presente.
@@ -751,9 +753,11 @@ translations:
   Define macros in your printer.cfg: Defina macros no seu printer.cfg
   Delete: Excluir
   Delete File?: Excluir Arquivo?
+  Delete Print Record: 'Excluir Registro de Impressão'
   Delete Profile?: Excluir Perfil?
   Delete Spool?: Excluir Carretel?
   Delete Video: Excluir Vídeo
+  Delete the history record for {}?: 'Excluir o registro do histórico de {}?'
   Delete {}?: Excluir {}?
   'Delta:': 'Delta:'
   Density: Densidade
@@ -1793,6 +1797,7 @@ translations:
   No temperature sensors detected: 'Nenhum sensor de temperatura detectado'
   No timelapse videos found: Nenhum vídeo timelapse encontrado
   No vendors found: Nenhum fornecedor encontrado
+  No video player installed - showing the timelapse library: 'Nenhum reprodutor de vídeo instalado – mostrando a biblioteca de timelapse'
   ? "No webcam detected.\nA webcam is required for timelapse."
   : "Nenhuma webcam detectada.\nUma webcam é necessária para timelapse."
   No width sensor detected: 'Nenhum sensor de largura detectado'
@@ -2089,6 +2094,7 @@ translations:
   Printer accepted job but isn't printing — check cover, paper, and label type (firmware status=0x{:02X} error=0x{:02X}): A
     impressora aceitou o trabalho mas não está imprimindo — verifique a tampa, o papel
     e o tipo de etiqueta (firmware status=0x{:02X} error=0x{:02X})
+  Printer connection unavailable: Conexão com a impressora indisponível
   Printer database format error: Erro de formato do banco de dados de impressoras
   Printer database is corrupt: O banco de dados de impressoras está corrompido
   Printer didn't respond — make sure it's on and in range: A impressora não respondeu
@@ -2097,6 +2103,7 @@ translations:
     o serviço esperado — dispositivo incorreto?
   Printer hardware detected: Hardware da impressora detectado
   Printer image set to auto-detect: Imagem da impressora configurada para auto-detectar
+  Printer is busy - {} stays in the queue: 'A impressora está ocupada – {} permanece na fila'
   Printer is not paired — pair it first: A impressora não está pareada — pareie-a
     primeiro
   Printer name: Nome da impressora

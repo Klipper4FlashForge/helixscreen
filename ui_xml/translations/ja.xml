@@ -88,6 +88,7 @@
   <translation tag="= Loosen" ja="= 緩める"/>
   <translation tag="= Tighten" ja="= 締める"/>
   <translation tag="A" ja="A"/>
+  <translation tag="A backup of %s is created before applying" ja="適用前に %s のバックアップを作成します"/>
   <translation tag="A picture of your printer" ja="プリンターの画像"/>
   <translation tag="ABS" ja="ABS"/>
   <translation tag="ACCELEROMETERS" ja="加速度センサー"/>
@@ -509,6 +510,7 @@
   <translation tag="Completed {}m ago" ja="{} 分前に完了"/>
   <translation tag="Computing calibration..." ja="キャリブレーション計算中..."/>
   <translation tag="Config Dir" ja="設定ディレクトリ"/>
+  <translation tag="Config Edit Failed" ja="設定の編集に失敗しました"/>
   <translation tag="Config-defined (read-only)" ja="設定で定義済み（読み取り専用）"/>
   <translation tag="Configuration added successfully." ja="設定が正常に追加されました。"/>
   <translation tag="Configuration already present." ja="設定は既に存在します。"/>
@@ -664,9 +666,11 @@
   <translation tag="Define macros in your printer.cfg" ja="printer.cfg でマクロを定義してください"/>
   <translation tag="Delete" ja="削除"/>
   <translation tag="Delete File?" ja="ファイルを削除しますか？"/>
+  <translation tag="Delete Print Record" ja="印刷記録を削除"/>
   <translation tag="Delete Profile?" ja="プロファイルを削除しますか？"/>
   <translation tag="Delete Spool?" ja="スプールを削除しますか？"/>
   <translation tag="Delete Video" ja="動画を削除"/>
+  <translation tag="Delete the history record for {}?" ja="{} の履歴記録を削除しますか？"/>
   <translation tag="Delete {}?" ja="{} を削除しますか?"/>
   <translation tag="Delta:" ja="差分:"/>
   <translation tag="Density" ja="密度"/>
@@ -1596,6 +1600,7 @@
   <translation tag="No temperature sensors detected" ja="温度センサーが検出されません"/>
   <translation tag="No timelapse videos found" ja="タイムラプス動画が見つかりません"/>
   <translation tag="No vendors found" ja="ベンダーが見つかりません"/>
+  <translation tag="No video player installed - showing the timelapse library" ja="動画プレーヤーがありません – タイムラプス一覧を表示します"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." ja="ウェブカメラが検出されませんでした。&#10;タイムラプスにはウェブカメラが必要です。"/>
   <translation tag="No width sensor detected" ja="幅センサーが検出されません"/>
   <translation tag="None" ja="なし"/>
@@ -1868,12 +1873,14 @@
   <translation tag="Printer Shutdown" ja="プリンターシャットダウン"/>
   <translation tag="Printer Type" ja="プリンタータイプ"/>
   <translation tag="Printer accepted job but isn&apos;t printing — check cover, paper, and label type (firmware status=0x{:02X} error=0x{:02X})" ja="プリンターはジョブを受け付けましたが印刷していません — カバー、用紙、ラベルの種類を確認してください (firmware status=0x{:02X} error=0x{:02X})"/>
+  <translation tag="Printer connection unavailable" ja="プリンターとの接続が利用できません"/>
   <translation tag="Printer database format error" ja="プリンターデータベースの形式エラー"/>
   <translation tag="Printer database is corrupt" ja="プリンターデータベースが破損しています"/>
   <translation tag="Printer didn&apos;t respond — make sure it&apos;s on and in range" ja="プリンターが応答しません — 電源が入っており通信範囲内にあることを確認してください"/>
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" ja="プリンターが想定されるサービスを公開していません — デバイスが違う可能性があります"/>
   <translation tag="Printer hardware detected" ja="プリンターのハードウェアを検出"/>
   <translation tag="Printer image set to auto-detect" ja="プリンター画像を自動検出に設定しました"/>
+  <translation tag="Printer is busy - {} stays in the queue" ja="プリンターは使用中です – {} はキューに残ります"/>
   <translation tag="Printer is not paired — pair it first" ja="プリンターがペアリングされていません — 先にペアリングしてください"/>
   <translation tag="Printer name" ja="プリンター名"/>
   <translation tag="Printer not ready" ja="プリンターの準備ができていません"/>

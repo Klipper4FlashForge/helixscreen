@@ -88,6 +88,7 @@
   <translation tag="= Loosen" it="= Allentare"/>
   <translation tag="= Tighten" it="= Stringere"/>
   <translation tag="A" it="A"/>
+  <translation tag="A backup of %s is created before applying" it="Prima di applicare viene creato un backup di %s"/>
   <translation tag="A picture of your printer" it="Immagine della tua stampante"/>
   <translation tag="ABS" it="ABS"/>
   <translation tag="ACCELEROMETERS" it="ACCELEROMETRI"/>
@@ -509,6 +510,7 @@
   <translation tag="Completed {}m ago" it="Completato {} min fa"/>
   <translation tag="Computing calibration..." it="Calcolo calibrazione..."/>
   <translation tag="Config Dir" it="Dir configurazione"/>
+  <translation tag="Config Edit Failed" it="Modifica della configurazione non riuscita"/>
   <translation tag="Config-defined (read-only)" it="Definito nella configurazione (sola lettura)"/>
   <translation tag="Configuration added successfully." it="Configurazione aggiunta con successo."/>
   <translation tag="Configuration already present." it="Configurazione già presente."/>
@@ -664,9 +666,11 @@
   <translation tag="Define macros in your printer.cfg" it="Definire le macro nel proprio printer.cfg"/>
   <translation tag="Delete" it="Elimina"/>
   <translation tag="Delete File?" it="Eliminare file?"/>
+  <translation tag="Delete Print Record" it="Elimina record di stampa"/>
   <translation tag="Delete Profile?" it="Eliminare profilo?"/>
   <translation tag="Delete Spool?" it="Eliminare bobina?"/>
   <translation tag="Delete Video" it="Elimina video"/>
+  <translation tag="Delete the history record for {}?" it="Eliminare il record della cronologia di {}?"/>
   <translation tag="Delete {}?" it="Eliminare {}?"/>
   <translation tag="Delta:" it="Delta:"/>
   <translation tag="Density" it="Densità"/>
@@ -1596,6 +1600,7 @@
   <translation tag="No temperature sensors detected" it="Nessun sensore di temperatura rilevato"/>
   <translation tag="No timelapse videos found" it="Nessun video timelapse trovato"/>
   <translation tag="No vendors found" it="Nessun fornitore trovato"/>
+  <translation tag="No video player installed - showing the timelapse library" it="Nessun lettore video installato – viene mostrata la libreria timelapse"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." it="Nessuna webcam rilevata.&#10;Una webcam è necessaria per il timelapse."/>
   <translation tag="No width sensor detected" it="Nessun sensore di larghezza rilevato"/>
   <translation tag="None" it="Nessuno"/>
@@ -1868,12 +1873,14 @@
   <translation tag="Printer Shutdown" it="Arresto stampante"/>
   <translation tag="Printer Type" it="Tipo stampante"/>
   <translation tag="Printer accepted job but isn&apos;t printing — check cover, paper, and label type (firmware status=0x{:02X} error=0x{:02X})" it="La stampante ha accettato il lavoro ma non sta stampando — controlla coperchio, carta e tipo di etichetta (firmware status=0x{:02X} error=0x{:02X})"/>
+  <translation tag="Printer connection unavailable" it="Connessione alla stampante non disponibile"/>
   <translation tag="Printer database format error" it="Errore nel formato del database della stampante"/>
   <translation tag="Printer database is corrupt" it="Il database della stampante è corrotto"/>
   <translation tag="Printer didn&apos;t respond — make sure it&apos;s on and in range" it="La stampante non ha risposto — assicurati che sia accesa e nel raggio d&apos;azione"/>
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" it="La stampante non espone il servizio previsto — dispositivo errato?"/>
   <translation tag="Printer hardware detected" it="Hardware stampante rilevato"/>
   <translation tag="Printer image set to auto-detect" it="Immagine stampante impostata su rilevamento auto"/>
+  <translation tag="Printer is busy - {} stays in the queue" it="La stampante è occupata – {} resta in coda"/>
   <translation tag="Printer is not paired — pair it first" it="La stampante non è associata — associala prima"/>
   <translation tag="Printer name" it="Nome stampante"/>
   <translation tag="Printer not ready" it="Stampante non pronta"/>
