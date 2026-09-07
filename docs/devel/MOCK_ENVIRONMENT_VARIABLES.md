@@ -148,6 +148,27 @@ it makes the print-start emit `SKIP_LEVELING=0 ADAPTIVE=1` on the `START_PRINT`
 invocation. On a non-adaptive printer the same row reads "Auto Bed Mesh" and
 behaves exactly as before.
 
+### `HELIX_MOCK_WEBCAMS`
+
+The webcam list the mock publishes at discovery, as `Name[:service]` entries
+separated by commas. Unset, the mock presents one unnamed MJPEG feed, which is
+what a printer with a single stock webcam looks like and leaves the camera
+widget's **Source** picker with nothing to offer. A service other than an MJPEG
+family (`mjpegstreamer`, `ustreamer`) makes that entry snapshot-only, exactly
+as discovery treats a WebRTC or HLS camera on a real printer. Each entry gets
+its own `/webcamN/` path so the `[CameraWidget] Stream started (camera='...')`
+log line shows which one a view is streaming. The mock serves no frames, so the
+widget stays on "Connecting Camera..." either way; the log line is the evidence.
+
+```bash
+# Two MJPEG cameras plus a WebRTC one: open the camera widget's gear icon in
+# edit mode and the Source row lists Nozzle, Bed and Chamber ("Snapshot only")
+HELIX_MOCK_WEBCAMS="Nozzle,Bed,Chamber:webrtc-go2rtc" ./build/bin/helix-screen --test -vv
+
+# Restart with Bed gone: a widget saved with source=Bed falls back to Nozzle
+HELIX_MOCK_WEBCAMS="Nozzle,Chamber:webrtc-go2rtc" ./build/bin/helix-screen --test -vv
+```
+
 ### `HELIX_MOCK_EXCLUDE_OBJECTS`
 
 Publish a synthetic multi-object plate at mock print start, so the exclude-object

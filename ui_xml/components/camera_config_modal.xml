@@ -10,7 +10,7 @@
 
   <!-- Camera Configuration Modal
        Opened from grid edit mode gear icon on the camera widget.
-       Rotation and flip settings. -->
+       Source (which webcam), rotation and flip settings. -->
   <view name="camera_config_modal"
         extends="ui_dialog" width="60%" height="content" align="center" flex_flow="column" style_flex_main_place="start"
         style_pad_gap="0">
@@ -18,10 +18,41 @@
     <!-- Header -->
     <modal_header icon_src="cog" icon_variant="accent" title="Camera" title_tag="Camera"/>
 
-    <!-- Content -->
+    <!-- Content: scrolls under the header and button row once the source
+         list makes it taller than the dialog budget -->
     <lv_obj width="100%"
-            height="content" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="#space_sm"
-            style_pad_bottom="#space_lg" flex_flow="column" style_pad_gap="#space_md">
+            height="content" style_max_height="#dialog_content_max" scrollable="true" style_pad_left="#space_lg"
+            style_pad_right="#space_lg" style_pad_top="#space_sm" style_pad_bottom="#space_lg" flex_flow="column"
+            style_pad_gap="#space_md">
+
+      <!-- Source row: Automatic (the discovery auto-pick) plus one row per
+           named webcam Moonraker lists, all from one repeat. Hidden when
+           there is nothing to choose between (only the Automatic row). The
+           note beside a name says what picking it gets: nothing = live
+           stream, "Snapshot only", or "Unavailable". -->
+      <lv_obj width="100%" height="content" flex_flow="column" style_pad_gap="#space_xs">
+        <bind_flag_if_lt subject="cam_source_count" flag="hidden" ref_value="2"/>
+        <text_small text="Source" translation_tag="Source" style_text_color="#text_muted"/>
+        <!-- Rows container: a subject-bound <repeat> must be its only child -->
+        <lv_obj name="cam_source_rows"
+                width="100%" height="content" scrollable="false" flex_flow="column" style_pad_all="0"
+                style_pad_gap="#space_xs">
+          <repeat count="cam_source_count">
+            <lv_obj name="cam_source_${i}"
+                    width="100%" height="content" clickable="true" scrollable="false" flex_flow="row"
+                    style_flex_cross_place="center" style_pad_left="#space_sm" style_pad_right="#space_sm"
+                    style_pad_top="#space_xs" style_pad_bottom="#space_xs" style_pad_gap="#space_sm"
+                    style_radius="#border_radius_small" style_border_width="0">
+              <bind_style name="cam_btn_selected" subject="cam_source_${i}_active" ref_value="1"/>
+              <bind_style name="cam_btn_unselected" subject="cam_source_${i}_active" ref_value="0"/>
+              <text_small name="cam_source_${i}_name"
+                          bind_text="cam_source_${i}_name" flex_grow="1" long_mode="dot" style_text_color="#text"/>
+              <text_xs name="cam_source_${i}_note" bind_text="cam_source_${i}_note" style_text_color="#text_muted"/>
+              <event_cb trigger="clicked" callback="on_cam_source_clicked" user_data="${i}"/>
+            </lv_obj>
+          </repeat>
+        </lv_obj>
+      </lv_obj>
 
       <!-- Rotation row -->
       <lv_obj width="100%" height="content" flex_flow="column" style_pad_gap="#space_xs">

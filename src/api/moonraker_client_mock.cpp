@@ -113,6 +113,31 @@ bool is_registered_diagnostics_object(const std::string& token) {
 } // namespace
 
 // Delegating constructor - uses default speedup of 1.0
+std::vector<WebcamInfo> MoonrakerClientMock::parse_mock_webcams(const char* spec) {
+    std::vector<WebcamInfo> cams;
+    if (!spec || !*spec)
+        return cams;
+    std::string rest = spec;
+    size_t index = 0;
+    while (!rest.empty()) {
+        size_t comma = rest.find(',');
+        std::string item = rest.substr(0, comma);
+        rest = comma == std::string::npos ? "" : rest.substr(comma + 1);
+        if (item.empty())
+            continue;
+        WebcamInfo cam;
+        size_t colon = item.find(':');
+        cam.name = item.substr(0, colon);
+        cam.service = colon == std::string::npos ? "mjpegstreamer" : item.substr(colon + 1);
+        std::string path = index == 0 ? "/webcam/" : "/webcam" + std::to_string(index + 1) + "/";
+        cam.stream_url = path + "?action=stream";
+        cam.snapshot_url = path + "?action=snapshot";
+        cams.push_back(std::move(cam));
+        ++index;
+    }
+    return cams;
+}
+
 MoonrakerClientMock::MoonrakerClientMock(PrinterType type) : MoonrakerClientMock(type, 1.0) {}
 
 MoonrakerClientMock::MoonrakerClientMock(PrinterType type, double speedup_factor)
@@ -154,6 +179,18 @@ MoonrakerClientMock::MoonrakerClientMock(PrinterType type, double speedup_factor
     if (spoolman_env && (std::string(spoolman_env) == "0" || std::string(spoolman_env) == "off")) {
         mock_spoolman_enabled_ = false;
         spdlog::info("[MoonrakerClientMock] Mock Spoolman disabled via HELIX_MOCK_SPOOLMAN=0");
+    }
+
+    // HELIX_MOCK_WEBCAMS="Name[:service],Name[:service],..." — the webcam list
+    // discovery publishes, so the camera widget's source picker has something
+    // to offer. Unset: one unnamed MJPEG feed, as a printer with a single
+    // stock webcam presents. Each entry gets its own /webcamN/ path so a log
+    // line shows which one a view is streaming. A service other than an MJPEG
+    // family ("webrtc-go2rtc", ...) makes that entry snapshot-only.
+    mock_webcams_ = parse_mock_webcams(std::getenv("HELIX_MOCK_WEBCAMS"));
+    if (!mock_webcams_.empty()) {
+        spdlog::info("[MoonrakerClientMock] {} mock webcam(s) via HELIX_MOCK_WEBCAMS",
+                     mock_webcams_.size());
     }
 
     // HELIX_MOCK_EXCLUDE_OBJECTS=<n>|1 — publish a synthetic multi-object plate at
@@ -1259,9 +1296,16 @@ void MoonrakerClientMock::discover_printer(
 
             // Set webcam availability during discovery (matches real Moonraker behavior)
             // Real client queries server.webcams.list during discovery
-            get_printer_state().set_webcam_available(true, "/webcam/?action=stream",
-                                                     "/webcam/?action=snapshot");
-            spdlog::debug("[MoonrakerClientMock] Webcam available: true (mock always has webcam)");
+            if (mock_webcams_.empty()) {
+                get_printer_state().set_webcam_available(true, "/webcam/?action=stream",
+                                                         "/webcam/?action=snapshot");
+                spdlog::debug(
+                    "[MoonrakerClientMock] Webcam available: true (mock always has webcam)");
+            } else {
+                get_printer_state().set_webcams(mock_webcams_);
+                spdlog::debug("[MoonrakerClientMock] Webcams published: {} (HELIX_MOCK_WEBCAMS)",
+                              mock_webcams_.size());
+            }
 
             // Set power device count during discovery (matches real Moonraker behavior)
             // Real client queries machine.device_power.devices during discovery

@@ -3,11 +3,14 @@
 
 #include "async_lifetime_guard.h"
 #include "capability_overrides.h"
+#include "moonraker_types.h"
 #include "printer_discovery.h"
 #include "subject_managed_panel.h"
 
 #include <lvgl.h>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace helix {
 
@@ -78,13 +81,30 @@ class PrinterCapabilitiesState {
     void set_purge_line(bool has_purge_line);
 
     /**
-     * @brief Set webcam availability (async update from Moonraker query)
+     * @brief Publish the printer's webcam list (async update from discovery)
+     *
+     * Keeps every entry so a camera view configured with a `source` name can
+     * find its camera (webcam::select_webcam), and derives the auto-pick
+     * (webcam::auto_pick) into the single-feed getters below, which every
+     * caller with no preference reads. `printer_has_webcam` follows the
+     * auto-pick; `webcam_count` is the number of NAMED entries — the ones a
+     * picker can offer.
+     *
+     * Thread-safe: Uses helix::ui::queue_update() for main-thread execution.
+     */
+    void set_webcams(std::vector<WebcamInfo> cams);
+
+    /**
+     * @brief Publish a single feed by URL, or no feed at all
+     *
+     * The one-entry form of set_webcams() for callers that have URLs rather
+     * than a Moonraker list (the mock client, tests). A non-empty stream_url
+     * is taken to be MJPEG — the caller vouches for it — so the auto-pick
+     * streams it instead of polling the snapshot.
      *
      * Thread-safe: Uses helix::ui::queue_update() for main-thread execution.
      *
-     * @param available True if at least one enabled webcam is configured
-     * @param stream_url MJPEG stream URL of first enabled webcam (empty if none)
-     * @param snapshot_url Snapshot URL of first enabled webcam (empty if none)
+     * @param available False publishes an empty list
      */
     void set_webcam_available(bool available, const std::string& stream_url = "",
                               const std::string& snapshot_url = "", bool flip_h = false,
@@ -276,6 +296,16 @@ class PrinterCapabilitiesState {
         return const_cast<lv_subject_t*>(&printer_has_webcam_);
     }
 
+    /// Number of named webcams in the list (the ones a picker can offer)
+    lv_subject_t* get_webcam_count_subject() const {
+        return const_cast<lv_subject_t*>(&webcam_count_);
+    }
+
+    /// Every enabled webcam discovery found, in Moonraker's order. Main thread only.
+    const std::vector<WebcamInfo>& get_webcams() const {
+        return webcams_;
+    }
+
     /// MJPEG stream URL of first enabled webcam (empty if none)
     const std::string& get_webcam_stream_url() const {
         return webcam_stream_url_;
@@ -389,7 +419,9 @@ class PrinterCapabilitiesState {
     lv_subject_t printer_has_chamber_{};            // combined: sensor OR heater
     lv_subject_t printer_has_screws_tilt_{};        // screws_tilt_adjust
     lv_subject_t printer_has_webcam_{};             // enabled webcam configured
-    std::string webcam_stream_url_;                 // MJPEG stream URL
+    lv_subject_t webcam_count_{};                   // named webcams in webcams_
+    std::vector<WebcamInfo> webcams_;               // every enabled webcam, Moonraker order
+    std::string webcam_stream_url_;                 // auto-pick: MJPEG stream URL
     std::string webcam_snapshot_url_;               // snapshot URL
     bool webcam_flip_h_ = false;                    // flip horizontal
     bool webcam_flip_v_ = false;                    // flip vertical

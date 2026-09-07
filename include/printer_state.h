@@ -1768,25 +1768,46 @@ class PrinterState {
      *
      * Thread-safe: Can be called from any thread, defers LVGL update to main thread.
      *
-     * @param available True if at least one enabled webcam is configured
-     * @param stream_url MJPEG stream URL of first enabled webcam
-     * @param snapshot_url Snapshot URL of first enabled webcam
+     * The one-entry form of set_webcams(): a single feed by URL, or none.
+     *
+     * @param available False publishes an empty list
+     * @param stream_url MJPEG stream URL (a non-empty one is streamed as MJPEG)
+     * @param snapshot_url Snapshot URL
      */
     void set_webcam_available(bool available, const std::string& stream_url = "",
                               const std::string& snapshot_url = "", bool flip_h = false,
                               bool flip_v = false, int target_fps = 15);
+
+    /**
+     * @brief Publish the printer's full webcam list (see
+     * PrinterCapabilitiesState::set_webcams). The auto-pick feeds the
+     * single-feed getters below; `webcam_count` counts the named entries.
+     *
+     * Thread-safe: Can be called from any thread, defers LVGL update to main thread.
+     */
+    void set_webcams(std::vector<WebcamInfo> cams);
+
+    /// Every enabled webcam discovery found, in Moonraker's order. Main thread only.
+    const std::vector<WebcamInfo>& get_webcams() const {
+        return capabilities_state_.get_webcams();
+    }
+
+    /// Number of named webcams in the list (what a picker can offer)
+    lv_subject_t* get_webcam_count_subject() const {
+        return capabilities_state_.get_webcam_count_subject();
+    }
 
     /// True if at least one enabled webcam has been detected
     bool has_webcam() const {
         return lv_subject_get_int(capabilities_state_.get_printer_has_webcam_subject()) == 1;
     }
 
-    /// Get MJPEG stream URL of first enabled webcam
+    /// Auto-pick MJPEG stream URL (empty if none)
     const std::string& get_webcam_stream_url() const {
         return capabilities_state_.get_webcam_stream_url();
     }
 
-    /// Get snapshot URL of first enabled webcam
+    /// Auto-pick snapshot URL (empty if none)
     const std::string& get_webcam_snapshot_url() const {
         return capabilities_state_.get_webcam_snapshot_url();
     }

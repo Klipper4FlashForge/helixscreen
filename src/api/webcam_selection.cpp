@@ -1,0 +1,143 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include "webcam_selection.h"
+
+#include <algorithm>
+#include <cctype>
+
+namespace helix {
+
+namespace {
+// Lowercase a copy of a string (ASCII) for case-insensitive suffix/substring checks.
+std::string to_lower_ascii(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+bool ends_with(const std::string& s, const std::string& suffix) {
+    return s.size() >= suffix.size() &&
+           s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+// The path component of a URL (everything before '?' or '#').
+std::string url_path(const std::string& url) {
+    auto cut = url.find_first_of("?#");
+    return cut == std::string::npos ? url : url.substr(0, cut);
+}
+} // namespace
+
+bool is_usable_snapshot_url(const std::string& snapshot_url) {
+    if (snapshot_url.empty())
+        return false;
+    std::string lower = to_lower_ascii(snapshot_url);
+    // Reject HTML pages (e.g. /snapshot.html, /camera.html) — never a JPEG.
+    if (ends_with(url_path(lower), ".html"))
+        return false;
+    // Accept obvious image/snapshot endpoints.
+    if (lower.find("action=snapshot") != std::string::npos)
+        return true;
+    std::string path = url_path(lower);
+    if (ends_with(path, ".jpg") || ends_with(path, ".jpeg") || ends_with(path, ".png"))
+        return true;
+    // No HTML marker and no explicit image marker: treat conservatively as usable
+    // so atypical-but-real endpoints (bare host, query-only) are not dropped.
+    return true;
+}
+
+namespace webcam {
+
+WebcamInfo parse_webcam_entry(const nlohmann::json& entry) {
+    WebcamInfo cam;
+    if (!entry.is_object())
+        return cam;
+    cam.name = entry.value("name", "");
+    cam.service = entry.value("service", "");
+    cam.snapshot_url = entry.value("snapshot_url", "");
+    cam.stream_url = entry.value("stream_url", "");
+    cam.uid = entry.value("uid", "");
+    cam.enabled = entry.value("enabled", true);
+    cam.flip_horizontal = entry.value("flip_horizontal", false);
+    cam.flip_vertical = entry.value("flip_vertical", false);
+    cam.target_fps = entry.value("target_fps", 15);
+    return cam;
+}
+
+bool is_mjpeg_service(const std::string& service) {
+    if (service.empty())
+        return false;
+    return service.find("mjpeg") != std::string::npos ||
+           service.find("ustreamer") != std::string::npos;
+}
+
+bool is_usable(const WebcamInfo& cam) {
+    if (!cam.enabled || !cam.unavailable_reason.empty())
+        return false;
+    if (is_mjpeg_service(cam.service) && !cam.stream_url.empty())
+        return true;
+    return is_usable_snapshot_url(cam.snapshot_url);
+}
+
+WebcamInfo feed_for(const WebcamInfo& cam) {
+    WebcamInfo feed = cam;
+    if (!is_mjpeg_service(feed.service)) {
+        feed.stream_url.clear();
+    }
+    if (!is_usable_snapshot_url(feed.snapshot_url)) {
+        feed.snapshot_url.clear();
+    }
+    return feed;
+}
+
+std::optional<size_t> auto_pick_index(const std::vector<WebcamInfo>& cams) {
+    // First pass: an MJPEG entry gives a real live stream.
+    for (size_t i = 0; i < cams.size(); ++i) {
+        const auto& cam = cams[i];
+        if (cam.enabled && cam.unavailable_reason.empty() && is_mjpeg_service(cam.service) &&
+            !cam.stream_url.empty()) {
+            return i;
+        }
+    }
+    // Second pass: anything with a snapshot image endpoint, polled.
+    for (size_t i = 0; i < cams.size(); ++i) {
+        if (is_usable(cams[i])) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<WebcamInfo> auto_pick(const std::vector<WebcamInfo>& cams) {
+    auto idx = auto_pick_index(cams);
+    if (!idx)
+        return std::nullopt;
+    return feed_for(cams[*idx]);
+}
+
+namespace {
+const WebcamInfo* find_named_usable(const std::vector<WebcamInfo>& cams,
+                                    const std::string& source) {
+    if (source.empty())
+        return nullptr;
+    auto it = std::find_if(cams.begin(), cams.end(), [&source](const WebcamInfo& cam) {
+        return cam.name == source && is_usable(cam);
+    });
+    return it == cams.end() ? nullptr : &*it;
+}
+} // namespace
+
+std::optional<WebcamInfo> select_webcam(const std::vector<WebcamInfo>& cams,
+                                        const std::string& source) {
+    if (const auto* named = find_named_usable(cams, source)) {
+        return feed_for(*named);
+    }
+    return auto_pick(cams);
+}
+
+bool source_is_honored(const std::vector<WebcamInfo>& cams, const std::string& source) {
+    return find_named_usable(cams, source) != nullptr;
+}
+
+} // namespace webcam
+} // namespace helix
