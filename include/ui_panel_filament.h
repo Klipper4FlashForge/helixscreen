@@ -15,6 +15,7 @@
 #include "filament_op_dispatch.h"
 #include "macro_param_modal.h"
 #include "operation_timeout_guard.h"
+#include "standard_macros.h"
 #include "subject_managed_panel.h"
 #include "ui/temperature_observer_bundle.h"
 
@@ -257,6 +258,21 @@ class FilamentPanel : public PanelBase {
      * @return true if nozzle is at or above MIN_EXTRUSION_TEMP (170°C)
      */
     bool is_extrusion_allowed() const;
+
+    /**
+     * @brief Must this panel heat the nozzle before dispatching @p plan?
+     *
+     * The temperature gate (is_extrusion_allowed()) answers whether extrusion is
+     * safe RIGHT NOW; this answers the narrower question the Load and Unload
+     * buttons actually ask, which also depends on whether the thing about to run
+     * heats the hotend for us. Extrude / Purge / Retract keep asking the gate
+     * directly: nothing downstream of those heats, so a cold nozzle there always
+     * means preheat.
+     *
+     * @param plan The plan about to be dispatched — see preheat_skip_reason().
+     * @param slot Which StandardMacros slot @p plan resolves against.
+     */
+    bool needs_ui_preheat(const helix::ui::FilamentOpPlan& plan, StandardMacroSlot slot) const;
 
     /**
      * @brief Set temperature limits from Moonraker heater config
@@ -609,6 +625,14 @@ class FilamentPanel : public PanelBase {
     // Filament sensor warning helpers
     void show_load_warning();
     void show_unload_warning();
+    /// The Load / Unload plan for the current dropdown selection, against live
+    /// backend state. Computed rather than stashed: the preheat decision and the
+    /// dispatch are separated by a heat cycle the firmware can change state
+    /// during, so each asks fresh — the same reason
+    /// AmsOperationSidebar::check_pending_load() re-plans after its preheat.
+    [[nodiscard]] helix::ui::FilamentOpPlan current_load_plan() const;
+    [[nodiscard]] helix::ui::FilamentOpPlan current_unload_plan() const;
+
     void execute_load();
     void execute_unload();
     void execute_extrude();

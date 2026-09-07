@@ -20,6 +20,7 @@
 #include "app_globals.h"
 #include "filament_database.h"
 #include "filament_op_dispatch.h"
+#include "filament_op_execute.h"
 #include "filament_op_router.h"
 #include "filament_op_slot_resolver.h"
 #include "lvgl/src/others/translation/lv_translation.h"
@@ -1146,19 +1147,10 @@ void AmsOperationSidebar::handle_unload(int slot_index) {
     // asymmetric with plan_load(), because bypass unload stays on the backend:
     // AFC calls the user's unload macro itself when bypass is enabled, and
     // routing it to tier 2 here would run that macro twice.
-    bool loaded = false;
-    if (caps.present) {
-        AmsBackend* backend = AmsState::instance().get_backend();
-        loaded = backend && helix::ui::unload_target_is_loaded(
-                                target_slot, backend->slot_is_actively_loaded(target_slot),
-                                backend->slot_has_filament_at_toolhead(target_slot),
-                                info.current_slot == target_slot, info.filament_loaded);
-    }
+    const bool loaded = helix::ui::read_unload_target_loaded(AmsState::instance().get_backend(),
+                                                             info, target_slot);
 
-    const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
-    const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_unload(caps, target_slot, loaded, !macro_info.is_empty(),
-                               macro_info.get_source() == MacroSource::CONFIGURED);
+    const helix::ui::FilamentOpPlan plan = helix::ui::plan_live_unload(caps, target_slot, loaded);
 
     if (plan.tier == helix::ui::FilamentTier::Refused) {
         // NothingLoaded is plan_unload's only refusal.
@@ -1297,10 +1289,7 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
     AmsSystemInfo info;
     const helix::ui::BackendCaps caps = read_backend_caps(info, slot_index);
 
-    const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
-    const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_load(info, caps, slot_index, !macro_info.is_empty(),
-                             macro_info.get_source() == MacroSource::CONFIGURED);
+    const helix::ui::FilamentOpPlan plan = helix::ui::plan_live_load(info, caps, slot_index);
 
     if (plan.tier == helix::ui::FilamentTier::Refused) {
         // Mostly silent on THIS surface. The AMS panel already highlights the
@@ -1325,12 +1314,14 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
         return;
     }
 
+    AmsBackend* backend = AmsState::instance().get_backend();
+
     if (plan.tier != helix::ui::FilamentTier::AmsBackend) {
-        dispatch_load_outside_backend(plan);
+        // Macro and raw gcode are the shared ladder's, verbatim — this surface
+        // adds only the lifetime guard and the parameter policy.
+        helix::ui::execute_filament_load(backend, slot_index, op_surface("[AmsSidebar]"));
         return;
     }
-
-    AmsBackend* backend = AmsState::instance().get_backend();
 
     // Tool changers keep their fast path: no UI preheat and no optimistic
     // HEATING stepper. SELECT_TOOL owns its own heat sequence, and the backend
@@ -1350,8 +1341,16 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
                                                               : StepOperationType::LOAD_SWAP,
                     slot_index);
 
-    // If backend handles heating automatically, just call load directly
-    if (backend->supports_auto_heat_on_load()) {
+    // Anything that already brings the hotend up makes our own preheat a second
+    // wait the user did not ask for — the backend's own auto-heat, or the user
+    // telling us their macros heat. Both terms live in preheat_skip_reason(), so
+    // this surface cannot honor one and ignore the other
+    // (prestonbrown/helixscreen#1494).
+    if (const auto skip = helix::ui::preheat_skip_reason(plan, StandardMacroSlot::LoadFilament,
+                                                         backend);
+        skip != helix::ui::PreheatSkip::None) {
+        spdlog::info("[AmsSidebar] Skipping preheat for slot {} load — {}", slot_index,
+                     helix::ui::preheat_skip_name(skip));
         ui_initiated_heat_ = false;
         dispatch_backend_load(plan, slot_index);
         return;
@@ -1402,8 +1401,8 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
     // G28 still fires later, inside AmsSubscriptionBackend::ensure_homed_then()
     // right before the tier-1 dispatch (unchanged) -- only the confirmation
     // moves earlier, so a decline never wastes a preheat cycle.
-    if (!helix::toolhead_is_homed(printer_state_) &&
-        !(backend && backend->delegates_homing_to_printer())) {
+    if (helix::ui::needs_home_confirmation(plan, StandardMacroSlot::LoadFilament, backend,
+                                          helix::toolhead_is_homed(printer_state_))) {
         spdlog::info("[AmsSidebar] Toolhead not homed -- asking before starting preheat for "
                      "slot {} load",
                      slot_index);
@@ -1457,10 +1456,8 @@ void AmsOperationSidebar::check_pending_load() {
         // while the nozzle came up to temperature, which flips load-vs-swap.
         AmsSystemInfo preheat_info;
         const helix::ui::BackendCaps caps = read_backend_caps(preheat_info, slot);
-        const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
         const helix::ui::FilamentOpPlan plan =
-            helix::ui::plan_load(preheat_info, caps, slot, !macro_info.is_empty(),
-                                 macro_info.get_source() == MacroSource::CONFIGURED);
+            helix::ui::plan_live_load(preheat_info, caps, slot);
 
         if (plan.tier != helix::ui::FilamentTier::AmsBackend) {
             // The preheat only ever starts on the tier-1 path, so anything else
@@ -1482,21 +1479,7 @@ void AmsOperationSidebar::check_pending_load() {
 
 helix::ui::BackendCaps AmsOperationSidebar::read_backend_caps(AmsSystemInfo& info_out,
                                                               int target_slot) const {
-    helix::ui::BackendCaps caps;
-    AmsBackend* backend = AmsState::instance().get_backend();
-    if (!backend) {
-        return caps;
-    }
-    info_out = backend->get_system_info();
-    caps.present = true;
-    caps.requires_slot_selection_for_load = backend->requires_slot_selection_for_load();
-    caps.needs_unload_before_load = backend->needs_unload_before_load(info_out, target_slot);
-    caps.is_tool_changer = backend->get_type() == AmsType::TOOL_CHANGER;
-    // Distinct from !requires_slot_selection_for_load(): plan_load() needs to
-    // tell "bypass is suppressing the lane tier" apart from "this backend
-    // never wanted a slot", because a named lane wants opposite treatment.
-    caps.bypass_active = backend->is_bypass_active();
-    return caps;
+    return helix::ui::read_backend_caps(AmsState::instance().get_backend(), info_out, target_slot);
 }
 
 void AmsOperationSidebar::dispatch_backend_load(const helix::ui::FilamentOpPlan& plan,
@@ -1537,28 +1520,6 @@ constexpr const char* LOAD_MACRO_TAG = "AmsOperationSidebar::load_macro";
 constexpr const char* UNLOAD_MACRO_TAG = "AmsOperationSidebar::unload_macro";
 } // namespace
 
-void AmsOperationSidebar::dispatch_load_outside_backend(const helix::ui::FilamentOpPlan& plan) {
-    if (plan.tier == helix::ui::FilamentTier::RawGcode) {
-        spdlog::info("[AmsSidebar] No backend and no load macro — raw gcode fallback");
-        send_filament_fallback_gcode(/*is_load=*/true);
-        return;
-    }
-
-    const std::string macro_name =
-        StandardMacros::instance().get(StandardMacroSlot::LoadFilament).get_macro();
-    // The shared MacroParamModal retains this callback past dismissal, and this
-    // sidebar dies with the AMS panel. token.defer() re-checks the generation on
-    // the main thread before touching `this`; a Run press after the panel closed
-    // is dropped (and counted) instead of running against freed memory.
-    auto token = lifetime_.token();
-    helix::ui::dispatch_filament_macro(
-        macro_name, helix::ui::ParamPolicy::Prompt,
-        [this, token](const helix::MacroParamResult& result) {
-            token.defer(LOAD_MACRO_TAG, [this, params = result.params]() {
-                send_standard_filament_macro(/*is_load=*/true, params);
-            });
-        });
-}
 
 void AmsOperationSidebar::dispatch_unload_outside_backend(const helix::ui::FilamentOpPlan& plan) {
     if (plan.tier == helix::ui::FilamentTier::RawGcode) {
@@ -1577,6 +1538,33 @@ void AmsOperationSidebar::dispatch_unload_outside_backend(const helix::ui::Filam
                 send_standard_filament_macro(/*is_load=*/false, params);
             });
         });
+}
+
+helix::ui::FilamentOpSurface AmsOperationSidebar::op_surface(const char* tag) {
+    helix::ui::FilamentOpSurface surface;
+    surface.log_tag = tag;
+    // The user tapped a button on this panel, so a parameter modal is expected
+    // rather than an ambush on top of something else.
+    surface.param_policy = helix::ui::ParamPolicy::Prompt;
+
+    surface.on_failed = [this](const helix::ui::FilamentOpPlan&, const AmsError& err,
+                               bool& reported) {
+        fail_started_operation(err);
+        reported = true;
+    };
+    surface.on_async_failed = [this](const helix::ui::FilamentOpPlan&) {
+        AmsState::instance().sync_from_backend();
+    };
+
+    // MacroParamModal stores its on_execute_ callback and does NOT clear it on
+    // dismiss, while this sidebar dies with the AMS panel. token.defer()
+    // re-checks the generation on the main thread, so a Run press after the
+    // panel closed is dropped and counted rather than reaching freed memory.
+    auto token = lifetime_.token();
+    surface.guard = [token](std::function<void()> fn) mutable {
+        token.defer(LOAD_MACRO_TAG, std::move(fn));
+    };
+    return surface;
 }
 
 void AmsOperationSidebar::send_standard_filament_macro(
