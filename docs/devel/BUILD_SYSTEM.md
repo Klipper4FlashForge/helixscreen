@@ -810,7 +810,7 @@ make check-deps
 This checks for:
 - **System tools**: C/C++ compiler, cmake, make, python3, npm
 - **Code formatters**: clang-format (C/C++), xmllint (XML validation/formatting)
-- **Libraries**: pkg-config
+- **Libraries**: pkg-config, OpenSSL, libnl, libusb (required on Linux: the build links `-lusb-1.0` unconditionally; optional on macOS), ALSA (Linux, warns when the headers are missing because the sound backend is then compiled out)
 - **Canvas dependencies**: cairo, pango, libpng, libjpeg, librsvg (for lv_img_conv)
 - **npm packages**: lv_font_conv, lv_img_conv
 - **Optional libraries**: SDL2, spdlog, libhv (uses system if available, otherwise builds from submodules)
