@@ -22,9 +22,13 @@
 #pragma once
 
 #include "filament_op_dispatch.h"
+#include "filament_op_router.h"
 #include "standard_macros.h"
 
+#include <functional>
+
 class AmsBackend;
+struct AmsError;
 
 namespace helix::ui {
 
@@ -133,6 +137,64 @@ enum class PreheatSkip {
 [[nodiscard]] bool needs_home_confirmation(const FilamentOpPlan& plan, StandardMacroSlot slot,
                                            AmsBackend* backend, bool toolhead_homed);
 
+// ============================================================================
+// The surface half of a dispatch
+// ============================================================================
+
+/**
+ * @brief What one surface does around a filament op, so every surface can share
+ *        the ladder that decides and runs it.
+ *
+ * The tier decision, the backend entry point, the macro tier and the raw-gcode
+ * fallback are the same everywhere and belong to the executor. What genuinely
+ * differs is bookkeeping the surface shows the user: a guard, an on-button
+ * spinner, a stepper. Those hang here rather than justifying a second ladder.
+ *
+ * Every callback is optional. The defaults describe a surface that outlives any
+ * dispatch it starts and shows nothing while one runs.
+ */
+struct FilamentOpSurface {
+    /// Prefixes the executor's log lines. Static storage duration, per the note
+    /// below — the executor captures it in callbacks that outlive the call.
+    const char* log_tag = "[Filament]";
+
+    /// Macro-tier parameter policy. A surface the user tapped a button on can
+    /// afford to raise the parameter modal; one layered under a live dialog
+    /// must not put a second modal on top of it.
+    ParamPolicy param_policy = ParamPolicy::Suppress;
+
+    /// Arm what this surface shows while the op runs. Called once, immediately
+    /// before the chosen tier runs — never on a refusal, which is what keeps a
+    /// refused op from leaving a surface stuck in a phantom "busy".
+    std::function<void(const FilamentOpPlan&)> on_begin;
+
+    /// Unwind what on_begin armed, after a tier-1 dispatch the backend rejected
+    /// outright. Owning the report is the surface's option: an unset hook leaves
+    /// the executor to raise the generic AMS-error toast, while a hook that sets
+    /// `reported` true has raised its own and suppresses that.
+    std::function<void(const FilamentOpPlan&, const AmsError&, bool& reported)> on_failed;
+
+    /// Unwind after a macro or raw-gcode dispatch failed. Separate from
+    /// on_failed because there is no AmsError there — the executor has already
+    /// reported through report_op_error(), and this is bookkeeping only.
+    std::function<void(const FilamentOpPlan&)> on_async_failed;
+
+    /// Present a refusal. Unset raises the shared toasts.
+    std::function<void(const FilamentOpPlan&)> on_refused;
+
+    /// The op finished, on the tiers that have a completion signal (macro and
+    /// raw gcode). Tier 1 completion arrives through the backend's action feed
+    /// instead, so this does not fire there.
+    std::function<void()> on_async_success;
+
+    /// Wrap a callback that may outlive this surface. Unset runs it directly,
+    /// which is correct ONLY for a surface that outlives every dispatch it
+    /// starts. A surface torn down with a panel must supply the token.defer()
+    /// wrapper here, or a macro-parameter modal answered after the teardown
+    /// reaches freed memory.
+    std::function<void(std::function<void()>)> guard;
+};
+
 /// @note **`log_tag` must have static storage duration.** All three functions
 /// capture the raw pointer in lambdas that outlive the call — the macro-tier
 /// and raw-gcode paths hand their success/error callbacks to Moonraker and
@@ -151,11 +213,18 @@ enum class PreheatSkip {
 /// begun to diverge the same way.
 void execute_filament_load(AmsBackend* backend, int slot, const char* log_tag);
 
+/// Load, with this surface's bookkeeping hung off the shared ladder.
+void execute_filament_load(AmsBackend* backend, int slot, const FilamentOpSurface& surface);
+
 /// Unload counterpart. `target_is_loaded` comes from unload_target_is_loaded()
 /// in filament_op_dispatch.h - do not answer that question inline, that
 /// divergence is what the helper exists to prevent.
 void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loaded,
                              const char* log_tag);
+
+/// Unload counterpart of the surface-taking load overload.
+void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loaded,
+                             const FilamentOpSurface& surface);
 
 /// Purge counterpart. Two tiers only (the configured macro, then
 /// filament_purge_fallback_gcode() from filament_op_router.h) — no AmsBackend

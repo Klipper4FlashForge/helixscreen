@@ -1314,12 +1314,14 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
         return;
     }
 
+    AmsBackend* backend = AmsState::instance().get_backend();
+
     if (plan.tier != helix::ui::FilamentTier::AmsBackend) {
-        dispatch_load_outside_backend(plan);
+        // Macro and raw gcode are the shared ladder's, verbatim — this surface
+        // adds only the lifetime guard and the parameter policy.
+        helix::ui::execute_filament_load(backend, slot_index, op_surface("[AmsSidebar]"));
         return;
     }
-
-    AmsBackend* backend = AmsState::instance().get_backend();
 
     // Tool changers keep their fast path: no UI preheat and no optimistic
     // HEATING stepper. SELECT_TOOL owns its own heat sequence, and the backend
@@ -1518,28 +1520,6 @@ constexpr const char* LOAD_MACRO_TAG = "AmsOperationSidebar::load_macro";
 constexpr const char* UNLOAD_MACRO_TAG = "AmsOperationSidebar::unload_macro";
 } // namespace
 
-void AmsOperationSidebar::dispatch_load_outside_backend(const helix::ui::FilamentOpPlan& plan) {
-    if (plan.tier == helix::ui::FilamentTier::RawGcode) {
-        spdlog::info("[AmsSidebar] No backend and no load macro — raw gcode fallback");
-        send_filament_fallback_gcode(/*is_load=*/true);
-        return;
-    }
-
-    const std::string macro_name =
-        StandardMacros::instance().get(StandardMacroSlot::LoadFilament).get_macro();
-    // The shared MacroParamModal retains this callback past dismissal, and this
-    // sidebar dies with the AMS panel. token.defer() re-checks the generation on
-    // the main thread before touching `this`; a Run press after the panel closed
-    // is dropped (and counted) instead of running against freed memory.
-    auto token = lifetime_.token();
-    helix::ui::dispatch_filament_macro(
-        macro_name, helix::ui::ParamPolicy::Prompt,
-        [this, token](const helix::MacroParamResult& result) {
-            token.defer(LOAD_MACRO_TAG, [this, params = result.params]() {
-                send_standard_filament_macro(/*is_load=*/true, params);
-            });
-        });
-}
 
 void AmsOperationSidebar::dispatch_unload_outside_backend(const helix::ui::FilamentOpPlan& plan) {
     if (plan.tier == helix::ui::FilamentTier::RawGcode) {
@@ -1558,6 +1538,33 @@ void AmsOperationSidebar::dispatch_unload_outside_backend(const helix::ui::Filam
                 send_standard_filament_macro(/*is_load=*/false, params);
             });
         });
+}
+
+helix::ui::FilamentOpSurface AmsOperationSidebar::op_surface(const char* tag) {
+    helix::ui::FilamentOpSurface surface;
+    surface.log_tag = tag;
+    // The user tapped a button on this panel, so a parameter modal is expected
+    // rather than an ambush on top of something else.
+    surface.param_policy = helix::ui::ParamPolicy::Prompt;
+
+    surface.on_failed = [this](const helix::ui::FilamentOpPlan&, const AmsError& err,
+                               bool& reported) {
+        fail_started_operation(err);
+        reported = true;
+    };
+    surface.on_async_failed = [this](const helix::ui::FilamentOpPlan&) {
+        AmsState::instance().sync_from_backend();
+    };
+
+    // MacroParamModal stores its on_execute_ callback and does NOT clear it on
+    // dismiss, while this sidebar dies with the AMS panel. token.defer()
+    // re-checks the generation on the main thread, so a Run press after the
+    // panel closed is dropped and counted rather than reaching freed memory.
+    auto token = lifetime_.token();
+    surface.guard = [token](std::function<void()> fn) mutable {
+        token.defer(LOAD_MACRO_TAG, std::move(fn));
+    };
+    return surface;
 }
 
 void AmsOperationSidebar::send_standard_filament_macro(

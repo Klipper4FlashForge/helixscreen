@@ -12,6 +12,7 @@
 #include "ams_types.h"
 #include "async_lifetime_guard.h"
 #include "filament_op_dispatch.h"
+#include "filament_op_execute.h"
 #include "filament_op_slot_resolver.h"
 
 #include <map>
@@ -284,8 +285,17 @@ class AmsOperationSidebar {
     // Reached when there is no AMS backend, or when bypass hands the load to the
     // user's LOAD_FILAMENT macro. Neither tier has an AMS operation to narrate,
     // so they run without the stepper / pending-target-slot bookkeeping.
-    void dispatch_load_outside_backend(const helix::ui::FilamentOpPlan& plan);
     void dispatch_unload_outside_backend(const helix::ui::FilamentOpPlan& plan);
+    /// This sidebar's half of a shared dispatch: which parameter policy it wants,
+    /// how a rejected dispatch unwinds the stepper, and the lifetime wrapper the
+    /// macro-parameter modal needs (this object dies with the AMS panel, and the
+    /// modal retains its callback past dismissal).
+    ///
+    /// on_begin is deliberately unset: the stepper is armed BEFORE the preheat,
+    /// which is earlier than the executor's dispatch, so re-arming there would
+    /// double-count.
+    [[nodiscard]] helix::ui::FilamentOpSurface op_surface(const char* tag);
+
     void send_standard_filament_macro(bool is_load,
                                       const std::map<std::string, std::string>& params);
     void send_filament_fallback_gcode(bool is_load);

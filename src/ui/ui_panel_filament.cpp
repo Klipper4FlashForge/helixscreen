@@ -2825,7 +2825,6 @@ helix::ui::FilamentOpPlan FilamentPanel::current_load_plan() const {
 
 void FilamentPanel::execute_load() {
     AmsBackend* backend = AmsState::instance().get_backend();
-    const int target_slot = selected_op_slot();
 
     const auto& info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
     const helix::ui::FilamentOpPlan plan = current_load_plan();
