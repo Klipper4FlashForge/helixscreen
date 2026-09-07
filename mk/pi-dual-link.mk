@@ -58,11 +58,11 @@ FBDEV_DISPLAY_UI_OBJS := $(FBDEV_DISPLAY_UI_SRCS:src/ui/%.cpp=$(FBDEV_DISPLAY_DI
 FBDEV_DISPLAY_OBJS := $(FBDEV_DISPLAY_API_OBJS) $(FBDEV_DISPLAY_UI_OBJS)
 
 # Build fbdev display objects
-$(FBDEV_DISPLAY_DIR)/%.o: src/api/%.cpp $(LIBHV_LIB) | $(FBDEV_DISPLAY_DIR)
+$(FBDEV_DISPLAY_DIR)/%.o: src/api/%.cpp $(LIBHV_LIB) $(ABI_STAMP) | $(FBDEV_DISPLAY_DIR)
 	@echo "[CXX/fbdev] $<"
 	$(Q)$(CXX) $(FBDEV_DISPLAY_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
-$(FBDEV_DISPLAY_DIR)/%.o: src/ui/%.cpp $(LIBHV_LIB) | $(FBDEV_DISPLAY_DIR)
+$(FBDEV_DISPLAY_DIR)/%.o: src/ui/%.cpp $(LIBHV_LIB) $(ABI_STAMP) | $(FBDEV_DISPLAY_DIR)
 	@echo "[CXX/fbdev] $<"
 	$(Q)$(CXX) $(FBDEV_DISPLAY_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
@@ -87,7 +87,7 @@ DRM_CRASH_OBJ := $(OBJ_DIR)/system/crash_reporter.o
 # Strip the DRM variant define and add fbdev
 FBDEV_VARIANT_CXXFLAGS := $(subst -DHELIX_BINARY_VARIANT=\"drm\",-DHELIX_BINARY_VARIANT=\"fbdev\",$(CXXFLAGS))
 
-$(FBDEV_CRASH_OBJ): src/system/crash_reporter.cpp $(LIBHV_LIB) $(PCH) | $(FBDEV_VARIANT_DIR)
+$(FBDEV_CRASH_OBJ): src/system/crash_reporter.cpp $(LIBHV_LIB) $(PCH) $(ABI_STAMP) | $(FBDEV_VARIANT_DIR)
 	@echo "[CXX/fbdev] $< (variant=fbdev)"
 	$(Q)$(CXX) $(FBDEV_VARIANT_CXXFLAGS) $(DEPFLAGS) $(PCH_FLAGS) $(INCLUDES) $(LV_CONF) -c $< -o $@
 
@@ -123,15 +123,15 @@ DRM_GLES_APP_OBJS := \
     $(OBJ_DIR)/ui/ui_gcode_viewer.o \
     $(OBJ_DIR)/ui/backdrop_blur.o
 
-$(FBDEV_GLES_VARIANT_DIR)/gcode_gles_renderer.o: src/rendering/gcode_gles_renderer.cpp $(LIBHV_LIB) $(PCH) | $(FBDEV_GLES_VARIANT_DIR)
+$(FBDEV_GLES_VARIANT_DIR)/gcode_gles_renderer.o: src/rendering/gcode_gles_renderer.cpp $(LIBHV_LIB) $(PCH) $(ABI_STAMP) | $(FBDEV_GLES_VARIANT_DIR)
 	@echo "[CXX/fbdev] $< (no GLES)"
 	$(Q)$(CXX) $(FBDEV_GLES_CXXFLAGS) $(DEPFLAGS) $(PCH_FLAGS) $(INCLUDES) $(LV_CONF) -c $< -o $@
 
-$(FBDEV_GLES_VARIANT_DIR)/ui_gcode_viewer.o: src/ui/ui_gcode_viewer.cpp $(LIBHV_LIB) $(PCH) | $(FBDEV_GLES_VARIANT_DIR)
+$(FBDEV_GLES_VARIANT_DIR)/ui_gcode_viewer.o: src/ui/ui_gcode_viewer.cpp $(LIBHV_LIB) $(PCH) $(ABI_STAMP) | $(FBDEV_GLES_VARIANT_DIR)
 	@echo "[CXX/fbdev] $< (no GLES)"
 	$(Q)$(CXX) $(FBDEV_GLES_CXXFLAGS) $(DEPFLAGS) $(PCH_FLAGS) $(INCLUDES) $(LV_CONF) -c $< -o $@
 
-$(FBDEV_GLES_VARIANT_DIR)/backdrop_blur.o: src/ui/backdrop_blur.cpp $(LIBHV_LIB) $(PCH) | $(FBDEV_GLES_VARIANT_DIR)
+$(FBDEV_GLES_VARIANT_DIR)/backdrop_blur.o: src/ui/backdrop_blur.cpp $(LIBHV_LIB) $(PCH) $(ABI_STAMP) | $(FBDEV_GLES_VARIANT_DIR)
 	@echo "[CXX/fbdev] $< (no GLES)"
 	$(Q)$(CXX) $(FBDEV_GLES_CXXFLAGS) $(DEPFLAGS) $(PCH_FLAGS) $(INCLUDES) $(LV_CONF) -c $< -o $@
 
