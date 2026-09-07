@@ -72,7 +72,7 @@ ifdef WATCHDOG_BUILD
 
 # Compile watchdog source (with dependency tracking for header changes)
 # Depends on LIBHV_LIB to ensure libhv headers are installed before compilation
-$(BUILD_DIR)/watchdog/%.o: src/%.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/%.o: src/%.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
@@ -100,49 +100,49 @@ WATCHDOG_EXTRA_OBJS := $(BUILD_DIR)/watchdog/config.o \
                        $(BUILD_DIR)/watchdog/helix_lvgl_anomaly_stub.o
 
 # Compile config for watchdog (with HELIX_WATCHDOG to guard get_runtime_config dependency)
-$(BUILD_DIR)/watchdog/config.o: src/system/config.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/config.o: src/system/config.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Compile config_backup for watchdog (config.cpp references it)
-$(BUILD_DIR)/watchdog/config_backup.o: src/system/config_backup.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/config_backup.o: src/system/config_backup.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Compile config_storage_file for watchdog (config.cpp's default ConfigStorage backend)
-$(BUILD_DIR)/watchdog/config_storage_file.o: src/system/config_storage_file.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/config_storage_file.o: src/system/config_storage_file.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Compile backlight backend for watchdog (with HELIX_WATCHDOG to skip runtime_config dependency)
-$(BUILD_DIR)/watchdog/backlight_backend.o: src/api/backlight_backend.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/backlight_backend.o: src/api/backlight_backend.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Compile data_root_resolver for watchdog (zero deps; provides writable_path,
 # get_user_config_dir, etc. for HELIX_CONFIG_DIR-aware path resolution)
-$(BUILD_DIR)/watchdog/data_root_resolver.o: src/application/data_root_resolver.cpp | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/data_root_resolver.o: src/application/data_root_resolver.cpp $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Compile helix_paths for watchdog (pure path primitives; data_root_resolver.cpp
 # calls helix::paths::strip_trailing_slash).
-$(BUILD_DIR)/watchdog/helix_paths.o: src/system/helix_paths.cpp | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/helix_paths.o: src/system/helix_paths.cpp $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Compile logging_init for watchdog
-$(BUILD_DIR)/watchdog/logging_init.o: src/system/logging_init.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/logging_init.o: src/system/logging_init.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # logging_init sizes the debug ring from total RAM, so the watchdog links this too.
-$(BUILD_DIR)/watchdog/platform_capabilities.o: src/system/platform_capabilities.cpp | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/platform_capabilities.o: src/system/platform_capabilities.cpp $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Compile notification stub for watchdog (with dependency tracking)
-$(BUILD_DIR)/watchdog/ui_notification_stub.o: tools/ui_notification_stub.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/ui_notification_stub.o: tools/ui_notification_stub.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog stub)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
@@ -151,28 +151,28 @@ $(BUILD_DIR)/watchdog/ui_notification_stub.o: tools/ui_notification_stub.cpp $(L
 # object in that archive becomes a hard link dependency whether or not this binary
 # reaches it. Without this the non-LTO targets (pi, pi32, x86) fail to link while the
 # -flto ones drop the unreachable caller and link clean.
-$(BUILD_DIR)/watchdog/log_redact.o: src/system/log_redact.cpp | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/log_redact.o: src/system/log_redact.cpp $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # No-op stub for helix_lvgl_anomaly() — patched LVGL references it but watchdog
 # has no telemetry pipeline. Real impl lives in src/system/helix_lvgl_anomaly.cpp.
-$(BUILD_DIR)/watchdog/helix_lvgl_anomaly_stub.o: tools/helix_lvgl_anomaly_stub.cpp | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/helix_lvgl_anomaly_stub.o: tools/helix_lvgl_anomaly_stub.cpp $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog stub)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # DRM mode-matching helper (pure, referenced by display_backend_drm.cpp). Added for #766.
-$(BUILD_DIR)/watchdog/drm_mode_matching.o: src/api/drm_mode_matching.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/drm_mode_matching.o: src/api/drm_mode_matching.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Fbdev kernel-size helper (pure, referenced by display_backend_fbdev.cpp). Added for #766.
-$(BUILD_DIR)/watchdog/fbdev_size_helper.o: src/api/fbdev_size_helper.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/fbdev_size_helper.o: src/api/fbdev_size_helper.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # PendingStartupWarnings queue (referenced by both display backends). Added for #766.
-$(BUILD_DIR)/watchdog/pending_startup_warnings.o: src/system/pending_startup_warnings.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+$(BUILD_DIR)/watchdog/pending_startup_warnings.o: src/system/pending_startup_warnings.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(ABI_STAMP) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 

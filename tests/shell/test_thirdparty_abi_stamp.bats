@@ -22,8 +22,13 @@ setup() {
     cd "$BATS_TEST_DIRNAME/../.." || return 1
 }
 
-# Makefiles that compile translation units into helix-screen or helix-tests.
-ABI_MAKEFILES="mk/rules.mk mk/tests.mk mk/bluetooth.mk"
+# Every makefile that compiles a translation unit against these headers. The
+# five beyond the app and test trees build their own binaries and archives -
+# helix-splash, helix-watchdog, libhelix-display.a, the fbdev variant objects
+# and the tools - out of the same sources, so a member offset they disagree
+# about is the same defect in a binary that ships.
+ABI_MAKEFILES="mk/rules.mk mk/tests.mk mk/bluetooth.mk mk/tools.mk \
+mk/display-lib.mk mk/splash.mk mk/watchdog.mk mk/pi-dual-link.mk"
 
 # Self-contained third-party translation units: they include neither our
 # headers nor the patched LVGL and libhv types, so no member offset they see
@@ -48,7 +53,7 @@ make_database() {
     make -pn help "$@" 2>/dev/null
 }
 
-@test "every rule compiling into helix-screen or helix-tests depends on ABI_STAMP" {
+@test "every rule compiling a translation unit depends on ABI_STAMP" {
     local missing=""
     while IFS= read -r rule; do
         [[ "$rule" =~ $ABI_EXEMPT ]] && continue

@@ -47,7 +47,7 @@ $(MOONRAKER_INSPECTOR): $(LIBHV_LIB) $(INSPECTOR_OBJ) $(INSPECTOR_DEPS)
 	$(ECHO) "$(GREEN)✓ Moonraker Inspector built: $@$(RESET)"
 
 # Compile inspector source
-$(INSPECTOR_OBJ): $(INSPECTOR_SRC) $(HEADERS) $(LIBHV_LIB)
+$(INSPECTOR_OBJ): $(INSPECTOR_SRC) $(HEADERS) $(LIBHV_LIB) $(ABI_STAMP)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(BLUE)[CXX]$(RESET) $<"
 ifeq ($(V),1)
@@ -59,7 +59,7 @@ endif
 	}
 
 # Compile interactive module
-$(INSPECTOR_INTERACTIVE_OBJ): $(INSPECTOR_INTERACTIVE_SRC) $(HEADERS) $(LIBHV_LIB)
+$(INSPECTOR_INTERACTIVE_OBJ): $(INSPECTOR_INTERACTIVE_SRC) $(HEADERS) $(LIBHV_LIB) $(ABI_STAMP)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(BLUE)[CXX]$(RESET) $<"
 ifeq ($(V),1)
@@ -71,7 +71,7 @@ endif
 	}
 
 # Compile cpp-terminal version stub (cmake normally generates version.cpp)
-$(CPP_TERMINAL_VERSION_STUB_OBJ): $(TOOLS_DIR)/cpp_terminal_version_stub.cpp
+$(CPP_TERMINAL_VERSION_STUB_OBJ): $(TOOLS_DIR)/cpp_terminal_version_stub.cpp $(ABI_STAMP)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(BLUE)[CXX]$(RESET) $<"
 	$(Q)$(CXX) $(CXXFLAGS) $(CPP_TERMINAL_INC) -c $< -o $@ || { \
@@ -80,7 +80,7 @@ $(CPP_TERMINAL_VERSION_STUB_OBJ): $(TOOLS_DIR)/cpp_terminal_version_stub.cpp
 	}
 
 # Compile cpp-terminal library (use SUBMODULE_CXXFLAGS to suppress third-party warnings)
-$(OBJ_DIR)/cpp-terminal/%.o: $(CPP_TERMINAL_DIR)/%.cpp
+$(OBJ_DIR)/cpp-terminal/%.o: $(CPP_TERMINAL_DIR)/%.cpp $(ABI_STAMP)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(BLUE)[CXX]$(RESET) $<"
 ifeq ($(V),1)
@@ -133,7 +133,7 @@ $(VALIDATE_XML_BIN): $(TARGET) $(VALIDATE_XML_OBJ)
 	$(ECHO) "$(GREEN)✓ XML Constants Validator built: $@$(RESET)"
 
 # Compile validator source
-$(VALIDATE_XML_OBJ): $(VALIDATE_XML_SRC)
+$(VALIDATE_XML_OBJ): $(VALIDATE_XML_SRC) $(ABI_STAMP)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(BLUE)[CXX]$(RESET) $<"
 ifeq ($(V),1)
@@ -190,7 +190,7 @@ $(VALIDATE_ATTRS_BIN): $(VALIDATE_ATTRS_OBJ) $(VALIDATE_ATTRS_LIB_OBJ)
 	$(ECHO) "$(GREEN)✓ XML Attribute Validator built: $@$(RESET)"
 
 # Compile validator main source
-$(VALIDATE_ATTRS_OBJ): $(VALIDATE_ATTRS_SRC)
+$(VALIDATE_ATTRS_OBJ): $(VALIDATE_ATTRS_SRC) $(ABI_STAMP)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(BLUE)[CXX]$(RESET) $<"
 	$(Q)$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@ || { \
@@ -199,7 +199,7 @@ $(VALIDATE_ATTRS_OBJ): $(VALIDATE_ATTRS_SRC)
 	}
 
 # Compile validator library source
-$(VALIDATE_ATTRS_LIB_OBJ): $(VALIDATE_ATTRS_LIB_SRC)
+$(VALIDATE_ATTRS_LIB_OBJ): $(VALIDATE_ATTRS_LIB_SRC) $(ABI_STAMP)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(BLUE)[CXX]$(RESET) $<"
 	$(Q)$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@ || { \
