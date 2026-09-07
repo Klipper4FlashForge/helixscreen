@@ -1985,6 +1985,72 @@ Only use `make clean && make` when:
 - Document patches in `patches/README.md`
 - Test patch application on clean checkouts
 
+## Cloud sessions: the warm environment
+
+Claude Code cloud sessions run on a fresh Ubuntu 24.04 VM per environment, and a cold one pays
+apt + submodule init + a full program and test build before it can do anything — on the order of
+hours. `scripts/cloud/env-setup.sh` and `scripts/cloud/session-start.sh` exist to make that a
+one-time cost per environment rather than a per-session one.
+
+**The setup script.** The cloud platform runs `scripts/cloud/env-setup.sh` once, as root, **before**
+the repo is cloned — there is no checkout for it to operate on, only system and network paths — and
+then snapshots the whole filesystem as the starting point of every later session on that
+environment. It must exit 0 and finish in a few minutes, so every step is best-effort and logged
+to `/var/log/helix-env-setup.log`: apt-installing the native build's dependencies
+(`scripts/cloud/env-setup.sh#install_apt_packages` names the single package list shared with CI),
+downloading and extracting a prebuilt ccache, seeding a full clone at `/opt/helixscreen-seed` for
+submodule alternates, and prebuilding a Python venv at `/opt/helix-venv`.
+`/opt/helix-cloud-env/READY` records what landed and gates everything downstream.
+
+**The snapshot's lifetime.** The platform reuses the snapshot until either ~7 days pass or the
+text pasted into the environment dialog changes. Pushing a new `scripts/cloud/env-setup.sh` to
+`main` does not refresh it on its own: the pasted three-liner re-fetches that file only when the
+snapshot is being rebuilt. To force a rebuild before the timer would, change the dialog text — a
+dated comment line there is a legitimate one-line edit purely for that.
+
+**The session hook.** `scripts/cloud/session-start.sh` runs as a `SessionStart` hook
+(`.claude/settings.json#SessionStart`) in every session, cloud or not. On a machine that never
+wrote the READY marker — a laptop, thelio — it exits silently on its first line, by design: the
+pieces below must never run uninvited. On a warmed cloud VM, once the repo exists, it wires
+`/opt/helixscreen-seed`'s objects in as a submodule alternate (so `git submodule update` borrows
+objects instead of fetching them), runs that submodule init, and symlinks `.venv` to the prebuilt
+one before reconciling it with `make venv-setup`.
+
+**Where the ccache comes from.** `.github/workflows/build-cache.yml` builds the program and test
+binaries on `runs-on: ubuntu-24.04` — the same image and clang package the cloud VMs run — and
+publishes the resulting `~/.cache/ccache` as a `ccache-linux-x64.tar.zst` asset on the `build-cache`
+release tag, which `env-setup.sh` downloads directly (a plain VM setup script has no GitHub Actions
+cache access, only network fetch, so a release asset is the delivery mechanism rather than
+`actions/cache`). This is a different consumer from `ccache-warm.yml` / `cache-prune.yml`, which
+warm and prune the Actions-cache ccache behind this repo's own cross-compile CI — same ccache tool,
+two unrelated pipelines; nothing here touches those. Both the workflow and `env-setup.sh` write
+`compiler_check = content`, so a cached object is only reused when the compiler that made it is
+byte-identical to the one asking — which is what makes it safe to share a cache between a GitHub
+runner and a cloud VM at all.
+
+**Pasting the setup script into the environment dialog.** The platform wants the script inline, not
+a path, so the pasted script re-fetches the real one and never blocks environment creation on a
+network hiccup:
+
+```bash
+#!/bin/bash
+curl -fsSL https://raw.githubusercontent.com/prestonbrown/helixscreen/main/scripts/cloud/env-setup.sh -o /tmp/helix-env-setup.sh || exit 0
+bash /tmp/helix-env-setup.sh || true
+```
+
+**Known cache invalidation.** `Makefile#VERSION_DEFINES` puts `-DHELIX_VERSION` on every
+translation unit's command line, and ccache's direct mode hashes the full command line — so a
+`VERSION.txt` bump misses the *entire* project's cache exactly once, the same way it does for
+regular CI (see the comment above `VERSION_DEFINES`). `HELIX_GIT_HASH` deliberately avoids this by
+reaching only one generated header instead of every TU.
+
+**The `build-cache` tag is not a version.** It is a release only in the GitHub sense — a place to
+attach a binary asset — never a HelixScreen release. The update checker discards any release whose
+tag does not parse as a semantic version
+(`src/system/update_checker.cpp#"parse_github_release(const json& j"`, via
+`src/util/version.cpp#parse_version`),
+so `build-cache` is invisible to it.
+
 ## See Also
 
 - **[README.md](../README.md)** - Project overview and quick start
