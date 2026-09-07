@@ -32,10 +32,12 @@ REMOTE_HOST="${REMOTE_HOST:-thelio}"
 REMOTE_DIR="${REMOTE_DIR:-\$HOME/helix-remote}"
 JOBS="${JOBS:-}"
 RUN_TAG=""
+QUIET="${QUIET:-0}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --run) RUN_TAG="$2"; shift 2 ;;
+        --quiet|-q) QUIET=1; shift ;;
         --host) REMOTE_HOST="$2"; shift 2 ;;
         --dir) REMOTE_DIR="$2"; shift 2 ;;
         *) break ;;
@@ -155,9 +157,30 @@ if ! tail -1 lib/libhv/hconfig.h 2>/dev/null | grep -q '#endif'; then
 fi
 
 JOBS_ARG="${JOBS:--j\$(nproc)}"
+
+# patches/ is per-branch. Moving this clone between branches leaves the
+# submodules carrying the previous branch's hunks, and the apply guard reads the
+# old marker as "already applied", so the drift gate fails the build. Reconcile
+# before compiling; it is a no-op when the patch set has not moved. Safe here
+# because this clone owns its submodules outright.
+if ! make -q build/.patches-applied >/dev/null 2>&1; then
+    make reapply-patches >/tmp/helix-remote-patches.log 2>&1 \
+        || { echo "✗ reapply-patches failed"; tail -20 /tmp/helix-remote-patches.log; exit 1; }
+fi
+
 echo "→ building on \$(hostname): make \$JOBS_ARG ${MAKE_ARGS[*]}"
-make \$JOBS_ARG ${MAKE_ARGS[*]}
-RC=\$?
+if [ "$QUIET" = "1" ]; then
+    # A full build prints thousands of [CXX] lines. On a slow link that output
+    # costs more than the patch did, and none of it is read unless it fails.
+    make \$JOBS_ARG ${MAKE_ARGS[*]} > /tmp/helix-remote-build.log 2>&1
+    RC=\$?
+    [ \$RC -eq 0 ] || { echo "--- last 40 lines ---"; tail -40 /tmp/helix-remote-build.log; }
+    [ \$RC -eq 0 ] && grep -cE '^\[(CXX|CC)\]' /tmp/helix-remote-build.log \
+        | sed 's/^/compiled: /' || true
+else
+    make \$JOBS_ARG ${MAKE_ARGS[*]}
+    RC=\$?
+fi
 echo "BUILD_RC=\$RC"
 [ \$RC -eq 0 ] || exit \$RC
 
