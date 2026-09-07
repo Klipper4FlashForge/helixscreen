@@ -402,8 +402,9 @@ def _match_cpp_define(text):
 
 # A declaration may open with one or more C++ attributes. They sit where the
 # type token belongs, so `_CPP_DECL` reads `[[nodiscard]] bool ready() const;`
-# as having nothing before the name and rejects it - which hid every one of
-# the 1558 `[[nodiscard]]` members in this tree from being cited at all.
+# as having nothing before the name and rejects it. Stripping them first is what
+# keeps attributed members citable, and that is most of them: `[[nodiscard]]`
+# alone is on over 1500 members here.
 _CPP_LEADING_ATTRS = re.compile(r"^\s*(?:\[\[[^\]]*\]\]\s*)+")
 
 
