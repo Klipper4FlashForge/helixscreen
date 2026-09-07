@@ -254,3 +254,143 @@ TEST_CASE("bypass widget: gated on ams_supports_bypass", "[ams][bypass-home]") {
     // opt-in tile, like the ams row
     CHECK_FALSE(def->default_enabled);
 }
+
+// ============================================================================
+// ensure_engaged_then(): the continuation a bypass Load hangs off
+// ============================================================================
+//
+// A Load offered on the bypass spool has to reach the toolhead through the
+// bypass path, so it must not dispatch until bypass is actually engaged. These
+// pin the one rule that makes that safe: the continuation runs on a successful
+// engage and on nothing else.
+
+TEST_CASE("ensure_engaged_then: already engaged runs the continuation inline",
+          "[ams][bypass-home]") {
+    BypassToggleFixture fx;
+    seed_print_state(PrintJobState::STANDBY);
+
+    REQUIRE(fx.backend->unload_active_filament().result == AmsResult::SUCCESS);
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+    fx.controller.toggle();
+    REQUIRE(fx.backend->is_bypass_active());
+
+    int ran = 0;
+    fx.controller.ensure_engaged_then([&ran]() { ++ran; });
+    CHECK(ran == 1);
+    CHECK(fx.backend->is_bypass_active());
+}
+
+TEST_CASE("ensure_engaged_then: a direct enable runs the continuation", "[ams][bypass-home]") {
+    BypassToggleFixture fx;
+    seed_print_state(PrintJobState::STANDBY);
+
+    // Nothing loaded, so the engage takes the direct path with no chain.
+    REQUIRE(fx.backend->unload_active_filament().result == AmsResult::SUCCESS);
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+    REQUIRE_FALSE(fx.backend->is_bypass_active());
+
+    int ran = 0;
+    fx.controller.ensure_engaged_then([&ran]() { ++ran; });
+    CHECK(fx.backend->is_bypass_active());
+    CHECK(ran == 1);
+}
+
+TEST_CASE("ensure_engaged_then: the unload chain defers the continuation to the enable",
+          "[ams][bypass-home]") {
+    BypassToggleFixture fx;
+    seed_print_state(PrintJobState::STANDBY);
+
+    REQUIRE(fx.backend->load_filament(0).result == AmsResult::SUCCESS);
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+
+    int ran = 0;
+    fx.controller.ensure_engaged_then([&ran]() { ++ran; });
+    // Dispatching here would feed the bypass spool down a path still set to the
+    // lane, which is the whole reason the continuation exists.
+    CHECK(ran == 0);
+    CHECK(fx.controller.pending_enable());
+
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+
+    REQUIRE(fx.controller.on_ams_action_changed(AmsAction::UNLOADING, AmsAction::IDLE));
+    CHECK(fx.backend->is_bypass_active());
+    CHECK(ran == 1);
+}
+
+TEST_CASE("ensure_engaged_then: a failed unload never runs the continuation",
+          "[ams][bypass-home]") {
+    BypassToggleFixture fx;
+    seed_print_state(PrintJobState::STANDBY);
+
+    REQUIRE(fx.backend->load_filament(0).result == AmsResult::SUCCESS);
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+
+    int ran = 0;
+    fx.controller.ensure_engaged_then([&ran]() { ++ran; });
+    REQUIRE(fx.controller.pending_enable());
+    fx.backend->wait_for_operation_thread();
+
+    REQUIRE(fx.controller.on_ams_action_changed(AmsAction::UNLOADING, AmsAction::ERROR));
+    CHECK_FALSE(fx.backend->is_bypass_active());
+    CHECK(ran == 0);
+
+    // The continuation belonged to the chain that failed. Left armed, the next
+    // engage — a plain tile toggle, nothing to do with Load — would run it.
+    fx.controller.toggle();
+    CHECK(fx.backend->is_bypass_active());
+    CHECK(ran == 0);
+}
+
+TEST_CASE("ensure_engaged_then: a refused engage never runs the continuation",
+          "[ams][bypass-home]") {
+    BypassToggleFixture fx;
+    seed_print_state(PrintJobState::PRINTING);
+
+    int ran = 0;
+    fx.controller.ensure_engaged_then([&ran]() { ++ran; });
+    CHECK(ran == 0);
+    CHECK_FALSE(fx.backend->is_bypass_active());
+    CHECK_FALSE(fx.controller.pending_enable());
+
+    // The refusal must not leave the continuation armed for the next engage,
+    // which would run a Load the user never asked for.
+    seed_print_state(PrintJobState::STANDBY);
+    REQUIRE(fx.backend->unload_active_filament().result == AmsResult::SUCCESS);
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+    fx.controller.toggle();
+    REQUIRE(fx.backend->is_bypass_active());
+    CHECK(ran == 0);
+}
+
+TEST_CASE("ensure_engaged_then: cancel_pending drops the continuation", "[ams][bypass-home]") {
+    // The owning panel going away mid-chain: the enable still lands, but nobody
+    // is left to dispatch the Load into.
+    BypassToggleFixture fx;
+    seed_print_state(PrintJobState::STANDBY);
+
+    REQUIRE(fx.backend->load_filament(0).result == AmsResult::SUCCESS);
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+
+    int ran = 0;
+    fx.controller.ensure_engaged_then([&ran]() { ++ran; });
+    REQUIRE(fx.controller.pending_enable());
+
+    fx.controller.cancel_pending();
+    fx.backend->wait_for_operation_thread();
+    UpdateQueue::instance().drain();
+
+    CHECK_FALSE(fx.controller.on_ams_action_changed(AmsAction::UNLOADING, AmsAction::IDLE));
+    CHECK(ran == 0);
+
+    // And it stays dropped: a later engage is a different request.
+    fx.controller.toggle();
+    CHECK(fx.backend->is_bypass_active());
+    CHECK(ran == 0);
+}

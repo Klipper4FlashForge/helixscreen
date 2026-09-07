@@ -14,6 +14,7 @@
 #include "moonraker_api.h"
 #include "safety_settings_manager.h"
 #include "standard_macros.h"
+#include "ui_update_queue.h"
 
 #include <spdlog/spdlog.h>
 
@@ -182,16 +183,24 @@ void unwind_backend(const FilamentOpSurface& surface, const FilamentOpPlan& plan
 }
 
 /// Macro / raw-gcode failure: bookkeeping only, the caller has reported.
+/// Marshalled — see FilamentOpSurface::on_async_success.
 void unwind_async(const FilamentOpSurface& surface, const FilamentOpPlan& plan) {
-    if (surface.on_async_failed) {
-        surface.on_async_failed(plan);
+    if (!surface.on_async_failed) {
+        return;
     }
+    // Marshal first, then guard: token.defer() is main-thread only, so a guard
+    // applied on the network thread would itself be the violation.
+    helix::ui::queue_update([s = surface, plan]() {
+        guarded(s, [s, plan]() { s.on_async_failed(plan); });
+    });
 }
 
-void finished(const std::function<void()>& hook) {
-    if (hook) {
-        hook();
+/// Completion hook, marshalled to the main thread and then guarded.
+void finished(const FilamentOpSurface& surface, const std::function<void()>& hook) {
+    if (!hook) {
+        return;
     }
+    helix::ui::queue_update([s = surface, hook]() { guarded(s, hook); });
 }
 
 /// The error copy a failed macro or fallback raises. A timed-out macro is not a
@@ -271,6 +280,8 @@ void execute_filament_load(AmsBackend* backend, int slot, const FilamentOpSurfac
     case helix::ui::FilamentTier::Macro: {
         auto* api = get_moonraker_api();
         if (!api) {
+            spdlog::warn("{} No API — cannot run the filament macro", log_tag);
+            NOTIFY_WARNING(lv_tr("Printer connection unavailable"));
             return;
         }
         const std::string macro_name = load_info.get_macro();
@@ -289,7 +300,7 @@ void execute_filament_load(AmsBackend* backend, int slot, const FilamentOpSurfac
                         StandardMacroSlot::LoadFilament, api, params,
                         [s]() {
                             spdlog::info("{} Load filament finished", s.log_tag);
-                            finished(s.on_async_success);
+                            finished(s, s.on_async_success);
                         },
                         [s, plan](const MoonrakerError& err) {
                             spdlog::error("{} Failed to load filament: {}", s.log_tag, err.message);
@@ -311,6 +322,8 @@ void execute_filament_load(AmsBackend* backend, int slot, const FilamentOpSurfac
     case helix::ui::FilamentTier::RawGcode: {
         auto* api = get_moonraker_api();
         if (!api) {
+            spdlog::warn("{} No API — cannot send the filament fallback", log_tag);
+            NOTIFY_WARNING(lv_tr("Printer connection unavailable"));
             return;
         }
         spdlog::info("{} No backend and no load macro — raw gcode fallback", log_tag);
@@ -320,7 +333,7 @@ void execute_filament_load(AmsBackend* backend, int slot, const FilamentOpSurfac
             helix::ui::filament_load_fallback_gcode(),
             [s]() {
                 spdlog::info("{} Load fallback gcode sent", s.log_tag);
-                finished(s.on_async_success);
+                finished(s, s.on_async_success);
             },
             [s, plan](const MoonrakerError& err) {
                 spdlog::error("{} Load fallback failed: {}", s.log_tag, err.message);
@@ -389,6 +402,8 @@ void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loade
     case helix::ui::FilamentTier::Macro: {
         auto* api = get_moonraker_api();
         if (!api) {
+            spdlog::warn("{} No API — cannot run the filament macro", log_tag);
+            NOTIFY_WARNING(lv_tr("Printer connection unavailable"));
             return;
         }
         const std::string macro_name = unload_info.get_macro();
@@ -403,7 +418,7 @@ void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loade
                         StandardMacroSlot::UnloadFilament, api, params,
                         [s]() {
                             spdlog::info("{} Unload filament finished", s.log_tag);
-                            finished(s.on_async_success);
+                            finished(s, s.on_async_success);
                         },
                         [s, plan](const MoonrakerError& err) {
                             spdlog::error("{} Failed to unload filament: {}", s.log_tag,
@@ -424,6 +439,8 @@ void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loade
     case helix::ui::FilamentTier::RawGcode: {
         auto* api = get_moonraker_api();
         if (!api) {
+            spdlog::warn("{} No API — cannot send the filament fallback", log_tag);
+            NOTIFY_WARNING(lv_tr("Printer connection unavailable"));
             return;
         }
         spdlog::info("{} No backend and no unload macro — raw gcode fallback", log_tag);
@@ -433,7 +450,7 @@ void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loade
             helix::ui::filament_unload_fallback_gcode(),
             [s]() {
                 spdlog::info("{} Unload fallback gcode sent", s.log_tag);
-                finished(s.on_async_success);
+                finished(s, s.on_async_success);
             },
             [s, plan](const MoonrakerError& err) {
                 spdlog::error("{} Unload fallback failed: {}", s.log_tag, err.message);

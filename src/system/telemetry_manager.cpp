@@ -897,15 +897,9 @@ void TelemetryManager::try_send(bool force) {
         return;
     }
 
-    // Check send interval with backoff
     auto now = std::chrono::steady_clock::now();
     int backoff = backoff_multiplier_.load();
-    auto interval = SEND_INTERVAL * backoff;
-    // Cap backoff at 7 days
-    auto max_interval = std::chrono::hours{24 * 7};
-    if (interval > max_interval) {
-        interval = max_interval;
-    }
+    auto interval = next_attempt_delay(backoff);
 
     if (!force && last_send_time_.time_since_epoch().count() > 0 &&
         now - last_send_time_ < interval) {
@@ -966,42 +960,62 @@ void TelemetryManager::do_send(const nlohmann::json& batch) {
             return;
         }
 
-        // Use libhv HTTP client (same pattern as UpdateChecker and Moonraker API)
-        auto req = std::make_shared<HttpRequest>();
-        req->method = HTTP_POST;
-        req->url = ENDPOINT_URL;
-        req->timeout = 30;
-        req->content_type = APPLICATION_JSON;
-        req->headers["User-Agent"] = std::string("HelixScreen/") + HELIX_VERSION;
-        req->headers["X-API-Key"] = API_KEY;
-        req->body = helix::json_util::safe_dump(batch);
+        // One send window drains the whole queue. Sending a single batch per
+        // window caps throughput at MAX_BATCH_SIZE per SEND_INTERVAL, which is
+        // below the rate the periodic producers enqueue at, so the queue sits
+        // saturated and enqueue_event() discards the oldest events for good
+        // (prestonbrown/helixscreen#1476). The bound stops a producer that
+        // outruns the drain from spinning this thread.
+        nlohmann::json pending = batch;
 
-        auto resp = requests::request(req);
+        for (size_t attempt = 0; attempt < MAX_BATCHES_PER_SEND; ++attempt) {
+            // Use libhv HTTP client (same pattern as UpdateChecker and Moonraker API)
+            auto req = std::make_shared<HttpRequest>();
+            req->method = HTTP_POST;
+            req->url = ENDPOINT_URL;
+            req->timeout = 30;
+            req->content_type = APPLICATION_JSON;
+            req->headers["User-Agent"] = std::string("HelixScreen/") + HELIX_VERSION;
+            req->headers["X-API-Key"] = API_KEY;
+            req->body = helix::json_util::safe_dump(pending);
 
-        if (shutting_down_.load()) {
-            spdlog::debug("[TelemetryManager] Shutting down, aborting send result processing");
-            return;
-        }
+            auto resp = requests::request(req);
 
-        int status_code = resp ? static_cast<int>(resp->status_code) : 0;
+            if (shutting_down_.load()) {
+                spdlog::debug("[TelemetryManager] Shutting down, aborting send result processing");
+                return;
+            }
 
-        if (resp && status_code >= 200 && status_code < 300) {
+            int status_code = resp ? static_cast<int>(resp->status_code) : 0;
+
+            if (!resp || status_code < 200 || status_code >= 300) {
+                // Failure: keep events, increase backoff
+                int new_backoff = std::min(backoff_multiplier_.load() * 2, MAX_BACKOFF_MULTIPLIER);
+                spdlog::warn(
+                    "[TelemetryManager] Send failed (HTTP {}), will retry with backoff={}x",
+                    status_code, new_backoff);
+                backoff_multiplier_.store(new_backoff);
+                return;
+            }
+
             // Success: remove sent events from queue and persist
-            spdlog::info("[TelemetryManager] Successfully sent {} events (HTTP {})", batch.size(),
+            spdlog::info("[TelemetryManager] Successfully sent {} events (HTTP {})", pending.size(),
                          status_code);
-            remove_sent_events(batch.size());
+            remove_sent_events(pending.size());
             save_queue();
             backoff_multiplier_.store(1);
-        } else {
-            // Failure: keep events, increase backoff
-            int new_backoff = std::min(backoff_multiplier_.load() * 2, 7);
-            spdlog::warn("[TelemetryManager] Send failed (HTTP {}), will retry with backoff={}x",
-                         status_code, new_backoff);
-            backoff_multiplier_.store(new_backoff);
+
+            pending = build_batch();
+            if (pending.empty()) {
+                return;
+            }
         }
+
+        spdlog::debug("[TelemetryManager] Drain bound reached, {} events left for the next send",
+                      queue_size());
     } catch (const std::exception& e) {
         spdlog::error("[TelemetryManager] Send exception: {}", e.what());
-        backoff_multiplier_.store(std::min(backoff_multiplier_.load() * 2, 7));
+        backoff_multiplier_.store(std::min(backoff_multiplier_.load() * 2, MAX_BACKOFF_MULTIPLIER));
     }
 }
 

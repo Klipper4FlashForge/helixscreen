@@ -185,6 +185,13 @@ struct FilamentOpSurface {
     /// The op finished, on the tiers that have a completion signal (macro and
     /// raw gcode). Tier 1 completion arrives through the backend's action feed
     /// instead, so this does not fire there.
+    ///
+    /// Marshalled to the main thread by the executor, along with on_async_failed:
+    /// both are reached from a Moonraker reply, which lands on a network thread,
+    /// and a hook that touched a subject or a widget there would corrupt LVGL.
+    /// on_begin, on_failed and on_refused are NOT marshalled — those run inline
+    /// on whichever thread called the executor, which is the UI thread for every
+    /// surface that has a button.
     std::function<void()> on_async_success;
 
     /// Wrap a callback that may outlive this surface. Unset runs it directly,

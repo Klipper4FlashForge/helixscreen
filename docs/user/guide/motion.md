@@ -80,6 +80,8 @@ Homing buttons live on the **Controls** panel (not the Motion screen). The **Hom
 
 Each segment turns **green** once that axis is homed and gray when it isn't. All segments are disabled while a homing or leveling operation is in progress.
 
+A status message confirms when homing begins and when it completes, the same way the leveling buttons do. If the printer connection is down, tapping a segment tells you so rather than doing nothing.
+
 > The jog pad's center home button (on the Motion screen) is a shortcut that homes X and Y.
 
 ---

@@ -1177,6 +1177,7 @@ translations:
   Homing Z...: 正在归位 Z...
   Homing all axes...: 正在归位所有轴...
   Homing axes...: 正在归位各轴...
+  Homing complete: 归位完成
   'Homing failed: ': '回零失败: '
   'Homing failed: {}': '归位失败: {}'
   Homing first...: 正在先归位...
@@ -1918,6 +1919,7 @@ translations:
   Printer Type: 打印机类型
   Printer accepted job but isn't printing — check cover, paper, and label type (firmware status=0x{:02X} error=0x{:02X}): 打印机已接受作业但未开始打印
     — 请检查盖板、纸张和标签类型 (firmware status=0x{:02X} error=0x{:02X})
+  Printer connection unavailable: 打印机连接不可用
   Printer database format error: 打印机数据库格式错误
   Printer database is corrupt: 打印机数据库已损坏
   Printer didn't respond — make sure it's on and in range: 打印机无响应 — 请确保已开机且在范围内
@@ -2612,6 +2614,7 @@ translations:
     %.0fg，但料盘仅剩约 %.0fg。仍要开始吗？
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
   : 此打印机看起来是 {}（置信度 {}%），但当前设置为 {}。错误的类型会应用不正确的打印前选项和预设。
+  This removes the plugin's macros and its Moonraker component from the printer and restarts Klipper.: 从打印机移除插件的宏及其 Moonraker 组件，并重启 Klipper。
   This tool probes each bed screw and tells you how much to adjust.: 此工具探测每个热床螺丝并告诉您需要调整多少。
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
     The printer will briefly disconnect.
@@ -2726,7 +2729,9 @@ translations:
   Understanding Results: 了解结果
   ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
   : "皮带张力不均会导致层错位、VFA(垂直细纹)和振纹等打印瑕疵。\n\n此工具会振动每条皮带路径并测量共振频率 — 频率匹配意味着张力均衡。\n\n对于 CoreXY,路径 A 与 B 应相差在几 Hz 以内。"
+  Uninstall: 卸载
   Uninstall HelixPrint Plugin: 卸载 HelixPrint 插件
+  Uninstall HelixPrint Plugin?: 卸载 HelixPrint 插件？
   Uninstall script not found.: 未找到卸载脚本。
   'Uninstall: Coming soon': '卸载: 即将推出'
   Uninstallation failed. Check logs for details.: 卸载失败。请查看日志了解详情。
