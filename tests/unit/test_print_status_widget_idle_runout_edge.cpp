@@ -67,7 +67,7 @@ class IdleRunoutEdgeFixture : public LVGLTestFixture {
         auto& ps = get_printer_state();
         PrinterStateTestAccess::reset(ps);
         ps.init_subjects(false);
-        AmsState::instance().init_subjects(false);
+        AmsState::instance().init_subjects(true);
         AmsState::instance().clear_backends();
 
         auto& fsm = FilamentSensorManager::instance();
