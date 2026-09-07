@@ -9,7 +9,7 @@
  *
  * The edit modal closes as soon as Save is tapped, so the safe-edit flow's
  * failure callback is the only place left to say that nothing was written.
- * It used to log at error level and stop there (prestonbrown/helixscreen#1373).
+ * An error-level log line reaches no one at the screen (prestonbrown/helixscreen#1373).
  */
 
 #include "ui_probe_overlay.h"

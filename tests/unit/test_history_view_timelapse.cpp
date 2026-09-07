@@ -7,8 +7,8 @@
  *
  * Run with: ./build/bin/helix-tests "[history][timelapse][overlay]"
  *
- * The button used to answer with a toast naming the file, which is a control
- * that does nothing (prestonbrown/helixscreen#1373). It now hands the file to
+ * A toast naming the file is a control that does nothing
+ * (prestonbrown/helixscreen#1373), so the button hands the file to
  * the timelapse browser, which owns player detection and playback; on a host
  * without a player the browser is still what opens.
  */
