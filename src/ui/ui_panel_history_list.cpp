@@ -7,6 +7,7 @@
 #include "ui_filename_utils.h"
 #include "ui_fonts.h"
 #include "ui_format_utils.h"
+#include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_notification.h"
 #include "ui_panel_common.h"
@@ -27,6 +28,7 @@
 #include "thumbnail_cache.h"
 #include "ui/ui_cleanup_helpers.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -1225,13 +1227,31 @@ void HistoryListPanel::handle_delete() {
         return;
     }
 
+    if (delete_confirmation_dialog_) {
+        return; // One confirmation at a time; a second tap must not stack another
+    }
+
     const auto& job = filtered_jobs_[selected_job_index_];
     spdlog::info("[{}] Delete requested for: {} (job_id: {})", get_name(), job.filename,
                  job.job_id);
 
-    // For now, directly delete without confirmation dialog
-    // TODO: Add confirmation dialog
-    confirm_delete();
+    std::string message = fmt::format(lv_tr("Delete the history record for {}?"), job.filename);
+
+    // The dialog closes itself on a button press and deletes itself after any
+    // close, so every path nulls the stored handle instead of hiding the dialog.
+    // The handle is the re-entry guard above, so a dismissal has to clear it too.
+    auto drop_dialog = [this] { delete_confirmation_dialog_ = nullptr; };
+    helix::ui::ConfirmOptions opts;
+    opts.on_cancel = drop_dialog;
+    opts.on_dismiss = drop_dialog;
+    opts.owner_token = lifetime_.token();
+    delete_confirmation_dialog_ = helix::ui::modal_confirm(
+        lv_tr("Delete Print Record"), message.c_str(), ModalSeverity::Warning, lv_tr("Delete"),
+        [this] {
+            delete_confirmation_dialog_ = nullptr;
+            confirm_delete();
+        },
+        opts);
 }
 
 void HistoryListPanel::confirm_delete() {
