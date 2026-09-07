@@ -1154,6 +1154,7 @@
   <translation tag="Homing Z..." ja="Z軸をホーミング中..."/>
   <translation tag="Homing all axes..." ja="全軸をホーミング中..."/>
   <translation tag="Homing axes..." ja="軸をホーミング中..."/>
+  <translation tag="Homing complete" ja="ホーミング完了"/>
   <translation tag="Homing failed: " ja="ホーミングに失敗: "/>
   <translation tag="Homing failed: {}" ja="ホーミングに失敗しました: {}"/>
   <translation tag="Homing first..." ja="ホーミング中..."/>

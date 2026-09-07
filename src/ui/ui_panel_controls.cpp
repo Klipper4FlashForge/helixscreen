@@ -1335,200 +1335,101 @@ void ControlsPanel::handle_secondary_fans_clicked() {
 // QUICK ACTION BUTTON HANDLERS
 // ============================================================================
 
-void ControlsPanel::handle_home_all() {
-    spdlog::debug("[{}] Home All clicked", get_name());
+void ControlsPanel::run_quick_action(uint32_t timeout_ms, const QuickActionText& text,
+                                     const QuickActionDispatch& dispatch) {
     if (operation_guard_.is_active()) {
         NOTIFY_WARNING(lv_tr("Operation already in progress"));
         return;
     }
-    if (api_) {
-        operation_guard_.begin(300000, [] { NOTIFY_WARNING(lv_tr("Homing timed out")); });
-        NOTIFY_INFO(lv_tr("Homing all axes..."));
-        // bg_cb defers the whole callback body to the main thread atomically —
-        // no bare bg-thread expired() check (L081 Mechanism C, hit on v0.99.60/ad5x).
-        api_->motion().home_axes(
-            "", lifetime_.bg_cb("ControlsPanel::home_all_ok", [this]() { operation_guard_.end(); }),
-            lifetime_.bg_cb("ControlsPanel::home_all_err", [this](const MoonrakerError& err) {
-                operation_guard_.end();
-                if (err.type == MoonrakerErrorType::TIMEOUT) {
-                    NOTIFY_WARNING(lv_tr("Homing may still be running — response timed out"));
-                } else {
-                    NOTIFY_ERROR(lv_tr("Homing failed: {}"), err.user_message());
-                }
-            }));
+    if (!api_) {
+        NOTIFY_WARNING(lv_tr("Printer connection unavailable"));
+        return;
     }
+
+    operation_guard_.begin(
+        timeout_ms, [msg = text.guard_timed_out] { NOTIFY_WARNING(fmt::runtime(msg.c_str())); });
+    NOTIFY_INFO(fmt::runtime(text.started.c_str()));
+
+    // Moonraker replies land on a network thread. bg_cb defers the whole body to
+    // the main thread atomically, which a bare expired() check followed by an
+    // inline mutation does not (L081 Mechanism C).
+    dispatch(lifetime_.bg_cb("ControlsPanel::quick_action_ok",
+                             [this, msg = text.completed]() {
+                                 operation_guard_.end();
+                                 NOTIFY_SUCCESS(fmt::runtime(msg.c_str()));
+                             }),
+             lifetime_.bg_cb(
+                 "ControlsPanel::quick_action_error", [this, text](const MoonrakerError& err) {
+                     operation_guard_.end();
+                     if (err.type == MoonrakerErrorType::TIMEOUT) {
+                         NOTIFY_WARNING(fmt::runtime(text.rpc_timed_out.c_str()));
+                     } else {
+                         NOTIFY_ERROR(fmt::runtime(text.failed_fmt.c_str()), err.user_message());
+                     }
+                 }));
+}
+
+// The five homing buttons share one set of strings for everything except the
+// "Homing X..." line: an axis that failed, timed out or finished did so as part
+// of the same homing move, and naming the axis twice buys the user nothing.
+ControlsPanel::QuickActionText ControlsPanel::homing_text(const char* started) {
+    return {started, lv_tr("Homing complete"), lv_tr("Homing timed out"),
+            lv_tr("Homing may still be running — response timed out"), lv_tr("Homing failed: {}")};
+}
+
+void ControlsPanel::home_axes_action(const char* axes, const char* started_toast) {
+    spdlog::debug("[{}] Home {} clicked", get_name(), axes[0] ? axes : "All");
+    run_quick_action(
+        IMoonrakerAPI::HOMING_TIMEOUT_MS, homing_text(started_toast),
+        [this, axes](IMoonrakerAPI::SuccessCallback ok, IMoonrakerAPI::ErrorCallback err) {
+            api_->motion().home_axes(axes, std::move(ok), std::move(err));
+        });
+}
+
+void ControlsPanel::handle_home_all() {
+    home_axes_action("", lv_tr("Homing all axes..."));
 }
 
 void ControlsPanel::handle_home_x() {
-    spdlog::debug("[{}] Home X clicked", get_name());
-    if (operation_guard_.is_active()) {
-        NOTIFY_WARNING(lv_tr("Operation already in progress"));
-        return;
-    }
-    if (api_) {
-        auto tok = lifetime_.token();
-        operation_guard_.begin(300000, [] { NOTIFY_WARNING(lv_tr("Homing timed out")); });
-        NOTIFY_INFO(lv_tr("Homing X..."));
-        api_->motion().home_axes(
-            "X",
-            [this, tok]() {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-            },
-            [this, tok](const MoonrakerError& err) {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-                if (err.type == MoonrakerErrorType::TIMEOUT) {
-                    NOTIFY_WARNING(lv_tr("Homing may still be running — response timed out"));
-                } else {
-                    NOTIFY_ERROR(lv_tr("Homing failed: {}"), err.user_message());
-                }
-            });
-    }
+    home_axes_action("X", lv_tr("Homing X..."));
 }
 
 void ControlsPanel::handle_home_y() {
-    spdlog::debug("[{}] Home Y clicked", get_name());
-    if (operation_guard_.is_active()) {
-        NOTIFY_WARNING(lv_tr("Operation already in progress"));
-        return;
-    }
-    if (api_) {
-        auto tok = lifetime_.token();
-        operation_guard_.begin(300000, [] { NOTIFY_WARNING(lv_tr("Homing timed out")); });
-        NOTIFY_INFO(lv_tr("Homing Y..."));
-        api_->motion().home_axes(
-            "Y",
-            [this, tok]() {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-            },
-            [this, tok](const MoonrakerError& err) {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-                if (err.type == MoonrakerErrorType::TIMEOUT) {
-                    NOTIFY_WARNING(lv_tr("Homing may still be running — response timed out"));
-                } else {
-                    NOTIFY_ERROR(lv_tr("Homing failed: {}"), err.user_message());
-                }
-            });
-    }
+    home_axes_action("Y", lv_tr("Homing Y..."));
 }
 
 void ControlsPanel::handle_home_xy() {
-    spdlog::debug("[{}] Home XY clicked", get_name());
-    if (operation_guard_.is_active()) {
-        NOTIFY_WARNING(lv_tr("Operation already in progress"));
-        return;
-    }
-    if (api_) {
-        auto tok = lifetime_.token();
-        operation_guard_.begin(300000, [] { NOTIFY_WARNING(lv_tr("Homing timed out")); });
-        NOTIFY_INFO(lv_tr("Homing XY..."));
-        api_->motion().home_axes(
-            "XY",
-            [this, tok]() {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-            },
-            [this, tok](const MoonrakerError& err) {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-                if (err.type == MoonrakerErrorType::TIMEOUT) {
-                    NOTIFY_WARNING(lv_tr("Homing may still be running — response timed out"));
-                } else {
-                    NOTIFY_ERROR(lv_tr("Homing failed: {}"), err.user_message());
-                }
-            });
-    }
+    home_axes_action("XY", lv_tr("Homing XY..."));
 }
 
 void ControlsPanel::handle_home_z() {
-    spdlog::debug("[{}] Home Z clicked", get_name());
-    if (operation_guard_.is_active()) {
-        NOTIFY_WARNING(lv_tr("Operation already in progress"));
-        return;
-    }
-    if (api_) {
-        auto tok = lifetime_.token();
-        operation_guard_.begin(300000, [] { NOTIFY_WARNING(lv_tr("Homing timed out")); });
-        NOTIFY_INFO(lv_tr("Homing Z..."));
-        api_->motion().home_axes(
-            "Z",
-            [this, tok]() {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-            },
-            [this, tok](const MoonrakerError& err) {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-                if (err.type == MoonrakerErrorType::TIMEOUT) {
-                    NOTIFY_WARNING(lv_tr("Homing may still be running — response timed out"));
-                } else {
-                    NOTIFY_ERROR(lv_tr("Homing failed: {}"), err.user_message());
-                }
-            });
-    }
+    home_axes_action("Z", lv_tr("Homing Z..."));
 }
 
 void ControlsPanel::handle_qgl() {
     spdlog::debug("[{}] QGL clicked", get_name());
-    if (operation_guard_.is_active()) {
-        NOTIFY_WARNING(lv_tr("Operation already in progress"));
-        return;
-    }
-    if (api_) {
-        auto tok = lifetime_.token();
-        operation_guard_.begin(600000, [] { NOTIFY_WARNING(lv_tr("QGL timed out")); });
-        NOTIFY_INFO(lv_tr("Quad Gantry Level started..."));
-        api_->execute_gcode(
-            "QUAD_GANTRY_LEVEL",
-            [this, tok]() {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-                NOTIFY_SUCCESS(lv_tr("Quad Gantry Level complete"));
-            },
-            [this, tok](const MoonrakerError& err) {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-                if (err.type == MoonrakerErrorType::TIMEOUT) {
-                    NOTIFY_WARNING(lv_tr("QGL may still be running — response timed out"));
-                } else {
-                    NOTIFY_ERROR(lv_tr("QGL failed: {}"), err.user_message());
-                }
-            },
-            MoonrakerAdvancedAPI::LEVELING_TIMEOUT_MS);
-    }
+    run_quick_action(MoonrakerAdvancedAPI::LEVELING_TIMEOUT_MS,
+                     {lv_tr("Quad Gantry Level started..."), lv_tr("Quad Gantry Level complete"),
+                      lv_tr("QGL timed out"),
+                      lv_tr("QGL may still be running — response timed out"),
+                      lv_tr("QGL failed: {}")},
+                     [this](IMoonrakerAPI::SuccessCallback ok, IMoonrakerAPI::ErrorCallback err) {
+                         api_->execute_gcode("QUAD_GANTRY_LEVEL", std::move(ok), std::move(err),
+                                             MoonrakerAdvancedAPI::LEVELING_TIMEOUT_MS);
+                     });
 }
 
 void ControlsPanel::handle_z_tilt() {
     spdlog::debug("[{}] Z-Tilt clicked", get_name());
-    if (operation_guard_.is_active()) {
-        NOTIFY_WARNING(lv_tr("Operation already in progress"));
-        return;
-    }
-    if (api_) {
-        auto tok = lifetime_.token();
-        operation_guard_.begin(600000, [] { NOTIFY_WARNING(lv_tr("Z-Tilt timed out")); });
-        NOTIFY_INFO(lv_tr("Z-Tilt Adjust started..."));
-        api_->execute_gcode(
-            "Z_TILT_ADJUST",
-            [this, tok]() {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-                NOTIFY_SUCCESS(lv_tr("Z-Tilt Adjust complete"));
-            },
-            [this, tok](const MoonrakerError& err) {
-                tok.defer("ControlsPanel::operation_guard_end",
-                          [this]() { operation_guard_.end(); });
-                if (err.type == MoonrakerErrorType::TIMEOUT) {
-                    NOTIFY_WARNING(lv_tr("Z-Tilt may still be running — response timed out"));
-                } else {
-                    NOTIFY_ERROR(lv_tr("Z-Tilt failed: {}"), err.user_message());
-                }
-            },
-            MoonrakerAdvancedAPI::LEVELING_TIMEOUT_MS);
-    }
+    run_quick_action(MoonrakerAdvancedAPI::LEVELING_TIMEOUT_MS,
+                     {lv_tr("Z-Tilt Adjust started..."), lv_tr("Z-Tilt Adjust complete"),
+                      lv_tr("Z-Tilt timed out"),
+                      lv_tr("Z-Tilt may still be running — response timed out"),
+                      lv_tr("Z-Tilt failed: {}")},
+                     [this](IMoonrakerAPI::SuccessCallback ok, IMoonrakerAPI::ErrorCallback err) {
+                         api_->execute_gcode("Z_TILT_ADJUST", std::move(ok), std::move(err),
+                                             MoonrakerAdvancedAPI::LEVELING_TIMEOUT_MS);
+                     });
 }
 
 void ControlsPanel::execute_macro(size_t index) {
