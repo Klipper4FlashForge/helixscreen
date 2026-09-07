@@ -183,7 +183,7 @@ bool RuntimeConfig::should_show_runout_modal() const {
     }
 
     // Check AMS state
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     if (ams.is_available()) {
         // Tool changers (Snapmaker U1, generic TOOL_CHANGER) have one extruder
         // per slot and no shared hub — runout on a tool cannot be auto-resolved

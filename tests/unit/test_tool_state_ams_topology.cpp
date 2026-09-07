@@ -97,10 +97,10 @@ TEST_CASE_METHOD(ToolStateFixture, "[ToolState][ams-topology] clear_ams_topology
 TEST_CASE_METHOD(ToolStateFixture,
                  "[ToolState][ams-topology] AFC mock with 4 lanes drives ToolState",
                  "[tool-state][ams][afc][ams-topology]") {
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.init_subjects(/*register_xml=*/false);
 
-    auto mock = AmsBackend::create_mock(4);
+    auto mock = helix::AmsBackend::create_mock(4);
     REQUIRE(mock != nullptr);
     // A REQUIRE, not a silent skip: the plain mock stands in for a lane
     // multiplexer and owns a table by construction. Returning early here would
@@ -459,13 +459,13 @@ namespace {
 // latch, without disturbing registry entries other fixtures own.
 struct ToolBadgeFixture : public LVGLTestFixture {
     ToolBadgeFixture() {
-        AmsState::instance().init_subjects(/*register_xml=*/false);
+        helix::AmsState::instance().init_subjects(/*register_xml=*/false);
         ToolState::instance().init_subjects(/*register_xml=*/false);
         helix::ui::init_ams_tool_text_observers();
     }
     ~ToolBadgeFixture() override {
         StaticSubjectRegistry::instance().deinit_one("AmsToolTextObservers");
-        AmsState::instance().deinit_subjects();
+        helix::AmsState::instance().deinit_subjects();
         ToolState::instance().deinit_subjects();
     }
 

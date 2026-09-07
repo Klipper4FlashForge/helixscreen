@@ -109,12 +109,12 @@ namespace {
 
 /// Installs a mock backend into AmsState for the life of the case.
 struct ScopedAmsBackend {
-    AmsBackendMock* backend = nullptr;
+    helix::AmsBackendMock* backend = nullptr;
 
     explicit ScopedAmsBackend(int slot_count) {
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         ams.init_subjects(false);
-        auto owned = std::make_unique<AmsBackendMock>(slot_count);
+        auto owned = std::make_unique<helix::AmsBackendMock>(slot_count);
         backend = owned.get();
         backend->set_operation_delay(0);
         ams.set_backend(std::move(owned));
@@ -125,7 +125,7 @@ struct ScopedAmsBackend {
         if (backend) {
             backend->stop();
         }
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         ams.clear_backends();
         ams.deinit_subjects();
     }
@@ -171,7 +171,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     SECTION("a backend with no route at all is not") {
         ScopedAmsBackend ams(4);
-        ams.backend->set_remap_strategy(AmsBackend::RemapStrategy::None);
+        ams.backend->set_remap_strategy(helix::AmsBackend::RemapStrategy::None);
         REQUIRE_FALSE(helix::printer::can_remap(*ams.backend));
         CHECK_FALSE(remap_button_offered(test_screen(), pump));
     }
@@ -181,7 +181,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
         // firmware object it writes through has not been discovered.
         ScopedAmsBackend ams(4);
         ams.backend->set_remap_ready(false);
-        REQUIRE(ams.backend->get_remap_strategy() != AmsBackend::RemapStrategy::None);
+        REQUIRE(ams.backend->get_remap_strategy() != helix::AmsBackend::RemapStrategy::None);
         REQUIRE_FALSE(helix::printer::can_remap(*ams.backend));
         CHECK_FALSE(remap_button_offered(test_screen(), pump));
     }

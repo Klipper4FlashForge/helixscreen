@@ -87,6 +87,8 @@ void check_common_shape(const ErrorEvent& e, helix::ErrorSource source) {
 // befriended).
 // ---------------------------------------------------------------------------
 
+namespace helix {
+
 class HhFaultEventCharHelper : public AmsBackendHappyHare {
   public:
     HhFaultEventCharHelper() : AmsBackendHappyHare(nullptr, nullptr) {
@@ -112,6 +114,9 @@ class HhFaultEventCharHelper : public AmsBackendHappyHare {
         handle_status_update(notification);
     }
 };
+} // namespace helix
+
+namespace helix {
 
 class AfcFaultEventCharHelper : public AmsBackendAfc {
   public:
@@ -138,15 +143,16 @@ class AfcFaultEventCharHelper : public AmsBackendAfc {
         current_lane_name_ = lane;
     }
 };
+} // namespace helix
 
 namespace {
 
 /// A backend that overrides nothing error-related, to pin the base defaults.
 /// The mock implements the whole AmsBackend interface without touching
 /// classify_error / current_error / build_recovery_actions.
-class InertBackend : public AmsBackendMock {
+class InertBackend : public helix::AmsBackendMock {
   public:
-    InertBackend() : AmsBackendMock(4) {}
+    InertBackend() : helix::AmsBackendMock(4) {}
 
     /// Reach the protected hook from the test.
     [[nodiscard]] std::vector<RecoveryAction> recovery_actions() const {
@@ -162,7 +168,7 @@ class InertBackend : public AmsBackendMock {
 
 TEST_CASE("Characterization: Happy Hare runout event, filament at the toolhead",
           "[ams][happy_hare][error-center][characterization][1250]") {
-    HhFaultEventCharHelper hh;
+    helix::HhFaultEventCharHelper hh;
     hh.feed_mmu(nlohmann::json{{"action", "Error"},
                                {"filament_pos", 8},
                                {"filament", "Loaded"},
@@ -192,7 +198,7 @@ TEST_CASE("Characterization: Happy Hare runout event, filament at the toolhead",
 
 TEST_CASE("Characterization: Happy Hare clog event, nothing at the toolhead",
           "[ams][happy_hare][error-center][characterization][1250]") {
-    HhFaultEventCharHelper hh;
+    helix::HhFaultEventCharHelper hh;
     hh.feed_mmu(nlohmann::json{{"action", "Error"},
                                {"filament_pos", 0}, // unloaded
                                {"filament", "Unloaded"},
@@ -218,7 +224,7 @@ TEST_CASE("Characterization: Happy Hare clog event, nothing at the toolhead",
 
 TEST_CASE("Characterization: Happy Hare falls back to the !! text when HH gives no reason",
           "[ams][happy_hare][error-center][characterization][1250]") {
-    HhFaultEventCharHelper hh;
+    helix::HhFaultEventCharHelper hh;
     hh.feed_mmu(nlohmann::json{{"action", "Error"}, {"reason_for_pause", ""}});
 
     helix::ClassifyContext ctx;
@@ -248,7 +254,7 @@ TEST_CASE("Characterization: Happy Hare falls back to the !! text when HH gives 
 
 TEST_CASE("Characterization: Happy Hare declines lines it does not own",
           "[ams][happy_hare][error-center][characterization][1250]") {
-    HhFaultEventCharHelper hh;
+    helix::HhFaultEventCharHelper hh;
     helix::ClassifyContext ctx;
 
     CHECK_FALSE(hh.classify_error("Error: generic klipper error", ctx).has_value());
@@ -265,7 +271,7 @@ TEST_CASE("Characterization: Happy Hare declines lines it does not own",
 
 TEST_CASE("Characterization: AFC toolhead jam from a !! line",
           "[ams][afc][error-center][characterization][1250]") {
-    AfcFaultEventCharHelper afc;
+    helix::AfcFaultEventCharHelper afc;
     afc.set_toolhead_sensor(true);
 
     helix::ClassifyContext ctx; // is_jam does not need is_paused
@@ -284,7 +290,7 @@ TEST_CASE("Characterization: AFC toolhead jam from a !! line",
 
 TEST_CASE("Characterization: AFC empty toolhead offers the cold lane eject",
           "[ams][afc][error-center][characterization][1250]") {
-    AfcFaultEventCharHelper afc;
+    helix::AfcFaultEventCharHelper afc;
     afc.set_toolhead_sensor(false);
     afc.set_current_lane("lane3");
     afc.feed_afc(nlohmann::json{{"error_state", true}, {"current_state", "Error"}});
@@ -307,7 +313,7 @@ TEST_CASE("Characterization: AFC empty toolhead offers the cold lane eject",
 
 TEST_CASE("Characterization: AFC with neither a loaded toolhead nor a lane",
           "[ams][afc][error-center][characterization][1250]") {
-    AfcFaultEventCharHelper afc;
+    helix::AfcFaultEventCharHelper afc;
     afc.feed_afc(nlohmann::json{{"error_state", true}, {"current_state", "Error"}});
 
     helix::ClassifyContext ctx;
@@ -323,7 +329,7 @@ TEST_CASE("Characterization: AFC with neither a loaded toolhead nor a lane",
 
 TEST_CASE("Characterization: AFC status-driven current_error",
           "[ams][afc][error-center][characterization][1250]") {
-    AfcFaultEventCharHelper afc;
+    helix::AfcFaultEventCharHelper afc;
     afc.set_toolhead_sensor(true);
     afc.feed_afc(nlohmann::json{
         {"error_state", true},
@@ -346,7 +352,7 @@ TEST_CASE("Characterization: AFC status-driven current_error",
 
 TEST_CASE("Characterization: AFC declines lines it does not own",
           "[ams][afc][error-center][characterization][1250]") {
-    AfcFaultEventCharHelper afc;
+    helix::AfcFaultEventCharHelper afc;
     helix::ClassifyContext ctx;
 
     CHECK_FALSE(afc.classify_error("Error: generic klipper error", ctx).has_value());

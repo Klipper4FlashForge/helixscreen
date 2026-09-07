@@ -34,6 +34,11 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsBackend;
+using helix::AmsBackendSnapmaker;
+using helix::AmsBackendToolChanger;
+using helix::AmsState;
+
 namespace {
 
 /// Install a real changer backend and hand back the raw pointer AmsState owns.

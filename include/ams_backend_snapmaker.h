@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <vector>
 
+namespace helix {
+
 class SnapmakerTestAccess;
 class SnapmakerRealtimeTestAccess;
 class RunoutScopeTestAccess;
@@ -320,9 +322,9 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     }
 
   private:
-    friend class ::SnapmakerTestAccess;
-    friend class ::SnapmakerRealtimeTestAccess;
-    friend class ::RunoutScopeTestAccess;
+    friend class SnapmakerTestAccess;
+    friend class SnapmakerRealtimeTestAccess;
+    friend class RunoutScopeTestAccess;
 
     static constexpr int NUM_TOOLS = 4;
 
@@ -467,5 +469,7 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     // access under mutex_.
     helix::ams::SlotFingerprintTracker rfid_tracker_;
 };
+
+} // namespace helix
 
 #endif // HELIX_HAS_SNAPMAKER

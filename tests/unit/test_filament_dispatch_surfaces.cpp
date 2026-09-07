@@ -77,7 +77,7 @@ class DispatchSurfaceFixture : public LVGLTestFixture {
         set_moonraker_api(api.get());
 
         // No AMS backend by default — the shape both surfaces used to refuse.
-        AmsState::instance().clear_backends();
+        helix::AmsState::instance().clear_backends();
         // Empty cache => MacroParamKnowledge::UNKNOWN for every macro, i.e. the
         // branch that WOULD prompt. That is deliberate: it is the only way to
         // prove ParamPolicy::Suppress actually suppresses something.
@@ -102,7 +102,7 @@ class DispatchSurfaceFixture : public LVGLTestFixture {
         set_moonraker_api(previous_api_);
         StandardMacros::instance().reset();
         helix::MacroParamCache::instance().clear();
-        AmsState::instance().clear_backends();
+        helix::AmsState::instance().clear_backends();
         helix::ui::UpdateQueue::instance().drain();
         helix::async_lifetime::take_snapshot();
         mock_client.stop_temperature_simulation();
@@ -260,7 +260,7 @@ TEST_CASE_METHOD(DispatchSurfaceFixture,
     // Before the router this was a bare `if (!backend) return;` — the button
     // did nothing at all on a printer with no AMS.
     configure_filament_macros();
-    REQUIRE(AmsState::instance().get_backend() == nullptr);
+    REQUIRE(helix::AmsState::instance().get_backend() == nullptr);
 
     AmsOperationSidebar sidebar(state);
     sidebar.handle_load_with_preheat(0);
@@ -273,7 +273,7 @@ TEST_CASE_METHOD(DispatchSurfaceFixture,
                  "Sidebar load with no backend and no macro falls back to raw gcode",
                  "[filament][dispatch][wiring][ams]") {
     clear_filament_macros();
-    REQUIRE(AmsState::instance().get_backend() == nullptr);
+    REQUIRE(helix::AmsState::instance().get_backend() == nullptr);
 
     AmsOperationSidebar sidebar(state);
     sidebar.handle_load_with_preheat(0);
@@ -286,7 +286,7 @@ TEST_CASE_METHOD(DispatchSurfaceFixture,
                  "Sidebar unload with no backend reaches the configured macro",
                  "[filament][dispatch][wiring][ams]") {
     configure_filament_macros();
-    REQUIRE(AmsState::instance().get_backend() == nullptr);
+    REQUIRE(helix::AmsState::instance().get_backend() == nullptr);
 
     AmsOperationSidebar sidebar(state);
     sidebar.handle_unload(1);
@@ -348,7 +348,7 @@ TEST_CASE_METHOD(DispatchSurfaceFixture,
                  "Runout load with no backend dispatches the macro instead of navigating",
                  "[filament][dispatch][wiring][runout]") {
     configure_filament_macros();
-    REQUIRE(AmsState::instance().get_backend() == nullptr);
+    REQUIRE(helix::AmsState::instance().get_backend() == nullptr);
 
     const helix::PanelId before = NavigationManager::instance().get_active();
 
@@ -407,7 +407,7 @@ TEST_CASE_METHOD(DispatchSurfaceFixture,
 TEST_CASE_METHOD(DispatchSurfaceFixture, "Runout unload with no backend dispatches the macro",
                  "[filament][dispatch][wiring][runout]") {
     configure_filament_macros();
-    REQUIRE(AmsState::instance().get_backend() == nullptr);
+    REQUIRE(helix::AmsState::instance().get_backend() == nullptr);
     REQUIRE_FALSE(StandardMacros::instance().get(StandardMacroSlot::UnloadFilament).is_empty());
 
     FilamentRunoutHandler handler(api.get());

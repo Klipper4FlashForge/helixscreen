@@ -47,7 +47,7 @@ class PrintStartControllerTestAccess {
 
     // --- remap-unsupported discriminator (test_print_start_filament_gate.cpp) ---
 
-    static bool should_warn_remap_unsupported(const AmsBackend& backend) {
+    static bool should_warn_remap_unsupported(const helix::AmsBackend& backend) {
         return helix::ui::PrintStartController::should_warn_remap_unsupported(backend);
     }
 

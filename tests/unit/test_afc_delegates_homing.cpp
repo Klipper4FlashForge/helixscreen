@@ -46,6 +46,8 @@ tool_start: direct
 )";
 } // namespace
 
+namespace helix {
+
 // Same friend-based access shape as test_afc_device_actions_config.cpp's
 // AmsBackendAfcConfigHelper (declared friend at include/ams_backend_afc.h:520).
 class AfcDelegatesHomingHelper : public AmsBackendAfc {
@@ -57,6 +59,7 @@ class AfcDelegatesHomingHelper : public AmsBackendAfc {
         afc_config_->load_from_string(content, "AFC/AFC.cfg");
     }
 };
+} // namespace helix
 
 TEST_CASE_METHOD(LVGLTestFixture, "AFC delegates_homing_to_printer reads [AFC] auto_home",
                  "[afc][homing][1265]") {
@@ -80,6 +83,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "base default: no backend delegates homing",
     auto afc = std::make_unique<AmsBackendAfc>(nullptr, nullptr);
     CHECK_FALSE(afc->AmsBackend::delegates_homing_to_printer());
 }
+
+namespace helix {
 
 // Drives the REAL ensure_homed_then() path with a captured-gcode API, the
 // same shape AfcReassertHelper uses in test_afc_spool_reassert.cpp.
@@ -122,6 +127,7 @@ class AfcDispatchHelper : public AmsBackendAfc {
     bool prompted = false;
     std::vector<std::string> captured;
 };
+} // namespace helix
 
 TEST_CASE_METHOD(LVGLTestFixture,
                  "ensure_homed_then dispatches without G28 or prompt when delegating (#1265)",

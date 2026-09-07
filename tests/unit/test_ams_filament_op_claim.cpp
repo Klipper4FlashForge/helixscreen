@@ -207,7 +207,7 @@ struct ClaimFixture : public LVGLTestFixture {
 
 TEST_CASE_METHOD(ClaimFixture, "AMS filament op: a second op cannot enter while one is dispatching",
                  "[ams][threading][claim]") {
-    auto backend = headless<AmsBackendHappyHare>();
+    auto backend = headless<helix::AmsBackendHappyHare>();
     backend->block_first_entrant.store(true);
 
     AmsError first_result = AmsErrorHelper::busy("not yet run");
@@ -237,7 +237,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: the loser is refused, never blo
                  "[ams][threading][claim]") {
     // A claim that made the contender WAIT would serialize the UI thread behind
     // a gcode send. It must fail fast instead.
-    auto backend = headless<AmsBackendHappyHare>();
+    auto backend = headless<helix::AmsBackendHappyHare>();
     backend->block_first_entrant.store(true);
 
     std::thread first([&] { (void)backend->load_filament(0); });
@@ -261,7 +261,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: exactly one of many concurrent 
     // Model the real shape of the window on AFC / ACE / CFS / AD5X: the op wins
     // the gate, does work, and only THEN publishes the busy action. Without the
     // claim every thread reads IDLE during that work and all eight win.
-    auto backend = headless<AmsBackendHappyHare>();
+    auto backend = headless<helix::AmsBackendHappyHare>();
     backend->hook_work = 25ms;
     backend->publish_busy_action = true;
 
@@ -300,7 +300,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: the claim covers a PrintActiveO
     // (FilamentOpGate::PrintActiveOnly). That is an opt-out of consulting an AMS
     // state it does not maintain — NOT an opt-out of the structural guarantee,
     // which a backend has no hook to decline.
-    auto backend = headless<AmsBackendQidi>();
+    auto backend = headless<helix::AmsBackendQidi>();
     backend->block_first_entrant.store(true);
 
     std::thread first([&] { (void)backend->load_filament(0); });
@@ -323,14 +323,14 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: the claim covers a PrintActiveO
 TEST_CASE_METHOD(ClaimFixture, "AMS filament op: the claim is released on every exit path",
                  "[ams][claim]") {
     SECTION("hook returned success") {
-        auto backend = headless<AmsBackendHappyHare>();
+        auto backend = headless<helix::AmsBackendHappyHare>();
         CHECK(backend->load_filament(0).success());
         CHECK(backend->load_filament(0).success());
         CHECK(backend->hook_entries.load() == 2);
     }
 
     SECTION("hook returned a failure") {
-        auto backend = headless<AmsBackendHappyHare>();
+        auto backend = headless<helix::AmsBackendHappyHare>();
         backend->hook_result = AmsErrorHelper::invalid_slot(9, 3);
         CHECK(backend->load_filament(9).result == AmsResult::INVALID_SLOT);
         backend->hook_result = AmsErrorHelper::success();
@@ -338,7 +338,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: the claim is released on every 
     }
 
     SECTION("hook threw") {
-        auto backend = headless<AmsBackendHappyHare>();
+        auto backend = headless<helix::AmsBackendHappyHare>();
         backend->hook_throws = true;
         CHECK_THROWS(backend->load_filament(0));
         backend->hook_throws = false;
@@ -346,7 +346,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: the claim is released on every 
     }
 
     SECTION("the print-active gate refused, so the hook never ran") {
-        auto backend = with_api<AmsBackendHappyHare>();
+        auto backend = with_api<helix::AmsBackendHappyHare>();
         set_print_state(helix::PrintJobState::PRINTING);
         const AmsError refused = backend->load_filament(0);
         CHECK_FALSE(refused.success());
@@ -360,7 +360,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: the claim is released on every 
     }
 
     SECTION("a backend that reports busy is refused without claiming") {
-        auto backend = headless<AmsBackendHappyHare>();
+        auto backend = headless<helix::AmsBackendHappyHare>();
         backend->set_action_for_test(AmsAction::UNLOADING);
         CHECK(backend->load_filament(0).result == AmsResult::BUSY);
         backend->set_action_for_test(AmsAction::IDLE);
@@ -375,7 +375,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: the claim is released on every 
 TEST_CASE_METHOD(ClaimFixture, "AMS filament op: refusal precedence is unchanged by the claim",
                  "[ams][claim]") {
     SECTION("not started outranks everything") {
-        auto backend = with_api<AmsBackendHappyHare>();
+        auto backend = with_api<helix::AmsBackendHappyHare>();
         backend->stop_for_test();
         set_print_state(helix::PrintJobState::PRINTING);
         const AmsError err = backend->load_filament(0);
@@ -384,7 +384,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: refusal precedence is unchanged
     }
 
     SECTION("busy outranks print-active") {
-        auto backend = with_api<AmsBackendHappyHare>();
+        auto backend = with_api<helix::AmsBackendHappyHare>();
         backend->set_action_for_test(AmsAction::LOADING);
         set_print_state(helix::PrintJobState::PRINTING);
         const AmsError err = backend->load_filament(0);
@@ -393,7 +393,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: refusal precedence is unchanged
     }
 
     SECTION("an in-flight claim reports busy the same way an AMS-reported one does") {
-        auto backend = headless<AmsBackendHappyHare>();
+        auto backend = headless<helix::AmsBackendHappyHare>();
         backend->set_action_for_test(AmsAction::LOADING);
         const AmsError from_state = backend->load_filament(0);
         backend->set_action_for_test(AmsAction::IDLE);

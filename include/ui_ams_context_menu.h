@@ -13,7 +13,9 @@
 #include <string>
 
 // Forward declaration
+namespace helix {
 class AmsBackend;
+} // namespace helix
 class AmsContextMenuTestAccess;
 
 namespace helix::ui {

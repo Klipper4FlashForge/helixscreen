@@ -34,6 +34,8 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsState;
+
 namespace {
 
 /// The seven environment-indicator subjects a unit card binds, in the order

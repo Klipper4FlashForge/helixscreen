@@ -22,32 +22,32 @@ using namespace helix::printer;
 
 TEST_CASE("AmsBackendMock: no firmware spool persistence by default",
           "[ams][backend][spool-persistence]") {
-    auto mock = AmsBackendMock::create_mock();
+    auto mock = helix::AmsBackendMock::create_mock();
     REQUIRE_FALSE(mock->has_firmware_spool_persistence());
 }
 
 TEST_CASE("AmsBackendHappyHare: has firmware spool persistence",
           "[ams][backend][spool-persistence]") {
     // Construct directly with nullptr — constructor sets capability flags
-    auto backend = std::make_unique<AmsBackendHappyHare>(nullptr, nullptr);
+    auto backend = std::make_unique<helix::AmsBackendHappyHare>(nullptr, nullptr);
     REQUIRE(backend->has_firmware_spool_persistence());
 }
 
 TEST_CASE("AmsBackendAfc: has firmware spool persistence", "[ams][backend][spool-persistence]") {
-    auto backend = std::make_unique<AmsBackendAfc>(nullptr, nullptr);
+    auto backend = std::make_unique<helix::AmsBackendAfc>(nullptr, nullptr);
     REQUIRE(backend->has_firmware_spool_persistence());
 }
 
 TEST_CASE("AmsBackendToolChanger: no firmware spool persistence",
           "[ams][backend][spool-persistence]") {
-    auto backend = std::make_unique<AmsBackendToolChanger>(nullptr, nullptr);
+    auto backend = std::make_unique<helix::AmsBackendToolChanger>(nullptr, nullptr);
     REQUIRE_FALSE(backend->has_firmware_spool_persistence());
 }
 
 TEST_CASE("AmsBackendAd5xIfs: no firmware spool persistence", "[ams][backend][spool-persistence]") {
     // IFS firmware persists color + material type but NOT spoolman_id,
     // so ToolState handles spool assignment persistence via Moonraker DB.
-    auto backend = std::make_unique<AmsBackendAd5xIfs>(nullptr, nullptr);
+    auto backend = std::make_unique<helix::AmsBackendAd5xIfs>(nullptr, nullptr);
     REQUIRE_FALSE(backend->has_firmware_spool_persistence());
 }
 
@@ -57,10 +57,10 @@ TEST_CASE("AmsBackendAd5xIfs: no firmware spool persistence", "[ams][backend][sp
 
 TEST_CASE("printer_reports_spool_ids capability", "[ams][capabilities]") {
     // Qualified call pins the BASE default (false), not the AFC override.
-    auto afc = std::make_unique<AmsBackendAfc>(nullptr, nullptr);
+    auto afc = std::make_unique<helix::AmsBackendAfc>(nullptr, nullptr);
     CHECK_FALSE(afc->AmsBackend::printer_reports_spool_ids());
     CHECK(afc->printer_reports_spool_ids());
-    auto hh = std::make_unique<AmsBackendHappyHare>(nullptr, nullptr);
+    auto hh = std::make_unique<helix::AmsBackendHappyHare>(nullptr, nullptr);
     CHECK(hh->printer_reports_spool_ids());
 }
 
@@ -75,7 +75,7 @@ TEST_CASE("printer_reports_spool_ids capability", "[ams][capabilities]") {
 
 TEST_CASE("AmsBackendMock: set_slot_info propagates mapped_tool change",
           "[ams][backend][slot-edit-remap]") {
-    auto mock = AmsBackendMock::create_mock();
+    auto mock = helix::AmsBackendMock::create_mock();
 
     // Mock seeds slot 0 → T0 by default.
     auto initial = mock->get_slot_info(0);
@@ -91,7 +91,7 @@ TEST_CASE("AmsBackendMock: set_slot_info propagates mapped_tool change",
 
 TEST_CASE("AmsBackendMock: set_slot_info ignores default mapped_tool (-1)",
           "[ams][backend][slot-edit-remap]") {
-    auto mock = AmsBackendMock::create_mock();
+    auto mock = helix::AmsBackendMock::create_mock();
 
     // Spoolman polling builds a default-constructed SlotInfo; live mapping must survive.
     SlotInfo info; // mapped_tool defaults to -1
@@ -103,9 +103,9 @@ TEST_CASE("AmsBackendMock: set_slot_info ignores default mapped_tool (-1)",
 
 namespace {
 // Minimal helper: capture G-code strings without dispatching to a real Moonraker.
-class ToolChangerGcodeCapture : public AmsBackendToolChanger {
+class ToolChangerGcodeCapture : public helix::AmsBackendToolChanger {
   public:
-    ToolChangerGcodeCapture() : AmsBackendToolChanger(nullptr, nullptr) {}
+    ToolChangerGcodeCapture() : helix::AmsBackendToolChanger(nullptr, nullptr) {}
     AmsError execute_gcode(const std::string& gcode) override {
         captured.push_back(gcode);
         return AmsErrorHelper::success();

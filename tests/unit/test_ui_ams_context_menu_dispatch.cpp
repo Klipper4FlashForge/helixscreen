@@ -36,10 +36,10 @@ namespace {
 /// Install a 4-slot mock backend so dispatch reaches real backend calls
 /// rather than short-circuiting on the "no MFS available" guard.
 void install_mock_backend() {
-    AmsState::instance().init_subjects(true);
-    auto mock = AmsBackend::create_mock(4);
-    AmsState::instance().set_backend(std::move(mock));
-    AmsState::instance().sync_from_backend();
+    helix::AmsState::instance().init_subjects(true);
+    auto mock = helix::AmsBackend::create_mock(4);
+    helix::AmsState::instance().set_backend(std::move(mock));
+    helix::AmsState::instance().sync_from_backend();
 }
 
 } // namespace
@@ -84,7 +84,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: EJECT reaches the backend",
                  "[ui][ams][context_menu][dispatch][1258]") {
     install_mock_backend();
 
-    auto* backend = static_cast<AmsBackendMock*>(AmsState::instance().get_backend());
+    auto* backend = static_cast<helix::AmsBackendMock*>(helix::AmsState::instance().get_backend());
     REQUIRE(backend != nullptr);
 
     SlotInfo info;
@@ -92,7 +92,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: EJECT reaches the backend",
     info.material = "PLA";
     info.status = SlotStatus::AVAILABLE;
     backend->set_slot_info(1, info);
-    AmsState::instance().sync_from_backend();
+    helix::AmsState::instance().sync_from_backend();
 
     // The whole point of #1258: the tap must actually arrive at the backend,
     // not be consumed by a switch that has no case for it.
@@ -101,8 +101,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: EJECT reaches the backend",
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: claims actions even with no backend",
                  "[ui][ams][context_menu][dispatch][1258]") {
-    AmsState::instance().init_subjects(true);
-    AmsState::instance().set_backend(nullptr);
+    helix::AmsState::instance().init_subjects(true);
+    helix::AmsState::instance().set_backend(nullptr);
 
     // With no MFS the user still gets a warning toast — the action is handled,
     // so the caller must not fall through and double-report it.

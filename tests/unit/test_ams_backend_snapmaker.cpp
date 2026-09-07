@@ -57,6 +57,8 @@ class FilamentSlotOverrideStoreTestAccess {
     }
 };
 
+namespace helix {
+
 // Friend-class shim for AmsBackendSnapmaker — declared as friend in the
 // backend header. Provides narrow, purpose-built accessors for the private
 // override and hardware-event-detection state so tests don't have to reach
@@ -116,6 +118,7 @@ class SnapmakerTestAccess {
         b.system_info_.current_tool = tool;
     }
 };
+} // namespace helix
 
 // Build a filament_feed status notification for a single channel/extruder with
 // a given channel_state (+ optional filament_detected / channel_error). Routes

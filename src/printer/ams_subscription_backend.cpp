@@ -13,6 +13,8 @@
 
 #include "hv/json.hpp"
 
+namespace helix {
+
 AmsSubscriptionBackend::AmsSubscriptionBackend(IMoonrakerAPI* api, helix::IMoonrakerClient* client)
     : api_(api), client_(client) {
     // Common defaults -- derived constructors set type-specific fields
@@ -646,3 +648,5 @@ AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode,
         /*caller_surfaces_errors=*/false);
     return AmsErrorHelper::success();
 }
+
+} // namespace helix

@@ -31,7 +31,7 @@
 #include <sstream>
 #include <vector>
 
-using namespace helix;
+namespace helix {
 
 namespace {
 
@@ -6480,3 +6480,5 @@ AmsError AmsBackendAfc::execute_device_action(const std::string& action_id, cons
 
     return AmsErrorHelper::not_supported("Unknown action: " + action_id);
 }
+
+} // namespace helix

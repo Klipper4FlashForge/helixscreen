@@ -30,9 +30,9 @@ namespace {
 /// on_error as a parameter (the 1-arg/2-arg execute_gcode virtuals predate
 /// on_error and can't grow it without breaking ~20 other fixtures), so the
 /// return-value channel is what's actually reachable here.
-class HomingProbeBackend : public AmsBackendAfc {
+class HomingProbeBackend : public helix::AmsBackendAfc {
   public:
-    HomingProbeBackend() : AmsBackendAfc(nullptr, nullptr) {}
+    HomingProbeBackend() : helix::AmsBackendAfc(nullptr, nullptr) {}
 
     AmsError execute_gcode(const std::string& gcode) override {
         if (fail_next_gcode) {
@@ -373,9 +373,9 @@ TEST_CASE("declining before a dispatch never arms anything for a later one",
 // that isn't a direct, synchronous confirm()/cancel() call in the same
 // stack frame -- which is exactly the shape backdrop-tap/ESC/the fixed
 // HomeConfirmModal's on_hide() fallback net all have.
-class ToolChangerHomingProbeBackend : public AmsBackendToolChanger {
+class ToolChangerHomingProbeBackend : public helix::AmsBackendToolChanger {
   public:
-    ToolChangerHomingProbeBackend() : AmsBackendToolChanger(nullptr, nullptr) {}
+    ToolChangerHomingProbeBackend() : helix::AmsBackendToolChanger(nullptr, nullptr) {}
 
     AmsError execute_gcode(const std::string& gcode) override {
         captured.push_back(gcode);
@@ -412,7 +412,7 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
             pending_cancel = std::move(cancel);
         });
 
-    ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=1",
+    helix::ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=1",
                                                    AmsAction::SELECTING);
 
     // The prompter didn't resolve synchronously, so the optimistic action
@@ -420,7 +420,7 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
     // still busy -- expected while the dialog is open, not the bug.
     REQUIRE(pending_cancel);
     CHECK(backend.get_system_info().action == AmsAction::SELECTING);
-    CHECK(ToolChangerTestAccess::has_pending_dispatch(backend));
+    CHECK(helix::ToolChangerTestAccess::has_pending_dispatch(backend));
     CHECK(backend.captured.empty());
 
     // Resolve it -- standing in for backdrop-tap/ESC/Cancel, all of which
@@ -438,13 +438,13 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
     pending_cancel();
 
     CHECK(backend.get_system_info().action == AmsAction::IDLE);
-    CHECK_FALSE(ToolChangerTestAccess::has_pending_dispatch(backend));
+    CHECK_FALSE(helix::ToolChangerTestAccess::has_pending_dispatch(backend));
     CHECK(backend.get_system_info().operation_detail.empty());
     CHECK(backend.captured.empty());
 
     // Not wedged: a subsequent dispatch still works.
     backend.homed = true;
-    auto err = ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=2",
+    auto err = helix::ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=2",
                                                               AmsAction::SELECTING);
     REQUIRE(err.success());
     REQUIRE(backend.captured.size() == 1);
@@ -471,7 +471,7 @@ TEST_CASE("ensure_homed_then custom timeout/silent bypass the hardcoded virtuals
     state.init_subjects(false);
     MoonrakerAPIMock api(client, state);
 
-    AmsBackendAfc backend(&api, &client);
+    helix::AmsBackendAfc backend(&api, &client);
 
     constexpr uint32_t CUSTOM_TIMEOUT_MS = 12345;
     REQUIRE(CUSTOM_TIMEOUT_MS != MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
@@ -516,7 +516,7 @@ TEST_CASE("ensure_homed_then custom timeout/silent bypass the hardcoded virtuals
 // would never be recorded.
 //
 // dispatch_action_script stays private in AmsBackendCfs -- these tests reach
-// the REAL production implementation through the ::CfsTestAccess friend shim
+// the REAL production implementation through the helix::CfsTestAccess friend shim
 // (tests/test_helpers/cfs_test_access.h), not by subclassing to widen access.
 
 TEST_CASE("CFS dispatch_action_script routes through ensure_homed_then and homes when unhomed",
@@ -529,7 +529,7 @@ TEST_CASE("CFS dispatch_action_script routes through ensure_homed_then and homes
     // homed_axes defaults to "" (not homed) -- exercises the G28-then-payload leg.
     helix::printer::AmsBackendCfs backend(&api, nullptr);
 
-    auto err = CfsTestAccess::call_dispatch_action_script(backend, "BOX_LOAD LANE=1");
+    auto err = helix::CfsTestAccess::call_dispatch_action_script(backend, "BOX_LOAD LANE=1");
     REQUIRE(err.success());
 
     // G28's success callback is marshalled through token.defer() (L081
@@ -555,12 +555,12 @@ TEST_CASE("CFS Fork variant never homes via dispatch_action_script", "[ams][homi
     MoonrakerAPIMock api(client, state);
 
     helix::printer::AmsBackendCfs backend(&api, nullptr);
-    CfsTestAccess::set_macro_variant_fork(backend);
+    helix::CfsTestAccess::set_macro_variant_fork(backend);
 
     // homed_axes is STILL "" (not homed) here -- proves the skip comes from
     // skip_homing=true (Fork maps to it), not from the toolhead happening to
     // already be homed.
-    auto err = CfsTestAccess::call_dispatch_action_script(backend, "BOX_LOAD LANE=1");
+    auto err = helix::CfsTestAccess::call_dispatch_action_script(backend, "BOX_LOAD LANE=1");
     REQUIRE(err.success());
 
     helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());

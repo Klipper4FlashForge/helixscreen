@@ -16,6 +16,8 @@
 #include <mutex>
 #include <optional>
 
+namespace helix {
+
 /// Base class for AMS backends that use Moonraker subscription-based status updates.
 /// Extracts common lifecycle, event, and state query logic from AFC/HappyHare/ToolChanger.
 ///
@@ -371,3 +373,5 @@ class AmsSubscriptionBackend : public AmsBackend {
     void handle_dispatch_error(const MoonrakerError& err,
                                const std::function<void(const MoonrakerError&)>& on_error);
 };
+
+} // namespace helix

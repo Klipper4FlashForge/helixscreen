@@ -242,7 +242,7 @@ struct KeypadCeilingFixture {
         // rather than `state`, so those need their subjects too - same pair the
         // SafetyTextHarness in test_safety_limits_negative_min_temp.cpp sets up.
         helix::ToolState::instance().init_subjects(true);
-        AmsState::instance().init_subjects(true);
+        helix::AmsState::instance().init_subjects(true);
         helix::PanelWidgetManager::instance().register_shared_resource(controller);
         panel = std::make_unique<::FilamentPanel>(state, &api);
     }

@@ -25,10 +25,10 @@ namespace {
 // sink can read/write real SlotInfo via the backend's set_slot_info API.
 struct AmsSlotSinkFixture : LVGLTestFixture {
     int backend_idx = 0;
-    AmsBackendMock* mock = nullptr;
+    helix::AmsBackendMock* mock = nullptr;
 
     AmsSlotSinkFixture() {
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         auto& printer = get_printer_state();
         ams.clear_backends();
         ams.deinit_subjects();
@@ -41,7 +41,7 @@ struct AmsSlotSinkFixture : LVGLTestFixture {
         printer.init_subjects(false);
         ams.init_subjects(false);
 
-        auto m = std::make_unique<AmsBackendMock>(4);
+        auto m = std::make_unique<helix::AmsBackendMock>(4);
         mock = m.get();
         backend_idx = ams.add_backend(std::move(m));
 
@@ -55,7 +55,7 @@ struct AmsSlotSinkFixture : LVGLTestFixture {
     }
 
     ~AmsSlotSinkFixture() override {
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         ams.clear_backends();
         ams.deinit_subjects();
     }
@@ -205,7 +205,7 @@ TEST_CASE_METHOD(AmsSlotSinkFixture,
 TEST_CASE_METHOD(LVGLTestFixture,
                  "FilamentConsumptionTracker: register_sink returns a usable handle",
                  "[consumption_sink][ams][tracker_registry]") {
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.clear_backends();
     ams.deinit_subjects();
     ams.init_subjects(false);
@@ -221,13 +221,13 @@ TEST_CASE_METHOD(LVGLTestFixture,
 TEST_CASE_METHOD(LVGLTestFixture,
                  "AmsState: add_backend registers one slot sink per slot; clear unregisters",
                  "[consumption_sink][ams][tracker_registry]") {
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.clear_backends();
     ams.deinit_subjects();
     ams.init_subjects(false);
 
     constexpr int SLOTS = 4;
-    auto m = std::make_unique<AmsBackendMock>(SLOTS);
+    auto m = std::make_unique<helix::AmsBackendMock>(SLOTS);
     int idx = ams.add_backend(std::move(m));
     REQUIRE(idx == 0);
 
@@ -243,7 +243,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
 TEST_CASE_METHOD(LVGLTestFixture,
                  "Tracker: mid-print register_sink auto-snapshots and tracks deltas",
                  "[consumption_sink][ams][registration]") {
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     auto& printer = get_printer_state();
     auto& tracker = FilamentConsumptionTracker::instance();
 
@@ -255,8 +255,8 @@ TEST_CASE_METHOD(LVGLTestFixture,
 
     // Backend gets added pre-start so its per-slot sinks are registered while
     // no print is in progress. Seed slot 0 with a trackable configuration.
-    auto m = std::make_unique<AmsBackendMock>(4);
-    AmsBackendMock* mock = m.get();
+    auto m = std::make_unique<helix::AmsBackendMock>(4);
+    helix::AmsBackendMock* mock = m.get();
     int backend_idx = ams.add_backend(std::move(m));
     SlotInfo seed = mock->get_slot_info(0);
     seed.material = "PLA";

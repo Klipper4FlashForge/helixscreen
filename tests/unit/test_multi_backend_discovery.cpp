@@ -10,6 +10,9 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsBackend;
+using helix::AmsState;
+
 /// This file had no fixture, so nothing drained the UpdateQueue. The AmsState
 /// tests below add backends and sync them, and AmsState defers its subject
 /// writes; each test returned with that work queued and handed it to whichever

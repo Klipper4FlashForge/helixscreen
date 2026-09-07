@@ -346,9 +346,9 @@ void apply_logo(lv_obj_t* image, const AmsUnit& unit, const AmsSystemInfo& info)
         return;
     }
 
-    const char* path = AmsState::get_logo_path(unit.name);
+    const char* path = helix::AmsState::get_logo_path(unit.name);
     if (!path || !path[0]) {
-        path = AmsState::get_logo_path(info.type_name);
+        path = helix::AmsState::get_logo_path(info.type_name);
     }
 
     if (path && path[0]) {
@@ -364,7 +364,7 @@ void apply_logo(lv_obj_t* image, const std::string& type_name) {
         return;
     }
 
-    const char* path = AmsState::get_logo_path(type_name);
+    const char* path = helix::AmsState::get_logo_path(type_name);
     if (path && path[0]) {
         lv_image_set_src(image, path);
         lv_obj_remove_flag(image, LV_OBJ_FLAG_HIDDEN);
@@ -377,7 +377,7 @@ void apply_logo(lv_obj_t* image, const std::string& type_name) {
 // System Tool Layout
 // ============================================================================
 
-SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const AmsBackend* backend) {
+SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const helix::AmsBackend* backend) {
     SystemToolLayout result;
     int total_physical = 0;
 

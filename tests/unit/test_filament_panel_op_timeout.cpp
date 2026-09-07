@@ -65,9 +65,9 @@ namespace {
 // Minimal AFC-shaped backend: the panel's op path needs a slot-selecting system
 // whose load/unload succeed synchronously and then stay silent, which is exactly
 // the fire-and-forget shape that makes a stall observable.
-class StubBackend : public AmsBackendMock {
+class StubBackend : public helix::AmsBackendMock {
   public:
-    StubBackend() : AmsBackendMock(4) {}
+    StubBackend() : helix::AmsBackendMock(4) {}
 
     AmsSystemInfo sys_{};
     int loaded_slot_ = -1;
@@ -126,14 +126,14 @@ struct TimeoutHarness {
 
     explicit TimeoutHarness(LVGLUITestFixture& f) : fx(f) {
         ToolState::instance().init_subjects(true);
-        AmsState::instance().init_subjects(true);
+        helix::AmsState::instance().init_subjects(true);
 
         auto owned = std::make_unique<StubBackend>();
         owned->sys_ = afc_sys();
         owned->loaded_slot_ = 3; // slot 0 stays free so a Load can proceed
         mock = owned.get();
-        AmsState::instance().set_backend(std::move(owned));
-        AmsState::instance().sync_from_backend();
+        helix::AmsState::instance().set_backend(std::move(owned));
+        helix::AmsState::instance().sync_from_backend();
         ToolState::instance().set_ams_topology(identity_topo());
 
         panel = std::make_unique<FilamentPanel>(fx.state(), fx.api());
@@ -165,7 +165,7 @@ struct TimeoutHarness {
     }
 
     void publish_action(AmsAction a, int settle_ms) {
-        lv_subject_set_int(AmsState::instance().get_ams_action_subject(), static_cast<int>(a));
+        lv_subject_set_int(helix::AmsState::instance().get_ams_action_subject(), static_cast<int>(a));
         fx.process_lvgl(settle_ms);
     }
 
@@ -175,9 +175,9 @@ struct TimeoutHarness {
         }
         fx.process_lvgl(10);
         panel.reset();
-        AmsState::instance().set_backend(nullptr);
+        helix::AmsState::instance().set_backend(nullptr);
         ToolState::instance().clear_ams_topology();
-        AmsState::instance().deinit_subjects();
+        helix::AmsState::instance().deinit_subjects();
         ToolState::instance().deinit_subjects();
     }
 };

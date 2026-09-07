@@ -20,6 +20,9 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsBackendMock;
+using helix::AmsState;
+
 namespace {
 class ErrorReportingBackend : public AmsBackendMock {
   public:

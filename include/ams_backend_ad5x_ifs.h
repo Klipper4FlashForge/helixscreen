@@ -22,6 +22,8 @@
 #include <utility>
 #include <vector>
 
+namespace helix {
+
 class Ad5xIfsTestAccess;
 
 /// AMS backend for FlashForge Adventurer 5X IFS (Intelligent Filament Switching).
@@ -1499,5 +1501,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
     // Note: uses inherited lifetime_ from AmsSubscriptionBackend (not shadowed).
 };
+
+} // namespace helix
 
 #endif // HELIX_HAS_IFS

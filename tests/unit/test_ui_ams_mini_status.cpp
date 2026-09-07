@@ -155,10 +155,10 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: all slots present incl
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: sync_from_ams_state feeds spool cells",
                  "[ui][ams_mini][spool][sync]") {
     using namespace helix;
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.init_subjects(false);
 
-    auto mock = std::make_unique<AmsBackendMock>(2);
+    auto mock = std::make_unique<helix::AmsBackendMock>(2);
     auto* mock_ptr = mock.get();
     ams.set_backend(std::move(mock));
     mock_ptr->start();
@@ -213,10 +213,10 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: sync_from_ams_state fe
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: active lane badge uses success color",
                  "[ui][ams_mini][spool]") {
     using namespace helix;
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.init_subjects(false);
 
-    auto mock = std::make_unique<AmsBackendMock>(2);
+    auto mock = std::make_unique<helix::AmsBackendMock>(2);
     auto* mock_ptr = mock.get();
     ams.set_backend(std::move(mock));
     mock_ptr->start();

@@ -43,9 +43,9 @@
 
 namespace {
 
-class SlotMemoryHelper : public AmsBackendToolChanger {
+class SlotMemoryHelper : public helix::AmsBackendToolChanger {
   public:
-    explicit SlotMemoryHelper(int tool_count) : AmsBackendToolChanger(nullptr, nullptr) {
+    explicit SlotMemoryHelper(int tool_count) : helix::AmsBackendToolChanger(nullptr, nullptr) {
         set_tools(tool_count);
         running_ = true;
     }
@@ -228,10 +228,10 @@ namespace {
 
 /// A backend wired to a mock Moonraker, so additional_start_checks() actually
 /// builds the store and does the blocking load.
-class StoreBackedHelper : public AmsBackendToolChanger {
+class StoreBackedHelper : public helix::AmsBackendToolChanger {
   public:
     explicit StoreBackedHelper(IMoonrakerAPI* api, int tool_count)
-        : AmsBackendToolChanger(api, nullptr) {
+        : helix::AmsBackendToolChanger(api, nullptr) {
         std::vector<std::string> names;
         for (int i = 0; i < tool_count; ++i) {
             names.push_back("T" + std::to_string(i));
@@ -265,13 +265,13 @@ TEST_CASE("Tool-changer slot metadata round-trips through Moonraker",
     // --- session 1: the user edits tool 1 -----------------------------------
     {
         StoreBackedHelper h(&api, 4);
-        ToolChangerTestAccess::call_on_started(h);
+        helix::ToolChangerTestAccess::call_on_started(h);
 
         // The SHARED namespace, not a private one. AFC and Happy Hare must use a
         // private namespace because their Klipper plugins own lane_data and AFC
         // wipes it every boot; klipper-toolchanger has no such plugin, so these
         // records are meant to interoperate.
-        CHECK(ToolChangerTestAccess::store_namespace(h) == "lane_data");
+        CHECK(helix::ToolChangerTestAccess::store_namespace(h) == "lane_data");
 
         REQUIRE(h.set_slot_info(1, blue_petg(), /*persist=*/true).success());
     }
@@ -298,7 +298,7 @@ TEST_CASE("Tool-changer slot metadata round-trips through Moonraker",
         // Before the load, the slot is whatever initialize_tools() built.
         CHECK(fresh.get_slot_info(1).color_rgb == AMS_DEFAULT_SLOT_COLOR);
 
-        ToolChangerTestAccess::call_on_started(fresh);
+        helix::ToolChangerTestAccess::call_on_started(fresh);
 
         // set_discovered_tools() ran in the constructor, before the store
         // loaded, so the slots predate the overrides. The load has to re-layer
@@ -333,7 +333,7 @@ TEST_CASE("Starting with a live API does not deadlock",
     state.init_subjects(false);
     MoonrakerAPIMock api(client, state);
 
-    AmsBackendToolChanger backend(&api, &client);
+    helix::AmsBackendToolChanger backend(&api, &client);
     backend.set_discovered_tools({"T0", "T1"});
 
     // If the load moves back into additional_start_checks(), this call never

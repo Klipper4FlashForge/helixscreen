@@ -255,7 +255,7 @@ AmsDetailSlotResult ams_detail_create_slots(AmsDetailWidgets& w, lv_obj_t* slot_
     int count = 0;
     int slot_offset = 0;
 
-    auto* backend = AmsState::instance().get_backend();
+    auto* backend = helix::AmsState::instance().get_backend();
     if (backend) {
         AmsSystemInfo info = backend->get_system_info();
         if (unit_index >= 0 && unit_index < static_cast<int>(info.units.size())) {
@@ -364,7 +364,7 @@ void ams_detail_update_tray(AmsDetailWidgets& w) {
         return;
 
     // Tool changers don't have a physical tray/housing
-    auto* backend = AmsState::instance().get_backend(0);
+    auto* backend = helix::AmsState::instance().get_backend(0);
     if (backend && !backend->has_physical_tray()) {
         lv_obj_add_flag(w.slot_tray, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -470,7 +470,7 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     if (!canvas)
         return;
 
-    auto* backend = AmsState::instance().get_backend();
+    auto* backend = helix::AmsState::instance().get_backend();
     if (!backend)
         return;
 
@@ -654,7 +654,7 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     // actually engaged: an assigned external spool is not in the filament path
     // until it is selected, and drawing it anyway put a loaded lane's material
     // on the bypass node (#1229 defect 5).
-    auto ext_spool = AmsState::instance().get_external_spool_info();
+    auto ext_spool = helix::AmsState::instance().get_external_spool_info();
     const bool show_bypass_spool =
         ext_spool.has_value() && helix::ui::bypass_node_visible_for(backend);
     ui_filament_path_canvas_set_bypass_has_spool(canvas, show_bypass_spool);
@@ -673,10 +673,10 @@ void ams_detail_pre_show_env_indicator(AmsDetailWidgets& w, int unit_index) {
         return;
 
     const int u = (unit_index >= 0) ? unit_index : 0; // -1 == whole/single-unit → unit 0
-    AmsState::instance().set_detail_env_unit(u);
+    helix::AmsState::instance().set_detail_env_unit(u);
     lv_obj_set_user_data(w.env_indicator, reinterpret_cast<void*>(static_cast<intptr_t>(u)));
 
-    auto* backend = AmsState::instance().get_backend();
+    auto* backend = helix::AmsState::instance().get_backend();
     if (backend && backend->has_environment_sensors()) {
         lv_obj_remove_flag(w.env_indicator, LV_OBJ_FLAG_HIDDEN);
         // Force layout on the root (flex row container) so the indicator's

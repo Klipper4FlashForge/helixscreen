@@ -7,6 +7,8 @@
 
 #include "../catch_amalgamated.hpp"
 
+namespace helix {
+
 /**
  * @brief Test helper for hub sensor tests, extending AmsBackendAfc
  *
@@ -101,6 +103,7 @@ class HubSensorTestHelper : public AmsBackendAfc {
         return AmsErrorHelper::success();
     }
 };
+} // namespace helix
 
 // ============================================================================
 // AmsUnit defaults
@@ -117,7 +120,7 @@ TEST_CASE("AmsUnit hub sensor fields default to false", "[ams][hub_sensor]") {
 // ============================================================================
 
 TEST_CASE("AFC single-unit: parse_afc_hub stores per-hub state", "[ams][hub_sensor][afc]") {
-    HubSensorTestHelper helper;
+    helix::HubSensorTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_discovered_hubs({"Turtle_1"});
 
@@ -133,7 +136,7 @@ TEST_CASE("AFC single-unit: parse_afc_hub stores per-hub state", "[ams][hub_sens
 }
 
 TEST_CASE("AFC single-unit: hub sensor updates AmsUnit", "[ams][hub_sensor][afc]") {
-    HubSensorTestHelper helper;
+    helix::HubSensorTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_discovered_hubs({"Turtle_1"});
 
@@ -153,7 +156,7 @@ TEST_CASE("AFC single-unit: hub sensor updates AmsUnit", "[ams][hub_sensor][afc]
 }
 
 TEST_CASE("AFC single-unit: hub sensor triggers OUTPUT segment", "[ams][hub_sensor][afc]") {
-    HubSensorTestHelper helper;
+    helix::HubSensorTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_discovered_hubs({"Turtle_1"});
 
@@ -168,7 +171,7 @@ TEST_CASE("AFC single-unit: hub sensor triggers OUTPUT segment", "[ams][hub_sens
 
 TEST_CASE("AFC multi-unit: per-unit hub sensor population after reorganize",
           "[ams][hub_sensor][afc]") {
-    HubSensorTestHelper helper;
+    helix::HubSensorTestHelper helper;
 
     // Set up 8 lanes across 2 units
     std::vector<std::string> all_lanes;
@@ -203,7 +206,7 @@ TEST_CASE("AFC multi-unit: per-unit hub sensor population after reorganize",
 }
 
 TEST_CASE("AFC multi-unit: real-time hub update on correct unit", "[ams][hub_sensor][afc]") {
-    HubSensorTestHelper helper;
+    helix::HubSensorTestHelper helper;
 
     std::vector<std::string> all_lanes;
     for (int i = 1; i <= 8; ++i) {
@@ -231,7 +234,7 @@ TEST_CASE("AFC multi-unit: real-time hub update on correct unit", "[ams][hub_sen
 }
 
 TEST_CASE("AFC multi-unit: any hub triggered returns OUTPUT segment", "[ams][hub_sensor][afc]") {
-    HubSensorTestHelper helper;
+    helix::HubSensorTestHelper helper;
     helper.initialize_test_lanes_with_slots(8);
     helper.set_discovered_hubs({"Turtle_1", "Turtle_2"});
 
@@ -242,7 +245,7 @@ TEST_CASE("AFC multi-unit: any hub triggered returns OUTPUT segment", "[ams][hub
 }
 
 TEST_CASE("AFC multi-unit: no hub triggered returns NONE", "[ams][hub_sensor][afc]") {
-    HubSensorTestHelper helper;
+    helix::HubSensorTestHelper helper;
     helper.initialize_test_lanes_with_slots(8);
     helper.set_discovered_hubs({"Turtle_1", "Turtle_2"});
 
@@ -259,7 +262,7 @@ TEST_CASE("AFC multi-unit: no hub triggered returns NONE", "[ams][hub_sensor][af
 // ============================================================================
 
 TEST_CASE("AFC initialize_slots sets has_hub_sensor on unit", "[ams][hub_sensor][afc]") {
-    HubSensorTestHelper helper;
+    helix::HubSensorTestHelper helper;
 
     // Use the real initialize_slots flow via set_discovered_lanes + initialize
     std::vector<std::string> lanes = {"lane1", "lane2", "lane3", "lane4"};

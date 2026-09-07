@@ -76,7 +76,7 @@ class RecoveryPreheatFixture : public LVGLUITestFixture {
 
         // No AMS backend and no external spool: the preheat target resolves to
         // DEFAULT_LOAD_PREHEAT_TEMP, so the tests know what they are waiting for.
-        AmsState::instance().set_backend(nullptr);
+        helix::AmsState::instance().set_backend(nullptr);
         prev_cold_extrude_ = helix::SafetySettingsManager::instance().get_allow_cold_extrude();
         helix::SafetySettingsManager::instance().set_allow_cold_extrude(false);
 

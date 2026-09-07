@@ -108,7 +108,7 @@ bool is_print_refusal(const AmsError& e) {
 
 struct Op {
     const char* name;
-    std::function<AmsError(AmsBackend&)> invoke;
+    std::function<AmsError(helix::AmsBackend&)> invoke;
 };
 
 /// The three ops that are toolhead motion on every backend by definition:
@@ -118,9 +118,9 @@ struct Op {
 /// classification below.
 const std::vector<Op>& motion_ops() {
     static const std::vector<Op> ops = {
-        {"load_filament", [](AmsBackend& b) { return b.load_filament(0); }},
-        {"unload_filament", [](AmsBackend& b) { return b.unload_filament(0); }},
-        {"change_tool", [](AmsBackend& b) { return b.change_tool(0); }},
+        {"load_filament", [](helix::AmsBackend& b) { return b.load_filament(0); }},
+        {"unload_filament", [](helix::AmsBackend& b) { return b.unload_filament(0); }},
+        {"change_tool", [](helix::AmsBackend& b) { return b.change_tool(0); }},
     };
     return ops;
 }
@@ -156,8 +156,8 @@ struct FactoryGateFixture : public LVGLTestFixture {
     /// not a skip. That matters: a backend stuck at running_ == false refuses
     /// every op with not_connected, which would let a missing print gate sail
     /// through as "well, it refused".
-    std::unique_ptr<AmsBackend> build(AmsType type) {
-        auto backend = AmsBackend::create(type, api.get(), &mock_client);
+    std::unique_ptr<helix::AmsBackend> build(AmsType type) {
+        auto backend = helix::AmsBackend::create(type, api.get(), &mock_client);
         if (!backend) {
             return nullptr;
         }
@@ -168,7 +168,7 @@ struct FactoryGateFixture : public LVGLTestFixture {
         // Tool Changer refuses to start until tools are discovered. A future
         // backend with its own start precondition trips the is_running()
         // REQUIRE below rather than quietly testing nothing.
-        if (auto* tc = dynamic_cast<AmsBackendToolChanger*>(backend.get())) {
+        if (auto* tc = dynamic_cast<helix::AmsBackendToolChanger*>(backend.get())) {
             tc->set_discovered_tools({"tool0", "tool1"});
         }
 
@@ -185,7 +185,7 @@ struct FactoryGateFixture : public LVGLTestFixture {
     /// Run @p op on a freshly built backend and record everything observable.
     /// Fresh each time so one op's side effects (CFS stamps action=LOADING on
     /// dispatch) cannot change what the next one is allowed to do.
-    Outcome run(AmsType type, const std::function<AmsError(AmsBackend&)>& op) {
+    Outcome run(AmsType type, const std::function<AmsError(helix::AmsBackend&)>& op) {
         auto backend = build(type);
         REQUIRE(backend != nullptr);
         mock_client.clear_gcode_script_history();
@@ -206,7 +206,7 @@ struct FactoryGateFixture : public LVGLTestFixture {
         std::vector<AmsType> types;
         for (int raw = 1; raw < AMS_TYPE_PROBE_LIMIT; ++raw) {
             const auto type = static_cast<AmsType>(raw);
-            if (AmsBackend::create(type, api.get(), &mock_client)) {
+            if (helix::AmsBackend::create(type, api.get(), &mock_client)) {
                 types.push_back(type);
             }
         }
@@ -237,7 +237,7 @@ TEST_CASE_METHOD(FactoryGateFixture, "AmsBackend::create builds a distinct backe
 
     for (AmsType type : types) {
         CAPTURE(ams_type_to_string(type));
-        auto backend = AmsBackend::create(type, api.get(), &mock_client);
+        auto backend = helix::AmsBackend::create(type, api.get(), &mock_client);
         REQUIRE(backend != nullptr);
         CHECK(backend->get_type() == type);
     }
@@ -327,8 +327,8 @@ TEST_CASE_METHOD(FactoryGateFixture,
 
 TEST_CASE_METHOD(FactoryGateFixture, "select_slot is print-gated exactly when it is a tool change",
                  "[ams][safety][factory]") {
-    auto select_slot = [](AmsBackend& b) { return b.select_slot(0); };
-    auto change_tool = [](AmsBackend& b) { return b.change_tool(0); };
+    auto select_slot = [](helix::AmsBackend& b) { return b.select_slot(0); };
+    auto change_tool = [](helix::AmsBackend& b) { return b.change_tool(0); };
 
     for (AmsType type : buildable_types()) {
         CAPTURE(ams_type_to_string(type));

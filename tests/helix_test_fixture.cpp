@@ -333,7 +333,7 @@ void HelixTestFixture::reset_all() {
     // inherits whatever the previous test left behind. set_active_step_operation()
     // only exchanges the atomic and clears a plain int high-water mark - no
     // subject writes - so it is safe to call unconditionally here.
-    AmsState::instance().set_active_step_operation(StepOperationType::LOAD_SWAP);
+    helix::AmsState::instance().set_active_step_operation(StepOperationType::LOAD_SWAP);
 
     // DisplaySettingsManager's animations_enabled is a process-global subject
     // that defaults to the platform value (true on desktop). A fixture-less

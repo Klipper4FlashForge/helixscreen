@@ -21,6 +21,9 @@
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
+
+namespace helix {
+
 /**
  * @brief Test helper class providing access to AmsBackendAfc internals
  *
@@ -598,6 +601,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         configfile_has_toolchanger_ = true;
     }
 };
+} // namespace helix
 
 // ============================================================================
 // AFC version is informational only
@@ -7190,6 +7194,8 @@ TEST_CASE("AFC full multi-lane v1.2.0 frame lands on every slot",
 // on the macro's own gcode ack, but only while AFC has not taken the operation
 // over — forcing IDLE underneath a live toolchange would truncate it.
 
+namespace helix {
+
 class AfcDispatchAckHelper : public AmsBackendAfc {
   public:
     AfcDispatchAckHelper() : AmsBackendAfc(nullptr, nullptr) {
@@ -7309,6 +7315,7 @@ class AfcDispatchAckHelper : public AmsBackendAfc {
     std::vector<std::function<void()>> pending_acks_;
     std::vector<AmsAction> action_trace_;
 };
+} // namespace helix
 
 namespace {
 

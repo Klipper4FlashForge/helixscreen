@@ -27,8 +27,9 @@
 
 #include <chrono>
 
+namespace helix {
+
 using json = nlohmann::json;
-using namespace helix;
 
 /// Max consecutive /server/ace/info failures before giving up on REST fallback
 static constexpr int MAX_INFO_FETCH_FAILURES = 3;
@@ -1750,5 +1751,7 @@ void AmsBackendAce::clear_slot_override(int slot_index) {
 
     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
 }
+
+} // namespace helix
 
 #endif // HELIX_HAS_ACE

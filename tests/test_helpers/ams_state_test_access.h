@@ -6,6 +6,8 @@
 
 #include <chrono>
 
+namespace helix {
+
 // Friend access to AmsState internals (the header already declares this class
 // as a friend; AmsState itself lives in the global namespace). Definition lives
 // in ONE place so two test translation units cannot each define their own and
@@ -46,3 +48,4 @@ class AmsStateTestAccess {
         return AmsState::POST_UNLOAD_RUNOUT_GRACE;
     }
 };
+} // namespace helix

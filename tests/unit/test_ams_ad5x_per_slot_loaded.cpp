@@ -32,6 +32,8 @@
 using json = nlohmann::json;
 using namespace helix;
 
+namespace helix {
+
 /// Feeds the production Moonraker status path (handle_status_update ->
 /// parse_save_variables / parse_port_sensor / parse_head_sensor ->
 /// recompute_current_slot_locked -> update_slot_from_state), so the parse chain
@@ -51,6 +53,7 @@ class Ad5xPerSlotLoadedHelper : public AmsBackendAd5xIfs {
         handle_status_update(status);
     }
 };
+} // namespace helix
 
 namespace {
 

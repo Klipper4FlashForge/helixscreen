@@ -405,12 +405,12 @@ namespace {
 /// singleton, so a test that installs a backend and walks away leaves it live for
 /// every test that runs after it. Mirrors MappingCardRenderFixture's wiring.
 struct ScopedAmsBackend {
-    AmsBackendMock* backend = nullptr;
+    helix::AmsBackendMock* backend = nullptr;
 
     explicit ScopedAmsBackend(int slot_count) {
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         ams.init_subjects(false);
-        auto owned = std::make_unique<AmsBackendMock>(slot_count);
+        auto owned = std::make_unique<helix::AmsBackendMock>(slot_count);
         backend = owned.get();
         backend->set_operation_delay(0);
         ams.set_backend(std::move(owned));
@@ -422,7 +422,7 @@ struct ScopedAmsBackend {
         if (backend) {
             backend->stop();
         }
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         ams.clear_backends();
         ams.deinit_subjects();
     }
@@ -659,7 +659,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "A bypassed single-lane print renders no fil
     SECTION("bypass engaged: no chip, no card, no tap affordance") {
         REQUIRE(ams.backend->enable_bypass().success());
         REQUIRE(ams.backend->is_bypass_active());
-        REQUIRE(AmsState::instance().any_bypass_active());
+        REQUIRE(helix::AmsState::instance().any_bypass_active());
 
         view.show("bypass_one.gcode", "sub", "PLA", palette, materials, kSize, kMtime);
 
@@ -675,7 +675,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "A bypassed single-lane print renders no fil
     SECTION("same file WITHOUT bypass: the one card renders its chip") {
         // The known positive. Without it the zeros above could come from a
         // fixture that cannot produce a chip under any conditions.
-        REQUIRE_FALSE(AmsState::instance().any_bypass_active());
+        REQUIRE_FALSE(helix::AmsState::instance().any_bypass_active());
 
         view.show("bypass_one.gcode", "sub", "PLA", palette, materials, kSize, kMtime);
 
@@ -769,7 +769,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "The tap chevron tracks the card, and the ba
         // for every non-Snapmaker mode, which is what made this case free - and
         // also what left the picker unreachable under --test for the five
         // backends that really do declare Native.
-        ams.backend->set_remap_strategy(AmsBackend::RemapStrategy::None);
+        ams.backend->set_remap_strategy(helix::AmsBackend::RemapStrategy::None);
         REQUIRE_FALSE(helix::ui::PrintSelectDetailView::color_card_opens_remap());
         view.show("two_tools.gcode", "sub", "PLA", two_colors, two_materials, kSize, kMtime);
 

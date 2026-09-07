@@ -20,6 +20,8 @@
 #include <string>
 #include <unordered_map>
 
+namespace helix {
+
 /**
  * @file ams_backend_afc.h
  * @brief AFC-Klipper-Add-On backend implementation
@@ -1397,3 +1399,5 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// signal completion.
     void on_lane_unload_done();
 };
+
+} // namespace helix

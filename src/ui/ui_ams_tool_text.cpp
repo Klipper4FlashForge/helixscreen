@@ -42,7 +42,7 @@ static void update_tool_badge(helix::ToolState* ts) {
     }
 }
 
-static void update_toolchange_text(AmsState* a) {
+static void update_toolchange_text(helix::AmsState* a) {
     int total = lv_subject_get_int(a->get_ams_number_of_toolchanges_subject());
     if (total > 0) {
         int current = lv_subject_get_int(a->get_ams_current_toolchange_subject());

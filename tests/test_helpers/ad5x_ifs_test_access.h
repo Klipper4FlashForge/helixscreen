@@ -27,6 +27,8 @@
 
 using json = nlohmann::json;
 
+namespace helix {
+
 // Test access helper — friend class for accessing internals
 class Ad5xIfsTestAccess {
   public:
@@ -584,3 +586,4 @@ class Ad5xIfsTestAccess {
         b.recheck_ifs_vars_macro();
     }
 };
+} // namespace helix

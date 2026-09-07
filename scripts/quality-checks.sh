@@ -1653,10 +1653,14 @@ if [ -f "scripts/check_namespace_compliance.py" ]; then
   # theme_manager_get_readable_on (declaration + definition), a new member of
   # the global theme_manager_* family it sits in - every accessor in that header
   # is global scope, so putting this one alone in helix:: would make its call
-  # sites the odd ones out. 2336 -> 2335: filament_op_execute.h's forward
-  # declarations of AmsBackend and AmsError carry NAMESPACE_OK, since both
-  # types are themselves global and a forward declaration cannot move them.
-  if python3 scripts/check_namespace_compliance.py --max-allowed 2335 --summary >/tmp/namespace_check.out 2>&1; then
+  # sites the odd ones out. 2335 -> 2297 is the AMS backend class layer moving
+  # under helix:: (#1370): AmsBackend, AmsSubscriptionBackend, the concrete
+  # backends and the mock with their per-backend value structs and test-access
+  # forward declarations, AmsState, and the headers that forward-declared
+  # AmsBackend at global scope (filament_sensor_manager.h's test-access
+  # forward declarations went with the RunoutScopeTestAccess it shares with
+  # the Snapmaker backend).
+  if python3 scripts/check_namespace_compliance.py --max-allowed 2297 --summary >/tmp/namespace_check.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/namespace_check.out

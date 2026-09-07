@@ -34,6 +34,12 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::Ad5xIfsTestAccess;
+using helix::AmsBackend;
+using helix::AmsBackendAd5xIfs;
+using helix::AmsBackendAfc;
+using helix::AmsState;
+
 // Friend-class shim matching the one in test_filament_slot_override_store.cpp
 // (declared friend in filament_slot_override_store.h per L065). Allows our
 // Task 10 tests to redirect the store's read-cache to a per-test tmp dir so

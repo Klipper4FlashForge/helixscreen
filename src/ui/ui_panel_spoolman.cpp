@@ -529,7 +529,7 @@ void SpoolmanPanel::set_active_spool(int spool_id) {
     slot.global_index = -2;
     apply_spool_to_slot(slot, *found);
 
-    AmsState::instance().commit_external_spool_edit(
+    helix::AmsState::instance().commit_external_spool_edit(
         slot,
         [this, spool_id, spool_name, name, tok]() {
             // Main-thread-only: AmsState::commit_external_spool_edit marshals

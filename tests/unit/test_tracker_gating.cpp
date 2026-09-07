@@ -49,10 +49,10 @@ namespace {
 // gating tests don't cross-pollinate their setup invariants.
 struct TrackerGatingFixture : LVGLTestFixture {
     int backend_idx = 0;
-    AmsBackendMock* mock = nullptr;
+    helix::AmsBackendMock* mock = nullptr;
 
     TrackerGatingFixture() {
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         auto& printer = get_printer_state();
 
         FilamentConsumptionTracker::instance().stop();
@@ -62,7 +62,7 @@ struct TrackerGatingFixture : LVGLTestFixture {
         printer.init_subjects(false);
         ams.clear_external_spool_info();
 
-        auto m = std::make_unique<AmsBackendMock>(4);
+        auto m = std::make_unique<helix::AmsBackendMock>(4);
         m->set_identity_extruder_mapping_for_testing(true);
         mock = m.get();
         backend_idx = ams.add_backend(std::move(m));
@@ -97,7 +97,7 @@ struct TrackerGatingFixture : LVGLTestFixture {
     ~TrackerGatingFixture() override {
         FilamentConsumptionTrackerTestAccess::force_print_state(PrintJobState::COMPLETE);
         FilamentConsumptionTracker::instance().stop();
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         ams.clear_backends();
         ams.clear_external_spool_info();
     }

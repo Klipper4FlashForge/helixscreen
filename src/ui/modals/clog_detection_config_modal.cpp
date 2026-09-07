@@ -118,7 +118,7 @@ void ClogDetectionConfigModal::on_show() {
         danger_threshold_ = config["danger_threshold"].get<int>();
 
     // Read current state from AmsState backend
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     auto* backend = ams.get_backend();
     AmsType backend_type = backend ? backend->get_type() : AmsType::NONE;
     if (backend) {
@@ -186,7 +186,7 @@ void ClogDetectionConfigModal::on_ok() {
     auto& wc = helix::PanelWidgetManager::instance().get_widget_config(panel_id_);
     wc.set_widget_config(widget_id_, config);
 
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.set_source_override(source_);
     ams.set_danger_threshold_override(danger_threshold_);
 
@@ -272,7 +272,7 @@ ClogDetectionConfigModal::build_detection_mode_gcode(AmsType type, int mode, flo
 void ClogDetectionConfigModal::send_detection_mode_gcode(int mode, float det_length) {
     // Re-read the backend rather than trust what on_show() saw: the UI gate hides
     // these controls, but the send must refuse on its own too.
-    auto* backend = AmsState::instance().get_backend();
+    auto* backend = helix::AmsState::instance().get_backend();
     AmsType type = backend ? backend->get_type() : AmsType::NONE;
 
     auto cmd = build_detection_mode_gcode(type, mode, det_length);

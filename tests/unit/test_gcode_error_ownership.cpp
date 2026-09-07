@@ -152,7 +152,7 @@ TEST_CASE_METHOD(OwnershipFixture,
     client.force_next_gcode_error(MoonrakerErrorType::JSON_RPC_ERROR, PAYLOAD_REJECTION,
                                   "BOX_LOAD");
 
-    auto err = CfsTestAccess::call_dispatch_action_script(backend, "BOX_LOAD LANE=1");
+    auto err = helix::CfsTestAccess::call_dispatch_action_script(backend, "BOX_LOAD LANE=1");
     REQUIRE(err.success());
 
     // G28's ack is marshalled through token.defer(); drain so the payload send

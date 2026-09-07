@@ -14,6 +14,8 @@
 
 using json = nlohmann::json;
 
+namespace helix {
+
 // Friend-class shim per L065 — exposes private parse helpers for unit tests.
 // Mirrors the Ad5xIfsTestAccess pattern in test_ams_backend_ad5x_ifs.cpp.
 class QidiBoxTestAccess {
@@ -95,3 +97,4 @@ class QidiBoxTestAccess {
         b.fw_has_clear_nozzle_ = has_clear_nozzle;
     }
 };
+} // namespace helix

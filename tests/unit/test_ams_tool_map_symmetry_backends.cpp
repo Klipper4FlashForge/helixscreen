@@ -156,9 +156,9 @@ class CfsToolMapProbe : public AmsBackendCfs {
 // --- ToolChanger ----------------------------------------------------------
 
 /// Drives the real toolchanger backend's protected status handler.
-class ToolChangerMapProbe : public AmsBackendToolChanger {
+class ToolChangerMapProbe : public helix::AmsBackendToolChanger {
   public:
-    explicit ToolChangerMapProbe(int tool_count) : AmsBackendToolChanger(nullptr, nullptr) {
+    explicit ToolChangerMapProbe(int tool_count) : helix::AmsBackendToolChanger(nullptr, nullptr) {
         std::vector<std::string> names;
         names.reserve(static_cast<size_t>(tool_count));
         for (int i = 0; i < tool_count; ++i) {
@@ -525,7 +525,7 @@ TEST_CASE("Mock IFS mode publishes both directions", "[ams][mock]") {
     // set_ifs_mode wrote mapped_tool onto the registry entries and the forward
     // map onto system_info_ — which get_system_info() does not read. The mode
     // therefore shipped a reverse map with no forward map at all.
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     backend.set_ifs_mode(true);
 
@@ -545,7 +545,7 @@ TEST_CASE("Mock IFS mode publishes both directions", "[ams][mock]") {
 }
 
 TEST_CASE("Mock Snapmaker mode publishes both directions", "[ams][mock]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     backend.set_snapmaker_mode(true);
 
@@ -563,7 +563,7 @@ TEST_CASE("Mock HELIX_MOCK_REMAP override publishes both directions", "[ams][moc
     // The knob exists to stage a remapped printer. It wrote mapped_tool only,
     // so it staged a system whose two halves disagreed — a shape no backend can
     // produce, and therefore a useless thing to test a UI against.
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     backend.set_snapmaker_mode(true);
     backend.apply_remap_overrides("0:2,2:0");
@@ -581,7 +581,7 @@ TEST_CASE("Mock HELIX_MOCK_REMAP override publishes both directions", "[ams][moc
 }
 
 TEST_CASE("Mock remap override clears a previous override", "[ams][mock]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     backend.set_snapmaker_mode(true);
     backend.apply_remap_overrides("0:3");
@@ -603,7 +603,7 @@ TEST_CASE("Mock set_slot_info does not change slot status", "[ams][mock]") {
     // which cost a debugging cycle — a test helper wrote status through here,
     // nothing took effect, and the resulting failures read as implementation
     // bugs. force_slot_status() is the path that works.
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     backend.force_slot_status(1, SlotStatus::EMPTY);
     REQUIRE(backend.get_slot_info(1).status == SlotStatus::EMPTY);

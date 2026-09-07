@@ -68,7 +68,7 @@ int slot_of_tool(const AmsSystemInfo& info, int tool) {
 
 TEST_CASE("QIDI Box default mapping is identity in both directions",
           "[ams][qidi][qidi_box][tool_map]") {
-    AmsBackendQidi backend(nullptr, nullptr);
+    helix::AmsBackendQidi backend(nullptr, nullptr);
     auto info = backend.get_system_info();
 
     REQUIRE(info.total_slots == 4);
@@ -82,10 +82,10 @@ TEST_CASE("QIDI Box default mapping is identity in both directions",
 
 TEST_CASE("QIDI Box value_t remap publishes tool_to_slot_map, not just mapped_tool",
           "[ams][qidi][qidi_box][tool_map]") {
-    AmsBackendQidi backend(nullptr, nullptr);
+    helix::AmsBackendQidi backend(nullptr, nullptr);
 
     // The reported field case: T0 remapped onto lane 2.
-    QidiBoxTestAccess::parse_vars(backend, json{{"value_t0", "slot2"}});
+    helix::QidiBoxTestAccess::parse_vars(backend, json{{"value_t0", "slot2"}});
     auto info = backend.get_system_info();
 
     // Reverse direction (AMS panel badge) — this half always worked.
@@ -107,8 +107,8 @@ TEST_CASE("QIDI Box exposes the mapping through get_tool_mapping()",
     // the AMS context menu all read the backend through get_tool_mapping().
     // The base default returns {}, which made AmsState synthesise a 1:1
     // topology that contradicts the Box's own remap.
-    AmsBackendQidi backend(nullptr, nullptr);
-    QidiBoxTestAccess::parse_vars(backend, json{{"value_t0", "slot2"}});
+    helix::AmsBackendQidi backend(nullptr, nullptr);
+    helix::QidiBoxTestAccess::parse_vars(backend, json{{"value_t0", "slot2"}});
 
     REQUIRE(backend.owns_tool_mapping_table());
     auto mapping = backend.get_tool_mapping();
@@ -119,9 +119,9 @@ TEST_CASE("QIDI Box exposes the mapping through get_tool_mapping()",
 
 TEST_CASE("QIDI Box swapping two tools keeps both directions in lockstep",
           "[ams][qidi][qidi_box][tool_map]") {
-    AmsBackendQidi backend(nullptr, nullptr);
+    helix::AmsBackendQidi backend(nullptr, nullptr);
 
-    QidiBoxTestAccess::parse_vars(backend, json{
+    helix::QidiBoxTestAccess::parse_vars(backend, json{
                                                {"value_t0", "slot2"},
                                                {"value_t2", "slot0"},
                                            });
@@ -143,11 +143,11 @@ TEST_CASE("QIDI Box swapping two tools keeps both directions in lockstep",
 }
 
 TEST_CASE("QIDI Box tool map follows a box_count resize", "[ams][qidi][qidi_box][tool_map]") {
-    AmsBackendQidi backend(nullptr, nullptr);
+    helix::AmsBackendQidi backend(nullptr, nullptr);
 
     // Two chained boxes = eight global slots; the forward map has to grow with
     // them or every tool above T3 resolves through the fallback.
-    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
+    helix::QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
     auto info = backend.get_system_info();
     REQUIRE(info.total_slots == 8);
     REQUIRE(info.tool_to_slot_map.size() == 8);
@@ -157,7 +157,7 @@ TEST_CASE("QIDI Box tool map follows a box_count resize", "[ams][qidi][qidi_box]
     }
 
     // Remap a tool onto a lane in the second box.
-    QidiBoxTestAccess::parse_vars(backend, json{{"value_t0", "slot5"}});
+    helix::QidiBoxTestAccess::parse_vars(backend, json{{"value_t0", "slot5"}});
     info = backend.get_system_info();
     CHECK(mapped_tool_of(info, 5) == 0);
     CHECK(mapped_tool_of(info, 0) == -1);
@@ -169,9 +169,9 @@ TEST_CASE("QIDI Box mapping survives a payload carrying only slot state",
           "[ams][qidi][qidi_box][tool_map]") {
     // Moonraker pushes deltas: a frame that repeats slot<N> without any
     // value_t<N> must not wipe the mapping established by an earlier frame.
-    AmsBackendQidi backend(nullptr, nullptr);
-    QidiBoxTestAccess::parse_vars(backend, json{{"value_t0", "slot2"}});
-    QidiBoxTestAccess::parse_vars(backend, json{{"slot2", 2}, {"last_load_slot", "slot2"}});
+    helix::AmsBackendQidi backend(nullptr, nullptr);
+    helix::QidiBoxTestAccess::parse_vars(backend, json{{"value_t0", "slot2"}});
+    helix::QidiBoxTestAccess::parse_vars(backend, json{{"slot2", 2}, {"last_load_slot", "slot2"}});
 
     auto info = backend.get_system_info();
     CHECK(mapped_tool_of(info, 2) == 0);
@@ -192,9 +192,9 @@ namespace {
 // Distinct from AmsBackendAceTestHelper in test_ams_backend_ace.cpp — same
 // idiom (subclass to reach the protected REST parse hooks), different name so
 // the two translation units don't collide.
-class AceToolMapProbe : public AmsBackendAce {
+class AceToolMapProbe : public helix::AmsBackendAce {
   public:
-    AceToolMapProbe() : AmsBackendAce(nullptr, nullptr) {}
+    AceToolMapProbe() : helix::AmsBackendAce(nullptr, nullptr) {}
     void feed_info(const json& data) {
         parse_info_response(data);
     }

@@ -34,6 +34,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::Ad5xIfsTestAccess;
+using helix::AmsBackend;
+using helix::AmsBackendMock;
+
 namespace {
 
 // Minimal concrete subclass of the base to test the default.

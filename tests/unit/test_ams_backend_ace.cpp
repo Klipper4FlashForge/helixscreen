@@ -23,6 +23,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AceTestAccess;
+using helix::AmsBackend;
+using helix::AmsBackendAce;
+
 using json = nlohmann::json;
 
 // Friend-class shim for FilamentSlotOverrideStore. Same idiom as IFS/Snapmaker
@@ -35,6 +39,8 @@ class FilamentSlotOverrideStoreTestAccess {
         store.cache_dir_ = std::move(dir);
     }
 };
+
+namespace helix {
 
 // Friend-class shim for AmsBackendAce — declared as friend in the backend
 // header. Gives tests narrow accessors for override state without going
@@ -83,6 +89,7 @@ class AceTestAccess {
         b.poll_slots();
     }
 };
+} // namespace helix
 
 namespace {
 // Per-test tmp cache dir — same idiom as IFS/Snapmaker tests.

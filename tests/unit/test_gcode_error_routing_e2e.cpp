@@ -211,15 +211,15 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // `AmsState::instance().get_backend()->classify_error(...)` resolves to the
     // AFC classifier (not the generic fallback). A fresh backend is enough: the
     // jam branch is text-driven (tool_end + jam/break/runout), no live state.
-    AmsState::instance().set_backend(std::make_unique<AmsBackendAfc>(api(), client()));
+    helix::AmsState::instance().set_backend(std::make_unique<helix::AmsBackendAfc>(api(), client()));
     // RAII guard: clear the AmsState singleton backend even if a REQUIRE throws,
     // so it never leaks into subsequent tests in the same run.
     struct BackendGuard {
         ~BackendGuard() {
-            AmsState::instance().set_backend(nullptr);
+            helix::AmsState::instance().set_backend(nullptr);
         }
     } backend_guard;
-    REQUIRE(AmsState::instance().get_backend() != nullptr);
+    REQUIRE(helix::AmsState::instance().get_backend() != nullptr);
 
     // The AFC handle_toolhead_runout chinglish: `tool_end` + `jam` → CRITICAL
     // jam, titled "Toolhead jam", carrying recovery actions (Resume is always
@@ -235,7 +235,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
         helix::ClassifyContext ctx;
         ctx.is_paused = true;
         ctx.is_printing = false;
-        auto ev = AmsState::instance().get_backend()->classify_error(AFC_JAM, ctx);
+        auto ev = helix::AmsState::instance().get_backend()->classify_error(AFC_JAM, ctx);
         REQUIRE(ev.has_value());
         REQUIRE(ev->severity == helix::ErrorSeverity::CRITICAL);
         REQUIRE(ev->source == helix::ErrorSource::AFC);
@@ -302,10 +302,10 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 // Minimal helper — exposes the protected handle_status_update so the e2e test
 // can drive the backend into an error state without accessing test-only code
 // defined in another translation unit (test_ams_backend_happy_hare.cpp).
-class HappyHareE2EHelper : public AmsBackendHappyHare {
+class HappyHareE2EHelper : public helix::AmsBackendHappyHare {
   public:
     HappyHareE2EHelper(MoonrakerAPI* api, helix::MoonrakerClient* client)
-        : AmsBackendHappyHare(api, client) {}
+        : helix::AmsBackendHappyHare(api, client) {}
 
     // Feed MMU JSON state through the normal notification pipeline.
     // Replicates AmsBackendHappyHareTestHelper::test_parse_mmu_state.
@@ -326,13 +326,13 @@ TEST_CASE_METHOD(LVGLUITestFixture, "Routing E2E: Happy Hare runout pause routes
 
     // Install the Happy Hare backend as the ACTIVE AmsState backend.
     // RAII guard: clear the singleton even if a REQUIRE throws.
-    AmsState::instance().set_backend(std::make_unique<HappyHareE2EHelper>(api(), client()));
+    helix::AmsState::instance().set_backend(std::make_unique<HappyHareE2EHelper>(api(), client()));
     struct BackendGuard {
         ~BackendGuard() {
-            AmsState::instance().set_backend(nullptr);
+            helix::AmsState::instance().set_backend(nullptr);
         }
     } backend_guard;
-    REQUIRE(AmsState::instance().get_backend() != nullptr);
+    REQUIRE(helix::AmsState::instance().get_backend() != nullptr);
 
     // Drive the HH backend into an error state via a Moonraker notification
     // envelope: params[0]["mmu"] = mmu_data.
@@ -346,7 +346,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "Routing E2E: Happy Hare runout pause routes
     mmu_data["filament"] = "Unloaded";
     mmu_data["enabled"] = true;
 
-    auto* hh = static_cast<HappyHareE2EHelper*>(AmsState::instance().get_backend());
+    auto* hh = static_cast<HappyHareE2EHelper*>(helix::AmsState::instance().get_backend());
     hh->push_mmu_state(mmu_data);
 
     // Sanity: the backend really classifies this as recoverable CRITICAL (HH source,
@@ -355,7 +355,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "Routing E2E: Happy Hare runout pause routes
         helix::ClassifyContext ctx;
         ctx.is_paused = true;
         ctx.is_printing = false;
-        auto ev = AmsState::instance().get_backend()->classify_error("!! Runout detected", ctx);
+        auto ev = helix::AmsState::instance().get_backend()->classify_error("!! Runout detected", ctx);
         REQUIRE(ev.has_value());
         REQUIRE(ev->severity == helix::ErrorSeverity::CRITICAL);
         REQUIRE(ev->source == helix::ErrorSource::HAPPY_HARE);

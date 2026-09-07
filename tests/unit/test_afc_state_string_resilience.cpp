@@ -17,6 +17,8 @@
 
 using namespace helix;
 
+namespace helix {
+
 class AfcStateStringHelper : public AmsBackendAfc {
   public:
     AfcStateStringHelper() : AmsBackendAfc(nullptr, nullptr) {}
@@ -62,6 +64,7 @@ class AfcStateStringHelper : public AmsBackendAfc {
 
     using AmsBackendAfc::match_narration_phase;
 };
+} // namespace helix
 
 // ============================================================================
 // ams_action_from_string() — normalized matching

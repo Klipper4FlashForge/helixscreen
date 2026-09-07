@@ -40,7 +40,7 @@
 #include <cstdlib>
 #include <string_view>
 
-using namespace helix;
+namespace helix {
 
 namespace {
 // Task 15 R2: ACE (500ms REST poll) and AD5X IFS (5s whole-file HTTP poll)
@@ -777,3 +777,5 @@ helix::printer::ToolMappingOrigin AmsBackend::tool_mapping_origin() const {
     }
     return helix::printer::ToolMappingOrigin::Unvouched;
 }
+
+} // namespace helix

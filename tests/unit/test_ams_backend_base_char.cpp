@@ -16,6 +16,8 @@
 // Each backend declares these as friend classes already (or we access
 // through the existing friend mechanism).
 
+namespace helix {
+
 // AFC: AmsBackendAfcTestHelper is already a friend in the header.
 class AfcCharHelper : public AmsBackendAfc {
   public:
@@ -31,6 +33,9 @@ class AfcCharHelper : public AmsBackendAfc {
         return execute_gcode(gcode);
     }
 };
+} // namespace helix
+
+namespace helix {
 
 // HappyHare: AmsBackendHappyHareTestHelper is a friend in the header.
 class HappyHareCharHelper : public AmsBackendHappyHare {
@@ -47,6 +52,9 @@ class HappyHareCharHelper : public AmsBackendHappyHare {
         return execute_gcode(gcode);
     }
 };
+} // namespace helix
+
+namespace helix {
 
 // ToolChanger: emit_event/execute_gcode/check_preconditions are private,
 // but we can subclass and access them since they're declared in the private
@@ -65,62 +73,63 @@ class ToolChangerCharHelper : public AmsBackendToolChanger {
         return execute_gcode(gcode);
     }
 };
+} // namespace helix
 
 // --- emit_event ---
 
 TEST_CASE("AMS backends: emit_event calls registered callback", "[ams][characterization]") {
     SECTION("AFC") {
-        AfcCharHelper backend;
+        helix::AfcCharHelper backend;
         std::string received_event;
         std::string received_data;
         backend.set_event_callback([&](const std::string& e, const std::string& d) {
             received_event = e;
             received_data = d;
         });
-        backend.call_emit_event(AmsBackend::EVENT_STATE_CHANGED, "test_data");
-        REQUIRE(received_event == AmsBackend::EVENT_STATE_CHANGED);
+        backend.call_emit_event(helix::AmsBackend::EVENT_STATE_CHANGED, "test_data");
+        REQUIRE(received_event == helix::AmsBackend::EVENT_STATE_CHANGED);
         REQUIRE(received_data == "test_data");
     }
     SECTION("HappyHare") {
-        HappyHareCharHelper backend;
+        helix::HappyHareCharHelper backend;
         std::string received_event;
         backend.set_event_callback(
             [&](const std::string& e, const std::string&) { received_event = e; });
-        backend.call_emit_event(AmsBackend::EVENT_STATE_CHANGED, "");
-        REQUIRE(received_event == AmsBackend::EVENT_STATE_CHANGED);
+        backend.call_emit_event(helix::AmsBackend::EVENT_STATE_CHANGED, "");
+        REQUIRE(received_event == helix::AmsBackend::EVENT_STATE_CHANGED);
     }
     SECTION("ToolChanger") {
-        ToolChangerCharHelper backend;
+        helix::ToolChangerCharHelper backend;
         std::string received_event;
         backend.set_event_callback(
             [&](const std::string& e, const std::string&) { received_event = e; });
-        backend.call_emit_event(AmsBackend::EVENT_STATE_CHANGED, "");
-        REQUIRE(received_event == AmsBackend::EVENT_STATE_CHANGED);
+        backend.call_emit_event(helix::AmsBackend::EVENT_STATE_CHANGED, "");
+        REQUIRE(received_event == helix::AmsBackend::EVENT_STATE_CHANGED);
     }
 }
 
 TEST_CASE("AMS backends: emit_event with no callback is safe", "[ams][characterization]") {
-    AfcCharHelper backend;
-    REQUIRE_NOTHROW(backend.call_emit_event(AmsBackend::EVENT_STATE_CHANGED, ""));
+    helix::AfcCharHelper backend;
+    REQUIRE_NOTHROW(backend.call_emit_event(helix::AmsBackend::EVENT_STATE_CHANGED, ""));
 }
 
 // --- check_preconditions ---
 
 TEST_CASE("AMS backends: check_preconditions when not running", "[ams][characterization]") {
     SECTION("AFC") {
-        AfcCharHelper backend;
+        helix::AfcCharHelper backend;
         auto err = backend.call_check_preconditions();
         REQUIRE_FALSE(err.success());
         REQUIRE(err.result == AmsResult::NOT_CONNECTED);
     }
     SECTION("HappyHare") {
-        HappyHareCharHelper backend;
+        helix::HappyHareCharHelper backend;
         auto err = backend.call_check_preconditions();
         REQUIRE_FALSE(err.success());
         REQUIRE(err.result == AmsResult::NOT_CONNECTED);
     }
     SECTION("ToolChanger") {
-        ToolChangerCharHelper backend;
+        helix::ToolChangerCharHelper backend;
         auto err = backend.call_check_preconditions();
         REQUIRE_FALSE(err.success());
         REQUIRE(err.result == AmsResult::NOT_CONNECTED);
@@ -131,19 +140,19 @@ TEST_CASE("AMS backends: check_preconditions when not running", "[ams][character
 
 TEST_CASE("AMS backends: execute_gcode without API returns error", "[ams][characterization]") {
     SECTION("AFC") {
-        AfcCharHelper backend;
+        helix::AfcCharHelper backend;
         auto err = backend.call_execute_gcode("G28");
         REQUIRE_FALSE(err.success());
         REQUIRE(err.result == AmsResult::NOT_CONNECTED);
     }
     SECTION("HappyHare") {
-        HappyHareCharHelper backend;
+        helix::HappyHareCharHelper backend;
         auto err = backend.call_execute_gcode("G28");
         REQUIRE_FALSE(err.success());
         REQUIRE(err.result == AmsResult::NOT_CONNECTED);
     }
     SECTION("ToolChanger") {
-        ToolChangerCharHelper backend;
+        helix::ToolChangerCharHelper backend;
         auto err = backend.call_execute_gcode("G28");
         REQUIRE_FALSE(err.success());
         REQUIRE(err.result == AmsResult::NOT_CONNECTED);
@@ -154,7 +163,7 @@ TEST_CASE("AMS backends: execute_gcode without API returns error", "[ams][charac
 
 TEST_CASE("AMS backends: default state after construction", "[ams][characterization]") {
     SECTION("AFC") {
-        AmsBackendAfc backend(nullptr, nullptr);
+        helix::AmsBackendAfc backend(nullptr, nullptr);
         REQUIRE(backend.get_type() == AmsType::AFC);
         REQUIRE(backend.get_current_tool() == -1);
         REQUIRE(backend.get_current_slot() == -1);
@@ -163,7 +172,7 @@ TEST_CASE("AMS backends: default state after construction", "[ams][characterizat
         REQUIRE_FALSE(backend.is_running());
     }
     SECTION("HappyHare") {
-        AmsBackendHappyHare backend(nullptr, nullptr);
+        helix::AmsBackendHappyHare backend(nullptr, nullptr);
         REQUIRE(backend.get_type() == AmsType::HAPPY_HARE);
         REQUIRE(backend.get_current_tool() == -1);
         REQUIRE(backend.get_current_slot() == -1);
@@ -172,7 +181,7 @@ TEST_CASE("AMS backends: default state after construction", "[ams][characterizat
         REQUIRE_FALSE(backend.is_running());
     }
     SECTION("ToolChanger") {
-        AmsBackendToolChanger backend(nullptr, nullptr);
+        helix::AmsBackendToolChanger backend(nullptr, nullptr);
         REQUIRE(backend.get_type() == AmsType::TOOL_CHANGER);
         REQUIRE(backend.get_current_tool() == -1);
         REQUIRE(backend.get_current_slot() == -1);
@@ -185,11 +194,11 @@ TEST_CASE("AMS backends: default state after construction", "[ams][characterizat
 // --- is_running / stop ---
 
 TEST_CASE("AMS backends: stop when not running is safe", "[ams][characterization]") {
-    AmsBackendAfc afc(nullptr, nullptr);
+    helix::AmsBackendAfc afc(nullptr, nullptr);
     REQUIRE_NOTHROW(afc.stop());
-    AmsBackendHappyHare hh(nullptr, nullptr);
+    helix::AmsBackendHappyHare hh(nullptr, nullptr);
     REQUIRE_NOTHROW(hh.stop());
-    AmsBackendToolChanger tc(nullptr, nullptr);
+    helix::AmsBackendToolChanger tc(nullptr, nullptr);
     REQUIRE_NOTHROW(tc.stop());
 }
 
@@ -197,13 +206,13 @@ TEST_CASE("AMS backends: stop when not running is safe", "[ams][characterization
 
 TEST_CASE("AMS backends: start without client returns not_connected", "[ams][characterization]") {
     SECTION("AFC") {
-        AmsBackendAfc backend(nullptr, nullptr);
+        helix::AmsBackendAfc backend(nullptr, nullptr);
         auto err = backend.start();
         REQUIRE_FALSE(err.success());
         REQUIRE(err.result == AmsResult::NOT_CONNECTED);
     }
     SECTION("HappyHare") {
-        AmsBackendHappyHare backend(nullptr, nullptr);
+        helix::AmsBackendHappyHare backend(nullptr, nullptr);
         auto err = backend.start();
         REQUIRE_FALSE(err.success());
         REQUIRE(err.result == AmsResult::NOT_CONNECTED);

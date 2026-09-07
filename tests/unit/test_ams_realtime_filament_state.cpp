@@ -32,6 +32,8 @@ using namespace helix::printer;
 
 using json = nlohmann::json;
 
+namespace helix {
+
 // Friend-class shim mirroring the one in test_ams_backend_snapmaker.cpp.
 class SnapmakerRealtimeTestAccess {
   public:
@@ -43,6 +45,7 @@ class SnapmakerRealtimeTestAccess {
         b.sensor_filament_present_[slot_index] = present;
     }
 };
+} // namespace helix
 
 namespace {
 void drain() {

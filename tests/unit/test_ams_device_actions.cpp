@@ -236,7 +236,7 @@ TEST_CASE("ActionType enum values and conversion", "[ams][device_actions][types]
 TEST_CASE("AmsBackend base class has device action virtual methods",
           "[ams][device_actions][interface]") {
     // Use mock backend to verify the interface exists
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
@@ -273,7 +273,7 @@ TEST_CASE("AmsBackend base class has device action virtual methods",
 // =============================================================================
 
 TEST_CASE("AmsBackendMock device actions - default configuration", "[ams][device_actions][mock]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
@@ -355,7 +355,7 @@ TEST_CASE("AmsBackendMock device actions - default configuration", "[ams][device
 // =============================================================================
 
 TEST_CASE("AmsBackendMock execute_device_action behavior", "[ams][device_actions][mock]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
@@ -418,7 +418,7 @@ TEST_CASE("AmsBackendMock execute_device_action behavior", "[ams][device_actions
 // =============================================================================
 
 TEST_CASE("AmsBackendMock device action setters", "[ams][device_actions][mock]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
@@ -474,7 +474,7 @@ TEST_CASE("AmsBackendMock device action setters", "[ams][device_actions][mock]")
 // =============================================================================
 
 TEST_CASE("AmsBackendMock handles disabled actions", "[ams][device_actions][mock]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
@@ -520,7 +520,7 @@ TEST_CASE("AmsBackendMock handles disabled actions", "[ams][device_actions][mock
 // =============================================================================
 
 TEST_CASE("AmsBackendMock execute with different value types", "[ams][device_actions][mock]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
@@ -620,7 +620,7 @@ TEST_CASE("AmsBackendMock execute with different value types", "[ams][device_act
 
 TEST_CASE("ACE device actions - sections and actions", "[ams][device_actions][ace]") {
     // Create ACE backend with null dependencies (for structure testing)
-    AmsBackendAce backend(nullptr, nullptr);
+    helix::AmsBackendAce backend(nullptr, nullptr);
 
     SECTION("get_device_sections returns two sections") {
         auto sections = backend.get_device_sections();
@@ -680,7 +680,7 @@ TEST_CASE("ACE device actions - sections and actions", "[ams][device_actions][ac
 
 TEST_CASE("ACE device actions - execute unknown returns not_supported",
           "[ams][device_actions][ace]") {
-    AmsBackendAce backend(nullptr, nullptr);
+    helix::AmsBackendAce backend(nullptr, nullptr);
 
     SECTION("unknown action returns not_supported") {
         auto result = backend.execute_device_action("nonexistent_action");
@@ -699,7 +699,7 @@ TEST_CASE("ACE device actions - execute valid actions", "[ams][device_actions][a
     // Note: ACE backend requires api_ for execute_gcode, so these tests verify
     // that execute_device_action recognizes the action IDs (returns NOT_CONNECTED, not
     // NOT_SUPPORTED)
-    AmsBackendAce backend(nullptr, nullptr);
+    helix::AmsBackendAce backend(nullptr, nullptr);
 
     SECTION("ace_manual_feed with null API returns not_connected") {
         auto result = backend.execute_device_action("ace_manual_feed");
@@ -739,7 +739,7 @@ TEST_CASE("ACE device actions - execute valid actions", "[ams][device_actions][a
 
 TEST_CASE("ToolChanger device actions stubs", "[ams][device_actions][toolchanger]") {
     // Create ToolChanger backend with null dependencies (for stub testing)
-    AmsBackendToolChanger backend(nullptr, nullptr);
+    helix::AmsBackendToolChanger backend(nullptr, nullptr);
 
     SECTION("get_device_sections returns empty vector") {
         auto sections = backend.get_device_sections();
@@ -771,7 +771,7 @@ TEST_CASE("ToolChanger device actions stubs", "[ams][device_actions][toolchanger
 // =============================================================================
 
 TEST_CASE("Device actions edge cases", "[ams][device_actions][edge]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
@@ -845,7 +845,7 @@ TEST_CASE("Device actions edge cases", "[ams][device_actions][edge]") {
 }
 
 TEST_CASE("Device actions section ordering", "[ams][device_actions][edge]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
@@ -876,7 +876,7 @@ TEST_CASE("Device actions section ordering", "[ams][device_actions][edge]") {
 }
 
 TEST_CASE("Device actions thread safety", "[ams][device_actions][mock]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
@@ -923,7 +923,7 @@ TEST_CASE("Device actions thread safety", "[ams][device_actions][mock]") {
 
 TEST_CASE("Mock backend device actions in tool changer mode",
           "[ams][device_actions][mock][toolchanger]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     backend.set_tool_changer_mode(true);
     REQUIRE(backend.start());

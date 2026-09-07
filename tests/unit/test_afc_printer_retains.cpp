@@ -28,6 +28,8 @@
 
 using namespace helix;
 
+namespace helix {
+
 // Global scope (not anonymous) to match the friend declaration in
 // include/ams_backend_afc.h — same convention as AfcReassertHelper.
 class AfcRetainsHelper : public AmsBackendAfc {
@@ -47,6 +49,7 @@ class AfcRetainsHelper : public AmsBackendAfc {
         handle_status_update(notification);
     }
 };
+} // namespace helix
 
 TEST_CASE_METHOD(LVGLTestFixture,
                  "AFC printer_retains_spool_info requires every lane at remember_spool true",

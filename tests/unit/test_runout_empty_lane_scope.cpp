@@ -51,6 +51,8 @@ using namespace helix;
 using namespace helix::printer;
 using json = nlohmann::json;
 
+namespace helix {
+
 // Friend shim (declared as friend in ams_backend_snapmaker.h) to reach the
 // protected handle_status_update() so tests can drive slot state through the
 // real firmware parse. Distinct from test_ams_backend_snapmaker.cpp's
@@ -91,6 +93,7 @@ class RunoutScopeTestAccess {
         mgr.startup_time_ = std::chrono::steady_clock::now() - std::chrono::seconds(10);
     }
 };
+} // namespace helix
 
 namespace {
 

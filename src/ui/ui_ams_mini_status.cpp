@@ -140,7 +140,7 @@ struct SpoolCellData {
  * inactive, matching ams_slot's fallback.
  */
 static bool slot_is_active_loaded(int slot_index) {
-    lv_subject_t* subject = AmsState::instance().get_slot_active_loaded_subject(slot_index);
+    lv_subject_t* subject = helix::AmsState::instance().get_slot_active_loaded_subject(slot_index);
     return subject && lv_subject_get_int(subject) != 0;
 }
 
@@ -1190,7 +1190,7 @@ lv_obj_t* ui_ams_mini_status_create(lv_obj_t* parent, int32_t height) {
     // This makes the widget self-updating - no external wiring needed
     using helix::ui::observe_int_sync;
 
-    lv_subject_t* slots_version_subject = AmsState::instance().get_slots_version_subject();
+    lv_subject_t* slots_version_subject = helix::AmsState::instance().get_slots_version_subject();
     if (slots_version_subject) {
         // Capture container (lv_obj_t*) instead of data pointer to prevent
         // use-after-free when deferred callback executes after widget deletion.
@@ -1204,7 +1204,7 @@ lv_obj_t* ui_ams_mini_status_create(lv_obj_t* parent, int32_t height) {
 
         // Sync initial state if AMS already has data — defer so layout is
         // fully resolved before rebuild_bars queries container dimensions.
-        lv_subject_t* slot_count_subject = AmsState::instance().get_slot_count_subject();
+        lv_subject_t* slot_count_subject = helix::AmsState::instance().get_slot_count_subject();
         if (slot_count_subject && lv_subject_get_int(slot_count_subject) > 0) {
             helix::ui::queue_update([container]() {
                 auto* d = get_data(container);
@@ -1220,7 +1220,7 @@ lv_obj_t* ui_ams_mini_status_create(lv_obj_t* parent, int32_t height) {
     // every delta on that subject bumps slots_version, so the observer above is
     // what keeps the strip live; this one covers a current_slot move that leaves
     // the active-loaded flags untouched.
-    lv_subject_t* current_slot_subject = AmsState::instance().get_current_slot_subject();
+    lv_subject_t* current_slot_subject = helix::AmsState::instance().get_current_slot_subject();
     if (current_slot_subject) {
         data->current_slot_observer = observe_int_sync<lv_obj_t>(current_slot_subject, container,
                                                                  [](lv_obj_t* obj, int /* slot */) {
@@ -1375,7 +1375,7 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
     if (!data)
         return;
 
-    AmsBackend* backend = AmsState::instance().get_backend();
+    helix::AmsBackend* backend = helix::AmsState::instance().get_backend();
     if (!backend) {
         // No backend - hide widget
         data->slot_count = 0;
@@ -1384,7 +1384,7 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
         return;
     }
 
-    int slot_count = lv_subject_get_int(AmsState::instance().get_slot_count_subject());
+    int slot_count = lv_subject_get_int(helix::AmsState::instance().get_slot_count_subject());
     data->slot_count = slot_count;
 
     // Get multi-unit info from system info
@@ -1538,7 +1538,7 @@ static void* ui_ams_mini_status_xml_create(lv_xml_parser_state_t* state, const c
     // slots_version is always bumped after slot_count changes, so one observer suffices
     using helix::ui::observe_int_sync;
 
-    lv_subject_t* slots_version_subject = AmsState::instance().get_slots_version_subject();
+    lv_subject_t* slots_version_subject = helix::AmsState::instance().get_slots_version_subject();
     if (slots_version_subject) {
         // Capture container (lv_obj_t*) instead of data pointer to prevent
         // use-after-free when deferred callback executes after widget deletion.
@@ -1552,7 +1552,7 @@ static void* ui_ams_mini_status_xml_create(lv_xml_parser_state_t* state, const c
 
         // Sync initial state if AMS already has data — defer so layout is
         // fully resolved before rebuild_bars queries container dimensions.
-        lv_subject_t* slot_count_subject = AmsState::instance().get_slot_count_subject();
+        lv_subject_t* slot_count_subject = helix::AmsState::instance().get_slot_count_subject();
         if (slot_count_subject && lv_subject_get_int(slot_count_subject) > 0) {
             helix::ui::queue_update([container]() {
                 auto* d = get_data(container);
@@ -1567,7 +1567,7 @@ static void* ui_ams_mini_status_xml_create(lv_xml_parser_state_t* state, const c
     // every delta on that subject bumps slots_version, so the observer above is
     // what keeps the strip live; this one covers a current_slot move that leaves
     // the active-loaded flags untouched.
-    lv_subject_t* current_slot_subject = AmsState::instance().get_current_slot_subject();
+    lv_subject_t* current_slot_subject = helix::AmsState::instance().get_current_slot_subject();
     if (current_slot_subject) {
         data->current_slot_observer = observe_int_sync<lv_obj_t>(current_slot_subject, container,
                                                                  [](lv_obj_t* obj, int /* slot */) {

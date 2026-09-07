@@ -14,7 +14,7 @@
  */
 
 TEST_CASE("AmsBackendMock bypass mode", "[ams][mock][bypass]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0); // Instant operations for tests
     REQUIRE(backend.start());
 
@@ -90,12 +90,12 @@ TEST_CASE("AmsBackendMock bypass mode", "[ams][mock][bypass]") {
 }
 
 TEST_CASE("AmsBackendMock bypass events", "[ams][mock][bypass][events]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
 
     bool state_changed = false;
     backend.set_event_callback([&](const std::string& event, const std::string&) {
-        if (event == AmsBackend::EVENT_STATE_CHANGED) {
+        if (event == helix::AmsBackend::EVENT_STATE_CHANGED) {
             state_changed = true;
         }
     });
@@ -119,7 +119,7 @@ TEST_CASE("AmsBackendMock bypass events", "[ams][mock][bypass][events]") {
 }
 
 TEST_CASE("AmsBackendMock hardware bypass sensor", "[ams][mock][bypass][sensor]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 

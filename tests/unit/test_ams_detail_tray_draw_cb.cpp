@@ -43,10 +43,10 @@
 class AmsDetailTrayFixture : public LVGLTestFixture {
   public:
     AmsDetailTrayFixture() {
-        AmsState::instance().clear_backends();
+        helix::AmsState::instance().clear_backends();
     }
     ~AmsDetailTrayFixture() override {
-        AmsState::instance().clear_backends();
+        helix::AmsState::instance().clear_backends();
     }
 };
 

@@ -28,16 +28,16 @@ namespace {
 /// A mock that reports an arbitrary AmsType. sync_from_backend() reads
 /// get_system_info().type, so the type must be stamped there, not only on
 /// get_type().
-class TypedBackend : public AmsBackendMock {
+class TypedBackend : public helix::AmsBackendMock {
   public:
-    TypedBackend(AmsType type, int slots) : AmsBackendMock(slots), type_(type) {}
+    TypedBackend(AmsType type, int slots) : helix::AmsBackendMock(slots), type_(type) {}
 
     [[nodiscard]] AmsType get_type() const override {
         return type_;
     }
 
     [[nodiscard]] AmsSystemInfo get_system_info() const override {
-        AmsSystemInfo info = AmsBackendMock::get_system_info();
+        AmsSystemInfo info = helix::AmsBackendMock::get_system_info();
         info.type = type_;
         return info;
     }
@@ -49,11 +49,11 @@ class TypedBackend : public AmsBackendMock {
 lv_subject_t* install(AmsType type) {
     auto mock = std::make_unique<TypedBackend>(type, 4);
     REQUIRE(mock->start().success());
-    AmsState::instance().set_backend(std::move(mock));
-    AmsState::instance().init_subjects(true);
-    AmsState::instance().sync_from_backend();
+    helix::AmsState::instance().set_backend(std::move(mock));
+    helix::AmsState::instance().init_subjects(true);
+    helix::AmsState::instance().sync_from_backend();
 
-    lv_subject_t* subject = AmsState::instance().get_is_tool_changer_subject();
+    lv_subject_t* subject = helix::AmsState::instance().get_is_tool_changer_subject();
     REQUIRE(subject != nullptr);
     return subject;
 }
@@ -99,7 +99,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "ams_is_tool_changer clears when the backends 
 
     // A stale 1 after teardown keeps the filament controls hidden on whatever
     // connects next.
-    AmsState::instance().clear_backends();
+    helix::AmsState::instance().clear_backends();
     CHECK(lv_subject_get_int(subject) == 0);
 }
 
@@ -113,13 +113,13 @@ TEST_CASE("No tool changer draws a shared tray", "[ams][toolchanger][tray]") {
     // bowdens into a lane-assist motor unit per side, so there is no container
     // to draw -- but AmsBackendSnapmaker inherited the default `true` and drew
     // one anyway.
-    AmsBackendToolChanger tc(nullptr, nullptr);
+    helix::AmsBackendToolChanger tc(nullptr, nullptr);
     CHECK_FALSE(tc.has_physical_tray());
 
-    AmsBackendSnapmaker sm(nullptr, nullptr);
+    helix::AmsBackendSnapmaker sm(nullptr, nullptr);
     CHECK_FALSE(sm.has_physical_tray());
 
     // A hub/selector system keeps its tray: the spools really do sit in a case.
-    AmsBackendMock hub(4);
+    helix::AmsBackendMock hub(4);
     CHECK(hub.has_physical_tray());
 }

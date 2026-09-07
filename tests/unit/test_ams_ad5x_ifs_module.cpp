@@ -26,6 +26,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::Ad5xIfsTestAccess;
+using helix::AmsBackendAd5xIfs;
+using helix::AmsState;
+
 using json = nlohmann::json;
 
 namespace {

@@ -48,7 +48,7 @@ class FastTimingScopeTC {
 
 TEST_CASE("Mock toolchanger mode gives PARALLEL topology and correct type",
           "[ams][toolchanger][toolchanger_actions]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
@@ -102,12 +102,12 @@ TEST_CASE("change_tool sets SELECTING immediately in mock toolchanger mode",
     std::mutex actions_mtx;
     std::vector<AmsAction> observed_actions;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(50); // Nonzero so operation is still in flight
     REQUIRE(backend.start());
     backend.set_event_callback([&](const std::string& event, const std::string&) {
-        if (event == AmsBackend::EVENT_STATE_CHANGED) {
+        if (event == helix::AmsBackend::EVENT_STATE_CHANGED) {
             auto action = backend.get_current_action();
             std::lock_guard<std::mutex> lock(actions_mtx);
             if (observed_actions.empty() || observed_actions.back() != action) {
@@ -159,7 +159,7 @@ TEST_CASE("Lockout rejects operations during in-flight tool change",
     // thread can clear the in-flight state before the immediate second call runs
     // — racing this test's whole premise. Use a real (un-scaled) delay long
     // enough that the operation is reliably still in-flight on slow CI.
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(500); // real ms — kept in-flight for the immediate reject check
     REQUIRE(backend.start());
@@ -211,7 +211,7 @@ TEST_CASE("load_filament delegates to change_tool in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
     FastTimingScopeTC timing_guard;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     REQUIRE(backend.start());
@@ -254,7 +254,7 @@ TEST_CASE("load_filament delegates to change_tool in mock toolchanger mode",
 
 TEST_CASE("change_tool with invalid slot returns error in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
@@ -288,7 +288,7 @@ TEST_CASE("unload_filament works in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
     FastTimingScopeTC timing_guard;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     REQUIRE(backend.start());
@@ -331,7 +331,7 @@ TEST_CASE("Sequential tool changes succeed in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
     FastTimingScopeTC timing_guard;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     REQUIRE(backend.start());
@@ -383,7 +383,7 @@ TEST_CASE("change_tool on already-active tool in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
     FastTimingScopeTC timing_guard;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     REQUIRE(backend.start());
@@ -412,7 +412,7 @@ TEST_CASE("change_tool on already-active tool in mock toolchanger mode",
 
 TEST_CASE("Operations rejected when mock toolchanger backend not started",
           "[ams][toolchanger][toolchanger_actions]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(0);
     // Intentionally NOT calling start()
@@ -448,13 +448,13 @@ TEST_CASE("Realistic mode tool change shows SELECTING phase in toolchanger mode"
     std::mutex actions_mtx;
     std::vector<AmsAction> observed_actions;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     backend.set_realistic_mode(true);
     REQUIRE(backend.start());
     backend.set_event_callback([&](const std::string& event, const std::string&) {
-        if (event == AmsBackend::EVENT_STATE_CHANGED) {
+        if (event == helix::AmsBackend::EVENT_STATE_CHANGED) {
             auto action = backend.get_current_action();
             std::lock_guard<std::mutex> lock(actions_mtx);
             if (observed_actions.empty() || observed_actions.back() != action) {

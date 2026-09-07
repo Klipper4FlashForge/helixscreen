@@ -54,6 +54,8 @@ static AmsSystemInfo make_multi_unit_info(const std::vector<int>& slots_per_unit
 // Test helpers for AFC and Happy Hare backends
 // ============================================================================
 
+namespace helix {
+
 /**
  * @brief Test helper for AFC multi-unit parsing
  *
@@ -120,6 +122,9 @@ class AmsBackendAfcMultiUnitHelper : public AmsBackendAfc {
     // but we need access through this separate helper class)
     // Access is provided through the protected members via inheritance
 };
+} // namespace helix
+
+namespace helix {
 
 /**
  * @brief Test helper for Happy Hare multi-unit parsing
@@ -149,6 +154,7 @@ class AmsBackendHHMultiUnitHelper : public AmsBackendHappyHare {
         return AmsErrorHelper::success();
     }
 };
+} // namespace helix
 
 // ============================================================================
 // Section 1: AmsSystemInfo multi-unit helpers (ams_types.h)
@@ -410,7 +416,7 @@ TEST_CASE("AmsSystemInfo total_slots matches sum across units", "[ams][multi-uni
 
 TEST_CASE("AFC single-unit backward compatibility", "[ams][multi-unit][afc]") {
     // Single unit with 4 lanes -- this is the existing behavior and should pass
-    AmsBackendAfcMultiUnitHelper helper;
+    helix::AmsBackendAfcMultiUnitHelper helper;
 
     std::vector<std::string> lanes = {"lane1", "lane2", "lane3", "lane4"};
     helper.test_initialize_slots(lanes);
@@ -459,7 +465,7 @@ TEST_CASE("AFC multi-unit: units array with 2 units creates 2 AmsUnit entries",
     //     { "name": "Turtle_2", "lanes": ["lane5", "lane6", "lane7", "lane8"] }
     //   ]
     // }
-    AmsBackendAfcMultiUnitHelper helper;
+    helix::AmsBackendAfcMultiUnitHelper helper;
 
     // Set up discovered lanes (all 8 lanes across 2 units)
     std::vector<std::string> all_lanes = {"lane1", "lane2", "lane3", "lane4",
@@ -522,7 +528,7 @@ TEST_CASE("AFC multi-unit: units array with 2 units creates 2 AmsUnit entries",
 
 TEST_CASE("AFC multi-unit: asymmetric unit sizes", "[ams][multi-unit][afc]") {
     // Unit 1 has 4 lanes, unit 2 has 6 lanes (different Box Turtle models)
-    AmsBackendAfcMultiUnitHelper helper;
+    helix::AmsBackendAfcMultiUnitHelper helper;
 
     std::vector<std::string> all_lanes = {"lane1", "lane2", "lane3", "lane4", "lane5",
                                           "lane6", "lane7", "lane8", "lane9", "lane10"};
@@ -552,7 +558,7 @@ TEST_CASE("AFC multi-unit: asymmetric unit sizes", "[ams][multi-unit][afc]") {
 }
 
 TEST_CASE("AFC multi-unit: three units", "[ams][multi-unit][afc]") {
-    AmsBackendAfcMultiUnitHelper helper;
+    helix::AmsBackendAfcMultiUnitHelper helper;
 
     std::vector<std::string> all_lanes = {"lane1", "lane2", "lane3", "lane4",  "lane5",  "lane6",
                                           "lane7", "lane8", "lane9", "lane10", "lane11", "lane12"};
@@ -579,7 +585,7 @@ TEST_CASE("AFC multi-unit: three units", "[ams][multi-unit][afc]") {
 TEST_CASE("AFC multi-unit: single unit in units array is backward compatible",
           "[ams][multi-unit][afc]") {
     // When AFC reports units array with just 1 unit, should behave same as legacy
-    AmsBackendAfcMultiUnitHelper helper;
+    helix::AmsBackendAfcMultiUnitHelper helper;
 
     std::vector<std::string> lanes = {"lane1", "lane2", "lane3", "lane4"};
     std::vector<std::string> hubs = {"Turtle_1"};
@@ -611,7 +617,7 @@ TEST_CASE("AFC multi-unit: single unit in units array is backward compatible",
 
 TEST_CASE("Happy Hare single-unit backward compatibility", "[ams][multi-unit][happy-hare]") {
     // Standard single-unit Happy Hare with integer num_gates
-    AmsBackendHHMultiUnitHelper helper;
+    helix::AmsBackendHHMultiUnitHelper helper;
 
     // Feed initial MMU state with gate arrays (triggers initialize_slots)
     nlohmann::json mmu_data;
@@ -659,7 +665,7 @@ TEST_CASE("Happy Hare multi-unit: num_units with comma-separated num_gates",
     //
     // Gate arrays (gate_status, gate_color_rgb, etc.) contain ALL gates
     // concatenated across units.
-    AmsBackendHHMultiUnitHelper helper;
+    helix::AmsBackendHHMultiUnitHelper helper;
 
     nlohmann::json mmu_data;
     // 2 units, 4 gates each = 8 total gates
@@ -727,7 +733,7 @@ TEST_CASE("Happy Hare multi-unit: num_units with comma-separated num_gates",
 
 TEST_CASE("Happy Hare multi-unit: uneven gate division", "[ams][multi-unit][happy-hare]") {
     // 10 gates across 3 units: 3+3+4 (last unit gets remainder)
-    AmsBackendHHMultiUnitHelper helper;
+    helix::AmsBackendHHMultiUnitHelper helper;
 
     nlohmann::json mmu_data;
     mmu_data["num_units"] = 3;
@@ -760,7 +766,7 @@ TEST_CASE("Happy Hare multi-unit: integer num_gates creates single unit",
           "[ams][multi-unit][happy-hare]") {
     // When num_gates is a plain integer (not comma-separated), it means
     // single unit with that many gates. This is backward compatible.
-    AmsBackendHHMultiUnitHelper helper;
+    helix::AmsBackendHHMultiUnitHelper helper;
 
     nlohmann::json mmu_data;
     mmu_data["num_gates"] = 4; // Integer, not string
@@ -782,7 +788,7 @@ TEST_CASE("Happy Hare multi-unit: integer num_gates creates single unit",
 }
 
 TEST_CASE("Happy Hare multi-unit: three units", "[ams][multi-unit][happy-hare]") {
-    AmsBackendHHMultiUnitHelper helper;
+    helix::AmsBackendHHMultiUnitHelper helper;
 
     nlohmann::json mmu_data;
     mmu_data["num_units"] = 3;

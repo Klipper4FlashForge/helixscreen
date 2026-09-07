@@ -54,9 +54,9 @@ namespace {
 /// Real backend with the gcode ack held so the test decides when the macro
 /// "completes". client_ is null, so ensure_homed_then() routes straight to
 /// execute_gcode() and these overrides capture everything.
-class ToolChangerDispatchHelper : public AmsBackendToolChanger {
+class ToolChangerDispatchHelper : public helix::AmsBackendToolChanger {
   public:
-    explicit ToolChangerDispatchHelper(int tool_count) : AmsBackendToolChanger(nullptr, nullptr) {
+    explicit ToolChangerDispatchHelper(int tool_count) : helix::AmsBackendToolChanger(nullptr, nullptr) {
         std::vector<std::string> names;
         names.reserve(static_cast<size_t>(tool_count));
         for (int i = 0; i < tool_count; ++i) {

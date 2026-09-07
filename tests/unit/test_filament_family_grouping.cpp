@@ -743,8 +743,8 @@ TEST_CASE_METHOD(XMLTestFixture, "AD5X whitelist filters entries, not just headi
     FilamentCatalogSelector sel;
     sel.attach(root);
     // Stock AD5X firmware whitelist, derived from the backend rather than re-typed.
-    sel.configure(std::nullopt, std::vector<std::string>(AmsBackendAd5xIfs::STOCK_WHITELIST.begin(),
-                                                         AmsBackendAd5xIfs::STOCK_WHITELIST.end()));
+    sel.configure(std::nullopt, std::vector<std::string>(helix::AmsBackendAd5xIfs::STOCK_WHITELIST.begin(),
+                                                         helix::AmsBackendAd5xIfs::STOCK_WHITELIST.end()));
     sel.populate();
 
     // Headings collapse to the four allowed families.

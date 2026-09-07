@@ -343,7 +343,7 @@ namespace {
 /// Load lane @p index with a colour and material. The card reads lanes through
 /// AmsState, so this is the only way to drive the surround: the renderer
 /// classifies (tool, lane) itself rather than trusting a flag on the mapping.
-void load_lane(AmsBackendMock* mock, int index, uint32_t rgb, const char* material) {
+void load_lane(helix::AmsBackendMock* mock, int index, uint32_t rgb, const char* material) {
     auto slot = mock->get_slot_info(index);
     slot.color_rgb = rgb;
     slot.material = material;

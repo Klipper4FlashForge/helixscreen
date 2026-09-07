@@ -30,6 +30,9 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsBackendMock;
+using helix::AmsState;
+
 namespace {
 
 /**

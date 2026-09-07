@@ -114,7 +114,6 @@ class PrinterDiscovery;
  */
 namespace helix {
 inline constexpr bool kPreprintSeedFollowsUserSetting = false;
-} // namespace helix
 
 class AmsState {
   public:
@@ -2044,3 +2043,5 @@ class AmsState {
     /// grace window.
     std::array<std::chrono::steady_clock::time_point, MAX_SLOTS> last_unload_time_{};
 };
+
+} // namespace helix

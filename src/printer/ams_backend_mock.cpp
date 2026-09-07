@@ -19,6 +19,8 @@
 #include <sstream>
 #include <thread>
 
+namespace helix {
+
 // Sample filament colors for mock slots
 namespace {
 struct MockFilament {
@@ -3648,3 +3650,5 @@ void AmsBackendMock::set_initial_state_scenario(const std::string& scenario) {
 std::unique_ptr<AmsBackend> AmsBackend::create_mock(int slot_count) {
     return std::make_unique<AmsBackendMock>(slot_count);
 }
+
+} // namespace helix

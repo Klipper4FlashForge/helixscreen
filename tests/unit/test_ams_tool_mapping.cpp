@@ -21,6 +21,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsBackend;
+using helix::AmsBackendMock;
+using helix::AmsState;
+
 using namespace helix::printer;
 
 // =============================================================================

@@ -9,7 +9,9 @@
 #include <unordered_map>
 #include <vector>
 
+namespace helix {
 class AmsBackend; // Forward declaration for compute_system_tool_layout()
+} // namespace helix
 
 /**
  * @brief Shared AMS drawing utilities
@@ -325,6 +327,6 @@ struct ToolBadgeLabels {
  * @param backend Backend for per-unit topology queries (nullable, falls back to unit.topology)
  * @return SystemToolLayout with physical positions and virtual mappings
  */
-SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const AmsBackend* backend);
+SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const helix::AmsBackend* backend);
 
 } // namespace ams_draw

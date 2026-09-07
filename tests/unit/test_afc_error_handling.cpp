@@ -28,6 +28,8 @@ using namespace helix;
 // Test Helper
 // ============================================================================
 
+namespace helix {
+
 /**
  * @brief Test helper for AFC error handling tests
  *
@@ -81,6 +83,7 @@ class AfcErrorHandlingHelper : public AmsBackendAfc {
         return AmsErrorHelper::success();
     }
 };
+} // namespace helix
 
 // ============================================================================
 // Message Deduplication Tests

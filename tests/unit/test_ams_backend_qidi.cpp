@@ -22,6 +22,9 @@
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
 
+using helix::AmsBackendQidi;
+using helix::QidiBoxTestAccess;
+
 using json = nlohmann::json;
 
 // Subclass that captures execute_gcode() invocations so write-path tests

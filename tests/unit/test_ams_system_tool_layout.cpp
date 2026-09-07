@@ -61,7 +61,7 @@ TEST_CASE("SystemToolLayout: 3 HUB units with unique mapped_tools", "[ams][tool_
 
 TEST_CASE("SystemToolLayout: user's exact mixed setup", "[ams][tool_layout]") {
     // HUB(mapped 0-3) + HUB(mapped 4-7) + PARALLEL(mapped 8-11)
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_mixed_topology_mode(true);
 
     auto info = backend.get_system_info();
@@ -96,7 +96,7 @@ TEST_CASE("SystemToolLayout: user's exact mixed setup", "[ams][tool_layout]") {
 // ============================================================================
 
 TEST_CASE("SystemToolLayout: mock mixed topology", "[ams][tool_layout]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_mixed_topology_mode(true);
 
     auto info = backend.get_system_info();
@@ -328,7 +328,7 @@ TEST_CASE("SystemToolLayout: HUB with no mapped_tool data", "[ams][tool_layout]"
 // ============================================================================
 
 TEST_CASE("SystemToolLayout: mixed setup active tool mapping", "[ams][tool_layout]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_mixed_topology_mode(true);
 
     auto info = backend.get_system_info();
@@ -820,7 +820,7 @@ TEST_CASE("SystemToolLayout: MIXED topology hub lanes share single nozzle positi
     info.total_slots = 4;
 
     // Need a backend that returns correct slot info for mapped_tool lookup
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_htlf_toolchanger_mode(true);
 
     auto layout = compute_system_tool_layout(info, &backend);
@@ -833,7 +833,7 @@ TEST_CASE("SystemToolLayout: MIXED topology hub lanes share single nozzle positi
 
 TEST_CASE("SystemToolLayout: HTLF MIXED + Toolchanger PARALLEL total tools",
           "[ams][tool_layout][mixed][htlf]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_htlf_toolchanger_mode(true);
 
     auto info = backend.get_system_info();
@@ -928,7 +928,7 @@ TEST_CASE("SystemToolLayout: multi-unit mock produces 1 physical tool", "[ams][t
     // Regression test: multi-unit mock (Box Turtle + Night Owl) both feed
     // a single T0 toolhead via hub. hub_tool_label must be set so both
     // units share one physical nozzle position.
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_multi_unit_mode(true);
 
     auto info = backend.get_system_info();

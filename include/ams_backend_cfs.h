@@ -16,7 +16,9 @@
 #include <unordered_map>
 #include <vector>
 
+namespace helix {
 class CfsTestAccess;
+} // namespace helix
 
 namespace helix::printer {
 
@@ -534,7 +536,7 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
                                                 const std::string& catalog_id, uint32_t color_rgb);
 
   private:
-    friend class ::CfsTestAccess;
+    friend class helix::CfsTestAccess;
 
     std::string current_tnn_;
     bool motor_ready_ = true;
@@ -604,7 +606,7 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// Marked virtual so test subclasses can capture the assembled load/swap/
     /// unload script (and the WITH/WITHOUT-material selection that produced it)
     /// without a live Moonraker connection. Private -- test access to call the
-    /// real implementation directly goes through the ::CfsTestAccess friend
+    /// real implementation directly goes through the helix::CfsTestAccess friend
     /// shim (tests/test_helpers/cfs_test_access.h), not a `using` declaration.
     virtual AmsError dispatch_action_script(std::string gcode);
 

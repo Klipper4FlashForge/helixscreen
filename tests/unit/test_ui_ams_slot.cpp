@@ -28,6 +28,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsBackend;
+using helix::AmsBackendMock;
+using helix::AmsState;
+
 // ============================================================================
 // Helper: Create an ams_slot widget with specified slot index
 // ============================================================================

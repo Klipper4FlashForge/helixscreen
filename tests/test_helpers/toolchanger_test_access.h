@@ -11,6 +11,8 @@
 #include <string>
 #include <utility>
 
+namespace helix {
+
 // Friend-class shim for AmsBackendToolChanger -- declared as friend in the
 // backend header (`friend class ToolChangerTestAccess;`). Gives tests direct
 // access to the private optimistic-dispatch surface (dispatch_operation) that
@@ -58,3 +60,4 @@ class ToolChangerTestAccess {
         return b.override_store_ ? b.override_store_->namespace_for_test() : std::string();
     }
 };
+} // namespace helix
