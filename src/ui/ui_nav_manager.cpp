@@ -2337,19 +2337,10 @@ bool NavigationManager::go_back() {
                 }
                 if (!is_main && !lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
                     lv_obj_add_flag(child, LV_OBJ_FLAG_HIDDEN);
-                    // Always reset styles unconditionally. The conditional check
-                    // (reading transform_scale_x/y before writing) was an ARM perf
-                    // optimization but may cause display corruption on Android where
-                    // stale transform values interact with SDL's logical scaling.
-                    // TODO: Re-enable conditional reset if this doesn't fix Android
-                    // corruption (see prestonbrown/helixscreen — v0.13.7 regression).
-                    //
-                    // Was:
-                    //   bool needs_reset =
-                    //       lv_obj_get_style_translate_x(child, LV_PART_MAIN) != 0 ||
-                    //       ...transform_scale_x != 256 || ...scale_y != 256...
-                    //       ...opa != LV_OPA_COVER;
-                    //   if (needs_reset) { ... }
+                    // Reset unconditionally. Reading the current transform first and
+                    // skipping the write when it looks clean leaves stale scale values
+                    // behind under SDL's logical scaling on Android, which corrupts the
+                    // display; the four writes cost less than that.
                     lv_obj_set_style_translate_x(child, 0, LV_PART_MAIN);
                     lv_obj_set_style_translate_y(child, 0, LV_PART_MAIN);
                     lv_obj_set_style_transform_scale(child, 256, LV_PART_MAIN);
