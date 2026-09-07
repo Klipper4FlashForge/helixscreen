@@ -838,23 +838,39 @@ TEST_CASE("Send delay: a healthy sender waits the full send interval", "[telemet
     REQUIRE(TelemetryManager::next_attempt_delay(1) == TelemetryManager::SEND_INTERVAL);
 }
 
-TEST_CASE("Send delay: a failed send retries in hours, not a day", "[telemetry][send][1476]") {
-    // A backoff above 1 means the previous attempt failed. Spacing that retry
-    // off the full send interval would leave the queue filling for days over a
-    // server that was unreachable for a moment.
-    for (int backoff = 2; backoff <= 7; ++backoff) {
-        INFO("backoff = " << backoff);
-        REQUIRE(TelemetryManager::next_attempt_delay(backoff) < TelemetryManager::SEND_INTERVAL);
-    }
+TEST_CASE("Send delay: a first failure retries sooner than the daily cadence",
+          "[telemetry][send][1476]") {
+    // A backoff above 1 means the previous attempt failed. Spacing that first
+    // retry off the full send interval would leave the queue filling for a day
+    // over a server that was unreachable for a moment.
+    REQUIRE(TelemetryManager::next_attempt_delay(2) < TelemetryManager::SEND_INTERVAL);
+}
+
+TEST_CASE("Send delay: a sustained failure backs off past the daily cadence",
+          "[telemetry][send][1476]") {
+    // The counterweight to the test above. A printer that never reaches the
+    // endpoint at all must not end up attempting MORE often than a healthy one
+    // — each attempt is a thread, a DNS lookup and a 30s timeout, and on a
+    // LAN-only machine every one of them is waste that never succeeds.
+    REQUIRE(TelemetryManager::next_attempt_delay(TelemetryManager::MAX_BACKOFF_MULTIPLIER) >=
+            TelemetryManager::SEND_INTERVAL);
 }
 
 TEST_CASE("Send delay: retries lengthen as the backoff grows", "[telemetry][send][1476]") {
     REQUIRE(TelemetryManager::next_attempt_delay(2) < TelemetryManager::next_attempt_delay(4));
-    REQUIRE(TelemetryManager::next_attempt_delay(4) < TelemetryManager::next_attempt_delay(7));
+    REQUIRE(TelemetryManager::next_attempt_delay(4) < TelemetryManager::next_attempt_delay(64));
+}
+
+TEST_CASE("Send delay: the backoff ceiling still reaches seven days",
+          "[telemetry][send][1476]") {
+    // RETRY_INTERVAL is the base, so the multiplier has to be able to climb far
+    // enough that the ceiling is still a week rather than a few hours.
+    REQUIRE(TelemetryManager::next_attempt_delay(TelemetryManager::MAX_BACKOFF_MULTIPLIER) ==
+            std::chrono::hours{24 * 7});
 }
 
 TEST_CASE("Send delay: never exceeds seven days", "[telemetry][send][1476]") {
-    REQUIRE(TelemetryManager::next_attempt_delay(1000) <= std::chrono::hours{24 * 7});
+    REQUIRE(TelemetryManager::next_attempt_delay(100000) <= std::chrono::hours{24 * 7});
 }
 
 // try_send() has to actually consult next_attempt_delay(). Pinning the helper

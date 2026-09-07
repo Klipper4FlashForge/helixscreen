@@ -776,6 +776,12 @@ class TelemetryManager {
      *  moment costs hours instead of a day, while the backoff still applies. */
     static constexpr auto RETRY_INTERVAL = std::chrono::hours{1};
 
+    /** @brief Ceiling on the backoff multiplier.
+     *  Large enough that RETRY_INTERVAL * backoff still reaches the seven-day
+     *  ceiling: a printer that never reaches the endpoint must end up retrying
+     *  weekly, not every few hours. */
+    static constexpr int MAX_BACKOFF_MULTIPLIER = 168;
+
     /** @brief Maximum events per HTTPS POST batch */
     static constexpr size_t MAX_BATCH_SIZE = 20;
 
