@@ -102,6 +102,24 @@ class StaticSubjectRegistry {
         return deinitializers_.size();
     }
 
+    /**
+     * @brief Registered names in registration order (for testing/debugging)
+     *
+     * deinit_all() walks this order in reverse, so the position of an entry is
+     * the contract: it is what makes late registrants tear down before the ones
+     * whose subjects they observe. A test that cares about ordering reads it
+     * here rather than firing deinit_all(), which in a test binary would also
+     * run entries left behind by earlier fixtures.
+     */
+    std::vector<std::string> names() const {
+        std::vector<std::string> out;
+        out.reserve(deinitializers_.size());
+        for (const DeinitEntry& e : deinitializers_) {
+            out.push_back(e.name);
+        }
+        return out;
+    }
+
   private:
     StaticSubjectRegistry() = default;
     ~StaticSubjectRegistry();
