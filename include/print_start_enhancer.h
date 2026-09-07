@@ -222,12 +222,19 @@ class PrintStartEnhancer {
                             EnhancementErrorCallback on_error);
 
     /**
-     * @brief Restore printer.cfg from a backup
+     * @brief Restore a config file from one of its backups
+     *
+     * The file that gets rewritten is recovered from @p backup_filename, not
+     * assumed: PRINT_START lives in whatever file the printer keeps it in, and
+     * the backup was taken of that file. A backup name this cannot parse is
+     * refused rather than guessed at, because the guess would overwrite a
+     * config the backup never held.
      *
      * @param api IMoonrakerAPI instance
-     * @param backup_filename Backup filename (in config root)
+     * @param backup_filename Backup filename (in config root), as produced by
+     *        generate_backup_filename()
      * @param on_complete Called on success
-     * @param on_error Called on error
+     * @param on_error Called on error, including an unparseable backup name
      */
     void restore_from_backup(IMoonrakerAPI* api, const std::string& backup_filename,
                              std::function<void()> on_complete, EnhancementErrorCallback on_error);
@@ -254,6 +261,18 @@ class PrintStartEnhancer {
      * @return Filename like "macros.cfg.backup.20251222_170530"
      */
     [[nodiscard]] static std::string generate_backup_filename(const std::string& source_file);
+
+    /**
+     * @brief Recover the config filename a backup was taken of
+     *
+     * The inverse of generate_backup_filename(). Kept next to it so the two
+     * spellings of the naming scheme cannot drift apart.
+     *
+     * @param backup_filename e.g. "macros.cfg.backup.20251222_170530"
+     * @return "macros.cfg", or "" if the name is not one we produced
+     */
+    [[nodiscard]] static std::string
+    config_file_from_backup_filename(const std::string& backup_filename);
 
     /**
      * @brief Get the standard skip parameter name for an operation category

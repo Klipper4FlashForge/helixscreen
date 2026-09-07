@@ -301,6 +301,20 @@ std::string PrintStartEnhancer::generate_backup_filename(const std::string& sour
     return ss.str();
 }
 
+std::string
+PrintStartEnhancer::config_file_from_backup_filename(const std::string& backup_filename) {
+    // Matches what generate_backup_filename() writes: "<config>.backup.<stamp>",
+    // stamp being YYYYMMDD_HHMMSS. Anything else is not ours, and the caller must
+    // not fall back to a default — the default would name a file the backup does
+    // not contain.
+    static const std::regex backup_pattern(R"(^(.+)\.backup\.\d{8}_\d{6}$)");
+    std::smatch match;
+    if (!std::regex_match(backup_filename, match, backup_pattern)) {
+        return {};
+    }
+    return match[1].str();
+}
+
 std::string PrintStartEnhancer::get_skip_param_for_category(PrintStartOpCategory category) {
     switch (category) {
     case PrintStartOpCategory::BED_MESH:
@@ -503,7 +517,20 @@ void PrintStartEnhancer::restore_from_backup(IMoonrakerAPI* api, const std::stri
         return;
     }
 
-    spdlog::info("[PrintStartEnhancer] Restoring from backup: {}", backup_filename);
+    const std::string target_file = config_file_from_backup_filename(backup_filename);
+    if (target_file.empty()) {
+        spdlog::error("[PrintStartEnhancer] Not a recognized backup name, refusing to restore: {}",
+                      backup_filename);
+        if (on_error) {
+            MoonrakerError err;
+            err.type = MoonrakerErrorType::VALIDATION_ERROR;
+            err.message = "Not a recognized backup filename: " + backup_filename;
+            on_error(err);
+        }
+        return;
+    }
+
+    spdlog::info("[PrintStartEnhancer] Restoring {} from backup: {}", target_file, backup_filename);
     auto token = lifetime_.token();
 
     // Wrap error callback with lifetime check
@@ -513,10 +540,13 @@ void PrintStartEnhancer::restore_from_backup(IMoonrakerAPI* api, const std::stri
         }
     };
 
-    // Copy backup over printer.cfg
+    // Copy the backup back over the file it was taken of, which is not always
+    // printer.cfg: enhance_macro() backs up whichever file PRINT_START was found
+    // in, so on a printer that keeps it in macros.cfg, restoring to printer.cfg
+    // would overwrite a config this backup never held.
     // Note: copy_file uses full paths like "config/printer.cfg"
     api->files().copy_file(
-        "config/" + backup_filename, "config/printer.cfg",
+        "config/" + backup_filename, "config/" + target_file,
         [this, api, on_complete, safe_error, token]() {
             // L081 Mechanism C: defer chained this-> work to main thread
             // (copy_file cb fires on HTTP bg thread).

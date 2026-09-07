@@ -359,6 +359,64 @@ TEST_CASE("PrintStartEnhancer: generate_backup_filename", "[enhancer][utility]")
 }
 
 // ============================================================================
+// Tests: config_file_from_backup_filename
+// ============================================================================
+
+TEST_CASE("PrintStartEnhancer: config_file_from_backup_filename", "[enhancer][utility]") {
+    // The restore path rewrites whatever this returns. PRINT_START lives in
+    // whichever file a given printer keeps it in, and enhance_macro() backs up
+    // that file, so a restore that assumed printer.cfg would overwrite a config
+    // the backup never contained.
+    SECTION("Round-trips whatever generate_backup_filename produced") {
+        for (const char* source : {"printer.cfg", "macros.cfg", "helix_macros.cfg"}) {
+            const auto backup = PrintStartEnhancer::generate_backup_filename(source);
+            CHECK(PrintStartEnhancer::config_file_from_backup_filename(backup) ==
+                  std::string(source));
+        }
+    }
+
+    SECTION("A config file whose own name contains .backup. still round-trips") {
+        // The timestamp is the anchor, so the last ".backup.<stamp>" wins.
+        const auto backup = PrintStartEnhancer::generate_backup_filename("a.backup.cfg");
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename(backup) == "a.backup.cfg");
+    }
+
+    SECTION("Names we did not produce are refused, not guessed at") {
+        // Empty is the signal to refuse the restore outright. Returning a
+        // default here is what turns a recovery action into data loss.
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename("").empty());
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename("printer.cfg").empty());
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename("printer.cfg.bak").empty());
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename("printer.cfg.backup").empty());
+        // Truncated / malformed timestamps.
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename("printer.cfg.backup.2025122")
+                  .empty());
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename(
+                  "printer.cfg.backup.20251222_17053")
+                  .empty());
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename(
+                  "printer.cfg.backup.20251222-170530")
+                  .empty());
+        // No config name in front of the suffix.
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename(".backup.20251222_170530")
+                  .empty());
+        // Trailing junk after the stamp.
+        CHECK(PrintStartEnhancer::config_file_from_backup_filename(
+                  "printer.cfg.backup.20251222_170530.tmp")
+                  .empty());
+    }
+
+    SECTION("A macros.cfg backup never resolves to printer.cfg") {
+        // The specific data-loss shape: restoring a macros.cfg backup must not
+        // name printer.cfg as its destination.
+        const auto backup = PrintStartEnhancer::generate_backup_filename("macros.cfg");
+        const auto target = PrintStartEnhancer::config_file_from_backup_filename(backup);
+        REQUIRE(target == "macros.cfg");
+        REQUIRE(target != "printer.cfg");
+    }
+}
+
+// ============================================================================
 // Tests: get_skip_param_for_category
 // ============================================================================
 
