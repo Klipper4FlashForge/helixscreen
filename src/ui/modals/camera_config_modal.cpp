@@ -53,10 +53,8 @@ void CameraConfigModal::init_subjects() {
     lv_xml_register_subject(nullptr, "cam_flip_v_active", &flip_v_active_);
 
     lv_subject_init_int(&source_count_, 0);
-    lv_subject_init_int(&source_auto_active_, 1);
     lv_xml_register_subject(nullptr, "cam_source_count", &source_count_);
-    lv_xml_register_subject(nullptr, "cam_source_auto_active", &source_auto_active_);
-    for (size_t i = 0; i < MAX_SOURCES; ++i) {
+    for (size_t i = 0; i < MAX_ROWS; ++i) {
         char key[40];
         lv_subject_init_int(&source_active_[i], 0);
         std::snprintf(key, sizeof(key), "cam_source_%zu_active", i);
@@ -84,8 +82,7 @@ void CameraConfigModal::deinit_subjects() {
     lv_subject_deinit(&flip_h_active_);
     lv_subject_deinit(&flip_v_active_);
     lv_subject_deinit(&source_count_);
-    lv_subject_deinit(&source_auto_active_);
-    for (size_t i = 0; i < MAX_SOURCES; ++i) {
+    for (size_t i = 0; i < MAX_ROWS; ++i) {
         lv_subject_deinit(&source_active_[i]);
         lv_subject_deinit(&source_name_[i]);
         lv_subject_deinit(&source_note_[i]);
@@ -154,13 +151,18 @@ void CameraConfigModal::on_ok() {
 }
 
 void CameraConfigModal::publish_sources(const std::vector<WebcamInfo>& cams) {
+    // Row 0 is Automatic — the discovery auto-pick — so it renders exactly
+    // like the camera rows it sits above.
+    lv_subject_copy_string(&source_name_[0], lv_tr("Automatic"));
+    lv_subject_copy_string(&source_note_[0], "");
+
     source_names_.clear();
     for (const auto& cam : cams) {
         if (cam.name.empty() || source_names_.size() >= MAX_SOURCES)
             continue; // The local-probe entry has no name; nothing to pick
-        size_t i = source_names_.size();
         source_names_.push_back(cam.name);
-        lv_subject_copy_string(&source_name_[i], cam.name.c_str());
+        size_t row = source_names_.size();
+        lv_subject_copy_string(&source_name_[row], cam.name.c_str());
         // What the user gets if they pick it: a live stream, snapshot polling
         // for a service CameraStream cannot decode, or (for now) nothing.
         const char* note = "";
@@ -169,37 +171,37 @@ void CameraConfigModal::publish_sources(const std::vector<WebcamInfo>& cams) {
         } else if (!webcam::is_mjpeg_service(cam.service)) {
             note = lv_tr("Snapshot only");
         }
-        lv_subject_copy_string(&source_note_[i], note);
+        lv_subject_copy_string(&source_note_[row], note);
     }
-    for (size_t i = source_names_.size(); i < MAX_SOURCES; ++i) {
-        lv_subject_copy_string(&source_name_[i], "");
-        lv_subject_copy_string(&source_note_[i], "");
+    for (size_t row = source_names_.size() + 1; row < MAX_ROWS; ++row) {
+        lv_subject_copy_string(&source_name_[row], "");
+        lv_subject_copy_string(&source_note_[row], "");
     }
     sync_source_subjects();
     // Set the count LAST: it drives the <repeat> expansion, and the rebuilt
     // rows read the row subjects as they are created.
-    lv_subject_set_int(&source_count_, static_cast<int>(source_names_.size()));
+    lv_subject_set_int(&source_count_, static_cast<int>(source_names_.size()) + 1);
 }
 
 void CameraConfigModal::select_source(int index) {
-    if (index < 0 || static_cast<size_t>(index) >= source_names_.size()) {
+    if (index <= 0 || static_cast<size_t>(index) > source_names_.size()) {
         source_.clear();
     } else {
-        source_ = source_names_[static_cast<size_t>(index)];
+        source_ = source_names_[static_cast<size_t>(index) - 1];
     }
     sync_source_subjects();
 }
 
 void CameraConfigModal::sync_source_subjects() {
     bool any = false;
-    for (size_t i = 0; i < MAX_SOURCES; ++i) {
-        bool active = i < source_names_.size() && source_names_[i] == source_;
+    for (size_t row = 1; row < MAX_ROWS; ++row) {
+        bool active = row <= source_names_.size() && source_names_[row - 1] == source_;
         any = any || active;
-        lv_subject_set_int(&source_active_[i], active ? 1 : 0);
+        lv_subject_set_int(&source_active_[row], active ? 1 : 0);
     }
     // A saved name no row carries (camera gone from Moonraker) shows as
     // Automatic — which is the feed the widget falls back to.
-    lv_subject_set_int(&source_auto_active_, any ? 0 : 1);
+    lv_subject_set_int(&source_active_[0], any ? 0 : 1);
 }
 
 void CameraConfigModal::sync_rotation_subjects() {
@@ -216,11 +218,11 @@ void CameraConfigModal::sync_flip_subjects() {
 
 // Static event callbacks — routed through the single active instance (s_active_).
 void CameraConfigModal::on_source_clicked(lv_event_t* e) {
-    // Row identity comes from the event_cb user_data ("${i}" of the repeat,
-    // "-1" on the Automatic button).
+    // Row identity comes from the event_cb user_data ("${i}" of the repeat;
+    // row 0 is Automatic).
     const char* ud = static_cast<const char*>(lv_event_get_user_data(e));
     if (auto* m = s_active_) {
-        m->select_source(ud ? std::atoi(ud) : -1);
+        m->select_source(ud ? std::atoi(ud) : 0);
     }
 }
 

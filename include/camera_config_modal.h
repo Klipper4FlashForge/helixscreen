@@ -49,11 +49,13 @@ class CameraConfigModal : public Modal {
         return "camera_config_modal";
     }
 
-    /// Rows the source picker can show; a printer with more lists the first 8.
+    /// Cameras the source picker can offer; a printer with more lists the first 8.
     static constexpr size_t MAX_SOURCES = 8;
+    /// Picker rows: Automatic is row 0, cameras follow.
+    static constexpr size_t MAX_ROWS = MAX_SOURCES + 1;
 
     // Static event callbacks — registered once in register_camera_widget()
-    static void on_source_clicked(lv_event_t* e); // user_data: row index, "-1" = Automatic
+    static void on_source_clicked(lv_event_t* e); // user_data: row index, 0 = Automatic
     static void on_rotate_0(lv_event_t* e);
     static void on_rotate_90(lv_event_t* e);
     static void on_rotate_180(lv_event_t* e);
@@ -78,7 +80,7 @@ class CameraConfigModal : public Modal {
     nlohmann::json build_config() const;
     /// Fill the source rows from the printer's named webcams.
     void publish_sources(const std::vector<WebcamInfo>& cams);
-    /// Pick row @p index (-1 = Automatic).
+    /// Pick row @p index (0 = Automatic, i = source_names_[i - 1]).
     void select_source(int index);
 
     std::string widget_id_;
@@ -105,14 +107,13 @@ class CameraConfigModal : public Modal {
     lv_subject_t rot_270_active_;
     lv_subject_t flip_h_active_;
     lv_subject_t flip_v_active_;
-    lv_subject_t source_count_;       // drives the <repeat> of picker rows
-    lv_subject_t source_auto_active_; // 1 while Automatic is selected
-    std::array<lv_subject_t, MAX_SOURCES> source_active_{};
-    std::array<lv_subject_t, MAX_SOURCES> source_name_{};
-    std::array<lv_subject_t, MAX_SOURCES> source_note_{};
+    lv_subject_t source_count_; // rows in the picker (Automatic + cameras); drives the <repeat>
+    std::array<lv_subject_t, MAX_ROWS> source_active_{}; // 1 on the selected row
+    std::array<lv_subject_t, MAX_ROWS> source_name_{};
+    std::array<lv_subject_t, MAX_ROWS> source_note_{};
     static constexpr size_t SOURCE_TEXT_LEN = 64;
-    std::array<std::array<char, SOURCE_TEXT_LEN>, MAX_SOURCES> source_name_buf_{};
-    std::array<std::array<char, SOURCE_TEXT_LEN>, MAX_SOURCES> source_note_buf_{};
+    std::array<std::array<char, SOURCE_TEXT_LEN>, MAX_ROWS> source_name_buf_{};
+    std::array<std::array<char, SOURCE_TEXT_LEN>, MAX_ROWS> source_note_buf_{};
 
     friend class CameraConfigModalTestAccess;
 };

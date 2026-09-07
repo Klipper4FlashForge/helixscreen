@@ -67,13 +67,13 @@ TEST_CASE_METHOD(LVGLTestFixture, "CameraConfigModal: picking a row writes its n
 
     Access::load_config(modal, nlohmann::json::object());
     Access::publish_sources(modal, {cam("Nozzle"), cam("Chamber", "webrtc-go2rtc")});
-    CHECK(Access::auto_active(modal) == 1);
+    CHECK(Access::row_active(modal, 0) == 1); // Automatic
 
-    Access::select_source(modal, 1);
+    Access::select_source(modal, 2);
     CHECK(Access::source(modal) == "Chamber");
-    CHECK(Access::auto_active(modal) == 0);
     CHECK(Access::row_active(modal, 0) == 0);
-    CHECK(Access::row_active(modal, 1) == 1);
+    CHECK(Access::row_active(modal, 1) == 0);
+    CHECK(Access::row_active(modal, 2) == 1);
 
     Access::ok(modal);
     CHECK(saved.value("source", "") == "Chamber");
@@ -88,10 +88,11 @@ TEST_CASE_METHOD(LVGLTestFixture, "CameraConfigModal: Automatic removes the sour
 
     Access::load_config(modal, {{"source", "Nozzle"}});
     Access::publish_sources(modal, {cam("Nozzle")});
-    CHECK(Access::row_active(modal, 0) == 1);
+    CHECK(Access::row_active(modal, 1) == 1);
 
-    Access::select_source(modal, -1);
-    CHECK(Access::auto_active(modal) == 1);
+    Access::select_source(modal, 0);
+    CHECK(Access::row_active(modal, 0) == 1);
+    CHECK(Access::row_active(modal, 1) == 0);
     Access::ok(modal);
 
     REQUIRE(saved.is_object());
@@ -110,18 +111,19 @@ TEST_CASE_METHOD(LVGLTestFixture, "CameraConfigModal: rows mirror the named webc
 
     Access::publish_sources(modal, {cam("Nozzle"), local, cam("Chamber", "webrtc-go2rtc"), down});
 
-    CHECK(Access::source_count(modal) == 3);
-    CHECK(std::string(Access::row_name(modal, 0)) == "Nozzle");
-    CHECK(std::string(Access::row_note(modal, 0)).empty());
-    CHECK(std::string(Access::row_name(modal, 1)) == "Chamber");
-    CHECK(std::string(Access::row_note(modal, 1)) == "Snapshot only");
-    CHECK(std::string(Access::row_name(modal, 2)) == "Toolhead");
-    CHECK(std::string(Access::row_note(modal, 2)) == "Unavailable");
-    CHECK(std::string(Access::row_name(modal, 3)).empty());
+    CHECK(Access::source_count(modal) == 4); // Automatic + three named
+    CHECK(std::string(Access::row_name(modal, 0)) == "Automatic");
+    CHECK(std::string(Access::row_name(modal, 1)) == "Nozzle");
+    CHECK(std::string(Access::row_note(modal, 1)).empty());
+    CHECK(std::string(Access::row_name(modal, 2)) == "Chamber");
+    CHECK(std::string(Access::row_note(modal, 2)) == "Snapshot only");
+    CHECK(std::string(Access::row_name(modal, 3)) == "Toolhead");
+    CHECK(std::string(Access::row_note(modal, 3)) == "Unavailable");
+    CHECK(std::string(Access::row_name(modal, 4)).empty());
 
     // A saved name no row carries reads as Automatic in the picker.
     Access::load_config(modal, {{"source", "Gone"}});
-    CHECK(Access::auto_active(modal) == 1);
+    CHECK(Access::row_active(modal, 0) == 1);
     CHECK(Access::source(modal) == "Gone");
 }
 

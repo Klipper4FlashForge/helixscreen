@@ -25,23 +25,14 @@
             style_pad_right="#space_lg" style_pad_top="#space_sm" style_pad_bottom="#space_lg" flex_flow="column"
             style_pad_gap="#space_md">
 
-      <!-- Source row: one button per named webcam Moonraker lists, plus
-           Automatic (the discovery auto-pick). Hidden when there is nothing
-           to choose between. The note beside a name says what picking it
-           gets: nothing = live stream, "Snapshot only", or "Unavailable". -->
+      <!-- Source row: Automatic (the discovery auto-pick) plus one row per
+           named webcam Moonraker lists, all from one repeat. Hidden when
+           there is nothing to choose between (only the Automatic row). The
+           note beside a name says what picking it gets: nothing = live
+           stream, "Snapshot only", or "Unavailable". -->
       <lv_obj width="100%" height="content" flex_flow="column" style_pad_gap="#space_xs">
-        <bind_flag_if_eq subject="cam_source_count" flag="hidden" ref_value="0"/>
+        <bind_flag_if_lt subject="cam_source_count" flag="hidden" ref_value="2"/>
         <text_small text="Source" translation_tag="Source" style_text_color="#text_muted"/>
-        <lv_obj name="btn_source_auto"
-                width="100%" height="content" clickable="true" scrollable="false" flex_flow="row"
-                style_flex_cross_place="center" style_pad_left="#space_sm" style_pad_right="#space_sm"
-                style_pad_top="#space_xs" style_pad_bottom="#space_xs" style_radius="#border_radius_small"
-                style_border_width="0">
-          <bind_style name="cam_btn_selected" subject="cam_source_auto_active" ref_value="1"/>
-          <bind_style name="cam_btn_unselected" subject="cam_source_auto_active" ref_value="0"/>
-          <text_small text="Automatic" translation_tag="Automatic" flex_grow="1" style_text_color="#text"/>
-          <event_cb trigger="clicked" callback="on_cam_source_clicked" user_data="-1"/>
-        </lv_obj>
         <!-- Rows container: a subject-bound <repeat> must be its only child -->
         <lv_obj name="cam_source_rows"
                 width="100%" height="content" scrollable="false" flex_flow="column" style_pad_all="0"

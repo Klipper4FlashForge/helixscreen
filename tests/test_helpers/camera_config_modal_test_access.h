@@ -41,11 +41,9 @@ class CameraConfigModalTestAccess {
     static const std::string& source(const helix::CameraConfigModal& modal) {
         return modal.source_;
     }
+    /// Picker rows: Automatic + named cameras.
     static int source_count(const helix::CameraConfigModal& modal) {
         return lv_subject_get_int(const_cast<lv_subject_t*>(&modal.source_count_));
-    }
-    static int auto_active(const helix::CameraConfigModal& modal) {
-        return lv_subject_get_int(const_cast<lv_subject_t*>(&modal.source_auto_active_));
     }
     static int row_active(const helix::CameraConfigModal& modal, size_t i) {
         return lv_subject_get_int(const_cast<lv_subject_t*>(&modal.source_active_[i]));
