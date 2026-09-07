@@ -26,6 +26,7 @@
 #include "config.h"
 #include "filament_database.h"
 #include "filament_op_dispatch.h"
+#include "filament_op_execute.h"
 #include "filament_op_router.h"
 #include "filament_op_slot_resolver.h"
 #include "filament_sensor_manager.h"
@@ -1320,15 +1321,20 @@ void FilamentPanel::handle_load_button() {
 
     snapshot_prior_heater_target();
 
-    if (!is_extrusion_allowed()) {
+    // One plan for both questions below: they are about the same dispatch, and a
+    // second call could answer them against different backend state.
+    const helix::ui::FilamentOpPlan plan = current_load_plan();
+
+    if (needs_ui_preheat(plan, StandardMacroSlot::LoadFilament)) {
         // Ask "home printer first?" BEFORE the preheat, not after: the
         // physical G28 still fires later, inside
         // AmsSubscriptionBackend::ensure_homed_then() right before the tier-1
         // dispatch (unchanged) -- only the confirmation moves earlier, so a
         // decline never wastes a preheat cycle (#1235-adjacent).
         AmsBackend* delegating_backend = AmsState::instance().get_backend();
-        if (!helix::toolhead_is_homed(printer_state_) &&
-            !(delegating_backend && delegating_backend->delegates_homing_to_printer())) {
+        if (helix::ui::needs_home_confirmation(plan, StandardMacroSlot::LoadFilament,
+                                               delegating_backend,
+                                               helix::toolhead_is_homed(printer_state_))) {
             spdlog::info("[{}] Toolhead not homed -- asking before starting preheat for load",
                          get_name());
             // FilamentPanel is an immortal singleton [L012] -- capturing
@@ -1379,7 +1385,7 @@ void FilamentPanel::handle_unload_button() {
 
     snapshot_prior_heater_target();
 
-    if (!is_extrusion_allowed()) {
+    if (needs_ui_preheat(current_unload_plan(), StandardMacroSlot::UnloadFilament)) {
         start_preheat_for_op(PreheatOp::UNLOAD);
         return;
     }
@@ -2424,6 +2430,29 @@ void FilamentPanel::set_material(int material_id) {
                  mat->chamber_temp_c);
 }
 
+bool FilamentPanel::needs_ui_preheat(const helix::ui::FilamentOpPlan& plan,
+                                     StandardMacroSlot slot) const {
+    if (is_extrusion_allowed()) {
+        return false;
+    }
+    // The nozzle is cold, but something downstream may bring it up on its own —
+    // an AMS backend that auto-heats, or a stock macro that heats in its body.
+    // Preheating in front of one of those makes the user wait twice, and settles
+    // on OUR material temperature before the macro commands its own
+    // (prestonbrown/helixscreen#1494).
+    //
+    // The plan is what decides: the macro tier's answer is about a macro that
+    // only runs on that tier.
+    const auto skip =
+        helix::ui::preheat_skip_reason(plan, slot, AmsState::instance().get_backend());
+    if (skip != helix::ui::PreheatSkip::None) {
+        spdlog::info("[{}] Skipping preheat — {}", get_name(),
+                     helix::ui::preheat_skip_name(skip));
+        return false;
+    }
+    return true;
+}
+
 bool FilamentPanel::is_extrusion_allowed() const {
     // Opt-in override (#978): users whose load/unload macros heat the nozzle
     // themselves — or perform a deliberate cold pull — can bypass the
@@ -2777,7 +2806,7 @@ FilamentPanelOutcome panel_unload_outcome(const FilamentOpPlan& plan, bool backe
 // FILAMENT SENSOR WARNING HELPERS
 // ============================================================================
 
-void FilamentPanel::execute_load() {
+helix::ui::FilamentOpPlan FilamentPanel::current_load_plan() const {
     // The three-tier routing (AMS backend → configured macro → raw gcode) lives
     // in plan_load(), the shared answer for every dispatch surface — it also
     // carries the already-mounted guard and the load-vs-swap rule that only
@@ -2790,22 +2819,15 @@ void FilamentPanel::execute_load() {
     const int target_slot = selected_op_slot();
 
     AmsSystemInfo sys;
-    helix::ui::BackendCaps caps;
-    if (backend) {
-        sys = backend->get_system_info();
-        caps.present = true;
-        caps.requires_slot_selection_for_load = backend->requires_slot_selection_for_load();
-        caps.needs_unload_before_load = backend->needs_unload_before_load(sys, target_slot);
-        caps.is_tool_changer = backend->get_type() == AmsType::TOOL_CHANGER;
-        // Distinct from !requires_slot_selection_for_load(): plan_load() needs to
-        // tell "bypass is suppressing the lane tier" apart from "this backend
-        // never wanted a slot", because a named lane wants opposite treatment.
-        caps.bypass_active = backend->is_bypass_active();
-    }
+    const helix::ui::BackendCaps caps = helix::ui::read_backend_caps(backend, sys, target_slot);
+    return helix::ui::plan_live_load(sys, caps, target_slot);
+}
+
+void FilamentPanel::execute_load() {
+    AmsBackend* backend = AmsState::instance().get_backend();
 
     const auto& info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
-    const helix::ui::FilamentOpPlan plan = helix::ui::plan_load(
-        sys, caps, target_slot, !info.is_empty(), info.get_source() == MacroSource::CONFIGURED);
+    const helix::ui::FilamentOpPlan plan = current_load_plan();
     // What to DO with the plan — the backend entry point, the refusal copy, the
     // slot-picker redirect — is named once in panel_load_outcome(), so the panel
     // and anything that checks the panel answer it from the same place.
@@ -2920,12 +2942,7 @@ void FilamentPanel::execute_load() {
         IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
-void FilamentPanel::execute_unload() {
-    // Filament is being pulled — nothing left to purge, so drop the swap-preheat
-    // latch. The next load computes its hold-temp fresh instead of inheriting this
-    // material's target.
-    printer_state_.clear_nozzle_load_latch();
-
+helix::ui::FilamentOpPlan FilamentPanel::current_unload_plan() const {
     // When an AMS backend is active, route unload through it so the backend's
     // tool change sequence runs (retract, cut, purge) instead of raw extrusion.
     // plan_unload() gates tier 1 on the backend merely existing — deliberately
@@ -2935,21 +2952,31 @@ void FilamentPanel::execute_unload() {
     // Single source of truth: act on the dropdown-selected tool's slot, the same
     // one the button gating uses — never a divergent current_slot read.
     const int slot = selected_op_slot();
-    helix::ui::BackendCaps caps;
-    bool loaded = false;
+
+    AmsSystemInfo sys;
     if (backend) {
-        // Only `present` matters to plan_unload; the remaining caps answer the
-        // load-vs-swap question, which unload does not ask.
-        caps.present = true;
-        const AmsSystemInfo sys = backend->get_system_info();
-        loaded = helix::ui::unload_target_is_loaded(slot, backend->slot_is_actively_loaded(slot),
-                                                    backend->slot_has_filament_at_toolhead(slot),
-                                                    sys.current_slot == slot, sys.filament_loaded);
+        sys = backend->get_system_info();
     }
+    // Only `present` matters to plan_unload; the remaining caps answer the
+    // load-vs-swap question, which unload does not ask.
+    helix::ui::BackendCaps caps;
+    caps.present = backend != nullptr;
+
+    return helix::ui::plan_live_unload(
+        caps, slot, helix::ui::read_unload_target_loaded(backend, sys, slot));
+}
+
+void FilamentPanel::execute_unload() {
+    // Filament is being pulled — nothing left to purge, so drop the swap-preheat
+    // latch. The next load computes its hold-temp fresh instead of inheriting this
+    // material's target.
+    printer_state_.clear_nozzle_load_latch();
+
+    AmsBackend* backend = AmsState::instance().get_backend();
+    const int slot = selected_op_slot();
 
     const auto& info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
-    const helix::ui::FilamentOpPlan plan = helix::ui::plan_unload(
-        caps, slot, loaded, !info.is_empty(), info.get_source() == MacroSource::CONFIGURED);
+    const helix::ui::FilamentOpPlan plan = current_unload_plan();
     // See execute_load(): what the panel does with the plan is named once, in
     // panel_unload_outcome().
     const helix::ui::FilamentPanelOutcome outcome =
