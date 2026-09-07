@@ -1162,7 +1162,17 @@ void AmsPanel::on_bypass_spool_clicked(void* user_data) {
 void AmsPanel::handle_bypass_spool_click() {
     helix::ui::show_external_spool_menu(
         parent_screen_, path_canvas_, context_menu_,
-        [this](bool open_on_picker) { show_edit_modal(-2, open_on_picker); });
+        {/*on_edit=*/[this](bool open_on_picker) { show_edit_modal(-2, open_on_picker); },
+         /*on_load=*/
+         [this]() {
+             if (sidebar_)
+                 sidebar_->handle_bypass_load();
+         },
+         /*on_unload=*/
+         [this]() {
+             if (sidebar_)
+                 sidebar_->handle_bypass_unload();
+         }});
 }
 
 void AmsPanel::on_buffer_clicked(void* user_data) {
