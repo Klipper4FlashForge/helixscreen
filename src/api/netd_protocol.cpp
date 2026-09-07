@@ -5,6 +5,8 @@
 
 #include "hv/base64.h"
 
+#include <spdlog/spdlog.h>
+
 #include <cctype>
 #include <cerrno>
 #include <chrono>
@@ -308,7 +310,16 @@ int connect_unix(const std::string& path, int timeout_ms, std::string* error_out
             *error_out = std::string("socket(): ") + std::strerror(errno);
         return -1;
     }
-    (void)set_nonblocking(fd, true);
+    if (!set_nonblocking(fd, true)) {
+        // The bounded wait below is built entirely on this: a blocking fd makes
+        // timeout_ms and the poll() dead code, and a daemon with a full accept
+        // backlog parks the caller for as long as it stays wedged. Fail rather
+        // than hand back a descriptor that cannot honour the contract.
+        if (error_out)
+            *error_out = std::string("fcntl(O_NONBLOCK): ") + std::strerror(errno);
+        ::close(fd);
+        return -1;
+    }
     sockaddr_un addr{};
     addr.sun_family = AF_UNIX;
     if (path.size() >= sizeof(addr.sun_path)) {
@@ -355,8 +366,15 @@ QueryResult query_snapshot(int timeout_ms) {
         return result;
 
     // Back to blocking mode so the SO_RCVTIMEO read loop below keeps its
-    // per-read timeout semantics.
-    (void)set_nonblocking(fd, false);
+    // per-read timeout semantics. Left non-blocking, every recv() returns
+    // EAGAIN immediately instead of waiting out timeout_ms, and the caller
+    // cannot tell that from a daemon that genuinely said nothing — reached
+    // stays false and the network row is blanked on a local fcntl failure.
+    if (!set_nonblocking(fd, false)) {
+        spdlog::warn("[netd] fcntl(~O_NONBLOCK) failed on query socket: {}", std::strerror(errno));
+        ::close(fd);
+        return result;
+    }
 
     struct timeval tv {};
     tv.tv_sec = timeout_ms / 1000;
