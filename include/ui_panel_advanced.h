@@ -11,6 +11,12 @@
 #include "async_lifetime_guard.h"
 #include "helix_plugin_installer.h"
 
+#include <functional>
+
+namespace helix::ui {
+struct AdvancedPanelTestAccess; // test-only friend (tests/test_helpers/)
+} // namespace helix::ui
+
 /**
  * @file ui_panel_advanced.h
  * @brief Advanced Panel - Hub for advanced printer tools and calibration
@@ -93,6 +99,9 @@ class AdvancedPanel : public PanelBase {
     void on_activate() override;
 
   private:
+    // Test-only access to the plugin uninstall flow.
+    friend struct helix::ui::AdvancedPanelTestAccess;
+
     //
     // === Navigation Handlers ===
     //
@@ -106,6 +115,10 @@ class AdvancedPanel : public PanelBase {
     void handle_timelapse_setup_clicked();
     void handle_helix_plugin_install_clicked();
     void handle_helix_plugin_uninstall_clicked();
+
+    /// The confirmed half of the uninstall row: runs the uninstaller and
+    /// reports the outcome. Blocks this thread while the script runs.
+    void run_helix_plugin_uninstall();
     void handle_phase_tracking_changed(bool enabled);
 
     // Both POWER rows (Shutdown, Reboot) open the same shared dialog — the
@@ -136,6 +149,15 @@ class AdvancedPanel : public PanelBase {
 
     helix::HelixPluginInstaller plugin_installer_;
     PluginInstallModal plugin_install_modal_;
+
+    /// What run_helix_plugin_uninstall() calls once the user has confirmed.
+    /// Empty means the bundled installer's uninstall_local(); a test installs
+    /// a recorder here so the confirm flow can be driven without forking.
+    using UninstallRunner = std::function<void(helix::HelixPluginInstaller::InstallCallback)>;
+    UninstallRunner uninstall_runner_;
+
+    /// Gates the uninstall confirmation's callbacks, which capture this panel.
+    helix::AsyncLifetimeGuard lifetime_;
 
     //
     // === Shared Power Dialog ===
