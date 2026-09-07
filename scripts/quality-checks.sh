@@ -1126,7 +1126,7 @@ if [ -n "$FILES" ]; then
             echo "   git add$FORMAT_ISSUES"
           fi
         else
-          qc_note "⚠️  clang-format: $CF_EXAMINED file(s) checked, $(grep -c . "$CF_DIRTY" 2>/dev/null || echo '?') may need formatting"
+          qc_note "⚠️  clang-format: $CF_EXAMINED file(s) checked, $(echo "$FORMAT_ISSUES" | wc -w | tr -d ' ') may need formatting"
           echo "⚠️  Files may need formatting (version differences may cause false positives):"
           echo "$FORMAT_ISSUES" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
           echo ""
