@@ -85,6 +85,27 @@ struct ControlsPanelTestAccess {
     static void update_temp(ControlsPanel& p, const std::string& klipper_name, int decidegrees) {
         p.update_secondary_temp(klipper_name, decidegrees);
     }
+
+    // --- Quick actions (homing, QGL, Z-Tilt) ---------------------------------
+    //
+    // The seven quick-action buttons share one guarded body. These accessors let
+    // a test drive that body with a dispatch it controls, so the guard contract
+    // can be asserted without a printer: who gets dispatched, and when the guard
+    // is released.
+    using QuickActionText = ControlsPanel::QuickActionText;
+
+    static void run_quick_action(ControlsPanel& p, uint32_t timeout_ms, const QuickActionText& text,
+                                 const ControlsPanel::QuickActionDispatch& dispatch) {
+        p.run_quick_action(timeout_ms, text, dispatch);
+    }
+
+    static QuickActionText homing_text(const char* started) {
+        return ControlsPanel::homing_text(started);
+    }
+
+    static bool guard_active(ControlsPanel& p) {
+        return p.operation_guard_.is_active();
+    }
 };
 
 } // namespace helix::ui

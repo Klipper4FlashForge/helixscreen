@@ -1154,6 +1154,7 @@
   <translation tag="Homing Z..." en="Homing Z..."/>
   <translation tag="Homing all axes..." en="Homing all axes..."/>
   <translation tag="Homing axes..." en="Homing axes..."/>
+  <translation tag="Homing complete" en="Homing complete"/>
   <translation tag="Homing failed: " en="Homing failed: "/>
   <translation tag="Homing failed: {}" en="Homing failed: {}"/>
   <translation tag="Homing first..." en="Homing first..."/>

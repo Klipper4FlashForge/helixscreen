@@ -1154,6 +1154,7 @@
   <translation tag="Homing Z..." fr="Référence Z..."/>
   <translation tag="Homing all axes..." fr="Référence de tous les axes..."/>
   <translation tag="Homing axes..." fr="Référence des axes..."/>
+  <translation tag="Homing complete" fr="Référence terminée"/>
   <translation tag="Homing failed: " fr="Échec de la prise dorigine : "/>
   <translation tag="Homing failed: {}" fr="Échec de la référence : {}"/>
   <translation tag="Homing first..." fr="Référence en cours..."/>

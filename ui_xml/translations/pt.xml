@@ -1154,6 +1154,7 @@
   <translation tag="Homing Z..." pt="Posicionando Z..."/>
   <translation tag="Homing all axes..." pt="Posicionando todos os eixos..."/>
   <translation tag="Homing axes..." pt="Posicionando eixos..."/>
+  <translation tag="Homing complete" pt="Homing concluído"/>
   <translation tag="Homing failed: " pt="Falha ao referenciar: "/>
   <translation tag="Homing failed: {}" pt="Falha no homing: {}"/>
   <translation tag="Homing first..." pt="Posicionando primeiro..."/>
