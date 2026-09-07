@@ -713,8 +713,9 @@ RibbonGeometry GeometryBuilder::build(const ParsedGCodeFile& gcode,
 
         // Note: Degenerate segments were already filtered before simplification
 
-        // Skip travel moves (non-extrusion moves)
-        // TODO: Make this configurable if we want to visualize travel paths
+        // Travel moves never reach the 3D geometry: they would roughly double
+        // the segment budget for lines the 3D preview does not draw. The 2D
+        // layer renderer, which can draw them, walks the parsed toolpath itself.
         if (!segment.is_extrusion) {
             continue;
         }

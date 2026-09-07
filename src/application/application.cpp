@@ -197,11 +197,11 @@
 #include "detection_manager.h"
 #include "filament_consumption_tracker.h"
 #include "filament_sensor_manager.h"
-#include "json_utils.h"
 #include "gcode_file_modifier.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "helix-xml/src/xml/lv_xml_translation.h"
 #include "hv/hlog.h" // libhv logging - sync level with spdlog
+#include "json_utils.h"
 #include "logging_init.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "lvgl_log_handler.h"
@@ -1968,7 +1968,7 @@ bool Application::init_panel_subjects() {
             // Modal::show_owned() (#1382): ModalStack frees the instance when
             // its entry goes, on every teardown path.
             auto modal = std::make_unique<SpaghettiDetectionModal>();
-            // TODO(detection): attach latest camera frame when a stream is active
+            // TODO(#1506): no frame yet; the modal shows the detector's text only
             modal->set_detection(e.message, nullptr);
             modal->set_on_resume([] {
                 get_moonraker_api()->job().resume_print([] {}, [](const MoonrakerError&) {});

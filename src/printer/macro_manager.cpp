@@ -459,7 +459,6 @@ std::optional<std::string> MacroManager::parse_installed_version() const {
     }
 
     if (hardware_.has_helix_macro("HELIX_READY")) {
-        // TODO: Query the actual version from _HELIX_STATE or similar via Moonraker
         return "2.0.0";
     }
 
