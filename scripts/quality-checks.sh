@@ -1031,19 +1031,30 @@ if [ -n "$FILES" ]; then
       FORMAT_ISSUES=""
       CF_CAND="$(mktemp)"
       CF_DIRTY="$(mktemp)"
+      CF_SEEN="$(mktemp)"
       printf '%s
 ' $FILES > "$CF_CAND"
+      CF_TOTAL=$(grep -c . "$CF_CAND")
       # Skipping auto-generated sources is part of the parallel pass: their
       # on-disk format is owned by the generator (e.g.
       # src/generated/lv_i18n_translations.c from generate_translations.py), and
       # reformatting them fights the generator on every build.
-      xargs -a "$CF_CAND" -P "${QC_JOBS:-4}" -I{} sh -c '
+      #
+      # The candidate list arrives on stdin: reading it with the -a flag is a
+      # GNU xargs extension that BSD xargs rejects outright, and this pipeline treats no output as
+      # no findings, so a fan-out that never ran would read as every file
+      # clean. Each worker records the file it looked at in CF_SEEN, and the
+      # verdict below refuses a probe that covered fewer files than it was
+      # given. xargs's own stderr stays visible for the same reason.
+      < "$CF_CAND" xargs -P "${QC_JOBS:-4}" -I{} sh -c '
         f="$1"
+        printf "%s\n" "$f" >> "$2"
         [ -f "$f" ] || exit 0
         head -5 "$f" | grep -qiE "auto-generated|DO NOT EDIT" && exit 0
         "$0" --dry-run --Werror "$f" >/dev/null 2>&1 || printf "%s
 " "$f"
-      ' "$CF_BIN" {} 2>/dev/null | sort > "$CF_DIRTY"
+      ' "$CF_BIN" {} "$CF_SEEN" | sort > "$CF_DIRTY"
+      CF_EXAMINED=$(grep -c . "$CF_SEEN")
       # Leading space is load-bearing: a message below prints "git add$FORMAT_ISSUES".
       FORMAT_ISSUES="$(sed 's|^| |' "$CF_DIRTY" | tr -d '
 ')"
@@ -1074,8 +1085,13 @@ if [ -n "$FILES" ]; then
             ;;
         esac
       fi
-      rm -f "$CF_CAND" "$CF_DIRTY"
+      rm -f "$CF_CAND" "$CF_DIRTY" "$CF_SEEN"
 
+      if [ "$CF_EXAMINED" -ne "$CF_TOTAL" ]; then
+        echo "❌ clang-format probe covered $CF_EXAMINED of $CF_TOTAL file(s): the fan-out did not run them"
+        echo "   (an xargs that rejects GNU options does this - prestonbrown/helixscreen#1488)"
+        EXIT_CODE=1
+      fi
       if [ -n "$FORMAT_ISSUES" ]; then
         if [ "$AUTO_FIX" = true ]; then
           # Auto-stage formatted files when in pre-commit mode (--staged-only)
@@ -1118,8 +1134,8 @@ if [ -n "$FILES" ]; then
           # NOTE: Don't fail CI for formatting - version differences cause issues
           # EXIT_CODE=1
         fi
-      else
-        echo "✅ All files properly formatted"
+      elif [ "$CF_EXAMINED" -eq "$CF_TOTAL" ]; then
+        echo "✅ All files properly formatted ($CF_EXAMINED file(s) checked)"
       fi
     else
       echo "ℹ️  No .clang-format file found - skipping format check"
@@ -2635,10 +2651,21 @@ if [ -x "$VENV_PYTHON" ] && [ -f "scripts/translation_sync.py" ]; then
     echo "   '// i18n: do not translate' on its line or the line above."
     EXIT_CODE=1
   fi
-else
+elif [ "$STAGED_ONLY" = true ]; then
   section_time $SECTION_START
   echo ""
   echo "⚠️  .venv not set up — skipping (run 'make venv-setup')"
+else
+  # The full sweep is the last gate before main (pre-push, CI mode). A skip
+  # here reads as green in the hook output while an untranslated lv_tr() key
+  # sails through to break Code Quality and the BATS job on the same head
+  # (prestonbrown/helixscreen#1507). Only the staged-mode pre-commit pass may
+  # treat a missing venv as "not my problem".
+  section_time $SECTION_START
+  echo ""
+  echo "❌ .venv not set up — the translation-coverage gate cannot run"
+  echo "   Fix: make venv-setup   (once per clone; the full sweep refuses to guess)"
+  EXIT_CODE=1
 fi
 
 echo ""
@@ -2719,18 +2746,27 @@ if [ -n "$SHELL_FILES" ]; then
     SC_DIR="$QC_TMP/shellcheck"
     mkdir -p "$SC_DIR"
     printf '%s\n' $SHELL_FILES > "$SC_DIR/files"
+    SHELL_TOTAL=$(grep -c . "$SC_DIR/files")
     # scripts/ is linted at warning severity minus the two excluded codes;
     # config/ keeps the stricter default.
-    xargs -a "$SC_DIR/files" -P "${QC_JOBS:-4}" -I{} sh -c '
+    #
+    # The list arrives on stdin: reading it with the -a flag is a GNU xargs
+    # extension that BSD xargs rejects outright, and the loop below counts findings, not files,
+    # so a fan-out that never ran would report every script clean. Every
+    # worker leaves a marker (.out, or .skip for a listed file that is not on
+    # disk), and the verdict refuses a run that examined fewer files than it
+    # was given.
+    < "$SC_DIR/files" xargs -P "${QC_JOBS:-4}" -I{} sh -c '
       f="$1"
-      [ -f "$f" ] || exit 0
+      out="$2/$(printf "%s" "$f" | tr "/" "_")"
+      if [ ! -f "$f" ]; then : > "$out.skip"; exit 0; fi
       case "$f" in
         scripts/*) flags="-S warning -e $3" ;;
         *)         flags="" ;;
       esac
-      out="$2/$(printf "%s" "$f" | tr "/" "_")"
       shellcheck $flags "$f" > "$out.out" 2>/dev/null || : > "$out.bad"
     ' _ {} "$SC_DIR" "$SHELLCHECK_SCRIPTS_EXCLUDE"
+    SHELL_EXAMINED=$(find "$SC_DIR" \( -name '*.out' -o -name '*.skip' \) | wc -l | tr -d ' ')
     for script in $SHELL_FILES; do
       sc_stem="$SC_DIR/$(printf '%s' "$script" | tr '/' '_')"
       [ -f "$sc_stem.bad" ] || continue
@@ -2744,11 +2780,15 @@ if [ -n "$SHELL_FILES" ]; then
     done
     section_time $SECTION_START
     echo ""
-    if [ $SHELL_ERRORS -eq 0 ]; then
+    if [ "$SHELL_EXAMINED" -ne "$SHELL_TOTAL" ]; then
+      echo "❌ shellcheck examined $SHELL_EXAMINED of $SHELL_TOTAL shell script(s): the fan-out did not run them"
+      echo "   (an xargs that rejects GNU options does this - prestonbrown/helixscreen#1488)"
+      EXIT_CODE=1
+    elif [ $SHELL_ERRORS -eq 0 ]; then
       if [ $SHELL_BASELINED -gt 0 ]; then
-        echo "✅ shellcheck clean ($SHELL_BASELINED baselined file(s) still dirty)"
+        echo "✅ shellcheck clean ($SHELL_BASELINED baselined file(s) still dirty, $SHELL_TOTAL linted)"
       else
-        echo "✅ All shell scripts pass shellcheck"
+        echo "✅ All shell scripts pass shellcheck ($SHELL_TOTAL file(s) linted)"
       fi
     else
       echo "❌ shellcheck found issues in $SHELL_ERRORS file(s)"
