@@ -15,7 +15,7 @@ VENV_PIP := $(VENV)/bin/pip3
 # The script is organized into functions by dependency category:
 #   - check_essential: CC, CXX, make, pkg-config
 #   - check_submodules: LVGL, spdlog, libhv, wpa_supplicant
-#   - check_libraries: fmt, OpenSSL
+#   - check_libraries: fmt, OpenSSL, libhv, libnl, libusb (required on Linux), ALSA (warns on Linux)
 #   - check_desktop_tools: SDL2, npm, python venv, clang-format (--minimal skips)
 #   - check_canvas_libs: cairo, pango, libpng (--minimal skips)
 #
@@ -105,6 +105,12 @@ install-deps:
 			openssl:brew) echo "openssl";; \
 			openssl:apt) echo "libssl-dev";; \
 			openssl:dnf) echo "openssl-devel";; \
+			libusb:brew) echo "libusb";; \
+			libusb:apt) echo "libusb-1.0-0-dev";; \
+			libusb:dnf) echo "libusb1-devel";; \
+			alsa:brew) echo "";; \
+			alsa:apt) echo "libasound2-dev";; \
+			alsa:dnf) echo "alsa-lib-devel";; \
 			shellcheck:brew|shellcheck:apt) echo "shellcheck";; \
 			shellcheck:dnf) echo "ShellCheck";; \
 			bats:brew) echo "bats-core";; \
@@ -161,6 +167,12 @@ install-deps:
 		fi; \
 		if ! pkg-config --exists librsvg-2.0 2>/dev/null; then \
 			INSTALL_NEEDED=1; TO_INSTALL="$$TO_INSTALL $$(add_pkg librsvg)"; \
+		fi; \
+		if ! pkg-config --exists libusb-1.0 2>/dev/null; then \
+			INSTALL_NEEDED=1; TO_INSTALL="$$TO_INSTALL $$(add_pkg libusb)"; \
+		fi; \
+		if [ "$(UNAME_S)" = "Linux" ] && ! pkg-config --exists alsa 2>/dev/null; then \
+			INSTALL_NEEDED=1; TO_INSTALL="$$TO_INSTALL $$(add_pkg alsa)"; \
 		fi; \
 		if [ "$(UNAME_S)" != "Darwin" ]; then \
 			if ! pkg-config --exists openssl 2>/dev/null && ! pkg-config --exists libssl 2>/dev/null; then \

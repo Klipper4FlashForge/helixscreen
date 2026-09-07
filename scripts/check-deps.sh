@@ -266,6 +266,33 @@ check_libraries() {
             hint "libnl" "" "libnl-3-dev libnl-genl-3-dev" "libnl3-devel"
         fi
     fi
+
+    # libusb (USB printer detection). The native Linux build links -lusb-1.0
+    # unconditionally, so the headers are required there. macOS detects it via
+    # pkg-config and compiles the detector out when absent. Cross targets get it
+    # from their Docker image or build without it (ad5m, cc1), so --minimal
+    # skips it entirely.
+    if [ $MINIMAL -eq 0 ]; then
+        if [ "$(uname -s)" = "Darwin" ]; then
+            if ! check_pkg libusb-1.0 "libusb"; then
+                skip "libusb not found (optional on macOS - USB printer detection compiled out)"
+            fi
+        elif ! check_pkg libusb-1.0 "libusb"; then
+            fail "libusb-1.0 development headers not found (the Linux build links -lusb-1.0)" "libusb"
+            hint "libusb" "libusb" "libusb-1.0-0-dev" "libusb1-devel"
+        fi
+    fi
+
+    # ALSA (sound output on Linux). Optional at build time, but without the
+    # headers the ALSA backend is compiled out and the app runs silent, which
+    # reads as a sound bug rather than a missing package - so warn, not skip.
+    if [ $MINIMAL -eq 0 ] && [ "$(uname -s)" = "Linux" ]; then
+        if ! check_pkg alsa "ALSA"; then
+            warn "ALSA development headers not found (sound output backend will be compiled out)"
+            echo -e "  Install: ${YELLOW}sudo apt install libasound2-dev${RESET} (Debian/Ubuntu)"
+            echo -e "           ${YELLOW}sudo dnf install alsa-lib-devel${RESET} (Fedora/RHEL)"
+        fi
+    fi
 }
 
 check_desktop_tools() {
