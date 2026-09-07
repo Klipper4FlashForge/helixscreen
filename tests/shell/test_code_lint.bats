@@ -806,7 +806,17 @@ EOF
 check_deinit_all_does_not_log() {
     local file="$1"
     local body
-    body=$(awk '/void deinit_all\(\) \{/{f=1} f{print} f && /^    \}$/{exit}' "$file")
+    # Track brace depth rather than stopping at the first four-space "}": a
+    # nested block closing in that column would end the extraction early and
+    # leave the rest of the body unchecked.
+    body=$(awk '
+        /void deinit_all\(\) \{/ { f = 1 }
+        f {
+            print
+            depth += gsub(/\{/, "{") - gsub(/\}/, "}")
+            if (depth <= 0) exit
+        }
+    ' "$file")
 
     if [ -z "$body" ]; then
         echo "could not locate SubjectManager::deinit_all() in $file"
@@ -834,6 +844,31 @@ check_deinit_all_does_not_log() {
     run check_deinit_all_does_not_log "$mutated"
     [ "$status" -eq 1 ]
     [[ "$output" == *"static destruction"* ]]
+}
+
+@test "the deinit_all logging gate reads the whole body, not a prefix" {
+    # Extraction has to end on the brace that closes deinit_all(), not on the
+    # first four-space "}" it meets. A nested block whose closing brace lands in
+    # that column - a lambda, or a clang-format reflow - would otherwise end the
+    # extraction early, and every line after it goes unchecked while the gate
+    # reports green.
+    local mutated="${BATS_TEST_TMPDIR}/subject_managed_panel_prefix.h"
+    awk '
+        /^        for \(size_t i = 0; i < subjects_.size\(\); \+\+i\) \{/ && !done {
+            print "        if (subjects_.empty()) {"
+            print "    }"
+            print "        spdlog::trace(\"after the reflowed brace\");"
+            done = 1
+        }
+        { print }
+    ' include/subject_managed_panel.h > "$mutated"
+
+    # The mutation has to actually be there, or this test passes vacuously.
+    contains "after the reflowed brace" "$(cat "$mutated")"
+
+    run check_deinit_all_does_not_log "$mutated"
+    [ "$status" -eq 1 ]
+    contains "static destruction" "$output"
 }
 
 @test "the deinit_all logging gate fails closed when the function is renamed" {
