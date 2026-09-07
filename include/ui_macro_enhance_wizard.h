@@ -174,7 +174,7 @@ class MacroEnhanceWizard : public Modal {
     lv_subject_t diff_preview_subject_;
     lv_subject_t summary_subject_;
     lv_subject_t state_subject_;
-    lv_subject_t backup_text_subject_; ///< Dynamic backup checkbox label text
+    lv_subject_t backup_text_subject_; ///< "A backup of <file> is created" note text
 
     // Boolean visibility subjects for each state (bind_flag_if_eq pattern)
     lv_subject_t show_operation_subject_;
@@ -191,7 +191,7 @@ class MacroEnhanceWizard : public Modal {
     char description_buf_[512] = {};
     char diff_preview_buf_[2048] = {};
     char summary_buf_[2048] = {};
-    char backup_text_buf_[128] = {}; ///< Buffer for dynamic backup checkbox label
+    char backup_text_buf_[128] = {}; ///< Buffer for the backup note text
 
     // === Observer tracking for cleanup [L020] ===
     lv_observer_t* step_title_observer_ = nullptr;
