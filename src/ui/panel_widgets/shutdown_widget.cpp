@@ -324,10 +324,13 @@ void ShutdownWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     if (shutdown_btn_) {
         lv_obj_add_event_cb(shutdown_btn_, shutdown_clicked_cb, LV_EVENT_CLICKED, this);
     }
+
+    install_delete_hook(widget_obj_);
 }
 
 void ShutdownWidget::detach() {
     lifetime_.invalidate();
+    uninstall_delete_hook();
 
     if (shutdown_modal_.is_visible()) {
         shutdown_modal_.hide();
@@ -336,6 +339,17 @@ void ShutdownWidget::detach() {
     if (widget_obj_) {
         lv_obj_set_user_data(widget_obj_, nullptr);
     }
+    shutdown_btn_ = nullptr;
+    widget_obj_ = nullptr;
+    parent_screen_ = nullptr;
+}
+
+void ShutdownWidget::on_hooked_root_deleted() {
+    // Runs inside LVGL's delete event: pointer drops and guard expiry only.
+    // The modal is deliberately left alone — it lives on the modal layer rather
+    // than in this tile tree, so it is still alive here and hiding it needs a
+    // non-delete context. detach() still runs later and does that.
+    lifetime_.invalidate();
     shutdown_btn_ = nullptr;
     widget_obj_ = nullptr;
     parent_screen_ = nullptr;

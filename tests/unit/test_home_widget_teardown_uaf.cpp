@@ -35,6 +35,7 @@
 #include "src/ui/panel_widgets/camera_widget.h"
 #endif
 #include "../test_helpers/print_stats_test_access.h"
+#include "../test_helpers/shutdown_widget_test_access.h"
 #include "../test_helpers/tool_switcher_test_access.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "helix-xml/src/xml/lv_xml.h"
@@ -43,6 +44,7 @@
 #include "printer_state.h"
 #include "src/ui/panel_widgets/nozzle_temps_widget.h"
 #include "src/ui/panel_widgets/print_stats_widget.h"
+#include "src/ui/panel_widgets/shutdown_widget.h"
 #include "src/ui/panel_widgets/thermistor_widget.h"
 #include "src/ui/panel_widgets/tool_switcher_widget.h"
 #include "temperature_sensor_manager.h"
@@ -748,6 +750,61 @@ TEST_CASE_METHOD(HomeWidgetTeardownFixture,
     auto widget = std::make_unique<PrintStatsWidget>();
     lv_obj_t* page = make_page();
     lv_obj_t* tile = make_tile(page, "panel_widget_print_stats");
+    widget->attach(tile, test_screen());
+    UpdateQueue::instance().drain();
+
+    REQUIRE(delete_hook_installed(tile, widget.get()));
+
+    const void* dead = widget.get();
+    widget.reset();
+    CHECK_FALSE(delete_hook_installed(tile, dead));
+
+    lv_obj_delete(tile);
+    UpdateQueue::instance().drain();
+    SUCCEED("tile torn down after the widget without touching freed memory");
+}
+
+// --------------------------------------------------------------------------
+// ShutdownWidget
+//
+// Its verification timer carries a heap VerifyCtx*, not `this`, and its
+// tok.defer() bodies call free functions, so neither reaches back into the
+// widget. What is left is the same cached-root exposure: detach() calls
+// lv_obj_set_user_data(widget_obj_, nullptr), and it also holds the button
+// pointer it registered a click handler on.
+// --------------------------------------------------------------------------
+
+TEST_CASE_METHOD(HomeWidgetTeardownFixture,
+                 "shutdown drops its cached root and button when the page tree is deleted raw",
+                 "[shutdown][teardown][uaf]") {
+    // No API needed: nothing on the teardown path calls one.
+    auto widget = std::make_unique<ShutdownWidget>(nullptr);
+    lv_obj_t* page = make_page();
+    lv_obj_t* tile = make_tile(page, "panel_widget_shutdown");
+    widget->attach(tile, test_screen());
+    UpdateQueue::instance().drain();
+
+    // Or the null reads below would prove nothing.
+    REQUIRE(ShutdownWidgetTestAccess::widget_obj(*widget) == tile);
+
+    lv_obj_delete(page);
+    UpdateQueue::instance().drain();
+
+    CHECK(ShutdownWidgetTestAccess::widget_obj(*widget) == nullptr);
+    CHECK(ShutdownWidgetTestAccess::shutdown_btn(*widget) == nullptr);
+    CHECK(ShutdownWidgetTestAccess::parent_screen(*widget) == nullptr);
+
+    // The path that would have written into the freed tile.
+    widget->detach();
+    SUCCEED("detach after a raw page delete touched no freed memory");
+}
+
+TEST_CASE_METHOD(HomeWidgetTeardownFixture,
+                 "shutdown uninstalls its delete hook when destroyed before its tree",
+                 "[shutdown][teardown][uaf]") {
+    auto widget = std::make_unique<ShutdownWidget>(nullptr);
+    lv_obj_t* page = make_page();
+    lv_obj_t* tile = make_tile(page, "panel_widget_shutdown");
     widget->attach(tile, test_screen());
     UpdateQueue::instance().drain();
 
