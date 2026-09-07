@@ -16,21 +16,21 @@
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
 
+using helix::ams_action_from_string;
 using helix::AmsAction;
 using helix::AmsError;
 using helix::AmsResult;
 using helix::AmsType;
 using helix::EncoderClogInfo;
+using helix::path_segment_from_happy_hare_pos;
 using helix::PathSegment;
 using helix::PathTopology;
 using helix::SlotInfo;
 using helix::SlotStatus;
-using helix::SpoolmanMode;
-using helix::StepOperationType;
-using helix::ams_action_from_string;
-using helix::path_segment_from_happy_hare_pos;
 using helix::spoolman_mode_from_string;
 using helix::spoolman_mode_to_string;
+using helix::SpoolmanMode;
+using helix::StepOperationType;
 
 namespace helix {
 

@@ -36,29 +36,29 @@
 
 TEST_CASE("Detection-mode gcode is emitted for Happy Hare", "[clog][gate]") {
     SECTION("auto mode carries no detection length") {
-        auto cmd =
-            ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType::HAPPY_HARE, 2, 12.0f);
+        auto cmd = ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType::HAPPY_HARE,
+                                                                        2, 12.0f);
         REQUIRE(cmd.has_value());
         REQUIRE(*cmd == "MMU_TEST_CONFIG clog_detection=2");
     }
 
     SECTION("manual mode carries the detection length") {
-        auto cmd =
-            ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType::HAPPY_HARE, 1, 12.0f);
+        auto cmd = ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType::HAPPY_HARE,
+                                                                        1, 12.0f);
         REQUIRE(cmd.has_value());
         REQUIRE(*cmd == "MMU_TEST_CONFIG clog_detection=1 detection_length=12.0");
     }
 
     SECTION("manual mode with no length falls back to the bare form") {
-        auto cmd =
-            ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType::HAPPY_HARE, 1, 0.0f);
+        auto cmd = ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType::HAPPY_HARE,
+                                                                        1, 0.0f);
         REQUIRE(cmd.has_value());
         REQUIRE(*cmd == "MMU_TEST_CONFIG clog_detection=1");
     }
 
     SECTION("off is still a Happy Hare write") {
-        auto cmd =
-            ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType::HAPPY_HARE, 0, 0.0f);
+        auto cmd = ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType::HAPPY_HARE,
+                                                                        0, 0.0f);
         REQUIRE(cmd.has_value());
         REQUIRE(*cmd == "MMU_TEST_CONFIG clog_detection=0");
     }
@@ -69,9 +69,10 @@ TEST_CASE("Detection-mode gcode is never emitted for non-Happy-Hare backends", "
     // buffer's error_sensitivity, which is not a detection length, so there is
     // no drop-in mapping — sending nothing is correct. The others reach the
     // modal through the same clog_meter_mode > 0 gate.
-    const helix::AmsType others[] = {helix::AmsType::NONE,         helix::AmsType::AFC,      helix::AmsType::ACE,
-                              helix::AmsType::TOOL_CHANGER, helix::AmsType::AD5X_IFS, helix::AmsType::CFS,
-                              helix::AmsType::SNAPMAKER,    helix::AmsType::QIDI_BOX};
+    const helix::AmsType others[] = {helix::AmsType::NONE,      helix::AmsType::AFC,
+                                     helix::AmsType::ACE,       helix::AmsType::TOOL_CHANGER,
+                                     helix::AmsType::AD5X_IFS,  helix::AmsType::CFS,
+                                     helix::AmsType::SNAPMAKER, helix::AmsType::QIDI_BOX};
 
     for (helix::AmsType type : others) {
         CAPTURE(helix::ams_type_to_string(type));

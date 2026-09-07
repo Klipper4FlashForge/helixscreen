@@ -135,7 +135,8 @@ void WizardAmsIdentifyStep::update_display() {
     // Set logo image (imperative - images don't support bind_src)
     lv_obj_t* logo = lv_obj_find_by_name(screen_root_, "ams_logo");
     if (logo && backend) {
-        const char* logo_path = helix::AmsState::get_logo_path(backend->get_system_info().type_name);
+        const char* logo_path =
+            helix::AmsState::get_logo_path(backend->get_system_info().type_name);
         if (logo_path && logo_path[0] != '\0') {
             lv_image_set_src(logo, logo_path);
             lv_obj_remove_flag(logo, LV_OBJ_FLAG_HIDDEN);

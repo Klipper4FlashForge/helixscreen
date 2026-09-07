@@ -211,7 +211,8 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // `AmsState::instance().get_backend()->classify_error(...)` resolves to the
     // AFC classifier (not the generic fallback). A fresh backend is enough: the
     // jam branch is text-driven (tool_end + jam/break/runout), no live state.
-    helix::AmsState::instance().set_backend(std::make_unique<helix::AmsBackendAfc>(api(), client()));
+    helix::AmsState::instance().set_backend(
+        std::make_unique<helix::AmsBackendAfc>(api(), client()));
     // RAII guard: clear the AmsState singleton backend even if a REQUIRE throws,
     // so it never leaks into subsequent tests in the same run.
     struct BackendGuard {
@@ -355,7 +356,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "Routing E2E: Happy Hare runout pause routes
         helix::ClassifyContext ctx;
         ctx.is_paused = true;
         ctx.is_printing = false;
-        auto ev = helix::AmsState::instance().get_backend()->classify_error("!! Runout detected", ctx);
+        auto ev =
+            helix::AmsState::instance().get_backend()->classify_error("!! Runout detected", ctx);
         REQUIRE(ev.has_value());
         REQUIRE(ev->severity == helix::ErrorSeverity::CRITICAL);
         REQUIRE(ev->source == helix::ErrorSource::HAPPY_HARE);

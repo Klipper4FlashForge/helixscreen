@@ -51,7 +51,8 @@ namespace {
 /// Drives the real backend's protected notify_status_update handler.
 class ToolChangerLoadHelper : public helix::AmsBackendToolChanger {
   public:
-    explicit ToolChangerLoadHelper(int tool_count) : helix::AmsBackendToolChanger(nullptr, nullptr) {
+    explicit ToolChangerLoadHelper(int tool_count)
+        : helix::AmsBackendToolChanger(nullptr, nullptr) {
         std::vector<std::string> names;
         names.reserve(static_cast<size_t>(tool_count));
         for (int i = 0; i < tool_count; ++i) {

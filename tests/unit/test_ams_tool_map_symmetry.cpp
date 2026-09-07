@@ -122,9 +122,9 @@ TEST_CASE("QIDI Box swapping two tools keeps both directions in lockstep",
     helix::AmsBackendQidi backend(nullptr, nullptr);
 
     helix::QidiBoxTestAccess::parse_vars(backend, json{
-                                               {"value_t0", "slot2"},
-                                               {"value_t2", "slot0"},
-                                           });
+                                                      {"value_t0", "slot2"},
+                                                      {"value_t2", "slot0"},
+                                                  });
     auto info = backend.get_system_info();
 
     CHECK(mapped_tool_of(info, 2) == 0);

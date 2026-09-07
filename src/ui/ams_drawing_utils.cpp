@@ -377,7 +377,8 @@ void apply_logo(lv_obj_t* image, const std::string& type_name) {
 // System Tool Layout
 // ============================================================================
 
-SystemToolLayout compute_system_tool_layout(const helix::AmsSystemInfo& info, const helix::AmsBackend* backend) {
+SystemToolLayout compute_system_tool_layout(const helix::AmsSystemInfo& info,
+                                            const helix::AmsBackend* backend) {
     SystemToolLayout result;
     int total_physical = 0;
 
@@ -680,8 +681,9 @@ bool layout_has_extruder_identity(const SystemToolLayout& layout) {
         [](const std::string& name) { return helix::tool_number_for_extruder(name).has_value(); });
 }
 
-ToolBadgeLabels compute_tool_badge_labels(const SystemToolLayout& layout, const helix::AmsSystemInfo& info,
-                                          int current_slot, int active_physical_tool) {
+ToolBadgeLabels compute_tool_badge_labels(const SystemToolLayout& layout,
+                                          const helix::AmsSystemInfo& info, int current_slot,
+                                          int active_physical_tool) {
     ToolBadgeLabels out;
 
     if (layout_has_extruder_identity(layout)) {
@@ -809,9 +811,9 @@ SpoolVisual create_spool_visual(lv_obj_t* container, int32_t spool_size) {
         lv_obj_set_size(outer_ring, spool_size, spool_size);
         lv_obj_align(outer_ring, LV_ALIGN_CENTER, 0, 0);
         lv_obj_set_style_radius(outer_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-        lv_obj_set_style_bg_color(outer_ring,
-                                  ams_draw::darken_color(lv_color_hex(helix::AMS_DEFAULT_SLOT_COLOR), 50),
-                                  LV_PART_MAIN);
+        lv_obj_set_style_bg_color(
+            outer_ring, ams_draw::darken_color(lv_color_hex(helix::AMS_DEFAULT_SLOT_COLOR), 50),
+            LV_PART_MAIN);
         lv_obj_set_style_bg_opa(outer_ring, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_border_width(outer_ring, 2, LV_PART_MAIN);
         lv_obj_set_style_border_color(outer_ring, theme_manager_get_color("ams_hub"), LV_PART_MAIN);

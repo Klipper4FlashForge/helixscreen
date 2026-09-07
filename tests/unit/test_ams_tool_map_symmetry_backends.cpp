@@ -142,7 +142,8 @@ class CfsToolMapProbe : public AmsBackendCfs {
         captured.push_back(gcode);
         return helix::AmsErrorHelper::success();
     }
-    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode,
+                                  std::function<void()> on_complete) override {
         captured.push_back(gcode);
         if (on_complete) {
             on_complete();
@@ -185,7 +186,8 @@ class ToolChangerMapProbe : public helix::AmsBackendToolChanger {
         captured.push_back(gcode);
         return helix::AmsErrorHelper::success();
     }
-    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode,
+                                  std::function<void()> on_complete) override {
         captured.push_back(gcode);
         if (on_complete) {
             on_complete();

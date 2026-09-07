@@ -310,8 +310,8 @@ struct ToolBadgeLabels {
  * @param active_physical_tool Physical nozzle the active slot feeds, or <0
  */
 [[nodiscard]] ToolBadgeLabels compute_tool_badge_labels(const SystemToolLayout& layout,
-                                                        const helix::AmsSystemInfo& info, int current_slot,
-                                                        int active_physical_tool);
+                                                        const helix::AmsSystemInfo& info,
+                                                        int current_slot, int active_physical_tool);
 
 /**
  * @brief Compute physical tool layout from AMS system info
@@ -327,6 +327,7 @@ struct ToolBadgeLabels {
  * @param backend Backend for per-unit topology queries (nullable, falls back to unit.topology)
  * @return SystemToolLayout with physical positions and virtual mappings
  */
-SystemToolLayout compute_system_tool_layout(const helix::AmsSystemInfo& info, const helix::AmsBackend* backend);
+SystemToolLayout compute_system_tool_layout(const helix::AmsSystemInfo& info,
+                                            const helix::AmsBackend* backend);
 
 } // namespace ams_draw

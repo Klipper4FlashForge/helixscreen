@@ -832,7 +832,8 @@ TEST_CASE("Happy Hare multi-unit: three units", "[ams][multi-unit][happy-hare]")
 // function is reachable in (the detail view is built for detail_unit_index_),
 // and the widget count is not a property of AmsSystemInfo, so it is not
 // modelled here.
-static int global_to_local_slot(const helix::AmsSystemInfo& info, int unit_index, int global_slot_index) {
+static int global_to_local_slot(const helix::AmsSystemInfo& info, int unit_index,
+                                int global_slot_index) {
     if (info.get_unit_position_for_slot(global_slot_index) != unit_index) {
         return -1;
     }

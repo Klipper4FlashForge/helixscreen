@@ -250,8 +250,9 @@ void ClogDetectionConfigModal::sync_det_length_text() {
     lv_subject_copy_string(&det_length_text_subject_, det_length_text_buf_);
 }
 
-std::optional<std::string>
-ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType type, int mode, float det_length) {
+std::optional<std::string> ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType type,
+                                                                                int mode,
+                                                                                float det_length) {
     // MMU_TEST_CONFIG is a Happy Hare command. AFC, ACE, CFS, QIDI Box and the
     // tool changers reach this modal too (the clog widget is offered whenever
     // clog_meter_mode > 0, which includes AFC buffer fault detection), and would

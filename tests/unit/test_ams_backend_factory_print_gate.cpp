@@ -102,7 +102,8 @@ bool is_print_refusal(const helix::AmsError& e) {
     }
     static const std::string printing_msg =
         helix::AmsErrorHelper::print_active(/*is_paused=*/false).user_msg;
-    static const std::string paused_msg = helix::AmsErrorHelper::print_active(/*is_paused=*/true).user_msg;
+    static const std::string paused_msg =
+        helix::AmsErrorHelper::print_active(/*is_paused=*/true).user_msg;
     return e.user_msg == printing_msg || e.user_msg == paused_msg;
 }
 

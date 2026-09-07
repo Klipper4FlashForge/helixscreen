@@ -178,7 +178,8 @@ struct TimeoutHarness {
     }
 
     void publish_action(AmsAction a, int settle_ms) {
-        lv_subject_set_int(helix::AmsState::instance().get_ams_action_subject(), static_cast<int>(a));
+        lv_subject_set_int(helix::AmsState::instance().get_ams_action_subject(),
+                           static_cast<int>(a));
         fx.process_lvgl(settle_ms);
     }
 

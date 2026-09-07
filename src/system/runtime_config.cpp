@@ -155,13 +155,13 @@ bool backend_owns_runout_during_job(helix::AmsType type) {
     case helix::AmsType::CFS:        // classify_error() (the ActionPromptModal #1388 observed)
         return true;
     case helix::AmsType::AD5X_IFS: // the runout detector fires only while PAUSED and
-                            // only after a 30-180s confirm dwell, so at the
-                            // sensor edge nothing has fired yet and quieting
-                            // the toast would open a silent window; the toast
-                            // is the immediate surface mid-print
+                                   // only after a 30-180s confirm dwell, so at the
+                                   // sensor edge nothing has fired yet and quieting
+                                   // the toast would open a silent window; the toast
+                                   // is the immediate surface mid-print
     case helix::AmsType::ACE:      // no error hook: the toast is the only runout signal
     case helix::AmsType::QIDI_BOX: // current_error() reports lane-BLOCKED faults, not
-                            // runout; for runout the toast is the only signal
+                                   // runout; for runout the toast is the only signal
     case helix::AmsType::TOOL_CHANGER:
     case helix::AmsType::SNAPMAKER:
     case helix::AmsType::NONE:

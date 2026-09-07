@@ -56,7 +56,8 @@ namespace {
 /// execute_gcode() and these overrides capture everything.
 class ToolChangerDispatchHelper : public helix::AmsBackendToolChanger {
   public:
-    explicit ToolChangerDispatchHelper(int tool_count) : helix::AmsBackendToolChanger(nullptr, nullptr) {
+    explicit ToolChangerDispatchHelper(int tool_count)
+        : helix::AmsBackendToolChanger(nullptr, nullptr) {
         std::vector<std::string> names;
         names.reserve(static_cast<size_t>(tool_count));
         for (int i = 0; i < tool_count; ++i) {
@@ -87,7 +88,8 @@ class ToolChangerDispatchHelper : public helix::AmsBackendToolChanger {
         return helix::AmsErrorHelper::success();
     }
 
-    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode,
+                                  std::function<void()> on_complete) override {
         sent_.push_back(gcode);
         pending_acks_.push_back(std::move(on_complete));
         return helix::AmsErrorHelper::success();

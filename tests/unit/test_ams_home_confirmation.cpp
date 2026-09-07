@@ -41,7 +41,8 @@ class HomingProbeBackend : public helix::AmsBackendAfc {
         captured.push_back(gcode);
         return helix::AmsErrorHelper::success();
     }
-    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode,
+                                  std::function<void()> on_complete) override {
         if (fail_next_gcode) {
             return helix::AmsError(helix::AmsResult::COMMAND_FAILED, "boom", "boom");
         }
@@ -381,7 +382,8 @@ class ToolChangerHomingProbeBackend : public helix::AmsBackendToolChanger {
         captured.push_back(gcode);
         return helix::AmsErrorHelper::success();
     }
-    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode,
+                                  std::function<void()> on_complete) override {
         captured.push_back(gcode);
         if (on_complete) {
             on_complete();
@@ -413,7 +415,7 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
         });
 
     helix::ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=1",
-                                                   helix::AmsAction::SELECTING);
+                                                          helix::AmsAction::SELECTING);
 
     // The prompter didn't resolve synchronously, so the optimistic action
     // dispatch_operation() set before ever reaching ensure_homed_then() is
@@ -445,7 +447,7 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
     // Not wedged: a subsequent dispatch still works.
     backend.homed = true;
     auto err = helix::ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=2",
-                                                              helix::AmsAction::SELECTING);
+                                                                     helix::AmsAction::SELECTING);
     REQUIRE(err.success());
     REQUIRE(backend.captured.size() == 1);
     CHECK(backend.captured[0] == "SELECT_TOOL T=2");

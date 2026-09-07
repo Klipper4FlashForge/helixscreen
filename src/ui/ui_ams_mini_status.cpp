@@ -1439,8 +1439,10 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
             slot_bar->fill_pct = fill_pct;
             slot_bar->present = slot.is_present();
             slot_bar->loaded = active;
-            slot_bar->has_error = (slot.status == helix::SlotStatus::BLOCKED || slot.error.has_value());
-            slot_bar->severity = slot.error.has_value() ? slot.error->severity : helix::SlotError::INFO;
+            slot_bar->has_error =
+                (slot.status == helix::SlotStatus::BLOCKED || slot.error.has_value());
+            slot_bar->severity =
+                slot.error.has_value() ? slot.error->severity : helix::SlotError::INFO;
         }
 
         // Spool-mode cache (uncapped).

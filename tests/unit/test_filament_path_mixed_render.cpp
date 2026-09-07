@@ -70,10 +70,12 @@ void configure_mixed(lv_obj_t* w) {
     // Installed filament on each lane (non-NONE segment so lanes are "filled").
     ui_filament_path_canvas_set_slot_filament(w, 0, static_cast<int>(helix::PathSegment::NOZZLE),
                                               0xE53935);
-    ui_filament_path_canvas_set_slot_filament(w, 1, static_cast<int>(helix::PathSegment::SPOOL), 0x1E88E5);
+    ui_filament_path_canvas_set_slot_filament(w, 1, static_cast<int>(helix::PathSegment::SPOOL),
+                                              0x1E88E5);
     ui_filament_path_canvas_set_slot_filament(w, 2, static_cast<int>(helix::PathSegment::NOZZLE),
                                               0x43A047);
-    ui_filament_path_canvas_set_slot_filament(w, 3, static_cast<int>(helix::PathSegment::SPOOL), 0xFDD835);
+    ui_filament_path_canvas_set_slot_filament(w, 3, static_cast<int>(helix::PathSegment::SPOOL),
+                                              0xFDD835);
     ui_filament_path_canvas_set_slot_mapped_tool(w, 0, 0);
     ui_filament_path_canvas_set_slot_mapped_tool(w, 1, 1);
     ui_filament_path_canvas_set_slot_mapped_tool(w, 2, 2);
@@ -106,7 +108,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "PARALLEL detail canvas renders pixels (harnes
     ui_filament_path_canvas_set_topology(w, static_cast<int>(helix::PathTopology::PARALLEL));
     ui_filament_path_canvas_set_slot_filament(w, 0, static_cast<int>(helix::PathSegment::NOZZLE),
                                               0xE53935);
-    ui_filament_path_canvas_set_slot_filament(w, 1, static_cast<int>(helix::PathSegment::SPOOL), 0x1E88E5);
+    ui_filament_path_canvas_set_slot_filament(w, 1, static_cast<int>(helix::PathSegment::SPOOL),
+                                              0x1E88E5);
     ui_filament_path_canvas_set_active_slot(w, 0);
 
     FORCE_RENDER();
