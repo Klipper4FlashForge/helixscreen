@@ -2635,10 +2635,21 @@ if [ -x "$VENV_PYTHON" ] && [ -f "scripts/translation_sync.py" ]; then
     echo "   '// i18n: do not translate' on its line or the line above."
     EXIT_CODE=1
   fi
-else
+elif [ "$STAGED_ONLY" = true ]; then
   section_time $SECTION_START
   echo ""
   echo "⚠️  .venv not set up — skipping (run 'make venv-setup')"
+else
+  # The full sweep is the last gate before main (pre-push, CI mode). A skip
+  # here reads as green in the hook output while an untranslated lv_tr() key
+  # sails through to break Code Quality and the BATS job on the same head
+  # (prestonbrown/helixscreen#1507). Only the staged-mode pre-commit pass may
+  # treat a missing venv as "not my problem".
+  section_time $SECTION_START
+  echo ""
+  echo "❌ .venv not set up — the translation-coverage gate cannot run"
+  echo "   Fix: make venv-setup   (once per clone; the full sweep refuses to guess)"
+  EXIT_CODE=1
 fi
 
 echo ""
