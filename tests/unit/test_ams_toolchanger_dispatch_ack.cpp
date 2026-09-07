@@ -123,20 +123,20 @@ class ToolChangerDispatchHelper : public helix::AmsBackendToolChanger {
     [[nodiscard]] const std::vector<std::string>& sent() const {
         return sent_;
     }
-    [[nodiscard]] const std::vector<AmsAction>& trace() const {
+    [[nodiscard]] const std::vector<helix::AmsAction>& trace() const {
         return trace_;
     }
-    [[nodiscard]] AmsAction action() const {
+    [[nodiscard]] helix::AmsAction action() const {
         return get_current_action();
     }
 
   private:
     std::vector<std::string> sent_;
     std::vector<std::function<void()>> pending_acks_;
-    std::vector<AmsAction> trace_;
+    std::vector<helix::AmsAction> trace_;
 };
 
-bool trace_contains(const std::vector<AmsAction>& trace, AmsAction a) {
+bool trace_contains(const std::vector<helix::AmsAction>& trace, helix::AmsAction a) {
     return std::find(trace.begin(), trace.end(), a) != trace.end();
 }
 
@@ -157,7 +157,7 @@ TEST_CASE("Toolchanger load on the already-mounted tool resolves on the macro ac
 
     // The optimistic busy leg is what the filament panel's completion observer
     // needs to see START before it can ever see one end.
-    CHECK(trace_contains(h.trace(), AmsAction::SELECTING));
+    CHECK(trace_contains(h.trace(), helix::AmsAction::SELECTING));
 
     // The dispatch must go out through the completion-callback form. Today it
     // uses the 1-arg overload and discards the ack, so there is nothing to fire.
@@ -167,8 +167,8 @@ TEST_CASE("Toolchanger load on the already-mounted tool resolves on the macro ac
 
     // Asserting the end value alone would pass without the fix — IDLE is where
     // this started. The busy leg above is the load-bearing half of the pair.
-    CHECK(h.trace().back() == AmsAction::IDLE);
-    CHECK(h.action() == AmsAction::IDLE);
+    CHECK(h.trace().back() == helix::AmsAction::IDLE);
+    CHECK(h.action() == helix::AmsAction::IDLE);
 }
 
 TEST_CASE("Toolchanger no-op load does not lock out the next operation",
@@ -208,14 +208,14 @@ TEST_CASE("Toolchanger macro ack does not truncate a real tool change",
     // finishes; resolving on it here would report done while the tool is still
     // moving.
     h.feed(json{{"toolchanger", {{"status", "changing"}}}});
-    REQUIRE(h.action() == AmsAction::SELECTING);
+    REQUIRE(h.action() == helix::AmsAction::SELECTING);
 
     h.ack(0);
-    CHECK(h.action() == AmsAction::SELECTING);
+    CHECK(h.action() == helix::AmsAction::SELECTING);
 
     // Only the firmware's own terminal frame ends it.
     h.feed(json{{"toolchanger", {{"status", "ready"}, {"tool_number", 3}}}});
-    CHECK(h.action() == AmsAction::IDLE);
+    CHECK(h.action() == helix::AmsAction::IDLE);
 }
 
 TEST_CASE("Toolchanger never takes the swap arm, so a remap cannot mount the wrong tool",
@@ -235,7 +235,7 @@ TEST_CASE("Toolchanger never takes the swap arm, so a remap cannot mount the wro
     ToolChangerDispatchHelper h(5);
     h.seat_tool(0);
 
-    AmsSystemInfo seated = h.get_system_info();
+    helix::AmsSystemInfo seated = h.get_system_info();
     REQUIRE(seated.current_slot == 0); // a tool is always on the carriage
     CHECK_FALSE(h.needs_unload_before_load(seated, /*target_slot=*/3));
 
@@ -253,6 +253,6 @@ TEST_CASE("Toolchanger dispatch failure reverts the optimistic action",
     helix::AmsError err = h.load_filament(99);
     CHECK_FALSE(err.success());
     CHECK(h.sent().empty());
-    CHECK(h.action() == AmsAction::IDLE);
+    CHECK(h.action() == helix::AmsAction::IDLE);
     CHECK_FALSE(h.get_system_info().is_busy());
 }

@@ -120,7 +120,7 @@ void ClogDetectionConfigModal::on_show() {
     // Read current state from AmsState backend
     auto& ams = helix::AmsState::instance();
     auto* backend = ams.get_backend();
-    AmsType backend_type = backend ? backend->get_type() : AmsType::NONE;
+    helix::AmsType backend_type = backend ? backend->get_type() : helix::AmsType::NONE;
     if (backend) {
         auto info = backend->get_system_info();
         detection_mode_ = info.encoder_info.detection_mode;
@@ -251,12 +251,12 @@ void ClogDetectionConfigModal::sync_det_length_text() {
 }
 
 std::optional<std::string>
-ClogDetectionConfigModal::build_detection_mode_gcode(AmsType type, int mode, float det_length) {
+ClogDetectionConfigModal::build_detection_mode_gcode(helix::AmsType type, int mode, float det_length) {
     // MMU_TEST_CONFIG is a Happy Hare command. AFC, ACE, CFS, QIDI Box and the
     // tool changers reach this modal too (the clog widget is offered whenever
     // clog_meter_mode > 0, which includes AFC buffer fault detection), and would
     // answer with "Unknown command".
-    if (type != AmsType::HAPPY_HARE)
+    if (type != helix::AmsType::HAPPY_HARE)
         return std::nullopt;
 
     char cmd[96];
@@ -273,13 +273,13 @@ void ClogDetectionConfigModal::send_detection_mode_gcode(int mode, float det_len
     // Re-read the backend rather than trust what on_show() saw: the UI gate hides
     // these controls, but the send must refuse on its own too.
     auto* backend = helix::AmsState::instance().get_backend();
-    AmsType type = backend ? backend->get_type() : AmsType::NONE;
+    helix::AmsType type = backend ? backend->get_type() : helix::AmsType::NONE;
 
     auto cmd = build_detection_mode_gcode(type, mode, det_length);
     if (!cmd) {
         spdlog::warn("[ClogConfig] Detection mode is Happy Hare only (MMU_TEST_CONFIG); "
                      "active backend is {} — not sending",
-                     ams_type_to_string(type));
+                     helix::ams_type_to_string(type));
         return;
     }
 

@@ -39,17 +39,17 @@ lv_color_t blend_color(lv_color_t c1, lv_color_t c2, float factor);
 // ============================================================================
 
 /** Map error severity to theme color (danger/warning/text_muted) */
-lv_color_t severity_color(SlotError::Severity severity);
+lv_color_t severity_color(helix::SlotError::Severity severity);
 
 /** Get worst error severity across all slots in a unit */
-SlotError::Severity worst_unit_severity(const AmsUnit& unit);
+helix::SlotError::Severity worst_unit_severity(const helix::AmsUnit& unit);
 
 // ============================================================================
 // Data Helpers
 // ============================================================================
 
 /** Calculate fill percentage from SlotInfo weight data (returns min_pct..100, or 100 if unknown) */
-int fill_percent_from_slot(const SlotInfo& slot, int min_pct = 5);
+int fill_percent_from_slot(const helix::SlotInfo& slot, int min_pct = 5);
 
 /**
  * Calculate bar width to fit slot_count bars in container_width.
@@ -63,7 +63,7 @@ int32_t calc_bar_width(int32_t container_width, int slot_count, int32_t gap, int
 // ============================================================================
 
 /** Get display name for a unit (uses unit.name, falls back to "Unit N") */
-std::string get_unit_display_name(const AmsUnit& unit, int unit_index);
+std::string get_unit_display_name(const helix::AmsUnit& unit, int unit_index);
 
 // ============================================================================
 // LVGL Widget Factories
@@ -171,7 +171,7 @@ void set_active_ring(lv_obj_t* target, bool active);
 lv_obj_t* create_error_badge(lv_obj_t* parent, int32_t size);
 
 /** Update badge visibility, color, and pulse based on error state */
-void update_error_badge(lv_obj_t* badge, bool has_error, SlotError::Severity severity,
+void update_error_badge(lv_obj_t* badge, bool has_error, helix::SlotError::Severity severity,
                         bool animate);
 
 // ============================================================================
@@ -193,7 +193,7 @@ struct BarStyleParams {
     bool is_present = false;
     bool is_loaded = false;
     bool has_error = false;
-    SlotError::Severity severity = SlotError::INFO;
+    helix::SlotError::Severity severity = helix::SlotError::INFO;
 };
 
 /// Status line dimensions
@@ -220,7 +220,7 @@ void style_slot_bar(const SlotColumn& col, const BarStyleParams& params, int32_t
 // ============================================================================
 
 /** Apply logo to image widget: try unit name -> type name -> hide */
-void apply_logo(lv_obj_t* image, const AmsUnit& unit, const AmsSystemInfo& info);
+void apply_logo(lv_obj_t* image, const helix::AmsUnit& unit, const helix::AmsSystemInfo& info);
 
 /** Apply logo to image widget: try type name -> hide */
 void apply_logo(lv_obj_t* image, const std::string& type_name);
@@ -310,7 +310,7 @@ struct ToolBadgeLabels {
  * @param active_physical_tool Physical nozzle the active slot feeds, or <0
  */
 [[nodiscard]] ToolBadgeLabels compute_tool_badge_labels(const SystemToolLayout& layout,
-                                                        const AmsSystemInfo& info, int current_slot,
+                                                        const helix::AmsSystemInfo& info, int current_slot,
                                                         int active_physical_tool);
 
 /**
@@ -327,6 +327,6 @@ struct ToolBadgeLabels {
  * @param backend Backend for per-unit topology queries (nullable, falls back to unit.topology)
  * @return SystemToolLayout with physical positions and virtual mappings
  */
-SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const helix::AmsBackend* backend);
+SystemToolLayout compute_system_tool_layout(const helix::AmsSystemInfo& info, const helix::AmsBackend* backend);
 
 } // namespace ams_draw

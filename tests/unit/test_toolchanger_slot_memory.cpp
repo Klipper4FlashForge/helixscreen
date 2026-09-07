@@ -125,8 +125,8 @@ struct ScopedCacheDir {
     }
 };
 
-SlotInfo blue_petg() {
-    SlotInfo info;
+helix::SlotInfo blue_petg() {
+    helix::SlotInfo info;
     info.color_rgb = 0x1E5AA8;
     info.color_name = "Blue";
     info.material = "PETG";
@@ -166,7 +166,7 @@ TEST_CASE("Rediscovery does not leak one tool's spool onto another",
     // Slot 0 was never edited: it must still read the untouched default, not
     // slot 1's colour.
     auto untouched = h.get_slot_info(0);
-    CHECK(untouched.color_rgb == AMS_DEFAULT_SLOT_COLOR);
+    CHECK(untouched.color_rgb == helix::AMS_DEFAULT_SLOT_COLOR);
     CHECK(untouched.material.empty());
 }
 
@@ -185,7 +185,7 @@ TEST_CASE("A status frame does not undo the user's edit", "[ams][toolchanger][sl
 
 TEST_CASE("persist=false is a preview, not a memory", "[ams][toolchanger][slot_memory]") {
     SlotMemoryHelper h(4);
-    SlotInfo info = blue_petg();
+    helix::SlotInfo info = blue_petg();
     REQUIRE(h.set_slot_info(1, info, /*persist=*/false).success());
 
     // Visible immediately, because set_slot_info still writes the live SlotInfo.
@@ -193,7 +193,7 @@ TEST_CASE("persist=false is a preview, not a memory", "[ams][toolchanger][slot_m
 
     // But nothing was staged, so the wipe takes it.
     h.set_tools(4);
-    CHECK(h.get_slot_info(1).color_rgb == AMS_DEFAULT_SLOT_COLOR);
+    CHECK(h.get_slot_info(1).color_rgb == helix::AMS_DEFAULT_SLOT_COLOR);
 }
 
 TEST_CASE("An edit that also remaps a tool keeps both", "[ams][toolchanger][slot_memory]") {
@@ -202,7 +202,7 @@ TEST_CASE("An edit that also remaps a tool keeps both", "[ams][toolchanger][slot
     // after it would silently drop the metadata on exactly this call.
     SlotMemoryHelper h(4);
 
-    SlotInfo info = blue_petg();
+    helix::SlotInfo info = blue_petg();
     info.mapped_tool = 3; // slot 1 should answer to T3
 
     REQUIRE(h.set_slot_info(1, info, /*persist=*/true).success());
@@ -296,7 +296,7 @@ TEST_CASE("Tool-changer slot metadata round-trips through Moonraker",
     {
         StoreBackedHelper fresh(&api, 4);
         // Before the load, the slot is whatever initialize_tools() built.
-        CHECK(fresh.get_slot_info(1).color_rgb == AMS_DEFAULT_SLOT_COLOR);
+        CHECK(fresh.get_slot_info(1).color_rgb == helix::AMS_DEFAULT_SLOT_COLOR);
 
         helix::ToolChangerTestAccess::call_on_started(fresh);
 
@@ -310,7 +310,7 @@ TEST_CASE("Tool-changer slot metadata round-trips through Moonraker",
         CHECK(slot.spoolman_id == 42);
 
         // A tool the user never touched stays untouched.
-        CHECK(fresh.get_slot_info(0).color_rgb == AMS_DEFAULT_SLOT_COLOR);
+        CHECK(fresh.get_slot_info(0).color_rgb == helix::AMS_DEFAULT_SLOT_COLOR);
     }
 }
 

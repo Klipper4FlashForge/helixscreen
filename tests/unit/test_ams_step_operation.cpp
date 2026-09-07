@@ -23,7 +23,9 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsAction;
 using helix::StepOperationType;
+using helix::ams_action_is_filament_operation;
 using helix::detect_step_operation;
 
 // ============================================================================

@@ -22,8 +22,15 @@
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
 
+using helix::AMS_DEFAULT_SLOT_COLOR;
+using helix::AmsAction;
 using helix::AmsBackendQidi;
+using helix::AmsType;
+using helix::DryerInfo;
+using helix::PathTopology;
 using helix::QidiBoxTestAccess;
+using helix::SlotInfo;
+using helix::SlotStatus;
 
 using json = nlohmann::json;
 

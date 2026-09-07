@@ -20,25 +20,25 @@
  * @param slots_per_unit Vector of slot counts, one per unit (e.g., {4, 4} for 2x4)
  * @return Populated AmsSystemInfo
  */
-static AmsSystemInfo make_multi_unit_info(const std::vector<int>& slots_per_unit) {
-    AmsSystemInfo info;
-    info.type = AmsType::AFC;
+static helix::AmsSystemInfo make_multi_unit_info(const std::vector<int>& slots_per_unit) {
+    helix::AmsSystemInfo info;
+    info.type = helix::AmsType::AFC;
 
     int global_offset = 0;
     for (int u = 0; u < static_cast<int>(slots_per_unit.size()); ++u) {
-        AmsUnit unit;
+        helix::AmsUnit unit;
         unit.unit_index = u;
         unit.name = "Box Turtle " + std::to_string(u + 1);
         unit.slot_count = slots_per_unit[u];
         unit.first_slot_global_index = global_offset;
 
         for (int s = 0; s < slots_per_unit[u]; ++s) {
-            SlotInfo slot;
+            helix::SlotInfo slot;
             slot.slot_index = s;
             slot.global_index = global_offset + s;
-            slot.status = SlotStatus::AVAILABLE;
+            slot.status = helix::SlotStatus::AVAILABLE;
             slot.mapped_tool = global_offset + s;
-            slot.color_rgb = AMS_DEFAULT_SLOT_COLOR;
+            slot.color_rgb = helix::AMS_DEFAULT_SLOT_COLOR;
             unit.slots.push_back(slot);
         }
 
@@ -161,7 +161,7 @@ class AmsBackendHHMultiUnitHelper : public AmsBackendHappyHare {
 // ============================================================================
 
 TEST_CASE("AmsSystemInfo is_multi_unit returns false for empty units", "[ams][multi-unit]") {
-    AmsSystemInfo info;
+    helix::AmsSystemInfo info;
     REQUIRE_FALSE(info.is_multi_unit());
 }
 
@@ -182,7 +182,7 @@ TEST_CASE("AmsSystemInfo is_multi_unit returns true for three units", "[ams][mul
 
 TEST_CASE("AmsSystemInfo unit_count returns correct count", "[ams][multi-unit]") {
     SECTION("empty") {
-        AmsSystemInfo info;
+        helix::AmsSystemInfo info;
         REQUIRE(info.unit_count() == 0);
     }
 
@@ -651,7 +651,7 @@ TEST_CASE("Happy Hare single-unit backward compatibility", "[ams][multi-unit][ha
     SECTION("slots have correct data") {
         const auto* slot0 = info.get_slot_global(0);
         REQUIRE(slot0 != nullptr);
-        REQUIRE(slot0->status == SlotStatus::AVAILABLE);
+        REQUIRE(slot0->status == helix::SlotStatus::AVAILABLE);
         REQUIRE(slot0->color_rgb == 0xFF0000);
         REQUIRE(slot0->material == "PLA");
     }
@@ -832,11 +832,11 @@ TEST_CASE("Happy Hare multi-unit: three units", "[ams][multi-unit][happy-hare]")
 // function is reachable in (the detail view is built for detail_unit_index_),
 // and the widget count is not a property of AmsSystemInfo, so it is not
 // modelled here.
-static int global_to_local_slot(const AmsSystemInfo& info, int unit_index, int global_slot_index) {
+static int global_to_local_slot(const helix::AmsSystemInfo& info, int unit_index, int global_slot_index) {
     if (info.get_unit_position_for_slot(global_slot_index) != unit_index) {
         return -1;
     }
-    const AmsUnit* unit = info.get_unit_for_slot(global_slot_index);
+    const helix::AmsUnit* unit = info.get_unit_for_slot(global_slot_index);
     return unit ? global_slot_index - unit->first_slot_global_index : -1;
 }
 

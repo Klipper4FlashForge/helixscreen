@@ -153,7 +153,7 @@ TEST_CASE("cancelling the home sends nothing and lands IDLE", "[ams][homing][con
     backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
 
     CHECK(backend.captured.empty());
-    CHECK(backend.get_system_info().action == AmsAction::IDLE);
+    CHECK(backend.get_system_info().action == helix::AmsAction::IDLE);
 
     // A cancelled op must not wedge the backend: the next load still works.
     // homed=true means ensure_homed_then() never consults the prompter, so
@@ -329,7 +329,7 @@ TEST_CASE("declining before a dispatch never arms anything for a later one",
     // unit-instantiable -- see test_filament_load_preheat.cpp).
     backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
     CHECK(backend.captured.empty());
-    CHECK(backend.get_system_info().action == AmsAction::IDLE);
+    CHECK(backend.get_system_info().action == helix::AmsAction::IDLE);
 
     // A later, unrelated dispatch must still ask -- the decline armed nothing.
     backend.ensure_homed_then("CHANGE_TOOL LANE=lane2");
@@ -413,13 +413,13 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
         });
 
     helix::ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=1",
-                                                   AmsAction::SELECTING);
+                                                   helix::AmsAction::SELECTING);
 
     // The prompter didn't resolve synchronously, so the optimistic action
     // dispatch_operation() set before ever reaching ensure_homed_then() is
     // still busy -- expected while the dialog is open, not the bug.
     REQUIRE(pending_cancel);
-    CHECK(backend.get_system_info().action == AmsAction::SELECTING);
+    CHECK(backend.get_system_info().action == helix::AmsAction::SELECTING);
     CHECK(helix::ToolChangerTestAccess::has_pending_dispatch(backend));
     CHECK(backend.captured.empty());
 
@@ -437,7 +437,7 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
     // before the fix.
     pending_cancel();
 
-    CHECK(backend.get_system_info().action == AmsAction::IDLE);
+    CHECK(backend.get_system_info().action == helix::AmsAction::IDLE);
     CHECK_FALSE(helix::ToolChangerTestAccess::has_pending_dispatch(backend));
     CHECK(backend.get_system_info().operation_detail.empty());
     CHECK(backend.captured.empty());
@@ -445,7 +445,7 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
     // Not wedged: a subsequent dispatch still works.
     backend.homed = true;
     auto err = helix::ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=2",
-                                                              AmsAction::SELECTING);
+                                                              helix::AmsAction::SELECTING);
     REQUIRE(err.success());
     REQUIRE(backend.captured.size() == 1);
     CHECK(backend.captured[0] == "SELECT_TOOL T=2");

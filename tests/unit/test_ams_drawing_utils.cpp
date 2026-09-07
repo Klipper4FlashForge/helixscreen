@@ -12,6 +12,12 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsSystemInfo;
+using helix::AmsUnit;
+using helix::SlotError;
+using helix::SlotInfo;
+using helix::SlotStatus;
+
 // ============================================================================
 // SlotInfo::is_present tests
 // ============================================================================

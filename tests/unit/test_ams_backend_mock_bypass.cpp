@@ -78,7 +78,7 @@ TEST_CASE("AmsBackendMock bypass mode", "[ams][mock][bypass]") {
 
     SECTION("get_filament_segment shows NOZZLE when bypass active") {
         backend.enable_bypass();
-        REQUIRE(backend.get_filament_segment() == PathSegment::NOZZLE);
+        REQUIRE(backend.get_filament_segment() == helix::PathSegment::NOZZLE);
     }
 
     SECTION("supports_bypass flag is set") {

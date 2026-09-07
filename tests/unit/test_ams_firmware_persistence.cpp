@@ -82,7 +82,7 @@ TEST_CASE("AmsBackendMock: set_slot_info propagates mapped_tool change",
     REQUIRE(initial.mapped_tool == 0);
 
     // Remap slot 0 → T2 through the slot edit path.
-    SlotInfo info = initial;
+    helix::SlotInfo info = initial;
     info.mapped_tool = 2;
     REQUIRE(mock->set_slot_info(0, info, /*persist=*/true).result == helix::AmsResult::SUCCESS);
 
@@ -94,7 +94,7 @@ TEST_CASE("AmsBackendMock: set_slot_info ignores default mapped_tool (-1)",
     auto mock = helix::AmsBackendMock::create_mock();
 
     // Spoolman polling builds a default-constructed SlotInfo; live mapping must survive.
-    SlotInfo info; // mapped_tool defaults to -1
+    helix::SlotInfo info; // mapped_tool defaults to -1
     info.material = "PLA";
 
     REQUIRE(mock->set_slot_info(2, info, /*persist=*/false).result == helix::AmsResult::SUCCESS);
@@ -122,7 +122,7 @@ TEST_CASE("AmsBackendToolChanger: set_slot_info emits ASSIGN_TOOL on mapped_tool
     backend.set_discovered_tools({"tool0", "tool1", "tool2", "tool3"});
 
     // Backend seeds slot 0 → T0. Remap slot 0 to respond to G-code T2.
-    SlotInfo info = backend.get_slot_info(0);
+    helix::SlotInfo info = backend.get_slot_info(0);
     info.mapped_tool = 2;
     REQUIRE(backend.set_slot_info(0, info, /*persist=*/true).result == helix::AmsResult::SUCCESS);
 
@@ -142,7 +142,7 @@ TEST_CASE("AmsBackendToolChanger: set_slot_info ignores default mapped_tool (-1)
     ToolChangerGcodeCapture backend;
     backend.set_discovered_tools({"tool0", "tool1", "tool2", "tool3"});
 
-    SlotInfo info; // mapped_tool defaults to -1
+    helix::SlotInfo info; // mapped_tool defaults to -1
     info.material = "PLA";
 
     REQUIRE(backend.set_slot_info(1, info, /*persist=*/true).result == helix::AmsResult::SUCCESS);

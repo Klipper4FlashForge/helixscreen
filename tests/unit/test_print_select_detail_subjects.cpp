@@ -482,7 +482,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // set_slot_info deliberately drops SlotStatus (no real backend accepts a
     // user-written status), so the empty case has to go through
     // force_slot_status - see ams_backend_mock.cpp:999.
-    auto load_lane = [&ams](uint32_t rgb, const char* material, SlotStatus status) {
+    auto load_lane = [&ams](uint32_t rgb, const char* material, helix::SlotStatus status) {
         auto slot = ams.backend->get_slot_info(0);
         slot.color_rgb = rgb;
         slot.material = material;
@@ -500,7 +500,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     };
 
     SECTION("a colour-only mismatch leaves the triangle dark") {
-        load_lane(0x0000FF, "PLA", SlotStatus::LOADED); // right polymer, nowhere near red
+        load_lane(0x0000FF, "PLA", helix::SlotStatus::LOADED); // right polymer, nowhere near red
         view.show("one_tool.gcode", "sub", "PLA", colors, materials, kSize, kMtime);
         view.recompute_preflight();
 
@@ -510,7 +510,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     }
 
     SECTION("a material mismatch lights it") {
-        load_lane(0xFF0000, "PETG", SlotStatus::LOADED); // exactly the file's colour
+        load_lane(0xFF0000, "PETG", helix::SlotStatus::LOADED); // exactly the file's colour
         view.show("one_tool.gcode", "sub", "PLA", colors, materials, kSize, kMtime);
         view.recompute_preflight();
 
@@ -520,7 +520,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     }
 
     SECTION("an empty lane is its own signal, not the triangle") {
-        load_lane(0xFF0000, "PLA", SlotStatus::EMPTY);
+        load_lane(0xFF0000, "PLA", helix::SlotStatus::EMPTY);
         view.show("one_tool.gcode", "sub", "PLA", colors, materials, kSize, kMtime);
         view.recompute_preflight();
 
@@ -532,7 +532,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     SECTION("a lane that satisfies the file lights nothing") {
         // The complement. Without it a subject wired to a constant 0 would pass
         // the two dark cases above and the empty case's triangle assertion too.
-        load_lane(0xFF0000, "PLA", SlotStatus::LOADED);
+        load_lane(0xFF0000, "PLA", helix::SlotStatus::LOADED);
         view.show("one_tool.gcode", "sub", "PLA", colors, materials, kSize, kMtime);
         view.recompute_preflight();
 

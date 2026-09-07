@@ -29,8 +29,8 @@ class SlotlessEditableBackend : public helix::AmsBackendMock {
   public:
     SlotlessEditableBackend() : helix::AmsBackendMock(4) {}
 
-    AmsSystemInfo get_system_info() const override {
-        AmsSystemInfo info = helix::AmsBackendMock::get_system_info();
+    helix::AmsSystemInfo get_system_info() const override {
+        helix::AmsSystemInfo info = helix::AmsBackendMock::get_system_info();
         info.total_slots = 0;
         return info;
     }

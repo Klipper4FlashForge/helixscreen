@@ -30,6 +30,8 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::SlotStatus;
+
 using json = nlohmann::json;
 
 namespace {

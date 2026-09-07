@@ -110,7 +110,7 @@ class HubSensorTestHelper : public AmsBackendAfc {
 // ============================================================================
 
 TEST_CASE("AmsUnit hub sensor fields default to false", "[ams][hub_sensor]") {
-    AmsUnit unit;
+    helix::AmsUnit unit;
     REQUIRE(unit.has_hub_sensor == false);
     REQUIRE(unit.hub_sensor_triggered == false);
 }
@@ -162,7 +162,7 @@ TEST_CASE("AFC single-unit: hub sensor triggers OUTPUT segment", "[ams][hub_sens
 
     helper.feed_afc_hub("Turtle_1", {{"state", true}});
 
-    REQUIRE(helper.test_compute_filament_segment() == PathSegment::OUTPUT);
+    REQUIRE(helper.test_compute_filament_segment() == helix::PathSegment::OUTPUT);
 }
 
 // ============================================================================
@@ -241,7 +241,7 @@ TEST_CASE("AFC multi-unit: any hub triggered returns OUTPUT segment", "[ams][hub
     // Only Turtle_2 triggered
     helper.feed_afc_hub("Turtle_2", {{"state", true}});
 
-    REQUIRE(helper.test_compute_filament_segment() == PathSegment::OUTPUT);
+    REQUIRE(helper.test_compute_filament_segment() == helix::PathSegment::OUTPUT);
 }
 
 TEST_CASE("AFC multi-unit: no hub triggered returns NONE", "[ams][hub_sensor][afc]") {
@@ -254,7 +254,7 @@ TEST_CASE("AFC multi-unit: no hub triggered returns NONE", "[ams][hub_sensor][af
     helper.feed_afc_hub("Turtle_2", {{"state", false}});
 
     // No lane sensors, no toolhead sensors — should be NONE
-    REQUIRE(helper.test_compute_filament_segment() == PathSegment::NONE);
+    REQUIRE(helper.test_compute_filament_segment() == helix::PathSegment::NONE);
 }
 
 // ============================================================================

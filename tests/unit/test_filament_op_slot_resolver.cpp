@@ -22,6 +22,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsSystemInfo;
+using helix::SlotInfo;
+using helix::SlotStatus;
+
 using helix::ui::resolve_op_button_slot;
 
 namespace {

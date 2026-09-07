@@ -28,8 +28,8 @@
 // Forward declarations
 namespace helix {
 class AmsBackend;
-} // namespace helix
 struct DryingPreset;
+} // namespace helix
 
 namespace helix::ui {
 

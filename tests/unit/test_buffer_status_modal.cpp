@@ -60,9 +60,9 @@ class TestableBufferStatusModal : public BufferStatusModal {
 // Helpers
 // ============================================================================
 
-static AmsSystemInfo make_hh_info() {
-    AmsSystemInfo info;
-    info.type = AmsType::HAPPY_HARE;
+static helix::AmsSystemInfo make_hh_info() {
+    helix::AmsSystemInfo info;
+    info.type = helix::AmsType::HAPPY_HARE;
     info.sync_feedback_bias = 0.15f;
     info.espooler_state = "rewind";
     info.sync_drive = true;
@@ -72,13 +72,13 @@ static AmsSystemInfo make_hh_info() {
     return info;
 }
 
-static AmsSystemInfo make_afc_info(int unit_count = 1) {
-    AmsSystemInfo info;
-    info.type = AmsType::AFC;
+static helix::AmsSystemInfo make_afc_info(int unit_count = 1) {
+    helix::AmsSystemInfo info;
+    info.type = helix::AmsType::AFC;
     for (int i = 0; i < unit_count; ++i) {
-        AmsUnit unit;
+        helix::AmsUnit unit;
         unit.unit_index = i;
-        BufferHealth bh;
+        helix::BufferHealth bh;
         bh.fault_detection_enabled = true;
         bh.distance_to_fault = 12.5f;
         bh.state = "Advancing";
@@ -350,8 +350,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate AFC out-of-range u
 TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal populate unknown type",
                  "[modals][buffer_status]") {
     TestableBufferStatusModal modal;
-    AmsSystemInfo info;
-    info.type = AmsType::NONE;
+    helix::AmsSystemInfo info;
+    info.type = helix::AmsType::NONE;
 
     modal.populate(info, 0);
 
@@ -372,8 +372,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "BufferStatusModal explains itself on a system
     // owner saw. The modal is reachable from the AMS panel as well as the home
     // tile, so it has to answer for itself rather than lean on the tile's gate.
     TestableBufferStatusModal modal;
-    AmsSystemInfo info;
-    info.type = AmsType::CFS;
+    helix::AmsSystemInfo info;
+    info.type = helix::AmsType::CFS;
 
     modal.populate(info, 0);
 
@@ -389,8 +389,8 @@ TEST_CASE_METHOD(LVGLTestFixture,
     // previous open would sit underneath a supported backend's body.
     TestableBufferStatusModal modal;
 
-    AmsSystemInfo none_info;
-    none_info.type = AmsType::CFS;
+    helix::AmsSystemInfo none_info;
+    none_info.type = helix::AmsType::CFS;
     modal.populate(none_info, 0);
     REQUIRE(std::string(modal.unsupported_value()).empty() == false);
 

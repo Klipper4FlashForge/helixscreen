@@ -64,7 +64,7 @@ struct TrackerRoutingFixture : LVGLTestFixture {
         // Seed every slot with a known, trackable configuration so per-slot
         // sinks become active on snapshot().
         for (int s = 0; s < 4; ++s) {
-            SlotInfo info = mock->get_slot_info(s);
+            helix::SlotInfo info = mock->get_slot_info(s);
             info.material = "PLA";
             info.remaining_weight_g = 1000.0f;
             info.total_weight_g = 1000.0f;
@@ -186,7 +186,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(idx == 0);
 
     for (int s = 0; s < 4; ++s) {
-        SlotInfo info = mock->get_slot_info(s);
+        helix::SlotInfo info = mock->get_slot_info(s);
         info.material = "PLA";
         info.remaining_weight_g = 1000.0f;
         info.total_weight_g = 1000.0f;

@@ -535,7 +535,7 @@ TEST_CASE("Phase 1 - All compat groups have representatives", "[filament][databa
 TEST_CASE("Phase 2 - get_default_drying_presets covers all compat groups",
           "[filament][database][phase2][ams]") {
     // get_default_drying_presets() should return one preset per compat group
-    auto presets = get_default_drying_presets();
+    auto presets = helix::get_default_drying_presets();
 
     // Should have presets for all 7 compat groups
     CHECK(presets.size() >= 7);
@@ -560,7 +560,7 @@ TEST_CASE("Phase 2 - get_default_drying_presets covers all compat groups",
 
 TEST_CASE("Phase 2 - get_default_drying_presets matches filament database",
           "[filament][database][phase2][ams]") {
-    auto ams_presets = get_default_drying_presets();
+    auto ams_presets = helix::get_default_drying_presets();
     auto filament_presets = get_drying_presets_by_group();
 
     // For each filament preset, there should be a matching ams preset with same temp/time
@@ -583,7 +583,7 @@ TEST_CASE("Phase 2 - get_default_drying_presets matches filament database",
 
 TEST_CASE("Phase 2 - get_default_drying_presets includes fan_pct",
           "[filament][database][phase2][ams]") {
-    auto presets = get_default_drying_presets();
+    auto presets = helix::get_default_drying_presets();
 
     // All presets should have reasonable fan_pct values (0-100)
     for (const auto& p : presets) {

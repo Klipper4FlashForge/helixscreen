@@ -19,7 +19,7 @@ struct ExternalSpoolSinkFixture : LVGLTestFixture {
         auto& ams = helix::AmsState::instance();
         ams.init_subjects(false);
 
-        SlotInfo info;
+        helix::SlotInfo info;
         info.material = "PLA";
         info.remaining_weight_g = 1000.0f;
         info.total_weight_g = 1000.0f;
@@ -56,7 +56,7 @@ TEST_CASE_METHOD(ExternalSpoolSinkFixture,
 
 TEST_CASE_METHOD(ExternalSpoolSinkFixture, "ExternalSpoolSink: unknown weight not trackable",
                  "[consumption_sink][external]") {
-    SlotInfo info;
+    helix::SlotInfo info;
     info.material = "PLA";
     info.remaining_weight_g = -1.0f;
     helix::AmsState::instance().set_external_spool_info_in_memory(info);
@@ -68,7 +68,7 @@ TEST_CASE_METHOD(ExternalSpoolSinkFixture, "ExternalSpoolSink: unknown weight no
 
 TEST_CASE_METHOD(ExternalSpoolSinkFixture, "ExternalSpoolSink: unknown material not trackable",
                  "[consumption_sink][external]") {
-    SlotInfo info;
+    helix::SlotInfo info;
     info.material = "UnknownNovelMaterial9000";
     info.remaining_weight_g = 1000.0f;
     info.total_weight_g = 1000.0f;
@@ -92,7 +92,7 @@ TEST_CASE_METHOD(ExternalSpoolSinkFixture,
 TEST_CASE_METHOD(ExternalSpoolSinkFixture,
                  "ExternalSpoolSink: apply_delta clamps remaining weight at zero",
                  "[consumption_sink][external]") {
-    SlotInfo info;
+    helix::SlotInfo info;
     info.material = "PLA";
     info.remaining_weight_g = 5.0f; // only 5 g available
     info.total_weight_g = 1000.0f;
@@ -119,7 +119,7 @@ TEST_CASE_METHOD(ExternalSpoolSinkFixture,
     // Simulate an external writer replacing remaining_weight_g.
     auto current = helix::AmsState::instance().get_external_spool_info();
     REQUIRE(current.has_value());
-    SlotInfo edited = *current;
+    helix::SlotInfo edited = *current;
     edited.remaining_weight_g = 500.0f;
     helix::AmsState::instance().set_external_spool_info_in_memory(edited);
 

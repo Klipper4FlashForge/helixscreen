@@ -29,6 +29,8 @@
  * of these structures should only occur in the backend layer.
  */
 
+namespace helix {
+
 /// Default color for slots without filament info (medium gray)
 constexpr uint32_t AMS_DEFAULT_SLOT_COLOR = 0x808080;
 
@@ -1564,8 +1566,6 @@ struct AmsSystemInfo {
     }
 };
 
-namespace helix {
-
 /**
  * @brief Decide whether enabling bypass must be preceded by an implicit unload.
  *
@@ -1588,8 +1588,6 @@ namespace helix {
                                                       bool allows_implicit_chaining) {
     return allows_implicit_chaining && info.current_slot >= 0 && info.filament_loaded;
 }
-
-} // namespace helix
 
 /**
  * @brief Filament requirement from G-code analysis
@@ -1724,7 +1722,7 @@ inline std::vector<DryingPreset> get_default_drying_presets() {
 // Endless Spool Types
 // ============================================================================
 
-namespace helix::printer {
+namespace printer {
 
 /**
  * @brief Does the endless-spool mechanism exist on this printer at all?
@@ -2082,4 +2080,6 @@ struct DeviceAction {
     std::string disable_reason;       ///< Why disabled (if applicable)
 };
 
-} // namespace helix::printer
+} // namespace printer
+
+} // namespace helix

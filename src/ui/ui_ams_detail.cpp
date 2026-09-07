@@ -257,7 +257,7 @@ AmsDetailSlotResult ams_detail_create_slots(AmsDetailWidgets& w, lv_obj_t* slot_
 
     auto* backend = helix::AmsState::instance().get_backend();
     if (backend) {
-        AmsSystemInfo info = backend->get_system_info();
+        helix::AmsSystemInfo info = backend->get_system_info();
         if (unit_index >= 0 && unit_index < static_cast<int>(info.units.size())) {
             count = info.units[unit_index].slot_count;
             slot_offset = info.units[unit_index].first_slot_global_index;
@@ -474,7 +474,7 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     if (!backend)
         return;
 
-    AmsSystemInfo info = backend->get_system_info();
+    helix::AmsSystemInfo info = backend->get_system_info();
 
     // Hub-only mode: only draw slots -> hub, skip downstream
     ui_filament_path_canvas_set_hub_only(canvas, hub_only);
@@ -493,13 +493,13 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     }
 
     ui_filament_path_canvas_set_slot_count(canvas, slot_count);
-    PathTopology topo =
+    helix::PathTopology topo =
         (unit_index >= 0) ? backend->get_unit_topology(unit_index) : backend->get_topology();
     // A passthrough selector with an on-head combiner draws as the merge fan
     // with the hub at the toolhead: the slots ARE the selector's per-lane
     // outputs, and each tube runs the full height to the combiner.
     if (backend->hub_on_toolhead())
-        topo = PathTopology::HUB;
+        topo = helix::PathTopology::HUB;
     ui_filament_path_canvas_set_topology(canvas, static_cast<int>(topo));
     ui_filament_path_canvas_set_hub_on_toolhead(canvas, backend->hub_on_toolhead());
 
@@ -528,22 +528,22 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     // Set filament color from active slot
     int global_active = (unit_index >= 0) ? active_slot + slot_offset : active_slot;
     if (global_active >= 0) {
-        SlotInfo slot_info = backend->get_slot_info(global_active);
+        helix::SlotInfo slot_info = backend->get_slot_info(global_active);
         ui_filament_path_canvas_set_filament_color(canvas, slot_info.color_rgb);
     }
 
     // Clear eject mode once the eject operation has completed (action returned
     // to IDLE and filament is no longer in the lane).
-    AmsAction action = backend->get_current_action();
-    if (action == AmsAction::IDLE) {
+    helix::AmsAction action = backend->get_current_action();
+    if (action == helix::AmsAction::IDLE) {
         ui_filament_path_canvas_set_eject_mode(canvas, false);
     }
 
     // Set filament and error segments
-    PathSegment segment = backend->get_filament_segment();
+    helix::PathSegment segment = backend->get_filament_segment();
     ui_filament_path_canvas_set_filament_segment(canvas, static_cast<int>(segment));
 
-    PathSegment error_seg = backend->infer_error_segment();
+    helix::PathSegment error_seg = backend->infer_error_segment();
     ui_filament_path_canvas_set_error_segment(canvas, static_cast<int>(error_seg));
 
     // Set per-slot prep sensor capability flags
@@ -560,7 +560,7 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
         std::vector<int> extruder_tools(static_cast<size_t>(slot_count), -1);
         for (int i = 0; i < slot_count; ++i) {
             int gi = slot_offset + i;
-            SlotInfo slot = backend->get_slot_info(gi);
+            helix::SlotInfo slot = backend->get_slot_info(gi);
             ui_filament_path_canvas_set_slot_mapped_tool(canvas, i, slot.mapped_tool);
             if (const auto n = helix::tool_number_for_extruder(slot.extruder_name)) {
                 extruder_tools[static_cast<size_t>(i)] = *n;
@@ -576,9 +576,9 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     ui_filament_path_canvas_clear_slot_filaments(canvas);
     for (int i = 0; i < slot_count; ++i) {
         int global_idx = i + slot_offset;
-        PathSegment slot_seg = backend->get_slot_filament_segment(global_idx);
-        if (slot_seg != PathSegment::NONE) {
-            SlotInfo si = backend->get_slot_info(global_idx);
+        helix::PathSegment slot_seg = backend->get_slot_filament_segment(global_idx);
+        if (slot_seg != helix::PathSegment::NONE) {
+            helix::SlotInfo si = backend->get_slot_info(global_idx);
             ui_filament_path_canvas_set_slot_filament(canvas, i, static_cast<int>(slot_seg),
                                                       si.color_rgb);
         }
@@ -630,7 +630,7 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     }
 
     // HH: sync_feedback_state indicates buffer
-    if (!buffer_present && info.type == AmsType::HAPPY_HARE) {
+    if (!buffer_present && info.type == helix::AmsType::HAPPY_HARE) {
         const auto& sf = info.sync_feedback_state;
         if (!sf.empty() && sf != "disabled") {
             buffer_present = true;

@@ -10,6 +10,12 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsUnit;
+using helix::BufferHealth;
+using helix::SlotError;
+using helix::SlotInfo;
+using helix::SlotStatus;
+
 // ============================================================================
 // Task 1: Data Model Tests — SlotError, BufferHealth, SlotInfo, AmsUnit
 // ============================================================================

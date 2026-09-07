@@ -32,7 +32,7 @@ class BufferStatusModal : public Modal {
 
     /// Convenience: create modal, populate from info, and show. One-shot and
     /// stack-owned - ModalStack frees the instance when its entry goes (#1382).
-    static void show_for(const AmsSystemInfo& info, int effective_unit);
+    static void show_for(const helix::AmsSystemInfo& info, int effective_unit);
 
   protected:
     void on_show() override;
@@ -41,7 +41,7 @@ class BufferStatusModal : public Modal {
     friend class TestableBufferStatusModal;
 
     static void init_subjects();
-    void populate(const AmsSystemInfo& info, int effective_unit);
+    void populate(const helix::AmsSystemInfo& info, int effective_unit);
 
     static bool subjects_initialized_;
     helix::ui::UiBufferMeter* meter_ = nullptr;
@@ -74,6 +74,6 @@ class BufferStatusModal : public Modal {
     static char afc_distance_buf_[128];
 
     // Stored info for post-show meter creation
-    AmsSystemInfo info_;
+    helix::AmsSystemInfo info_;
     int effective_unit_ = 0;
 };

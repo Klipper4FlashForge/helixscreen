@@ -7,6 +7,12 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsSystemInfo;
+using helix::AmsType;
+using helix::AmsUnit;
+using helix::PathTopology;
+using helix::SlotInfo;
+
 /**
  * @file test_ams_system_tool_layout.cpp
  * @brief Unit tests for compute_system_tool_layout()

@@ -52,13 +52,13 @@ using helix::ui::resolve_op_button_slot;
 namespace {
 
 // Slot -> tool as the AMS panel reads it, by global index.
-int mapped_tool_of(const AmsSystemInfo& info, int global_index) {
+int mapped_tool_of(const helix::AmsSystemInfo& info, int global_index) {
     const auto* slot = info.get_slot_global(global_index);
     return slot ? slot->mapped_tool : -99; // -99: slot absent, distinct from "unmapped"
 }
 
 // Tool -> slot as resolve_op_button_slot reads it.
-int slot_of_tool(const AmsSystemInfo& info, int tool) {
+int slot_of_tool(const helix::AmsSystemInfo& info, int tool) {
     if (tool < 0 || tool >= static_cast<int>(info.tool_to_slot_map.size())) {
         return -99; // no entry at all — the shape that caused the bug
     }
@@ -70,7 +70,7 @@ int slot_of_tool(const AmsSystemInfo& info, int tool) {
 /// The generic half of every case below: whatever the mapping is, a lane that
 /// claims tool T must be the lane tool T resolves to, and vice versa. A
 /// one-sided write fails here even if the case's own expectations are updated.
-void require_symmetric(const AmsSystemInfo& info) {
+void require_symmetric(const helix::AmsSystemInfo& info) {
     for (int i = 0; i < info.total_slots; ++i) {
         int tool = mapped_tool_of(info, i);
         if (tool >= 0) {
@@ -429,7 +429,7 @@ TEST_CASE("ToolChanger set_slot_info remap moves the lane badge with the map",
     // tool number.
     ToolChangerMapProbe backend(4);
 
-    SlotInfo edit = backend.get_slot_info(1);
+    helix::SlotInfo edit = backend.get_slot_info(1);
     edit.mapped_tool = 3;
     REQUIRE(backend.set_slot_info(1, edit).success());
 
@@ -495,10 +495,10 @@ TEST_CASE("ToolChanger resolves the carriage lane through the map",
 
     const auto* seated = info.get_slot_global(2);
     REQUIRE(seated != nullptr);
-    CHECK(seated->status == SlotStatus::LOADED);
+    CHECK(seated->status == helix::SlotStatus::LOADED);
     const auto* lane0 = info.get_slot_global(0);
     REQUIRE(lane0 != nullptr);
-    CHECK(lane0->status == SlotStatus::AVAILABLE);
+    CHECK(lane0->status == helix::SlotStatus::AVAILABLE);
 
     CHECK(backend.can_unload_from_toolhead(2));
     CHECK_FALSE(backend.can_unload_from_toolhead(0));
@@ -605,19 +605,19 @@ TEST_CASE("Mock set_slot_info does not change slot status", "[ams][mock]") {
     // bugs. force_slot_status() is the path that works.
     helix::AmsBackendMock backend(4);
     backend.set_operation_delay(0);
-    backend.force_slot_status(1, SlotStatus::EMPTY);
-    REQUIRE(backend.get_slot_info(1).status == SlotStatus::EMPTY);
+    backend.force_slot_status(1, helix::SlotStatus::EMPTY);
+    REQUIRE(backend.get_slot_info(1).status == helix::SlotStatus::EMPTY);
 
-    SlotInfo edit = backend.get_slot_info(1);
-    edit.status = SlotStatus::LOADED; // ignored
+    helix::SlotInfo edit = backend.get_slot_info(1);
+    edit.status = helix::SlotStatus::LOADED; // ignored
     edit.material = "PETG";           // applied
     REQUIRE(backend.set_slot_info(1, edit).success());
 
     auto after = backend.get_slot_info(1);
-    CHECK(after.status == SlotStatus::EMPTY);
+    CHECK(after.status == helix::SlotStatus::EMPTY);
     CHECK(after.material == "PETG");
 
     // And the documented path does take effect.
-    backend.force_slot_status(1, SlotStatus::AVAILABLE);
-    CHECK(backend.get_slot_info(1).status == SlotStatus::AVAILABLE);
+    backend.force_slot_status(1, helix::SlotStatus::AVAILABLE);
+    CHECK(backend.get_slot_info(1).status == helix::SlotStatus::AVAILABLE);
 }

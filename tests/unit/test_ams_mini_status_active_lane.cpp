@@ -32,6 +32,9 @@
 
 using helix::AmsBackendMock;
 using helix::AmsState;
+using helix::AmsSystemInfo;
+using helix::SlotInfo;
+using helix::SlotStatus;
 
 namespace {
 

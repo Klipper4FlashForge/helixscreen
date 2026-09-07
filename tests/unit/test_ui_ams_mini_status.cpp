@@ -164,15 +164,15 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: sync_from_ams_state fe
     mock_ptr->start();
 
     // Deterministic known data: slot 0 = PETG @ 60%, slot 1 = ABS @ 25%.
-    SlotInfo s0 = mock_ptr->get_slot_info(0);
-    s0.status = SlotStatus::AVAILABLE;
+    helix::SlotInfo s0 = mock_ptr->get_slot_info(0);
+    s0.status = helix::SlotStatus::AVAILABLE;
     s0.material = "PETG";
     s0.total_weight_g = 1000.0f;
     s0.remaining_weight_g = 600.0f; // -> 60%
     mock_ptr->set_slot_info(0, s0);
 
-    SlotInfo s1 = mock_ptr->get_slot_info(1);
-    s1.status = SlotStatus::AVAILABLE;
+    helix::SlotInfo s1 = mock_ptr->get_slot_info(1);
+    s1.status = helix::SlotStatus::AVAILABLE;
     s1.material = "ABS";
     s1.total_weight_g = 1000.0f;
     s1.remaining_weight_g = 250.0f; // -> 25%
@@ -222,14 +222,14 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: active lane badge uses
     mock_ptr->start();
 
     // Mock initializes slot 0 LOADED with current_slot=0 -> lane 0 is the active lane.
-    SlotInfo s0 = mock_ptr->get_slot_info(0);
+    helix::SlotInfo s0 = mock_ptr->get_slot_info(0);
     s0.material = "PETG";
     s0.total_weight_g = 1000.0f;
     s0.remaining_weight_g = 600.0f;
     mock_ptr->set_slot_info(0, s0);
 
-    SlotInfo s1 = mock_ptr->get_slot_info(1);
-    s1.status = SlotStatus::AVAILABLE;
+    helix::SlotInfo s1 = mock_ptr->get_slot_info(1);
+    s1.status = helix::SlotStatus::AVAILABLE;
     s1.material = "ABS";
     s1.total_weight_g = 1000.0f;
     s1.remaining_weight_g = 250.0f;

@@ -47,13 +47,13 @@ namespace {
 // Slot -> tool as the AMS panel reads it (SlotInfo::mapped_tool), looked up by
 // global index so a multi-box QIDI system is addressed the same way as a
 // single-box one.
-int mapped_tool_of(const AmsSystemInfo& info, int global_index) {
+int mapped_tool_of(const helix::AmsSystemInfo& info, int global_index) {
     const auto* slot = info.get_slot_global(global_index);
     return slot ? slot->mapped_tool : -99; // -99: slot absent, distinct from "unmapped"
 }
 
 // Tool -> slot as resolve_op_button_slot reads it.
-int slot_of_tool(const AmsSystemInfo& info, int tool) {
+int slot_of_tool(const helix::AmsSystemInfo& info, int tool) {
     if (tool < 0 || tool >= static_cast<int>(info.tool_to_slot_map.size())) {
         return -99; // no entry at all — the shape that caused the bug
     }

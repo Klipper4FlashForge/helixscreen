@@ -8,6 +8,10 @@
 
 using helix::AmsBackend;
 using helix::AmsBackendMock;
+using helix::AmsSystemInfo;
+using helix::AmsType;
+using helix::PathTopology;
+using helix::SlotStatus;
 
 /**
  * @file test_ams_mock_mixed_topology.cpp

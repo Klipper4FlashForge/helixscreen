@@ -46,7 +46,7 @@ void check_backend_against_spoolman(helix::AmsBackendMock& mock, int slot_count)
     REQUIRE(!spools.empty());
 
     for (int i = 0; i < slot_count; ++i) {
-        SlotInfo slot = mock.get_slot_info(i);
+        helix::SlotInfo slot = mock.get_slot_info(i);
         if (slot.spoolman_id <= 0) {
             continue; // intentionally unlinked lane (untracked path)
         }
@@ -94,7 +94,7 @@ TEST_CASE("AFC mock keeps one unlinked lane for the untracked path",
           "[mock][spoolman][ams_edit_overlay]") {
     helix::AmsBackendMock mock(4);
     mock.set_afc_mode(true);
-    SlotInfo lane3 = mock.get_slot_info(3);
+    helix::SlotInfo lane3 = mock.get_slot_info(3);
     CHECK(lane3.spoolman_id == 0);
     // Unlinked AND unbranded: no Spoolman record to name it, and AFC reports no
     // vendor, so this lane is the one that must fall back to its color name.
@@ -112,8 +112,8 @@ TEST_CASE("AFC mock lane resolves its brand through the Spoolman identity, not t
     helix::AmsBackendMock mock(8);
     mock.set_afc_mode(true);
 
-    const SlotInfo lane0 = mock.get_slot_info(0);
-    REQUIRE(lane0.status == SlotStatus::LOADED);
+    const helix::SlotInfo lane0 = mock.get_slot_info(0);
+    REQUIRE(lane0.status == helix::SlotStatus::LOADED);
     REQUIRE(lane0.spoolman_id > 0);
     CHECK(lane0.brand.empty());
 

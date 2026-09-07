@@ -24,8 +24,16 @@
 #include "../catch_amalgamated.hpp"
 
 using helix::AceTestAccess;
+using helix::AmsAction;
 using helix::AmsBackend;
 using helix::AmsBackendAce;
+using helix::AmsSystemInfo;
+using helix::AmsType;
+using helix::DryerInfo;
+using helix::PathSegment;
+using helix::PathTopology;
+using helix::SlotInfo;
+using helix::SlotStatus;
 
 using json = nlohmann::json;
 

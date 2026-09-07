@@ -164,29 +164,29 @@ TEST_CASE("AMS backends: execute_gcode without API returns error", "[ams][charac
 TEST_CASE("AMS backends: default state after construction", "[ams][characterization]") {
     SECTION("AFC") {
         helix::AmsBackendAfc backend(nullptr, nullptr);
-        REQUIRE(backend.get_type() == AmsType::AFC);
+        REQUIRE(backend.get_type() == helix::AmsType::AFC);
         REQUIRE(backend.get_current_tool() == -1);
         REQUIRE(backend.get_current_slot() == -1);
         REQUIRE_FALSE(backend.is_filament_loaded());
-        REQUIRE(backend.get_current_action() == AmsAction::IDLE);
+        REQUIRE(backend.get_current_action() == helix::AmsAction::IDLE);
         REQUIRE_FALSE(backend.is_running());
     }
     SECTION("HappyHare") {
         helix::AmsBackendHappyHare backend(nullptr, nullptr);
-        REQUIRE(backend.get_type() == AmsType::HAPPY_HARE);
+        REQUIRE(backend.get_type() == helix::AmsType::HAPPY_HARE);
         REQUIRE(backend.get_current_tool() == -1);
         REQUIRE(backend.get_current_slot() == -1);
         REQUIRE_FALSE(backend.is_filament_loaded());
-        REQUIRE(backend.get_current_action() == AmsAction::IDLE);
+        REQUIRE(backend.get_current_action() == helix::AmsAction::IDLE);
         REQUIRE_FALSE(backend.is_running());
     }
     SECTION("ToolChanger") {
         helix::AmsBackendToolChanger backend(nullptr, nullptr);
-        REQUIRE(backend.get_type() == AmsType::TOOL_CHANGER);
+        REQUIRE(backend.get_type() == helix::AmsType::TOOL_CHANGER);
         REQUIRE(backend.get_current_tool() == -1);
         REQUIRE(backend.get_current_slot() == -1);
         REQUIRE_FALSE(backend.is_filament_loaded());
-        REQUIRE(backend.get_current_action() == AmsAction::IDLE);
+        REQUIRE(backend.get_current_action() == helix::AmsAction::IDLE);
         REQUIRE_FALSE(backend.is_running());
     }
 }

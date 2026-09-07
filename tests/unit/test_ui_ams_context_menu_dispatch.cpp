@@ -87,10 +87,10 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams dispatch: EJECT reaches the backend",
     auto* backend = static_cast<helix::AmsBackendMock*>(helix::AmsState::instance().get_backend());
     REQUIRE(backend != nullptr);
 
-    SlotInfo info;
+    helix::SlotInfo info;
     info.slot_index = 1;
     info.material = "PLA";
-    info.status = SlotStatus::AVAILABLE;
+    info.status = helix::SlotStatus::AVAILABLE;
     backend->set_slot_info(1, info);
     helix::AmsState::instance().sync_from_backend();
 

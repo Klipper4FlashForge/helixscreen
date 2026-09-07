@@ -108,10 +108,10 @@ TEST_CASE("Toolchanger reports only the carriage tool actively loaded",
 
     // The per-slot stamp agrees with the aggregate, so a future opt-in cannot
     // silently blank the active-tool highlight.
-    CHECK(backend.get_slot_info(2).status == SlotStatus::LOADED);
-    CHECK(backend.get_slot_info(0).status == SlotStatus::AVAILABLE);
-    CHECK(backend.get_slot_info(1).status == SlotStatus::AVAILABLE);
-    CHECK(backend.get_slot_info(3).status == SlotStatus::AVAILABLE);
+    CHECK(backend.get_slot_info(2).status == helix::SlotStatus::LOADED);
+    CHECK(backend.get_slot_info(0).status == helix::SlotStatus::AVAILABLE);
+    CHECK(backend.get_slot_info(1).status == helix::SlotStatus::AVAILABLE);
+    CHECK(backend.get_slot_info(3).status == helix::SlotStatus::AVAILABLE);
 }
 
 TEST_CASE("Toolchanger with no tool on the carriage reports nothing loaded",
@@ -127,7 +127,7 @@ TEST_CASE("Toolchanger with no tool on the carriage reports nothing loaded",
     for (int i = 0; i < 4; ++i) {
         CAPTURE(i);
         CHECK_FALSE(backend.slot_is_actively_loaded(i));
-        CHECK(backend.get_slot_info(i).status == SlotStatus::AVAILABLE);
+        CHECK(backend.get_slot_info(i).status == helix::SlotStatus::AVAILABLE);
     }
 }
 
@@ -135,14 +135,14 @@ TEST_CASE("Toolchanger moves the load stamp on a tool change", "[ams][toolchange
     ToolChangerLoadHelper backend(4);
     backend.feed(json{{"toolchanger", {{"tool_number", 0}}}});
     REQUIRE(backend.slot_is_actively_loaded(0));
-    REQUIRE(backend.get_slot_info(0).status == SlotStatus::LOADED);
+    REQUIRE(backend.get_slot_info(0).status == helix::SlotStatus::LOADED);
 
     backend.feed(json{{"toolchanger", {{"tool_number", 3}}}});
 
     CHECK(backend.slot_is_actively_loaded(3));
-    CHECK(backend.get_slot_info(3).status == SlotStatus::LOADED);
+    CHECK(backend.get_slot_info(3).status == helix::SlotStatus::LOADED);
     CHECK_FALSE(backend.slot_is_actively_loaded(0));
-    CHECK(backend.get_slot_info(0).status == SlotStatus::AVAILABLE);
+    CHECK(backend.get_slot_info(0).status == helix::SlotStatus::AVAILABLE);
 }
 
 TEST_CASE("Toolchanger out-of-range slots are false, not a crash", "[ams][toolchanger][1199]") {
@@ -169,11 +169,11 @@ TEST_CASE("Toolchanger with mounted true on every tool still names one loaded",
     backend.feed(status);
 
     CHECK(backend.slot_is_actively_loaded(1));
-    CHECK(backend.get_slot_info(1).status == SlotStatus::LOADED);
+    CHECK(backend.get_slot_info(1).status == helix::SlotStatus::LOADED);
     for (int i : {0, 2, 3}) {
         CAPTURE(i);
         CHECK_FALSE(backend.slot_is_actively_loaded(i));
-        CHECK(backend.get_slot_info(i).status == SlotStatus::AVAILABLE);
+        CHECK(backend.get_slot_info(i).status == helix::SlotStatus::AVAILABLE);
         CHECK_FALSE(backend.can_unload_from_toolhead(i));
     }
 }
@@ -188,7 +188,7 @@ TEST_CASE("Toolchanger tool objects alone never name a loaded tool", "[ams][tool
     for (int i = 0; i < 4; ++i) {
         CAPTURE(i);
         CHECK_FALSE(backend.slot_is_actively_loaded(i));
-        CHECK(backend.get_slot_info(i).status == SlotStatus::AVAILABLE);
+        CHECK(backend.get_slot_info(i).status == helix::SlotStatus::AVAILABLE);
     }
 }
 
@@ -199,11 +199,11 @@ TEST_CASE("Toolchanger keeps the carriage tool loaded across a tool-only delta",
     // the tool the carriage frame named.
     ToolChangerLoadHelper backend(4);
     backend.feed(json{{"toolchanger", {{"tool_number", 2}}}});
-    REQUIRE(backend.get_slot_info(2).status == SlotStatus::LOADED);
+    REQUIRE(backend.get_slot_info(2).status == helix::SlotStatus::LOADED);
 
     backend.feed(ToolChangerLoadHelper::every_tool_mounted(4, /*mounted=*/false));
 
-    CHECK(backend.get_slot_info(2).status == SlotStatus::LOADED);
+    CHECK(backend.get_slot_info(2).status == helix::SlotStatus::LOADED);
     CHECK(backend.slot_is_actively_loaded(2));
     CHECK(backend.can_unload_from_toolhead(2));
 }

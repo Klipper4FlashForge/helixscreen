@@ -56,6 +56,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsAction;
+using helix::AmsSystemInfo;
+using helix::AmsType;
+using helix::PathTopology;
 using helix::ToolState;
 using helix::ToolTopology;
 using TA = helix::ui::FilamentPanelTestAccess;

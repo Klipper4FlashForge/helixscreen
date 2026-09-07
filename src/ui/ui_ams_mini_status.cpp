@@ -181,7 +181,7 @@ struct SlotBarData {
     bool present = false;                           // Filament present in slot
     bool loaded = false;                            // Filament loaded to toolhead
     bool has_error = false;                         // Slot is in error/blocked state
-    SlotError::Severity severity = SlotError::INFO; // Error severity level
+    helix::SlotError::Severity severity = helix::SlotError::INFO; // Error severity level
 };
 
 /**
@@ -1388,7 +1388,7 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
     data->slot_count = slot_count;
 
     // Get multi-unit info from system info
-    AmsSystemInfo info = backend->get_system_info();
+    helix::AmsSystemInfo info = backend->get_system_info();
     data->unit_count = static_cast<int>(info.units.size());
     for (int u = 0; u < data->unit_count && u < 8; ++u) {
         data->unit_rows[u].first_slot = info.units[u].first_slot_global_index;
@@ -1405,7 +1405,7 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
     // slot_count) so the wide spool view sees every lane on multi-unit systems.
     data->spool_cells.assign(slot_count, SpoolCellData{});
     for (int i = 0; i < slot_count; ++i) {
-        SlotInfo slot = backend->get_slot_info(i);
+        helix::SlotInfo slot = backend->get_slot_info(i);
         // Fill is read from this slots_version snapshot on purpose. This widget
         // rebuilds all bars/cells wholesale on every sync; a per-slot fill
         // subject observer (as in the ams_slot widget) would race that rebuild
@@ -1439,8 +1439,8 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
             slot_bar->fill_pct = fill_pct;
             slot_bar->present = slot.is_present();
             slot_bar->loaded = active;
-            slot_bar->has_error = (slot.status == SlotStatus::BLOCKED || slot.error.has_value());
-            slot_bar->severity = slot.error.has_value() ? slot.error->severity : SlotError::INFO;
+            slot_bar->has_error = (slot.status == helix::SlotStatus::BLOCKED || slot.error.has_value());
+            slot_bar->severity = slot.error.has_value() ? slot.error->severity : helix::SlotError::INFO;
         }
 
         // Spool-mode cache (uncapped).

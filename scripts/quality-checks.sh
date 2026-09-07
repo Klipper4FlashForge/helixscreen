@@ -1661,8 +1661,11 @@ if [ -f "scripts/check_namespace_compliance.py" ]; then
   # forward declarations went with the RunoutScopeTestAccess it shares with
   # the Snapmaker backend). 2297 -> 2290 is ams_error.h (AmsResult, AmsError,
   # AmsErrorHelper and the result-to-string helper) and ams_step_operation.h
-  # following the backends into helix::.
-  if python3 scripts/check_namespace_compliance.py --max-allowed 2290 --summary >/tmp/namespace_check.out 2>&1; then
+  # following the backends into helix::. 2290 -> 2242 is ams_types.h: every
+  # AMS value type, enum, constant and inline helper it declared at global
+  # scope, plus the SlotInfo and DryingPreset forward declarations that
+  # followed them.
+  if python3 scripts/check_namespace_compliance.py --max-allowed 2242 --summary >/tmp/namespace_check.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/namespace_check.out

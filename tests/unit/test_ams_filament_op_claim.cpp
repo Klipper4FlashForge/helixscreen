@@ -102,7 +102,7 @@ template <typename Backend> class ClaimDouble : public Backend {
     bool hook_throws{false};
 
     /// Drive the two things the gate consults, without a live Moonraker.
-    void set_action_for_test(AmsAction action) {
+    void set_action_for_test(helix::AmsAction action) {
         std::lock_guard<std::mutex> lock(this->mutex_);
         this->system_info_.action = action;
     }
@@ -160,7 +160,7 @@ template <typename Backend> class ClaimDouble : public Backend {
 
         if (publish_busy_action) {
             std::lock_guard<std::mutex> lock(this->mutex_);
-            this->system_info_.action = AmsAction::LOADING;
+            this->system_info_.action = helix::AmsAction::LOADING;
         }
 
         if (hook_throws) {
@@ -222,7 +222,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: a second op cannot enter while 
     // pre-claim gate has nothing to refuse on and would wave the contender
     // straight through.
     backend->wait_for_first_entrant();
-    CHECK(backend->get_current_action() == AmsAction::IDLE);
+    CHECK(backend->get_current_action() == helix::AmsAction::IDLE);
 
     const AmsError contender = backend->load_filament(1);
 
@@ -365,9 +365,9 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: the claim is released on every 
 
     SECTION("a backend that reports busy is refused without claiming") {
         auto backend = headless<helix::AmsBackendHappyHare>();
-        backend->set_action_for_test(AmsAction::UNLOADING);
+        backend->set_action_for_test(helix::AmsAction::UNLOADING);
         CHECK(backend->load_filament(0).result == AmsResult::BUSY);
-        backend->set_action_for_test(AmsAction::IDLE);
+        backend->set_action_for_test(helix::AmsAction::IDLE);
         CHECK(backend->load_filament(0).success());
     }
 }
@@ -389,7 +389,7 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: refusal precedence is unchanged
 
     SECTION("busy outranks print-active") {
         auto backend = with_api<helix::AmsBackendHappyHare>();
-        backend->set_action_for_test(AmsAction::LOADING);
+        backend->set_action_for_test(helix::AmsAction::LOADING);
         set_print_state(helix::PrintJobState::PRINTING);
         const AmsError err = backend->load_filament(0);
         CHECK(err.result == AmsResult::BUSY);
@@ -398,9 +398,9 @@ TEST_CASE_METHOD(ClaimFixture, "AMS filament op: refusal precedence is unchanged
 
     SECTION("an in-flight claim reports busy the same way an AMS-reported one does") {
         auto backend = headless<helix::AmsBackendHappyHare>();
-        backend->set_action_for_test(AmsAction::LOADING);
+        backend->set_action_for_test(helix::AmsAction::LOADING);
         const AmsError from_state = backend->load_filament(0);
-        backend->set_action_for_test(AmsAction::IDLE);
+        backend->set_action_for_test(helix::AmsAction::IDLE);
 
         backend->block_first_entrant.store(true);
         std::thread first([&] { (void)backend->load_filament(0); });

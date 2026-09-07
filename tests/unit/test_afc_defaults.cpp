@@ -252,5 +252,5 @@ TEST_CASE("AFC default capabilities are correct", "[defaults][afc]") {
     REQUIRE(caps.supports_endless_spool);
     REQUIRE(caps.supports_bypass);
     REQUIRE(caps.supports_purge);
-    REQUIRE(caps.tip_method == TipMethod::CUT);
+    REQUIRE(caps.tip_method == helix::TipMethod::CUT);
 }

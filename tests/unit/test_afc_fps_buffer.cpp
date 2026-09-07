@@ -27,8 +27,8 @@
 
 namespace {
 
-BufferHealth fps_buffer(float smoothed, float set_point) {
-    BufferHealth h;
+helix::BufferHealth fps_buffer(float smoothed, float set_point) {
+    helix::BufferHealth h;
     h.smoothed_fps = smoothed;
     h.fps_value = smoothed;
     h.fps_set_point = set_point;
@@ -44,13 +44,13 @@ TEST_CASE("afc_fps: a switched buffer is untouched", "[ams][afc][fps]") {
     // The BoxTurtle case, and every AFC install before FPS existed. No fields,
     // no bias, and supports_sync_feedback_visualization() gates on exactly this
     // sentinel — so nothing about those printers changes.
-    BufferHealth switched;
+    helix::BufferHealth switched;
     CHECK_FALSE(switched.has_fps());
     CHECK(switched.afc_fps_to_bias() == kNoData);
 
     // A half-populated frame is still not FPS data. Moonraker forwards only
     // changed keys, so a status update carrying one of the three is normal.
-    BufferHealth partial;
+    helix::BufferHealth partial;
     partial.smoothed_fps = 0.5f;
     partial.fps_reported = true;
     CHECK_FALSE(partial.has_fps()); // set_point never arrived

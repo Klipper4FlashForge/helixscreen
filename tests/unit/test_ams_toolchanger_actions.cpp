@@ -25,6 +25,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsAction;
+using helix::AmsType;
+using helix::PathTopology;
+
 // RAII helper to set up fast timing and restore on exit
 class FastTimingScopeTC {
   public:

@@ -524,7 +524,7 @@ void SpoolmanPanel::set_active_spool(int spool_id) {
     // S1 server set gated on the round-trip, S5 store subset with the
     // emptiness predicate, S6 identity-cache invalidation of the replaced
     // link (prestonbrown/helixscreen#1283).
-    SlotInfo slot;
+    helix::SlotInfo slot;
     slot.slot_index = -2;
     slot.global_index = -2;
     apply_spool_to_slot(slot, *found);

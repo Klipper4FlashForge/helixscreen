@@ -45,19 +45,19 @@ lv_color_t blend_color(lv_color_t c1, lv_color_t c2, float factor) {
 // Severity & Error Helpers
 // ============================================================================
 
-lv_color_t severity_color(SlotError::Severity severity) {
+lv_color_t severity_color(helix::SlotError::Severity severity) {
     switch (severity) {
-    case SlotError::ERROR:
+    case helix::SlotError::ERROR:
         return theme_manager_get_color("danger");
-    case SlotError::WARNING:
+    case helix::SlotError::WARNING:
         return theme_manager_get_color("warning");
     default:
         return theme_manager_get_color("text_muted");
     }
 }
 
-SlotError::Severity worst_unit_severity(const AmsUnit& unit) {
-    SlotError::Severity worst = SlotError::INFO;
+helix::SlotError::Severity worst_unit_severity(const helix::AmsUnit& unit) {
+    helix::SlotError::Severity worst = helix::SlotError::INFO;
     for (const auto& slot : unit.slots) {
         if (slot.error.has_value() && slot.error->severity > worst) {
             worst = slot.error->severity;
@@ -70,7 +70,7 @@ SlotError::Severity worst_unit_severity(const AmsUnit& unit) {
 // Data Helpers
 // ============================================================================
 
-int fill_percent_from_slot(const SlotInfo& slot, int min_pct) {
+int fill_percent_from_slot(const helix::SlotInfo& slot, int min_pct) {
     // Canonical fill semantics (SlotInfo::display_fill_pct): real ratio when
     // both weights are known, 100% when only metadata is present, 0 for an
     // empty/ghost lane, and -1 when there is no data at all. -1 is propagated
@@ -97,7 +97,7 @@ int32_t calc_bar_width(int32_t container_width, int slot_count, int32_t gap, int
 // Presentation Helpers
 // ============================================================================
 
-std::string get_unit_display_name(const AmsUnit& unit, int unit_index) {
+std::string get_unit_display_name(const helix::AmsUnit& unit, int unit_index) {
     // Prefer display_name (short, pretty) over internal name
     std::string raw;
     if (!unit.display_name.empty()) {
@@ -231,7 +231,7 @@ lv_obj_t* create_error_badge(lv_obj_t* parent, int32_t size) {
     return badge;
 }
 
-void update_error_badge(lv_obj_t* badge, bool has_error, SlotError::Severity severity,
+void update_error_badge(lv_obj_t* badge, bool has_error, helix::SlotError::Severity severity,
                         bool animate) {
     if (!badge) {
         return;
@@ -341,7 +341,7 @@ void style_slot_bar(const SlotColumn& col, const BarStyleParams& params, int32_t
 // Logo Helpers
 // ============================================================================
 
-void apply_logo(lv_obj_t* image, const AmsUnit& unit, const AmsSystemInfo& info) {
+void apply_logo(lv_obj_t* image, const helix::AmsUnit& unit, const helix::AmsSystemInfo& info) {
     if (!image) {
         return;
     }
@@ -377,7 +377,7 @@ void apply_logo(lv_obj_t* image, const std::string& type_name) {
 // System Tool Layout
 // ============================================================================
 
-SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const helix::AmsBackend* backend) {
+SystemToolLayout compute_system_tool_layout(const helix::AmsSystemInfo& info, const helix::AmsBackend* backend) {
     SystemToolLayout result;
     int total_physical = 0;
 
@@ -408,7 +408,7 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const hel
         const auto& unit = info.units[i];
 
         // Determine topology — prefer backend query, fall back to unit struct
-        PathTopology topo = unit.topology;
+        helix::PathTopology topo = unit.topology;
         if (backend) {
             topo = backend->get_unit_topology(i);
         }
@@ -431,7 +431,7 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const hel
         utl.min_virtual_tool = min_tool;
         utl.hub_tool_label = unit.hub_tool_label;
 
-        if (topo == PathTopology::MIXED) {
+        if (topo == helix::PathTopology::MIXED) {
             // MIXED: direct lanes each get their own nozzle position,
             // hub lanes share one nozzle position regardless of mapped_tool.
             // Count = number of direct lanes + 1 per hub group.
@@ -449,7 +449,7 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const hel
                                   ? unit.lane_is_hub_routed[s]
                                   : false;
                 int gi = unit.first_slot_global_index + s;
-                auto slot = backend ? backend->get_slot_info(gi) : SlotInfo{};
+                auto slot = backend ? backend->get_slot_info(gi) : helix::SlotInfo{};
                 int tool = (slot.mapped_tool >= 0) ? slot.mapped_tool : gi;
 
                 if (is_hub) {
@@ -484,7 +484,7 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const hel
             }
 
             total_physical += utl.tool_count;
-        } else if (topo != PathTopology::PARALLEL) {
+        } else if (topo != helix::PathTopology::PARALLEL) {
             // HUB/LINEAR: all lanes converge to a single physical nozzle.
             // Multiple HUB units feeding one extruder (e.g. a BoxTurtle and a
             // Claymore both on e0) share one physical nozzle.
@@ -680,7 +680,7 @@ bool layout_has_extruder_identity(const SystemToolLayout& layout) {
         [](const std::string& name) { return helix::tool_number_for_extruder(name).has_value(); });
 }
 
-ToolBadgeLabels compute_tool_badge_labels(const SystemToolLayout& layout, const AmsSystemInfo& info,
+ToolBadgeLabels compute_tool_badge_labels(const SystemToolLayout& layout, const helix::AmsSystemInfo& info,
                                           int current_slot, int active_physical_tool) {
     ToolBadgeLabels out;
 
@@ -705,7 +705,7 @@ ToolBadgeLabels compute_tool_badge_labels(const SystemToolLayout& layout, const 
     // loaded, not "T4").
     if (active_physical_tool >= 0 && active_physical_tool < static_cast<int>(out.numbers.size()) &&
         current_slot >= 0) {
-        const SlotInfo* active_slot_info = info.get_slot_global(current_slot);
+        const helix::SlotInfo* active_slot_info = info.get_slot_global(current_slot);
         if (active_slot_info && active_slot_info->mapped_tool >= 0) {
             out.numbers[active_physical_tool] = active_slot_info->mapped_tool;
         }
@@ -785,7 +785,7 @@ SpoolVisual create_spool_visual(lv_obj_t* container, int32_t spool_size) {
             lv_obj_set_style_min_height(canvas, spool_size, LV_PART_MAIN);
             lv_obj_set_style_max_width(canvas, spool_size, LV_PART_MAIN);
             lv_obj_set_style_max_height(canvas, spool_size, LV_PART_MAIN);
-            ui_spool_canvas_set_color(canvas, lv_color_hex(AMS_DEFAULT_SLOT_COLOR));
+            ui_spool_canvas_set_color(canvas, lv_color_hex(helix::AMS_DEFAULT_SLOT_COLOR));
             ui_spool_canvas_set_fill_level(canvas, 1.0f);
             lv_obj_add_flag(canvas, LV_OBJ_FLAG_EVENT_BUBBLE);
             sv.canvas = canvas;
@@ -810,7 +810,7 @@ SpoolVisual create_spool_visual(lv_obj_t* container, int32_t spool_size) {
         lv_obj_align(outer_ring, LV_ALIGN_CENTER, 0, 0);
         lv_obj_set_style_radius(outer_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
         lv_obj_set_style_bg_color(outer_ring,
-                                  ams_draw::darken_color(lv_color_hex(AMS_DEFAULT_SLOT_COLOR), 50),
+                                  ams_draw::darken_color(lv_color_hex(helix::AMS_DEFAULT_SLOT_COLOR), 50),
                                   LV_PART_MAIN);
         lv_obj_set_style_bg_opa(outer_ring, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_border_width(outer_ring, 2, LV_PART_MAIN);
@@ -825,7 +825,7 @@ SpoolVisual create_spool_visual(lv_obj_t* container, int32_t spool_size) {
         lv_obj_set_size(filament_ring, filament_ring_size, filament_ring_size);
         lv_obj_align(filament_ring, LV_ALIGN_CENTER, 0, 0);
         lv_obj_set_style_radius(filament_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-        lv_obj_set_style_bg_color(filament_ring, lv_color_hex(AMS_DEFAULT_SLOT_COLOR),
+        lv_obj_set_style_bg_color(filament_ring, lv_color_hex(helix::AMS_DEFAULT_SLOT_COLOR),
                                   LV_PART_MAIN);
         lv_obj_set_style_bg_opa(filament_ring, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_border_width(filament_ring, 0, LV_PART_MAIN);

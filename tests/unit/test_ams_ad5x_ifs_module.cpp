@@ -152,7 +152,7 @@ TEST_CASE("PrinterDiscovery detects the standalone IFS module objects",
             json::array({"toolhead", "extruder", "save_variables", "ifs", "ifs_materials",
                          "filament_switch_sensor toolhead", "filament_switch_sensor lane1",
                          "filament_switch_sensor lane2"}));
-        CHECK(hw.mmu_type() == AmsType::AD5X_IFS);
+        CHECK(hw.mmu_type() == helix::AmsType::AD5X_IFS);
         // The objects are state, not sensors — they must not land in the
         // sensor list FilamentSensorManager reads.
         const auto& sensors = hw.filament_sensor_names();
@@ -162,19 +162,19 @@ TEST_CASE("PrinterDiscovery detects the standalone IFS module objects",
     SECTION("ifs_materials alone — IFS board unplugged but registry readable") {
         helix::PrinterDiscovery hw;
         hw.parse_objects(json::array({"toolhead", "save_variables", "ifs_materials"}));
-        CHECK(hw.mmu_type() == AmsType::AD5X_IFS);
+        CHECK(hw.mmu_type() == helix::AmsType::AD5X_IFS);
     }
     SECTION("a real MMU outranks the module objects") {
         helix::PrinterDiscovery hw;
         hw.parse_objects(
             json::array({"toolhead", "save_variables", "mmu", "ifs", "ifs_materials"}));
-        CHECK(hw.mmu_type() == AmsType::HAPPY_HARE);
+        CHECK(hw.mmu_type() == helix::AmsType::HAPPY_HARE);
     }
     SECTION("no module objects, no detection") {
         helix::PrinterDiscovery hw;
         // A stock-named sensor alone must NOT read as an IFS printer.
         hw.parse_objects(json::array({"toolhead", "extruder", "filament_switch_sensor toolhead"}));
-        CHECK(hw.mmu_type() == AmsType::NONE);
+        CHECK(hw.mmu_type() == helix::AmsType::NONE);
     }
 }
 
@@ -553,14 +553,14 @@ TEST_CASE("AD5X IFS module ifs_loaded is the seated authority", "[ams][ad5x_ifs]
 TEST_CASE("AD5X IFS module driver_error surfaces as ERROR", "[ams][ad5x_ifs][ifs_module]") {
     AmsBackendAd5xIfs backend(nullptr, nullptr);
     Ad5xIfsTestAccess::handle_status(backend, module_ifs_frame(0, {}, "ready"));
-    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == helix::AmsAction::IDLE);
 
     Ad5xIfsTestAccess::handle_status(backend, json{{"ifs",
                                                     {{"activity", "driver_error"},
                                                      {"error", "stepper driver fault: overcurrent"},
                                                      {"active_channel", 0},
                                                      {"loaded_channels", json::array()}}}});
-    CHECK(Ad5xIfsTestAccess::action(backend) == AmsAction::ERROR);
+    CHECK(Ad5xIfsTestAccess::action(backend) == helix::AmsAction::ERROR);
     CHECK(backend.get_system_info().operation_detail.find("overcurrent") != std::string::npos);
 }
 
@@ -571,13 +571,13 @@ TEST_CASE("AD5X IFS module activity tracks an externally-started op",
     // A slicer's T1 or a console IFS_LOAD sets no tracker and installs no ack
     // callback here — the board's activity is the only signal it produces.
     Ad5xIfsTestAccess::handle_status(backend, module_ifs_frame(0, {}, "loading"));
-    CHECK(Ad5xIfsTestAccess::action(backend) == AmsAction::LOADING);
+    CHECK(Ad5xIfsTestAccess::action(backend) == helix::AmsAction::LOADING);
 
     Ad5xIfsTestAccess::handle_status(backend, module_ifs_frame(0, {}, "ready"));
-    CHECK(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+    CHECK(Ad5xIfsTestAccess::action(backend) == helix::AmsAction::IDLE);
 
     Ad5xIfsTestAccess::handle_status(backend, module_ifs_frame(0, {}, "unloading"));
-    CHECK(Ad5xIfsTestAccess::action(backend) == AmsAction::UNLOADING);
+    CHECK(Ad5xIfsTestAccess::action(backend) == helix::AmsAction::UNLOADING);
 }
 
 TEST_CASE("AD5X IFS module ops dispatch the module's macros", "[ams][ad5x_ifs][ifs_module]") {
@@ -634,7 +634,7 @@ TEST_CASE("AD5X IFS set_slot_info writes through IFS_SET_MATERIAL on the module"
     Ad5xIfsTestAccess::set_running(backend, true);
     Ad5xIfsTestAccess::handle_status(backend, module_ifs_frame(0, {1, 2, 3, 4}));
 
-    SlotInfo info;
+    helix::SlotInfo info;
     info.color_rgb = 0x7EC8E3;
     info.material = "PLA";
 
