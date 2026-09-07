@@ -34,6 +34,7 @@
 #include "../test_helpers/camera_widget_test_access.h"
 #include "src/ui/panel_widgets/camera_widget.h"
 #endif
+#include "../test_helpers/network_widget_test_access.h"
 #include "../test_helpers/print_stats_test_access.h"
 #include "../test_helpers/shutdown_widget_test_access.h"
 #include "../test_helpers/tool_switcher_test_access.h"
@@ -42,6 +43,7 @@
 #include "print_lifecycle_state.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
+#include "src/ui/panel_widgets/network_widget.h"
 #include "src/ui/panel_widgets/nozzle_temps_widget.h"
 #include "src/ui/panel_widgets/print_stats_widget.h"
 #include "src/ui/panel_widgets/shutdown_widget.h"
@@ -805,6 +807,64 @@ TEST_CASE_METHOD(HomeWidgetTeardownFixture,
     auto widget = std::make_unique<ShutdownWidget>(nullptr);
     lv_obj_t* page = make_page();
     lv_obj_t* tile = make_tile(page, "panel_widget_shutdown");
+    widget->attach(tile, test_screen());
+    UpdateQueue::instance().drain();
+
+    REQUIRE(delete_hook_installed(tile, widget.get()));
+
+    const void* dead = widget.get();
+    widget.reset();
+    CHECK_FALSE(delete_hook_installed(tile, dead));
+
+    lv_obj_delete(tile);
+    UpdateQueue::instance().drain();
+    SUCCEED("tile torn down after the widget without touching freed memory");
+}
+
+// --------------------------------------------------------------------------
+// NetworkWidget
+//
+// The one here that needs more than pointer drops. Its signal-poll timer holds
+// `this` and the widget outlives the tree on this path, so the callback's own
+// `self` check still passes and a null root does not stop it. The body writes a
+// module-owned static subject rather than the tree, so it is not a UAF by
+// itself — but it keeps polling a screen that is gone, and at process teardown
+// that subject dies first.
+// --------------------------------------------------------------------------
+
+TEST_CASE_METHOD(HomeWidgetTeardownFixture,
+                 "network drops its cached root when the page tree is deleted raw",
+                 "[network_widget][teardown][uaf]") {
+    auto widget = std::make_unique<NetworkWidget>();
+    lv_obj_t* page = make_page();
+    lv_obj_t* tile = make_tile(page, "panel_widget_network");
+    widget->attach(tile, test_screen());
+    UpdateQueue::instance().drain();
+
+    // Or the null reads below would prove nothing.
+    REQUIRE(NetworkWidgetTestAccess::widget_obj(*widget) == tile);
+
+    lv_obj_delete(page);
+    UpdateQueue::instance().drain();
+
+    CHECK(NetworkWidgetTestAccess::widget_obj(*widget) == nullptr);
+    CHECK(NetworkWidgetTestAccess::parent_screen(*widget) == nullptr);
+    // Whether the poll timer was ever started depends on the detected network,
+    // so this pins the invariant rather than the transition: nothing may still
+    // be polling once the tree is gone.
+    CHECK(NetworkWidgetTestAccess::signal_poll_timer(*widget) == nullptr);
+
+    // The path that would have written into the freed tile.
+    widget->detach();
+    SUCCEED("detach after a raw page delete touched no freed memory");
+}
+
+TEST_CASE_METHOD(HomeWidgetTeardownFixture,
+                 "network uninstalls its delete hook when destroyed before its tree",
+                 "[network_widget][teardown][uaf]") {
+    auto widget = std::make_unique<NetworkWidget>();
+    lv_obj_t* page = make_page();
+    lv_obj_t* tile = make_tile(page, "panel_widget_network");
     widget->attach(tile, test_screen());
     UpdateQueue::instance().drain();
 

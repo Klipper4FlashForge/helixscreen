@@ -91,6 +91,8 @@ void NetworkWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     // Get WiFiManager for signal strength queries
     wifi_manager_ = get_wifi_manager();
 
+    install_delete_hook(widget_obj_);
+
     // Initialize EthernetManager for Ethernet status detection
     ethernet_manager_ = std::make_unique<EthernetManager>();
 
@@ -137,6 +139,24 @@ void NetworkWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
 // the list LVGL is currently walking (#750, #751). lv_timer_cancel_safe() also
 // self-guards on lv_is_initialized(), which is what makes it safe from the
 // destructor after lv_deinit().
+void NetworkWidget::on_hooked_root_deleted() {
+    // Runs inside LVGL's delete event: pointer drops, timer stop, guard expiry.
+    //
+    // The poll timer is the reason this needs more than pointer drops. It
+    // carries `this`, and the widget outlives the tree on this path, so its
+    // `self` check still passes and nulling the root does not stop it. Its body
+    // writes a module-owned static subject rather than the tree, so it is not a
+    // use-after-free on its own — but it keeps polling a screen that is gone,
+    // and at process teardown that subject dies before the timer does.
+    // lv_timer_cancel_safe() neuters rather than unlinks, which is what makes
+    // stopping it safe from inside a delete event.
+    lifetime_.invalidate();
+    cancel_signal_poll_timer();
+    network_icon_state_ = nullptr;
+    widget_obj_ = nullptr;
+    parent_screen_ = nullptr;
+}
+
 void NetworkWidget::cancel_signal_poll_timer() {
     if (!signal_poll_timer_) {
         return;
@@ -148,6 +168,7 @@ void NetworkWidget::cancel_signal_poll_timer() {
 void NetworkWidget::detach() {
     // Expire pending async ethernet callbacks before tearing down subjects.
     lifetime_.invalidate();
+    uninstall_delete_hook();
 
     cancel_signal_poll_timer();
 
