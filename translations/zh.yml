@@ -88,6 +88,7 @@ translations:
   = Loosen: = 松开
   = Tighten: = 拧紧
   A: 辅
+  A backup of %s is created before applying: '应用前会创建 %s 的备份'
   A picture of your printer: 打印机的图片
   ABS: ABS
   ACCELEROMETERS: 加速度计
@@ -513,6 +514,7 @@ translations:
   Completed {}m ago: '{} 分钟前完成'
   Computing calibration...: 正在计算校准...
   Config Dir: 配置目录
+  Config Edit Failed: '配置编辑失败'
   Config-defined (read-only): 配置定义（只读）
   Configuration added successfully.: 配置添加成功。
   Configuration already present.: 配置已存在。
@@ -673,9 +675,11 @@ translations:
   Define macros in your printer.cfg: 在 printer.cfg 中定义宏
   Delete: 删除
   Delete File?: 删除文件？
+  Delete Print Record: '删除打印记录'
   Delete Profile?: 删除配置？
   Delete Spool?: 删除料盘？
   Delete Video: 删除视频
+  Delete the history record for {}?: '删除 {} 的历史记录？'
   Delete {}?: 删除 {}?
   'Delta:': 差值：
   Density: 密度
@@ -1637,6 +1641,7 @@ translations:
   No temperature sensors detected: '未检测到温度传感器'
   No timelapse videos found: 未找到延时视频
   No vendors found: 未找到供应商
+  No video player installed - showing the timelapse library: '未安装视频播放器 – 显示延时摄影库'
   ? "No webcam detected.\nA webcam is required for timelapse."
   : "未检测到摄像头。\n延时摄影需要摄像头。"
   No width sensor detected: '未检测到宽度传感器'
@@ -1926,6 +1931,7 @@ translations:
   Printer doesn't expose the expected service — wrong device?: 打印机未提供预期的服务 — 设备是否有误？
   Printer hardware detected: 检测到打印机硬件
   Printer image set to auto-detect: 打印机图片已设为自动检测
+  Printer is busy - {} stays in the queue: '打印机忙碌中 – {} 保留在队列中'
   Printer is not paired — pair it first: 打印机未配对 — 请先进行配对
   Printer name: 打印机名称
   Printer not ready: 打印机未就绪

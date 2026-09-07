@@ -88,6 +88,7 @@
   <translation tag="= Loosen" it="= Allentare"/>
   <translation tag="= Tighten" it="= Stringere"/>
   <translation tag="A" it="A"/>
+  <translation tag="A backup of %s is created before applying" it="Prima di applicare viene creato un backup di %s"/>
   <translation tag="A picture of your printer" it="Immagine della tua stampante"/>
   <translation tag="ABS" it="ABS"/>
   <translation tag="ACCELEROMETERS" it="ACCELEROMETRI"/>
@@ -509,6 +510,7 @@
   <translation tag="Completed {}m ago" it="Completato {} min fa"/>
   <translation tag="Computing calibration..." it="Calcolo calibrazione..."/>
   <translation tag="Config Dir" it="Dir configurazione"/>
+  <translation tag="Config Edit Failed" it="Modifica della configurazione non riuscita"/>
   <translation tag="Config-defined (read-only)" it="Definito nella configurazione (sola lettura)"/>
   <translation tag="Configuration added successfully." it="Configurazione aggiunta con successo."/>
   <translation tag="Configuration already present." it="Configurazione già presente."/>
@@ -664,9 +666,11 @@
   <translation tag="Define macros in your printer.cfg" it="Definire le macro nel proprio printer.cfg"/>
   <translation tag="Delete" it="Elimina"/>
   <translation tag="Delete File?" it="Eliminare file?"/>
+  <translation tag="Delete Print Record" it="Elimina record di stampa"/>
   <translation tag="Delete Profile?" it="Eliminare profilo?"/>
   <translation tag="Delete Spool?" it="Eliminare bobina?"/>
   <translation tag="Delete Video" it="Elimina video"/>
+  <translation tag="Delete the history record for {}?" it="Eliminare il record della cronologia di {}?"/>
   <translation tag="Delete {}?" it="Eliminare {}?"/>
   <translation tag="Delta:" it="Delta:"/>
   <translation tag="Density" it="Densità"/>
@@ -1597,6 +1601,7 @@
   <translation tag="No temperature sensors detected" it="Nessun sensore di temperatura rilevato"/>
   <translation tag="No timelapse videos found" it="Nessun video timelapse trovato"/>
   <translation tag="No vendors found" it="Nessun fornitore trovato"/>
+  <translation tag="No video player installed - showing the timelapse library" it="Nessun lettore video installato – viene mostrata la libreria timelapse"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." it="Nessuna webcam rilevata.&#10;Una webcam è necessaria per il timelapse."/>
   <translation tag="No width sensor detected" it="Nessun sensore di larghezza rilevato"/>
   <translation tag="None" it="Nessuno"/>
@@ -1876,6 +1881,7 @@
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" it="La stampante non espone il servizio previsto — dispositivo errato?"/>
   <translation tag="Printer hardware detected" it="Hardware stampante rilevato"/>
   <translation tag="Printer image set to auto-detect" it="Immagine stampante impostata su rilevamento auto"/>
+  <translation tag="Printer is busy - {} stays in the queue" it="La stampante è occupata – {} resta in coda"/>
   <translation tag="Printer is not paired — pair it first" it="La stampante non è associata — associala prima"/>
   <translation tag="Printer name" it="Nome stampante"/>
   <translation tag="Printer not ready" it="Stampante non pronta"/>

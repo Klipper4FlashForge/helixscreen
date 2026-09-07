@@ -93,6 +93,7 @@ translations:
   = Loosen: = Aflojar
   = Tighten: = Apretar
   A: A
+  A backup of %s is created before applying: 'Se crea una copia de seguridad de %s antes de aplicar'
   A picture of your printer: Una imagen de tu impresora
   ABS: ABS
   ACCELEROMETERS: ACELERÓMETROS
@@ -577,6 +578,7 @@ translations:
   Completed {}m ago: 'Completado hace {} min'
   Computing calibration...: Calculando calibración...
   Config Dir: Directorio de Configuración
+  Config Edit Failed: 'Error al editar la configuración'
   Config-defined (read-only): Definido en configuración (solo lectura)
   Configuration added successfully.: Configuración añadida correctamente.
   Configuration already present.: Configuración ya presente.
@@ -750,9 +752,11 @@ translations:
   Define macros in your printer.cfg: Defina macros en su printer.cfg
   Delete: Eliminar
   Delete File?: ¿Eliminar Archivo?
+  Delete Print Record: 'Eliminar registro de impresión'
   Delete Profile?: ¿Eliminar Perfil?
   Delete Spool?: ¿Eliminar bobina?
   Delete Video: Eliminar vídeo
+  Delete the history record for {}?: '¿Eliminar el registro del historial de {}?'
   Delete {}?: ¿Eliminar {}?
   'Delta:': 'Delta:'
   Density: Densidad
@@ -1791,6 +1795,7 @@ translations:
   No temperature sensors detected: 'No se detectaron sensores de temperatura'
   No timelapse videos found: No se encontraron videos timelapse
   No vendors found: No se encontraron proveedores
+  No video player installed - showing the timelapse library: 'No hay reproductor de vídeo instalado: se muestra la biblioteca de timelapse'
   ? "No webcam detected.\nA webcam is required for timelapse."
   : "No se detectó webcam.\nSe necesita webcam para timelapse."
   No width sensor detected: 'No se detectó sensor de ancho'
@@ -2097,6 +2102,7 @@ translations:
     el servicio esperado — ¿dispositivo equivocado?
   Printer hardware detected: Hardware de impresora detectado
   Printer image set to auto-detect: Imagen de impresora configurada en auto-detectar
+  Printer is busy - {} stays in the queue: 'La impresora está ocupada: {} permanece en la cola'
   Printer is not paired — pair it first: La impresora no está emparejada — empareja
     primero
   Printer name: Nombre de impresora

@@ -88,6 +88,7 @@
   <translation tag="= Loosen" en="= Loosen"/>
   <translation tag="= Tighten" en="= Tighten"/>
   <translation tag="A" en="A"/>
+  <translation tag="A backup of %s is created before applying" en="A backup of %s is created before applying"/>
   <translation tag="A picture of your printer" en="A picture of your printer"/>
   <translation tag="ABS" en="ABS"/>
   <translation tag="ACCELEROMETERS" en="ACCELEROMETERS"/>
@@ -509,6 +510,7 @@
   <translation tag="Completed {}m ago" en="Completed {}m ago"/>
   <translation tag="Computing calibration..." en="Computing calibration..."/>
   <translation tag="Config Dir" en="Config Dir"/>
+  <translation tag="Config Edit Failed" en="Config Edit Failed"/>
   <translation tag="Config-defined (read-only)" en="Config-defined (read-only)"/>
   <translation tag="Configuration added successfully." en="Configuration added successfully."/>
   <translation tag="Configuration already present." en="Configuration already present."/>
@@ -664,9 +666,11 @@
   <translation tag="Define macros in your printer.cfg" en="Define macros in your printer.cfg"/>
   <translation tag="Delete" en="Delete"/>
   <translation tag="Delete File?" en="Delete File?"/>
+  <translation tag="Delete Print Record" en="Delete Print Record"/>
   <translation tag="Delete Profile?" en="Delete Profile?"/>
   <translation tag="Delete Spool?" en="Delete Spool?"/>
   <translation tag="Delete Video" en="Delete Video"/>
+  <translation tag="Delete the history record for {}?" en="Delete the history record for {}?"/>
   <translation tag="Delete {}?" en="Delete {}?"/>
   <translation tag="Delta:" en="Delta:"/>
   <translation tag="Density" en="Density"/>
@@ -1597,6 +1601,7 @@
   <translation tag="No temperature sensors detected" en="No temperature sensors detected"/>
   <translation tag="No timelapse videos found" en="No timelapse videos found"/>
   <translation tag="No vendors found" en="No vendors found"/>
+  <translation tag="No video player installed - showing the timelapse library" en="No video player installed - showing the timelapse library"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." en="No webcam detected.&#10;A webcam is required for timelapse."/>
   <translation tag="No width sensor detected" en="No width sensor detected"/>
   <translation tag="None" en="None"/>
@@ -1876,6 +1881,7 @@
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" en="Printer doesn&apos;t expose the expected service — wrong device?"/>
   <translation tag="Printer hardware detected" en="Printer hardware detected"/>
   <translation tag="Printer image set to auto-detect" en="Printer image set to auto-detect"/>
+  <translation tag="Printer is busy - {} stays in the queue" en="Printer is busy - {} stays in the queue"/>
   <translation tag="Printer is not paired — pair it first" en="Printer is not paired — pair it first"/>
   <translation tag="Printer name" en="Printer name"/>
   <translation tag="Printer not ready" en="Printer not ready"/>

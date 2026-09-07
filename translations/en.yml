@@ -89,6 +89,7 @@ translations:
   = Loosen: = Loosen
   = Tighten: = Tighten
   A: A
+  A backup of %s is created before applying: A backup of %s is created before applying
   A picture of your printer: A picture of your printer
   ABS: ABS
   ACCELEROMETERS: ACCELEROMETERS
@@ -558,6 +559,7 @@ translations:
   Completed {}m ago: Completed {}m ago
   Computing calibration...: Computing calibration...
   Config Dir: Config Dir
+  Config Edit Failed: Config Edit Failed
   Config-defined (read-only): Config-defined (read-only)
   Configuration added successfully.: Configuration added successfully.
   Configuration already present.: Configuration already present.
@@ -725,9 +727,11 @@ translations:
   Define macros in your printer.cfg: Define macros in your printer.cfg
   Delete: Delete
   Delete File?: Delete File?
+  Delete Print Record: Delete Print Record
   Delete Profile?: Delete Profile?
   Delete Spool?: Delete Spool?
   Delete Video: Delete Video
+  Delete the history record for {}?: Delete the history record for {}?
   Delete {}?: Delete {}?
   'Delta:': 'Delta:'
   Density: Density
@@ -1748,6 +1752,7 @@ translations:
   No temperature sensors detected: No temperature sensors detected
   No timelapse videos found: No timelapse videos found
   No vendors found: No vendors found
+  No video player installed - showing the timelapse library: No video player installed - showing the timelapse library
   ? "No webcam detected.\nA webcam is required for timelapse."
   : "No webcam detected.\nA webcam is required for timelapse."
   No width sensor detected: No width sensor detected
@@ -2049,6 +2054,7 @@ translations:
     the expected service — wrong device?
   Printer hardware detected: Printer hardware detected
   Printer image set to auto-detect: Printer image set to auto-detect
+  Printer is busy - {} stays in the queue: Printer is busy - {} stays in the queue
   Printer is not paired — pair it first: Printer is not paired — pair it first
   Printer name: Printer name
   Printer not ready: Printer not ready

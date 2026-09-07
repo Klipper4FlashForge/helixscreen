@@ -93,6 +93,7 @@ translations:
   = Loosen: = Allentare
   = Tighten: = Stringere
   A: A
+  A backup of %s is created before applying: 'Prima di applicare viene creato un backup di %s'
   A picture of your printer: Immagine della tua stampante
   ABS: ABS
   ACCELEROMETERS: ACCELEROMETRI
@@ -574,6 +575,7 @@ translations:
   Completed {}m ago: 'Completato {} min fa'
   Computing calibration...: Calcolo calibrazione...
   Config Dir: Dir configurazione
+  Config Edit Failed: 'Modifica della configurazione non riuscita'
   Config-defined (read-only): Definito nella configurazione (sola lettura)
   Configuration added successfully.: Configurazione aggiunta con successo.
   Configuration already present.: Configurazione già presente.
@@ -745,9 +747,11 @@ translations:
   Define macros in your printer.cfg: Definire le macro nel proprio printer.cfg
   Delete: Elimina
   Delete File?: Eliminare file?
+  Delete Print Record: 'Elimina record di stampa'
   Delete Profile?: Eliminare profilo?
   Delete Spool?: Eliminare bobina?
   Delete Video: Elimina video
+  Delete the history record for {}?: 'Eliminare il record della cronologia di {}?'
   Delete {}?: Eliminare {}?
   'Delta:': 'Delta:'
   Density: Densità
@@ -1790,6 +1794,7 @@ translations:
   No temperature sensors detected: 'Nessun sensore di temperatura rilevato'
   No timelapse videos found: Nessun video timelapse trovato
   No vendors found: Nessun fornitore trovato
+  No video player installed - showing the timelapse library: 'Nessun lettore video installato – viene mostrata la libreria timelapse'
   ? "No webcam detected.\nA webcam is required for timelapse."
   : "Nessuna webcam rilevata.\nUna webcam è necessaria per il timelapse."
   No width sensor detected: 'Nessun sensore di larghezza rilevato'
@@ -2094,6 +2099,7 @@ translations:
     il servizio previsto — dispositivo errato?
   Printer hardware detected: Hardware stampante rilevato
   Printer image set to auto-detect: Immagine stampante impostata su rilevamento auto
+  Printer is busy - {} stays in the queue: 'La stampante è occupata – {} resta in coda'
   Printer is not paired — pair it first: La stampante non è associata — associala
     prima
   Printer name: Nome stampante

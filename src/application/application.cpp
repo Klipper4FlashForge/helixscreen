@@ -1968,7 +1968,7 @@ bool Application::init_panel_subjects() {
             // Modal::show_owned() (#1382): ModalStack frees the instance when
             // its entry goes, on every teardown path.
             auto modal = std::make_unique<SpaghettiDetectionModal>();
-            // TODO(detection): attach latest camera frame when a stream is active
+            // TODO(#1506): no frame yet; the modal shows the detector's text only
             modal->set_detection(e.message, nullptr);
             modal->set_on_resume([] {
                 get_moonraker_api()->job().resume_print([] {}, [](const MoonrakerError&) {});

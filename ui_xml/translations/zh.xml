@@ -88,6 +88,7 @@
   <translation tag="= Loosen" zh="= 松开"/>
   <translation tag="= Tighten" zh="= 拧紧"/>
   <translation tag="A" zh="辅"/>
+  <translation tag="A backup of %s is created before applying" zh="应用前会创建 %s 的备份"/>
   <translation tag="A picture of your printer" zh="打印机的图片"/>
   <translation tag="ABS" zh="ABS"/>
   <translation tag="ACCELEROMETERS" zh="加速度计"/>
@@ -509,6 +510,7 @@
   <translation tag="Completed {}m ago" zh="{} 分钟前完成"/>
   <translation tag="Computing calibration..." zh="正在计算校准..."/>
   <translation tag="Config Dir" zh="配置目录"/>
+  <translation tag="Config Edit Failed" zh="配置编辑失败"/>
   <translation tag="Config-defined (read-only)" zh="配置定义（只读）"/>
   <translation tag="Configuration added successfully." zh="配置添加成功。"/>
   <translation tag="Configuration already present." zh="配置已存在。"/>
@@ -664,9 +666,11 @@
   <translation tag="Define macros in your printer.cfg" zh="在 printer.cfg 中定义宏"/>
   <translation tag="Delete" zh="删除"/>
   <translation tag="Delete File?" zh="删除文件？"/>
+  <translation tag="Delete Print Record" zh="删除打印记录"/>
   <translation tag="Delete Profile?" zh="删除配置？"/>
   <translation tag="Delete Spool?" zh="删除料盘？"/>
   <translation tag="Delete Video" zh="删除视频"/>
+  <translation tag="Delete the history record for {}?" zh="删除 {} 的历史记录？"/>
   <translation tag="Delete {}?" zh="删除 {}?"/>
   <translation tag="Delta:" zh="差值："/>
   <translation tag="Density" zh="密度"/>
@@ -1597,6 +1601,7 @@
   <translation tag="No temperature sensors detected" zh="未检测到温度传感器"/>
   <translation tag="No timelapse videos found" zh="未找到延时视频"/>
   <translation tag="No vendors found" zh="未找到供应商"/>
+  <translation tag="No video player installed - showing the timelapse library" zh="未安装视频播放器 – 显示延时摄影库"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." zh="未检测到摄像头。&#10;延时摄影需要摄像头。"/>
   <translation tag="No width sensor detected" zh="未检测到宽度传感器"/>
   <translation tag="None" zh="无"/>
@@ -1876,6 +1881,7 @@
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" zh="打印机未提供预期的服务 — 设备是否有误？"/>
   <translation tag="Printer hardware detected" zh="检测到打印机硬件"/>
   <translation tag="Printer image set to auto-detect" zh="打印机图片已设为自动检测"/>
+  <translation tag="Printer is busy - {} stays in the queue" zh="打印机忙碌中 – {} 保留在队列中"/>
   <translation tag="Printer is not paired — pair it first" zh="打印机未配对 — 请先进行配对"/>
   <translation tag="Printer name" zh="打印机名称"/>
   <translation tag="Printer not ready" zh="打印机未就绪"/>

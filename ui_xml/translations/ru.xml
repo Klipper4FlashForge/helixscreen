@@ -88,6 +88,7 @@
   <translation tag="= Loosen" ru="= Ослабить"/>
   <translation tag="= Tighten" ru="= Затянуть"/>
   <translation tag="A" ru="A"/>
+  <translation tag="A backup of %s is created before applying" ru="Перед применением создаётся резервная копия %s"/>
   <translation tag="A picture of your printer" ru="Изображение вашего принтера"/>
   <translation tag="ABS" ru="ABS"/>
   <translation tag="ACCELEROMETERS" ru="АКСЕЛЕРОМЕТРЫ"/>
@@ -509,6 +510,7 @@
   <translation tag="Completed {}m ago" ru="Завершено {} мин назад"/>
   <translation tag="Computing calibration..." ru="Вычисление калибровки..."/>
   <translation tag="Config Dir" ru="Директория конфигурации"/>
+  <translation tag="Config Edit Failed" ru="Не удалось изменить конфигурацию"/>
   <translation tag="Config-defined (read-only)" ru="Определено в конфигурации (только чтение)"/>
   <translation tag="Configuration added successfully." ru="Конфигурация успешно добавлена."/>
   <translation tag="Configuration already present." ru="Конфигурация уже присутствует."/>
@@ -664,9 +666,11 @@
   <translation tag="Define macros in your printer.cfg" ru="Определите макросы в вашем printer.cfg"/>
   <translation tag="Delete" ru="Удалить"/>
   <translation tag="Delete File?" ru="Удалить файл?"/>
+  <translation tag="Delete Print Record" ru="Удалить запись печати"/>
   <translation tag="Delete Profile?" ru="Удалить профиль?"/>
   <translation tag="Delete Spool?" ru="Удалить катушку?"/>
   <translation tag="Delete Video" ru="Удалить видео"/>
+  <translation tag="Delete the history record for {}?" ru="Удалить запись истории для {}?"/>
   <translation tag="Delete {}?" ru="Удалить {}?"/>
   <translation tag="Delta:" ru="Дельта:"/>
   <translation tag="Density" ru="Плотность"/>
@@ -1597,6 +1601,7 @@
   <translation tag="No temperature sensors detected" ru="Датчики температуры не обнаружены"/>
   <translation tag="No timelapse videos found" ru="Таймлапс-видео не найдены"/>
   <translation tag="No vendors found" ru="Производители не найдены"/>
+  <translation tag="No video player installed - showing the timelapse library" ru="Видеоплеер не установлен – показана библиотека таймлапсов"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." ru="Веб-камера не обнаружена.&#10;Для таймлапса необходима веб-камера."/>
   <translation tag="No width sensor detected" ru="Датчик диаметра не обнаружен"/>
   <translation tag="None" ru="Нет"/>
@@ -1876,6 +1881,7 @@
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" ru="Принтер не предоставляет ожидаемый сервис — не то устройство?"/>
   <translation tag="Printer hardware detected" ru="Обнаружено оборудование принтера"/>
   <translation tag="Printer image set to auto-detect" ru="Изображение принтера — автоопределение"/>
+  <translation tag="Printer is busy - {} stays in the queue" ru="Принтер занят – {} остаётся в очереди"/>
   <translation tag="Printer is not paired — pair it first" ru="Принтер не сопряжён — сначала выполните сопряжение"/>
   <translation tag="Printer name" ru="Название принтера"/>
   <translation tag="Printer not ready" ru="Принтер не готов"/>
