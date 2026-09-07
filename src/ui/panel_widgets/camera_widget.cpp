@@ -92,6 +92,8 @@ void register_camera_widget() {
                              CameraConfigModal::on_flip_h_toggled);
     lv_xml_register_event_cb(nullptr, "on_cam_flip_v_toggled",
                              CameraConfigModal::on_flip_v_toggled);
+    lv_xml_register_event_cb(nullptr, "on_cam_source_clicked",
+                             CameraConfigModal::on_source_clicked);
 }
 
 void CameraWidget::on_camera_clicked(lv_event_t* e) {
