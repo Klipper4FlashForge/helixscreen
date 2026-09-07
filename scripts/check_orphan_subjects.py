@@ -49,6 +49,7 @@
 #   check_orphan_subjects.py                      # count
 #   check_orphan_subjects.py --list               # name every orphan
 #   check_orphan_subjects.py --max-allowed 26     # ratcheting baseline
+#   check_orphan_subjects.py --repo-root DIR      # scan a tree other than this one
 
 import argparse
 import pathlib
@@ -89,8 +90,10 @@ READ_SITE_RE = re.compile(
 # a subject by name and reading it on the next line —
 #     lv_subject_t* on = lv_xml_get_subject(nullptr, "chamber_filter_fan_on");
 #     tc->set_chamber_filter_fan(!on || lv_subject_get_int(on) != 1);
-# — puts the literal ABOVE the lv_subject_get_* match. A forward-only window
-# missed every read of that shape and reported a live subject as an orphan.
+# — puts the literal ABOVE the lv_subject_get_* match. Reaching backwards is
+# only sound because registrations are masked out of the scanned text first
+# (see mask_registrations): otherwise the window swallows the declaration of
+# the very subject it is deciding about.
 READ_WINDOW = 400
 IDENT_TOKEN_RE = re.compile(r'[A-Za-z_][A-Za-z_0-9]*')
 ALLOW_RE = re.compile(r'//\s*SUBJECT_OK:')
@@ -149,6 +152,38 @@ def collect_xml_refs(root: pathlib.Path) -> set[str]:
     return refs
 
 
+def mask_registrations(text: str) -> str:
+    """Blank out every registration call, preserving offsets and line breaks.
+
+    Registering a subject is not reading it, but the call spells out both the
+    name and the member, and registrations sit a few lines from the observers
+    that read them — that is the ordinary shape of init_subjects(). Left in the
+    text, a registration falls inside the window around some neighbouring read
+    site and satisfies the read check for itself, which clears exactly the
+    population this gate exists to find. Masking is length-preserving so the
+    windows stay aligned with the offsets READ_SITE_RE reports.
+    """
+    out = list(text)
+    for m in REGISTER_RE.finditer(text):
+        open_paren = text.find("(", m.start())
+        if open_paren == -1:
+            continue
+        depth = 0
+        end = len(text)
+        for i in range(open_paren, len(text)):
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        for j in range(m.start(), end):
+            if out[j] != "\n":
+                out[j] = " "
+    return "".join(out)
+
+
 def collect_read_text(root: pathlib.Path) -> str:
     """Concatenated text of every site that observes or reads a subject."""
     chunks = []
@@ -156,7 +191,7 @@ def collect_read_text(root: pathlib.Path) -> str:
         for path in (root / d).rglob("*"):
             if path.suffix not in (".cpp", ".h", ".hpp", ".cc"):
                 continue
-            text = path.read_text(errors="ignore")
+            text = mask_registrations(path.read_text(errors="ignore"))
             for m in READ_SITE_RE.finditer(text):
                 chunks.append(text[max(0, m.start() - READ_WINDOW):m.start() + READ_WINDOW])
     return "\n".join(chunks)
@@ -167,9 +202,11 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="print every orphan with its site")
     ap.add_argument("--max-allowed", type=int, default=None, help="ratchet baseline")
     ap.add_argument("--summary", action="store_true", help="one-line result")
+    ap.add_argument("--repo-root", type=pathlib.Path, default=None,
+                    help="tree to scan (default: this repository)")
     args = ap.parse_args()
 
-    root = repo_root()
+    root = args.repo_root.resolve() if args.repo_root else repo_root()
     registered, members = collect_registrations(root)
     bound = collect_xml_refs(root)
     read_text = collect_read_text(root)
