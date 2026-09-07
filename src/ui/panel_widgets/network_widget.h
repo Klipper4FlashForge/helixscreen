@@ -34,7 +34,14 @@ class NetworkWidget : public PanelWidget {
     // XML event callback (public for early registration in register_network_widget)
     static void network_clicked_cb(lv_event_t* e);
 
+  protected:
+    /// Drop the cached tile pointers, stop the poll timer and expire the guard
+    /// when the tile tree dies without a detach() — screen teardown.
+    void on_hooked_root_deleted() override;
+
   private:
+    friend class NetworkWidgetTestAccess;
+
     lv_obj_t* widget_obj_ = nullptr;
     lv_obj_t* parent_screen_ = nullptr;
 
