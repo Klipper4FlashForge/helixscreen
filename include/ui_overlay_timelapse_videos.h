@@ -59,6 +59,7 @@ class TimelapseVideosOverlay : public OverlayBase {
     };
 
     void fetch_frame_info();
+    void fetch_timelapse_root();
     void fetch_video_list();
     TimelapseCardDimensions calculate_card_dimensions();
     void populate_video_grid(const std::vector<FileInfo>& files);
@@ -67,6 +68,11 @@ class TimelapseVideosOverlay : public OverlayBase {
     void clear_video_grid();
 
     void detect_playback_capability();
+    /// Adopt Moonraker's "timelapse" root from a server.files.roots answer.
+    void apply_timelapse_root(const std::vector<FileRoot>& roots);
+    /// Where a same-host player opens `filename`: under the reported root,
+    /// or the stock data_path layout until one is reported.
+    [[nodiscard]] std::string local_video_path(const std::string& filename) const;
 
     void confirm_delete(const std::string& filename);
 
@@ -74,11 +80,14 @@ class TimelapseVideosOverlay : public OverlayBase {
     static void on_card_clicked(lv_event_t* e);
     static void on_card_long_pressed(lv_event_t* e);
 
+    friend struct TimelapseVideosOverlayTestAccess;
+
     IMoonrakerAPI* api_;
     std::vector<VideoEntry> videos_;
     bool can_play_ = false;
     std::string player_command_;
     bool is_local_moonraker_ = false;
+    std::string timelapse_root_; ///< Moonraker's "timelapse" root on disk, when reported
 
     helix::AsyncLifetimeGuard thumb_lifetime_;
 
