@@ -1653,8 +1653,10 @@ if [ -f "scripts/check_namespace_compliance.py" ]; then
   # theme_manager_get_readable_on (declaration + definition), a new member of
   # the global theme_manager_* family it sits in - every accessor in that header
   # is global scope, so putting this one alone in helix:: would make its call
-  # sites the odd ones out.
-  if python3 scripts/check_namespace_compliance.py --max-allowed 2336 --summary >/tmp/namespace_check.out 2>&1; then
+  # sites the odd ones out. 2336 -> 2335: filament_op_execute.h's forward
+  # declarations of AmsBackend and AmsError carry NAMESPACE_OK, since both
+  # types are themselves global and a forward declaration cannot move them.
+  if python3 scripts/check_namespace_compliance.py --max-allowed 2335 --summary >/tmp/namespace_check.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/namespace_check.out
