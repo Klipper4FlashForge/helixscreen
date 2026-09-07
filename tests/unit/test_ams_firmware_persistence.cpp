@@ -84,7 +84,7 @@ TEST_CASE("AmsBackendMock: set_slot_info propagates mapped_tool change",
     // Remap slot 0 → T2 through the slot edit path.
     SlotInfo info = initial;
     info.mapped_tool = 2;
-    REQUIRE(mock->set_slot_info(0, info, /*persist=*/true).result == AmsResult::SUCCESS);
+    REQUIRE(mock->set_slot_info(0, info, /*persist=*/true).result == helix::AmsResult::SUCCESS);
 
     REQUIRE(mock->get_slot_info(0).mapped_tool == 2);
 }
@@ -97,7 +97,7 @@ TEST_CASE("AmsBackendMock: set_slot_info ignores default mapped_tool (-1)",
     SlotInfo info; // mapped_tool defaults to -1
     info.material = "PLA";
 
-    REQUIRE(mock->set_slot_info(2, info, /*persist=*/false).result == AmsResult::SUCCESS);
+    REQUIRE(mock->set_slot_info(2, info, /*persist=*/false).result == helix::AmsResult::SUCCESS);
     REQUIRE(mock->get_slot_info(2).mapped_tool == 2);
 }
 
@@ -106,9 +106,9 @@ namespace {
 class ToolChangerGcodeCapture : public helix::AmsBackendToolChanger {
   public:
     ToolChangerGcodeCapture() : helix::AmsBackendToolChanger(nullptr, nullptr) {}
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         captured.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
     std::vector<std::string> captured;
 };
@@ -124,7 +124,7 @@ TEST_CASE("AmsBackendToolChanger: set_slot_info emits ASSIGN_TOOL on mapped_tool
     // Backend seeds slot 0 → T0. Remap slot 0 to respond to G-code T2.
     SlotInfo info = backend.get_slot_info(0);
     info.mapped_tool = 2;
-    REQUIRE(backend.set_slot_info(0, info, /*persist=*/true).result == AmsResult::SUCCESS);
+    REQUIRE(backend.set_slot_info(0, info, /*persist=*/true).result == helix::AmsResult::SUCCESS);
 
     bool emitted = false;
     for (const auto& g : backend.captured) {
@@ -145,7 +145,7 @@ TEST_CASE("AmsBackendToolChanger: set_slot_info ignores default mapped_tool (-1)
     SlotInfo info; // mapped_tool defaults to -1
     info.material = "PLA";
 
-    REQUIRE(backend.set_slot_info(1, info, /*persist=*/true).result == AmsResult::SUCCESS);
+    REQUIRE(backend.set_slot_info(1, info, /*persist=*/true).result == helix::AmsResult::SUCCESS);
 
     for (const auto& g : backend.captured) {
         REQUIRE(g.rfind("ASSIGN_TOOL ", 0) != 0);

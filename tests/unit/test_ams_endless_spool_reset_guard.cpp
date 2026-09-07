@@ -35,7 +35,7 @@ class SlotlessEditableBackend : public helix::AmsBackendMock {
         return info;
     }
 
-    AmsError apply_endless_spool_backup(int slot_index, int backup_slot) override {
+    helix::AmsError apply_endless_spool_backup(int slot_index, int backup_slot) override {
         ++writes;
         return helix::AmsBackendMock::apply_endless_spool_backup(slot_index, backup_slot);
     }
@@ -61,7 +61,7 @@ TEST_CASE("reset_endless_spool refuses a backend with no slot count",
     // The whole point: NOT success. A silent success behind a destructive
     // confirmation is indistinguishable from a working reset.
     CHECK_FALSE(result.success());
-    CHECK(result.result == AmsResult::NOT_SUPPORTED);
+    CHECK(result.result == helix::AmsResult::NOT_SUPPORTED);
     CHECK_FALSE(result.user_msg.empty()); // something to put in front of the user
     CHECK(backend.writes == 0);
 

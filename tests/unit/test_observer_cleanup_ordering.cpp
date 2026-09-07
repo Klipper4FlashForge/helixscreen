@@ -265,7 +265,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "Observer cleanup: cleanup resets all pending 
     REQUIRE(backend->start());
     lv_subject_set_int(get_printer_state().get_print_state_enum_subject(),
                        static_cast<int>(helix::PrintJobState::STANDBY));
-    REQUIRE(backend->load_filament(0).result == AmsResult::SUCCESS);
+    REQUIRE(backend->load_filament(0).result == helix::AmsResult::SUCCESS);
     backend->wait_for_operation_thread();
     drain();
 

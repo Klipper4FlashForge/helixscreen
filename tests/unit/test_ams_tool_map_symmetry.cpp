@@ -224,7 +224,7 @@ TEST_CASE("ACE publishes no tool mapping in either direction", "[ams][ace][tool_
     CHECK_FALSE(ace.owns_tool_mapping_table());
     CHECK_FALSE(helix::printer::can_remap(ace));
     CHECK(ace.get_tool_mapping().empty());
-    CHECK(ace.set_tool_mapping(0, 2).result == AmsResult::NOT_SUPPORTED);
+    CHECK(ace.set_tool_mapping(0, 2).result == helix::AmsResult::NOT_SUPPORTED);
 
     auto info = ace.get_system_info();
     REQUIRE(info.total_slots == 4);

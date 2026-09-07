@@ -365,14 +365,14 @@ TEST_CASE("AmsBackendMock execute_device_action behavior", "[ams][device_actions
 
         auto result = backend.execute_device_action(actions[0].id);
         CHECK(result);
-        CHECK(result.result == AmsResult::SUCCESS);
+        CHECK(result.result == helix::AmsResult::SUCCESS);
     }
 
     SECTION("execute unknown action returns not_supported") {
         auto result = backend.execute_device_action("nonexistent_action");
 
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        CHECK(result.result == helix::AmsResult::NOT_SUPPORTED);
     }
 
     SECTION("stores last executed action for verification") {
@@ -493,7 +493,7 @@ TEST_CASE("AmsBackendMock handles disabled actions", "[ams][device_actions][mock
         auto result = backend.execute_device_action("disabled_test");
 
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        CHECK(result.result == helix::AmsResult::NOT_SUPPORTED);
     }
 
     SECTION("enabled action succeeds") {
@@ -509,7 +509,7 @@ TEST_CASE("AmsBackendMock handles disabled actions", "[ams][device_actions][mock
         auto result = backend.execute_device_action("enabled_test");
 
         CHECK(result);
-        CHECK(result.result == AmsResult::SUCCESS);
+        CHECK(result.result == helix::AmsResult::SUCCESS);
     }
 
     backend.stop();
@@ -685,13 +685,13 @@ TEST_CASE("ACE device actions - execute unknown returns not_supported",
     SECTION("unknown action returns not_supported") {
         auto result = backend.execute_device_action("nonexistent_action");
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        CHECK(result.result == helix::AmsResult::NOT_SUPPORTED);
     }
 
     SECTION("unknown action with value returns not_supported") {
         auto result = backend.execute_device_action("nonexistent_action", 42);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        CHECK(result.result == helix::AmsResult::NOT_SUPPORTED);
     }
 }
 
@@ -705,31 +705,31 @@ TEST_CASE("ACE device actions - execute valid actions", "[ams][device_actions][a
         auto result = backend.execute_device_action("ace_manual_feed");
         // Should fail with not_connected (recognized action), not not_supported (unknown action)
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 
     SECTION("ace_manual_retract with null API returns not_connected") {
         auto result = backend.execute_device_action("ace_manual_retract");
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 
     SECTION("ace_feed_assist_toggle with enable=true returns not_connected") {
         auto result = backend.execute_device_action("ace_feed_assist_toggle", true);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 
     SECTION("ace_feed_assist_toggle with enable=false returns not_connected") {
         auto result = backend.execute_device_action("ace_feed_assist_toggle", false);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 
     SECTION("ace_feed_assist_toggle with no value returns not_connected") {
         auto result = backend.execute_device_action("ace_feed_assist_toggle");
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 }
 
@@ -755,14 +755,14 @@ TEST_CASE("ToolChanger device actions stubs", "[ams][device_actions][toolchanger
         auto result = backend.execute_device_action("any_action");
 
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        CHECK(result.result == helix::AmsResult::NOT_SUPPORTED);
     }
 
     SECTION("execute_device_action with value still returns not_supported") {
         auto result = backend.execute_device_action("calibrate", std::string("fast"));
 
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        CHECK(result.result == helix::AmsResult::NOT_SUPPORTED);
     }
 }
 
@@ -792,14 +792,14 @@ TEST_CASE("Device actions edge cases", "[ams][device_actions][edge]") {
         if (valid_id != uppercase_id) {
             auto result2 = backend.execute_device_action(uppercase_id);
             CHECK_FALSE(result2);
-            CHECK(result2.result == AmsResult::NOT_SUPPORTED);
+            CHECK(result2.result == helix::AmsResult::NOT_SUPPORTED);
         }
     }
 
     SECTION("empty action_id returns not_supported") {
         auto result = backend.execute_device_action("");
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        CHECK(result.result == helix::AmsResult::NOT_SUPPORTED);
     }
 
     SECTION("actions can reference same section") {

@@ -62,9 +62,9 @@ class CapturingSnapmaker : public helix::AmsBackendSnapmaker {
 
     vector<string> captured_gcodes;
 
-    AmsError execute_gcode(const string& gcode) override {
+    helix::AmsError execute_gcode(const string& gcode) override {
         captured_gcodes.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
 
     void set_loaded_slot(int slot) {

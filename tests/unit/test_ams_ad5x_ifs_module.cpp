@@ -97,13 +97,13 @@ class TestableModuleBackend : public AmsBackendAd5xIfs {
 
     std::vector<std::string> captured_gcodes;
 
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         captured_gcodes.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string& gcode, std::function<void()>) override {
+    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()>) override {
         captured_gcodes.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
     bool toolhead_homed() const override {
         return homed;
@@ -623,7 +623,7 @@ TEST_CASE("AD5X IFS module ops dispatch the module's macros", "[ams][ad5x_ifs][i
     SECTION("load-free slot selection is declined, not fed") {
         const auto err = backend.select_slot(0);
         REQUIRE_FALSE(err.success());
-        CHECK(err.result == AmsResult::NOT_SUPPORTED);
+        CHECK(err.result == helix::AmsResult::NOT_SUPPORTED);
         CHECK(backend.captured_gcodes.empty());
     }
 }

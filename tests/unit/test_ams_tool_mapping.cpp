@@ -124,14 +124,14 @@ TEST_CASE("Mock backend tool mapping - filament system mode", "[ams][tool_mappin
         // Invalid tool number (too high)
         auto result = backend.set_tool_mapping(99, 0);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_TOOL);
+        CHECK(result.result == helix::AmsResult::INVALID_TOOL);
     }
 
     SECTION("set_tool_mapping validates slot number") {
         // Invalid slot number (too high)
         auto result = backend.set_tool_mapping(0, 99);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_SLOT);
+        CHECK(result.result == helix::AmsResult::INVALID_SLOT);
     }
 
     SECTION("set_tool_mapping rejects negative values") {
@@ -317,8 +317,8 @@ class RefusingBackend : public AmsBackendMock {
     explicit RefusingBackend(int slots) : AmsBackendMock(slots) {}
 
   protected:
-    AmsError set_tool_mapping_impl(int, int) override {
-        return AmsErrorHelper::not_supported("no mapping on this backend");
+    helix::AmsError set_tool_mapping_impl(int, int) override {
+        return helix::AmsErrorHelper::not_supported("no mapping on this backend");
     }
 };
 

@@ -29,8 +29,8 @@
 
 namespace helix {
 class AmsBackend;
+struct AmsError;
 } // namespace helix
-struct AmsError; // NAMESPACE_OK: forward declaration of the global type in ams_error.h
 
 namespace helix::ui {
 

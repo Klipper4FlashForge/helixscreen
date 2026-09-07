@@ -56,6 +56,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsError;
+using helix::AmsErrorHelper;
+using helix::AmsResult;
+
 namespace {
 
 /// Doubles exist only to (a) flip running_ so check_preconditions() reaches the

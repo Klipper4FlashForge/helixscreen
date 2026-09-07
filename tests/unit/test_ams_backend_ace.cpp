@@ -232,11 +232,11 @@ TEST_CASE("ACE bypass not supported", "[ams][ace][bypass]") {
 
     auto err = helper.enable_bypass();
     REQUIRE(!err.success());
-    REQUIRE(err.result == AmsResult::NOT_SUPPORTED);
+    REQUIRE(err.result == helix::AmsResult::NOT_SUPPORTED);
 
     err = helper.disable_bypass();
     REQUIRE(!err.success());
-    REQUIRE(err.result == AmsResult::NOT_SUPPORTED);
+    REQUIRE(err.result == helix::AmsResult::NOT_SUPPORTED);
 }
 
 // ============================================================================

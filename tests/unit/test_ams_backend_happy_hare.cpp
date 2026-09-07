@@ -16,6 +16,10 @@
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
 
+using helix::AmsError;
+using helix::AmsResult;
+using helix::StepOperationType;
+
 namespace helix {
 
 /**

@@ -172,7 +172,7 @@ TEST_CASE("Lockout rejects operations during in-flight tool change",
         // Immediately try another operation -- should be rejected as BUSY
         auto result2 = backend.change_tool(2);
         CHECK_FALSE(result2);
-        CHECK(result2.result == AmsResult::BUSY);
+        CHECK(result2.result == helix::AmsResult::BUSY);
 
         // Wait for first operation to complete
         std::this_thread::sleep_for(std::chrono::milliseconds(800));
@@ -184,7 +184,7 @@ TEST_CASE("Lockout rejects operations during in-flight tool change",
 
         auto result2 = backend.load_filament(2);
         CHECK_FALSE(result2);
-        CHECK(result2.result == AmsResult::BUSY);
+        CHECK(result2.result == helix::AmsResult::BUSY);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(800));
     }
@@ -195,7 +195,7 @@ TEST_CASE("Lockout rejects operations during in-flight tool change",
 
         auto result2 = backend.unload_active_filament();
         CHECK_FALSE(result2);
-        CHECK(result2.result == AmsResult::BUSY);
+        CHECK(result2.result == helix::AmsResult::BUSY);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(800));
     }
@@ -236,13 +236,13 @@ TEST_CASE("load_filament delegates to change_tool in mock toolchanger mode",
     SECTION("load_filament with invalid slot returns error") {
         auto result = backend.load_filament(99);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_SLOT);
+        CHECK(result.result == helix::AmsResult::INVALID_SLOT);
     }
 
     SECTION("load_filament with negative slot returns error") {
         auto result = backend.load_filament(-1);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_SLOT);
+        CHECK(result.result == helix::AmsResult::INVALID_SLOT);
     }
 
     backend.stop();
@@ -262,19 +262,19 @@ TEST_CASE("change_tool with invalid slot returns error in mock toolchanger mode"
     SECTION("negative tool number returns INVALID_TOOL") {
         auto result = backend.change_tool(-1);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_TOOL);
+        CHECK(result.result == helix::AmsResult::INVALID_TOOL);
     }
 
     SECTION("out-of-range tool number returns INVALID_TOOL") {
         auto result = backend.change_tool(99);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_TOOL);
+        CHECK(result.result == helix::AmsResult::INVALID_TOOL);
     }
 
     SECTION("tool number equal to slot count returns error") {
         auto result = backend.change_tool(4); // 0-3 are valid
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_TOOL);
+        CHECK(result.result == helix::AmsResult::INVALID_TOOL);
     }
 
     backend.stop();
@@ -317,7 +317,7 @@ TEST_CASE("unload_filament works in mock toolchanger mode",
         // Second unload should fail — nothing loaded
         auto result = backend.unload_active_filament();
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::WRONG_STATE);
+        CHECK(result.result == helix::AmsResult::WRONG_STATE);
     }
 
     backend.stop();
@@ -420,19 +420,19 @@ TEST_CASE("Operations rejected when mock toolchanger backend not started",
     SECTION("change_tool fails when not started") {
         auto result = backend.change_tool(0);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 
     SECTION("load_filament fails when not started") {
         auto result = backend.load_filament(0);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 
     SECTION("unload_filament fails when not started") {
         auto result = backend.unload_active_filament();
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 }
 

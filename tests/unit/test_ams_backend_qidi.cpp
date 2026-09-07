@@ -32,9 +32,9 @@ using json = nlohmann::json;
 class RecordingQidiBackend : public AmsBackendQidi {
   public:
     RecordingQidiBackend() : AmsBackendQidi(nullptr, nullptr) {}
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         sent.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
     std::vector<std::string> sent;
 };
@@ -1771,14 +1771,14 @@ class RecordingQidiWithApi : public AmsBackendQidi {
   public:
     RecordingQidiWithApi(MoonrakerAPI* api, helix::MoonrakerClient* client)
         : AmsBackendQidi(api, client) {}
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         sent.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
         sent.push_back(gcode);
         (void)on_complete;
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
     std::vector<std::string> sent;
 };
@@ -1807,10 +1807,10 @@ struct QidiHomingGuardFixture : public LVGLTestFixture {
 TEST_CASE_METHOD(QidiHomingGuardFixture,
                  "QIDI load/unload/change_tool refuse while PRINTING, proceed while PAUSED",
                  "[ams][qidi_box][homing_guard]") {
-    auto check_refused = [](AmsError err, const std::vector<std::string>& sent,
+    auto check_refused = [](helix::AmsError err, const std::vector<std::string>& sent,
                             const std::string& expected_msg) {
         CHECK_FALSE(err.success());
-        CHECK(err.result == AmsResult::WRONG_STATE);
+        CHECK(err.result == helix::AmsResult::WRONG_STATE);
         CHECK(err.user_msg == expected_msg);
         CHECK(sent.empty());
     };

@@ -81,16 +81,16 @@ class ToolChangerDispatchHelper : public helix::AmsBackendToolChanger {
         helix::ui::UpdateQueue::instance().drain();
     }
 
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         sent_.push_back(gcode);
         pending_acks_.emplace_back(nullptr); // keep indices aligned with sent_
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
 
-    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
         sent_.push_back(gcode);
         pending_acks_.push_back(std::move(on_complete));
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
 
     /// Fire the ack for the Nth dispatched gcode, then drain — the production
@@ -186,7 +186,7 @@ TEST_CASE("Toolchanger no-op load does not lock out the next operation",
     // the 120 s UI guard.
     REQUIRE_FALSE(h.get_system_info().is_busy());
 
-    AmsError second = h.load_filament(2);
+    helix::AmsError second = h.load_filament(2);
     CHECK(second.success());
     CHECK(h.sent().size() == 2);
 }
@@ -250,7 +250,7 @@ TEST_CASE("Toolchanger dispatch failure reverts the optimistic action",
     h.seat_tool(1);
 
     // An out-of-range tool never reaches the wire.
-    AmsError err = h.load_filament(99);
+    helix::AmsError err = h.load_filament(99);
     CHECK_FALSE(err.success());
     CHECK(h.sent().empty());
     CHECK(h.action() == AmsAction::IDLE);

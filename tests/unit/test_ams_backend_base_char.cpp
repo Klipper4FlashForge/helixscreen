@@ -120,19 +120,19 @@ TEST_CASE("AMS backends: check_preconditions when not running", "[ams][character
         helix::AfcCharHelper backend;
         auto err = backend.call_check_preconditions();
         REQUIRE_FALSE(err.success());
-        REQUIRE(err.result == AmsResult::NOT_CONNECTED);
+        REQUIRE(err.result == helix::AmsResult::NOT_CONNECTED);
     }
     SECTION("HappyHare") {
         helix::HappyHareCharHelper backend;
         auto err = backend.call_check_preconditions();
         REQUIRE_FALSE(err.success());
-        REQUIRE(err.result == AmsResult::NOT_CONNECTED);
+        REQUIRE(err.result == helix::AmsResult::NOT_CONNECTED);
     }
     SECTION("ToolChanger") {
         helix::ToolChangerCharHelper backend;
         auto err = backend.call_check_preconditions();
         REQUIRE_FALSE(err.success());
-        REQUIRE(err.result == AmsResult::NOT_CONNECTED);
+        REQUIRE(err.result == helix::AmsResult::NOT_CONNECTED);
     }
 }
 
@@ -143,19 +143,19 @@ TEST_CASE("AMS backends: execute_gcode without API returns error", "[ams][charac
         helix::AfcCharHelper backend;
         auto err = backend.call_execute_gcode("G28");
         REQUIRE_FALSE(err.success());
-        REQUIRE(err.result == AmsResult::NOT_CONNECTED);
+        REQUIRE(err.result == helix::AmsResult::NOT_CONNECTED);
     }
     SECTION("HappyHare") {
         helix::HappyHareCharHelper backend;
         auto err = backend.call_execute_gcode("G28");
         REQUIRE_FALSE(err.success());
-        REQUIRE(err.result == AmsResult::NOT_CONNECTED);
+        REQUIRE(err.result == helix::AmsResult::NOT_CONNECTED);
     }
     SECTION("ToolChanger") {
         helix::ToolChangerCharHelper backend;
         auto err = backend.call_execute_gcode("G28");
         REQUIRE_FALSE(err.success());
-        REQUIRE(err.result == AmsResult::NOT_CONNECTED);
+        REQUIRE(err.result == helix::AmsResult::NOT_CONNECTED);
     }
 }
 
@@ -209,12 +209,12 @@ TEST_CASE("AMS backends: start without client returns not_connected", "[ams][cha
         helix::AmsBackendAfc backend(nullptr, nullptr);
         auto err = backend.start();
         REQUIRE_FALSE(err.success());
-        REQUIRE(err.result == AmsResult::NOT_CONNECTED);
+        REQUIRE(err.result == helix::AmsResult::NOT_CONNECTED);
     }
     SECTION("HappyHare") {
         helix::AmsBackendHappyHare backend(nullptr, nullptr);
         auto err = backend.start();
         REQUIRE_FALSE(err.success());
-        REQUIRE(err.result == AmsResult::NOT_CONNECTED);
+        REQUIRE(err.result == helix::AmsResult::NOT_CONNECTED);
     }
 }

@@ -14,6 +14,8 @@
  * details for debugging.
  */
 
+namespace helix {
+
 /**
  * @brief AMS operation result codes
  *
@@ -505,3 +507,5 @@ class AmsErrorHelper {
                         "Print Was Terminated", "Restart from the beginning to recover");
     }
 };
+
+} // namespace helix

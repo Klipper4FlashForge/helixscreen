@@ -34,22 +34,22 @@ class HomingProbeBackend : public helix::AmsBackendAfc {
   public:
     HomingProbeBackend() : helix::AmsBackendAfc(nullptr, nullptr) {}
 
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         if (fail_next_gcode) {
-            return AmsError(AmsResult::COMMAND_FAILED, "boom", "boom");
+            return helix::AmsError(helix::AmsResult::COMMAND_FAILED, "boom", "boom");
         }
         captured.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
         if (fail_next_gcode) {
-            return AmsError(AmsResult::COMMAND_FAILED, "boom", "boom");
+            return helix::AmsError(helix::AmsResult::COMMAND_FAILED, "boom", "boom");
         }
         captured.push_back(gcode);
         if (on_complete) {
             on_complete();
         }
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
     bool toolhead_homed() const override {
         return homed;
@@ -377,16 +377,16 @@ class ToolChangerHomingProbeBackend : public helix::AmsBackendToolChanger {
   public:
     ToolChangerHomingProbeBackend() : helix::AmsBackendToolChanger(nullptr, nullptr) {}
 
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         captured.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
         captured.push_back(gcode);
         if (on_complete) {
             on_complete();
         }
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
     bool toolhead_homed() const override {
         return homed;

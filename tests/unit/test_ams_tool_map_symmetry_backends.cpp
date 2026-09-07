@@ -138,16 +138,16 @@ class CfsToolMapProbe : public AmsBackendCfs {
                                   {"params", json::array({json{{"box", box}}, 0})}});
     }
 
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         captured.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
         captured.push_back(gcode);
         if (on_complete) {
             on_complete();
         }
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
 
     std::vector<std::string> captured;
@@ -181,16 +181,16 @@ class ToolChangerMapProbe : public helix::AmsBackendToolChanger {
 
     // client_ is null, so ensure_homed_then() routes straight to execute_gcode();
     // both overloads are captured because dispatch paths use the 2-arg form.
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         captured.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
         captured.push_back(gcode);
         if (on_complete) {
             on_complete();
         }
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
 
     std::vector<std::string> captured;

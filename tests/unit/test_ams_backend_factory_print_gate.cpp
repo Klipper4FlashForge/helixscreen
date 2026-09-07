@@ -96,19 +96,19 @@ constexpr int EXPECTED_BACKEND_COUNT = 3
 /// to any other failure a backend might return first. Derived from the error
 /// factory rather than hardcoding copy, so reworded messages do not silently
 /// turn these assertions into tautologies.
-bool is_print_refusal(const AmsError& e) {
-    if (e.success() || e.result != AmsResult::WRONG_STATE) {
+bool is_print_refusal(const helix::AmsError& e) {
+    if (e.success() || e.result != helix::AmsResult::WRONG_STATE) {
         return false;
     }
     static const std::string printing_msg =
-        AmsErrorHelper::print_active(/*is_paused=*/false).user_msg;
-    static const std::string paused_msg = AmsErrorHelper::print_active(/*is_paused=*/true).user_msg;
+        helix::AmsErrorHelper::print_active(/*is_paused=*/false).user_msg;
+    static const std::string paused_msg = helix::AmsErrorHelper::print_active(/*is_paused=*/true).user_msg;
     return e.user_msg == printing_msg || e.user_msg == paused_msg;
 }
 
 struct Op {
     const char* name;
-    std::function<AmsError(helix::AmsBackend&)> invoke;
+    std::function<helix::AmsError(helix::AmsBackend&)> invoke;
 };
 
 /// The three ops that are toolhead motion on every backend by definition:
@@ -129,7 +129,7 @@ const std::vector<Op>& motion_ops() {
 /// reached the wire. Equality across two ops is how select_slot's "this really
 /// is a tool change" classification is derived without naming backends.
 struct Outcome {
-    AmsError err;
+    helix::AmsError err;
     std::vector<std::string> gcode;
 
     bool operator==(const Outcome& o) const {
@@ -185,7 +185,7 @@ struct FactoryGateFixture : public LVGLTestFixture {
     /// Run @p op on a freshly built backend and record everything observable.
     /// Fresh each time so one op's side effects (CFS stamps action=LOADING on
     /// dispatch) cannot change what the next one is allowed to do.
-    Outcome run(AmsType type, const std::function<AmsError(helix::AmsBackend&)>& op) {
+    Outcome run(AmsType type, const std::function<helix::AmsError(helix::AmsBackend&)>& op) {
         auto backend = build(type);
         REQUIRE(backend != nullptr);
         mock_client.clear_gcode_script_history();

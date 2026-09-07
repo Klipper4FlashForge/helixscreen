@@ -37,6 +37,8 @@
 using helix::Ad5xIfsTestAccess;
 using helix::AmsBackend;
 using helix::AmsBackendMock;
+using helix::AmsError;
+using helix::AmsErrorHelper;
 
 namespace {
 

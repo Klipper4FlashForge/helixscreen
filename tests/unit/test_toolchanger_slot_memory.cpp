@@ -54,13 +54,13 @@ class SlotMemoryHelper : public helix::AmsBackendToolChanger {
         helix::ui::UpdateQueue::instance().drain();
     }
 
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         sent_.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string& gcode, std::function<void()>) override {
+    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()>) override {
         sent_.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
 
     /// Re-run discovery exactly as AmsState does on reconnect. This is the wipe.
@@ -244,11 +244,11 @@ class StoreBackedHelper : public helix::AmsBackendToolChanger {
         helix::ui::UpdateQueue::instance().drain();
     }
 
-    AmsError execute_gcode(const std::string&) override {
-        return AmsErrorHelper::success();
+    helix::AmsError execute_gcode(const std::string&) override {
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string&, std::function<void()>) override {
-        return AmsErrorHelper::success();
+    helix::AmsError execute_gcode(const std::string&, std::function<void()>) override {
+        return helix::AmsErrorHelper::success();
     }
 };
 

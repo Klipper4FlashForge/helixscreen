@@ -90,11 +90,11 @@ class StubBackend : public helix::AmsBackendMock {
     [[nodiscard]] bool slot_has_filament_at_toolhead(int slot) const override {
         return slot == loaded_slot_;
     }
-    AmsError load_filament(int) override {
-        return AmsErrorHelper::success();
+    helix::AmsError load_filament(int) override {
+        return helix::AmsErrorHelper::success();
     }
-    AmsError unload_filament(int) override {
-        return AmsErrorHelper::success();
+    helix::AmsError unload_filament(int) override {
+        return helix::AmsErrorHelper::success();
     }
 };
 

@@ -38,7 +38,11 @@ using helix::Ad5xIfsTestAccess;
 using helix::AmsBackend;
 using helix::AmsBackendAd5xIfs;
 using helix::AmsBackendAfc;
+using helix::AmsError;
+using helix::AmsErrorHelper;
+using helix::AmsResult;
 using helix::AmsState;
+using helix::StepOperationType;
 
 // Friend-class shim matching the one in test_filament_slot_override_store.cpp
 // (declared friend in filament_slot_override_store.h per L065). Allows our

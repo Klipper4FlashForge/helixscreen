@@ -23,6 +23,9 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::StepOperationType;
+using helix::detect_step_operation;
+
 // ============================================================================
 // External Swap Detection (filament loaded, various start actions)
 // ============================================================================

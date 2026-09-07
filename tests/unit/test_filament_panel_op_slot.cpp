@@ -111,20 +111,20 @@ class RecordingBackend : public helix::AmsBackendMock {
         return self_homes_;
     }
 
-    AmsError load_filament(int slot) override {
+    helix::AmsError load_filament(int slot) override {
         last_load_slot = slot;
         ++load_calls;
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError unload_filament(int slot) override {
+    helix::AmsError unload_filament(int slot) override {
         last_unload_slot = slot;
         ++unload_calls;
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError change_tool(int t) override {
+    helix::AmsError change_tool(int t) override {
         last_change_tool = t;
         ++change_tool_calls;
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
 };
 
