@@ -311,3 +311,66 @@ TEST_CASE_METHOD(LVGLTestFixture,
     ams.clear_backends();
     ams.clear_external_spool_info();
 }
+
+// ---------------------------------------------------------------------------
+// A slot mapped to an extruder Klipper does not report never receives a delta,
+// so it silently stops tracking. The tracker names such mappings at print
+// start instead (prestonbrown/helixscreen#1373).
+// ---------------------------------------------------------------------------
+
+TEST_CASE_METHOD(AmsSlotSinkFixture,
+                 "tracker reports slot mappings past the printer's extruder count",
+                 "[filament][tracker][ams_slot]") {
+    auto& tracker = FilamentConsumptionTracker::instance();
+    auto& printer = get_printer_state();
+
+    SECTION("identity mapping on a single-extruder printer: three dead slots") {
+        mock->set_identity_extruder_mapping_for_testing(true);
+        printer.init_extruders({"extruder"});
+        CHECK(FilamentConsumptionTrackerTestAccess::warn_unreported_extruder_mappings(tracker) ==
+              3);
+    }
+    SECTION("every mapped extruder reported: nothing to say") {
+        mock->set_identity_extruder_mapping_for_testing(true);
+        printer.init_extruders({"extruder", "extruder1", "extruder2", "extruder3"});
+        CHECK(FilamentConsumptionTrackerTestAccess::warn_unreported_extruder_mappings(tracker) ==
+              0);
+    }
+    SECTION("no mapping declared: nothing to say") {
+        printer.init_extruders({"extruder"});
+        CHECK(FilamentConsumptionTrackerTestAccess::warn_unreported_extruder_mappings(tracker) ==
+              0);
+    }
+    SECTION("before extruder discovery the count is unknown, not zero") {
+        mock->set_identity_extruder_mapping_for_testing(true);
+        printer.init_extruders({});
+        CHECK(FilamentConsumptionTrackerTestAccess::warn_unreported_extruder_mappings(tracker) ==
+              0);
+    }
+}
+
+TEST_CASE_METHOD(AmsSlotSinkFixture, "the PRINTING transition is what reports dead slot mappings",
+                 "[filament][tracker][ams_slot]") {
+    auto& tracker = FilamentConsumptionTracker::instance();
+    auto& printer = get_printer_state();
+
+    mock->set_identity_extruder_mapping_for_testing(true);
+    printer.init_extruders({"extruder"});
+
+    tracker.start();
+    lv_subject_set_int(printer.get_print_filament_used_subject(), 0);
+    lv_subject_set_int(printer.get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::STANDBY));
+    helix::ui::UpdateQueue::instance().drain();
+    REQUIRE(FilamentConsumptionTrackerTestAccess::unreported_mappings_at_start(tracker) == 0);
+
+    lv_subject_set_int(printer.get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::PRINTING));
+    helix::ui::UpdateQueue::instance().drain();
+    CHECK(FilamentConsumptionTrackerTestAccess::unreported_mappings_at_start(tracker) == 3);
+
+    lv_subject_set_int(printer.get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::COMPLETE));
+    helix::ui::UpdateQueue::instance().drain();
+    tracker.stop();
+}
