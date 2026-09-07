@@ -357,11 +357,19 @@ TEST_CASE("A changer without klipper-toolchanger names its own commands",
     CHECK(cmds.unselect == "DROP_TOOL");
 }
 
-TEST_CASE("A printer with no changer at all names no commands",
+TEST_CASE("A printer with no changer module at all swaps with plain T<n>",
           "[toolchanger][toolsource][commands]") {
+    // Two hot ends and nothing that calls itself a changer. SELECT_TOOL exists
+    // only where klipper-toolchanger does, so naming it here would send a
+    // command this printer does not have; T<n> is what Klipper maps to
+    // ACTIVATE_EXTRUDER.
     PrinterDiscovery hw;
     hw.parse_objects(json::array({"extruder", "extruder1", "toolhead"}));
 
     auto cmds = toolchanger_addon::resolve_tool_commands(hw);
-    CHECK_FALSE(cmds.present);
+    REQUIRE(cmds.present);
+    CHECK(cmds.select_prefix == "T");
+    // Only the provider table names an unmount, and no provider claims this
+    // machine: its tool can only be swapped for another.
+    CHECK(cmds.unselect.empty());
 }

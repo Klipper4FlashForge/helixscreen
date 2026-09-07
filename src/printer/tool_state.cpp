@@ -238,8 +238,6 @@ void ToolState::init_tools(const helix::PrinterDiscovery& hardware) {
             tool.name = ::fmt::format("T{}", i);
             tool.extruder_name = extruder_names[i];
             tool.heater_name = std::nullopt;
-            tool.fan_name = (i == 0) ? std::optional<std::string>("fan") : std::nullopt;
-            tool.active = (i == 0);
 
             spdlog::debug("[ToolState] Tool {}: name={}, extruder={}", i, tool.name,
                           tool.extruder_name.value_or("none"));
@@ -247,7 +245,20 @@ void ToolState::init_tools(const helix::PrinterDiscovery& hardware) {
         }
     }
 
+    // T0 holds the head until a status frame says otherwise. active_tool_index_
+    // and the per-tool flag are the same claim, so every branch above leaves
+    // both to this one place. Set in only one of them they disagree, and
+    // whichever a caller happens to read decides what it sees.
     active_tool_index_ = 0;
+    if (!tools_.empty()) {
+        tools_[0].active = true;
+        // Klipper's [fan] is the first extruder's part cooling fan. A branch
+        // that knows the machine's own per-tool names (Snapmaker) has already
+        // filled this in; everything else gets the one name always true of T0.
+        if (!tools_[0].fan_name) {
+            tools_[0].fan_name = "fan";
+        }
+    }
 
     // Update subjects
     lv_subject_set_int(&tool_count_, static_cast<int>(tools_.size()));
