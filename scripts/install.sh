@@ -5043,12 +5043,9 @@ seed_from_moonraker_detection() {
 # show mksclient is a plain binary at that path, run as user `sovol`. Empty
 # otherwise.
 #
-# TODO(#986): the binary path + `sovol` user is now the CONFIRMED fingerprint
-# (from published Sovol/R8CEH firmware configs). The only remaining uncertainty
-# is the exact /etc/hostname and /proc/device-tree/model strings on the panel,
-# which we chose not to fetch — the binary path is a strong, unambiguous signal
-# on its own, so hostname matching was dropped to avoid false negatives on
-# renamed hosts.
+# The binary path is the whole fingerprint on purpose: it is unambiguous on
+# its own, and matching /etc/hostname or /proc/device-tree/model as well would
+# only add false negatives on renamed hosts.
 detect_printer_model() {
     # Confirmed signal: the stock Sovol UI binary at its known build path.
     # HELIX_SOVOL_MKSCLIENT lets tests redirect the path under a temp HOME.
@@ -8801,9 +8798,8 @@ configure_moonraker_updates() {
         log_error "Moonraker's type:web updater replaces the whole root on update, destroying"
         log_error "the config/ and platform/ preservation the payload contract provides."
         log_error "Re-run with --payload-root outside the mod's tree (e.g. /usr/data/helixscreen)."
-        # TODO(OD2): a persistent-files-aware stanza shape could make the
-        # mod-owned root safe for --auto-update - open decision 2 in
-        # docs/devel/plans/2026-08-31-forgex-ad5x-installer-rework.md.
+        # TODO(#1505): a persistent_files-aware stanza could make a mod-owned
+        # root safe for --auto-update; refused until that is decided.
         return 0
     fi
 

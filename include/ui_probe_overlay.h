@@ -193,6 +193,8 @@ class ProbeOverlay : public OverlayBase {
 
     // Widget/client references
     lv_obj_t* parent_screen_ = nullptr;
+    friend struct ProbeOverlayTestAccess;
+
     IMoonrakerAPI* api_ = nullptr;
 
     // Type-specific panel container

@@ -24,6 +24,25 @@ struct HistoryListPanelTestAccess {
     static void set_jobs(HistoryListPanel& p, std::vector<PrintHistoryJob> jobs) {
         p.jobs_ = std::move(jobs);
     }
+
+    // The detail overlay's Delete button reaches handle_delete() with the row
+    // the user opened already selected; seeding both here skips the overlay.
+    static void select_job(HistoryListPanel& p, std::vector<PrintHistoryJob> jobs, size_t index) {
+        p.filtered_jobs_ = std::move(jobs);
+        p.selected_job_index_ = index;
+    }
+
+    static void handle_delete(HistoryListPanel& p) {
+        p.handle_delete();
+    }
+
+    static lv_obj_t* delete_dialog(HistoryListPanel& p) {
+        return p.delete_confirmation_dialog_;
+    }
+
+    static void handle_view_timelapse(HistoryListPanel& p) {
+        p.handle_view_timelapse();
+    }
 };
 
 } // namespace helix::ui

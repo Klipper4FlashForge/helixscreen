@@ -88,6 +88,7 @@
   <translation tag="= Loosen" fr="= Desserrer"/>
   <translation tag="= Tighten" fr="= Serrer"/>
   <translation tag="A" fr="A"/>
+  <translation tag="A backup of %s is created before applying" fr="Une sauvegarde de %s est créée avant l&apos;application"/>
   <translation tag="A picture of your printer" fr="Une photo de votre imprimante"/>
   <translation tag="ABS" fr="ABS"/>
   <translation tag="ACCELEROMETERS" fr="ACCÉLÉROMÈTRES"/>
@@ -509,6 +510,7 @@
   <translation tag="Completed {}m ago" fr="Terminé il y a {} min"/>
   <translation tag="Computing calibration..." fr="Calcul de la calibration..."/>
   <translation tag="Config Dir" fr="Dossier de configuration"/>
+  <translation tag="Config Edit Failed" fr="Échec de la modification de la configuration"/>
   <translation tag="Config-defined (read-only)" fr="Défini par la config (lecture seule)"/>
   <translation tag="Configuration added successfully." fr="Configuration ajoutée avec succès."/>
   <translation tag="Configuration already present." fr="Configuration déjà présente."/>
@@ -664,9 +666,11 @@
   <translation tag="Define macros in your printer.cfg" fr="Définissez les macros dans votre printer.cfg"/>
   <translation tag="Delete" fr="Supprimer"/>
   <translation tag="Delete File?" fr="Supprimer le fichier ?"/>
+  <translation tag="Delete Print Record" fr="Supprimer l&apos;entrée d&apos;impression"/>
   <translation tag="Delete Profile?" fr="Supprimer le profil ?"/>
   <translation tag="Delete Spool?" fr="Supprimer la bobine ?"/>
   <translation tag="Delete Video" fr="Supprimer la vidéo"/>
+  <translation tag="Delete the history record for {}?" fr="Supprimer l&apos;entrée d&apos;historique de {} ?"/>
   <translation tag="Delete {}?" fr="Supprimer {} ?"/>
   <translation tag="Delta:" fr="Delta :"/>
   <translation tag="Density" fr="Densité"/>
@@ -1597,6 +1601,7 @@
   <translation tag="No temperature sensors detected" fr="Aucun capteur de température détecté"/>
   <translation tag="No timelapse videos found" fr="Aucune vidéo timelapse trouvée"/>
   <translation tag="No vendors found" fr="Aucun fournisseur trouvé"/>
+  <translation tag="No video player installed - showing the timelapse library" fr="Aucun lecteur vidéo installé – affichage de la bibliothèque timelapse"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." fr="Aucune webcam détectée.&#10;Une webcam est requise pour le timelapse."/>
   <translation tag="No width sensor detected" fr="Aucun capteur de diamètre détecté"/>
   <translation tag="None" fr="Aucun"/>
@@ -1876,6 +1881,7 @@
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" fr="L&apos;imprimante n&apos;expose pas le service attendu — mauvais appareil ?"/>
   <translation tag="Printer hardware detected" fr="Matériel d&apos;imprimante détecté"/>
   <translation tag="Printer image set to auto-detect" fr="Image de l&apos;imprimante en auto-détection"/>
+  <translation tag="Printer is busy - {} stays in the queue" fr="L&apos;imprimante est occupée – {} reste dans la file"/>
   <translation tag="Printer is not paired — pair it first" fr="L&apos;imprimante n&apos;est pas appairée — appairez-la d&apos;abord"/>
   <translation tag="Printer name" fr="Nom de l&apos;imprimante"/>
   <translation tag="Printer not ready" fr="Imprimante non prête"/>
@@ -2530,6 +2536,7 @@
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." fr="Ce plugin permet à HelixScreen de contrôler les options de démarrage d&apos;impression comme le maillage du plateau et QGL. Une fois installé, utilisez Configurer PRINT_START ci-dessous pour activer les étapes optionnelles."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" fr="Cette impression nécessite environ %.0fg mais il reste environ %.0fg sur la bobine. Démarrer quand même ?"/>
   <translation tag="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets." fr="Cette imprimante ressemble à un {} ({} % de confiance), mais elle est configurée en {}. Un type erroné applique des options et des préréglages de pré-impression incorrects."/>
+  <translation tag="This removes the plugin&apos;s macros and its Moonraker component from the printer and restarts Klipper." fr="Supprime les macros du plugin et son composant Moonraker de l&apos;imprimante, puis redémarre Klipper."/>
   <translation tag="This tool probes each bed screw and tells you how much to adjust." fr="Cet outil palpe chaque vis du plateau et vous indique combien ajuster."/>
   <translation tag="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect." fr="Cela appliquera le Z-offset à votre butée et redémarrera Klipper pour enregistrer la configuration. L&apos;imprimante se déconnectera brièvement."/>
   <translation tag="This will apply the Z-offset to your probe and restart Klipper to save the configuration. The printer will briefly disconnect." fr="Cela appliquera le Z-offset à votre sonde et redémarrera Klipper pour enregistrer la configuration. L&apos;imprimante se déconnectera brièvement."/>
@@ -2635,7 +2642,9 @@
   <translation tag="Unavailable" fr="Indisponible"/>
   <translation tag="Understanding Results" fr="Comprendre les résultats"/>
   <translation tag="Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.&#10;&#10;This tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.&#10;&#10;For CoreXY, Path A and B should be within a few Hz of each other." fr="Une tension de courroie inégale provoque des défauts d&apos;impression comme des décalages de couches, des VFA (défauts verticaux fins) et du ringing.&#10;&#10;Cet outil fait vibrer chaque chemin de courroie et mesure la fréquence de résonance — des fréquences identiques signifient une tension équilibrée.&#10;&#10;Pour le CoreXY, les chemins A et B devraient être à quelques Hz l&apos;un de l&apos;autre."/>
+  <translation tag="Uninstall" fr="Désinstaller"/>
   <translation tag="Uninstall HelixPrint Plugin" fr="Désinstaller le plugin HelixPrint"/>
+  <translation tag="Uninstall HelixPrint Plugin?" fr="Désinstaller le plugin HelixPrint ?"/>
   <translation tag="Uninstall script not found." fr="Script de désinstallation introuvable."/>
   <translation tag="Uninstall: Coming soon" fr="Désinstaller : Bientôt disponible"/>
   <translation tag="Uninstallation failed. Check logs for details." fr="Désinstallation échouée. Consultez les journaux pour plus de détails."/>

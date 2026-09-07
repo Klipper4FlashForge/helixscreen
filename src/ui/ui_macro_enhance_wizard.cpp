@@ -172,9 +172,9 @@ bool MacroEnhanceWizard::show(lv_obj_t* parent) {
     lv_subject_set_int(&show_success_subject_, 0);
     lv_subject_set_int(&show_error_subject_, 0);
 
-    // Set dynamic backup checkbox text using source file from analysis
+    // Name the file the enhancer backs up before it applies anything
     snprintf(backup_text_buf_, sizeof(backup_text_buf_),
-             lv_tr("Create backup of %s before applying"),
+             lv_tr("A backup of %s is created before applying"),
              analysis_.source_file.empty() ? "printer.cfg" : analysis_.source_file.c_str());
     lv_subject_set_pointer(&backup_text_subject_, backup_text_buf_);
 
@@ -504,16 +504,9 @@ void MacroEnhanceWizard::apply_enhancements() {
         return;
     }
 
+    // PrintStartEnhancer always backs the file up before touching it; the
+    // review step states that as a fact rather than offering it as a choice.
     show_applying("Creating backup...");
-
-    // Check if backup checkbox is checked
-    lv_obj_t* checkbox = find_widget("backup_checkbox");
-    bool create_backup = true;
-    if (checkbox != nullptr) {
-        create_backup = lv_obj_has_state(checkbox, LV_STATE_CHECKED);
-    }
-    // TODO: Pass create_backup to enhancer when API supports it
-    (void)create_backup;
 
     auto token = lifetime_.token();
 

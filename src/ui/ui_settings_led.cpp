@@ -351,18 +351,14 @@ void LedSettingsOverlay::populate_macro_devices_impl() {
                                          "variant", "tertiary", nullptr};
         lv_xml_create(edit_btn, "icon", edit_icon_attrs);
 
-        // TODO: lv_obj user_data is safe on these buttons because they're
-        // plain lv_button_create() (not XML widgets). If buttons are ever
-        // created via lv_xml_create() from a component that claims user_data,
-        // move to event callback user_data instead. See L069.
+        // The index rides on the event callback, not on lv_obj user_data, so
+        // the button's base widget is free to claim that slot (L069).
         auto* edit_idx = new int(i);
-        lv_obj_set_user_data(edit_btn, edit_idx);
         lv_obj_add_event_cb(
             edit_btn,
             [](lv_event_t* e) {
                 LVGL_SAFE_EVENT_CB_BEGIN("[LedSettingsOverlay] edit_macro_device");
-                auto* idx = static_cast<int*>(
-                    lv_obj_get_user_data(static_cast<lv_obj_t*>(lv_event_get_current_target(e))));
+                auto* idx = static_cast<int*>(lv_event_get_user_data(e));
                 if (idx) {
                     get_led_settings_overlay().handle_edit_macro_device(*idx);
                 }
@@ -384,13 +380,11 @@ void LedSettingsOverlay::populate_macro_devices_impl() {
         lv_xml_create(del_btn, "icon", del_icon_attrs);
 
         auto* del_idx = new int(i);
-        lv_obj_set_user_data(del_btn, del_idx);
         lv_obj_add_event_cb(
             del_btn,
             [](lv_event_t* e) {
                 LVGL_SAFE_EVENT_CB_BEGIN("[LedSettingsOverlay] delete_macro_device");
-                auto* idx = static_cast<int*>(
-                    lv_obj_get_user_data(static_cast<lv_obj_t*>(lv_event_get_current_target(e))));
+                auto* idx = static_cast<int*>(lv_event_get_user_data(e));
                 if (idx) {
                     get_led_settings_overlay().handle_delete_macro_device(*idx);
                 }

@@ -445,12 +445,9 @@ seed_from_moonraker_detection() {
 # show mksclient is a plain binary at that path, run as user `sovol`. Empty
 # otherwise.
 #
-# TODO(#986): the binary path + `sovol` user is now the CONFIRMED fingerprint
-# (from published Sovol/R8CEH firmware configs). The only remaining uncertainty
-# is the exact /etc/hostname and /proc/device-tree/model strings on the panel,
-# which we chose not to fetch — the binary path is a strong, unambiguous signal
-# on its own, so hostname matching was dropped to avoid false negatives on
-# renamed hosts.
+# The binary path is the whole fingerprint on purpose: it is unambiguous on
+# its own, and matching /etc/hostname or /proc/device-tree/model as well would
+# only add false negatives on renamed hosts.
 detect_printer_model() {
     # Confirmed signal: the stock Sovol UI binary at its known build path.
     # HELIX_SOVOL_MKSCLIENT lets tests redirect the path under a temp HOME.

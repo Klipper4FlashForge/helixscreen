@@ -377,6 +377,8 @@ class GCodeRenderer {
      */
     bool clip_line_to_viewport(glm::vec2& p1, glm::vec2& p2) const;
 
+    friend struct GCodeRendererTestAccess;
+
     // ==============================================
     // Drawing Helpers
     // ==============================================

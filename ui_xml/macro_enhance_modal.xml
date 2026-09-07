@@ -7,12 +7,12 @@
 
     A step-by-step wizard for making PRINT_START operations skippable.
     Shows each operation for approval, displays the Jinja2 wrapper code,
-    and applies changes with backup support.
+    and applies changes after backing the file up.
 
     Steps:
     1. Per-operation confirmation (loops for each detected operation)
     2. Summary of all approved changes
-    3. Apply with backup option
+    3. Apply (a timestamped backup is always taken first)
 
     Required subjects:
     - macro_enhance_step_title: Current step title (e.g., "Make BED_MESH_CALIBRATE Optional?")
@@ -69,11 +69,11 @@
         <lv_label name="summary_list"
                   width="100%" bind_text="macro_enhance_summary" long_mode="wrap" style_text_font="#font_small"/>
       </lv_obj>
-      <!-- Backup checkbox - uses separate label for dynamic text binding -->
+      <!-- Backup note - a statement, not an option: the enhancer always backs up -->
       <lv_obj width="100%"
               height="content" flex_flow="row" style_flex_main_place="start" style_flex_cross_place="center"
-              style_pad_all="0" style_pad_gap="#space_xs">
-        <lv_checkbox name="backup_checkbox" checked="true" text=""/>
+              style_pad_all="0" style_pad_gap="#space_sm">
+        <icon src="check" size="sm" variant="success"/>
         <text_body name="backup_label" bind_text="macro_enhance_backup_text"/>
       </lv_obj>
       <!-- Warning note -->

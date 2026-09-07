@@ -4,6 +4,7 @@
 #include "ui_probe_overlay.h"
 
 #include "ui_callback_helpers.h"
+#include "ui_error_reporting.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_panel_bed_mesh.h"
@@ -1032,13 +1033,14 @@ void ProbeOverlay::handle_config_save() {
                         load_config_values();
                     });
                 },
-                [](const std::string& err) {
-                    spdlog::error("[Probe] Config edit failed: {}", err);
-                    // TODO: Show error to user via modal
+                [field](const std::string& err) {
+                    // Runs on the network thread; the toast queues itself to the
+                    // UI thread. The safe-edit flow has already reverted the file.
+                    NOTIFY_ERROR_T(lv_tr("Config Edit Failed"), "{}: {}", field, err);
                 });
         },
-        [](const std::string& err) {
-            spdlog::error("[Probe] Failed to load config files for edit: {}", err);
+        [field](const std::string& err) {
+            NOTIFY_ERROR_T(lv_tr("Config Edit Failed"), "{}: {}", field, err);
         });
 }
 

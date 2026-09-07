@@ -7,8 +7,10 @@
 #include "ui_filename_utils.h"
 #include "ui_fonts.h"
 #include "ui_format_utils.h"
+#include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_notification.h"
+#include "ui_overlay_timelapse_videos.h"
 #include "ui_panel_common.h"
 #include "ui_panel_print_select.h"
 #include "ui_update_queue.h"
@@ -27,6 +29,7 @@
 #include "thumbnail_cache.h"
 #include "ui/ui_cleanup_helpers.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -1150,7 +1153,10 @@ void HistoryListPanel::update_detail_subjects(const PrintHistoryJob& job) {
     lv_subject_set_int(&detail_can_reprint_, job.exists ? 1 : 0);
 
     // Set timelapse availability
-    lv_subject_set_int(&detail_has_timelapse_, job.has_timelapse ? 1 : 0);
+    // A build without the timelapse viewer has nothing to open, so the button
+    // stays hidden there rather than reachable and inert.
+    lv_subject_set_int(&detail_has_timelapse_,
+                       (job.has_timelapse && helix::ui::timelapse_viewer_available()) ? 1 : 0);
 
     // Set status code for icon visibility binding: 0=completed, 1=cancelled, 2=error, 3=in_progress
     int status_code = 0; // Default to completed
@@ -1225,13 +1231,31 @@ void HistoryListPanel::handle_delete() {
         return;
     }
 
+    if (delete_confirmation_dialog_) {
+        return; // One confirmation at a time; a second tap must not stack another
+    }
+
     const auto& job = filtered_jobs_[selected_job_index_];
     spdlog::info("[{}] Delete requested for: {} (job_id: {})", get_name(), job.filename,
                  job.job_id);
 
-    // For now, directly delete without confirmation dialog
-    // TODO: Add confirmation dialog
-    confirm_delete();
+    std::string message = fmt::format(lv_tr("Delete the history record for {}?"), job.filename);
+
+    // The dialog closes itself on a button press and deletes itself after any
+    // close, so every path nulls the stored handle instead of hiding the dialog.
+    // The handle is the re-entry guard above, so a dismissal has to clear it too.
+    auto drop_dialog = [this] { delete_confirmation_dialog_ = nullptr; };
+    helix::ui::ConfirmOptions opts;
+    opts.on_cancel = drop_dialog;
+    opts.on_dismiss = drop_dialog;
+    opts.owner_token = lifetime_.token();
+    delete_confirmation_dialog_ = helix::ui::modal_confirm(
+        lv_tr("Delete Print Record"), message.c_str(), ModalSeverity::Warning, lv_tr("Delete"),
+        [this] {
+            delete_confirmation_dialog_ = nullptr;
+            confirm_delete();
+        },
+        opts);
 }
 
 void HistoryListPanel::confirm_delete() {
@@ -1290,10 +1314,9 @@ void HistoryListPanel::handle_view_timelapse() {
     spdlog::info("[{}] View timelapse requested for: {} (file: {})", get_name(), job.filename,
                  job.timelapse_filename);
 
-    // TODO: Phase 6 - Open timelapse viewer/player
-    // For now, show a toast with the filename
-    std::string message = "Timelapse: " + job.timelapse_filename;
-    ui_notification_info(message.c_str());
+    // The timelapse browser owns playback (player detection, remote download);
+    // it plays the file where a player exists and otherwise lands on its card.
+    helix::ui::open_timelapse_video(job.timelapse_filename);
 }
 
 // ============================================================================

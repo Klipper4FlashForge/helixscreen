@@ -423,8 +423,7 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     const bool layout_state_transient =
         conn_layout &&
         lv_subject_get_int(conn_layout) == static_cast<int>(ConnectionState::CONNECTED) &&
-        klippy_layout &&
-        lv_subject_get_int(klippy_layout) != static_cast<int>(KlippyState::READY);
+        klippy_layout && lv_subject_get_int(klippy_layout) != static_cast<int>(KlippyState::READY);
     if (layout_state_transient) {
         spdlog::debug("[PanelWidgetManager] '{}': deferring layout resolution — Klipper is not "
                       "READY, so this arrangement is transient",
@@ -498,13 +497,6 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             int row = fitted.row;
             int colspan = fitted.colspan;
             int rowspan = fitted.rowspan;
-
-            // Pin print_status to bottom row on first layout (no user edit yet).
-            // Skip pinning if the grid edit mode is active — user is positioning manually.
-            // We detect user-positioned widgets by checking if the row would differ;
-            // during initial layout (auto-placed), the row will be -1 and get_grid_position
-            // won't match, so this only fires for the default layout.
-            // TODO: replace with explicit "user_positioned" flag in config
 
             if (grid.place({slot.widget_id, col, row, colspan, rowspan})) {
                 placed.push_back(

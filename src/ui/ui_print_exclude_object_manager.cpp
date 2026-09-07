@@ -431,12 +431,10 @@ void PrintExcludeObjectManager::on_exclude_rpc_error(const std::string& object_n
     if (err.type == MoonrakerErrorType::TIMEOUT) {
         // Advisory path. printer.gcode.script blocks until Klipper executes the queued
         // gcode; during pre-print this can legitimately take >15 minutes (our ceiling).
-        // If we DO hit that ceiling, we log silently and keep the optimistic visual in
-        // place. Worst case: Klipper never ran the command and the visual is wrong until
-        // the next print or the user manually reverts — tradeoff for avoiding the
-        // false-positive toast that motivated this refactor. TODO(post-1.0): watchdog
-        // that reverts visual if still awaiting_confirmation_ when print state leaves
-        // the pre-print/printing phases.
+        // Past that ceiling the optimistic visual stays: a toast here would be a
+        // false positive, since the command may still run. If it never does, the
+        // visual is wrong until the print ends, where on_print_state_changed() drops
+        // every still-unconfirmed exclusion and re-renders the viewer.
         spdlog::warn("[PrintExcludeObjectManager] EXCLUDE_OBJECT '{}' RPC timed out ({}) — "
                      "continuing to wait for status subscription to confirm",
                      object_name, err.message);

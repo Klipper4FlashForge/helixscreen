@@ -470,9 +470,10 @@ WifiBackend::ConnectionStatus WifiBackendMacOS::get_status() {
 
             status.signal_strength = rssi_to_percentage(static_cast<int>([iface rssiValue]));
 
-            // Get IP address (requires additional work, simplified for now)
-            // Would need to query network interfaces via getifaddrs() or similar
-            status.ip_address = ""; // TODO: Implement IP address query
+            // macOS is a development host only, never a deployment target, so
+            // the address stays blank rather than growing a getifaddrs() walk
+            // no user would ever see.
+            status.ip_address = "";
         }
     }
 

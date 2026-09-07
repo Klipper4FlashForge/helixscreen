@@ -93,6 +93,7 @@ translations:
   = Loosen: = Ослабить
   = Tighten: = Затянуть
   A: A
+  A backup of %s is created before applying: 'Перед применением создаётся резервная копия %s'
   A picture of your printer: Изображение вашего принтера
   ABS: ABS
   ACCELEROMETERS: АКСЕЛЕРОМЕТРЫ
@@ -569,6 +570,7 @@ translations:
   Completed {}m ago: 'Завершено {} мин назад'
   Computing calibration...: Вычисление калибровки...
   Config Dir: Директория конфигурации
+  Config Edit Failed: 'Не удалось изменить конфигурацию'
   Config-defined (read-only): Определено в конфигурации (только чтение)
   Configuration added successfully.: Конфигурация успешно добавлена.
   Configuration already present.: Конфигурация уже присутствует.
@@ -738,9 +740,11 @@ translations:
   Define macros in your printer.cfg: Определите макросы в вашем printer.cfg
   Delete: Удалить
   Delete File?: Удалить файл?
+  Delete Print Record: 'Удалить запись печати'
   Delete Profile?: Удалить профиль?
   Delete Spool?: Удалить катушку?
   Delete Video: Удалить видео
+  Delete the history record for {}?: 'Удалить запись истории для {}?'
   Delete {}?: Удалить {}?
   'Delta:': 'Дельта:'
   Density: Плотность
@@ -1770,6 +1774,7 @@ translations:
   No temperature sensors detected: 'Датчики температуры не обнаружены'
   No timelapse videos found: Таймлапс-видео не найдены
   No vendors found: Производители не найдены
+  No video player installed - showing the timelapse library: 'Видеоплеер не установлен – показана библиотека таймлапсов'
   ? "No webcam detected.\nA webcam is required for timelapse."
   : "Веб-камера не обнаружена.\nДля таймлапса необходима веб-камера."
   No width sensor detected: 'Датчик диаметра не обнаружен'
@@ -2072,6 +2077,7 @@ translations:
     ожидаемый сервис — не то устройство?
   Printer hardware detected: Обнаружено оборудование принтера
   Printer image set to auto-detect: Изображение принтера — автоопределение
+  Printer is busy - {} stays in the queue: 'Принтер занят – {} остаётся в очереди'
   Printer is not paired — pair it first: Принтер не сопряжён — сначала выполните сопряжение
   Printer name: Название принтера
   Printer not ready: Принтер не готов
@@ -2832,6 +2838,7 @@ translations:
     этой печати нужно около %.0fг, но на катушке осталось около %.0fг. Всё равно начать?
   ? This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets.
   : Этот принтер похож на {} (уверенность {}%), но настроен как {}. Неверный тип применяет неправильные параметры перед печатью и пресеты.
+  This removes the plugin's macros and its Moonraker component from the printer and restarts Klipper.: Удаляет макросы плагина и его компонент Moonraker с принтера и перезапускает Klipper.
   This tool probes each bed screw and tells you how much to adjust.: Этот инструмент
     проверяет каждый винт стола и показывает, насколько его нужно отрегулировать.
   ? This will apply the Z-offset to your endstop and restart Klipper to save the configuration.
@@ -2957,7 +2964,9 @@ translations:
   Understanding Results: Понимание результатов
   ? "Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.\n\nThis tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.\n\nFor CoreXY, Path A and B should be within a few Hz of each other."
   : "Неравномерное натяжение ремня вызывает дефекты печати, такие как смещения слоёв, VFA (вертикальные мелкие артефакты) и ringing.\n\nЭтот инструмент вибрирует каждый путь ремня и измеряет резонансную частоту — совпадающие частоты означают сбалансированное натяжение.\n\nДля CoreXY пути A и B должны отличаться на несколько Гц."
+  Uninstall: Удалить
   Uninstall HelixPrint Plugin: Удалить плагин HelixPrint
+  Uninstall HelixPrint Plugin?: Удалить плагин HelixPrint?
   Uninstall script not found.: Скрипт удаления не найден.
   'Uninstall: Coming soon': 'Удаление: Скоро появится'
   Uninstallation failed. Check logs for details.: Ошибка удаления. Подробности смотрите

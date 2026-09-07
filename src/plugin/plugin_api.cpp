@@ -207,7 +207,9 @@ bool PluginAPI::unregister_subject(const std::string& name) {
     auto it = std::find(registered_subjects_.begin(), registered_subjects_.end(), name);
     if (it != registered_subjects_.end()) {
         registered_subjects_.erase(it);
-        // TODO: Unregister from LVGL XML system
+        // The XML scope keeps only the pointer; a reloaded plugin re-registers
+        // a fresh one, so the stale entry has to go with the plugin's own.
+        lv_xml_unregister_subject(nullptr, name.c_str());
         spdlog::debug("[plugin:{}] Subject unregistered: {}", plugin_id_, name);
         return true;
     }
@@ -454,8 +456,11 @@ void PluginAPI::cleanup() {
         }
         registered_services_.clear();
 
-        // Clear subjects
-        // TODO: Unregister from LVGL XML system when implemented
+        // Drop every subject this plugin put in the XML scope, or a reload
+        // leaves bindings pointing at the unloaded module's memory.
+        for (const auto& name : registered_subjects_) {
+            lv_xml_unregister_subject(nullptr, name.c_str());
+        }
         registered_subjects_.clear();
     }
 

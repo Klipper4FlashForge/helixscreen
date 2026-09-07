@@ -17,6 +17,7 @@
 #include "ui_event_safety.h"
 #include "ui_nav_manager.h"
 #include "ui_update_queue.h"
+#include "ui_utils.h"
 
 #include "config.h"
 #include "lvgl/src/others/translation/lv_translation.h"
@@ -219,31 +220,13 @@ lv_obj_t* PrinterImageOverlay::create_list_row(lv_obj_t* parent, const std::stri
         return nullptr;
     }
 
-    // Store image_id in user_data (freed on row delete)
-    // TODO: lv_obj user_data is safe here ONLY because printer_image_list_item
-    // extends lv_button (which doesn't claim user_data). If the XML component
-    // ever extends a custom widget like severity_card that uses user_data
-    // internally, this will silently collide. Consider event callback user_data
-    // or a C++ side map instead. See L069.
-    char* id_copy = strdup(image_id.c_str());
-    if (!id_copy) {
-        spdlog::error("[{}] Failed to allocate memory for image id", get_name());
-        return row;
+    // The id rides in the row's user_data through the owned-string helper,
+    // which refuses a slot another widget already claims and frees the copy on
+    // LV_EVENT_DELETE (L069). A refused or failed attach leaves the row inert:
+    // the readers below get nullptr rather than a foreign pointer.
+    if (!helix::ui::set_owned_user_string(row, image_id)) {
+        spdlog::warn("[{}] Could not attach image id to list row for {}", get_name(), image_id);
     }
-    lv_obj_set_user_data(row, id_copy);
-
-    // Free strdup'd user_data when LVGL destroys the row
-    // (acceptable exception to declarative UI rule for cleanup)
-    lv_obj_add_event_cb(
-        row,
-        [](lv_event_t* e) {
-            auto* obj = lv_event_get_current_target_obj(e);
-            void* data = lv_obj_get_user_data(obj);
-            if (data) {
-                free(data);
-            }
-        },
-        LV_EVENT_DELETE, nullptr);
 
     return row;
 }
@@ -368,7 +351,7 @@ void PrinterImageOverlay::update_selection_indicator(const std::string& active_i
         uint32_t count = lv_obj_get_child_count(list);
         for (uint32_t i = 0; i < count; i++) {
             lv_obj_t* child = lv_obj_get_child(list, static_cast<int32_t>(i));
-            auto* id = static_cast<const char*>(lv_obj_get_user_data(child));
+            const char* id = helix::ui::get_owned_user_string(child);
             if (id && std::string(id) == active_id) {
                 lv_obj_add_state(child, LV_STATE_CHECKED);
             } else {
@@ -517,7 +500,7 @@ void PrinterImageOverlay::on_image_card_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrinterImageOverlay] on_image_card_clicked");
     // Get the row root (current_target = obj with the handler = setting_action_row view)
     auto* row = lv_event_get_current_target_obj(e);
-    auto* id = static_cast<const char*>(lv_obj_get_user_data(row));
+    const char* id = helix::ui::get_owned_user_string(row);
     if (id) {
         get_printer_image_overlay().handle_image_selected(std::string(id));
     }
@@ -528,7 +511,7 @@ void PrinterImageOverlay::on_usb_image_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrinterImageOverlay] on_usb_image_clicked");
     // Get the row root (current_target = obj with the handler = setting_action_row view)
     auto* row = lv_event_get_current_target_obj(e);
-    auto* path = static_cast<const char*>(lv_obj_get_user_data(row));
+    const char* path = helix::ui::get_owned_user_string(row);
     if (path) {
         get_printer_image_overlay().handle_usb_import(std::string(path));
     }

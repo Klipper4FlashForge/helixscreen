@@ -13,6 +13,7 @@
 #include "ui_gradient_canvas.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
+#include "ui_notification.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
@@ -41,9 +42,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-// Default path for timelapse files relative to $HOME.
-// TODO: Query Moonraker's data_path config if an API becomes available.
+// Where a same-host Moonraker keeps its videos when server.files.roots has not
+// answered yet (or names no timelapse root): the stock data_path layout.
 static constexpr const char* TIMELAPSE_DATA_SUBPATH = "printer_data/timelapse/";
+
+static std::string default_timelapse_dir() {
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/" + TIMELAPSE_DATA_SUBPATH;
+}
 
 // ============================================================================
 // GLOBAL INSTANCE
@@ -105,6 +111,24 @@ void open_timelapse_videos() {
     NavigationManager::instance().push_overlay(g_timelapse_videos_panel);
 }
 
+void helix::ui::open_timelapse_video(const std::string& filename) {
+    open_timelapse_videos();
+    if (!g_timelapse_videos || !g_timelapse_videos_panel) {
+        return;
+    }
+    if (!g_timelapse_videos->can_play()) {
+        spdlog::info("[Timelapse Videos] No video player on this host; showing the library for {}",
+                     filename);
+        ui_notification_info(lv_tr("No video player installed - showing the timelapse library"));
+        return;
+    }
+    g_timelapse_videos->play_video(filename);
+}
+
+bool helix::ui::timelapse_viewer_available() {
+    return true;
+}
+
 // ============================================================================
 // CONSTRUCTOR
 // ============================================================================
@@ -149,6 +173,7 @@ void TimelapseVideosOverlay::on_activate() {
     OverlayBase::on_activate();
     spdlog::debug("[{}] on_activate() - fetching video list", get_name());
     detect_playback_capability();
+    fetch_timelapse_root();
     fetch_frame_info();
     fetch_video_list();
 
@@ -668,6 +693,42 @@ void TimelapseVideosOverlay::detect_playback_capability() {
 // VIDEO PLAYBACK
 // ============================================================================
 
+void TimelapseVideosOverlay::fetch_timelapse_root() {
+    // Only same-host playback opens the file by path; a remote host streams it.
+    if (!api_ || !is_local_moonraker_) {
+        return;
+    }
+    auto tok = lifetime_.token();
+    api_->files().get_file_roots(
+        [this, tok](const std::vector<FileRoot>& roots) {
+            if (tok.expired())
+                return;
+            tok.defer([this, roots]() { apply_timelapse_root(roots); });
+        },
+        [](const MoonrakerError& error) {
+            spdlog::debug("[Timelapse Videos] server.files.roots unavailable: {}", error.message);
+        });
+}
+
+void TimelapseVideosOverlay::apply_timelapse_root(const std::vector<FileRoot>& roots) {
+    std::string path = helix::readable_root_path(roots, "timelapse");
+    if (path.empty()) {
+        spdlog::debug("[{}] No timelapse root reported; using {}", get_name(),
+                      default_timelapse_dir());
+        return;
+    }
+    timelapse_root_ = path;
+    spdlog::debug("[{}] Timelapse root: {}", get_name(), timelapse_root_);
+}
+
+std::string TimelapseVideosOverlay::local_video_path(const std::string& filename) const {
+    std::string dir = timelapse_root_.empty() ? default_timelapse_dir() : timelapse_root_;
+    if (dir.back() != '/') {
+        dir += '/';
+    }
+    return dir + filename;
+}
+
 /// Launch a child process via double-fork to prevent zombie processes.
 /// The grandchild is adopted by init so no waitpid is needed long-term.
 static void spawn_detached(const std::vector<std::string>& args) {
@@ -708,9 +769,9 @@ void TimelapseVideosOverlay::play_video(const std::string& filename) {
     }
 
     if (is_local_moonraker_) {
-        // Local: construct path directly
-        std::string home = getenv("HOME") ? getenv("HOME") : "/root";
-        std::string path = home + "/" + TIMELAPSE_DATA_SUBPATH + filename;
+        // Local: the file is on this filesystem, under Moonraker's own root
+        // when it told us where that is.
+        std::string path = local_video_path(filename);
         auto args = helix::timelapse::build_player_args(player_command_, path);
         spdlog::info("[{}] Playing local video: {} {}", get_name(), args[0], path);
         spawn_detached(args);
@@ -884,6 +945,15 @@ void open_timelapse_videos() {
     spdlog::debug("[Timelapse Videos] Compiled out (HELIX_HAS_TIMELAPSE_VIEWER=0); ignoring");
 }
 
+void helix::ui::open_timelapse_video(const std::string& filename) {
+    spdlog::debug("[Timelapse Videos] Compiled out (HELIX_HAS_TIMELAPSE_VIEWER=0); ignoring {}",
+                  filename);
+}
+
+bool helix::ui::timelapse_viewer_available() {
+    return false;
+}
+
 TimelapseVideosOverlay::TimelapseVideosOverlay(IMoonrakerAPI* api) : api_(api) {}
 
 void TimelapseVideosOverlay::init_subjects() {}
@@ -902,6 +972,14 @@ void TimelapseVideosOverlay::on_deactivate() {
 
 void TimelapseVideosOverlay::cleanup() {
     OverlayBase::cleanup();
+}
+
+void TimelapseVideosOverlay::play_video(const std::string&) {}
+
+void TimelapseVideosOverlay::apply_timelapse_root(const std::vector<FileRoot>&) {}
+
+std::string TimelapseVideosOverlay::local_video_path(const std::string& filename) const {
+    return filename;
 }
 
 #endif // HELIX_HAS_TIMELAPSE_VIEWER

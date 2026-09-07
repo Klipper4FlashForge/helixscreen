@@ -479,8 +479,7 @@ TEST_CASE("theme_manager_get_readable_on returns black on a light fill", "[theme
 // The point of the helper: whatever it returns must actually be readable. A
 // fixed choice cannot satisfy this — pure black fails on a dark navy accent and
 // the palette's own text color fails on a saturated mid-tone.
-TEST_CASE("theme_manager_get_readable_on clears WCAG AA on every accent it is given",
-          "[theme]") {
+TEST_CASE("theme_manager_get_readable_on clears WCAG AA on every accent it is given", "[theme]") {
     // Accents drawn from the shipped theme presets, spanning dark navy through
     // saturated mid-tone to bright yellow.
     const uint32_t accents[] = {
@@ -519,12 +518,11 @@ TEST_CASE("theme_manager_get_readable_on clears WCAG AA on every shipped theme a
 
         auto check_palette = [&](const helix::ModePalette& palette, const char* mode) {
             for (const char* accent : kAccents) {
-                const std::string& hex =
-                    accent == std::string("primary")     ? palette.primary
-                    : accent == std::string("secondary") ? palette.secondary
-                    : accent == std::string("success")   ? palette.success
-                    : accent == std::string("warning")   ? palette.warning
-                                                         : palette.danger;
+                const std::string& hex = accent == std::string("primary")     ? palette.primary
+                                         : accent == std::string("secondary") ? palette.secondary
+                                         : accent == std::string("success")   ? palette.success
+                                         : accent == std::string("warning")   ? palette.warning
+                                                                              : palette.danger;
                 lv_color_t fill = theme_manager_parse_hex_color(hex.c_str());
                 double ratio = wcag_contrast(theme_manager_get_readable_on(fill), fill);
                 CAPTURE(mode, accent, hex, ratio);
