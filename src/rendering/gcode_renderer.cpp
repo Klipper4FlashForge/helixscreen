@@ -5,6 +5,7 @@
 
 #include "gcode_renderer.h"
 
+#include "gcode_line_clip.h"
 #include "gcode_projection.h"
 #include "gcode_selection_style.h"
 #include "theme_manager.h"
@@ -315,28 +316,8 @@ bool GCodeRenderer::should_render_segment(const ToolpathSegment& segment) const 
 }
 
 bool GCodeRenderer::clip_line_to_viewport(glm::vec2& p1, glm::vec2& p2) const {
-    // Simple Cohen-Sutherland line clipping
-    // For now, just check if line is completely outside viewport
-    // TODO: Implement proper clipping for partially visible lines
-
-    float min_x = 0.0f;
-    float max_x = static_cast<float>(viewport_width_);
-    float min_y = 0.0f;
-    float max_y = static_cast<float>(viewport_height_);
-
-    // Both points outside on same side = completely outside
-    if ((p1.x < min_x && p2.x < min_x) || (p1.x > max_x && p2.x > max_x) ||
-        (p1.y < min_y && p2.y < min_y) || (p1.y > max_y && p2.y > max_y)) {
-        return false;
-    }
-
-    // Simple clamp for now (not perfect but acceptable for Phase 1)
-    p1.x = std::clamp(p1.x, min_x, max_x);
-    p1.y = std::clamp(p1.y, min_y, max_y);
-    p2.x = std::clamp(p2.x, min_x, max_x);
-    p2.y = std::clamp(p2.y, min_y, max_y);
-
-    return true;
+    return helix::gcode::clip_line_to_rect(p1, p2, static_cast<float>(viewport_width_),
+                                           static_cast<float>(viewport_height_));
 }
 
 lv_draw_line_dsc_t GCodeRenderer::get_line_style(const ToolpathSegment& segment,
