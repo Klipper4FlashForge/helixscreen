@@ -325,8 +325,8 @@ static LabelBitmap render_minimal(const std::string& qr_data, const std::string&
     const int inner_h = canvas_h > 0 ? canvas_h - 2 * qr_margin : 0;
 
     int scale_beside = fit_scale(id_text, inner_w - qr.width() - gap, qr.height());
-    int scale_below =
-        fit_scale(id_text, inner_w, canvas_h > 0 ? inner_h - qr.height() - gap : ID_MAX_SCALE * FONT_H);
+    int scale_below = fit_scale(id_text, inner_w,
+                                canvas_h > 0 ? inner_h - qr.height() - gap : ID_MAX_SCALE * FONT_H);
     bool beside = scale_beside >= ID_MIN_SCALE && scale_beside >= scale_below;
 
     if (!beside && scale_below < ID_MIN_SCALE) {
@@ -413,8 +413,8 @@ LabelBitmap LabelRenderer::render(const SpoolInfo& spool, LabelPreset preset,
                 render_minimal(qr_data, id_text, lw, label_width, qr_margin, qr_max, 8, spool.id);
             return landscape.rotate_90_cw();
         }
-        return render_minimal(qr_data, id_text, label_width, size.height_px, qr_margin, qr_max,
-                              16, spool.id);
+        return render_minimal(qr_data, id_text, label_width, size.height_px, qr_margin, qr_max, 16,
+                              spool.id);
     }
 
     // Build text content
