@@ -10,6 +10,7 @@
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_notification.h"
+#include "ui_overlay_timelapse_videos.h"
 #include "ui_panel_common.h"
 #include "ui_panel_print_select.h"
 #include "ui_update_queue.h"
@@ -1152,7 +1153,10 @@ void HistoryListPanel::update_detail_subjects(const PrintHistoryJob& job) {
     lv_subject_set_int(&detail_can_reprint_, job.exists ? 1 : 0);
 
     // Set timelapse availability
-    lv_subject_set_int(&detail_has_timelapse_, job.has_timelapse ? 1 : 0);
+    // A build without the timelapse viewer has nothing to open, so the button
+    // stays hidden there rather than reachable and inert.
+    lv_subject_set_int(&detail_has_timelapse_,
+                       (job.has_timelapse && helix::ui::timelapse_viewer_available()) ? 1 : 0);
 
     // Set status code for icon visibility binding: 0=completed, 1=cancelled, 2=error, 3=in_progress
     int status_code = 0; // Default to completed
@@ -1310,10 +1314,9 @@ void HistoryListPanel::handle_view_timelapse() {
     spdlog::info("[{}] View timelapse requested for: {} (file: {})", get_name(), job.filename,
                  job.timelapse_filename);
 
-    // TODO: Phase 6 - Open timelapse viewer/player
-    // For now, show a toast with the filename
-    std::string message = "Timelapse: " + job.timelapse_filename;
-    ui_notification_info(message.c_str());
+    // The timelapse browser owns playback (player detection, remote download);
+    // it plays the file where a player exists and otherwise lands on its card.
+    helix::ui::open_timelapse_video(job.timelapse_filename);
 }
 
 // ============================================================================

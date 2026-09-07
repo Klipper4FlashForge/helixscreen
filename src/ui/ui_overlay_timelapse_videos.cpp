@@ -13,6 +13,7 @@
 #include "ui_gradient_canvas.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
+#include "ui_notification.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
@@ -103,6 +104,24 @@ void open_timelapse_videos() {
 
     // Show the overlay - NavigationManager will call on_activate()
     NavigationManager::instance().push_overlay(g_timelapse_videos_panel);
+}
+
+void helix::ui::open_timelapse_video(const std::string& filename) {
+    open_timelapse_videos();
+    if (!g_timelapse_videos || !g_timelapse_videos_panel) {
+        return;
+    }
+    if (!g_timelapse_videos->can_play()) {
+        spdlog::info("[Timelapse Videos] No video player on this host; showing the library for {}",
+                     filename);
+        ui_notification_info(lv_tr("No video player installed - showing the timelapse library"));
+        return;
+    }
+    g_timelapse_videos->play_video(filename);
+}
+
+bool helix::ui::timelapse_viewer_available() {
+    return true;
 }
 
 // ============================================================================
@@ -884,6 +903,15 @@ void open_timelapse_videos() {
     spdlog::debug("[Timelapse Videos] Compiled out (HELIX_HAS_TIMELAPSE_VIEWER=0); ignoring");
 }
 
+void helix::ui::open_timelapse_video(const std::string& filename) {
+    spdlog::debug("[Timelapse Videos] Compiled out (HELIX_HAS_TIMELAPSE_VIEWER=0); ignoring {}",
+                  filename);
+}
+
+bool helix::ui::timelapse_viewer_available() {
+    return false;
+}
+
 TimelapseVideosOverlay::TimelapseVideosOverlay(IMoonrakerAPI* api) : api_(api) {}
 
 void TimelapseVideosOverlay::init_subjects() {}
@@ -903,5 +931,7 @@ void TimelapseVideosOverlay::on_deactivate() {
 void TimelapseVideosOverlay::cleanup() {
     OverlayBase::cleanup();
 }
+
+void TimelapseVideosOverlay::play_video(const std::string&) {}
 
 #endif // HELIX_HAS_TIMELAPSE_VIEWER

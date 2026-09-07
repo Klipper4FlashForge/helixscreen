@@ -38,6 +38,18 @@ class TimelapseVideosOverlay : public OverlayBase {
         api_ = api;
     }
 
+    /**
+     * @brief Play one video through the detected player
+     *
+     * Downloads first when Moonraker is remote. Without a player (no mpv or
+     * ffplay on the host) this logs and returns; can_play() says so up front.
+     */
+    void play_video(const std::string& filename);
+
+    [[nodiscard]] bool can_play() const {
+        return can_play_;
+    }
+
   private:
     struct VideoEntry {
         std::string filename;
@@ -55,7 +67,6 @@ class TimelapseVideosOverlay : public OverlayBase {
     void clear_video_grid();
 
     void detect_playback_capability();
-    void play_video(const std::string& filename);
 
     void confirm_delete(const std::string& filename);
 
@@ -89,3 +100,20 @@ class TimelapseVideosOverlay : public OverlayBase {
 TimelapseVideosOverlay& get_global_timelapse_videos();
 void init_global_timelapse_videos(IMoonrakerAPI* api);
 void open_timelapse_videos();
+
+namespace helix::ui {
+
+/**
+ * @brief Open the timelapse browser on a specific video and play it
+ *
+ * The browser is pushed first so the user lands on the library either way;
+ * playback then starts when a player exists, and a toast says so when none
+ * does. A no-op (with a log line) on builds without the viewer.
+ */
+void open_timelapse_video(const std::string& filename);
+
+/// False on builds compiled without the viewer (HELIX_HAS_TIMELAPSE_VIEWER=0),
+/// where every open_* entry point is inert.
+bool timelapse_viewer_available();
+
+} // namespace helix::ui
