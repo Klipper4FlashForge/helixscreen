@@ -61,7 +61,10 @@ class PanelWidgetHarnessBase {
         lv_obj_set_size(obj_, width_px, height_px);
         lv_obj_update_layout(obj_);
         if (instance_) {
-            instance_->on_size_changed(colspan, rowspan, width_px, height_px);
+            // notify_size_changed(), not on_size_changed(): the manager calls the
+            // recording entry point, and a widget that replays the last granted
+            // size on rebuild only sees one if the harness records it too.
+            instance_->notify_size_changed(colspan, rowspan, width_px, height_px);
         }
         lv_obj_update_layout(obj_);
     }
