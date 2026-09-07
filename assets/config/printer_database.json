@@ -2330,6 +2330,13 @@
           "pattern": "cr-10",
           "confidence": 85,
           "reason": "Hostname contains 'cr-10'"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "ducr10",
+          "confidence": 0,
+          "reason": "A DuCR10 hostname contains 'cr10'; it is not a Creality CR-10"
         }
       ]
     },
