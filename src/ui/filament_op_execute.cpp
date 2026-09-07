@@ -327,7 +327,8 @@ void execute_filament_load(AmsBackend* backend, int slot, const FilamentOpSurfac
                 unwind_async(s, plan);
                 report_op_error(err, "load");
             },
-            IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+            IMoonrakerAPI::EXTRUSION_TIMEOUT_MS, /*silent=*/false, /*on_queued=*/nullptr,
+            /*caller_surfaces_errors=*/true); // report_op_error() toasts the failure
         return;
     }
     }
@@ -439,7 +440,8 @@ void execute_filament_unload(AmsBackend* backend, int slot, bool target_is_loade
                 unwind_async(s, plan);
                 report_op_error(err, "unload");
             },
-            IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+            IMoonrakerAPI::EXTRUSION_TIMEOUT_MS, /*silent=*/false, /*on_queued=*/nullptr,
+            /*caller_surfaces_errors=*/true); // report_op_error() toasts the failure
         return;
     }
     }
