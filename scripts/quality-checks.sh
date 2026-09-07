@@ -135,6 +135,36 @@ TRANS_FMT_PY="${VENV_PYTHON:-python3}"
 # ====================================================================
 # Phase 1: Critical Checks
 # ====================================================================
+# One clang-format formats this tree: the wheel pinned in requirements.txt,
+# installed into .venv by `make venv-setup`. CLANG_FORMAT may name another
+# binary, but only one that reports the pinned version; nothing on PATH is
+# ever consulted. Sets CF_PIN and CF_BIN on success and CF_RESOLVE_ERR on
+# failure.
+qc_resolve_clang_format() {
+  CF_PIN="$(grep -oE '^clang-format==[0-9.]+' "$REPO_ROOT/requirements.txt" 2>/dev/null | cut -d= -f3)"
+  CF_BIN=""; CF_RESOLVE_ERR=""
+  if [ -z "$CF_PIN" ]; then
+    CF_RESOLVE_ERR="requirements.txt does not pin clang-format (clang-format==X.Y.Z)"
+    return 1
+  fi
+  local cand="${CLANG_FORMAT:-$REPO_ROOT/.venv/bin/clang-format}" ver
+  if [ ! -x "$cand" ] && ! command -v "$cand" >/dev/null 2>&1; then
+    if [ -n "${CLANG_FORMAT:-}" ]; then
+      CF_RESOLVE_ERR="CLANG_FORMAT=$cand is not an executable"
+    else
+      CF_RESOLVE_ERR="pinned clang-format $CF_PIN not found (.venv/bin/clang-format is missing)"
+    fi
+    return 1
+  fi
+  ver="$("$cand" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  if [ "$ver" != "$CF_PIN" ]; then
+    CF_RESOLVE_ERR="$cand is clang-format ${ver:-unknown}, the pin is $CF_PIN"
+    return 1
+  fi
+  CF_BIN="$cand"
+  return 0
+}
+
 qc_phase1() {
   local EXIT_CODE=0
 
@@ -997,31 +1027,52 @@ echo ""
 qc_phase2() {
   local EXIT_CODE=0
 
-# Code Formatting Check (clang-format) - WARNING ONLY
-# NOTE: clang-format versions differ between local (macOS Homebrew) and CI (Ubuntu)
-# which can cause false positives. Use pre-commit hook for local enforcement.
+# Code Formatting Check (clang-format)
+#
+# The pinned wheel (qc_resolve_clang_format) is the only formatter this tree
+# accepts, on every machine and in CI, so its verdict is byte-identical
+# everywhere and a difference is a real one. A distro or Homebrew
+# clang-format, even another 18.x, reflows differently, and two formatters
+# taking turns on one file is how files ping-pong between commits; a tree
+# that cannot resolve the pin fails here instead of formatting with whatever
+# it has.
+#
+# Files that were unformatted when this gate started blocking are carried in
+# CLANG_FORMAT_BASELINE: still-unformatted entries are reported, not failed,
+# until they are next staged - the pre-commit auto-format cleans them then
+# - and a full sweep refuses an entry that has come clean, so the list only
+# shrinks.
 echo "🎨 Checking code formatting (clang-format)..."
-# Resolve clang-format to the EXACT pinned wheel (clang-format==18.1.8 in
-# requirements.txt, installed into .venv by `make deps`). Preference order:
-# $CLANG_FORMAT override, then the project .venv (the single source of truth —
-# byte-identical on every OS + CI), then a system clang-format-18, then bare
-# clang-format. The .venv wins over the system binary so a machine's Homebrew
-# (newer) or distro (older 18.1.x patch) clang-format never affects formatting.
-# Auto-fix only runs when the resolved binary is v18, so a non-18 fallback can
-# never reflow whole files.
-CF_BIN=""
-CF_VER=""
-for cf_cand in "${CLANG_FORMAT:-}" "$REPO_ROOT/.venv/bin/clang-format" clang-format-18 clang-format; do
-  [ -n "$cf_cand" ] || continue
-  command -v "$cf_cand" >/dev/null 2>&1 || [ -x "$cf_cand" ] || continue
-  cf_v="$("$cf_cand" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-  [ -n "$cf_v" ] || continue
-  CF_BIN="$cf_cand"
-  CF_VER="$cf_v"
-  case "$cf_v" in 18.*) break ;; esac
-done
+# Unformatted when the gate started blocking; each entry leaves when it is
+# next staged and auto-formatted.
+CLANG_FORMAT_BASELINE="
+include/print_history_manager.h
+include/printer_discovery.h
+include/tool_state.h
+include/ui_icon.h
+src/application/application.cpp
+src/print/print_history_manager.cpp
+src/printer/ams_backend_cfs.cpp
+src/printer/ams_backend_happy_hare.cpp
+src/printer/ams_subscription_backend.cpp
+src/printer/filament_mapper.cpp
+src/system/pwm_sound_backend.cpp
+src/system/telemetry_manager.cpp
+src/system/update_checker.cpp
+src/ui/filament_op_execute.cpp
+src/ui/panel_widget_manager.cpp
+src/ui/ui_ams_context_menu.cpp
+src/ui/ui_ams_sidebar.cpp
+src/ui/ui_filament_mapping_modal.cpp
+src/ui/ui_icon.cpp
+src/ui/ui_panel_filament.cpp
+src/ui/ui_print_tune_overlay.cpp
+src/ui/ui_settings_about.cpp
+"
+CF_OK=false
+if qc_resolve_clang_format; then CF_OK=true; fi
 if [ -n "$FILES" ]; then
-  if [ -n "$CF_BIN" ]; then
+  if [ "$CF_OK" = true ]; then
     if [ -f ".clang-format" ]; then
       # This probe was the single slowest thing in the script - 41s of a 44s
       # run - because it spawned one clang-format (plus one head+grep) per
@@ -1070,20 +1121,11 @@ if [ -n "$FILES" ]; then
         done < "$CF_DIRTY"
       fi
       if [ -n "$FORMAT_ISSUES" ] && [ "$AUTO_FIX" = true ]; then
-        case "$CF_VER" in
-          18.*)
-            while IFS= read -r file; do
-              [ -n "$file" ] || continue
-              "$CF_BIN" -i "$file"
-              echo "   ✓ Auto-formatted: $file"
-            done < "$CF_DIRTY"
-            ;;
-          *)
-            echo "   ⚠️  Skipping auto-format: resolved clang-format $CF_VER != 18"
-            echo "       (auto-formatting with a non-CI version would reflow whole files)"
-            echo "       Install v18: pip install 'clang-format==18.1.8' into .venv, or set CLANG_FORMAT=clang-format-18"
-            ;;
-        esac
+        while IFS= read -r file; do
+          [ -n "$file" ] || continue
+          "$CF_BIN" -i "$file"
+          echo "   ✓ Auto-formatted: $file"
+        done < "$CF_DIRTY"
       fi
       rm -f "$CF_CAND" "$CF_DIRTY" "$CF_SEEN"
 
@@ -1092,6 +1134,21 @@ if [ -n "$FILES" ]; then
         echo "   (an xargs that rejects GNU options does this - prestonbrown/helixscreen#1488)"
         EXIT_CODE=1
       fi
+      # Split the dirty list against the baseline, and find baseline entries
+      # that were examined this run and came back clean.
+      CF_NEW=""; CF_BASELINED=""; CF_RETIRE=""
+      for cf_f in $FORMAT_ISSUES; do
+        if printf '%s\n' $CLANG_FORMAT_BASELINE | grep -Fxq "$cf_f"; then
+          CF_BASELINED="$CF_BASELINED $cf_f"
+        else
+          CF_NEW="$CF_NEW $cf_f"
+        fi
+      done
+      for cf_f in $CLANG_FORMAT_BASELINE; do
+        printf '%s\n' $FILES | grep -Fxq "$cf_f" || continue
+        case "$FORMAT_ISSUES " in *" $cf_f "*) continue ;; esac
+        CF_RETIRE="$CF_RETIRE $cf_f"
+      done
       if [ -n "$FORMAT_ISSUES" ]; then
         if [ "$AUTO_FIX" = true ]; then
           # Auto-stage formatted files when in pre-commit mode (--staged-only)
@@ -1115,8 +1172,17 @@ if [ -n "$FILES" ]; then
               echo "$CF_RESTAGE" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
             fi
             if [ -n "$CF_HELD" ]; then
-              echo "⚠️  Formatted but NOT re-staged (partially staged):$CF_HELD"
-              echo "ℹ️  This commit still carries unformatted C++. Stage it with: git add$CF_HELD"
+              CF_HELD_NEW=""
+              for cf_f in $CF_HELD; do
+                printf '%s\n' $CLANG_FORMAT_BASELINE | grep -Fxq "$cf_f" || CF_HELD_NEW="$CF_HELD_NEW $cf_f"
+              done
+              if [ -n "$CF_HELD_NEW" ]; then
+                echo "❌ Formatted on disk but NOT re-staged (partially staged):$CF_HELD_NEW"
+                echo "   This commit would carry unformatted C++. Stage it with: git add$CF_HELD_NEW"
+                EXIT_CODE=1
+              else
+                echo "⚠️  Formatted on disk but NOT re-staged (partially staged, baselined):$CF_HELD"
+              fi
             fi
           else
             echo "✅ Auto-formatted files - re-stage them before committing:"
@@ -1126,24 +1192,38 @@ if [ -n "$FILES" ]; then
             echo "   git add$FORMAT_ISSUES"
           fi
         else
-          qc_note "⚠️  clang-format: $CF_EXAMINED file(s) checked, $(echo "$FORMAT_ISSUES" | wc -w | tr -d ' ') may need formatting"
-          echo "⚠️  Files may need formatting (version differences may cause false positives):"
-          echo "$FORMAT_ISSUES" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
-          echo ""
-          echo "ℹ️  Fix with: clang-format -i <file>"
-          echo "ℹ️  Or run: ./scripts/quality-checks.sh --auto-fix"
-          # NOTE: Don't fail CI for formatting - version differences cause issues
-          # EXIT_CODE=1
+          if [ -n "$CF_NEW" ]; then
+            echo "❌ Unformatted C++ (clang-format $CF_PIN, the pinned wheel, disagrees):"
+            echo "$CF_NEW" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
+            echo "   Fix with: ./scripts/quality-checks.sh --auto-fix   (then git add the files it names)"
+            EXIT_CODE=1
+          fi
+          if [ -n "$CF_BASELINED" ]; then
+            echo "⚠️  Baselined and still unformatted (auto-formatted when next staged):"
+            echo "$CF_BASELINED" | tr ' ' '\n' | grep -v '^$' | sed 's/^/   /'
+          fi
+          if [ -z "$CF_NEW" ] && [ "$CF_EXAMINED" -eq "$CF_TOTAL" ]; then
+            qc_count "✅ clang-format: $CF_EXAMINED file(s) checked, $(echo "$CF_BASELINED" | wc -w | tr -d ' ') baselined still unformatted"
+          fi
         fi
       elif [ "$CF_EXAMINED" -eq "$CF_TOTAL" ]; then
         qc_count "✅ All files properly formatted ($CF_EXAMINED file(s) checked)"
+      fi
+      if [ -n "$CF_RETIRE" ]; then
+        if [ "$STAGED_ONLY" = true ]; then
+          echo "ℹ️  Formatted now; retire from CLANG_FORMAT_BASELINE (scripts/quality-checks.sh) before pushing:$CF_RETIRE"
+        else
+          echo "❌ Formatted now but still listed in CLANG_FORMAT_BASELINE (scripts/quality-checks.sh); retire:$CF_RETIRE"
+          EXIT_CODE=1
+        fi
       fi
     else
       echo "ℹ️  No .clang-format file found - skipping format check"
     fi
   else
-    echo "⚠️  clang-format not found - skipping format check"
-    echo "   Install with: brew install clang-format (macOS) or apt install clang-format (Linux)"
+    echo "❌ $CF_RESOLVE_ERR"
+    echo "   Run: make venv-setup   (installs the pinned wheel into .venv)"
+    EXIT_CODE=1
   fi
 else
   echo "ℹ️  No files to check"
