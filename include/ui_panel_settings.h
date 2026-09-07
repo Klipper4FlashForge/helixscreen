@@ -222,9 +222,6 @@ class SettingsPanel : public PanelBase {
     // Called by toast action to navigate and open overlay
     void handle_hardware_health_clicked();
 
-    // Called by plugin failure toast action to open plugins overlay
-    void handle_plugins_clicked();
-
     // Opens the Performance overlay (System settings row)
     void handle_performance_clicked();
 
@@ -269,7 +266,6 @@ class SettingsPanel : public PanelBase {
     static void on_touch_calibration_clicked(lv_event_t* e);
     static void on_factory_reset_clicked(lv_event_t* e);
     static void on_hardware_health_clicked(lv_event_t* e);
-    static void on_plugins_clicked(lv_event_t* e);
     static void on_system_performance_clicked(lv_event_t* e);
     static void on_telemetry_view_data(lv_event_t* e);
     static void on_restart_helix_settings_clicked(lv_event_t* e);

@@ -1154,6 +1154,7 @@
   <translation tag="Homing Z..." de="Referenzfahrt Z..."/>
   <translation tag="Homing all axes..." de="Referenzfahrt alle Achsen..."/>
   <translation tag="Homing axes..." de="Achsen referenzieren..."/>
+  <translation tag="Homing complete" de="Referenzfahrt abgeschlossen"/>
   <translation tag="Homing failed: " de="Referenzfahrt fehlgeschlagen: "/>
   <translation tag="Homing failed: {}" de="Referenzfahrt fehlgeschlagen: {}"/>
   <translation tag="Homing first..." de="Referenzfahrt zuerst..."/>
@@ -1868,6 +1869,7 @@
   <translation tag="Printer Shutdown" de="Drucker-Abschaltung"/>
   <translation tag="Printer Type" de="Druckertyp"/>
   <translation tag="Printer accepted job but isn&apos;t printing — check cover, paper, and label type (firmware status=0x{:02X} error=0x{:02X})" de="Drucker hat Auftrag angenommen, druckt aber nicht – prüfen Sie Abdeckung, Papier und Etikettentyp (firmware status=0x{:02X} error=0x{:02X})"/>
+  <translation tag="Printer connection unavailable" de="Druckerverbindung nicht verfügbar"/>
   <translation tag="Printer database format error" de="Formatfehler der Druckerdatenbank"/>
   <translation tag="Printer database is corrupt" de="Druckerdatenbank ist beschädigt"/>
   <translation tag="Printer didn&apos;t respond — make sure it&apos;s on and in range" de="Drucker hat nicht reagiert — stellen Sie sicher, dass er eingeschaltet und in Reichweite ist"/>
@@ -2529,6 +2531,7 @@
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." de="Dieses Plugin ermöglicht HelixScreen die Steuerung von Druckstartoptionen wie Bettnetz und QGL. Nach der Installation verwenden Sie PRINT_START konfigurieren unten, um optionale Schritte zu aktivieren."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" de="Dieser Druck benötigt etwa %.0fg, aber die Spule hat noch etwa %.0fg übrig. Trotzdem starten?"/>
   <translation tag="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets." de="Dieser Drucker sieht aus wie ein {} ({}% Konfidenz), ist aber als {} eingerichtet. Ein falscher Typ wendet falsche Optionen und Voreinstellungen für die Druckvorbereitung an."/>
+  <translation tag="This removes the plugin&apos;s macros and its Moonraker component from the printer and restarts Klipper." de="Entfernt die Makros des Plugins und seine Moonraker-Komponente vom Drucker und startet Klipper neu."/>
   <translation tag="This tool probes each bed screw and tells you how much to adjust." de="Dieses Werkzeug tastet jede Bettschraube ab und zeigt Ihnen, wie viel Sie einstellen müssen."/>
   <translation tag="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect." de="Dies wendet den Z-offset auf Ihren Endschalter an und startet Klipper neu, um die Konfiguration zu speichern. Der Drucker wird kurz getrennt."/>
   <translation tag="This will apply the Z-offset to your probe and restart Klipper to save the configuration. The printer will briefly disconnect." de="Dies wendet den Z-offset auf Ihre Sonde an und startet Klipper neu, um die Konfiguration zu speichern. Der Drucker wird kurz getrennt."/>
@@ -2634,7 +2637,9 @@
   <translation tag="Unavailable" de="Nicht verfügbar"/>
   <translation tag="Understanding Results" de="Ergebnisse verstehen"/>
   <translation tag="Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.&#10;&#10;This tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.&#10;&#10;For CoreXY, Path A and B should be within a few Hz of each other." de="Ungleichmäßige Riemenspannung verursacht Druckartefakte wie Schichtverschiebungen, VFAs (vertikale feine Artefakte) und Ringing.&#10;&#10;Dieses Werkzeug lässt jeden Riemenpfad vibrieren und misst die Resonanzfrequenz — übereinstimmende Frequenzen bedeuten ausgewogene Spannung.&#10;&#10;Bei CoreXY sollten Pfad A und B nur wenige Hz voneinander entfernt sein."/>
+  <translation tag="Uninstall" de="Deinstallieren"/>
   <translation tag="Uninstall HelixPrint Plugin" de="HelixPrint-Plugin deinstallieren"/>
+  <translation tag="Uninstall HelixPrint Plugin?" de="HelixPrint-Plugin deinstallieren?"/>
   <translation tag="Uninstall script not found." de="Deinstallationsskript nicht gefunden."/>
   <translation tag="Uninstall: Coming soon" de="Deinstallieren: Demnächst verfügbar"/>
   <translation tag="Uninstallation failed. Check logs for details." de="Deinstallation fehlgeschlagen. Details in den Protokollen."/>

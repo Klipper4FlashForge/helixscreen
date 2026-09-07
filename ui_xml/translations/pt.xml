@@ -1154,6 +1154,7 @@
   <translation tag="Homing Z..." pt="Posicionando Z..."/>
   <translation tag="Homing all axes..." pt="Posicionando todos os eixos..."/>
   <translation tag="Homing axes..." pt="Posicionando eixos..."/>
+  <translation tag="Homing complete" pt="Homing concluído"/>
   <translation tag="Homing failed: " pt="Falha ao referenciar: "/>
   <translation tag="Homing failed: {}" pt="Falha no homing: {}"/>
   <translation tag="Homing first..." pt="Posicionando primeiro..."/>
@@ -1868,6 +1869,7 @@
   <translation tag="Printer Shutdown" pt="Desligamento da Impressora"/>
   <translation tag="Printer Type" pt="Tipo de Impressora"/>
   <translation tag="Printer accepted job but isn&apos;t printing — check cover, paper, and label type (firmware status=0x{:02X} error=0x{:02X})" pt="A impressora aceitou o trabalho mas não está imprimindo — verifique a tampa, o papel e o tipo de etiqueta (firmware status=0x{:02X} error=0x{:02X})"/>
+  <translation tag="Printer connection unavailable" pt="Conexão com a impressora indisponível"/>
   <translation tag="Printer database format error" pt="Erro de formato do banco de dados de impressoras"/>
   <translation tag="Printer database is corrupt" pt="O banco de dados de impressoras está corrompido"/>
   <translation tag="Printer didn&apos;t respond — make sure it&apos;s on and in range" pt="A impressora não respondeu — certifique-se de que está ligada e ao alcance"/>
@@ -2529,6 +2531,7 @@
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." pt="Este plugin permite que o HelixScreen controle opções de início de impressão como malha da mesa e QGL. Após instalado, use Configurar PRINT_START abaixo para habilitar etapas opcionais."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" pt="Esta impressão precisa de cerca de %.0fg, mas o carretel tem cerca de %.0fg restantes. Iniciar mesmo assim?"/>
   <translation tag="This printer looks like a {} ({}% confidence), but it is set up as a {}. A wrong type applies incorrect pre-print options and presets." pt="Esta impressora parece ser uma {} ({}% de confiança), mas está configurada como {}. Um tipo errado aplica opções de pré-impressão e predefinições incorretas."/>
+  <translation tag="This removes the plugin&apos;s macros and its Moonraker component from the printer and restarts Klipper." pt="Remove as macros do plugin e seu componente do Moonraker da impressora e reinicia o Klipper."/>
   <translation tag="This tool probes each bed screw and tells you how much to adjust." pt="Esta ferramenta sonda cada parafuso da mesa e informa quanto ajustar."/>
   <translation tag="This will apply the Z-offset to your endstop and restart Klipper to save the configuration. The printer will briefly disconnect." pt="Isso aplicará o Z-offset ao seu endstop e reiniciará o Klipper para salvar a configuração. A impressora será brevemente desconectada."/>
   <translation tag="This will apply the Z-offset to your probe and restart Klipper to save the configuration. The printer will briefly disconnect." pt="Isso aplicará o Z-offset à sua sonda e reiniciará o Klipper para salvar a configuração. A impressora será brevemente desconectada."/>
@@ -2634,7 +2637,9 @@
   <translation tag="Unavailable" pt="Indisponível"/>
   <translation tag="Understanding Results" pt="Entender resultados"/>
   <translation tag="Uneven belt tension causes print artifacts like layer shifts, VFAs (vertical fine artifacts), and ringing.&#10;&#10;This tool vibrates each belt path and measures the resonant frequency — matched frequencies mean balanced tension.&#10;&#10;For CoreXY, Path A and B should be within a few Hz of each other." pt="A tensão desigual da correia causa artefatos de impressão como deslocamentos de camada, VFAs (artefatos verticais finos) e ringing.&#10;&#10;Esta ferramenta vibra cada caminho de correia e mede a frequência de ressonância — frequências coincidentes significam tensão equilibrada.&#10;&#10;Para CoreXY, o Caminho A e B devem estar a poucos Hz um do outro."/>
+  <translation tag="Uninstall" pt="Desinstalar"/>
   <translation tag="Uninstall HelixPrint Plugin" pt="Desinstalar Plugin HelixPrint"/>
+  <translation tag="Uninstall HelixPrint Plugin?" pt="Desinstalar Plugin HelixPrint?"/>
   <translation tag="Uninstall script not found." pt="Script de desinstalação não encontrado."/>
   <translation tag="Uninstall: Coming soon" pt="Desinstalar: Em breve"/>
   <translation tag="Uninstallation failed. Check logs for details." pt="A desinstalação falhou. Verifique os logs para detalhes."/>

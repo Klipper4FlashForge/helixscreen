@@ -13,12 +13,15 @@
 #include "ams_types.h"
 #include "app_globals.h"
 #include "filament_database.h"
+#include "filament_op_execute.h"
 #include "filament_op_slot_resolver.h"
 #include "filament_variants.h"
 #include "printer_state.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
+
+#include <optional>
 
 namespace helix::ui {
 
@@ -168,19 +171,51 @@ bool AmsContextMenu::show_for_external_spool(lv_obj_t* parent, lv_obj_t* anchor_
 void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     int slot_index = get_item_index();
 
-    // External spool mode: hide backend-related buttons, show only EDIT/CLEAR
+    // External spool mode: the lane dropdowns do not apply, but Load and Unload
+    // do — EXTERNAL_SPOOL_SLOT is a target plan_load()/plan_unload() both
+    // resolve, and this menu is where a user looking at the bypass spool goes
+    // for them (prestonbrown/helixscreen#1486).
     if (external_spool_mode_) {
-        // Hide Load/Unload buttons (not applicable to external spool)
-        lv_obj_t* btn_load = lv_obj_find_by_name(menu_obj, "btn_load");
-        if (btn_load)
-            lv_obj_add_flag(btn_load, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
-        if (btn_unload)
-            lv_obj_add_flag(btn_unload, LV_OBJ_FLAG_HIDDEN);
+        // backend_ is deliberately null in this mode, so the gating terms come
+        // off the live backend instead. Same predicate as every other surface:
+        // a bypass Load offered here and refused by the Filament panel would be
+        // the divergence compute_op_button_gating() exists to prevent.
+        AmsBackend* const backend = AmsState::instance().get_backend();
+        AmsSystemInfo ext_sys;
+        if (backend) {
+            ext_sys = backend->get_system_info();
+        }
+        const bool bypass_loaded =
+            helix::ui::read_unload_target_loaded(backend, ext_sys, helix::ui::EXTERNAL_SPOOL_SLOT);
 
-        // Disable subject-driven states so hidden buttons stay hidden
-        lv_subject_set_int(&slot_is_loaded_subject_, 0);
-        lv_subject_set_int(&slot_can_load_subject_, 0);
+        helix::ui::OpButtonState ext_state;
+        ext_state.slot_is_loaded = bypass_loaded;
+        // Nothing reports whether a spool is actually on the external holder, so
+        // the surface cannot answer this. Left unset, Load stays reachable and
+        // the dispatch's own refusal explains itself.
+        ext_state.slot_has_filament = std::nullopt;
+        ext_state.unload_available = bypass_loaded;
+        ext_state.system_busy = backend && ext_sys.is_busy();
+        ext_state.print_blocks_op =
+            helix::ui::print_blocks_filament_op(get_printer_state().get_print_lifecycle(),
+                                                backend && backend->filament_ops_self_home());
+        // A bypass unload feeds filament out through a heated toolhead; it is
+        // not one of the cold lane ops that stay reachable mid-print.
+        ext_state.unload_is_cold_lane_op = false;
+
+        const helix::ui::OpButtonGating ext_gating = helix::ui::compute_op_button_gating(ext_state);
+        lv_subject_set_int(&slot_can_load_subject_, ext_gating.load_disabled ? 0 : 1);
+        lv_subject_set_int(&slot_is_loaded_subject_, ext_gating.unload_disabled ? 0 : 1);
+        // The lane menu retitles Unload per UnloadMode; bypass has only the one.
+        unload_mode_ = UnloadMode::Unload;
+
+        // These subjects are static and outlive any one show, while the widget
+        // tree is rebuilt from XML each time. A lane menu shown earlier leaves
+        // its answers behind, so a bypass menu that did not clear them would
+        // render that lane's unload refusal under the bypass spool's own Unload.
+        lv_subject_set_int(&slot_mounts_tool_subject_, 0);
+        lv_subject_copy_string(&slot_unload_hint_subject_, "");
+        lv_subject_set_int(&slot_unload_hint_visible_subject_, 0);
 
         // Set header to "External Spool"
         lv_obj_t* slot_header = lv_obj_find_by_name(menu_obj, "slot_header");
@@ -287,9 +322,9 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     // A disabled button with no stated reason reads as a bug. Only populated
     // when the backend has something actionable to say - "nothing is loaded" is
     // not worth a line, because there is visibly nothing to unload.
-    const std::string unload_hint =
-        (!ops.unload_enabled && backend_) ? backend_->unload_blocked_reason(slot_index)
-                                         : std::string();
+    const std::string unload_hint = (!ops.unload_enabled && backend_)
+                                        ? backend_->unload_blocked_reason(slot_index)
+                                        : std::string();
     // Already translated by the backend, which had the literal to extract.
     lv_subject_copy_string(&slot_unload_hint_subject_, unload_hint.c_str());
     lv_subject_set_int(&slot_unload_hint_visible_subject_, unload_hint.empty() ? 0 : 1);
@@ -299,9 +334,8 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     // one-line hint pointing at the config instead of silently omitting the
     // action — for QIDI, !supports_eject here can only mean force_move is off
     // (the box always supports eject otherwise). See #1041.
-    if (backend_ && backend_->get_type() == AmsType::QIDI_BOX &&
-        !backend_->supports_lane_eject() && !pending_is_loaded_ &&
-        ops.presence.value_or(false)) {
+    if (backend_ && backend_->get_type() == AmsType::QIDI_BOX && !backend_->supports_lane_eject() &&
+        !pending_is_loaded_ && ops.presence.value_or(false)) {
         lv_obj_t* hint = lv_obj_find_by_name(menu_obj, "eject_force_move_hint");
         if (hint) {
             lv_obj_remove_flag(hint, LV_OBJ_FLAG_HIDDEN);
@@ -313,8 +347,7 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
         spdlog::debug("[AmsContextMenu] Load disabled for slot {}: busy={}, loaded={} "
                       "(live={}), has_filament={}, print_blocks_op={}",
                       slot_index, system_busy, ops.is_loaded, ops.live_loaded,
-                      ops.presence ? (*ops.presence ? "yes" : "no") : "unknown",
-                      print_blocks_op);
+                      ops.presence ? (*ops.presence ? "yes" : "no") : "unknown", print_blocks_op);
     }
 
     // Show Select Gate button if backend supports it (e.g. Happy Hare)
@@ -480,11 +513,9 @@ AmsContextMenu::decide_unload_mode(bool toolhead_unload, bool can_recover, bool 
     return UnloadMode::Unavailable;
 }
 
-AmsContextMenu::SlotOpDecision AmsContextMenu::decide_slot_ops(const AmsBackend* backend,
-                                                              int slot_index,
-                                                              bool pending_is_loaded,
-                                                              bool system_busy,
-                                                              bool print_blocks_op) {
+AmsContextMenu::SlotOpDecision
+AmsContextMenu::decide_slot_ops(const AmsBackend* backend, int slot_index, bool pending_is_loaded,
+                                bool system_busy, bool print_blocks_op) {
     SlotOpDecision d;
 
     if (backend) {

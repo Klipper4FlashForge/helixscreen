@@ -731,8 +731,8 @@ void PluginManager::add_error(const std::string& plugin_id, PluginError::Type ty
 
 // Compiled-out build (HELIX_HAS_PLUGINS=0): no dlopen/manifest-scanning
 // infrastructure exists on this target. Stub keeps PluginManager's public API
-// so Application and SettingsPluginsOverlay need no source changes — it just
-// always reports zero discovered/loaded plugins.
+// so Application needs no source changes — it just always reports zero
+// discovered/loaded plugins.
 
 #include <spdlog/spdlog.h>
 

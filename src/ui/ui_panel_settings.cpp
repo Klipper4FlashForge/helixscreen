@@ -36,7 +36,6 @@
 #include "ui_settings_machine_limits.h"
 #include "ui_settings_macro_buttons.h"
 #include "ui_settings_material_temps.h"
-#include "ui_settings_plugins.h"
 #include "ui_settings_security.h"
 #include "ui_settings_sensors.h"
 #include "ui_settings_telemetry_data.h"
@@ -461,7 +460,6 @@ void SettingsPanel::init_subjects() {
         {"on_power_devices_clicked", on_power_devices_clicked},
         {"on_factory_reset_clicked", on_factory_reset_clicked},
         {"on_hardware_health_clicked", on_hardware_health_clicked},
-        {"on_plugins_clicked", on_plugins_clicked},
         {"on_system_performance_clicked", on_system_performance_clicked},
 
         // Overlay callbacks
@@ -1135,30 +1133,6 @@ void SettingsPanel::handle_factory_reset_clicked() {
     }
 }
 
-void SettingsPanel::handle_plugins_clicked() {
-#if HELIX_HAS_PLUGINS
-    spdlog::debug("[{}] Plugins clicked - opening overlay", get_name());
-
-    auto& overlay = get_settings_plugins_overlay();
-
-    if (!overlay.are_subjects_initialized()) {
-        overlay.init_subjects();
-        overlay.register_callbacks();
-        overlay.create(parent_screen_);
-    }
-
-    // Show the overlay via navigation stack
-    if (overlay.get_root()) {
-        NavigationManager::instance().register_overlay_instance(overlay.get_root(), &overlay);
-        NavigationManager::instance().push_overlay(overlay.get_root());
-    }
-#else
-    // Plugin system compiled out (HELIX_HAS_PLUGINS=0) — row_plugins stays in the
-    // XML layout (see CLAUDE.md gcode_viewer precedent) but the click is inert.
-    spdlog::debug("[{}] Plugins clicked - plugin system compiled out, ignoring", get_name());
-#endif
-}
-
 void SettingsPanel::perform_factory_reset() {
     spdlog::warn("[{}] Performing factory reset - resetting config!", get_name());
 
@@ -1450,12 +1424,6 @@ void SettingsPanel::on_factory_reset_clicked(lv_event_t* /*e*/) {
 void SettingsPanel::on_hardware_health_clicked(lv_event_t* /*e*/) {
     LVGL_SAFE_EVENT_CB_BEGIN("[SettingsPanel] on_hardware_health_clicked");
     get_global_settings_panel().handle_hardware_health_clicked();
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void SettingsPanel::on_plugins_clicked(lv_event_t* /*e*/) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[SettingsPanel] on_plugins_clicked");
-    get_global_settings_panel().handle_plugins_clicked();
     LVGL_SAFE_EVENT_CB_END();
 }
 
