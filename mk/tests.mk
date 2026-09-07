@@ -1021,7 +1021,10 @@ $(OBJ_DIR)/tests/application/%.o: $(TEST_UNIT_DIR)/application/%.cpp $(LIBHV_LIB
 
 # Compile libhv dns_resolv.c for test_dns_resolver
 # dns_resolv.c dependency on PATCHES_STAMP is declared in rules.mk
-$(DNS_RESOLV_OBJ): $(LIBHV_DIR)/base/dns_resolv.c
+# LIBHV_LIB orders this after libhv's build, which is what generates the
+# hconfig.h that $(LIBHV_INC) pulls in; without it a parallel build can read
+# the header while configure is still writing it.
+$(DNS_RESOLV_OBJ): $(LIBHV_DIR)/base/dns_resolv.c $(LIBHV_LIB)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(BLUE)[TEST-C]$(RESET) $<"
 	$(Q)$(CC) $(CFLAGS) -I$(LIBHV_DIR)/base $(LIBHV_INC) -c $< -o $@
