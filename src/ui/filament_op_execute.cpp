@@ -14,6 +14,7 @@
 #include "moonraker_api.h"
 #include "safety_settings_manager.h"
 #include "standard_macros.h"
+#include "ui_update_queue.h"
 
 #include <spdlog/spdlog.h>
 
@@ -182,16 +183,20 @@ void unwind_backend(const FilamentOpSurface& surface, const FilamentOpPlan& plan
 }
 
 /// Macro / raw-gcode failure: bookkeeping only, the caller has reported.
+/// Marshalled — see FilamentOpSurface::on_async_success.
 void unwind_async(const FilamentOpSurface& surface, const FilamentOpPlan& plan) {
-    if (surface.on_async_failed) {
-        surface.on_async_failed(plan);
+    if (!surface.on_async_failed) {
+        return;
     }
+    helix::ui::queue_update([hook = surface.on_async_failed, plan]() { hook(plan); });
 }
 
+/// Completion hook, marshalled to the main thread.
 void finished(const std::function<void()>& hook) {
-    if (hook) {
-        hook();
+    if (!hook) {
+        return;
     }
+    helix::ui::queue_update([hook]() { hook(); });
 }
 
 /// The error copy a failed macro or fallback raises. A timed-out macro is not a
