@@ -315,18 +315,22 @@ ToolSensor resolve_tool_sensor(const PrinterDiscovery& hw) {
 }
 
 ToolCommands resolve_tool_commands(const PrinterDiscovery& hw) {
-    const Provider* p = match(hw);
     // klipper-toolchanger present means SELECT_TOOL/UNSELECT_TOOL exist and are
-    // the machine's own answer. Only a changer running without it needs to name
-    // its commands here.
-    if (!p || hw.has_tool_changer()) {
+    // the machine's own answer.
+    if (hw.has_tool_changer()) {
         return {};
     }
+    // Without it there is no SELECT_TOOL, and T<n> is what every multi-tool
+    // machine answers to instead: Klipper maps it to ACTIVATE_EXTRUDER, and a
+    // changer extra registers its own T<n> over that. So the table only has to
+    // name what DIFFERS, which is the unmount - a machine whose tools are plain
+    // extruders has none, and its tool can only be swapped for another.
+    const Provider* p = match(hw);
     ToolCommands c;
     c.present = true;
-    c.provider_name = p->name;
-    c.select_prefix = p->select_prefix ? p->select_prefix : "";
-    c.unselect = p->unselect_gcode ? p->unselect_gcode : "";
+    c.provider_name = p ? p->name : std::string();
+    c.select_prefix = (p && p->select_prefix) ? p->select_prefix : "T";
+    c.unselect = (p && p->unselect_gcode) ? p->unselect_gcode : "";
     return c;
 }
 

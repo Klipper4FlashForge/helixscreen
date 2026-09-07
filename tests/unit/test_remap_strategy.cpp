@@ -34,11 +34,12 @@
 
 #include "../catch_amalgamated.hpp"
 
-using helix::Ad5xIfsTestAccess;
 using helix::AmsBackend;
 using helix::AmsBackendMock;
 using helix::AmsError;
 using helix::AmsErrorHelper;
+
+using helix::Ad5xIfsTestAccess;
 
 namespace {
 

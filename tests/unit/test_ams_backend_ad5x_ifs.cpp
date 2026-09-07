@@ -35,10 +35,8 @@
 #include "../catch_amalgamated.hpp"
 
 using helix::AMS_DEFAULT_SLOT_COLOR;
-using helix::Ad5xIfsTestAccess;
 using helix::AmsAction;
 using helix::AmsBackend;
-using helix::AmsBackendAd5xIfs;
 using helix::AmsBackendAfc;
 using helix::AmsError;
 using helix::AmsErrorHelper;
@@ -51,6 +49,9 @@ using helix::PathTopology;
 using helix::SlotInfo;
 using helix::SlotStatus;
 using helix::StepOperationType;
+
+using helix::Ad5xIfsTestAccess;
+using helix::AmsBackendAd5xIfs;
 
 // Friend-class shim matching the one in test_filament_slot_override_store.cpp
 // (declared friend in filament_slot_override_store.h per L065). Allows our

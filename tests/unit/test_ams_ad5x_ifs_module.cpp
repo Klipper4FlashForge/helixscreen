@@ -241,7 +241,7 @@ TEST_CASE("AD5X IFS installs the identity tool map when the module goes live",
 TEST_CASE_METHOD(LVGLTestFixture,
                  "AD5X IFS module routing carries the loaded lane colours to the renderer",
                  "[ams][ad5x_ifs][ifs_module][959]") {
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.init_subjects(false);
 
     auto owned = std::make_unique<AmsBackendAd5xIfs>(nullptr, nullptr);
@@ -685,7 +685,7 @@ TEST_CASE("AD5X IFS module colour normalisation", "[ams][ad5x_ifs][ifs_module]")
 TEST_CASE_METHOD(LVGLTestFixture,
                  "AD5X IFS: a table collapsing every tool onto one lane says nothing",
                  "[ams][ad5x_ifs][ifs_module][provenance][1422]") {
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.init_subjects(false);
 
     auto owned = std::make_unique<AmsBackendAd5xIfs>(nullptr, nullptr);

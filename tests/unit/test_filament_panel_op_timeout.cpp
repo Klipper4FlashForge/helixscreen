@@ -54,12 +54,15 @@
 #include <lvgl.h>
 #include <memory>
 
+#include "filament_op_router.h"
+
 #include "../catch_amalgamated.hpp"
 
 using helix::AmsAction;
 using helix::AmsSystemInfo;
 using helix::AmsType;
 using helix::PathTopology;
+
 using helix::ToolState;
 using helix::ToolTopology;
 using TA = helix::ui::FilamentPanelTestAccess;
@@ -75,6 +78,12 @@ class StubBackend : public helix::AmsBackendMock {
 
     AmsSystemInfo sys_{};
     int loaded_slot_ = -1;
+    /// AFC/CFS/QIDI Box/AD5X IFS all answer true here.
+    bool auto_heats_ = false;
+
+    [[nodiscard]] bool supports_auto_heat_on_load() const override {
+        return auto_heats_;
+    }
 
     [[nodiscard]] AmsSystemInfo get_system_info() const override {
         return sys_;
@@ -433,4 +442,57 @@ TEST_CASE_METHOD(LVGLUITestFixture, "a later operation is not eaten by a stale a
     h.publish_action(AmsAction::IDLE, 600);
 
     CHECK(TA::op_load_state(*h.panel) == 2); // done/checkmark
+}
+
+// ============================================================================
+// The home confirmation is not the preheat's passenger
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "a backend that heats for us still gets the home confirmation",
+                 "[ui_integration][filament][homing][1494]") {
+    // A cold, unhomed toolhead on a backend that heats on load. "Do we preheat?"
+    // and "do we ask about homing?" are independent questions about that state,
+    // and folding the second inside the first loses it exactly when the backend
+    // removes the reason for the first.
+    //
+    // The cost of losing it is not just a missing prompt: skipping the ask also
+    // skips arm_home_preconfirmed(), so the backend raises its own confirmation
+    // later, and declining THAT drives AmsAction LOADING -> IDLE, which
+    // ams_action_observer_ reads as a completed load — green checkmark and a
+    // post-op cooldown for a load that never ran.
+    TimeoutHarness h(*this);
+    h.mock->auto_heats_ = true;
+
+    int asked = 0;
+    helix::ui::set_home_confirm_prompter(
+        [&asked](std::function<void()>, std::function<void()> on_cancel) {
+            ++asked;
+            on_cancel(); // decline, so nothing dispatches
+        });
+
+    TA::handle_load_button(*h.panel);
+    process_lvgl(20);
+
+    CHECK(asked == 1);
+
+    helix::ui::set_home_confirm_prompter({});
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "declining the pre-load home dispatches nothing",
+                 "[ui_integration][filament][homing][1494]") {
+    TimeoutHarness h(*this);
+    h.mock->auto_heats_ = true;
+
+    helix::ui::set_home_confirm_prompter(
+        [](std::function<void()>, std::function<void()> on_cancel) { on_cancel(); });
+
+    TA::handle_load_button(*h.panel);
+    process_lvgl(20);
+
+    // The spinner is the observable: on_begin() runs only from the executor, and
+    // a declined home never reaches it.
+    CHECK(lv_subject_get_int(lv_xml_get_subject(nullptr, "filament_op_load_state")) == 0);
+
+    helix::ui::set_home_confirm_prompter({});
 }

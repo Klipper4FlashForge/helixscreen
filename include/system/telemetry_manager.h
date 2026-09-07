@@ -771,8 +771,40 @@ class TelemetryManager {
     /** @brief Minimum interval between transmission attempts */
     static constexpr auto SEND_INTERVAL = std::chrono::hours{24};
 
+    /** @brief Retry spacing after a failed send, multiplied by the backoff.
+     *  A failure is spaced off this rather than SEND_INTERVAL so one unreachable
+     *  moment costs hours instead of a day, while the backoff still applies. */
+    static constexpr auto RETRY_INTERVAL = std::chrono::hours{1};
+
+    /** @brief Ceiling on the backoff multiplier.
+     *  Large enough that RETRY_INTERVAL * backoff still reaches the seven-day
+     *  ceiling: a printer that never reaches the endpoint must end up retrying
+     *  weekly, not every few hours. */
+    static constexpr int MAX_BACKOFF_MULTIPLIER = 168;
+
     /** @brief Maximum events per HTTPS POST batch */
     static constexpr size_t MAX_BATCH_SIZE = 20;
+
+    /** @brief Batches one send window will POST before giving the thread back.
+     *  Must cover a full queue, or the drain cannot outrun the producers and
+     *  the oldest events are discarded unsent. */
+    static constexpr size_t MAX_BATCHES_PER_SEND = (MAX_QUEUE_SIZE / MAX_BATCH_SIZE) + 1;
+
+    /**
+     * @brief Spacing required before the next transmission attempt.
+     *
+     * A backoff above 1 means the previous attempt failed. Those retries are
+     * spaced off RETRY_INTERVAL rather than the full SEND_INTERVAL, and the
+     * result is capped at seven days.
+     *
+     * @param backoff Current backoff multiplier (1 when the last send succeeded)
+     * @return Minimum delay since the last attempt before another is allowed
+     */
+    static constexpr std::chrono::hours next_attempt_delay(int backoff) {
+        auto interval = (backoff > 1) ? RETRY_INTERVAL * backoff : SEND_INTERVAL;
+        constexpr auto max_interval = std::chrono::hours{24 * 7};
+        return interval > max_interval ? max_interval : interval;
+    }
 
     /** @brief Interval between periodic performance snapshots */
     static constexpr uint32_t SNAPSHOT_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -796,6 +828,8 @@ class TelemetryManager {
     static constexpr uint32_t SETTINGS_DEBOUNCE_MS = 30 * 1000;
 
   private:
+    friend class TelemetryManagerTestAccess;
+
     TelemetryManager() = default;
     ~TelemetryManager();
 
