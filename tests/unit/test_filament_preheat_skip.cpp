@@ -217,3 +217,59 @@ TEST_CASE_METHOD(PreheatSkipFixture, "preheat_skip_reason: a refused plan heats 
                                            StandardMacroSlot::LoadFilament,
                                            nullptr) == PreheatSkip::None);
 }
+
+// ============================================================================
+// needs_home_confirmation
+// ============================================================================
+
+TEST_CASE_METHOD(PreheatSkipFixture, "needs_home_confirmation: an already-homed toolhead asks nobody",
+                 "[filament][preheat][homing]") {
+    detect_with({"LOAD_FILAMENT"});
+    REQUIRE_FALSE(helix::ui::needs_home_confirmation(plan_at(FilamentTier::Macro),
+                                                     StandardMacroSlot::LoadFilament, nullptr,
+                                                     /*toolhead_homed=*/true));
+}
+
+TEST_CASE_METHOD(PreheatSkipFixture, "needs_home_confirmation: a macro carrying its own home",
+                 "[filament][preheat][homing]") {
+    // M604 opens with _CG28, so asking in front of it is pure friction.
+    detect_with({"M604"});
+    REQUIRE_FALSE(helix::ui::needs_home_confirmation(plan_at(FilamentTier::Macro),
+                                                     StandardMacroSlot::LoadFilament, nullptr,
+                                                     /*toolhead_homed=*/false));
+
+    // The claim is about that macro run alone. A backend merely composing it can
+    // add unguarded moves of its own, so tier 1 does not inherit the answer.
+    AutoHeatBackend backend;
+    REQUIRE(helix::ui::needs_home_confirmation(plan_at(FilamentTier::AmsBackend),
+                                               StandardMacroSlot::LoadFilament, &backend,
+                                               /*toolhead_homed=*/false));
+}
+
+TEST_CASE_METHOD(PreheatSkipFixture, "needs_home_confirmation: an ordinary macro still asks",
+                 "[filament][preheat][homing]") {
+    detect_with({"LOAD_FILAMENT"});
+    REQUIRE(helix::ui::needs_home_confirmation(plan_at(FilamentTier::Macro),
+                                               StandardMacroSlot::LoadFilament, nullptr,
+                                               /*toolhead_homed=*/false));
+}
+
+TEST_CASE_METHOD(PreheatSkipFixture, "needs_home_confirmation: the raw-gcode tier always asks",
+                 "[filament][preheat][homing]") {
+    detect_with({"M604"});
+    REQUIRE(helix::ui::needs_home_confirmation(plan_at(FilamentTier::RawGcode),
+                                               StandardMacroSlot::LoadFilament, nullptr,
+                                               /*toolhead_homed=*/false));
+}
+
+TEST_CASE_METHOD(PreheatSkipFixture, "needs_home_confirmation: a backend that does not delegate",
+                 "[filament][preheat][homing]") {
+    // Happy Hare and QIDI Box both answer delegates_homing_to_printer() false;
+    // only AFC with [AFC] auto_home set answers true, and this one has no config
+    // loaded, so it reads false too.
+    detect_with({"LOAD_FILAMENT"});
+    ColdBackend backend;
+    REQUIRE(helix::ui::needs_home_confirmation(plan_at(FilamentTier::AmsBackend),
+                                               StandardMacroSlot::LoadFilament, &backend,
+                                               /*toolhead_homed=*/false));
+}
