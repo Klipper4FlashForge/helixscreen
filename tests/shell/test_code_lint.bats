@@ -1015,3 +1015,68 @@ check_observer_guard_move_clears_cleanup() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"expected exactly 2"* ]]
 }
+
+# ====================================================================
+# A backend's test friendship is one shim, not an open-ended set
+# ====================================================================
+# Four of the six filament backends expose internals to tests through a single
+# XTestAccess shim. AFC and Happy Hare grew one friend per test file instead, so
+# the header carried a list that grew with every new test and stated no contract.
+# This keeps the collapsed form: widening what tests reach is an edit to the shim,
+# where it is reviewable, not another friend line in the backend header.
+check_backend_single_test_friend() {
+    local file="$1"
+    local expected="$2"
+    local friends
+    friends=$(grep -n '^[[:space:]]*friend class ' "$file" || true)
+
+    if [ -z "$friends" ]; then
+        echo "no friend declaration in $file; expected exactly one: $expected"
+        return 1
+    fi
+
+    local count
+    count=$(echo "$friends" | wc -l)
+    if [ "$count" -ne 1 ]; then
+        echo "expected exactly 1 test friend in $file, found $count:"
+        echo "$friends"
+        echo "Add the accessor to $expected instead of befriending another class."
+        return 1
+    fi
+
+    if ! echo "$friends" | grep -q "friend class ${expected};"; then
+        echo "the single friend in $file is not ${expected}:"
+        echo "$friends"
+        return 1
+    fi
+    return 0
+}
+
+@test "AmsBackendAfc befriends exactly one test shim" {
+    run check_backend_single_test_friend include/ams_backend_afc.h AfcTestAccess
+    [ "$status" -eq 0 ]
+}
+
+@test "AmsBackendHappyHare befriends exactly one test shim" {
+    run check_backend_single_test_friend include/ams_backend_happy_hare.h HappyHareTestAccess
+    [ "$status" -eq 0 ]
+}
+
+@test "the backend friend gate fires when a second friend is added" {
+    local mutated="${BATS_TEST_TMPDIR}/afc_two_friends.h"
+    sed -e 's@^\([[:space:]]*\)friend class AfcTestAccess;@\1friend class AfcTestAccess;\n\1friend class AfcSomeNewHelper;@' \
+        include/ams_backend_afc.h > "$mutated"
+
+    run check_backend_single_test_friend "$mutated" AfcTestAccess
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"expected exactly 1"* ]]
+}
+
+@test "the backend friend gate fails closed when the shim friend disappears" {
+    local mutated="${BATS_TEST_TMPDIR}/afc_no_friend.h"
+    grep -v 'friend class AfcTestAccess;' include/ams_backend_afc.h > "$mutated"
+
+    run check_backend_single_test_friend "$mutated" AfcTestAccess
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"no friend declaration"* ]]
+}

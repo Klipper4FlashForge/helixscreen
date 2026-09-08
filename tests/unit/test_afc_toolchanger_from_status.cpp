@@ -36,6 +36,7 @@
  * so it stays authoritative whenever it is present.
  */
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 
@@ -55,7 +56,7 @@ class AfcToolchangerStatusHelper : public AmsBackendAfc {
   public:
     AfcToolchangerStatusHelper() : AmsBackendAfc(nullptr, nullptr) {
         std::vector<std::string> names{"lane1", "lane2"};
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
         running_ = true;
     }
 
@@ -70,14 +71,14 @@ class AfcToolchangerStatusHelper : public AmsBackendAfc {
 
     [[nodiscard]] int extruder_count() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return num_extruders_;
+        return AfcTestAccess::num_extruders(*this);
     }
 
     [[nodiscard]] std::vector<std::string> extruder_infos() const {
         std::lock_guard<std::mutex> lock(mutex_);
         std::vector<std::string> out;
-        out.reserve(extruders_.size());
-        for (const auto& e : extruders_) {
+        out.reserve(AfcTestAccess::extruders(*this).size());
+        for (const auto& e : AfcTestAccess::extruders(*this)) {
             out.push_back(e.name);
         }
         return out;
@@ -205,7 +206,7 @@ class AfcStatusDispatchHelper : public AmsBackendAfc {
         // status UNKNOWN, which is what a freshly subscribed backend holds
         // before the per-lane AFC_stepper frames land.
         std::vector<std::string> names{"lane1", "lane2", "lane3", "lane4"};
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
         running_ = true;
     }
 
@@ -238,7 +239,7 @@ class AfcStatusDispatchHelper : public AmsBackendAfc {
     /// client_ is null here, so query_afc_configfile_topology() never runs.
     void seed_configfile_toolchanger(bool present) {
         std::lock_guard<std::mutex> lock(mutex_);
-        configfile_has_toolchanger_ = present;
+        AfcTestAccess::configfile_has_toolchanger(*this) = present;
     }
 
     [[nodiscard]] bool sent(const std::string& gcode) const {

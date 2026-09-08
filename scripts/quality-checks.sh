@@ -1051,7 +1051,6 @@ include/printer_discovery.h
 include/tool_state.h
 include/ui_icon.h
 src/print/print_history_manager.cpp
-src/printer/ams_backend_cfs.cpp
 src/printer/filament_mapper.cpp
 src/system/pwm_sound_backend.cpp
 src/system/update_checker.cpp
@@ -1502,7 +1501,7 @@ if [ -f "scripts/check_todo_markers.py" ]; then
   # constraint on the same line, or sits in a file another change is rewriting.
   # The number may go DOWN (fix one, then lower this baseline) but must never
   # go up. Always whole-tree: a marker is a marker whichever commit adds it.
-  if python3 scripts/check_todo_markers.py --max-allowed 10 --summary >/tmp/todo_markers.out 2>&1; then
+  if python3 scripts/check_todo_markers.py --max-allowed 9 --summary >/tmp/todo_markers.out 2>&1; then
     echo ""
     tail -1 /tmp/todo_markers.out
   else

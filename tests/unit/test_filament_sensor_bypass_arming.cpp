@@ -20,6 +20,7 @@
 #include "ui_update_queue.h"
 
 #include "../helix_test_fixture.h"
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_ad5x_ifs.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_cfs.h"
@@ -238,9 +239,9 @@ class AfcBypassPublishTestAccess : public AmsBackendAfc {
         }
         system_info_.units.push_back(unit);
         system_info_.total_slots = count;
-        slots_.initialize("Box Turtle 1", names);
+        AfcTestAccess::slots(*this).initialize("Box Turtle 1", names);
         for (int i = 0; i < count; ++i) {
-            auto* entry = slots_.get_mut(i);
+            auto* entry = AfcTestAccess::slots(*this).get_mut(i);
             if (entry) {
                 entry->info.mapped_tool = i;
             }

@@ -11,12 +11,14 @@
  * the ONE place its guards now live (AmsBackend::set_endless_spool_backup).
  */
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_happy_hare.h"
 #include "ams_backend_mock.h"
 #include "ams_types.h"
 #include "filament_database.h"
 #include "filament_variants.h"
+#include "test_helpers/happy_hare_test_access.h"
 
 #include <algorithm>
 
@@ -478,7 +480,7 @@ class AmsBackendAfcEndlessSpoolHelper : public AmsBackendAfc {
         }
 
         system_info_.units.push_back(unit);
-        slots_.initialize("AFC Test Unit", names);
+        AfcTestAccess::slots(*this).initialize("AFC Test Unit", names);
     }
 
     // G-code capture for verification
@@ -608,9 +610,9 @@ class AmsBackendHappyHareEndlessSpoolHelper : public AmsBackendHappyHare {
         for (int i = 0; i < count; ++i) {
             slot_names.push_back(std::to_string(i));
         }
-        slots_.initialize("MMU", slot_names);
+        HappyHareTestAccess::slots(*this).initialize("MMU", slot_names);
         for (int i = 0; i < count; ++i) {
-            auto* entry = slots_.get_mut(i);
+            auto* entry = HappyHareTestAccess::slots(*this).get_mut(i);
             if (entry) {
                 entry->info.status = SlotStatus::AVAILABLE;
                 entry->info.endless_spool_group = -1;
@@ -621,7 +623,7 @@ class AmsBackendHappyHareEndlessSpoolHelper : public AmsBackendHappyHare {
     void set_endless_spool_groups(const std::vector<int>& groups) {
         // Simulate data from printer.mmu.endless_spool_groups via registry
         for (size_t i = 0; i < groups.size(); ++i) {
-            auto* entry = slots_.get_mut(static_cast<int>(i));
+            auto* entry = HappyHareTestAccess::slots(*this).get_mut(static_cast<int>(i));
             if (entry) {
                 entry->info.endless_spool_group = groups[i];
             }

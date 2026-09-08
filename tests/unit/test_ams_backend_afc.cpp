@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../lvgl_test_fixture.h"
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_state.h"
 #include "ams_types.h"
@@ -38,58 +39,58 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     // writing the afc-install namespace in its #451). Kept so tests can assert
     // that behavior is INDEPENDENT of whatever version is reported.
     void set_afc_version(const std::string& version) {
-        afc_version_ = version;
+        AfcTestAccess::afc_version(*this) = version;
     }
 
     // Sensor state setters for compute_filament_segment_unlocked testing
     void set_tool_end_sensor(bool state) {
-        tool_end_sensor_ = state;
+        AfcTestAccess::tool_end_sensor(*this) = state;
     }
     void set_tool_start_sensor(bool state) {
-        tool_start_sensor_ = state;
+        AfcTestAccess::tool_start_sensor(*this) = state;
     }
     void set_hub_sensor(const std::string& hub_name, bool state) {
-        hub_sensors_[hub_name] = state;
+        AfcTestAccess::hub_sensors(*this)[hub_name] = state;
     }
 
     // Convenience overload for single-hub backward compat in tests
     void set_hub_sensor(bool state) {
         // Set/clear on a default hub name for single-hub tests
         if (state) {
-            hub_sensors_["default"] = true;
+            AfcTestAccess::hub_sensors(*this)["default"] = true;
         } else {
-            hub_sensors_.clear();
+            AfcTestAccess::hub_sensors(*this).clear();
         }
     }
 
     // Lane → hub routing, as parsed from AFC_stepper.hub ("Turtle_1" or "direct").
     void set_lane_hub_routing(const std::string& lane_name, const std::string& hub_name) {
-        lane_hub_routing_[lane_name] = hub_name;
+        AfcTestAccess::lane_hub_routing(*this)[lane_name] = hub_name;
     }
 
     // Lane AFC currently names as active (AFC.current_load / AFC.current_lane),
     // as tracked by parse_afc_state() — used to attribute a shared hub sensor.
     void set_active_load_lane(const std::string& lane_name) {
-        active_load_lane_ = lane_name;
+        AfcTestAccess::active_load_lane(*this) = lane_name;
     }
 
     std::string get_active_load_lane() const {
-        return active_load_lane_;
+        return AfcTestAccess::active_load_lane(*this);
     }
 
     // Lane AFC reports as gripped by the extruder (AFC.current_load only), as
     // tracked by parse_afc_state() — distinct from active_load_lane_, which
     // prefers the transient AFC.current_lane.
     void set_toolhead_lane(const std::string& lane_name) {
-        toolhead_lane_ = lane_name;
+        AfcTestAccess::toolhead_lane(*this) = lane_name;
     }
 
     std::string get_toolhead_lane() const {
-        return toolhead_lane_;
+        return AfcTestAccess::toolhead_lane(*this);
     }
 
     void set_current_lane(const std::string& lane_name) {
-        current_lane_name_ = lane_name;
+        AfcTestAccess::current_lane_name(*this) = lane_name;
     }
 
     void initialize_test_lanes(int count) {
@@ -97,7 +98,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         for (int i = 0; i < count; ++i) {
             names.push_back("lane" + std::to_string(i + 1));
         }
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
     }
 
     // 0-based lane naming: lane0, lane1, ... lane{N-1} (matches real AFC hardware)
@@ -106,23 +107,23 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         for (int i = 0; i < count; ++i) {
             names.push_back("lane" + std::to_string(i));
         }
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
     }
 
     void set_lane_prep_sensor(int lane_index, bool state) {
-        auto* entry = slots_.get_mut(lane_index);
+        auto* entry = AfcTestAccess::slots(*this).get_mut(lane_index);
         if (entry)
             entry->sensors.prep = state;
     }
 
     void set_lane_load_sensor(int lane_index, bool state) {
-        auto* entry = slots_.get_mut(lane_index);
+        auto* entry = AfcTestAccess::slots(*this).get_mut(lane_index);
         if (entry)
             entry->sensors.load = state;
     }
 
     void set_lane_loaded_to_hub(int lane_index, bool state) {
-        auto* entry = slots_.get_mut(lane_index);
+        auto* entry = AfcTestAccess::slots(*this).get_mut(lane_index);
         if (entry)
             entry->sensors.loaded_to_hub = state;
     }
@@ -130,19 +131,19 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     // AFC_stepper.extruder — which extruder this lane feeds. Present whether or
     // not the lane is seated, unlike the lane_loaded back-reference.
     void set_lane_extruder(int lane_index, const std::string& extruder_name) {
-        auto* entry = slots_.get_mut(lane_index);
+        auto* entry = AfcTestAccess::slots(*this).get_mut(lane_index);
         if (entry)
             entry->info.extruder_name = extruder_name;
     }
 
     // AFC_extruder.lane_loaded — the lane this extruder currently holds.
     void set_extruder_lane_loaded(const std::string& extruder_name, const std::string& lane_name) {
-        extruder_sensors_[extruder_name].lane_loaded = lane_name;
+        AfcTestAccess::extruder_sensors(*this)[extruder_name].lane_loaded = lane_name;
     }
 
     // AFC_extruder.is_standalone (v1.2.0+ only publishes it).
     void report_extruder_standalone(const std::string& extruder_name, bool standalone) {
-        tool_states_[extruder_name].is_standalone = standalone;
+        AfcTestAccess::tool_states(*this)[extruder_name].is_standalone = standalone;
     }
 
     void set_running(bool state) {
@@ -165,11 +166,11 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     // expired" without a real sleep. Pass a negative offset to expire it.
     void set_message_drain_deadline_offset(std::chrono::seconds offset) {
         std::lock_guard<std::mutex> lock(mutex_);
-        message_drain_deadline_ = std::chrono::steady_clock::now() + offset;
+        AfcTestAccess::message_drain_deadline(*this) = std::chrono::steady_clock::now() + offset;
     }
 
     PathSegment test_compute_filament_segment() const {
-        return compute_filament_segment_unlocked();
+        return AfcTestAccess::compute_filament_segment_unlocked(*this);
     }
 
     void test_parse_afc_state(const nlohmann::json& data) {
@@ -177,21 +178,21 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         std::string deferred_error_event;
         bool current_slot_set_by_afc_state = false;
         bool afc_stated_unloaded = false;
-        parse_afc_state(data, deferred_error_event, current_slot_set_by_afc_state,
-                        afc_stated_unloaded);
+        AfcTestAccess::parse_afc_state(*this, data, deferred_error_event,
+                                       current_slot_set_by_afc_state, afc_stated_unloaded);
     }
 
     // Discovery testing helpers
     int get_slot_count() const {
-        return slots_.slot_count();
+        return AfcTestAccess::slots(*this).slot_count();
     }
 
     std::string get_slot_name(int index) const {
-        return slots_.name_of(index);
+        return AfcTestAccess::slots(*this).name_of(index);
     }
 
     const std::vector<std::string>& get_hub_names() const {
-        return hub_names_;
+        return AfcTestAccess::hub_names(*this);
     }
 
     void initialize_slots_from_discovery() {
@@ -205,8 +206,9 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         //                 so the shipped initialize_slots() can be called; the
         //                 logic under test is initialize_slots(), which IS
         //                 production.
-        if (!discovered_lane_names_.empty() && !slots_.is_initialized()) {
-            initialize_slots(discovered_lane_names_);
+        if (!AfcTestAccess::discovered_lane_names(*this).empty() &&
+            !AfcTestAccess::slots(*this).is_initialized()) {
+            AfcTestAccess::initialize_slots(*this, AfcTestAccess::discovered_lane_names(*this));
         }
     }
 
@@ -236,7 +238,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
 
         system_info_.units.push_back(unit);
         system_info_.total_slots = count;
-        slots_.initialize("Box Turtle 1", names);
+        AfcTestAccess::slots(*this).initialize("Box Turtle 1", names);
 
         // Set mapped_tool on registry entries to match unit slot info
         for (int i = 0; i < count; ++i) {
@@ -247,27 +249,27 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     }
 
     SlotInfo* get_mutable_slot(int slot_index) {
-        auto* entry = slots_.get_mut(slot_index);
+        auto* entry = AfcTestAccess::slots(*this).get_mut(slot_index);
         return entry ? &entry->info : nullptr;
     }
 
     // Initialize endless spool configs for reset testing
     void initialize_endless_spool_configs(int count) {
         for (int i = 0; i < count; ++i) {
-            slots_.set_backup(i, -1);
+            AfcTestAccess::slots(*this).set_backup(i, -1);
         }
     }
 
     // Set a specific endless spool backup for testing
     void set_endless_spool_config(int slot, int backup) {
-        slots_.set_backup(slot, backup);
+        AfcTestAccess::slots(*this).set_backup(slot, backup);
     }
 
     // Set up multi-unit configuration and trigger reorganize
     void
     setup_multi_unit(const std::unordered_map<std::string, std::vector<std::string>>& unit_map) {
-        unit_lane_map_ = unit_map;
-        reorganize_slots();
+        AfcTestAccess::unit_lane_map(*this) = unit_map;
+        AfcTestAccess::reorganize_slots(*this);
     }
 
     // For persistence tests: capture G-code commands
@@ -331,13 +333,13 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     // Directly seed pending_eject_lanes_ for clear_fault()'s discard test, taking
     // eject_queue_mutex_ the same way production code does.
     void test_queue_pending_eject(const std::string& lane_name) {
-        std::lock_guard<std::mutex> lock(eject_queue_mutex_);
-        pending_eject_lanes_.push_back(lane_name);
+        std::lock_guard<std::mutex> lock(AfcTestAccess::eject_queue_mutex(*this));
+        AfcTestAccess::pending_eject_lanes(*this).push_back(lane_name);
     }
 
     int test_pending_eject_count() {
-        std::lock_guard<std::mutex> lock(eject_queue_mutex_);
-        return static_cast<int>(pending_eject_lanes_.size());
+        std::lock_guard<std::mutex> lock(AfcTestAccess::eject_queue_mutex(*this));
+        return static_cast<int>(AfcTestAccess::pending_eject_lanes(*this).size());
     }
 
     void clear_captured_gcodes() {
@@ -372,10 +374,10 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
             std::count(captured_gcodes.begin(), captured_gcodes.end(), expected));
     }
 
-    static constexpr int MESSAGE_DRAIN_MAX_CLEARS = AmsBackendAfc::MESSAGE_DRAIN_MAX_CLEARS;
+    static constexpr int MESSAGE_DRAIN_MAX_CLEARS = AfcTestAccess::message_drain_max_clears();
 
     void test_maybe_drain_message_queue() {
-        maybe_drain_message_queue();
+        AfcTestAccess::maybe_drain_message_queue(*this);
     }
 
     // Position of the first gcode starting with `prefix`, or -1 if absent.
@@ -430,7 +432,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
 
     // Get mapped_tool from a slot
     int get_slot_mapped_tool(int slot_index) const {
-        const auto* entry = slots_.get(slot_index);
+        const auto* entry = AfcTestAccess::slots(*this).get(slot_index);
         return entry ? entry->info.mapped_tool : -1;
     }
 
@@ -461,7 +463,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
 
     // Access to extended parsing state (reads from registry)
     helix::printer::SlotSensors get_lane_sensors(int index) const {
-        const auto* entry = slots_.get(index);
+        const auto* entry = AfcTestAccess::slots(*this).get(index);
         if (entry) {
             return entry->sensors;
         }
@@ -469,7 +471,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     }
     bool get_hub_sensor() const {
         // Returns true if any hub sensor is triggered (backward compat)
-        for (const auto& [name, triggered] : hub_sensors_) {
+        for (const auto& [name, triggered] : AfcTestAccess::hub_sensors(*this)) {
             if (triggered)
                 return true;
         }
@@ -477,39 +479,39 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     }
 
     bool get_hub_sensor(const std::string& hub_name) const {
-        auto it = hub_sensors_.find(hub_name);
-        return it != hub_sensors_.end() && it->second;
+        auto it = AfcTestAccess::hub_sensors(*this).find(hub_name);
+        return it != AfcTestAccess::hub_sensors(*this).end() && it->second;
     }
 
     const std::unordered_map<std::string, bool>& get_hub_sensors() const {
-        return hub_sensors_;
+        return AfcTestAccess::hub_sensors(*this);
     }
     bool get_tool_start_sensor() const {
-        return tool_start_sensor_;
+        return AfcTestAccess::tool_start_sensor(*this);
     }
     bool get_tool_end_sensor() const {
-        return tool_end_sensor_;
+        return AfcTestAccess::tool_end_sensor(*this);
     }
     bool get_quiet_mode() const {
-        return afc_quiet_mode_;
+        return AfcTestAccess::afc_quiet_mode(*this);
     }
     // AFC.maps — the T-commands AFC registered with Klipper (v1.2.0+)
     const std::vector<std::string>& get_afc_tool_cmds() const {
-        return afc_tool_cmds_;
+        return AfcTestAccess::afc_tool_cmds(*this);
     }
     // Per-lane AFC_stepper.remember_spool. nullopt = never reported for this lane.
     std::optional<bool> get_lane_remember_spool(const std::string& lane_name) const {
-        auto it = lane_remember_spool_.find(lane_name);
-        if (it == lane_remember_spool_.end()) {
+        auto it = AfcTestAccess::lane_remember_spool(*this).find(lane_name);
+        if (it == AfcTestAccess::lane_remember_spool(*this).end()) {
             return std::nullopt;
         }
         return it->second;
     }
     bool get_led_state() const {
-        return afc_led_state_;
+        return AfcTestAccess::afc_led_state(*this);
     }
     float get_bowden_length() const {
-        return bowden_length_;
+        return AfcTestAccess::bowden_length(*this);
     }
 
     // Feed AFC_hub update
@@ -535,11 +537,11 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
 
     // Phase 2 mixed topology accessors
     const std::vector<AfcUnitInfo>& get_unit_infos() const {
-        return unit_infos_;
+        return AfcTestAccess::unit_infos(*this);
     }
 
     const std::vector<std::string>& get_extruder_names() const {
-        return extruder_names_;
+        return AfcTestAccess::extruder_names(*this);
     }
 
     AmsSystemInfo& get_system_info_mutable() {
@@ -552,39 +554,39 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     void seed_extruder_klipper_names(
         const std::unordered_map<std::string, std::string>& section_to_klipper) {
         std::lock_guard<std::mutex> lock(mutex_);
-        extruder_klipper_names_ = section_to_klipper;
-        configfile_answered_ = true; // stands in for the query having landed
-        extruder_tool_index_warned_.clear();
+        AfcTestAccess::extruder_klipper_names(*this) = section_to_klipper;
+        AfcTestAccess::configfile_answered(*this) = true; // stands in for the query having landed
+        AfcTestAccess::extruder_tool_index_warned(*this).clear();
     }
 
     int tool_index_for(const std::string& ext_name) const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return tool_index_for_extruder_unlocked(ext_name);
+        return AfcTestAccess::tool_index_for_extruder_unlocked(*this, ext_name);
     }
 
     /// Stand in for an `[AFC_Toolchanger …]` section in configfile.settings.
     void seed_configfile_toolchanger(bool present) {
         std::lock_guard<std::mutex> lock(mutex_);
-        configfile_has_toolchanger_ = present;
+        AfcTestAccess::configfile_has_toolchanger(*this) = present;
     }
 
     bool test_has_toolchanger() const {
-        return has_toolchanger();
+        return AfcTestAccess::has_toolchanger(*this);
     }
 
     /// N extruders and NO toolchanger — IDEX, or standalone toolheads each
     /// driven by their own [AFC_extruder] section. This is a real machine, and
     /// `AFC_SELECT_TOOL` does not exist on it.
     void setup_multi_extruder_no_toolchanger(int num_extruders) {
-        num_extruders_ = num_extruders;
-        extruders_.clear();
-        extruder_names_.clear();
+        AfcTestAccess::num_extruders(*this) = num_extruders;
+        AfcTestAccess::extruders(*this).clear();
+        AfcTestAccess::extruder_names(*this).clear();
         for (int i = 0; i < num_extruders; ++i) {
             std::string name = (i == 0) ? "extruder" : "extruder" + std::to_string(i);
             AfcExtruderInfo ext;
             ext.name = name;
-            extruders_.push_back(std::move(ext));
-            extruder_names_.push_back(std::move(name));
+            AfcTestAccess::extruders(*this).push_back(std::move(ext));
+            AfcTestAccess::extruder_names(*this).push_back(std::move(name));
         }
     }
 
@@ -598,7 +600,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     /// topology tests below assert on its exact contents.
     void setup_toolchanger(int num_extruders) {
         setup_multi_extruder_no_toolchanger(num_extruders);
-        configfile_has_toolchanger_ = true;
+        AfcTestAccess::configfile_has_toolchanger(*this) = true;
     }
 };
 } // namespace helix
@@ -7200,9 +7202,9 @@ class AfcDispatchAckHelper : public AmsBackendAfc {
   public:
     AfcDispatchAckHelper() : AmsBackendAfc(nullptr, nullptr) {
         std::vector<std::string> lanes{"lane1", "lane2", "lane3", "lane4"};
-        initialize_slots(lanes);
+        AfcTestAccess::initialize_slots(*this, lanes);
         for (int i = 0; i < 4; ++i) {
-            auto* entry = slots_.get_mut(i);
+            auto* entry = AfcTestAccess::slots(*this).get_mut(i);
             if (entry)
                 entry->info.status = SlotStatus::AVAILABLE;
         }
@@ -7241,7 +7243,7 @@ class AfcDispatchAckHelper : public AmsBackendAfc {
     /// of AmsBackendAfc.
     [[nodiscard]] bool has_pending_dispatch() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return pending_dispatch_action_.has_value();
+        return AfcTestAccess::pending_dispatch_action(*this).has_value();
     }
 
     [[nodiscard]] std::string operation_detail() const {
@@ -7275,7 +7277,7 @@ class AfcDispatchAckHelper : public AmsBackendAfc {
 
     void age_action(std::chrono::seconds elapsed) {
         std::lock_guard<std::mutex> lock(mutex_);
-        action_start_time_ = std::chrono::steady_clock::now() - elapsed;
+        AfcTestAccess::action_start_time(*this) = std::chrono::steady_clock::now() - elapsed;
     }
 
     void mark_filament_loaded(bool loaded) {
@@ -7287,7 +7289,7 @@ class AfcDispatchAckHelper : public AmsBackendAfc {
     /// the backend has no client here, so the real query never runs.
     void seed_configfile_toolchanger(bool present) {
         std::lock_guard<std::mutex> lock(mutex_);
-        configfile_has_toolchanger_ = present;
+        AfcTestAccess::configfile_has_toolchanger(*this) = present;
     }
 
     [[nodiscard]] AmsAction action() const {
@@ -7296,7 +7298,7 @@ class AfcDispatchAckHelper : public AmsBackendAfc {
 
     [[nodiscard]] bool latched() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return timed_out_state_.has_value();
+        return AfcTestAccess::timed_out_state(*this).has_value();
     }
 
     [[nodiscard]] const std::vector<std::string>& sent() const {

@@ -22,6 +22,8 @@
 
 namespace helix {
 
+class AfcTestAccess;
+
 /**
  * @file ams_backend_afc.h
  * @brief AFC-Klipper-Add-On backend implementation
@@ -516,40 +518,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     AmsError apply_endless_spool_backup(int slot_index, int backup_slot) override;
 
     // Allow test helper access to private members
-    friend class AmsBackendAfcTestHelper;
-    friend class AfcPerSlotLoadedHelper;
-    friend class AfcHelper;
-    friend class AfcBypassPublishTestAccess;
-    friend class AfcCurrentErrorHelper;
-    friend class AfcRetainsHelper;
-    friend class AfcLaneDataClearHelper;
-    friend class AfcRebindHelper;
-    friend class AfcFaultEventCharHelper;
-    friend class AfcFeatureLevelHelper;
-    friend class AfcFixtureHelper;
-    friend class AmsBackendAfcEndlessSpoolHelper;
-    friend class AmsBackendAfcMultiUnitHelper;
-    friend class HubSensorTestHelper;
-    friend class AmsBackendAfcMultiExtruderHelper;
-    friend class AmsBackendAfcConfigHelper;
-    friend class AfcErrorHandlingHelper;
-    friend class AfcErrorStateHelper;
-    friend class AfcCharHelper;
-    friend class AfcToolchangeTestHelper;
-    friend class AfcToolchangerLaneHelper;
-    friend class AfcStateStringHelper;
-    friend class AfcDatabaseResponseHelper;
-    friend class AfcStatusFieldHelper;
-    friend class AfcActionTimeoutHelper;
-    friend class AfcDispatchAckHelper;
-    friend class AfcToolchangerStatusHelper;
-    friend class AfcStatusDispatchHelper;
-    friend class AfcEjectPrintGateHelper;
-    friend class AfcSharedExtruderHelper;
-    friend class AfcLaneDataToolKeyHelper;
-    friend class AfcReassertHelper;
-    friend class AfcDelegatesHomingHelper;
-    friend class AfcDispatchHelper;
+    friend class AfcTestAccess;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;

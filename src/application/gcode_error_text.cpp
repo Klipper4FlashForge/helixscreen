@@ -7,11 +7,7 @@
 // .cpp drags along — the same seam-driven split as moonraker_api_power.cpp.
 
 #include "gcode_error_router.h"
-
-#if HELIX_HAS_CFS
-#include "ams_backend_cfs.h"
-#endif
-
+#include "klipper_error_table.h"
 #include "lvgl.h"
 
 #include "hv/json.hpp"
@@ -79,15 +75,21 @@ void GcodeErrorRouter::clean_error_text(std::string& text, std::string& out_code
                     if (j.contains("values")) {
                         values = j["values"];
                     }
-#if HELIX_HAS_CFS
-                    if (auto friendly = printer::CfsErrorDecoder::lookup_message_with_values(
-                            out_code, values, fw_msg)) {
-                        text = friendly->first + ". " + friendly->second;
+                    // Not behind HELIX_HAS_CFS: key111/key298/key585 are
+                    // Klipper-layer faults a machine reports with no filament
+                    // hardware, and a build without CFS still has to translate
+                    // them rather than show the raw firmware string.
+                    if (const printer::KlipperErrorEntry* entry =
+                            printer::klipper_error_lookup(out_code)) {
+                        std::string message = (entry->prefer_fw_msg && !fw_msg.empty())
+                                                  ? fw_msg
+                                                  : std::string(entry->message);
+                        if (entry->format_values) {
+                            message += entry->format_values(values);
+                        }
+                        text = message + ". " + entry->hint;
                         return;
                     }
-#else
-                    (void)values;
-#endif
                 }
                 if (!fw_msg.empty()) {
                     text = fw_msg;

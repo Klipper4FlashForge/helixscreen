@@ -18,6 +18,7 @@
  * implementation: the expectations come from firmware, not from the parser.
  */
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 
 #include "../catch_amalgamated.hpp"
@@ -120,7 +121,7 @@ class AfcFeatureLevelHelper : public AmsBackendAfc {
     }
 
     [[nodiscard]] std::string prefix() const {
-        return lane_object_prefix_;
+        return AfcTestAccess::lane_object_prefix(*this);
     }
 };
 } // namespace helix

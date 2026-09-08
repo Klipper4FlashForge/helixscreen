@@ -13,6 +13,7 @@
  */
 
 #include "../lvgl_test_fixture.h"
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_cfs.h"
 #include "ams_types.h"
@@ -34,12 +35,12 @@ class AfcRebindHelper : public AmsBackendAfc {
   public:
     AfcRebindHelper() : AmsBackendAfc(nullptr, nullptr) {
         std::vector<std::string> names{"lane1", "lane2"};
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
     }
 
     void set_override(int slot_index, const helix::ams::FilamentSlotOverride& o) {
         std::lock_guard<std::mutex> lock(mutex_);
-        overrides_[slot_index] = o;
+        AfcTestAccess::overrides(*this)[slot_index] = o;
     }
 
     /// Drive the live status path, so assertions see what the UI would paint.
@@ -61,7 +62,7 @@ class AfcRebindHelper : public AmsBackendAfc {
 
     [[nodiscard]] bool has_override(int slot_index) const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return overrides_.count(slot_index) > 0;
+        return AfcTestAccess::overrides(*this).count(slot_index) > 0;
     }
 
     /// Drive AmsBackend::record_own_spool_write exactly the way

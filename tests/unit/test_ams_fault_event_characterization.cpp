@@ -24,6 +24,7 @@
  * that does not override.
  */
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_happy_hare.h"
 #include "ams_backend_mock.h"
@@ -122,7 +123,7 @@ class AfcFaultEventCharHelper : public AmsBackendAfc {
   public:
     AfcFaultEventCharHelper() : AmsBackendAfc(nullptr, nullptr) {
         std::vector<std::string> names{"lane1", "lane2", "lane3", "lane4"};
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
     }
 
     void feed_afc(const nlohmann::json& afc) {
@@ -135,12 +136,12 @@ class AfcFaultEventCharHelper : public AmsBackendAfc {
 
     void set_toolhead_sensor(bool state) {
         std::lock_guard<std::mutex> lock(mutex_);
-        tool_start_sensor_ = state;
+        AfcTestAccess::tool_start_sensor(*this) = state;
     }
 
     void set_current_lane(const std::string& lane) {
         std::lock_guard<std::mutex> lock(mutex_);
-        current_lane_name_ = lane;
+        AfcTestAccess::current_lane_name(*this) = lane;
     }
 };
 } // namespace helix
