@@ -703,6 +703,7 @@ translations:
   Different filament?: 耗材不同？
   Digital Clock: '数字时钟'
   Disable: 禁用
+  Disable Bypass: 禁用旁路
   Disable Motors?: 关闭电机？
   Disable the security PIN: 禁用安全 PIN
   Disabling motors...: 正在禁用电机...
@@ -780,6 +781,7 @@ translations:
   Empty slots disable the associated functionality: 空槽位将禁用相关功能
   Enable: 启用
   Enable Brush Wipe: '启用刷子擦拭'
+  Enable Bypass: 启用旁路
   Enable Bypass Controls: 启用旁路控制
   Enable Monitoring: 启用监控
   Enable Purge: '启用排料'

@@ -1160,19 +1160,8 @@ void AmsPanel::on_bypass_spool_clicked(void* user_data) {
 }
 
 void AmsPanel::handle_bypass_spool_click() {
-    helix::ui::show_external_spool_menu(
-        parent_screen_, path_canvas_, context_menu_,
-        {/*on_edit=*/[this](bool open_on_picker) { show_edit_modal(-2, open_on_picker); },
-         /*on_load=*/
-         [this]() {
-             if (sidebar_)
-                 sidebar_->handle_bypass_load();
-         },
-         /*on_unload=*/
-         [this]() {
-             if (sidebar_)
-                 sidebar_->handle_bypass_unload();
-         }});
+    helix::ui::show_external_spool_menu(parent_screen_, path_canvas_, context_menu_,
+                                        helix::ui::sidebar_external_spool_hooks(sidebar_.get()));
 }
 
 void AmsPanel::on_buffer_clicked(void* user_data) {
@@ -1481,26 +1470,6 @@ void AmsPanel::show_edit_modal(int slot_index, bool open_on_picker) {
     }
 
     auto& editor = helix::ui::get_ams_edit_overlay();
-
-    // External spool (bypass/direct) — not managed by backend
-    if (slot_index == -2) {
-        auto ext = AmsState::instance().get_external_spool_info();
-        SlotInfo initial_info = ext.value_or(SlotInfo{});
-        initial_info.slot_index = -2;
-        initial_info.global_index = -2;
-
-        editor.show_for_slot(
-            parent_screen_, -2, initial_info, api_,
-            [](const helix::ui::AmsEditOverlay::EditResult& result) {
-                if (result.saved) {
-                    AmsState::instance().commit_external_spool_edit(result.slot_info);
-                    // bypass display update handled reactively by external_spool_observer_
-                    NOTIFY_INFO(lv_tr("External spool updated"));
-                }
-            },
-            open_on_picker);
-        return;
-    }
 
     AmsBackend* backend = AmsState::instance().get_backend();
     if (!backend) {

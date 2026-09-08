@@ -12,8 +12,12 @@
 #    over an otherwise untouched tree: no code changes, nothing for a compile or
 #    a lint to say, and a worker pushes one every few minutes.
 #
-# main and release/** are deliberately keyed on the SHA rather than the ref, so
-# a group never cancels a run for a commit that landed.
+# 3. A key that lets a newer push supersede an older one on the SAME ref. Keying
+#    main on the SHA gives every landed commit its own run and none of them ever
+#    cancels another, which at this repo's push rate buries the queue: the tree
+#    the newest commit describes contains all the earlier ones, so a green run on
+#    it is the signal that matters. release/** is the exception and stays keyed on
+#    the SHA, because those land rarely and each one is worth its own record.
 
 setup() {
     cd "$BATS_TEST_DIRNAME/../.." || return 1
@@ -85,7 +89,7 @@ assert '!claude/report-*' in branches, 'push branches do not exclude claude/repo
     [ "$checked" -gt 0 ] || fail "examined no workflows"
 }
 
-@test "main and release keep a run per commit rather than per branch" {
+@test "only release/** keys on the SHA; main lets a newer push supersede" {
     local checked=0
     while read -r wf; do
         [ -n "$wf" ] || continue
@@ -94,8 +98,12 @@ assert '!claude/report-*' in branches, 'push branches do not exclude claude/repo
 import yaml
 doc = yaml.safe_load(open('$wf'))
 group = str(doc['concurrency']['group'])
-assert 'github.sha' in group, 'group keys on the ref alone, so a push to main can cancel a landed commit: %s' % group
-assert \"refs/heads/main\" in group, 'group does not special-case main: %s' % group
+assert 'refs/heads/main' not in group, (
+    'group special-cases main, so main runs never cancel each other and the queue '
+    'fills with superseded work: %s' % group)
+assert 'refs/heads/release/' in group and 'github.sha' in group, (
+    'group does not keep a per-commit run for release/**: %s' % group)
+assert 'github.ref' in group, 'group never falls back to the ref: %s' % group
 "
         [ "$status" -eq 0 ] || fail "$wf: $output"
     done <<< "$(claude_push_workflows)"

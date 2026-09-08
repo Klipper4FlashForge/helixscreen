@@ -27,6 +27,29 @@ namespace helix {
     return firmware_supports_bypass || force_override;
 }
 
+/**
+ * @brief Whether a bypass toggle should be offered at all on this machine.
+ *
+ * The two static reasons a toggle is pointless: bypass is not available here,
+ * and a hardware sensor owns the bypass so the firmware ignores the command.
+ * BypassToggleController refuses on both, so a surface asking this before it
+ * draws a toggle cannot offer a control the controller will only refuse.
+ *
+ * Not yet asked everywhere: the AMS sidebar's bypass_row and the Device
+ * Operations row each gate on availability alone, or spell the pair out as two
+ * separate XML bindings. On AFC hardware reporting a bypass sensor the sidebar
+ * therefore draws a live switch that is refused on every tap.
+ *
+ * Deliberately NOT including the print guard: that one is live state, so a
+ * toggle stays drawn and goes disabled rather than vanishing mid-print.
+ *
+ * @param available            bypass_available() / bypass_available_for()
+ * @param has_hardware_sensor  AmsSystemInfo::has_hardware_bypass_sensor
+ */
+[[nodiscard]] constexpr bool bypass_toggle_offered(bool available, bool has_hardware_sensor) {
+    return available && !has_hardware_sensor;
+}
+
 /// Gather bypass_available()'s override input from settings. Split from the pure
 /// rule above so the rule is testable without standing up SettingsManager, which
 /// is the same split bypass_node_visible() / bypass_node_visible_for() uses.

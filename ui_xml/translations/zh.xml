@@ -694,6 +694,7 @@
   <translation tag="Different filament?" zh="耗材不同？"/>
   <translation tag="Digital Clock" zh="数字时钟"/>
   <translation tag="Disable" zh="禁用"/>
+  <translation tag="Disable Bypass" zh="禁用旁路"/>
   <translation tag="Disable Motors?" zh="关闭电机？"/>
   <translation tag="Disable the security PIN" zh="禁用安全 PIN"/>
   <translation tag="Disabling motors..." zh="正在禁用电机..."/>
@@ -769,6 +770,7 @@
   <translation tag="Empty slots disable the associated functionality" zh="空槽位将禁用相关功能"/>
   <translation tag="Enable" zh="启用"/>
   <translation tag="Enable Brush Wipe" zh="启用刷子擦拭"/>
+  <translation tag="Enable Bypass" zh="启用旁路"/>
   <translation tag="Enable Bypass Controls" zh="启用旁路控制"/>
   <translation tag="Enable Monitoring" zh="启用监控"/>
   <translation tag="Enable Purge" zh="启用排料"/>

@@ -768,6 +768,7 @@ translations:
   Different filament?: Другой филамент?
   Digital Clock: 'Цифровые часы'
   Disable: Отключить
+  Disable Bypass: Отключить байпас
   Disable Motors?: Отключить моторы?
   Disable the security PIN: Отключить PIN-код
   Disabling motors...: Отключение моторов...
@@ -850,6 +851,7 @@ translations:
     функционал
   Enable: Включить
   Enable Brush Wipe: 'Включить очистку щёткой'
+  Enable Bypass: Включить байпас
   Enable Bypass Controls: Включить управление байпасом
   Enable Monitoring: Включить мониторинг
   Enable Purge: 'Включить продувку'

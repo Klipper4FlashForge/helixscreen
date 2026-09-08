@@ -694,6 +694,7 @@
   <translation tag="Different filament?" ru="Другой филамент?"/>
   <translation tag="Digital Clock" ru="Цифровые часы"/>
   <translation tag="Disable" ru="Отключить"/>
+  <translation tag="Disable Bypass" ru="Отключить байпас"/>
   <translation tag="Disable Motors?" ru="Отключить моторы?"/>
   <translation tag="Disable the security PIN" ru="Отключить PIN-код"/>
   <translation tag="Disabling motors..." ru="Отключение моторов..."/>
@@ -769,6 +770,7 @@
   <translation tag="Empty slots disable the associated functionality" ru="Пустые слоты отключают связанный функционал"/>
   <translation tag="Enable" ru="Включить"/>
   <translation tag="Enable Brush Wipe" ru="Включить очистку щёткой"/>
+  <translation tag="Enable Bypass" ru="Включить байпас"/>
   <translation tag="Enable Bypass Controls" ru="Включить управление байпасом"/>
   <translation tag="Enable Monitoring" ru="Включить мониторинг"/>
   <translation tag="Enable Purge" ru="Включить продувку"/>

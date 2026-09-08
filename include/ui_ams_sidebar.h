@@ -111,25 +111,12 @@ class AmsOperationSidebar {
      */
     void handle_unload(int slot_index);
 
-    /**
-     * @brief Load the external (bypass) spool from the bypass affordance.
-     *
-     * The dispatch is handle_load_with_preheat(EXTERNAL_SPOOL_SLOT) — the same
-     * ladder every other surface takes, which is already bypass-aware. What this
-     * adds is the precondition: a load offered on a bypass spool the user can
-     * see must engage bypass when it is not engaged, or the op runs against the
-     * lane path instead. Engaging is BypassToggleController's, chain and all.
-     */
-    void handle_bypass_load();
-
-    /**
-     * @brief Unload the external (bypass) spool.
-     *
-     * No engage step: plan_unload() refuses with NothingLoaded when the bypass
-     * spool is not at the toolhead, and engaging bypass to unload something that
-     * is not there would move the path for nothing.
-     */
-    void handle_bypass_unload();
+    /// This sidebar's bypass controller, for the external-spool menu to drive.
+    /// One controller per surface: a second would own half of the #1229
+    /// unload-first chain and settle against the wrong half.
+    [[nodiscard]] BypassToggleController* bypass_controller() {
+        return &bypass_toggle_;
+    }
 
     /**
      * @brief Update the loaded card swatch color and info
@@ -341,9 +328,9 @@ class AmsOperationSidebar {
 
     // Action handlers
     void handle_unload();
+    void handle_bypass_toggle();
     void handle_reset();
     void handle_check_gates();
-    void handle_bypass_toggle();
 
     // Action display (sidebar-relevant parts only)
     void update_action_display(AmsAction action);

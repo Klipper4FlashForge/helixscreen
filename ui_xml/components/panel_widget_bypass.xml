@@ -1,9 +1,10 @@
 <?xml version="1.0"?>
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Home bypass toggle tile. Gated on ams_supports_bypass by the registry
-     row (panel_widget_registry.cpp). Tap toggles bypass through the shared
-     BypassToggleController; the tile itself only renders state. -->
+<!-- Home bypass tile. Gated on ams_supports_bypass by the registry row
+     (panel_widget_registry.cpp). Tap opens the external-spool context menu,
+     which carries the bypass toggle alongside the spool's Load, Unload and
+     Purge; the tile itself only renders state. -->
 <component>
   <view name="panel_widget_bypass"
         extends="lv_obj" height="100%" flex_grow="1" style_pad_all="0" scrollable="false" flex_flow="column"

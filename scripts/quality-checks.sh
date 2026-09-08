@@ -2991,6 +2991,36 @@ echo ""
   return $EXIT_CODE
 }
 
+qc_esp32_gated_stubs() {
+  local EXIT_CODE=0
+SECTION_START=$(date +%s)
+echo -n "📟 Checking ESP32 gated stubs are compiled..."
+
+if [ -f "scripts/check_esp32_gated_stubs.py" ]; then
+  if python3 scripts/check_esp32_gated_stubs.py >/tmp/esp32_stubs.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/esp32_stubs.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/esp32_stubs.out
+    echo "   The ESP32 toolchain lives only in CI, so this class reaches main as a"
+    echo "   red esp32-build and nothing local can see it."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_esp32_gated_stubs.py not found - skipping"
+fi
+
+echo ""
+
+# ====================================================================
+  return $EXIT_CODE
+}
+
 qc_patch_drift() {
   local EXIT_CODE=0
 SECTION_START=$(date +%s)
@@ -3143,7 +3173,7 @@ echo ""
   return $EXIT_CODE
 }
 
-QC_ALL="qc_phase1 qc_xml_const qc_xml_attr qc_dup_names qc_xml_linter qc_xml_subtests qc_hidden_tests qc_overlay_width qc_icon_names qc_design_pixels qc_phase2 qc_icon_font qc_mdi_codepoints qc_todo_markers qc_mem_safety qc_null_safety qc_l081 qc_net_pii qc_decl_ui qc_namespace qc_spdlog_only qc_design_tokens qc_test_mirrors qc_test_tautology qc_test_widget_registry qc_doc_refs qc_lvgl_event_codes qc_translation_fmt qc_base_locale qc_translation_coverage qc_shellcheck qc_installer_reachability qc_patch_drift qc_workflow_submodules qc_bats_inert"
+QC_ALL="qc_phase1 qc_xml_const qc_xml_attr qc_dup_names qc_xml_linter qc_xml_subtests qc_hidden_tests qc_overlay_width qc_icon_names qc_design_pixels qc_phase2 qc_icon_font qc_mdi_codepoints qc_todo_markers qc_mem_safety qc_null_safety qc_l081 qc_net_pii qc_decl_ui qc_namespace qc_spdlog_only qc_design_tokens qc_test_mirrors qc_test_tautology qc_test_widget_registry qc_doc_refs qc_lvgl_event_codes qc_translation_fmt qc_base_locale qc_translation_coverage qc_shellcheck qc_installer_reachability qc_patch_drift qc_esp32_gated_stubs qc_workflow_submodules qc_bats_inert"
 
 QC_PARALLEL=""
 for fn in $QC_ALL; do
@@ -3189,6 +3219,7 @@ qc_trigger_re() {
     qc_installer_reachability)
                         echo '^scripts/lib/installer/|^scripts/install-dev\.sh$|^scripts/bundle-(un)?installer\.sh$|^scripts/check_installer_step_reachability\.py$' ;;
     qc_patch_drift)     echo '^patches/|mk/patches\.mk|check_patch_drift\.py' ;;
+    qc_esp32_gated_stubs) echo '^firmware/helixscreen-esp32/|^src/|check_esp32_gated_stubs\.py' ;;
     qc_bats_inert)      echo '\.bats$|^tests/shell/helpers\.bash$|check_bats_inert_assertions\.py$' ;;
     qc_workflow_submodules)
                         echo '^\.github/workflows/|^\.github/actions/|check_workflow_submodules\.py$' ;;
