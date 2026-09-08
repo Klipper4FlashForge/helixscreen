@@ -1054,7 +1054,6 @@ src/printer/filament_mapper.cpp
 src/system/pwm_sound_backend.cpp
 src/system/update_checker.cpp
 src/ui/filament_op_execute.cpp
-src/ui/ui_panel_filament.cpp
 src/ui/ui_settings_about.cpp
 "
 CF_OK=false
