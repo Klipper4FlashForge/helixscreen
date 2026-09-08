@@ -9,6 +9,7 @@
 #include "../catch_amalgamated.hpp"
 
 using json = nlohmann::json;
+using namespace helix;
 
 // ============================================================================
 // StandardMacroInfo Tests
