@@ -402,11 +402,6 @@ src/ui/ui_overlay_printer_image.cpp
 src/ui/ui_overlay_printer_type.cpp
 src/ui/ui_overlay_retraction_settings.cpp
 src/ui/ui_overlay_temp_graph.cpp
-# Compiled for its HELIX_HAS_TIMELAPSE_VIEWER=0 arm only (set in CMakeLists.txt).
-# The viewer UI is gated off on this target, but ui_panel_history_list.cpp calls
-# helix::ui::timelapse_viewer_available() and open_timelapse_video(), and this is
-# the file whose #else arm defines them. Dropping it links nothing and fails.
-src/ui/ui_overlay_timelapse_videos.cpp
 src/ui/ui_panel_advanced.cpp
 src/ui/ui_panel_ams.cpp
 src/ui/ui_panel_ams_overview.cpp

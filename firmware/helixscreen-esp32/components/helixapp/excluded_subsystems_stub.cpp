@@ -90,6 +90,16 @@ TimelapseVideosOverlay& get_global_timelapse_videos() {
 void init_global_timelapse_videos(IMoonrakerAPI*) {}
 void open_timelapse_videos() {}
 
+// src/ui/ui_overlay_timelapse_videos.cpp, helix::ui entry points. Kept code calls
+// both: ui_panel_history_list.cpp gates a row on the availability query and opens a
+// job's video from it. Returning false is what makes the row inert here.
+namespace helix::ui {
+void open_timelapse_video(const std::string&) {}
+bool timelapse_viewer_available() {
+    return false;
+}
+} // namespace helix::ui
+
 // ===========================================================================
 // Timelapse install + settings overlays and TimelapseState (dropped
 // 2026-08-12; see app_srcs_excluded.txt for the scope decision).
