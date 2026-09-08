@@ -131,6 +131,12 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     [[nodiscard]] std::string reset_button_label() const override {
         return "Home";
     }
+    /// reset() sends bare MMU_HOME. With no FORCE_UNLOAD parameter Happy Hare
+    /// takes its automatic-unload branch whenever filament_pos is not UNLOADED,
+    /// so the filament comes out of the toolhead before the selector homes.
+    [[nodiscard]] bool reset_moves_filament() const override {
+        return true;
+    }
     /**
      * @brief Probe a single gate's sensor (MMU_CHECK_GATE GATE=n).
      */

@@ -162,6 +162,11 @@ class AmsBackendMock : public AmsBackend {
         return system_info_.type == AmsType::HAPPY_HARE ? std::string("Home")
                                                         : std::string("Reset");
     }
+    /// Mirrors the emulated backend so the sidebar greys Reset in --test exactly
+    /// where it would on hardware: Happy Hare's MMU_HOME unloads before homing.
+    [[nodiscard]] bool reset_moves_filament() const override {
+        return system_info_.type == AmsType::HAPPY_HARE;
+    }
 
     // Configuration
 
