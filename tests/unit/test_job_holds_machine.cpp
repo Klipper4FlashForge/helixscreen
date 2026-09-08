@@ -316,7 +316,9 @@ constexpr GuardedFile kGuardedFiles[] = {
     {"ui_xml/ams_device_operations.xml", 1},
     {"ui_xml/components/ams_sidebar.xml", 1},
     {"ui_xml/components/panel_widget_bypass.xml", 1},
-    {"ui_xml/controls_panel.xml", 9},
+    // 9 -> 11: this fork adds the Tool Offsets and Pressure Advance calibration
+    // buttons, both of which reach the toolhead.
+    {"ui_xml/controls_panel.xml", 11},
     {"ui_xml/header_bar.xml", 1},
     {"ui_xml/micro/controls_panel.xml", 9},
     {"ui_xml/micro/header_bar.xml", 1},
