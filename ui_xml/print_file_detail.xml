@@ -71,9 +71,6 @@
             <lv_obj width="80%"
                     height="content" align="center" flex_flow="column" style_pad_all="0" style_pad_gap="#space_sm"
                     style_flex_cross_place="center" style_bg_opa="0" style_border_width="0" scrollable="false">
-              <!-- One compound rule per flag, not two: two flag observers on the
-                   same flag each assert both polarities on every fire and clobber
-                   each other (see wizard_input_shaper.xml). -->
               <spinner size="lg">
                 <bind_flag_if cond="detail_gcode_progress gt 0" flag="hidden"/>
               </spinner>

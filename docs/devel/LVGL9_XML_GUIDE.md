@@ -568,13 +568,15 @@ instead.
 
 **Reuse alone does not pick `<subject_expr>`** — check the phase table above first. If any referenced subject comes from an `init_subjects()` (Phase 9a), the derived subject silently never registers, so either repeat the `cond=` at each site or, when that would scatter one rule across several files, publish the answer as a C++ subject every site binds (see "Which phase registers the subject" above).
 
-**❌ Never put two flag bindings for the same flag on one widget.** The flag
-binds are two-way — a non-matching `bind_flag_if_eq` actively *removes* the flag
-rather than abstaining — so two of them do not AND, they overwrite each other.
-Combine into one expression (`cond="can and dirty"`) instead. Two binds for one
-flag are safe only on different widgets, which is why the broken form can look
-correct in nested markup. Worked example and the tests that pin it:
-[`lib/helix-xml/docs/BINDINGS.md` § *The flag binds are two-way*](../../lib/helix-xml/docs/BINDINGS.md#the-flag-binds-are-two-way).
+**✅ Several bindings on one flag or state OR together.** Give each independent
+reason its own line — a widget disabled while a job holds the machine *or* while
+an operation is running gets two `bind_state_if_eq` elements, and the state is
+applied while either holds, in whatever order the subjects notify. What that
+does *not* give you is the conjunction: two bindings never AND, so a condition
+that needs one is a single expression (`cond="can and dirty"`). Composition is
+per widget and per property; it never reaches an ancestor's binding on the same
+flag. Worked example and the tests that pin it:
+[`lib/helix-xml/docs/BINDINGS.md` § *Several bindings on one property OR together*](../../lib/helix-xml/docs/BINDINGS.md#several-bindings-on-one-property-or-together).
 
 #### Repeating fragments with `<repeat>`
 
