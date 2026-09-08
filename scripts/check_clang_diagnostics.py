@@ -671,7 +671,7 @@ def main() -> int:
         # same result: the tree was never built, so the gate saw nothing and would
         # report a clean bill of health for code it never compiled. The divergence
         # this exists to catch is precisely what an unbuilt tree cannot show.
-        wanted = len(tus) + len(headers)
+        wanted = len(changed_cpp_paths(args, root))
         if wanted:
             print(
                 f"clang syntax check: 0 of {wanted} changed C++ file(s) could be "
