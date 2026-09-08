@@ -59,30 +59,37 @@ fi
 
 # d. One short banner. SessionStart stdout becomes context for the agent, so
 # this stays terse rather than replaying either log.
-ccache_summary() {
-    command -v ccache >/dev/null 2>&1 || { printf 'not installed'; return; }
-    local tarball size
-    # What env-setup.sh recorded at provisioning time is the authority on whether
-    # a cache was ever fetched. `ccache -s` can only describe the cache now, and
-    # says the least when it matters most: ccache 4.9.1 omits the "Files in cache"
-    # line entirely for an empty cache, so treating its absence as anything but
-    # empty reports a cold box as warm.
-    tarball=$(sed -n 's/^ccache_tarball: *//p' "$CLOUD_ENV_DIR/READY" 2>/dev/null | head -1)
-    size=$(ccache -s 2>/dev/null | grep -E '^ *Cache size' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
-    [ -n "$size" ] || size=0
-    case "$size" in
-        0 | 0.0 | 0.00) printf 'EMPTY — %s' "${tarball:-provisioning status unknown}" ;;
-        *) printf '%s GB — %s (hit rate resets per session)' "$size" "${tarball:-provisioning status unknown}" ;;
-    esac
-}
+# The program and test binaries take over an hour between them on these boxes and
+# a session cannot do much until they exist, so start them now: the wait then
+# overlaps reading the code instead of following it. Nothing here waits on the
+# build — the banner names the log and the pid so a session can decide for itself
+# whether to block.
+#
+# One build per tree is the rule (CLAUDE.md): a second `make` in the same tree
+# deletes the binary this one is linking. So the banner tells a session to wait on
+# this build rather than start its own, and PREBUILD_PID is how it checks.
+PREBUILD_LOG=/tmp/helix-prebuild.log
+if [ -z "${HELIX_SKIP_PREBUILD:-}" ] && command -v make >/dev/null 2>&1; then
+    nohup sh -c 'make -j"$(nproc)" && make test -j"$(nproc)"' >"$PREBUILD_LOG" 2>&1 &
+    PREBUILD_PID=$!
+else
+    PREBUILD_PID=""
+fi
 
 if [ -n "$FAILED_STEP" ]; then
-    printf '[cloud-env] ready with issues: %s failed — submodules %ss, ccache %s\n' \
-        "$FAILED_STEP" "$SUBMODULE_ELAPSED" "$(ccache_summary)"
+    printf '[cloud-env] ready with issues: %s failed — submodules %ss, venv ok\n' \
+        "$FAILED_STEP" "$SUBMODULE_ELAPSED"
 else
-    printf '[cloud-env] ready: submodules %ss, ccache %s, venv ok\n' \
-        "$SUBMODULE_ELAPSED" "$(ccache_summary)"
+    printf '[cloud-env] ready: submodules %ss, venv ok\n' "$SUBMODULE_ELAPSED"
 fi
-printf '[cloud-env] build with plain `make -j4` and `make test -j4` (default OPT; no OPT=0), never two makes in one tree\n'
+if [ -n "$PREBUILD_PID" ]; then
+    printf '[cloud-env] prebuild running (pid %s, log %s) — `make` and `make test` are ALREADY going.\n' \
+        "$PREBUILD_PID" "$PREBUILD_LOG"
+    printf '[cloud-env] do NOT start your own build: wait with `while kill -0 %s 2>/dev/null; do sleep 20; done; tail -5 %s`\n' \
+        "$PREBUILD_PID" "$PREBUILD_LOG"
+else
+    printf '[cloud-env] no prebuild started; build with plain `make -j4` and `make test -j4` (default OPT)\n'
+fi
+printf '[cloud-env] default OPT everywhere (no OPT=0), and never two makes in one tree\n'
 
 exit 0
