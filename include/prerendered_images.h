@@ -149,6 +149,11 @@ namespace helix {
 /**
  * @brief Get the cache file path for a printer image at exact dimensions
  *
+ * The name is "<source basename>-<W>x<H>-<mtime>-<size>.bin", so it is content-
+ * addressed on the source: rewriting an image in place under an existing filename
+ * resolves to a different entry, and the one holding the old pixels is never
+ * consulted again.
+ *
  * @param source_image_path The resolved source image path (LVGL path with A: prefix)
  * @param width Exact widget width in pixels
  * @param height Exact widget height in pixels
@@ -156,6 +161,22 @@ namespace helix {
  */
 [[nodiscard]] std::string get_cached_printer_image_path(const std::string& source_image_path,
                                                         int width, int height);
+
+/**
+ * @brief Whether a cache filename is an entry generated from a given source image
+ *
+ * Pure name arithmetic — touches no filesystem. A match requires the source's
+ * basename followed by the "<W>x<H>-" dimension segment, which is what keeps a
+ * PNG's entries apart from those of the prerendered variants beside it:
+ * "creality-k1-se-" also prefixes "creality-k1-se-300-233x209-…", the cache of a
+ * different source image.
+ *
+ * @param cache_filename Filename (no directory) of a cache entry
+ * @param source_image_path The LVGL source path (with or without A: prefix)
+ * @return true if the entry caches that source
+ */
+[[nodiscard]] bool printer_cache_entry_matches(const std::string& cache_filename,
+                                               const std::string& source_image_path);
 
 /**
  * @brief Generate a cached printer image at exact dimensions
@@ -184,32 +205,21 @@ bool generate_cached_printer_image(const std::string& source_image_path, int wid
 void prune_printer_image_cache(int max_files = 10, int max_keep = 5);
 
 /**
- * @brief Invalidate cached printer images whose filename starts with a given prefix
+ * @brief Invalidate every cached size generated from one source image
  *
- * Removes all dimension-specific cache files in the printer image cache directory
- * that match the source image basename. For example, if source_image_path is
- * "A:config/custom_images/my-printer-300.bin", this removes files like
- * "my-printer-300-480x320.bin" from the cache directory.
+ * Removes the dimension-specific cache files in the printer image cache directory
+ * that printer_cache_entry_matches() attributes to this source. For
+ * "A:config/custom_images/my-printer-300.bin" that is
+ * "my-printer-300-480x320-<mtime>-<size>.bin" and its siblings, and nothing
+ * belonging to another source that shares the stem.
+ *
+ * Entries are already keyed on the source's mtime and size, so a rewrite in place
+ * is never served from a stale one. This is the prompt cleanup of files that can
+ * no longer be named, not a correctness requirement.
  *
  * @param source_image_path The LVGL source path (with or without A: prefix)
  * @return Number of cache files removed
  */
 int invalidate_printer_image_cache(const std::string& source_image_path);
-
-/**
- * @brief Invalidate an image's caches only when a refresh resolves elsewhere
- *
- * A refresh that lands on the image already displayed keeps its cache files:
- * rebuilding one is a synchronous decode-and-resize on the main thread, seconds
- * of it on a slow board, and the result is identical to what was deleted.
- * Rewriting an image in place under an existing filename is invalidated by
- * PrinterImageManager::import_image() instead, which owns the write.
- *
- * @param current_image_path The LVGL path currently displayed (empty on first refresh)
- * @param new_image_path The LVGL path the refresh resolved to
- * @return Number of cache files removed
- */
-int invalidate_printer_image_cache_if_changed(const std::string& current_image_path,
-                                              const std::string& new_image_path);
 
 } // namespace helix
