@@ -2016,17 +2016,24 @@ pieces below must never run uninvited. On a warmed cloud VM, once the repo exist
 objects instead of fetching them), runs that submodule init, and symlinks `.venv` to the prebuilt
 one before reconciling it with `make venv-setup`.
 
-**Where the ccache comes from.** `.github/workflows/build-cache.yml` builds the program and test
-binaries on `runs-on: ubuntu-24.04` — the same image and clang package the cloud VMs run — and
-publishes the resulting `~/.cache/ccache` as a `ccache-linux-x64.tar.zst` asset on the `build-cache`
-release tag, which `env-setup.sh` downloads directly (a plain VM setup script has no GitHub Actions
-cache access, only network fetch, so a release asset is the delivery mechanism rather than
-`actions/cache`). This is a different consumer from `ccache-warm.yml` / `cache-prune.yml`, which
-warm and prune the Actions-cache ccache behind this repo's own cross-compile CI — same ccache tool,
-two unrelated pipelines; nothing here touches those. Both the workflow and `env-setup.sh` write
-`compiler_check = content`, so a cached object is only reused when the compiler that made it is
-byte-identical to the one asking — which is what makes it safe to share a cache between a GitHub
-runner and a cloud VM at all.
+**Nothing prefetches a ccache, and the measurement is why.** `.github/workflows/build-cache.yml`
+still publishes a `ccache-linux-x64.tar.zst` asset on the `build-cache` release tag, but
+`env-setup.sh` no longer downloads it. Measured on a cloud box: of the calls a first build made
+against that cache, 18.75% hit; of the 955 compilations in a rebuild after 191 files moved under a
+new namespace, **none** did. The percentage a session reads from `ccache -s` at startup is the
+tarball's own banked history — it never grows from that number, it only dilutes as the box builds.
+A full `make test` took about 85 minutes with 98% on screen.
+
+The asset is left published for anyone who wants to fetch one by hand; it is simply not worth 1.4 GB
+and a failure path on every provisioning. ccache itself is still installed and configured, and earns
+its keep within a session.
+
+`ccache-warm.yml` / `cache-prune.yml` are a different pipeline entirely — they warm and prune the
+Actions-cache ccache behind this repo's cross-compile CI, where the cache is restored from the
+previous run on the same branch rather than from a snapshot, so the staleness above does not apply.
+Nothing here touches those. The `compiler_check = content` setting stays in the generated
+`ccache.conf`: a cached object is reused only when the compiler that made it is byte-identical to
+the one asking.
 
 **Pasting the setup script into the environment dialog.** The platform wants the script inline, not
 a path, so the pasted script re-fetches the real one and never blocks environment creation on a
