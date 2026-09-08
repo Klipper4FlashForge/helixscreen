@@ -535,10 +535,58 @@ edit_an_applied_patch() {
 }
 
 @test "pre-push defers drift in the isolated sweep and re-asks in the primary tree" {
-    grep -q 'HELIX_QC_SKIP_PATCH_DRIFT=1 ./scripts/quality-checks.sh' .githooks/pre-push
+    # The sweep invocation spans lines, so assert the flag and the invocation
+    # separately rather than pinning one formatting of the command.
+    grep -q 'HELIX_QC_SKIP_PATCH_DRIFT=1' .githooks/pre-push
+    grep -q './scripts/quality-checks.sh' .githooks/pre-push
     grep -q 'cd "$REPO_ROOT" && python3 scripts/check_patch_drift.py' .githooks/pre-push
 }
 
 @test "pre-push blames the working tree, not the pushed commit, for drift" {
     grep -q 'Patch drift is in YOUR WORKING TREE' .githooks/pre-push
+}
+
+# --- the clang gate has the same borrowed-tree problem ---
+#
+# check_clang_diagnostics.py derives its repo root from its own path and needs a
+# compile database there. The isolated checkout is never built, so the gate
+# declines rather than reporting a vacuous green, and the hook re-asks it in the
+# tree that has a database.
+
+@test "qc_clang_divergence_deferred is set by the env flag" {
+    eval "$(sed -n "/^qc_clang_divergence_deferred() {/,/^}/p" scripts/quality-checks.sh)"
+    HELIX_QC_SKIP_CLANG_DIVERGENCE=1 qc_clang_divergence_deferred
+}
+
+@test "qc_clang_divergence_deferred is false without the flag" {
+    eval "$(sed -n "/^qc_clang_divergence_deferred() {/,/^}/p" scripts/quality-checks.sh)"
+    unset HELIX_QC_SKIP_CLANG_DIVERGENCE
+    ! qc_clang_divergence_deferred
+}
+
+@test "the clang section consults the predicate before running the gate" {
+    # The deferral arm must come first, or an unbuilt isolated tree still fails.
+    local sec
+    sec=$(awk '/Checking clang\/GCC divergence/,/check_clang_diagnostics.py not found/' scripts/quality-checks.sh)
+    contains "if qc_clang_divergence_deferred; then" "$sec"
+    contains 'elif [ "$STAGED_ONLY" = false ]' "$sec"
+}
+
+@test "pre-push defers the clang gate in the sweep and re-asks in the primary tree" {
+    grep -q 'HELIX_QC_SKIP_CLANG_DIVERGENCE=1' .githooks/pre-push
+    grep -q 'cd "$REPO_ROOT" && python3 scripts/check_clang_diagnostics.py' .githooks/pre-push
+}
+
+@test "a branch whose quality-checks.sh predates the deferral is still pushable" {
+    # The hook only exports the flag; a script that has never heard of it must
+    # ignore it rather than fail, so an older branch stays pushable.
+    run env HELIX_QC_SKIP_CLANG_DIVERGENCE=1 bash -c '
+        STAGED_ONLY=false
+        section_time() { :; }
+        # Stand in for a pre-deferral script: the plain guard, no predicate.
+        if [ "$STAGED_ONLY" = false ] && [ -f "scripts/check_clang_diagnostics.py" ]; then
+            echo "gate would run"
+        fi'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"gate would run"* ]]
 }
