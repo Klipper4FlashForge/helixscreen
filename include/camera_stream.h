@@ -8,12 +8,14 @@
 #if HELIX_HAS_CAMERA
 
 #include "async_lifetime_guard.h"
+#include "moonraker_types.h"
 
 #include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -106,10 +108,23 @@ class CameraStream {
     }
 
     /**
-     * @brief Configure stream URLs from printer state.
+     * @brief The feed a view with this camera preference should show.
      *
-     * Reads webcam URLs from PrinterState and resolves relative URLs via
-     * IMoonrakerAPI. Flip/rotation must be set separately by the caller.
+     * Runs webcam::select_webcam over PrinterState's webcam list: the camera
+     * named by @p source when it is listed and usable, else the auto-pick
+     * (see webcam_selection.h). URLs come back resolved against the web
+     * frontend via IMoonrakerAPI. Flip/rotation are the caller's to apply.
+     * Main thread only (reads PrinterState).
+     *
+     * @param source Webcam name from the view's config; empty = no preference
+     * @return The chosen entry, or nullopt when no camera is available
+     */
+    static std::optional<WebcamInfo> resolve_from_printer(const std::string& source);
+
+    /**
+     * @brief Configure stream URLs from printer state (the auto-pick).
+     *
+     * resolve_from_printer("") for callers with no camera preference.
      *
      * @param[out] stream_url Resolved stream URL (empty if no webcam)
      * @param[out] snapshot_url Resolved snapshot URL (empty if no webcam)

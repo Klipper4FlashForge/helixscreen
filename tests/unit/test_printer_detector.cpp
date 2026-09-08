@@ -2682,9 +2682,8 @@ TEST_CASE_METHOD(PrinterDetectorFixture,
                  "decision",
                  "[printer][detector][qidi][q2][mismatch]") {
     // The overload the running app calls. It reads the margin off the result
-    // rather than being handed one, so a tie reaches the decision as a tie -
-    // the scalar form's margin defaults to "separated" when nobody supplies it,
-    // and a caller that lost the value would still warn on evidence that fits
+    // rather than being handed one, so a tie reaches the decision as a tie: a
+    // caller that lost the value would otherwise warn on evidence that fits
     // five models equally (prestonbrown/helixscreen#1431).
     const auto tied = PrinterDetector::detect(qidi_q2_hardware());
     REQUIRE(tied.detected());
@@ -2962,16 +2961,18 @@ TEST_CASE("PrinterDetector: telling a user their saved type is wrong needs at le
         INFO("confidence " << confidence);
         // Too weak to be written into an empty config, so too weak to tell
         // someone the type they chose is wrong.
-        CHECK(PrinterDetector::classify_type_mismatch("Voron 2.4", "Qidi Plus 4", confidence, "") ==
+        CHECK(PrinterDetector::classify_type_mismatch("Voron 2.4", "Qidi Plus 4", confidence, "",
+                                                      PrinterDetector::DETECT_MIN_MARGIN) ==
               MD::ConfidenceTooLow);
     }
 
     // The bar moving up must not silence the warning altogether: a detection
     // strong enough to be persisted is strong enough to be raised.
     CHECK(PrinterDetector::classify_type_mismatch("Voron 2.4", "Qidi Plus 4",
-                                                  PrinterDetector::AUTOSAVE_MIN_CONFIDENCE,
-                                                  "") == MD::Warn);
-    CHECK(PrinterDetector::classify_type_mismatch("Voron 2.4", "Qidi Plus 4", 100, "") == MD::Warn);
+                                                  PrinterDetector::AUTOSAVE_MIN_CONFIDENCE, "",
+                                                  PrinterDetector::DETECT_MIN_MARGIN) == MD::Warn);
+    CHECK(PrinterDetector::classify_type_mismatch("Voron 2.4", "Qidi Plus 4", 100, "",
+                                                  PrinterDetector::DETECT_MIN_MARGIN) == MD::Warn);
 }
 
 TEST_CASE_METHOD(PrinterDetectorFixture,
@@ -4941,36 +4942,46 @@ TEST_CASE_METHOD(
 // Type Mismatch Warning Decider
 // ============================================================================
 
-TEST_CASE("should_warn_type_mismatch table", "[detector][mismatch]") {
+namespace {
+/// The scalar decision for a detection that separated its rivals: what a
+/// caller holding a bare confidence and no candidate field passes.
+bool warns_when_separated(const std::string& saved, const std::string& detected, int confidence,
+                          const std::string& flag) {
+    return PrinterDetector::classify_type_mismatch(saved, detected, confidence, flag,
+                                                   PrinterDetector::DETECT_MIN_MARGIN) ==
+           PrinterDetector::MismatchDecision::Warn;
+}
+} // namespace
+
+TEST_CASE("classify_type_mismatch warn table", "[detector][mismatch]") {
     using PD = PrinterDetector;
     const std::string none; // "" — flag never shown
     const std::string ad5m = "FlashForge Adventurer 5M Pro";
     const std::string trident = "Voron Trident";
 
     SECTION("high-confidence different type warns") {
-        REQUIRE(PD::should_warn_type_mismatch(ad5m, trident, 85, none));
+        REQUIRE(warns_when_separated(ad5m, trident, 85, none));
     }
     SECTION("boundary: the bar warns, one below it does not") {
         // Read from the constant, not spelled out: the warning bar is derived
         // from the auto-save bar so the two cannot land in an order where
         // contradicting a user costs less evidence than filling a blank.
-        REQUIRE(PD::should_warn_type_mismatch(ad5m, trident, PD::MISMATCH_MIN_CONFIDENCE, none));
-        REQUIRE_FALSE(
-            PD::should_warn_type_mismatch(ad5m, trident, PD::MISMATCH_MIN_CONFIDENCE - 1, none));
+        REQUIRE(warns_when_separated(ad5m, trident, PD::MISMATCH_MIN_CONFIDENCE, none));
+        REQUIRE_FALSE(warns_when_separated(ad5m, trident, PD::MISMATCH_MIN_CONFIDENCE - 1, none));
     }
     SECTION("same type never warns") {
-        REQUIRE_FALSE(PD::should_warn_type_mismatch(ad5m, ad5m, 95, none));
+        REQUIRE_FALSE(warns_when_separated(ad5m, ad5m, 95, none));
     }
     SECTION("deliberate picks and undetected saves are exempt") {
-        REQUIRE_FALSE(PD::should_warn_type_mismatch("Custom/Other", trident, 95, none));
-        REQUIRE_FALSE(PD::should_warn_type_mismatch("Unknown", trident, 95, none));
-        REQUIRE_FALSE(PD::should_warn_type_mismatch("", trident, 95, none));
+        REQUIRE_FALSE(warns_when_separated("Custom/Other", trident, 95, none));
+        REQUIRE_FALSE(warns_when_separated("Unknown", trident, 95, none));
+        REQUIRE_FALSE(warns_when_separated("", trident, 95, none));
     }
     SECTION("flag suppresses until the saved type changes") {
-        REQUIRE_FALSE(PD::should_warn_type_mismatch(ad5m, trident, 85, ad5m));
+        REQUIRE_FALSE(warns_when_separated(ad5m, trident, 85, ad5m));
         // User re-ran wizard and picked ANOTHER wrong type: re-arm once.
         const std::string k1max = "Creality K1 Max (with CFS)";
-        REQUIRE(PD::should_warn_type_mismatch(k1max, trident, 85, ad5m));
+        REQUIRE(warns_when_separated(k1max, trident, 85, ad5m));
     }
 }
 
@@ -5010,16 +5021,14 @@ TEST_CASE("a renamed entry does not warn once the saved name is canonicalised",
 
     // Raw comparison — what shipped before the alias lookup, and why the
     // prompt fired at 100% confidence on a printer that was never mis-set.
-    REQUIRE(PD::should_warn_type_mismatch(legacy, current, 100, none));
+    REQUIRE(warns_when_separated(legacy, current, 100, none));
 
     // Through the resolver, the same pair is the same printer.
-    REQUIRE_FALSE(
-        PD::should_warn_type_mismatch(PD::canonical_type_name(legacy), current, 100, none));
+    REQUIRE_FALSE(warns_when_separated(PD::canonical_type_name(legacy), current, 100, none));
 
     // A genuine mismatch still warns after canonicalisation — the resolver
     // must not swallow real disagreement.
-    REQUIRE(
-        PD::should_warn_type_mismatch(PD::canonical_type_name(legacy), "Voron Trident", 100, none));
+    REQUIRE(warns_when_separated(PD::canonical_type_name(legacy), "Voron Trident", 100, none));
 }
 
 // ============================================================================
@@ -5076,8 +5085,8 @@ TEST_CASE_METHOD(PrinterDetectorFixture,
     // May still be suggested (corroborating signal), but never >=70 where it
     // would override the saved type or arm the mismatch warning.
     REQUIRE(result.confidence < 70);
-    REQUIRE_FALSE(PrinterDetector::should_warn_type_mismatch("Voron 2.4", result.type_name,
-                                                             result.confidence, ""));
+    REQUIRE(PrinterDetector::classify_type_mismatch("Voron 2.4", result, "") !=
+            PrinterDetector::MismatchDecision::Warn);
 }
 
 TEST_CASE_METHOD(PrinterDetectorFixture,
@@ -5550,18 +5559,20 @@ TEST_CASE("PrinterDetector: type mismatch decline reasons are distinguishable", 
 
     SECTION("A high-confidence contradiction warns") {
         REQUIRE(PrinterDetector::classify_type_mismatch(
-                    "Voron Trident", "FlashForge Adventurer 5M Pro", 90, "") == MD::Warn);
+                    "Voron Trident", "FlashForge Adventurer 5M Pro", 90, "",
+                    PrinterDetector::DETECT_MIN_MARGIN) == MD::Warn);
     }
 
     SECTION("No detected type reports NoDetection, not a low score") {
-        REQUIRE(PrinterDetector::classify_type_mismatch("Voron Trident", "", 0, "") ==
+        REQUIRE(PrinterDetector::classify_type_mismatch("Voron Trident", "", 0, "",
+                                                        PrinterDetector::DETECT_MIN_MARGIN) ==
                 MD::NoDetection);
     }
 
     SECTION("A near-miss reports ConfidenceTooLow and names the gap it missed") {
         REQUIRE(PrinterDetector::classify_type_mismatch(
-                    "Voron Trident", "Creality K2 Plus",
-                    PrinterDetector::MISMATCH_MIN_CONFIDENCE - 1, "") == MD::ConfidenceTooLow);
+                    "Voron Trident", "Creality K2 Plus", PrinterDetector::MISMATCH_MIN_CONFIDENCE - 1,
+                    "", PrinterDetector::DETECT_MIN_MARGIN) == MD::ConfidenceTooLow);
     }
 
     SECTION("A model that only tied its rivals reports Ambiguous, not a low score") {
@@ -5572,22 +5583,28 @@ TEST_CASE("PrinterDetector: type mismatch decline reasons are distinguishable", 
     }
 
     SECTION("Agreement reports MatchesSavedType") {
-        REQUIRE(PrinterDetector::classify_type_mismatch("Voron Trident", "Voron Trident", 95, "") ==
+        REQUIRE(PrinterDetector::classify_type_mismatch("Voron Trident", "Voron Trident", 95, "",
+                                                        PrinterDetector::DETECT_MIN_MARGIN) ==
                 MD::MatchesSavedType);
     }
 
     SECTION("An unset or deliberately generic saved type reports SavedTypeNotSpecific") {
-        REQUIRE(PrinterDetector::classify_type_mismatch("", "Creality K2 Plus", 95, "") ==
+        REQUIRE(PrinterDetector::classify_type_mismatch("", "Creality K2 Plus", 95, "",
+                                                        PrinterDetector::DETECT_MIN_MARGIN) ==
                 MD::SavedTypeNotSpecific);
-        REQUIRE(PrinterDetector::classify_type_mismatch("Custom/Other", "Creality K2 Plus", 95,
-                                                        "") == MD::SavedTypeNotSpecific);
-        REQUIRE(PrinterDetector::classify_type_mismatch("Unknown", "Creality K2 Plus", 95, "") ==
+        REQUIRE(PrinterDetector::classify_type_mismatch("Custom/Other", "Creality K2 Plus", 95, "",
+                                                        PrinterDetector::DETECT_MIN_MARGIN) ==
+                MD::SavedTypeNotSpecific);
+        REQUIRE(PrinterDetector::classify_type_mismatch("Unknown", "Creality K2 Plus", 95, "",
+                                                        PrinterDetector::DETECT_MIN_MARGIN) ==
                 MD::SavedTypeNotSpecific);
     }
 
     SECTION("A previously answered prompt reports AlreadyDismissed") {
         REQUIRE(PrinterDetector::classify_type_mismatch("Voron Trident", "Creality K2 Plus", 95,
-                                                        "Voron Trident") == MD::AlreadyDismissed);
+                                                        "Voron Trident",
+                                                        PrinterDetector::DETECT_MIN_MARGIN) ==
+                MD::AlreadyDismissed);
     }
 
     SECTION("Every decision has its own log tag") {
@@ -5610,34 +5627,6 @@ TEST_CASE("PrinterDetector: type mismatch decline reasons are distinguishable", 
     }
 }
 
-// should_warn_type_mismatch is the existing entry point; it must stay a pure
-// wrapper so its callers and tests keep the same semantics.
-TEST_CASE("PrinterDetector: should_warn_type_mismatch agrees with classify_type_mismatch",
-          "[detector]") {
-    struct Case {
-        const char* saved;
-        const char* detected;
-        int confidence;
-        const char* flag;
-    };
-    const Case cases[] = {
-        {"Voron Trident", "Creality K2 Plus", 90, ""},
-        {"Voron Trident", "Creality K2 Plus", 68, ""},
-        {"Voron Trident", "", 0, ""},
-        {"Voron Trident", "Voron Trident", 95, ""},
-        {"Custom/Other", "Creality K2 Plus", 95, ""},
-        {"Voron Trident", "Creality K2 Plus", 95, "Voron Trident"},
-    };
-    for (const auto& c : cases) {
-        const bool warn =
-            PrinterDetector::should_warn_type_mismatch(c.saved, c.detected, c.confidence, c.flag);
-        const bool classified =
-            PrinterDetector::classify_type_mismatch(c.saved, c.detected, c.confidence, c.flag) ==
-            PrinterDetector::MismatchDecision::Warn;
-        INFO("saved=" << c.saved << " detected=" << c.detected << " conf=" << c.confidence);
-        REQUIRE(warn == classified);
-    }
-}
 // ============================================================================
 // Reported Voron Trident misdetection (debug bundle TZT85MQ3)
 // ============================================================================

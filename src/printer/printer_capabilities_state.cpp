@@ -14,6 +14,7 @@
 
 #include "sound_manager.h"
 #include "state/subject_macros.h"
+#include "webcam_selection.h"
 
 #include <spdlog/spdlog.h>
 
@@ -50,6 +51,7 @@ void PrinterCapabilitiesState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(printer_has_chamber, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_screws_tilt, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_webcam, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(webcam_count, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_extra_fans, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(power_device_count, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(sensor_count, 0, subjects_, register_xml);
@@ -204,24 +206,47 @@ void PrinterCapabilitiesState::set_spoolman_available(bool available) {
     });
 }
 
+void PrinterCapabilitiesState::set_webcams(std::vector<WebcamInfo> cams) {
+    async_lifetime_.defer(
+        "PrinterCapabilitiesState::set_webcams", [this, cams = std::move(cams)]() mutable {
+            webcams_ = std::move(cams);
+            auto feed = webcam::auto_pick(webcams_);
+            webcam_stream_url_ = feed ? feed->stream_url : "";
+            webcam_snapshot_url_ = feed ? feed->snapshot_url : "";
+            webcam_flip_h_ = feed ? feed->flip_horizontal : false;
+            webcam_flip_v_ = feed ? feed->flip_vertical : false;
+            webcam_target_fps_ = (feed && feed->target_fps > 0) ? feed->target_fps : 15;
+            int named = 0;
+            for (const auto& cam : webcams_) {
+                if (!cam.name.empty())
+                    ++named;
+            }
+            set_capability_int(printer_has_webcam_, feed ? 1 : 0);
+            set_capability_int(webcam_count_, named);
+            spdlog::debug("[PrinterCapabilitiesState] Webcams: {} listed ({} named), "
+                          "auto-pick={} stream_url={} flip_h={} flip_v={} target_fps={}",
+                          webcams_.size(), named, feed ? feed->name : "<none>", webcam_stream_url_,
+                          webcam_flip_h_, webcam_flip_v_, webcam_target_fps_);
+        });
+}
+
 void PrinterCapabilitiesState::set_webcam_available(bool available, const std::string& stream_url,
                                                     const std::string& snapshot_url, bool flip_h,
                                                     bool flip_v, int target_fps) {
-    // Store URLs before queuing (captured by value for thread safety)
-    async_lifetime_.defer("PrinterCapabilitiesState::set_webcam_available", [this, available,
-                                                                             stream_url,
-                                                                             snapshot_url, flip_h,
-                                                                             flip_v, target_fps]() {
-        webcam_stream_url_ = available ? stream_url : "";
-        webcam_snapshot_url_ = available ? snapshot_url : "";
-        webcam_flip_h_ = flip_h;
-        webcam_flip_v_ = flip_v;
-        webcam_target_fps_ = target_fps > 0 ? target_fps : 15;
-        set_capability_int(printer_has_webcam_, available ? 1 : 0);
-        spdlog::debug("[PrinterCapabilitiesState] Webcam: available={}, stream_url={}, flip_h={}, "
-                      "flip_v={}, target_fps={}",
-                      available, stream_url, flip_h, flip_v, webcam_target_fps_);
-    });
+    std::vector<WebcamInfo> cams;
+    if (available) {
+        WebcamInfo cam;
+        cam.stream_url = stream_url;
+        cam.snapshot_url = snapshot_url;
+        if (!stream_url.empty()) {
+            cam.service = "mjpegstreamer";
+        }
+        cam.flip_horizontal = flip_h;
+        cam.flip_vertical = flip_v;
+        cam.target_fps = target_fps;
+        cams.push_back(std::move(cam));
+    }
+    set_webcams(std::move(cams));
 }
 
 void PrinterCapabilitiesState::set_timelapse_available(bool available) {

@@ -2051,6 +2051,47 @@ tag does not parse as a semantic version
 `src/util/version.cpp#parse_version`),
 so `build-cache` is invisible to it.
 
+## Briefing a cloud worker
+
+A coordinator session spawns worker sessions, hands each a scope, and merges their branches. What
+follows is the part of that protocol which is a property of this repo rather than of any one
+coordinator's plan.
+
+**Give a worker a queue, not a ticket.** On a cold 4-core cloud box the program binary takes about
+44 minutes and the test binary about another 55 before a worker can run anything — roughly an hour
+and a half of machine time that a one-issue scope pays in full and then throws away. A warm
+environment removes most of that, but the second cost does not go away: a worker that has already
+read a subsystem answers the next question in it far faster than a fresh session does. So scope a
+worker to an *area* with two to four related issues in dependency order, and say which ones may be
+dropped if time runs short. Sequence anything that touches the same files behind the change that
+moves them.
+
+**Never leave a worker blocked on the coordinator.** A worker waiting for a merge to appear on
+`main` is an idle box. When a scope depends on work still in review, say so in the brief, name what
+it should do meanwhile, and send the unblock as soon as it lands.
+
+**The reply channel is git.** Cross-session chat does not resolve from a worker container, so a
+worker reports by pushing a short status file early and a full report at the end to a throwaway
+`claude/report-<issue>` branch, never onto its work branch and never as a PR. The push
+triggers in `.github/workflows/build.yml` and `quality.yml` exclude that branch pattern, so status
+pushes cost no CI.
+
+**Tell a worker the formatter rule explicitly.** `scripts/quality-checks.sh` accepts only the
+pinned `clang-format` from `.venv`, so a worker runs `make venv-setup` before `make quality` and
+formats only the files its own diff touched. The sweep's `--auto-fix` reformats every file in
+`CLANG_FORMAT_BASELINE`, which belong to whoever is retiring them, not to the worker.
+
+**A push to a work branch costs a full CI run.** Build, Code Quality and XML Lint all fire on the
+`claude/**` namespace, and Build alone budgets 200 minutes. Push when the gates are green locally,
+never to find out whether they are — a red run on a work branch is a signal the worker skipped a
+check it could have run itself, and it queues behind everyone else's work. A coordinator asking for
+an early push to review in parallel is accepting that cost deliberately; a worker iterating against
+CI is not.
+
+**One OPT flavor per tree.** The pre-commit hook builds at the default optimization level, so a
+worker that builds with `OPT=0` makes every later hook run rewrite the objects it just wrote.
+Default everywhere, and never two `make` invocations in one tree at once.
+
 ## See Also
 
 - **[README.md](../README.md)** - Project overview and quick start

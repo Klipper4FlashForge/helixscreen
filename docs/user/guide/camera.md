@@ -17,6 +17,19 @@ The feed is decoded as an MJPEG stream when one is available. If only a snapshot
 
 ---
 
+## Choosing Between Several Cameras
+
+When Moonraker lists more than one enabled webcam, HelixScreen picks one automatically: the first camera whose service is an MJPEG streamer (mjpegstreamer, ustreamer) and whose serving process is running, otherwise the first camera with a usable snapshot image, polled. That automatic choice is what the standalone fullscreen viewer and the QR scanner always show.
+
+The home widget can be pointed at a specific camera instead. Open the camera configuration (edit mode, then the gear icon) and choose it under **Source**:
+
+- **Automatic** — the camera HelixScreen would pick on its own.
+- A named camera — one of the enabled webcams in Moonraker's list. A camera whose service is not MJPEG (WebRTC, HLS, an IP camera) is marked **Snapshot only**: HelixScreen will poll its snapshot image rather than stream it. A camera whose service is not running is marked **Unavailable**.
+
+The choice is saved with the widget by name, so it survives a change of the printer's address. If the named camera later disappears from Moonraker, is disabled, or its service stops, the widget falls back to the automatic choice rather than showing **No Camera**, and returns to the named camera when it is back. Each widget has its own Source, so two camera widgets on one dashboard can show two different feeds — each one is a separate stream and a separate decode, so expect the extra CPU cost on small boards.
+
+---
+
 ## Stream Status
 
 While the camera is connecting or unavailable, the widget shows a status message over a spinner:
@@ -39,6 +52,7 @@ To correct a camera that's mounted upside-down or mirrored, open the camera conf
 
 The configuration dialog offers:
 
+- **Source** — which camera to show (see above); only listed when Moonraker names at least one camera
 - **Rotation** — 0°, 90°, 180°, or 270°
 - **Flip** — Horizontal and/or Vertical
 

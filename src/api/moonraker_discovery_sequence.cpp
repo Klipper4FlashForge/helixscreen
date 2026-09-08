@@ -41,44 +41,6 @@
 
 namespace helix {
 
-namespace {
-// Lowercase a copy of a string (ASCII) for case-insensitive suffix/substring checks.
-std::string to_lower_ascii(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
-}
-
-bool ends_with(const std::string& s, const std::string& suffix) {
-    return s.size() >= suffix.size() &&
-           s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
-// The path component of a URL (everything before '?' or '#').
-std::string url_path(const std::string& url) {
-    auto cut = url.find_first_of("?#");
-    return cut == std::string::npos ? url : url.substr(0, cut);
-}
-} // namespace
-
-bool is_usable_snapshot_url(const std::string& snapshot_url) {
-    if (snapshot_url.empty())
-        return false;
-    std::string lower = to_lower_ascii(snapshot_url);
-    // Reject HTML pages (e.g. /snapshot.html, /camera.html) — never a JPEG.
-    if (ends_with(url_path(lower), ".html"))
-        return false;
-    // Accept obvious image/snapshot endpoints.
-    if (lower.find("action=snapshot") != std::string::npos)
-        return true;
-    std::string path = url_path(lower);
-    if (ends_with(path, ".jpg") || ends_with(path, ".jpeg") || ends_with(path, ".png"))
-        return true;
-    // No HTML marker and no explicit image marker: treat conservatively as usable
-    // so atypical-but-real endpoints (bare host, query-only) are not dropped.
-    return true;
-}
-
 bool probe_snapshot_reachable(const std::string& snapshot_url) {
     auto req = std::make_shared<HttpRequest>();
     req->method = HTTP_GET;
@@ -307,12 +269,16 @@ void MoonrakerDiscoverySequence::parse_system_info(const json& sys_response) {
     }
 }
 
-// Decide whether this printer has a usable webcam and publish the answer.
+// Decide which webcams this printer has and publish the list.
 //
 // Three signals, cheapest first: the Moonraker webcam registry (is one
 // CONFIGURED), systemd's view of the process that serves it (is it RUNNING),
-// and an HTTP snapshot probe (is that address still right). Falls back to
-// probing local camera endpoints when the registry has nothing usable.
+// and an HTTP snapshot probe (is that address still right). Every enabled
+// entry is kept — a camera view may be configured to show a specific one —
+// and the two health checks mark an entry unavailable rather than dropping
+// it, so the auto-pick (webcam::auto_pick) skips it and a picker can say why.
+// Falls back to probing local camera endpoints when nothing in the registry
+// is usable.
 //
 // @param service_state `service_state` out of machine.system_info, or an empty
 //        object when that query failed - which reads as "assume available".
@@ -320,144 +286,74 @@ void MoonrakerDiscoverySequence::detect_webcam(json service_state) {
     client_.send_jsonrpc(
         "server.webcams.list", json::object(),
         [service_state = std::move(service_state)](json response) {
-            bool has_webcam = false;
-            json chosen_entry = json::object();
-            std::string chosen_name;
-            std::string chosen_service;
-            std::string stream_url;
-            std::string snapshot_url;
-            bool flip_h = false;
-            bool flip_v = false;
-            int target_fps = 15;
+            std::vector<WebcamInfo> cams;
             if (response.contains("result") && response["result"].contains("webcams")) {
-                const auto& cams = response["result"]["webcams"];
-
-                // MJPEG-family service substrings CameraStream can consume
-                // directly. Everything else (webrtc-*, ipcamera, hlsstream, …)
-                // returns HTML/SDP/HLS and wastes three failover attempts
-                // before snapshot polling kicks in.
-                auto is_mjpeg_service = [](const std::string& svc) {
-                    if (svc.empty())
-                        return false;
-                    return svc.find("mjpeg") != std::string::npos ||
-                           svc.find("ustreamer") != std::string::npos;
-                };
-
-                // First pass: prefer an enabled MJPEG-compatible webcam so we
-                // get the real live stream for QR decoding.
-                for (const auto& cam : cams) {
-                    if (!cam.value("enabled", true))
+                for (const auto& entry : response["result"]["webcams"]) {
+                    WebcamInfo cam = webcam::parse_webcam_entry(entry);
+                    if (!cam.enabled) {
+                        spdlog::debug("[Discovery] Skipping disabled webcam '{}'", cam.name);
                         continue;
-                    std::string service = cam.value("service", "");
-                    if (is_mjpeg_service(service)) {
-                        has_webcam = true;
-                        chosen_entry = cam;
-                        chosen_name = cam.value("name", "");
-                        chosen_service = service;
-                        stream_url = cam.value("stream_url", "");
-                        snapshot_url = cam.value("snapshot_url", "");
-                        flip_h = cam.value("flip_horizontal", false);
-                        flip_v = cam.value("flip_vertical", false);
-                        target_fps = cam.value("target_fps", 15);
-                        break;
-                    } else {
-                        spdlog::debug("[Discovery] Skipping webcam '{}' stream_url: "
-                                      "service '{}' is not MJPEG-compatible",
-                                      cam.value("name", ""), service.empty() ? "<unset>" : service);
                     }
+                    // Cross-check the SERVICE before the URL. server.webcams.list
+                    // answers "is a webcam configured", never "is the thing
+                    // serving it running": a crashed crowsnest leaves its entry
+                    // behind, and because a stock crowsnest registers a RELATIVE
+                    // snapshot_url the probe below deliberately skips it
+                    // (prestonbrown/helixscreen#1351). machine.system_info's
+                    // service_state closes that hole with no extra round trip.
+                    // It fails OPEN — an unknown service or a missing
+                    // service_state never hides a camera. See
+                    // webcam_service_health.h.
+                    std::string down_reason;
+                    if (webcam::owning_service_is_down(entry, service_state, &down_reason)) {
+                        spdlog::warn("[Discovery] Configured webcam '{}' unavailable: its "
+                                     "camera service is not running [{}]",
+                                     cam.name.empty() ? "<unnamed>" : cam.name, down_reason);
+                        cam.unavailable_reason = "service not running: " + down_reason;
+                    } else if (!webcam::is_mjpeg_service(cam.service)) {
+                        spdlog::debug("[Discovery] Webcam '{}' service '{}' is not "
+                                      "MJPEG-compatible: snapshot polling only",
+                                      cam.name, cam.service.empty() ? "<unset>" : cam.service);
+                    }
+                    cams.push_back(std::move(cam));
                 }
+            }
 
-                // Second pass: no MJPEG entry — fall back to any enabled entry
-                // with a usable snapshot_url. Force snapshot-only mode by
-                // leaving stream_url empty so CameraStream doesn't waste three
-                // failed MJPEG attempts on a WebRTC/HLS endpoint first.
-                if (!has_webcam) {
-                    for (const auto& cam : cams) {
-                        if (!cam.value("enabled", true))
-                            continue;
-                        std::string snap = cam.value("snapshot_url", "");
-                        if (snap.empty())
-                            continue;
-                        // Reject HTML viewer pages (e.g. the K2's
-                        // "iframe" service points snapshot_url at
-                        // /snapshot.html). CameraStream would poll it
-                        // forever and never decode a JPEG frame.
-                        if (!is_usable_snapshot_url(snap)) {
-                            spdlog::info("[Discovery] Rejecting snapshot fallback for "
-                                         "service '{}': snapshot_url '{}' is an HTML page, "
-                                         "not an image endpoint",
-                                         cam.value("service", "").empty()
-                                             ? "<unset>"
-                                             : cam.value("service", ""),
-                                         snap);
-                            continue;
-                        }
-                        has_webcam = true;
-                        chosen_entry = cam;
-                        chosen_name = cam.value("name", "");
-                        chosen_service = cam.value("service", "");
-                        stream_url = "";
-                        snapshot_url = snap;
-                        flip_h = cam.value("flip_horizontal", false);
-                        flip_v = cam.value("flip_vertical", false);
-                        target_fps = cam.value("target_fps", 15);
-                        spdlog::info("[Discovery] No MJPEG webcam found; using snapshot-only "
-                                     "fallback for service '{}'",
-                                     chosen_service.empty() ? "<unset>" : chosen_service);
-                        break;
-                    }
-                }
-            }
-            // Cross-check the SERVICE before the URL. server.webcams.list
-            // answers "is a webcam configured", never "is the thing serving
-            // it running": a crashed crowsnest leaves its entry behind, and
-            // because a stock crowsnest registers a RELATIVE snapshot_url the
-            // probe below deliberately skips it, so the camera widget offered
-            // a stream nothing answers (#1351). machine.system_info's
-            // service_state closes that hole with no extra round trip. It
-            // fails OPEN — an unknown service or a missing service_state
-            // never hides a camera. See webcam_service_health.h.
-            if (has_webcam) {
-                std::string down_reason;
-                if (webcam::owning_service_is_down(chosen_entry, service_state, &down_reason)) {
-                    spdlog::warn("[Discovery] Configured webcam '{}' ignored: its camera "
-                                 "service is not running [{}] — falling back to local "
-                                 "camera probe",
-                                 chosen_name.empty() ? "<unnamed>" : chosen_name, down_reason);
-                    has_webcam = false;
-                }
-            }
+            auto is_absolute = [](const std::string& u) {
+                return u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0;
+            };
+
             // Guard against a stale ABSOLUTE webcam URL — e.g. an
-            // install-time-detected LAN IP that has since changed via
-            // DHCP, or an IOT-subnet address unreachable from here. A
-            // registered-but-dead entry otherwise wins over (and
-            // suppresses) the localhost probe below, leaving the camera
-            // silently broken. Probe the SNAPSHOT url only — it returns
-            // and closes, unlike an MJPEG stream that would hang until
-            // the timeout and read as a false negative. Relative URLs
-            // are skipped: they resolve against the Moonraker base and
-            // are the churn-immune case we don't need to second-guess.
-            if (has_webcam && !snapshot_url.empty()) {
-                auto is_absolute = [](const std::string& u) {
-                    return u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0;
-                };
+            // install-time-detected LAN IP that has since changed via DHCP, or
+            // an IOT-subnet address unreachable from here. A registered-but-
+            // dead entry otherwise wins over (and suppresses) the localhost
+            // probe below, leaving the camera silently broken. Probe the
+            // SNAPSHOT url only — it returns and closes, unlike an MJPEG stream
+            // that would hang until the timeout and read as a false negative.
+            // Relative URLs are skipped: they resolve against the Moonraker
+            // base and are the churn-immune case we don't need to second-guess.
+            // One probe per discovery: only the auto-pick winner is checked.
+            auto chosen = webcam::auto_pick_index(cams);
+            if (chosen) {
+                const std::string& snapshot_url = cams[*chosen].snapshot_url;
                 if (is_absolute(snapshot_url) && !probe_snapshot_reachable(snapshot_url)) {
-                    spdlog::warn("[Discovery] Configured webcam '{}' unreachable at {} — "
-                                 "falling back to local camera probe",
-                                 chosen_name.empty() ? "<unnamed>" : chosen_name, snapshot_url);
-                    has_webcam = false;
+                    WebcamInfo& cam = cams[*chosen];
+                    spdlog::warn("[Discovery] Configured webcam '{}' unreachable at {}",
+                                 cam.name.empty() ? "<unnamed>" : cam.name, snapshot_url);
+                    cam.unavailable_reason = "unreachable at " + snapshot_url;
+                    chosen = webcam::auto_pick_index(cams);
                 }
             }
-            if (has_webcam) {
+
+            if (chosen) {
+                const WebcamInfo feed = webcam::feed_for(cams[*chosen]);
                 spdlog::info("[Discovery] Webcam selected: name='{}' service='{}' "
-                             "stream={} snapshot={}",
-                             chosen_name, chosen_service.empty() ? "<unset>" : chosen_service,
-                             stream_url.empty() ? "<none>" : stream_url,
-                             snapshot_url.empty() ? "<none>" : snapshot_url);
-                get_printer_state().set_webcam_available(true, stream_url, snapshot_url, flip_h,
-                                                         flip_v, target_fps);
+                             "stream={} snapshot={} ({} listed)",
+                             feed.name, feed.service.empty() ? "<unset>" : feed.service,
+                             feed.stream_url.empty() ? "<none>" : feed.stream_url,
+                             feed.snapshot_url.empty() ? "<none>" : feed.snapshot_url, cams.size());
             } else {
-                // No Moonraker webcam config — probe local camera endpoints
+                // No usable Moonraker webcam — probe local camera endpoints.
                 // Run synchronously on the WS callback instead of spawning a
                 // detached std::thread. Thread creation crashes on resource-
                 // constrained ARM devices (AD5M #724) — std::terminate is
@@ -466,13 +362,13 @@ void MoonrakerDiscoverySequence::detect_webcam(json service_state) {
                 // loopback addresses: an unbound port is refused immediately,
                 // so the common "no local camera" path costs milliseconds, not
                 // the full per-URL budget. Runs once during discovery.
-                spdlog::info("[Discovery] No Moonraker webcam, probing local camera...");
-                bool found = false;
+                spdlog::info("[Discovery] No usable Moonraker webcam, probing local camera...");
                 static const char* probe_urls[] = {
                     "http://127.0.0.1:8080/?action=snapshot",
                     "http://127.0.0.1:8081/?action=snapshot",
                     "http://127.0.0.1:4408/webcam/?action=snapshot",
                 };
+                bool found = false;
                 for (const char* url : probe_urls) {
                     spdlog::info("[Discovery] Probing camera at {}", url);
                     // Same two-budget probe as the configured-webcam case above.
@@ -481,16 +377,20 @@ void MoonrakerDiscoverySequence::detect_webcam(json service_state) {
                     // so the longer response budget costs nothing here.
                     if (probe_snapshot_reachable(url)) {
                         spdlog::info("[Discovery] Local camera found at {}", url);
-                        get_printer_state().set_webcam_available(true, "", url, false, false);
+                        // An unnamed snapshot-only entry: the auto-pick takes it
+                        // and a picker (which lists names) never offers it.
+                        WebcamInfo local;
+                        local.snapshot_url = url;
+                        cams.push_back(std::move(local));
                         found = true;
                         break;
                     }
                 }
                 if (!found) {
                     spdlog::info("[Discovery] No local camera found");
-                    get_printer_state().set_webcam_available(false);
                 }
             }
+            get_printer_state().set_webcams(std::move(cams));
         },
         [](const MoonrakerError& err) {
             spdlog::debug("[Discovery] Webcam detection failed: {}", err.message);

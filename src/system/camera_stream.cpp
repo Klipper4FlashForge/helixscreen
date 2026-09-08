@@ -12,6 +12,7 @@
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
 #include "stb_image.h"
+#include "webcam_selection.h"
 
 #include <algorithm>
 #include <chrono>
@@ -111,26 +112,42 @@ CameraStream::~CameraStream() {
 // Public API
 // ============================================================================
 
-bool CameraStream::configure_from_printer(std::string& stream_url, std::string& snapshot_url) {
+std::optional<WebcamInfo> CameraStream::resolve_from_printer(const std::string& source) {
     // Lazy includes — avoid header dependency on printer_state/moonraker in camera_stream.h
     auto& state = get_printer_state();
-    stream_url = state.get_webcam_stream_url();
-    snapshot_url = state.get_webcam_snapshot_url();
-
-    if (stream_url.empty() && snapshot_url.empty()) {
-        return false;
+    auto feed = webcam::select_webcam(state.get_webcams(), source);
+    if (!feed) {
+        return std::nullopt;
+    }
+    if (!source.empty() && feed->name != source) {
+        spdlog::info("[CameraStream] Configured camera '{}' is not available; showing '{}'", source,
+                     feed->name.empty() ? "<auto>" : feed->name);
+    }
+    if (feed->stream_url.empty() && feed->snapshot_url.empty()) {
+        return std::nullopt;
     }
 
     // Resolve relative URLs against the web frontend (nginx on port 80)
     auto* api = get_moonraker_api();
     if (api) {
-        api->resolve_webcam_url(stream_url);
-        api->resolve_webcam_url(snapshot_url);
+        api->resolve_webcam_url(feed->stream_url);
+        api->resolve_webcam_url(feed->snapshot_url);
     }
 
     // Flip/rotation are set by the caller (CameraWidget::apply_transform)
     // which XORs Moonraker values with user overrides.
+    return feed;
+}
 
+bool CameraStream::configure_from_printer(std::string& stream_url, std::string& snapshot_url) {
+    auto feed = resolve_from_printer("");
+    if (!feed) {
+        stream_url.clear();
+        snapshot_url.clear();
+        return false;
+    }
+    stream_url = feed->stream_url;
+    snapshot_url = feed->snapshot_url;
     return true;
 }
 

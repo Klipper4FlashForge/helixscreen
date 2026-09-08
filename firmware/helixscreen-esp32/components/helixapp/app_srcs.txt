@@ -402,6 +402,11 @@ src/ui/ui_overlay_printer_image.cpp
 src/ui/ui_overlay_printer_type.cpp
 src/ui/ui_overlay_retraction_settings.cpp
 src/ui/ui_overlay_temp_graph.cpp
+# Compiled for its HELIX_HAS_TIMELAPSE_VIEWER=0 arm only (set in CMakeLists.txt).
+# The viewer UI is gated off on this target, but ui_panel_history_list.cpp calls
+# helix::ui::timelapse_viewer_available() and open_timelapse_video(), and this is
+# the file whose #else arm defines them. Dropping it links nothing and fails.
+src/ui/ui_overlay_timelapse_videos.cpp
 src/ui/ui_panel_advanced.cpp
 src/ui/ui_panel_ams.cpp
 src/ui/ui_panel_ams_overview.cpp
@@ -534,6 +539,7 @@ src/api/moonraker_job_api.cpp
 src/api/moonraker_motion_api.cpp
 src/api/moonraker_queue_api.cpp
 src/api/rpc_error_correlation.cpp
+src/api/webcam_selection.cpp
 src/application/moonraker_manager.cpp
 src/generated/theme_token_table.cpp
 # New-since-audit core files the link pass proved are referenced by kept core:
