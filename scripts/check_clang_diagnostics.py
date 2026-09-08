@@ -577,8 +577,27 @@ def select_entries(args, db, root) -> tuple[list[dict], list[dict], list[str]]:
 # --------------------------------------------------------------------------------
 
 
+def _default_jobs() -> int:
+    """Parallel clang invocations, following the repo's own build rule.
+
+    CLAUDE.md tells a human to throttle only when a build is actually running and
+    otherwise to use the whole box, so this asks the same question rather than
+    assuming a peer. On an idle machine every core is available; while a build
+    holds the box, one quarter of them keeps this out of its way. The difference
+    is not marginal: a 4-core box resolves to 1 when a build is running, and a
+    sweep whose diff reaches a few hundred TUs then takes tens of minutes.
+    """
+    cpus = os.cpu_count() or 4
+    try:
+        busy = subprocess.run(["pgrep", "-x", "make"], capture_output=True).returncode == 0 or \
+               subprocess.run(["pgrep", "-x", "cc1plus"], capture_output=True).returncode == 0
+    except OSError:
+        busy = True  # cannot tell: assume a peer and stay out of its way
+    return max(1, min(8, cpus // 4)) if busy else max(1, min(8, cpus))
+
+
 def main() -> int:
-    default_jobs = max(1, min(8, (os.cpu_count() or 4) // 4))
+    default_jobs = _default_jobs()
     ap = argparse.ArgumentParser(description="Syntax-check TUs with clang to catch GCC/clang divergence.")
     ap.add_argument("files", nargs="*", help="explicit files (default: changed vs origin/main)")
     ap.add_argument("--all", action="store_true", help="check every TU in the compile database (slow)")
