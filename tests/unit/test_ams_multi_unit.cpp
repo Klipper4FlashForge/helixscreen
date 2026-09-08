@@ -1,6 +1,7 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_happy_hare.h"
 #include "ams_types.h"
@@ -78,7 +79,7 @@ class AmsBackendAfcMultiUnitHelper : public AmsBackendAfc {
 
     /// Expose initialize_slots for testing
     void test_initialize_slots(const std::vector<std::string>& names) {
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
     }
 
     /// Access system_info for assertions (const)
@@ -93,17 +94,17 @@ class AmsBackendAfcMultiUnitHelper : public AmsBackendAfc {
 
     /// Get slot count from registry
     int get_slot_count() const {
-        return slots_.slot_count();
+        return AfcTestAccess::slots(*this).slot_count();
     }
 
     /// Get slot name from registry
     std::string get_slot_name(int index) const {
-        return slots_.name_of(index);
+        return AfcTestAccess::slots(*this).name_of(index);
     }
 
     /// Check if lanes have been initialized
     bool are_lanes_initialized() const {
-        return slots_.is_initialized();
+        return AfcTestAccess::slots(*this).is_initialized();
     }
 
     /// Set discovered lanes (delegates to base)

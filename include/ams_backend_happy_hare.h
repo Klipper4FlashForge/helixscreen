@@ -17,6 +17,8 @@
 
 namespace helix {
 
+class HappyHareTestAccess;
+
 /**
  * @file ams_backend_happy_hare.h
  * @brief Happy Hare MMU backend implementation
@@ -300,13 +302,7 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     AmsError apply_endless_spool_backup(int slot_index, int backup_slot) override;
 
     // Allow test helper access to private members
-    friend class AmsBackendHappyHareTestHelper;
-    friend class AmsBackendHappyHareEndlessSpoolHelper;
-    friend class AmsBackendHHMultiUnitHelper;
-    friend class HappyHareErrorStateHelper;
-    friend class HappyHareCharHelper;
-    friend class HHToolchangeTestHelper;
-    friend class HhFaultEventCharHelper;
+    friend class HappyHareTestAccess;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;

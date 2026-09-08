@@ -30,6 +30,7 @@
  * and [status] on the ones fed a real status frame.
  */
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 
@@ -112,7 +113,7 @@ class AmsBackendAfcMultiExtruderHelper : public AmsBackendAfc {
             system_info_.tool_to_slot_map.push_back(i);
         }
 
-        slots_.initialize("Box Turtle 1", names);
+        AfcTestAccess::slots(*this).initialize("Box Turtle 1", names);
     }
 
     // Set discovered lanes (delegates to base)
@@ -123,11 +124,11 @@ class AmsBackendAfcMultiExtruderHelper : public AmsBackendAfc {
 
     // Accessors for extruder state
     int get_num_extruders() const {
-        return num_extruders_;
+        return AfcTestAccess::num_extruders(*this);
     }
 
     const std::vector<AfcExtruderInfo>& get_extruders() const {
-        return extruders_;
+        return AfcTestAccess::extruders(*this);
     }
 
     // Access system_info for assertions

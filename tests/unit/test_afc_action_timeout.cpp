@@ -17,6 +17,7 @@
 //
 // The clock is faked by back-dating action_start_time_ — no sleeps.
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 
@@ -39,7 +40,7 @@ class AfcActionTimeoutHelper : public AmsBackendAfc {
     explicit AfcActionTimeoutHelper(bool with_lanes = true) : AmsBackendAfc(nullptr, nullptr) {
         if (with_lanes) {
             std::vector<std::string> lanes{"lane1", "lane2"};
-            initialize_slots(lanes);
+            AfcTestAccess::initialize_slots(*this, lanes);
         }
     }
 
@@ -62,7 +63,7 @@ class AfcActionTimeoutHelper : public AmsBackendAfc {
     /// Back-date the action clock so the budget has "elapsed" without sleeping.
     void age_action(seconds elapsed) {
         std::lock_guard<std::mutex> lock(mutex_);
-        action_start_time_ = steady_clock::now() - elapsed;
+        AfcTestAccess::action_start_time(*this) = steady_clock::now() - elapsed;
     }
 
     [[nodiscard]] AmsAction action() const {
@@ -77,12 +78,12 @@ class AfcActionTimeoutHelper : public AmsBackendAfc {
 
     [[nodiscard]] bool latched() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return timed_out_state_.has_value();
+        return AfcTestAccess::timed_out_state(*this).has_value();
     }
 
     [[nodiscard]] steady_clock::time_point action_stamp() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return action_start_time_;
+        return AfcTestAccess::action_start_time(*this);
     }
 };
 } // namespace helix

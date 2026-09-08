@@ -1,6 +1,7 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 #include "moonraker_api.h"
@@ -44,31 +45,31 @@ class HubSensorTestHelper : public AmsBackendAfc {
 
         system_info_.units.push_back(unit);
         system_info_.total_slots = count;
-        slots_.initialize("Turtle_1", names);
+        AfcTestAccess::slots(*this).initialize("Turtle_1", names);
     }
 
     void set_discovered_hubs(const std::vector<std::string>& hubs) {
-        hub_names_ = hubs;
+        AfcTestAccess::hub_names(*this) = hubs;
     }
 
     void set_hub_sensor(const std::string& hub_name, bool state) {
-        hub_sensors_[hub_name] = state;
+        AfcTestAccess::hub_sensors(*this)[hub_name] = state;
     }
 
     bool get_hub_sensor(const std::string& hub_name) const {
-        auto it = hub_sensors_.find(hub_name);
-        return it != hub_sensors_.end() && it->second;
+        auto it = AfcTestAccess::hub_sensors(*this).find(hub_name);
+        return it != AfcTestAccess::hub_sensors(*this).end() && it->second;
     }
 
     const std::unordered_map<std::string, bool>& get_hub_sensors() const {
-        return hub_sensors_;
+        return AfcTestAccess::hub_sensors(*this);
     }
 
     // Multi-unit setup
     void
     setup_multi_unit(const std::unordered_map<std::string, std::vector<std::string>>& unit_map) {
-        unit_lane_map_ = unit_map;
-        reorganize_slots();
+        AfcTestAccess::unit_lane_map(*this) = unit_map;
+        AfcTestAccess::reorganize_slots(*this);
     }
 
     // Feed status updates
@@ -89,12 +90,13 @@ class HubSensorTestHelper : public AmsBackendAfc {
     }
 
     PathSegment test_compute_filament_segment() const {
-        return compute_filament_segment_unlocked();
+        return AfcTestAccess::compute_filament_segment_unlocked(*this);
     }
 
     void initialize_slots_from_discovery() {
-        if (!discovered_lane_names_.empty() && !slots_.is_initialized()) {
-            initialize_slots(discovered_lane_names_);
+        if (!AfcTestAccess::discovered_lane_names(*this).empty() &&
+            !AfcTestAccess::slots(*this).is_initialized()) {
+            AfcTestAccess::initialize_slots(*this, AfcTestAccess::discovered_lane_names(*this));
         }
     }
 

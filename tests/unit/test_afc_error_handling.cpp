@@ -13,6 +13,7 @@
  */
 
 #include "action_prompt_manager.h"
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 #include "moonraker_api.h"
@@ -41,7 +42,7 @@ class AfcErrorHandlingHelper : public AmsBackendAfc {
     AfcErrorHandlingHelper() : AmsBackendAfc(nullptr, nullptr) {
         // Initialize some lanes so parse_afc_state works
         std::vector<std::string> names = {"lane1", "lane2", "lane3", "lane4"};
-        slots_.initialize("AFC Test Unit", names);
+        AfcTestAccess::slots(*this).initialize("AFC Test Unit", names);
     }
 
     // Feed AFC state update with a message object
@@ -74,7 +75,7 @@ class AfcErrorHandlingHelper : public AmsBackendAfc {
 
     // Access last_seen_message_ for assertions
     std::string get_last_seen_message() const {
-        return last_seen_message_;
+        return AfcTestAccess::last_seen_message(*this);
     }
 
   private:

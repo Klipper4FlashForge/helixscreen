@@ -7,6 +7,7 @@
 #include "ams_backend_happy_hare.h"
 #include "ams_state.h"
 #include "ams_types.h"
+#include "test_helpers/happy_hare_test_access.h"
 #include "hh_defaults.h"
 #include "moonraker_api.h"
 
@@ -63,12 +64,12 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
     /// override tests do. Callers hold no lock; this takes mutex_.
     void set_gate_override(int slot_index, const helix::ams::FilamentSlotOverride& o) {
         std::lock_guard<std::mutex> lock(mutex_);
-        overrides_[slot_index] = o;
+        HappyHareTestAccess::overrides(*this)[slot_index] = o;
     }
 
     [[nodiscard]] bool has_gate_override(int slot_index) const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return overrides_.count(slot_index) > 0;
+        return HappyHareTestAccess::overrides(*this).count(slot_index) > 0;
     }
 
     void clear_slot_override(int slot_index) {
@@ -97,8 +98,9 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
             unit.slots.push_back(slot);
         }
 
-        unit.topology = is_type_b() ? PathTopology::HUB : PathTopology::LINEAR;
-        unit.has_encoder = !is_type_b();
+        unit.topology =
+            HappyHareTestAccess::is_type_b(*this) ? PathTopology::HUB : PathTopology::LINEAR;
+        unit.has_encoder = !HappyHareTestAccess::is_type_b(*this);
 
         system_info_.units.push_back(unit);
         system_info_.total_slots = count;
@@ -114,17 +116,17 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
         for (int i = 0; i < count; ++i) {
             slot_names.push_back(std::to_string(i));
         }
-        slots_.initialize("MMU", slot_names);
+        HappyHareTestAccess::slots(*this).initialize("MMU", slot_names);
         // Set status to AVAILABLE to match legacy init
         for (int i = 0; i < count; ++i) {
-            auto* entry = slots_.get_mut(i);
+            auto* entry = HappyHareTestAccess::slots(*this).get_mut(i);
             if (entry) {
                 entry->info.status = SlotStatus::AVAILABLE;
                 entry->info.color_rgb = AMS_DEFAULT_SLOT_COLOR;
             }
         }
         // Set 1:1 tool map
-        slots_.set_tool_map(system_info_.tool_to_slot_map);
+        HappyHareTestAccess::slots(*this).set_tool_map(system_info_.tool_to_slot_map);
     }
 
     /**
@@ -141,7 +143,7 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
             }
             units.push_back({"MMU" + std::to_string(u), std::move(names)});
         }
-        slots_.initialize_units(units);
+        HappyHareTestAccess::slots(*this).initialize_units(units);
     }
 
     /**
@@ -182,7 +184,7 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
      * @return Pointer to SlotInfo or nullptr
      */
     SlotInfo* get_mutable_slot(int slot_index) {
-        auto* entry = slots_.get_mut(slot_index);
+        auto* entry = HappyHareTestAccess::slots(*this).get_mut(slot_index);
         return entry ? &entry->info : nullptr;
     }
 
@@ -192,7 +194,7 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
      * @return Pointer to SlotEntry or nullptr
      */
     const helix::printer::SlotEntry* get_slot_entry(int slot_index) const {
-        return slots_.get(slot_index);
+        return HappyHareTestAccess::slots(*this).get(slot_index);
     }
 
     // G-code capture for persistence tests
@@ -233,7 +235,7 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
     }
 
     void set_selector_type(const std::string& type) {
-        selector_type_ = type;
+        HappyHareTestAccess::selector_type(*this) = type;
     }
 
     /**
@@ -243,23 +245,23 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
      * that get_device_actions() overlays them correctly.
      */
     void set_config_defaults_for_test() {
-        config_defaults_.gear_from_buffer_speed = 180.0f;
-        config_defaults_.gear_from_spool_speed = 70.0f;
-        config_defaults_.gear_unload_speed = 90.0f;
-        config_defaults_.selector_move_speed = 200.0f;
-        config_defaults_.extruder_load_speed = 45.0f;
-        config_defaults_.extruder_unload_speed = 45.0f;
-        config_defaults_.toolhead_sensor_to_nozzle = 62.0f;
-        config_defaults_.toolhead_extruder_to_nozzle = 72.0f;
-        config_defaults_.toolhead_entry_to_extruder = 0.0f;
-        config_defaults_.toolhead_ooze_reduction = 2.0f;
-        config_defaults_.sync_to_extruder = 0;
-        config_defaults_.clog_detection = 0;
-        config_defaults_.loaded = true;
+        HappyHareTestAccess::config_defaults(*this).gear_from_buffer_speed = 180.0f;
+        HappyHareTestAccess::config_defaults(*this).gear_from_spool_speed = 70.0f;
+        HappyHareTestAccess::config_defaults(*this).gear_unload_speed = 90.0f;
+        HappyHareTestAccess::config_defaults(*this).selector_move_speed = 200.0f;
+        HappyHareTestAccess::config_defaults(*this).extruder_load_speed = 45.0f;
+        HappyHareTestAccess::config_defaults(*this).extruder_unload_speed = 45.0f;
+        HappyHareTestAccess::config_defaults(*this).toolhead_sensor_to_nozzle = 62.0f;
+        HappyHareTestAccess::config_defaults(*this).toolhead_extruder_to_nozzle = 72.0f;
+        HappyHareTestAccess::config_defaults(*this).toolhead_entry_to_extruder = 0.0f;
+        HappyHareTestAccess::config_defaults(*this).toolhead_ooze_reduction = 2.0f;
+        HappyHareTestAccess::config_defaults(*this).sync_to_extruder = 0;
+        HappyHareTestAccess::config_defaults(*this).clog_detection = 0;
+        HappyHareTestAccess::config_defaults(*this).loaded = true;
     }
 
     void apply_selector_type_update() {
-        update_unit_topologies();
+        HappyHareTestAccess::update_unit_topologies(*this);
     }
 
     void clear_captured_gcodes() {
@@ -268,33 +270,33 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
 
     /// Expose reapply_overrides for testing
     void test_reapply_overrides() {
-        reapply_overrides();
+        HappyHareTestAccess::reapply_overrides(*this);
     }
 
     /// Override the clock function for deterministic countdown tests
     void test_set_clock(std::function<std::time_t()> fn) {
-        now_fn_ = std::move(fn);
+        HappyHareTestAccess::now_fn(*this) = std::move(fn);
     }
 
     /// Expose apply_heater_config for testing (simulates the async configfile query result)
     void test_apply_heater_config(const nlohmann::json& settings) {
-        apply_heater_config(settings);
+        HappyHareTestAccess::apply_heater_config(*this, settings);
     }
 
     /// Same, with the live mmu_machine object Happy Hare v4 carries the fields in.
     void test_apply_heater_config(const nlohmann::json& settings,
                                   const nlohmann::json& live_mmu_machine) {
-        apply_heater_config(settings, live_mmu_machine);
+        HappyHareTestAccess::apply_heater_config(*this, settings, live_mmu_machine);
     }
 
     /// Expose apply_filament_heater_status for testing
     bool test_apply_filament_heater_status(const nlohmann::json& params) {
-        return apply_filament_heater_status(params);
+        return HappyHareTestAccess::apply_filament_heater_status(*this, params);
     }
 
     /// Expose apply_environment_sensor_status for testing
     bool test_apply_environment_sensor_status(const nlohmann::json& params) {
-        return apply_environment_sensor_status(params);
+        return HappyHareTestAccess::apply_environment_sensor_status(*this, params);
     }
 
     /**

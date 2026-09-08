@@ -109,7 +109,6 @@ STATE_DIR="/opt/helix-cloud-env"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 APT_STATUS_FILE="/tmp/.helix-env-setup-apt-status"
-CCACHE_STATUS_FILE="/tmp/.helix-env-setup-ccache-status"
 SEED_STATUS_FILE="/tmp/.helix-env-setup-seed-status"
 VENV_STATUS_FILE="/tmp/.helix-env-setup-venv-status"
 
@@ -137,36 +136,6 @@ step_apt() {
     else
         echo "$?" > "$APT_STATUS_FILE"
         log "Step A done: apt install failed"
-    fi
-}
-
-# --- Step B: warm ccache from the rolling release asset (background) ---
-step_ccache() {
-    log "Step B: warming ccache from the build-cache release..."
-    wait_for_apt || log "Step B: apt install did not finish in time, extracting anyway"
-    mkdir -p /root/.cache
-    # Downloaded to a file rather than piped into tar, so a failure says which
-    # half failed. Piping collapses "the asset was not there" and "this image
-    # cannot unpack zstd" into one verdict, and a cold cache costs every session
-    # on this snapshot an hour — too expensive to leave unattributed.
-    local tarball=/tmp/helix-ccache.tar.zst rc=0
-    if ! curl -fsSL --retry 3 -o "$tarball" \
-        https://github.com/prestonbrown/helixscreen/releases/download/build-cache/ccache-linux-x64.tar.zst; then
-        rc=$?
-        log "Step B: download failed (curl exit $rc) — release asset unreachable or absent"
-    elif ! tar --zstd -xf "$tarball" -C /root/.cache; then
-        rc=$?
-        log "Step B: extract failed (tar exit $rc); zstd binary: $(command -v zstd || echo 'not installed')"
-        log "Step B: downloaded $(wc -c <"$tarball" 2>/dev/null || echo 0) bytes"
-    fi
-    rm -f "$tarball"
-    if [ "$rc" -eq 0 ]; then
-        echo "landed" > "$CCACHE_STATUS_FILE"
-        log "Step B done: ccache warmed"
-    else
-        rm -rf /root/.cache/ccache
-        echo "cold start" > "$CCACHE_STATUS_FILE"
-        log "Step B done: cold start (see the failure above for which half)"
     fi
 }
 
@@ -219,17 +188,14 @@ EOF
 
 step_apt &
 PID_APT=$!
-step_ccache &
-PID_CCACHE=$!
 step_seed &
 PID_SEED=$!
 step_venv &
 PID_VENV=$!
 
-wait "$PID_APT" "$PID_CCACHE" "$PID_SEED" "$PID_VENV" 2>/dev/null || true
+wait "$PID_APT" "$PID_SEED" "$PID_VENV" 2>/dev/null || true
 
 APT_EXIT_CODE=$(cat "$APT_STATUS_FILE" 2>/dev/null || echo "unknown")
-CCACHE_RESULT=$(cat "$CCACHE_STATUS_FILE" 2>/dev/null || echo "unknown")
 SEED_RESULT=$(cat "$SEED_STATUS_FILE" 2>/dev/null || echo "unknown")
 VENV_RESULT=$(cat "$VENV_STATUS_FILE" 2>/dev/null || echo "unknown")
 
@@ -246,7 +212,7 @@ fi
 {
     echo "date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "apt_exit_code: $APT_EXIT_CODE"
-    echo "ccache_tarball: $CCACHE_RESULT"
+    echo "ccache_tarball: not used (see BUILD_SYSTEM.md)"
     echo "seed_present: $SEED_PRESENT ($SEED_RESULT)"
     echo "venv_present: $VENV_PRESENT ($VENV_RESULT)"
     echo "---- ccache -s ----"
@@ -255,7 +221,7 @@ fi
 
 log "================ helix cloud env setup summary ================"
 log "apt exit code:  $APT_EXIT_CODE"
-log "ccache tarball: $CCACHE_RESULT"
+log "ccache: installed and configured; no prebuilt cache is fetched"
 log "seed clone:     $SEED_PRESENT ($SEED_RESULT)"
 log "python venv:    $VENV_PRESENT ($VENV_RESULT)"
 log "================================================================"

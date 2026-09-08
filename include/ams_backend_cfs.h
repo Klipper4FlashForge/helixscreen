@@ -67,7 +67,7 @@ class CfsErrorDecoder {
     /// the values shape is unknown for that code.
     ///
     /// `fw_msg` is the firmware's own `msg` from the same JSON error. For a
-    /// table entry that prefers it (see CfsErrorEntry::prefer_fw_msg) and a
+    /// table entry that prefers it (see KlipperErrorEntry::prefer_fw_msg) and a
     /// non-empty msg, that wording replaces the table message: the code's
     /// causes vary and the firmware names the one that fired (#1387).
     static std::optional<std::pair<std::string, std::string>>

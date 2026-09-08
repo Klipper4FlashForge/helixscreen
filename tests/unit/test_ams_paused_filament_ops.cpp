@@ -40,6 +40,7 @@
 // AD5X IFS is feature-gated (HELIX_HAS_IFS=0 on the space-constrained cross
 // builds, mk/cross.mk), so every self-homing assertion below is guarded. The
 // non-self-homing half of the table is unconditional.
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_ad5x_ifs.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_happy_hare.h"
@@ -503,7 +504,7 @@ class AfcEjectPrintGateHelper : public AmsBackendAfc {
     AfcEjectPrintGateHelper(MoonrakerAPI* api, helix::MoonrakerClient* client)
         : AmsBackendAfc(api, client) {
         running_.store(true);
-        initialize_slots({"lane1", "lane2"});
+        AfcTestAccess::initialize_slots(*this, std::vector<std::string>{"lane1", "lane2"});
     }
 
     /// Production dispatch goes through api_->execute_gcode with completion

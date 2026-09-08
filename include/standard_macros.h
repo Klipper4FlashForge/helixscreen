@@ -183,6 +183,8 @@ struct StandardMacroInfo {
     }
 };
 
+namespace helix {
+
 /// A slot resolved into something runnable.
 struct ResolvedMacroScript {
     /// The winning macro name or sequence, with `{profile}` substituted.
@@ -214,6 +216,8 @@ struct ResolvedMacroScript {
 [[nodiscard]] ResolvedMacroScript resolve_macro_script(const StandardMacroInfo& info,
                                                        const std::string& profile,
                                                        bool accept_fallback = true);
+
+} // namespace helix
 
 /**
  * @brief Unified registry for standard macro operations (singleton)

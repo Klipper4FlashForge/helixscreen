@@ -31,6 +31,7 @@
  * Run with: ./build/bin/helix-tests "[ams][toolhead-unaccounted]"
  */
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_ad5x_ifs.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_cfs.h"
@@ -62,7 +63,8 @@ namespace helix {
 class AfcHelper : public AmsBackendAfc {
   public:
     AfcHelper() : AmsBackendAfc(nullptr, nullptr) {
-        initialize_slots({"lane1", "lane2", "lane3", "lane4"});
+        AfcTestAccess::initialize_slots(
+            *this, std::vector<std::string>{"lane1", "lane2", "lane3", "lane4"});
     }
     void feed_extruder(const std::string& lane_loaded, bool tool_start, bool tool_end) {
         json ext{{"tool_start_status", tool_start}, {"tool_end_status", tool_end}};
