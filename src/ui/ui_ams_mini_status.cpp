@@ -178,9 +178,9 @@ struct SlotBarData {
     ams_draw::SlotColumn col; // Shared slot column (container, bar_bg, bar_fill, status_line)
     uint32_t color_rgb = 0x808080;
     int fill_pct = 100;
-    bool present = false;                           // Filament present in slot
-    bool loaded = false;                            // Filament loaded to toolhead
-    bool has_error = false;                         // Slot is in error/blocked state
+    bool present = false;                                         // Filament present in slot
+    bool loaded = false;                                          // Filament loaded to toolhead
+    bool has_error = false;                                       // Slot is in error/blocked state
     helix::SlotError::Severity severity = helix::SlotError::INFO; // Error severity level
 };
 
