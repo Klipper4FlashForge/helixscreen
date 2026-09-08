@@ -5618,9 +5618,16 @@ bool MoonrakerClientMock::simulate_tool_offset_calibration(
                         s->error_cb(err);
                     }
                 }
-                s->success_cb = nullptr;
-                s->error_cb = nullptr;
-                lv_timer_set_repeat_count(t, 0);
+                // Natural completion frees its own payload and drops the
+                // tracking entry, as the shaper sim does; the destructor's
+                // deleter is only for a teardown that catches the timer armed.
+                auto& timers = s->mock->calibration_timers_;
+                timers.erase(
+                    std::remove_if(timers.begin(), timers.end(),
+                                   [t](const CalibrationTimer& ct) { return ct.timer == t; }),
+                    timers.end());
+                delete s;
+                lv_timer_delete(t);
             };
 
             if (tool >= s->tool_count) {
