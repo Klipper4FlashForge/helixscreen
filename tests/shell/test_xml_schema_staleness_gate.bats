@@ -53,6 +53,10 @@ extract_block() {
         || fail "extracted block has no regen step — markers moved?"
     grep -q 'run_xml_linter' "$BLOCK" \
         || fail "extracted block has no run_xml_linter — markers moved?"
+    # The block records its pass verdicts through qc_count, which quality-checks.sh
+    # defines further down than the slice reaches.
+    printf '%s\n' "$(qc_verdict_defs "$REPO_ROOT/$QC")" | cat - "$BLOCK" > "$BLOCK.tmp" \
+        && mv "$BLOCK.tmp" "$BLOCK"
 }
 
 # A throwaway git repo shaped like the parts of the tree the block touches:

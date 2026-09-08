@@ -607,12 +607,21 @@ void PrinterFanState::rename_fan(const std::string& object_name, const std::stri
         std::string key = config->df() + "fans/names/" + object_name;
         config->set<std::string>(key, new_name);
 
-        config->save();
+        if (config->save()) {
+            spdlog::info("[PrinterFanState] Persisted name '{}' for '{}'", new_name, object_name);
+        } else {
+            spdlog::error("[PrinterFanState] Failed to persist name '{}' for '{}'", new_name,
+                          object_name);
+        }
+    } else {
+        spdlog::error("[PrinterFanState] No config available, '{}' not persisted", object_name);
     }
 
     // Update in-memory display name
+    bool matched = false;
     for (auto& fan : fans_) {
         if (fan.object_name == object_name) {
+            matched = true;
             if (new_name.empty()) {
                 // Revert to role name or auto-generated name
                 std::string role_name = get_role_display_name(object_name);
@@ -626,6 +635,15 @@ void PrinterFanState::rename_fan(const std::string& object_name, const std::stri
             spdlog::info("[PrinterFanState] Renamed '{}' -> '{}'", object_name, fan.display_name);
             break;
         }
+    }
+
+    // Discovery can drop a fan between the rename modal opening and the confirm — a
+    // Klipper restart empties fans_. The name is persisted above either way and takes
+    // effect when the object is discovered again.
+    if (!matched) {
+        spdlog::warn("[PrinterFanState] '{}' is not a discovered fan; name persisted, display "
+                     "name applies when it returns",
+                     object_name);
     }
 
     // Bump version so UI rebuilds
