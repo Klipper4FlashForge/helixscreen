@@ -4,6 +4,7 @@
 #include "system/telemetry_manager.h"
 
 #include <chrono>
+#include <mutex>
 
 // Test-only seam. TelemetryManager declares this class as a friend, so a test
 // can observe whether try_send() cleared its send-interval gate.
@@ -52,5 +53,13 @@ class TelemetryManagerTestAccess {
     /// alone when it skips, so it is the observable for "did the gate pass".
     static std::chrono::steady_clock::time_point last_send_time(const TelemetryManager& t) {
         return t.last_send_time_;
+    }
+
+    /// Events discarded by enqueue_event() since the last batch was accepted.
+    /// The queue size alone cannot distinguish a window that fit from one that
+    /// overflowed, because both leave it at MAX_QUEUE_SIZE.
+    static size_t events_dropped_since_send(const TelemetryManager& t) {
+        std::lock_guard<std::mutex> lock(t.mutex_);
+        return t.events_dropped_since_send_;
     }
 };
