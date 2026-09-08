@@ -13,10 +13,12 @@
  */
 
 #include "../lvgl_test_fixture.h"
+#include "../test_helpers/scoped_env.h"
 #include "moonraker_client_mock.h"
 #include "moonraker_error.h"
 
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,50 +28,36 @@ using nlohmann::json;
 
 namespace {
 
-/// The toolchanger persona is chosen by HELIX_MOCK_AMS at construction.
-struct ToolchangerEnv {
-    std::string prev;
-    bool had = false;
-    ToolchangerEnv() {
-        if (const char* p = std::getenv("HELIX_MOCK_AMS")) {
-            had = true;
-            prev = p;
-        }
-        setenv("HELIX_MOCK_AMS", "toolchanger", 1);
-    }
-    ~ToolchangerEnv() {
-        if (had) {
-            setenv("HELIX_MOCK_AMS", prev.c_str(), 1);
-        } else {
-            unsetenv("HELIX_MOCK_AMS");
-        }
-    }
-};
-
 struct ToolCalFixture : public LVGLTestFixture {
-    ToolchangerEnv env;
-    MoonrakerClientMock client{MoonrakerClientMock::PrinterType::VORON_24, 100.0};
+    /// The toolchanger persona is chosen by HELIX_MOCK_AMS when the mock is
+    /// constructed, so the guard is declared first and the client is built in
+    /// the constructor body once the variable is set. Members are destroyed in
+    /// reverse order: the client goes before the guard restores the variable.
+    helix::ScopedEnv ams_env{"HELIX_MOCK_AMS"};
+    std::optional<MoonrakerClientMock> client;
     std::vector<std::string> console;
     bool acked = false;
     bool failed = false;
     std::string error;
 
     ToolCalFixture() {
-        client.register_method_callback("notify_gcode_response", "test_console",
-                                        [this](const json& msg) {
-                                            for (const auto& p : msg["params"]) {
-                                                if (p.is_string()) {
-                                                    console.push_back(p.get<std::string>());
-                                                }
-                                            }
-                                        });
+        setenv("HELIX_MOCK_AMS", "toolchanger", 1);
+        client.emplace(MoonrakerClientMock::PrinterType::VORON_24, 100.0);
+        client->register_method_callback("notify_gcode_response", "test_console",
+                                         [this](const json& msg) {
+                                             for (const auto& p : msg["params"]) {
+                                                 if (p.is_string()) {
+                                                     console.push_back(p.get<std::string>());
+                                                 }
+                                             }
+                                         });
     }
     ~ToolCalFixture() override {
-        client.unregister_method_callback("notify_gcode_response", "test_console");
+        client->unregister_method_callback("notify_gcode_response", "test_console");
     }
 
     void run_macro() {
-        client.send_jsonrpc(
+        client->send_jsonrpc(
             "printer.gcode.script", json{{"script", "CALIBRATE_TOOL_OFFSETS"}},
             [this](const json&) { acked = true; },
             [this](const MoonrakerError& e) {
@@ -92,7 +80,7 @@ struct ToolCalFixture : public LVGLTestFixture {
 
 TEST_CASE_METHOD(ToolCalFixture, "mock: the calibration rpc answers only when the run is over",
                  "[mock][toolchanger][tool_offset_cal]") {
-    REQUIRE(client.hardware().tool_names().size() == 4);
+    REQUIRE(client->hardware().tool_names().size() == 4);
 
     run_macro();
     CHECK_FALSE(acked); // blocking, like the macro
@@ -117,15 +105,15 @@ TEST_CASE_METHOD(ToolCalFixture, "mock: every measured tool's offsets land live 
 
     // T0 is the reference and keeps its seed; the others carry the measured
     // offset on all three axes, exactly as _SAVE_TOOL_OFFSET writes them.
-    CHECK(client.tool_offset(0, helix::Axis::X) == Catch::Approx(0.0));
-    CHECK(client.tool_offset(1, helix::Axis::X) == Catch::Approx(0.12));
-    CHECK(client.tool_offset(1, helix::Axis::Y) == Catch::Approx(-0.05));
-    CHECK(client.tool_offset(1, helix::Axis::Z) == Catch::Approx(-0.03));
-    CHECK(client.tool_offset(3, helix::Axis::X) == Catch::Approx(0.36));
+    CHECK(client->tool_offset(0, helix::Axis::X) == Catch::Approx(0.0));
+    CHECK(client->tool_offset(1, helix::Axis::X) == Catch::Approx(0.12));
+    CHECK(client->tool_offset(1, helix::Axis::Y) == Catch::Approx(-0.05));
+    CHECK(client->tool_offset(1, helix::Axis::Z) == Catch::Approx(-0.03));
+    CHECK(client->tool_offset(3, helix::Axis::X) == Catch::Approx(0.36));
 
     // Staged, not persisted: SAVE_CONFIG is the panel's job.
-    CHECK(client.save_config_pending());
-    const json items = client.save_config_pending_items();
+    CHECK(client->save_config_pending());
+    const json items = client->save_config_pending_items();
     REQUIRE(items.contains("tool T2"));
     CHECK(items["tool T2"].contains("gcode_x_offset"));
     CHECK(items["tool T2"].contains("gcode_y_offset"));
@@ -133,25 +121,27 @@ TEST_CASE_METHOD(ToolCalFixture, "mock: every measured tool's offsets land live 
     CHECK_FALSE(items.contains("tool T0"));
 
     // And a restart without SAVE_CONFIG throws it all away, as on the printer.
-    client.send_jsonrpc(
+    client->send_jsonrpc(
         "printer.gcode.script", json{{"script", "RESTART"}}, [](const json&) {},
         [](const MoonrakerError&) {});
-    CHECK(client.tool_offset(1, helix::Axis::X) == Catch::Approx(0.100));
+    CHECK(client->tool_offset(1, helix::Axis::X) == Catch::Approx(0.100));
 }
 
 TEST_CASE_METHOD(ToolCalFixture, "mock: HELIX_MOCK_TOOL_CAL_FAIL fails the run on that tool",
                  "[mock][toolchanger][tool_offset_cal]") {
+    // Guarded, not a bare setenv/unsetenv pair: an aborting REQUIRE below
+    // would otherwise leave the knob set for every later test in the shard.
+    helix::ScopedEnv fail_env("HELIX_MOCK_TOOL_CAL_FAIL");
     setenv("HELIX_MOCK_TOOL_CAL_FAIL", "2", 1);
     run_macro();
     process_lvgl(600 * 12);
-    unsetenv("HELIX_MOCK_TOOL_CAL_FAIL");
 
     CHECK_FALSE(acked);
     CHECK(failed);
     CHECK(error.find("samples_tolerance") != std::string::npos);
     // T1 was measured before the failure; T2 and T3 were not.
-    CHECK(client.tool_offset(1, helix::Axis::X) == Catch::Approx(0.12));
-    CHECK(client.tool_offset(2, helix::Axis::X) == Catch::Approx(0.200));
+    CHECK(client->tool_offset(1, helix::Axis::X) == Catch::Approx(0.12));
+    CHECK(client->tool_offset(2, helix::Axis::X) == Catch::Approx(0.200));
     CHECK(saw("!! Probe samples exceed samples_tolerance"));
     CHECK_FALSE(saw("Selected tool 3 (T3)"));
 }
@@ -159,7 +149,7 @@ TEST_CASE_METHOD(ToolCalFixture, "mock: HELIX_MOCK_TOOL_CAL_FAIL fails the run o
 TEST_CASE_METHOD(ToolCalFixture, "mock: printer.gcode.help describes the macro",
                  "[mock][toolchanger][tool_offset_cal]") {
     json result;
-    client.send_jsonrpc(
+    client->send_jsonrpc(
         "printer.gcode.help", json::object(), [&result](const json& r) { result = r["result"]; },
         [](const MoonrakerError&) {});
 
