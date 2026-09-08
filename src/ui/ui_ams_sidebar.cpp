@@ -61,22 +61,31 @@ constexpr const char* HOME_CONFIRM_LOAD_DECLINE_TAG =
  * before lv_deinit()), same shape as ScrewsTiltShareModal's row subjects.
  */
 lv_subject_t s_unload_disabled;
-bool s_unload_disabled_initialized = false;
+lv_subject_t s_reset_disabled;
+lv_subject_t s_check_gates_disabled;
+bool s_gating_subjects_initialized = false;
 
-void init_unload_gating_subject() {
-    if (s_unload_disabled_initialized) {
+void init_button_gating_subjects() {
+    if (s_gating_subjects_initialized) {
         return;
     }
-    // Start disabled: nothing is known to be loaded until the first refresh.
+    // Start disabled: nothing is known about the backend or the job until the
+    // first refresh, and an over-eager button is the failure that matters here.
     lv_subject_init_int(&s_unload_disabled, 1);
+    lv_subject_init_int(&s_reset_disabled, 1);
+    lv_subject_init_int(&s_check_gates_disabled, 1);
     lv_xml_register_subject(nullptr, "ams_sidebar_unload_disabled", &s_unload_disabled);
-    s_unload_disabled_initialized = true;
+    lv_xml_register_subject(nullptr, "ams_sidebar_reset_disabled", &s_reset_disabled);
+    lv_xml_register_subject(nullptr, "ams_sidebar_check_gates_disabled", &s_check_gates_disabled);
+    s_gating_subjects_initialized = true;
 
-    StaticSubjectRegistry::instance().register_deinit("AmsSidebarUnloadGating", []() {
-        if (s_unload_disabled_initialized && lv_is_initialized()) {
+    StaticSubjectRegistry::instance().register_deinit("AmsSidebarButtonGating", []() {
+        if (s_gating_subjects_initialized && lv_is_initialized()) {
             lv_subject_deinit(&s_unload_disabled);
-            s_unload_disabled_initialized = false;
-            spdlog::trace("[AmsSidebar] Unload gating subject deinitialized");
+            lv_subject_deinit(&s_reset_disabled);
+            lv_subject_deinit(&s_check_gates_disabled);
+            s_gating_subjects_initialized = false;
+            spdlog::trace("[AmsSidebar] Button gating subjects deinitialized");
         }
     });
 }
@@ -104,7 +113,7 @@ void AmsOperationSidebar::register_callbacks_static() {
     // Must exist before ams_sidebar.xml is parsed — btn_unload binds it. Same
     // "before the parser sees it" contract as the callbacks below, so it is
     // registered from the same hook.
-    init_unload_gating_subject();
+    init_button_gating_subjects();
 
     register_xml_callbacks({
         {"ams_sidebar_bypass_toggled", on_bypass_toggled_cb},
@@ -229,7 +238,7 @@ bool AmsOperationSidebar::setup(lv_obj_t* panel) {
 
     sync_reset_button_label();
     update_check_gates_visibility();
-    refresh_unload_gating();
+    refresh_button_gating();
     spdlog::debug("[AmsSidebar] Setup complete");
     return true;
 }
@@ -309,7 +318,7 @@ void AmsOperationSidebar::init_observers() {
 
             // AmsSystemInfo::is_busy() is "action is neither IDLE nor ERROR", so
             // every edge here changes the Unload button's gating.
-            self->refresh_unload_gating();
+            self->refresh_button_gating();
 
             self->prev_ams_action_ = action;
         },
@@ -324,7 +333,7 @@ void AmsOperationSidebar::init_observers() {
             self->update_current_loaded_display();
             self->sync_reset_button_label();
             self->update_check_gates_visibility();
-            self->refresh_unload_gating();
+            self->refresh_button_gating();
         },
         AmsState::instance().get_subjects_lifetime());
 
@@ -341,11 +350,11 @@ void AmsOperationSidebar::init_observers() {
     // AmsState's does not.
     filament_loaded_observer_ = observe_int_sync<AmsOperationSidebar>(
         AmsState::instance().get_filament_loaded_subject(), this,
-        [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); },
+        [](AmsOperationSidebar* self, int) { self->refresh_button_gating(); },
         AmsState::instance().get_subjects_lifetime());
     print_state_observer_ = observe_int_sync<AmsOperationSidebar>(
         printer_state_.get_print_lifecycle_subject(), this,
-        [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); },
+        [](AmsOperationSidebar* self, int) { self->refresh_button_gating(); },
         printer_state_.get_static_print_subjects_lifetime());
 
     // Active backend observer: re-syncs reset button label when the user switches backend tabs
@@ -356,6 +365,9 @@ void AmsOperationSidebar::init_observers() {
                 return;
             self->sync_reset_button_label();
             self->update_check_gates_visibility();
+            // reset_moves_filament() is a per-backend answer, so switching tabs
+            // changes Reset's gating even with the job state unmoved.
+            self->refresh_button_gating();
         },
         AmsState::instance().get_subjects_lifetime());
 
@@ -516,7 +528,7 @@ void AmsOperationSidebar::sync_from_state() {
     update_settings_visibility();
     update_check_gates_visibility();
     sync_reset_button_label();
-    refresh_unload_gating();
+    refresh_button_gating();
 }
 
 // ============================================================================
@@ -1084,12 +1096,24 @@ helix::ui::OpButtonState AmsOperationSidebar::read_unload_gating_state() const {
         /*backend_self_homes=*/backend && backend->filament_ops_self_home());
 }
 
-void AmsOperationSidebar::refresh_unload_gating() {
-    if (!s_unload_disabled_initialized) {
+helix::ui::MachineOpGating AmsOperationSidebar::read_machine_op_gating() const {
+    AmsBackend* backend = AmsState::instance().get_backend();
+    return helix::ui::compute_machine_op_gating(
+        helix::ui::print_blocks_filament_op(printer_state_.get_print_lifecycle(),
+                                            backend && backend->filament_ops_self_home()),
+        /*reset_moves_filament=*/backend && backend->reset_moves_filament());
+}
+
+void AmsOperationSidebar::refresh_button_gating() {
+    if (!s_gating_subjects_initialized) {
         return;
     }
     const auto gating = helix::ui::compute_op_button_gating(read_unload_gating_state());
     lv_subject_set_int(&s_unload_disabled, gating.unload_disabled ? 1 : 0);
+
+    const auto machine = read_machine_op_gating();
+    lv_subject_set_int(&s_reset_disabled, machine.reset_disabled ? 1 : 0);
+    lv_subject_set_int(&s_check_gates_disabled, machine.check_gates_disabled ? 1 : 0);
 }
 
 void AmsOperationSidebar::handle_unload() {
@@ -1211,6 +1235,17 @@ void AmsOperationSidebar::handle_reset() {
         return;
     }
 
+    // The button is bound to ams_sidebar_reset_disabled, but a tap can still
+    // land in the window between a print starting and the subject settling. No
+    // backend's reset() asks check_preconditions() for the print term, so
+    // nothing downstream would refuse this.
+    if (read_machine_op_gating().reset_disabled) {
+        spdlog::info("[AmsSidebar] Reset refused — a print owns the toolhead and this "
+                     "backend's reset moves filament");
+        NOTIFY_WARNING(lv_tr("Pause the print first, then load, unload, or change filament"));
+        return;
+    }
+
     // Clear any latched fault before re-prepping. AFC_RESET alone leaves
     // printer.AFC.message populated, so the sidebar kept showing an error the
     // user had just asked to reset away.
@@ -1231,6 +1266,15 @@ void AmsOperationSidebar::handle_check_gates() {
     AmsBackend* backend = AmsState::instance().get_backend();
     if (!backend) {
         NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
+        return;
+    }
+
+    // check_all_gates() checks only that the backend is running, so this is the
+    // only place a mid-print tap can be stopped. Probing a gate parks the
+    // toolhead and unloads/reloads each lane to test its sensor.
+    if (read_machine_op_gating().check_gates_disabled) {
+        spdlog::info("[AmsSidebar] Check slots refused — a print owns the toolhead");
+        NOTIFY_WARNING(lv_tr("Pause the print first, then load, unload, or change filament"));
         return;
     }
 

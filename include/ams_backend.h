@@ -1055,6 +1055,27 @@ class AmsBackend {
     virtual AmsError reset() = 0;
 
     /**
+     * @brief Does reset() move filament, rather than only clearing state?
+     *
+     * The sidebar's Reset button is shared by every backend, but what it
+     * dispatches is not: on most it is a state-only fault clear (CFS
+     * BOX_ERROR_CLEAR, AFC's lane-picker prompt, QIDI/Snapmaker no-ops) that a
+     * user reaches for *during* a job and must stay live. Happy Hare's
+     * MMU_HOME is the outlier — it runs an unload sequence before homing the
+     * selector — so only there does a running print have to grey the button.
+     *
+     * Default: false. Override true ONLY with positive evidence that this
+     * backend's reset G-code moves filament; a wrong true deletes the recovery
+     * path exactly when the user needs it.
+     *
+     * Distinct from filament_ops_self_home(), which asks whether a load/unload
+     * macro homes the printer's own toolhead.
+     */
+    [[nodiscard]] virtual bool reset_moves_filament() const {
+        return false;
+    }
+
+    /**
      * @brief Clear a latched fault so the system stops reporting an error
      *
      * Bookkeeping only — this never moves filament. Distinct from
