@@ -1532,6 +1532,131 @@ TEST_CASE_METHOD(PrinterDetectorFixture, "PrinterDetector: Regular AD5M without 
     REQUIRE(result.confidence >= 90);
 }
 
+// ----------------------------------------------------------------------------
+// led_required: absence as evidence (prestonbrown/helixscreen#1498)
+//
+// The chamber light is the only hardware that separates a 5M Pro from a plain
+// 5M. Every other heuristic on the two entries is identical, so on a plain
+// machine the Pro entry matches everything the plain entry does and the two
+// tie; nothing scores the light's absence. led_required does, but only on a
+// list that was reported: an empty list before discovery has run says nothing.
+// ----------------------------------------------------------------------------
+
+namespace {
+PrinterHardwareData plain_ad5m_reporting(bool objects_reported) {
+    PrinterHardwareData hardware{.heaters = {"extruder", "heater_bed"},
+                                 .sensors = {"tvocValue", "weightValue"},
+                                 .fans = {"fan", "fan_generic exhaust_fan"},
+                                 .leds = {},
+                                 .hostname = "flashforge-ad5m",
+                                 .printer_objects = {"extruder", "heater_bed"},
+                                 .kinematics = "corexy"};
+    hardware.objects_reported = objects_reported;
+    return hardware;
+}
+} // namespace
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: a plain 5M that reported no chamber light is separated from "
+                 "the Pro",
+                 "[printer][led_required][1498]") {
+    auto result = PrinterDetector::detect(plain_ad5m_reporting(true));
+
+    REQUIRE(result.type_name == "FlashForge Adventurer 5M");
+    CAPTURE(result.confidence, result.runner_up_type_name, result.runner_up_confidence,
+            result.margin());
+    // The Pro entry is ruled out, not merely out-scored: whatever remains
+    // pictures the same machine, so the answer is an identification and the
+    // type can be persisted.
+    CHECK(result.runner_up_type_name != "FlashForge Adventurer 5M Pro");
+    CHECK_FALSE(result.ambiguous());
+    CHECK(PrinterDetector::meets_autosave_threshold(result));
+}
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: led_required says nothing until the object list is reported",
+                 "[printer][led_required][1498]") {
+    // A Pro whose hostname names it, snapshotted before discovery filled the
+    // lists: the empty LED list is "not yet", not "none". Firing on it would
+    // turn a slow discovery into a wrong model, which is worse than the tie.
+    auto pro_before_discovery = plain_ad5m_reporting(false);
+    pro_before_discovery.hostname = "flashforge-ad5m-pro";
+    auto early = PrinterDetector::detect(pro_before_discovery);
+    CHECK(early.type_name == "FlashForge Adventurer 5M Pro");
+
+    // The same machine once the list has been reported and really has no
+    // light is a plain 5M with a Pro-shaped hostname.
+    auto reported = plain_ad5m_reporting(true);
+    reported.hostname = "flashforge-ad5m-pro";
+    auto late = PrinterDetector::detect(reported);
+    CHECK(late.type_name == "FlashForge Adventurer 5M");
+}
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: a Pro that reports its chamber light stays a Pro",
+                 "[printer][led_required][1498]") {
+    auto hardware = plain_ad5m_reporting(true);
+    hardware.leds = {"led chamber_light"};
+    hardware.printer_objects.push_back("led chamber_light");
+    hardware.hostname = "flashforge-ad5m-pro";
+
+    auto result = PrinterDetector::detect(hardware);
+
+    REQUIRE(result.type_name == "FlashForge Adventurer 5M Pro");
+    CAPTURE(result.confidence, result.runner_up_type_name, result.margin());
+    // The plain entry is ruled out by the light this machine reports, so the
+    // nearest rival is some other machine entirely.
+    CHECK(result.runner_up_type_name != "FlashForge Adventurer 5M");
+    CHECK_FALSE(result.ambiguous());
+    CHECK(PrinterDetector::meets_autosave_threshold(result));
+}
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: a ForgeX Pro is separated from the plain ForgeX entry by its "
+                 "chamber light",
+                 "[printer][led_required][1498]") {
+    // Both ForgeX entries lead on the same SUPPORT_FORGE_X macro and the
+    // extra-match bonus saturates, so on a Pro the plain entry ties unless the
+    // light it does not have rules it out. led_exclude on the plain entries is
+    // the presence side of the same fact led_required states for the Pro.
+    auto hardware = plain_ad5m_reporting(true);
+    hardware.leds = {"led chamber_led"};
+    hardware.printer_objects = {"extruder", "heater_bed", "mod_params",
+                                "gcode_macro SUPPORT_FORGE_X", "led chamber_led"};
+    hardware.hostname = "flashforge-ad5m-pro";
+
+    auto result = PrinterDetector::detect(hardware);
+
+    REQUIRE(result.type_name == "FlashForge Adventurer 5M Pro (ForgeX)");
+    CAPTURE(result.confidence, result.runner_up_type_name, result.runner_up_confidence,
+            result.margin());
+    CHECK(result.runner_up_type_name != "FlashForge Adventurer 5M (ForgeX)");
+    CHECK_FALSE(result.ambiguous());
+}
+
+TEST_CASE("PrinterDetector: auto_detect carries the reported flag from discovery",
+          "[printer][led_required][1498]") {
+    // The flag is set by parsing an object list, never by hand: a discovery
+    // that parsed one reports absences, one that did not stays silent.
+    helix::PrinterDiscovery parsed;
+    parsed.parse_objects(
+        nlohmann::json::array({"extruder", "heater_bed", "temperature_sensor tvocValue",
+                               "temperature_sensor weightValue"}));
+    parsed.set_hostname("flashforge-ad5m-pro");
+    parsed.set_kinematics("corexy");
+    REQUIRE(parsed.objects_reported());
+    CHECK(PrinterDetector::auto_detect(parsed).type_name == "FlashForge Adventurer 5M");
+
+    helix::PrinterDiscovery unparsed;
+    unparsed.set_hostname("flashforge-ad5m-pro");
+    unparsed.set_kinematics("corexy");
+    REQUIRE_FALSE(unparsed.objects_reported());
+    CHECK(PrinterDetector::auto_detect(unparsed).type_name == "FlashForge Adventurer 5M Pro");
+
+    parsed.clear();
+    CHECK_FALSE(parsed.objects_reported());
+}
+
 TEST_CASE_METHOD(PrinterDetectorFixture, "PrinterDetector: AD5M Pro with chamber_light LED",
                  "[printer][led_match]") {
     // AD5M Pro has "led chamber_light" - the key differentiator
