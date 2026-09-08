@@ -246,11 +246,36 @@ def run(cmd, cwd, capture=True, timeout=None):
                           text=True, errors='replace')
 
 
-def repo_root():
+def git_toplevel():
+    """The worktree root, or None when the cwd is not inside a git repository."""
     r = run(['git', 'rev-parse', '--show-toplevel'], cwd='.')
-    if r.returncode != 0:
-        sys.exit('not a git repository')
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
     return Path(r.stdout.strip())
+
+
+def repo_root():
+    root = git_toplevel()
+    if root is None:
+        sys.exit('not a git repository')
+    return root
+
+
+def default_log_path():
+    """Run log named for the worktree it is run from.
+
+    Every verdict, every suite's stdout and the diagnostics that quote this path
+    go into one file opened with 'w'. A path shared between worktrees is
+    truncated and then interleaved by whichever run starts next, and the
+    per-hunk attribution the gate exists to produce is exactly what is lost --
+    an inline SURVIVED beside a final-summary killed for the same hunk. Two runs
+    in the SAME tree still share this path; they already cannot coexist, because
+    they fight over the tree and the test binary.
+    """
+    root = git_toplevel()
+    if root is None:
+        return '/tmp/mutate-diff.log'
+    return f'/tmp/mutate-diff-{root.name}.log'
 
 
 def changed_files(root, base):
@@ -687,7 +712,9 @@ def main():
     ap.add_argument('--allow-incomplete', action='store_true',
                     help='exit 0 when nothing survived but part of the change was not examined')
     ap.add_argument('--list-only', action='store_true', help='list hunks, mutate nothing')
-    ap.add_argument('--log', default='/tmp/mutate-diff.log')
+    ap.add_argument('--log', default=default_log_path(),
+                    help='run log (default: named for this worktree, so runs in '
+                         'different trees do not overwrite each other)')
     args = ap.parse_args()
 
     root = repo_root()
