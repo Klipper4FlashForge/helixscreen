@@ -3887,13 +3887,12 @@ TEST_CASE("Happy Hare v4 takes machine fields from live status, not configfile",
         {"mmu_machine",
          {{"happy_hare_version", "4.0.0"}, {"units", nlohmann::json::array({"unit0"})}}}};
 
-    nlohmann::json live_mmu_machine = {
-        {"happy_hare_version", "4.0.0"},
-        {"num_units", 1},
-        {"unit_0",
-         {{"name", "unit0"},
-          {"environment_sensor", "aht10 unit0_Env"},
-          {"filament_heater", "heater_generic box1_heater"}}}};
+    nlohmann::json live_mmu_machine = {{"happy_hare_version", "4.0.0"},
+                                       {"num_units", 1},
+                                       {"unit_0",
+                                        {{"name", "unit0"},
+                                         {"environment_sensor", "aht10 unit0_Env"},
+                                         {"filament_heater", "heater_generic box1_heater"}}}};
 
     helper.test_apply_heater_config(configfile_settings, live_mmu_machine);
     helper.test_parse_mmu_state({{"drying_state", nlohmann::json::array({"", "", "", ""})}});

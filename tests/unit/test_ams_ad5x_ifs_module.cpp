@@ -427,8 +427,7 @@ TEST_CASE("AD5X IFS module identity returns when the plugin contract demotes",
     SECTION("a live wire table owns the map and survives the demote") {
         // The module echoes its own tool_map by subscription, so it is already
         // current — identity would overwrite a deliberate IFS_MAP_TOOL routing.
-        const json wire{
-            {"ifs", json{{"tool_map", json{{"0", 3}, {"1", 4}, {"2", 1}, {"3", 2}}}}}};
+        const json wire{{"ifs", json{{"tool_map", json{{"0", 3}, {"1", 4}, {"2", 1}, {"3", 2}}}}}};
 
         AmsBackendAd5xIfs backend(nullptr, nullptr);
         Ad5xIfsTestAccess::set_ifs_macro_confirmed_missing(backend, false);
@@ -473,8 +472,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     AmsBackendAd5xIfs backend(nullptr, &client);
 
     Ad5xIfsTestAccess::set_ifs_macro_confirmed_missing(backend, false);
-    Ad5xIfsTestAccess::parse_vars(backend,
-                                  json{{"bambufy_tools", json::array({2, 1, 4, 3})}});
+    Ad5xIfsTestAccess::parse_vars(backend, json{{"bambufy_tools", json::array({2, 1, 4, 3})}});
     Ad5xIfsTestAccess::handle_status(backend, module_ifs_frame(0, {}));
     REQUIRE(backend.get_system_info().tool_to_slot_map[0] == 1);
 

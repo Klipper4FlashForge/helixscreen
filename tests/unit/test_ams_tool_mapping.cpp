@@ -401,8 +401,7 @@ TEST_CASE("Routing provenance: a printer publishing its own table has already an
     backend.stop();
 }
 
-TEST_CASE_METHOD(LVGLTestFixture,
-                 "Routing provenance reaches the preview through AmsState",
+TEST_CASE_METHOD(LVGLTestFixture, "Routing provenance reaches the preview through AmsState",
                  "[ams][tool_mapping][provenance][1422]") {
     // The composition the print-status preview actually calls, not a hand-rolled
     // mirror of it: the backend's routing and its provenance meeting in

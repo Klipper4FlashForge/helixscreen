@@ -30,8 +30,7 @@ class CfsTestAccess {
     // dispatch_action_script is private; the homing/unwind cases drive it
     // directly because the branch under test is its failure disposition, not
     // the operation that chose the script.
-    static AmsError dispatch_action_script(helix::printer::AmsBackendCfs& b,
-                                           std::string gcode) {
+    static AmsError dispatch_action_script(helix::printer::AmsBackendCfs& b, std::string gcode) {
         return b.dispatch_action_script(std::move(gcode));
     }
 

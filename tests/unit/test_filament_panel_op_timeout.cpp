@@ -49,12 +49,11 @@
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "ams_types.h"
+#include "filament_op_router.h"
 #include "tool_state.h"
 
 #include <lvgl.h>
 #include <memory>
-
-#include "filament_op_router.h"
 
 #include "../catch_amalgamated.hpp"
 
@@ -449,8 +448,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "a later operation is not eaten by a stale a
 // The home confirmation is not the preheat's passenger
 // ============================================================================
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "a backend that heats for us still gets the home confirmation",
+TEST_CASE_METHOD(LVGLUITestFixture, "a backend that heats for us still gets the home confirmation",
                  "[ui_integration][filament][homing][1494]") {
     // A cold, unhomed toolhead on a backend that heats on load. "Do we preheat?"
     // and "do we ask about homing?" are independent questions about that state,

@@ -1052,8 +1052,6 @@ include/tool_state.h
 include/ui_icon.h
 src/print/print_history_manager.cpp
 src/printer/ams_backend_cfs.cpp
-src/printer/ams_backend_happy_hare.cpp
-src/printer/ams_subscription_backend.cpp
 src/printer/filament_mapper.cpp
 src/system/pwm_sound_backend.cpp
 src/system/update_checker.cpp
