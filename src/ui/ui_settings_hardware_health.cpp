@@ -125,9 +125,7 @@ void HardwareHealthOverlay::on_activate() {
     populate_hardware_issues();
 }
 
-void HardwareHealthOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-
+void HardwareHealthOverlay::on_deactivating(DeactivateReason) {
     // Clean up any open modal dialog
     if (hardware_save_dialog_) {
         helix::ui::modal_hide(hardware_save_dialog_);

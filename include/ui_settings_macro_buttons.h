@@ -140,11 +140,6 @@ class MacroButtonsOverlay : public OverlayBase {
      */
     void on_activate() override;
 
-    /**
-     * @brief Called when overlay is being hidden
-     */
-    void on_deactivate() override;
-
     //
     // === Event Handlers (public for static callbacks) ===
     //

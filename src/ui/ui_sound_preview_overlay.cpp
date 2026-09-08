@@ -94,8 +94,7 @@ void SoundPreviewOverlay::on_activate() {
     populate_buttons();
 }
 
-void SoundPreviewOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
+void SoundPreviewOverlay::on_deactivating(DeactivateReason) {
     clear_buttons();
 }
 

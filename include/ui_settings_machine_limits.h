@@ -157,7 +157,7 @@ class MachineLimitsOverlay : public OverlayBase {
     /**
      * @brief Called when overlay is being hidden
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     //
     // === Accessors ===

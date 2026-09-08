@@ -145,8 +145,7 @@ void TimelapseInstallOverlay::on_activate() {
     start_wizard();
 }
 
-void TimelapseInstallOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
+void TimelapseInstallOverlay::on_deactivating(DeactivateReason) {
     spdlog::debug("[{}] Deactivated", get_name());
     wizard_active_ = false;
 }

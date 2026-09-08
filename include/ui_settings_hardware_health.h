@@ -125,7 +125,7 @@ class HardwareHealthOverlay : public OverlayBase {
      *
      * Cleans up any open modal dialogs.
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     //
     // === Initialization ===

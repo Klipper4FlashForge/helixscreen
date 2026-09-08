@@ -151,7 +151,7 @@ class HistoryListPanel : public OverlayBase {
     /**
      * @brief Called when panel is hidden
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     //
     // === Public API ===

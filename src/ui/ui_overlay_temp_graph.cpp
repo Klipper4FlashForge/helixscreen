@@ -260,9 +260,7 @@ void TempGraphOverlay::on_activate() {
                   static_cast<int>(mode_));
 }
 
-void TempGraphOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-
+void TempGraphOverlay::on_deactivating(DeactivateReason) {
     // Mirror the bind() calls in on_activate() — the icon widgets themselves
     // survive (cached_overlay_ persists across pushes), but printer_state_ and
     // the underlying subject lifetimes are only guaranteed valid while active.

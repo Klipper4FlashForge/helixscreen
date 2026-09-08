@@ -86,11 +86,6 @@ class TelemetryDataOverlay : public OverlayBase {
      */
     void on_activate() override;
 
-    /**
-     * @brief Called when overlay is being hidden
-     */
-    void on_deactivate() override;
-
     //
     // === Public Interface ===
     //

@@ -301,18 +301,15 @@ void MotionPanel::on_activate() {
     }
 }
 
-void MotionPanel::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void MotionPanel::on_deactivating(DeactivateReason reason) {
+    spdlog::debug("[{}] on_deactivating({})", get_name(), deactivate_reason_name(reason));
 
-    // OverlayBase::on_deactivate() invalidates lifetime_, dropping any
-    // in-flight ack callback — fully reset the coalescer so it can't get
-    // stuck in_flight forever, and re-arm the edge warnings.
+    // The base invalidates lifetime_ on the way out of this hook, dropping any
+    // in-flight ack callback — fully reset the coalescer so it can't get stuck
+    // in_flight forever, and re-arm the edge warnings.
     jog_coalescer_.reset();
     x_edge_warned_ = false;
     y_edge_warned_ = false;
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 void MotionPanel::on_ui_destroyed() {

@@ -490,11 +490,6 @@ class FilamentPanel : public PanelBase {
     lv_obj_t* load_warning_dialog_ = nullptr;
     lv_obj_t* unload_warning_dialog_ = nullptr;
 
-    /// Expires the load/unload warning dialogs' callbacks when this panel is
-    /// destroyed via StaticPanelRegistry (soft restart, printer switch,
-    /// shutdown). Panels are not OverlayBase, so the guard lives here.
-    helix::AsyncLifetimeGuard lifetime_;
-
     // Temperature graph (managed by TemperatureService)
     TemperatureService* temp_control_panel_ = nullptr;
 

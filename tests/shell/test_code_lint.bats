@@ -1080,3 +1080,91 @@ check_backend_single_test_friend() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"no friend declaration"* ]]
 }
+# --- No on_deactivate() overrides on panels and overlays ---
+# ViewLifecycleBase makes on_deactivate(DeactivateReason) final and dispatches to
+# on_deactivating(reason), so a subclass re-declaring the no-argument spelling
+# overrides nothing: it compiles, it is never called, and the work it meant to do
+# silently stops happening. PanelWidget is a separate hierarchy with its own
+# on_deactivate() hook and keeps the name.
+
+check_no_on_deactivate_overrides() {
+    local hits=""
+    local file found
+    while IFS= read -r file; do
+        # The widget hierarchy, by directory and by the base it names — an
+        # implementation file mentions PanelWidget only via its own header.
+        case "$file" in */panel_widgets/*) continue ;; esac
+        grep -q 'PanelWidget' "$file" && continue
+        found=$(grep -nE '(\bvoid[[:space:]]+on_deactivate[[:space:]]*\(\)|::on_deactivate[[:space:]]*\(\))' "$file")
+        [ -n "$found" ] && hits+="${file}:${found}"$'\n'
+    done < <(grep -rl 'on_deactivate' "$@" --include='*.h' --include='*.cpp' 2>/dev/null)
+
+    if [ -n "$hits" ]; then
+        echo "on_deactivate() is final on ViewLifecycleBase — override"
+        echo "on_deactivating(DeactivateReason) instead. Offending sites:"
+        echo "$hits"
+        return 1
+    fi
+    return 0
+}
+
+@test "no panel or overlay declares a no-argument on_deactivate() override" {
+    run check_no_on_deactivate_overrides src include
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the on_deactivate gate fires on a reintroduced override" {
+    local dir="${BATS_TEST_TMPDIR}/reintroduced"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_thing.h" <<'EOF'
+class ThingOverlay : public OverlayBase {
+    void on_deactivate() override;
+};
+EOF
+
+    run check_no_on_deactivate_overrides "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"on_deactivating(DeactivateReason)"* ]]
+}
+
+@test "the on_deactivate gate fires on an out-of-line definition" {
+    local dir="${BATS_TEST_TMPDIR}/outofline"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_thing.cpp" <<'EOF'
+void ThingOverlay::on_deactivate() {
+    stop_scanning();
+}
+EOF
+
+    run check_no_on_deactivate_overrides "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ui_overlay_thing.cpp"* ]]
+}
+
+@test "the on_deactivate gate stays quiet on the hook, PanelWidget and prose" {
+    local dir="${BATS_TEST_TMPDIR}/quiet"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_migrated.h" <<'EOF'
+/// Fires when the overlay is popped; on_deactivate() reaches this via the base.
+class MigratedOverlay : public OverlayBase {
+  protected:
+    void on_deactivating(DeactivateReason reason) override;
+};
+EOF
+    cat > "$dir/clock_widget.h" <<'EOF'
+class ClockWidget : public PanelWidget {
+    void on_deactivate() override;
+};
+EOF
+    cat > "$dir/panel_lifecycle.h" <<'EOF'
+class ViewLifecycleBase : public IPanelLifecycle {
+  public:
+    void on_deactivate(DeactivateReason reason) final;
+};
+EOF
+
+    run check_no_on_deactivate_overrides "$dir"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}

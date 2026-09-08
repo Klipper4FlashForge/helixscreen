@@ -436,14 +436,11 @@ void ConsolePanel::on_activate() {
     subscribe_to_gcode_responses();
 }
 
-void ConsolePanel::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void ConsolePanel::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     // Unsubscribe from real-time updates
     unsubscribe_from_gcode_responses();
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 void ConsolePanel::on_ui_destroyed() {

@@ -286,26 +286,25 @@ void ZOffsetCalibrationPanel::on_activate() {
     }
 }
 
-void ZOffsetCalibrationPanel::on_deactivate() {
-    spdlog::debug("[ZOffsetCal] on_deactivate()");
+void ZOffsetCalibrationPanel::on_deactivating(DeactivateReason reason) {
+    spdlog::debug("[ZOffsetCal] on_deactivating({})", deactivate_reason_name(reason));
 
-    // If calibration is in progress, abort it — but NOT during app shutdown
-    // (shutdown calls on_deactivate on all overlays; we don't want to cancel
-    // an in-progress calibration just because the UI is restarting)
+    // A run in progress is abandoned only when the user walks away from it.
+    // Shutdown and hot-reload take the UI out from under a calibration that
+    // the printer is still executing; cancelling on those would abort a run
+    // nobody asked to stop.
     if (state_ == State::ADJUSTING || state_ == State::PROBING) {
-        if (!NavigationManager::instance().is_shutting_down()) {
+        if (reason == DeactivateReason::NavigateAway) {
             spdlog::info("[ZOffsetCal] Aborting calibration on deactivate");
             send_abort(); // send_abort() calls turn_off_bed_if_needed()
         } else {
-            spdlog::info("[ZOffsetCal] Skipping abort during app shutdown");
+            spdlog::info("[ZOffsetCal] Leaving calibration running ({})",
+                         deactivate_reason_name(reason));
         }
     } else {
         // Safety net: turn off bed if navigating away after completion/error
         turn_off_bed_if_needed();
     }
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 void ZOffsetCalibrationPanel::cleanup() {

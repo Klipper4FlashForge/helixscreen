@@ -407,14 +407,6 @@ void ProbeOverlay::on_activate() {
     load_config_values();
 }
 
-void ProbeOverlay::on_deactivate() {
-    spdlog::debug("[Probe] Deactivated");
-}
-
-void ProbeOverlay::cleanup() {
-    spdlog::trace("[Probe] Cleanup");
-}
-
 void ProbeOverlay::set_api(IMoonrakerAPI* api) {
     api_ = api;
 }

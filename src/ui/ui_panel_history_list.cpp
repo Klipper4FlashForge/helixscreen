@@ -337,8 +337,8 @@ void HistoryListPanel::on_activate() {
     }
 }
 
-void HistoryListPanel::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void HistoryListPanel::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     is_active_ = false;
 
@@ -381,9 +381,6 @@ void HistoryListPanel::on_deactivate() {
     if (list_view_) {
         list_view_->reset();
     }
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 // ============================================================================

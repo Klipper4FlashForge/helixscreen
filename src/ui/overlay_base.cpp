@@ -32,15 +32,15 @@ void OverlayBase::on_activate() {
     visible_ = true;
 }
 
-void OverlayBase::on_deactivate() {
-    spdlog::trace("[OverlayBase] on_deactivate() - {}", get_name());
-    lifetime_.invalidate();
+void OverlayBase::on_view_hidden() {
+    spdlog::trace("[OverlayBase] deactivated - {}", get_name());
     visible_ = false;
 }
 
 void OverlayBase::cleanup() {
     spdlog::trace("[OverlayBase] cleanup() - {}", get_name());
     lifetime_.invalidate();
+    object_lifetime_.invalidate();
     cleanup_called_ = true;
     visible_ = false;
 }
@@ -118,7 +118,7 @@ bool OverlayBase::rebuild() {
 
     bool was_visible = visible_;
 
-    on_deactivate(); // invalidates lifetime_, clears visible_
+    on_deactivate(DeactivateReason::Rebuild); // invalidates lifetime_, clears visible_
 
     lv_obj_t* old_root = overlay_root_;
     overlay_root_ = nullptr;

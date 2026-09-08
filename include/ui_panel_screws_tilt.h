@@ -97,7 +97,7 @@ class ScrewsTiltPanel : public OverlayBase {
      *
      * Aborts probing if in progress, clears results.
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     /**
      * @brief Clean up resources for async-safe destruction

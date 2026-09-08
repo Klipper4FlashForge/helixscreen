@@ -190,10 +190,6 @@ void MaterialTempsOverlay::on_activate() {
     populate_material_list();
 }
 
-void MaterialTempsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // LIST VIEW
 // ============================================================================

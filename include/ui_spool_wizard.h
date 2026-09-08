@@ -50,7 +50,7 @@ class SpoolWizardOverlay : public OverlayBase {
         return "SpoolWizard";
     }
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     // ========== Step navigation (public for testing) ==========
     Step current_step() const {

@@ -257,9 +257,7 @@ void FanControlOverlay::on_activate() {
     spdlog::trace("[{}] Activated", get_name());
 }
 
-void FanControlOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-
+void FanControlOverlay::on_deactivating(DeactivateReason) {
     // Unsubscribe from all observers
     fans_observer_.reset();
     anim_settings_observer_.reset();

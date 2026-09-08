@@ -246,8 +246,7 @@ void PrintTuneOverlay::on_activate() {
     spdlog::debug("[PrintTuneOverlay] Activated - synced to state");
 }
 
-void PrintTuneOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
+void PrintTuneOverlay::on_deactivating(DeactivateReason) {
     spdlog::debug("[PrintTuneOverlay] Deactivated");
 }
 

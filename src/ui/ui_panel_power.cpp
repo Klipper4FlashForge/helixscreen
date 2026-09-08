@@ -135,7 +135,7 @@ void PowerPanel::fetch_devices() {
     std::snprintf(status_buf_, sizeof(status_buf_), "%s", lv_tr("Loading devices..."));
     lv_subject_copy_string(&status_subject_, status_buf_);
 
-    auto token = lifetime_.token();
+    auto token = object_lifetime_.token();
     api_->get_power_devices(
         [this, token](const std::vector<PowerDevice>& devices) {
             if (token.expired())
@@ -305,7 +305,7 @@ void PowerPanel::handle_device_toggle(const std::string& device, bool power_on) 
         EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::NORMAL);
     }
 
-    auto token = lifetime_.token();
+    auto token = object_lifetime_.token();
     api_->set_device_power(
         device, action,
         [device, power_on]() {
@@ -473,13 +473,13 @@ void PowerPanel::populate_device_chips() {
     if (!chip_container_)
         return;
 
-    // Defer rebuild (#80) AND use safe_clean_children (#776): lifetime_.defer moves
+    // Defer rebuild (#80) AND use safe_clean_children (#776): object_lifetime_.defer moves
     // the rebuild off the click handler stack (avoids deleting the clicked chip during
     // its own event), and safe_clean_children escapes UpdateQueue::process_pending()
     // so sync lv_obj_clean() can't corrupt LVGL's event linked list.
     if (!chips_rebuild_pending_) {
         chips_rebuild_pending_ = true;
-        lifetime_.defer("PowerPanel::populate_device_chips", [this]() {
+        object_lifetime_.defer("PowerPanel::populate_device_chips", [this]() {
             chips_rebuild_pending_ = false;
             if (chip_container_)
                 populate_device_chips_impl();

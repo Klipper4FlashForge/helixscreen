@@ -132,7 +132,7 @@ bool PanelBase::rebuild() {
 
     bool was_hidden = lv_obj_has_flag(panel_, LV_OBJ_FLAG_HIDDEN);
 
-    on_deactivate();
+    on_deactivate(DeactivateReason::Rebuild);
     cleanup_observers();
 
     lv_obj_t* old_widget = panel_;

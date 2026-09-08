@@ -191,7 +191,7 @@ class PrintTuneOverlay : public OverlayBase {
     /**
      * @brief Called when overlay is being hidden
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
   private:
     void init_subjects_internal();
