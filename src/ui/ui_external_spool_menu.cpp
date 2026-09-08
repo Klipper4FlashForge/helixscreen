@@ -36,7 +36,7 @@ void show_external_spool_editor(lv_obj_t* parent_screen, const ExternalSpoolMenu
         return;
     }
 
-    auto ext = ::AmsState::instance().get_external_spool_info();
+    auto ext = helix::AmsState::instance().get_external_spool_info();
     SlotInfo initial = ext.value_or(SlotInfo{});
     initial.slot_index = EXTERNAL_SPOOL_SLOT;
     initial.global_index = EXTERNAL_SPOOL_SLOT;
@@ -45,7 +45,7 @@ void show_external_spool_editor(lv_obj_t* parent_screen, const ExternalSpoolMenu
         parent_screen, EXTERNAL_SPOOL_SLOT, initial, get_moonraker_api(),
         [](const AmsEditOverlay::EditResult& result) {
             if (result.saved) {
-                ::AmsState::instance().commit_external_spool_edit(result.slot_info);
+                helix::AmsState::instance().commit_external_spool_edit(result.slot_info);
                 NOTIFY_INFO(lv_tr("External spool updated"));
             }
         },
@@ -95,8 +95,8 @@ void show_external_spool_menu(lv_obj_t* parent_screen, lv_obj_t* anchor_widget,
                 // "Select a filament slot" — the dead end this menu exists to
                 // remove. Owned here so no surface can omit it.
                 std::function<void()> dispatch = h.on_load ? h.on_load : [] {
-                    execute_filament_load(::AmsState::instance().get_backend(), EXTERNAL_SPOOL_SLOT,
-                                          "[ExternalSpoolMenu]");
+                    execute_filament_load(helix::AmsState::instance().get_backend(),
+                                          EXTERNAL_SPOOL_SLOT, "[ExternalSpoolMenu]");
                 };
                 if (h.toggle) {
                     h.toggle->ensure_engaged_then(std::move(dispatch));
@@ -113,7 +113,7 @@ void show_external_spool_menu(lv_obj_t* parent_screen, lv_obj_t* anchor_widget,
                 if (h.on_unload) {
                     h.on_unload();
                 } else {
-                    AmsBackend* backend = ::AmsState::instance().get_backend();
+                    AmsBackend* backend = helix::AmsState::instance().get_backend();
                     AmsSystemInfo info;
                     if (backend) {
                         info = backend->get_system_info();
@@ -131,7 +131,7 @@ void show_external_spool_menu(lv_obj_t* parent_screen, lv_obj_t* anchor_widget,
                 // The gate was decided when the menu opened; a print or an AMS op
                 // can start while it sits there. execute_filament_purge() has no
                 // guard of its own, so re-ask before extruding.
-                AmsBackend* backend = ::AmsState::instance().get_backend();
+                AmsBackend* backend = helix::AmsState::instance().get_backend();
                 AmsSystemInfo info;
                 if (backend) {
                     info = backend->get_system_info();
