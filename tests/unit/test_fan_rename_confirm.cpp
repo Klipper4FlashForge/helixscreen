@@ -15,11 +15,11 @@
 #include "ui_settings_fans.h"
 
 #include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/log_capture.h"
 #include "app_globals.h"
 #include "config.h"
 #include "printer_state.h"
 
-#include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/spdlog.h>
 
 #include <lvgl.h>
@@ -72,55 +72,6 @@ class ScopedFanNameKey {
   private:
     std::string key_;
     std::string original_;
-};
-
-/// RAII spdlog capture, so "a failed rename says so in the log" is an assertion
-/// rather than an intention. Mirrors the local helper several other suites keep.
-class LogCapture {
-  public:
-    LogCapture() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256)) {
-        logger_ = spdlog::default_logger();
-        prev_level_ = logger_->level();
-        sink_->set_level(spdlog::level::trace);
-        logger_->sinks().push_back(sink_);
-        logger_->set_level(spdlog::level::trace);
-    }
-
-    ~LogCapture() {
-        auto& sinks = logger_->sinks();
-        for (auto it = sinks.begin(); it != sinks.end(); ++it) {
-            if (*it == sink_) {
-                sinks.erase(it);
-                break;
-            }
-        }
-        logger_->set_level(prev_level_);
-    }
-
-    LogCapture(const LogCapture&) = delete;
-    LogCapture& operator=(const LogCapture&) = delete;
-
-    /// True when some captured line contains every one of @p needles.
-    bool has_line_with(const std::vector<std::string>& needles) const {
-        for (const auto& line : sink_->last_formatted(256)) {
-            bool all = true;
-            for (const auto& needle : needles) {
-                if (line.find(needle) == std::string::npos) {
-                    all = false;
-                    break;
-                }
-            }
-            if (all) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-  private:
-    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
-    std::shared_ptr<spdlog::logger> logger_;
-    spdlog::level::level_enum prev_level_;
 };
 
 /// The textarea inside whichever modal is currently on top of the stack.
@@ -250,7 +201,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan rename bail-outs name themselves in the
     get_printer_state().init_fans({kFanObject});
 
     SECTION("a confirm with nothing pending is distinguishable from a rename") {
-        LogCapture log;
+        helix::LogCapture log;
         overlay.confirm_rename();
         REQUIRE(log.has_line_with({"no fan pending"}));
     }
@@ -264,7 +215,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan rename bail-outs name themselves in the
         // name to apply.
         lv_obj_delete(input);
 
-        LogCapture log;
+        helix::LogCapture log;
         overlay.confirm_rename();
         REQUIRE(log.has_line_with({"Rename input not found", kFanObject}));
     }
@@ -272,7 +223,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan rename bail-outs name themselves in the
     SECTION("a cancel is distinguishable from a failed confirm") {
         overlay.handle_fan_rename(kFanObject, "Soc Fan");
 
-        LogCapture log;
+        helix::LogCapture log;
         overlay.cancel_rename();
         REQUIRE(log.has_line_with({"Rename modal dismissed", kFanObject}));
     }
@@ -297,7 +248,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan rename logs the persist step and unknow
         REQUIRE(input != nullptr);
         lv_textarea_set_text(input, "Logged SoC Fan");
 
-        LogCapture log;
+        helix::LogCapture log;
         overlay.confirm_rename();
         REQUIRE(log.has_line_with({"Persisted name", "Logged SoC Fan", kFanObject}));
     }
@@ -313,7 +264,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan rename logs the persist step and unknow
         REQUIRE(input != nullptr);
         lv_textarea_set_text(input, "Ghost Fan");
 
-        LogCapture log;
+        helix::LogCapture log;
         overlay.confirm_rename();
         REQUIRE(log.has_line_with({"not a discovered fan", kGhost}));
 
