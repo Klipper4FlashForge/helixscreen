@@ -358,7 +358,8 @@ lv_indev_t* DisplayBackendFbdev::create_input_pointer() {
                     // calibration (e.g., SonicPad gt9xxnew_ts).
                     needs_calibration_ = true;
                     spdlog::warn("[Fbdev Backend] ABS range is zero — LVGL cannot map "
-                                 "coordinates to display ({}x{}), forcing calibration",
+                                 "coordinates to display ({}x{}), panel needs affine "
+                                 "calibration",
                                  screen_width_, screen_height_);
                 } else if (!needs_calibration_ &&
                            helix::has_transposed_abs_range(abs_x.maximum, abs_y.maximum,
@@ -383,7 +384,7 @@ lv_indev_t* DisplayBackendFbdev::create_input_pointer() {
                     // resolution-independent and LVGL maps them correctly.
                     needs_calibration_ = true;
                     spdlog::warn("[Fbdev Backend] ABS range ({},{}) mismatches display "
-                                 "({}x{}) — forcing calibration",
+                                 "({}x{}) — panel needs affine calibration",
                                  abs_x.maximum, abs_y.maximum, screen_width_, screen_height_);
                 }
             } else {
