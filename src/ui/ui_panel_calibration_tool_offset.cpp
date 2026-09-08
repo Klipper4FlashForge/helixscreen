@@ -357,12 +357,10 @@ bool ToolOffsetCalibrationPanel::abort_in_progress_calibration() {
     }
     spdlog::info("[ToolOffsetCal] Aborting calibration (M112 + firmware restart)");
 
-    // Expected reconnect: keep the shutdown/disconnect modals quiet.
-    EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::LONG);
+    // E-stop + firmware restart: klippy comes back, so this is an expected
+    // reconnect, not a fault. Same call as the PID and input-shaper aborts.
+    helix::ui::begin_expected_klippy_restart("Firmware restarting...");
     auto* api = get_moonraker_api();
-    if (api) {
-        api->suppress_disconnect_modal(15000);
-    }
 
     // Drop the in-flight execute_gcode callbacks: they would report the M112
     // shutdown as the run's failure.
