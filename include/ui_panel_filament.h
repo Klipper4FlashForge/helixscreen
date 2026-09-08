@@ -568,10 +568,28 @@ class FilamentPanel : public PanelBase {
     // needs no separate Dock control.
     lv_subject_t selected_tool_subject_;
     ObserverGuard selected_tool_observer_;
+    /// Death signal for the subjects this panel owns, for observers OUTSIDE it.
+    ///
+    /// filament_selected_tool is published here and watched by every tool_chip
+    /// on the tool row. ~FilamentPanel() frees subjects_ but does not delete
+    /// those widgets - they belong to the screen and outlive the panel - so a
+    /// chip's guard must hold this token to learn the subject is gone. Without
+    /// it, the chip's LV_EVENT_DELETE calls lv_observer_remove() on a freed
+    /// subject (prestonbrown/helixscreen#705's mechanism).
+    SubjectLifetime subjects_lifetime_ = std::make_shared<bool>(true);
     [[nodiscard]] int selected_tool_index() const;
     /// Point the selection at the active tool. Preserves a still-valid choice
     /// unless @p force — the machine must not overwrite a deliberate pick.
     void seed_selected_tool(bool force = false);
+
+  public:
+    /// @see subjects_lifetime_ - hand this to observe_*() when watching a
+    /// subject this panel owns from a widget that can outlive it.
+    [[nodiscard]] SubjectLifetime get_subjects_lifetime() const {
+        return subjects_lifetime_;
+    }
+
+  private:
 
     void update_multi_filament_card_visibility();
     void apply_left_column_sizing(bool external_spool_mode);

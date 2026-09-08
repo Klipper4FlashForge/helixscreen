@@ -18,6 +18,7 @@
 #include "ui_gradient_canvas.h"
 #include "ui_icon.h"
 #include "ui_severity_card.h"
+#include "ui_tool_chip.h"
 #include "ui_switch.h"
 #include "ui_temp_display.h"
 #include "ui_text_input.h"
@@ -137,6 +138,11 @@ void LVGLUITestFixture::register_widgets() {
     ui_bed_mesh_register();
     ui_gcode_viewer_register();
     ui_gradient_canvas_register();
+    // One chip per tool on the filament panel's tool row. Registered here
+    // because it is created by a <repeat> in filament_panel.xml: an
+    // unregistered widget makes that repeat produce nothing at all, so a test
+    // asking about the row sees an empty one rather than an error.
+    ui_tool_chip_register_widget();
     // Grouped-list card used by every settings-style overlay
     setting_group_register();
 

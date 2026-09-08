@@ -5,6 +5,8 @@
 
 #include "lvgl/lvgl.h"
 
+#include "ui_observer_guard.h" // SubjectLifetime
+
 /**
  * @file ui_tool_chip.h
  * @brief One tool's card in the filament panel's tool row.
@@ -62,6 +64,20 @@
  * Call once during application startup, before any XML referencing it is parsed.
  */
 void ui_tool_chip_register_widget();
+
+/**
+ * @brief Tell chips how long UI_TOOL_CHIP_SELECTED_SUBJECT lives.
+ *
+ * The subject is resolved by name, so the chip cannot know which object
+ * published it - and that object (FilamentPanel) frees it in its destructor
+ * without deleting the chips, which belong to the screen. The publisher calls
+ * this with its own token in init_subjects() and again, with a fresh one, once
+ * the subject is gone; without it a chip's LV_EVENT_DELETE would call
+ * lv_observer_remove() on freed memory (prestonbrown/helixscreen#705).
+ *
+ * A chip built while no lifetime is set simply does not observe the selection.
+ */
+void ui_tool_chip_set_selection_lifetime(SubjectLifetime lifetime);
 
 /**
  * @brief True when @p obj is a tool_chip.
