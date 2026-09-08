@@ -5,6 +5,7 @@
 
 #include "ui_error_reporting.h"
 
+#include "ams_bypass_policy.h"
 #include "ams_state.h"
 #include "app_globals.h"
 #include "lvgl/src/others/translation/lv_translation.h"
@@ -19,6 +20,26 @@ namespace helix::ui {
 BypassToggleController::~BypassToggleController() {
     cancel_pending();
 }
+
+namespace {
+
+/// The static half of "may this machine's bypass be driven at all", toasting the
+/// refusal. bypass_toggle_offered() is the rule; both the disable path in
+/// toggle() and the enable path in begin_engage() ask it here so neither can
+/// answer it differently from the surfaces that decide whether to draw a toggle.
+bool bypass_toggle_allowed(const AmsSystemInfo& info) {
+    if (helix::bypass_toggle_offered(helix::bypass_available_for(info.supports_bypass),
+                                     info.has_hardware_bypass_sensor)) {
+        return true;
+    }
+    // Only the sensor case can realistically be reached: a machine with no
+    // bypass at all draws no toggle to press.
+    NOTIFY_WARNING(lv_tr("Bypass controlled by sensor"));
+    spdlog::warn("[BypassToggle] Blocked — bypass not drivable on this machine");
+    return false;
+}
+
+} // namespace
 
 void BypassToggleController::toggle() {
     spdlog::info("[BypassToggle] Toggle requested");
@@ -41,10 +62,7 @@ void BypassToggleController::toggle() {
         return;
     }
 
-    AmsSystemInfo info = backend->get_system_info();
-    if (info.has_hardware_bypass_sensor) {
-        NOTIFY_WARNING(lv_tr("Bypass controlled by sensor"));
-        spdlog::warn("[BypassToggle] Blocked — hardware sensor controls bypass");
+    if (!bypass_toggle_allowed(backend->get_system_info())) {
         return;
     }
 
@@ -103,9 +121,7 @@ bool BypassToggleController::begin_engage() {
     }
 
     AmsSystemInfo info = backend->get_system_info();
-    if (info.has_hardware_bypass_sensor) {
-        NOTIFY_WARNING(lv_tr("Bypass controlled by sensor"));
-        spdlog::warn("[BypassToggle] Blocked — hardware sensor controls bypass");
+    if (!bypass_toggle_allowed(info)) {
         return false;
     }
 

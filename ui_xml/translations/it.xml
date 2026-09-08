@@ -694,6 +694,7 @@
   <translation tag="Different filament?" it="Filamento diverso?"/>
   <translation tag="Digital Clock" it="Orologio digitale"/>
   <translation tag="Disable" it="Disabilita"/>
+  <translation tag="Disable Bypass" it="Disabilita bypass"/>
   <translation tag="Disable Motors?" it="Disabilitare motori?"/>
   <translation tag="Disable the security PIN" it="Disabilita il PIN di sicurezza"/>
   <translation tag="Disabling motors..." it="Disabilitazione motori..."/>
@@ -769,6 +770,7 @@
   <translation tag="Empty slots disable the associated functionality" it="Gli slot vuoti disabilitano le funzionalità associate"/>
   <translation tag="Enable" it="Abilita"/>
   <translation tag="Enable Brush Wipe" it="Abilita la pulizia con spazzola"/>
+  <translation tag="Enable Bypass" it="Abilita bypass"/>
   <translation tag="Enable Bypass Controls" it="Abilita controlli bypass"/>
   <translation tag="Enable Monitoring" it="Abilita monitoraggio"/>
   <translation tag="Enable Purge" it="Abilita lo spurgo"/>

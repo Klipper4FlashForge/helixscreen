@@ -14,6 +14,7 @@
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/print_state_test_drivers.h"
 #include "ams_backend_mock.h"
+#include "ams_bypass_policy.h"
 #include "ams_state.h"
 #include "ams_types.h"
 #include "app_globals.h"
@@ -393,4 +394,17 @@ TEST_CASE("ensure_engaged_then: cancel_pending drops the continuation", "[ams][b
     fx.controller.toggle();
     CHECK(fx.backend->is_bypass_active());
     CHECK(ran == 0);
+}
+
+TEST_CASE("bypass_toggle_offered: the two static reasons a toggle is pointless",
+          "[ams][bypass-home]") {
+    // Every surface that draws a bypass control asks this before drawing it, and
+    // BypassToggleController refuses on the same answer — so a control offered
+    // here is one the controller will actually act on.
+    CHECK(helix::bypass_toggle_offered(/*available=*/true, /*has_hardware_sensor=*/false));
+    // A hardware sensor owns the bypass; the firmware ignores the command.
+    CHECK_FALSE(helix::bypass_toggle_offered(true, /*has_hardware_sensor=*/true));
+    // No bypass on this machine at all.
+    CHECK_FALSE(helix::bypass_toggle_offered(/*available=*/false, false));
+    CHECK_FALSE(helix::bypass_toggle_offered(false, true));
 }

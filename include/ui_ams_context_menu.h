@@ -81,7 +81,9 @@ class AmsContextMenu : public ContextMenu {
         EDIT,             ///< Edit slot properties
         CLEAR_SPOOL,      ///< Clear assigned spool from empty slot
         SPOOLMAN,         ///< Assign Spoolman spool
-        SCAN_QR           ///< Scan QR code to assign spool
+        SCAN_QR,          ///< Scan QR code to assign spool
+        PURGE,            ///< Purge the current filament through the nozzle
+        TOGGLE_BYPASS     ///< Engage or disengage bypass (external spool only)
     };
 
     using ActionCallback = std::function<void(MenuAction action, int slot_index)>;
@@ -112,14 +114,19 @@ class AmsContextMenu : public ContextMenu {
     /**
      * @brief Show context menu for external spool (bypass/direct feed)
      *
-     * Shows a reduced menu with only EDIT and CLEAR_SPOOL actions
-     * (no LOAD/UNLOAD/EJECT since external spool is not managed by backend).
+     * Shows the bypass spool's own actions: the bypass toggle, Load, Unload and
+     * Purge against EXTERNAL_SPOOL_SLOT, plus the spool bookkeeping. The lane
+     * dropdowns and the cold lane ops do not apply and stay hidden.
      *
      * @param parent Parent screen for the menu
      * @param anchor_widget Widget to position menu near (for click point)
+     * @param offer_toggle Whether this surface can drive bypass. False hides the
+     *        Enable/Disable Bypass entry — a visible entry the surface cannot
+     *        act on would be a button that silently does nothing.
      * @return true if menu was shown successfully
      */
-    bool show_for_external_spool(lv_obj_t* parent, lv_obj_t* anchor_widget);
+    bool show_for_external_spool(lv_obj_t* parent, lv_obj_t* anchor_widget,
+                                 bool offer_toggle = true);
 
     /**
      * @brief Get slot index the menu is currently shown for
@@ -168,6 +175,9 @@ class AmsContextMenu : public ContextMenu {
     // are set in on_created() immediately before the menu is shown.
     static lv_subject_t slot_is_loaded_subject_; ///< 1 = loaded (Unload enabled), 0 = not loaded
     static lv_subject_t slot_can_load_subject_;  ///< 1 = has filament (Load enabled), 0 = empty
+    /// 1 = Purge enabled. External-spool menu only; the lane menu has no Purge
+    /// entry, so nothing binds this there.
+    static lv_subject_t slot_can_purge_subject_;
     /// 1 = this backend's load/unload mount and unmount a tool, so the menu
     /// shows the tool wording instead of the filament wording.
     static lv_subject_t slot_mounts_tool_subject_;
@@ -203,7 +213,8 @@ class AmsContextMenu : public ContextMenu {
     };
     UnloadMode unload_mode_ = UnloadMode::Unavailable;
 
-    bool external_spool_mode_ = false; ///< True when showing menu for external spool (bypass)
+    bool external_spool_mode_ = false;  ///< True when showing menu for external spool (bypass)
+    bool external_offer_toggle_ = true; ///< show_for_external_spool()'s offer_toggle
 
     // === Event Handlers ===
     void handle_load();
@@ -212,6 +223,8 @@ class AmsContextMenu : public ContextMenu {
     void handle_gate_check();
     void handle_edit();
     void handle_clear_spool();
+    void handle_purge();
+    void handle_bypass_toggle();
     void handle_spoolman();
     void handle_scan_qr();
     void handle_tool_changed();
@@ -387,6 +400,8 @@ class AmsContextMenu : public ContextMenu {
     static void on_gate_check_cb(lv_event_t* e);
     static void on_edit_cb(lv_event_t* e);
     static void on_clear_spool_cb(lv_event_t* e);
+    static void on_purge_cb(lv_event_t* e);
+    static void on_bypass_toggle_cb(lv_event_t* e);
     static void on_spoolman_cb(lv_event_t* e);
     static void on_scan_qr_cb(lv_event_t* e);
     static void on_tool_changed_cb(lv_event_t* e);

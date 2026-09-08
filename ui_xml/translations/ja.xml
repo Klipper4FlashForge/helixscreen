@@ -694,6 +694,7 @@
   <translation tag="Different filament?" ja="別のフィラメント？"/>
   <translation tag="Digital Clock" ja="デジタル時計"/>
   <translation tag="Disable" ja="無効化"/>
+  <translation tag="Disable Bypass" ja="バイパスを無効化"/>
   <translation tag="Disable Motors?" ja="モーターを無効にしますか？"/>
   <translation tag="Disable the security PIN" ja="セキュリティ PIN を無効化"/>
   <translation tag="Disabling motors..." ja="モーターを無効化中..."/>
@@ -769,6 +770,7 @@
   <translation tag="Empty slots disable the associated functionality" ja="空のスロットは関連機能を無効にします"/>
   <translation tag="Enable" ja="有効化"/>
   <translation tag="Enable Brush Wipe" ja="ブラシワイプを有効化"/>
+  <translation tag="Enable Bypass" ja="バイパスを有効化"/>
   <translation tag="Enable Bypass Controls" ja="バイパスコントロールを有効化"/>
   <translation tag="Enable Monitoring" ja="監視を有効化"/>
   <translation tag="Enable Purge" ja="パージを有効化"/>
