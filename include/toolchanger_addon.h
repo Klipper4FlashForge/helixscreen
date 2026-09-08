@@ -62,7 +62,10 @@ struct Feeder {
 /// `toolchanger.tool_number` when a provider is present.
 struct ToolReading {
     /// 0..N-1 mounted, -1 nothing on the head, -2 the sensors cannot tell.
-    int current_tool = -1;
+    /// nullopt when this frame did not name it. Moonraker republishes only the
+    /// fields that CHANGED, so a frame silent about the carriage is not a frame
+    /// reporting an empty one - the same rule `docks` below is written to.
+    std::optional<int> current_tool;
     /// current_tool == -2. A distinct state from "no tool": the machine does not
     /// KNOW, and acting on a guess would drive the carriage into a dock.
     bool sensor_error = false;

@@ -828,3 +828,46 @@ TEST_CASE("A dock-sensor fault reaches the LIVE half of the loaded signal too",
     tc.feed(json{{"medusahc", {{"operation", "idle"}, {"current_tool", 1}}}});
     CHECK(tc.slot_is_actively_loaded(1));
 }
+
+// ============================================================================
+// Partial status frames
+// ============================================================================
+
+TEST_CASE("A partial medusahc frame leaves the mounted tool alone",
+          "[ams][toolchanger][medusahc]") {
+    ToolChangerHelper tc(4);
+    tc.set_tool_sensor(toolchanger_addon::resolve_tool_sensor(medusahc_discovery()));
+
+    tc.feed(json{{"medusahc", {{"state", "ready"}, {"current_tool", 1}, {"tool_count", 4}}}});
+    REQUIRE(tc.get_current_slot() == 1);
+    REQUIRE(tc.slot_is_actively_loaded(1));
+
+    // Moonraker republishes only the fields that CHANGED, so a frame carrying
+    // the gripper alone says nothing about the carriage.
+    tc.feed(json{{"medusahc", {{"feeder_open", true}}}});
+
+    CHECK(tc.get_current_slot() == 1);
+    CHECK(tc.is_filament_loaded());
+    CHECK(tc.slot_is_actively_loaded(1));
+    CHECK(tc.can_unload_from_toolhead(1));
+}
+
+TEST_CASE("A partial medusahc frame does not empty the mounted tool's slot",
+          "[ams][toolchanger][medusahc]") {
+    ToolChangerHelper tc(4);
+    tc.set_tool_sensor(toolchanger_addon::resolve_tool_sensor(medusahc_discovery()));
+
+    // The mounted tool's own dock reads vacant: that is where the tool came from.
+    tc.feed(json{{"medusahc",
+                  {{"state", "ready"},
+                   {"current_tool", 1},
+                   {"tool0_docked", true},
+                   {"tool1_docked", false},
+                   {"tool2_docked", true},
+                   {"tool3_docked", true}}}});
+    REQUIRE(tc.get_slot_info(1).status == SlotStatus::LOADED);
+
+    tc.feed(json{{"medusahc", {{"feeder_open", true}}}});
+
+    CHECK(tc.get_slot_info(1).status == SlotStatus::LOADED);
+}

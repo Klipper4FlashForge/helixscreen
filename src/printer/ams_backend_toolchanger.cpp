@@ -541,23 +541,29 @@ void AmsBackendToolChanger::apply_tool_sensor_locked(
     }
     sensor_error_ = false;
 
-    const int tool = reading.current_tool;
-    if (system_info_.current_tool != tool) {
-        spdlog::info("{} Dock sensors report tool {} (toolchanger said {})", backend_log_tag(),
-                     tool, system_info_.current_tool);
-    }
-    system_info_.current_tool = tool;
-    int seated_slot = -1;
-    if (tool >= 0) {
-        seated_slot = tool < static_cast<int>(system_info_.tool_to_slot_map.size())
-                          ? system_info_.tool_to_slot_map[static_cast<size_t>(tool)]
-                          : -1;
-        if (seated_slot < 0) {
-            seated_slot = tool;
+    // Only when the frame named the carriage. A delta carrying just the gripper
+    // or the phase says nothing about which tool is on the head, and answering
+    // -1 there withdraws the mounted tool from the unmount gate, its slot status
+    // and the active-slot highlight in one pass.
+    if (reading.current_tool.has_value()) {
+        const int tool = *reading.current_tool;
+        if (system_info_.current_tool != tool) {
+            spdlog::info("{} Dock sensors report tool {} (toolchanger said {})", backend_log_tag(),
+                         tool, system_info_.current_tool);
         }
+        system_info_.current_tool = tool;
+        int seated_slot = -1;
+        if (tool >= 0) {
+            seated_slot = tool < static_cast<int>(system_info_.tool_to_slot_map.size())
+                              ? system_info_.tool_to_slot_map[static_cast<size_t>(tool)]
+                              : -1;
+            if (seated_slot < 0) {
+                seated_slot = tool;
+            }
+        }
+        system_info_.current_slot = seated_slot;
+        system_info_.filament_loaded = (tool >= 0);
     }
-    system_info_.current_slot = seated_slot;
-    system_info_.filament_loaded = (tool >= 0);
 
     // Dock occupancy, when the frame carried any. Merged rather than replaced:
     // Moonraker republishes only changed fields, so a frame naming two docks
