@@ -804,20 +804,18 @@ jobs:
     - name: Fix permissions
       run: chmod +x build/bin/helix-screen build/bin/helix-tests
 
-    # --out is not optional. Tests that shell out print ANSI status to stdout,
-    # and with the report on stdout too the XML comes back complete but
-    # unparseable. The `|| true` is deliberate: a red suite is test-all's job to
-    # report, and these gates still have something to say about the report.
+    # The script owns the --out contract, the tolerance for a red suite, and the
+    # stall watch; the filter comes from the makefile so this job cannot hold a
+    # different one from `make test-vacuous`. The step timeout stays as a
+    # backstop, but SUITE_REPORT_MAX_SECS is set below it so the run that gets
+    # stopped is the one that can say which case it stopped in.
     - name: Produce the shared suite report
       timeout-minutes: 25
+      env:
+        SUITE_REPORT_MAX_SECS: 1200
       run: |
-        # ~[subprocess] and ~[socket_discovery] fork; the child shares the
-        # report file description and its writes interleave with the XML,
-        # producing a structurally corrupt report. See mk/tests.mk.
-        ./build/bin/helix-tests "~[.]~[slow]~[subprocess]~[socket_discovery]" \
-          --reporter xml --success \
-          --out build/suite-report.xml > /dev/null 2>&1 || true
-        test -s build/suite-report.xml
+        scripts/run_suite_report.sh ./build/bin/helix-tests \
+          "$(make -s print-vacuous-filter | tail -1)" build/suite-report.xml
 
     # Cheap, and identical on every shard - only worth running once.
     - name: Assertions that cannot fail
