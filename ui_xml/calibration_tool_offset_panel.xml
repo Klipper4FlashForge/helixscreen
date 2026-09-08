@@ -112,10 +112,10 @@
         </lv_obj>
       </lv_obj>
 
-      <!-- Two fixed footer slots in every state - run action, then save - so
-           nothing moves under the finger. Save turns amber only when a tool
-           carries an offset that is not yet in printer.cfg; that is the one
-           global signal that work would be lost on a restart. -->
+      <!-- Run action, then Save. Save appears only while a tool carries an
+           offset that is not yet in printer.cfg - the one global signal that
+           work would be lost on a restart - exactly as the Controls panel's
+           Save Z-Offset does. -->
       <lv_obj name="tool_cal_actions"
               width="100%" height="content" flex_flow="row" style_pad_all="0" style_pad_gap="#space_sm" style_bg_opa="0"
               style_border_width="0" scrollable="false">
@@ -137,11 +137,6 @@
           <bind_flag_if_eq subject="any_tool_offset_dirty" flag="hidden" ref_value="0"/>
           <!-- Save restarts Klipper; never under a run that is moving the machine. -->
           <bind_state_if_eq subject="tool_cal_active" state="disabled" ref_value="1"/>
-        </ui_button>
-        <ui_button name="tool_cal_save_idle_btn"
-                   flex_grow="2" variant="outline" text="Save offsets" translation_tag="Save offsets">
-          <bind_flag_if_eq subject="any_tool_offset_dirty" flag="hidden" ref_value="1"/>
-          <bind_state_if_eq subject="any_tool_offset_dirty" state="disabled" ref_value="0"/>
         </ui_button>
       </lv_obj>
     </lv_obj>
