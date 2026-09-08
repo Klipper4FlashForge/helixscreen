@@ -9,7 +9,7 @@
  * the filament panel embeds (4da7a07db):
  *
  *   present              -> material
- *   ejected + assigned   -> retained material, ghosted at LV_OPA_10
+ *   ejected + assigned   -> retained material, ghosted at LV_OPA_30
  *   ejected + unassigned -> lv_tr("Empty") at full strength
  *
  * It used to have two implementations racing each other. apply_slot_status()
@@ -177,7 +177,7 @@ TEST_CASE_METHOD(XMLTestFixture, "ams_slot: assigned ejected lane keeps its mate
     REQUIRE(slot.obj != nullptr);
 
     CHECK(material_text(slot.obj) == "PETG");
-    CHECK(material_opa(slot.obj) == LV_OPA_10);
+    CHECK(material_opa(slot.obj) == LV_OPA_30);
     // A retained identity ghosts the real spool rather than swapping in the
     // placeholder — the inverse of the unassigned case above.
     CHECK_FALSE(placeholder_visible(slot.obj));

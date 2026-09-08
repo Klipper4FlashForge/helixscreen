@@ -79,7 +79,7 @@ lv_obj_t* create_transparent_container(lv_obj_t* parent);
 /// Opacity of a spool visual and its labels on a lane that is assigned but not
 /// physically present. Shared by the AMS slot widget and the mini status strip
 /// so two views of the same lane cannot ghost to different strengths.
-inline constexpr lv_opa_t GHOST_OPA = LV_OPA_10;
+inline constexpr lv_opa_t GHOST_OPA = LV_OPA_30;
 
 /** Widget handles produced by create_spool_visual() */
 struct SpoolVisual {
