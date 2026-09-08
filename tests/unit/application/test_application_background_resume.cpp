@@ -51,7 +51,7 @@ class CountingOverlay : public IPanelLifecycle {
     void on_activate() override {
         ++activates;
     }
-    void on_deactivate() override {
+    void on_deactivate(DeactivateReason) override {
         ++deactivates;
     }
     const char* get_name() const override {
@@ -78,7 +78,7 @@ class CountingPanel : public PanelBase {
     void on_activate() override {
         ++activates;
     }
-    void on_deactivate() override {
+    void on_deactivating(DeactivateReason) override {
         ++deactivates;
     }
 

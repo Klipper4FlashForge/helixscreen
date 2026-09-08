@@ -58,7 +58,7 @@ class SpoolmanPanel : public OverlayBase {
 
     // === Lifecycle hooks ===
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     // === Public API ===
     lv_obj_t* get_panel() const {

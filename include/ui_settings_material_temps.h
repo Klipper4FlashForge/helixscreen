@@ -39,7 +39,6 @@ class MaterialTempsOverlay : public OverlayBase {
     void show(lv_obj_t* parent_screen);
 
     void on_activate() override;
-    void on_deactivate() override;
 
     // === Event Handlers (public for static callbacks) ===
 

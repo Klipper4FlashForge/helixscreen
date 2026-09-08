@@ -149,10 +149,6 @@ void LedSettingsOverlay::on_activate() {
     populate_macro_devices();
 }
 
-void LedSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // INTERNAL METHODS
 // ============================================================================

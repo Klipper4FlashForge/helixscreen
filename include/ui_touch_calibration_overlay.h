@@ -124,7 +124,7 @@ class TouchCalibrationOverlay : public OverlayBase {
      *
      * Cancels any in-progress calibration.
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     /**
      * @brief Clean up resources for async-safe destruction

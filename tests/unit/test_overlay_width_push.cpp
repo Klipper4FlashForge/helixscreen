@@ -40,7 +40,7 @@ class FakeOverlay : public IPanelLifecycle {
         : name_(name), destination_(destination) {}
 
     void on_activate() override {}
-    void on_deactivate() override {}
+    void on_deactivate(DeactivateReason) override {}
     const char* get_name() const override {
         return name_;
     }

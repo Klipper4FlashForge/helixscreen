@@ -138,8 +138,7 @@ void HelpSettingsOverlay::on_activate() {
     spdlog::debug("[{}] Activated", get_name());
 }
 
-void HelpSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
+void HelpSettingsOverlay::on_deactivating(DeactivateReason) {
     spdlog::debug("[{}] Deactivated", get_name());
 }
 

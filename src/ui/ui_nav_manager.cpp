@@ -236,7 +236,7 @@ void NavigationManager::clear_overlay_stack() {
         // keep their camera running after connection loss. (#632)
         auto inst_it = overlay_instances_.find(overlay);
         if (inst_it != overlay_instances_.end() && inst_it->second) {
-            inst_it->second->on_deactivate();
+            inst_it->second->on_deactivate(DeactivateReason::NavigateAway);
         }
 
         // Defer close callback via lv_async_call so any object deletion happens
@@ -1086,7 +1086,7 @@ void NavigationManager::switch_to_panel_impl(int panel_id) {
             if (inst_it != overlay_instances_.end() && inst_it->second) {
                 spdlog::trace("[NavigationManager] Calling on_deactivate() for overlay {} (navbar)",
                               (void*)panel);
-                inst_it->second->on_deactivate();
+                inst_it->second->on_deactivate(DeactivateReason::NavigateAway);
             }
         } else {
             spdlog::trace(
@@ -1395,7 +1395,8 @@ void NavigationManager::set_active(PanelId panel_id) {
     if (panel_instances_[static_cast<int>(old_panel)]) {
         spdlog::trace("[NavigationManager] Calling on_deactivate() for panel {}",
                       static_cast<int>(old_panel));
-        panel_instances_[static_cast<int>(old_panel)]->on_deactivate();
+        panel_instances_[static_cast<int>(old_panel)]->on_deactivate(
+            DeactivateReason::NavigateAway);
     }
 
     // Update state
@@ -1880,11 +1881,12 @@ void NavigationManager::suspend_active() {
         auto it = overlay_instances_.find(top_overlay);
         if (it != overlay_instances_.end() && it->second) {
             spdlog::debug("[NavigationManager] Suspending overlay {}", it->second->get_name());
-            it->second->on_deactivate();
+            it->second->on_deactivate(DeactivateReason::NavigateAway);
         }
     } else if (panel_instances_[static_cast<int>(active_panel_)]) {
         spdlog::debug("[NavigationManager] Suspending panel {}", static_cast<int>(active_panel_));
-        panel_instances_[static_cast<int>(active_panel_)]->on_deactivate();
+        panel_instances_[static_cast<int>(active_panel_)]->on_deactivate(
+            DeactivateReason::NavigateAway);
     }
 }
 
@@ -2040,7 +2042,8 @@ void NavigationManager::push_overlay(lv_obj_t* overlay_panel, bool hide_previous
             if (mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]) {
                 spdlog::trace("[NavigationManager] Deactivating main panel {} for overlay",
                               static_cast<int>(mgr.active_panel_));
-                mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]->on_deactivate();
+                mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]->on_deactivate(
+                    DeactivateReason::NavigateAway);
             }
         } else {
             // Deactivate previous overlay if stacking
@@ -2049,7 +2052,7 @@ void NavigationManager::push_overlay(lv_obj_t* overlay_panel, bool hide_previous
             if (it != mgr.overlay_instances_.end() && it->second) {
                 spdlog::trace("[NavigationManager] Deactivating previous overlay {}",
                               it->second->get_name());
-                it->second->on_deactivate();
+                it->second->on_deactivate(DeactivateReason::NavigateAway);
             }
         }
 
@@ -2155,13 +2158,14 @@ void NavigationManager::push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_
         if (is_first_overlay) {
             mgr.main_panel_deactivated_for_overlay_ = true;
             if (mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]) {
-                mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]->on_deactivate();
+                mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]->on_deactivate(
+                    DeactivateReason::NavigateAway);
             }
         } else {
             lv_obj_t* prev_overlay = mgr.panel_stack_.back();
             auto it = mgr.overlay_instances_.find(prev_overlay);
             if (it != mgr.overlay_instances_.end() && it->second) {
-                it->second->on_deactivate();
+                it->second->on_deactivate(DeactivateReason::NavigateAway);
             }
         }
 
@@ -2279,7 +2283,7 @@ bool NavigationManager::go_back() {
             if (it != mgr.overlay_instances_.end() && it->second) {
                 spdlog::trace("[NavigationManager] Deactivating closing overlay {}",
                               it->second->get_name());
-                it->second->on_deactivate();
+                it->second->on_deactivate(DeactivateReason::NavigateAway);
             }
 
             // Arm the exactly-once activation latch for this close. Consumed
@@ -2435,7 +2439,7 @@ void NavigationManager::shutdown() {
         auto it = overlay_instances_.find(overlay_widget);
         if (it != overlay_instances_.end() && it->second) {
             spdlog::trace("[NavigationManager] Deactivating overlay: {}", it->second->get_name());
-            it->second->on_deactivate();
+            it->second->on_deactivate(DeactivateReason::Shutdown);
         }
     }
 

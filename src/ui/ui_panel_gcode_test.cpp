@@ -158,8 +158,8 @@ void GcodeTestPanel::on_activate() {
     }
 }
 
-void GcodeTestPanel::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void GcodeTestPanel::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     // Pause G-code viewer rendering when panel is hidden (CPU optimization)
     if (gcode_viewer_) {

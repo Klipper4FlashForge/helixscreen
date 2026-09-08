@@ -202,10 +202,6 @@ void PrinterImageOverlay::on_activate() {
     }
 }
 
-void PrinterImageOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // LIST ROW CREATION
 // ============================================================================

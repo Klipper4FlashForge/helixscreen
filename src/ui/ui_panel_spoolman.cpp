@@ -172,7 +172,7 @@ void SpoolmanPanel::on_activate() {
     SpoolmanManager::instance().start_spoolman_polling();
 }
 
-void SpoolmanPanel::on_deactivate() {
+void SpoolmanPanel::on_deactivating(DeactivateReason) {
     SpoolmanManager::instance().stop_spoolman_polling();
 
     // Clean up debounce timer
@@ -181,10 +181,7 @@ void SpoolmanPanel::on_deactivate() {
     // Reset visible state but keep pool intact for reactivation
     list_view_.reset();
 
-    spdlog::debug("[{}] on_deactivate()", get_name());
-
-    // Call base class
-    OverlayBase::on_deactivate();
+    spdlog::debug("[{}] on_deactivating()", get_name());
 }
 
 // ============================================================================

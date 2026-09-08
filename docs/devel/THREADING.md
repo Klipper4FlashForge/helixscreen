@@ -167,7 +167,12 @@ modal/overlay/panel being dismissed before the callback fires. `AsyncLifetimeGua
 
 **Who has one already:**
 - `Modal` — `lifetime_` member; `hide()` calls `invalidate()` automatically
-- `OverlayBase` — `lifetime_` member; `cleanup()` / `on_deactivate()` call `invalidate()`
+- `PanelBase` and `OverlayBase` — both inherit two guards from `ViewLifecycleBase`
+  (`include/panel_lifecycle.h`). `lifetime_` is screen-scoped: every deactivation
+  invalidates it, so park work there whose result only matters while the view is on
+  screen. `object_lifetime_` is object-scoped: it survives deactivation and dies at
+  `cleanup()`/destruction, for work the view owes the machine rather than the screen
+  (an abort the printer must acknowledge, a settings write, a power-off handshake)
 - **Standalone classes** — declare your own: `helix::AsyncLifetimeGuard lifetime_;`
 
 ### Two correct forms

@@ -103,7 +103,7 @@ class PrinterManagerOverlay : public OverlayBase {
      * Cancels any in-progress name edit and hides the keyboard
      * to restore screen position.
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
   private:
     //

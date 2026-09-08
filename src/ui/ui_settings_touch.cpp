@@ -82,10 +82,6 @@ void TouchSettingsOverlay::on_activate() {
     init_input_sliders();
 }
 
-void TouchSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // Sliders capture their value at XML construction from the static `value`
 // prop, so push the persisted value on every activate. Toggle rows bind to
 // subjects directly and need no manual sync.

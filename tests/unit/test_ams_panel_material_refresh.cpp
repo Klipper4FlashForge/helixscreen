@@ -121,7 +121,7 @@ TEST_CASE_METHOD(XMLTestFixture, "AmsPanel slot material stays correct across na
     //    unchanged, exactly the #981 scenario), then nav back. The label must
     //    reflect the new material, driven by the reactive subject rather than an
     //    on_activate() imperative re-read.
-    panel.on_deactivate();
+    panel.on_deactivate(DeactivateReason::NavigateAway);
     {
         SlotInfo info = backend->get_slot_info(0);
         info.material = "PETG"; // color_rgb left untouched — the #981 case

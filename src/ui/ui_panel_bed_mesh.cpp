@@ -736,16 +736,13 @@ void BedMeshPanel::ensure_async_rendering() {
     ui_bed_mesh_request_async_render(canvas_);
 }
 
-void BedMeshPanel::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void BedMeshPanel::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     // Stop the render thread when panel is not visible to avoid wasting CPU
     if (canvas_) {
         ui_bed_mesh_set_async_mode(canvas_, false);
     }
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 void BedMeshPanel::on_ui_destroyed() {

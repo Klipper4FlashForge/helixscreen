@@ -28,7 +28,7 @@ class LabelPrinterSettingsOverlay : public OverlayBase {
         return "Label Printer";
     }
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     // UI creation
     lv_obj_t* create(lv_obj_t* parent) override;

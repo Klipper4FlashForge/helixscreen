@@ -105,7 +105,7 @@ class HistoryDashboardPanel : public OverlayBase {
     /**
      * @brief Called when panel becomes invisible (navigated away)
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     //
     // === Public API ===

@@ -156,18 +156,15 @@ class AdvancedPanel : public PanelBase {
     using UninstallRunner = std::function<void(helix::HelixPluginInstaller::InstallCallback)>;
     UninstallRunner uninstall_runner_;
 
-    /// Gates the uninstall confirmation's callbacks, which capture this panel.
-    helix::AsyncLifetimeGuard lifetime_;
-
     //
     // === Shared Power Dialog ===
     //
-    // Reuses the same modal the home-panel power widget shows. The lifetime
-    // guard is required by the "Both" flow (defers screen-side SystemPower
-    // call until the printer-side ack lands on the WS background thread).
+    // Reuses the same modal the home-panel power widget shows. The "Both" flow
+    // defers the screen-side SystemPower call until the printer-side ack lands
+    // on the WS background thread, so it runs on object_lifetime_: the ack is
+    // owed to the machine and must survive the user leaving this panel.
 
     ShutdownModal shutdown_modal_;
-    helix::AsyncLifetimeGuard shutdown_lifetime_;
 
     //
     // === Cached Overlay Panels ===

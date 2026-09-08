@@ -150,10 +150,6 @@ void MacroButtonsOverlay::on_activate() {
     populate_dropdowns();
 }
 
-void MacroButtonsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // DROPDOWN POPULATION
 // ============================================================================

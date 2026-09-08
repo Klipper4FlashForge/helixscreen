@@ -130,9 +130,8 @@ void TimelapseSettingsOverlay::on_activate() {
     fetch_settings();
 }
 
-void TimelapseSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void TimelapseSettingsOverlay::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 }
 
 void TimelapseSettingsOverlay::cleanup() {

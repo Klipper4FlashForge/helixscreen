@@ -60,7 +60,7 @@ class AmsEnvironmentOverlay : public OverlayBase {
     void on_activate() override;
 
     /// Drop the live-update subscription.
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     const char* get_name() const override {
         return "AMS Environment";

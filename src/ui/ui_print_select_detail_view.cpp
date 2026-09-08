@@ -759,8 +759,8 @@ void PrintSelectDetailView::on_activate() {
     load_gcode_for_preview();
 }
 
-void PrintSelectDetailView::on_deactivate() {
-    spdlog::debug("[DetailView] on_deactivate()");
+void PrintSelectDetailView::on_deactivating(DeactivateReason) {
+    spdlog::debug("[DetailView] on_deactivating()");
 
     // Clear and pause gcode viewer immediately so the old model doesn't
     // linger when the user selects a different file
@@ -807,9 +807,6 @@ void PrintSelectDetailView::on_deactivate() {
     // Note: We don't cancel scans here because PrintPreparationManager
     // has its own lifetime guard. Async callbacks in prep_manager_
     // will check cleanup_called() if needed.
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 void PrintSelectDetailView::cleanup() {

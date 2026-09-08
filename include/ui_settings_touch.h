@@ -32,7 +32,6 @@ class TouchSettingsOverlay : public OverlayBase {
     }
 
     void on_activate() override;
-    void on_deactivate() override;
 
     lv_obj_t* create(lv_obj_t* parent) override;
     void show(lv_obj_t* parent_screen);

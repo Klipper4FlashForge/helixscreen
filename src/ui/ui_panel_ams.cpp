@@ -319,14 +319,14 @@ void AmsPanel::init_subjects() {
         AmsState::instance().get_subjects_lifetime());
 
     // Slot count observer for dynamic slot creation (non-scoped mode only).
-    // Deferred via lifetime_ to avoid deleting children during LVGL layout refresh (#563).
+    // Deferred via object_lifetime_ to avoid deleting children during LVGL layout refresh (#563).
     slot_count_observer_ = observe_int_sync<AmsPanel>(
         AmsState::instance().get_slot_count_subject(), this, [](AmsPanel* self, int new_count) {
             if (!self->panel_)
                 return;
             if (!self->slot_creation_pending_) {
                 self->slot_creation_pending_ = true;
-                self->lifetime_.defer("AmsPanel::create_slots", [self, new_count]() {
+                self->object_lifetime_.defer("AmsPanel::create_slots", [self, new_count]() {
                     self->slot_creation_pending_ = false;
                     spdlog::debug("[AmsPanel] Slot count changed to {}", new_count);
                     self->create_slots(new_count);
@@ -335,13 +335,13 @@ void AmsPanel::init_subjects() {
         });
 
     // Path state observers for filament path visualization.
-    // Deferred via lifetime_ to avoid modifying widgets during LVGL layout refresh (#563).
+    // Deferred via object_lifetime_ to avoid modifying widgets during LVGL layout refresh (#563).
     auto path_handler = [](AmsPanel* self, int) {
         if (!self->subjects_initialized_ || !self->panel_)
             return;
         if (!self->path_update_pending_) {
             self->path_update_pending_ = true;
-            self->lifetime_.defer("AmsPanel::update_path_canvas", [self]() {
+            self->object_lifetime_.defer("AmsPanel::update_path_canvas", [self]() {
                 self->path_update_pending_ = false;
                 spdlog::debug("[AmsPanel] Path state changed - updating path canvas");
                 self->update_path_canvas_from_backend();
@@ -360,7 +360,7 @@ void AmsPanel::init_subjects() {
         AmsState::instance().get_backend_count_subject(), this, [](AmsPanel* self, int /*count*/) {
             if (!self->backend_rebuild_pending_) {
                 self->backend_rebuild_pending_ = true;
-                self->lifetime_.defer("AmsPanel::rebuild_backend_selector", [self]() {
+                self->object_lifetime_.defer("AmsPanel::rebuild_backend_selector", [self]() {
                     self->backend_rebuild_pending_ = false;
                     self->rebuild_backend_selector();
                 });
@@ -524,7 +524,7 @@ void AmsPanel::sync_spoolman_active_spool() {
     }
 }
 
-void AmsPanel::on_deactivate() {
+void AmsPanel::on_deactivating(DeactivateReason) {
     if (holds_poll_ref_) {
         SpoolmanManager::instance().stop_spoolman_polling();
         holds_poll_ref_ = false;
@@ -610,7 +610,7 @@ void AmsPanel::rebuild_backend_selector() {
     lv_obj_remove_flag(row, LV_OBJ_FLAG_HIDDEN);
 
     // Clear existing children. rebuild_backend_selector runs from
-    // backend_count_observer_ via lifetime_.defer (UpdateQueue batch). [L081]
+    // backend_count_observer_ via object_lifetime_.defer (UpdateQueue batch). [L081]
     helix::ui::safe_clean_children(row);
 
     for (int i = 0; i < count; ++i) {
@@ -760,7 +760,7 @@ void AmsPanel::setup_slot_path_observers(int slot_count) {
         spdlog::debug("[AmsPanel] Per-slot path subject fired — scheduling path redraw");
         if (!self->path_update_pending_) {
             self->path_update_pending_ = true;
-            self->lifetime_.defer("AmsPanel::update_path_canvas(slot)", [self]() {
+            self->object_lifetime_.defer("AmsPanel::update_path_canvas(slot)", [self]() {
                 self->path_update_pending_ = false;
                 self->update_path_canvas_from_backend();
             });

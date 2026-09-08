@@ -126,7 +126,7 @@ class ControlsPanel : public PanelBase {
      * completed after initial setup or when switching between connections.
      */
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
   private:
     // Test-only access to private secondary-fan lifetime/observer internals.
@@ -275,8 +275,6 @@ class ControlsPanel : public PanelBase {
     bool fans_rebuild_pending_ = false; ///< Coalesces rapid fans_version observer notifications
     bool temps_rebuild_pending_ =
         false; ///< Coalesces rapid temp_sensor_count observer notifications
-    helix::AsyncLifetimeGuard
-        lifetime_; ///< Guards deferred callbacks from accessing destroyed panel
 
     //
     // === Lazily-Created Child Panels ===

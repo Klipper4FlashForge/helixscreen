@@ -515,8 +515,8 @@ void InputShaperPanel::on_activate() {
     }
 }
 
-void InputShaperPanel::on_deactivate() {
-    spdlog::debug("[InputShaper] on_deactivate()");
+void InputShaperPanel::on_deactivating(DeactivateReason) {
+    spdlog::debug("[InputShaper] on_deactivating()");
 
     // Stop the analysis elapsed timer even when the state check below does not
     // run; the label it refreshes is going off screen either way.
@@ -537,9 +537,6 @@ void InputShaperPanel::on_deactivate() {
         helix::ui::modal_hide(low_ram_warn_dialog_);
         low_ram_warn_dialog_ = nullptr;
     }
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 void InputShaperPanel::cleanup() {
