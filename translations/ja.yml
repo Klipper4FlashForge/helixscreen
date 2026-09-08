@@ -707,6 +707,7 @@ translations:
   Different filament?: 別のフィラメント？
   Digital Clock: 'デジタル時計'
   Disable: 無効化
+  Disable Bypass: バイパスを無効化
   Disable Motors?: モーターを無効にしますか？
   Disable the security PIN: セキュリティ PIN を無効化
   Disabling motors...: モーターを無効化中...
@@ -786,6 +787,7 @@ translations:
   Empty slots disable the associated functionality: 空のスロットは関連機能を無効にします
   Enable: 有効化
   Enable Brush Wipe: 'ブラシワイプを有効化'
+  Enable Bypass: バイパスを有効化
   Enable Bypass Controls: バイパスコントロールを有効化
   Enable Monitoring: 監視を有効化
   Enable Purge: 'パージを有効化'

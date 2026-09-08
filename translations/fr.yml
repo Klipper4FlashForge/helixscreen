@@ -787,6 +787,7 @@ translations:
   Different filament?: Filament différent ?
   Digital Clock: 'Horloge numérique'
   Disable: Désactiver
+  Disable Bypass: Désactiver le bypass
   Disable Motors?: Désactiver les moteurs ?
   Disable the security PIN: Désactiver le PIN de sécurité
   Disabling motors...: Désactivation des moteurs...
@@ -871,6 +872,7 @@ translations:
     fonctionnalité associée
   Enable: Activer
   Enable Brush Wipe: 'Activer l''essuyage par brosse'
+  Enable Bypass: Activer le bypass
   Enable Bypass Controls: Activer les contrôles du bypass
   Enable Monitoring: Activer la surveillance
   Enable Purge: 'Activer la purge'

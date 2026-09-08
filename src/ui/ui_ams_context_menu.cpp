@@ -9,6 +9,7 @@
 #include "ui_toast_manager.h"
 
 #include "ams_backend.h"
+#include "ams_bypass_policy.h"
 #include "ams_state.h"
 #include "ams_types.h"
 #include "app_globals.h"
@@ -30,6 +31,7 @@ bool AmsContextMenu::callbacks_registered_ = false;
 bool AmsContextMenu::subjects_initialized_ = false;
 lv_subject_t AmsContextMenu::slot_is_loaded_subject_;
 lv_subject_t AmsContextMenu::slot_can_load_subject_;
+lv_subject_t AmsContextMenu::slot_can_purge_subject_;
 lv_subject_t AmsContextMenu::slot_mounts_tool_subject_;
 lv_subject_t AmsContextMenu::slot_unload_hint_subject_;
 lv_subject_t AmsContextMenu::slot_unload_hint_visible_subject_;
@@ -45,6 +47,7 @@ void AmsContextMenu::init_subjects() {
 
     lv_subject_init_int(&slot_is_loaded_subject_, 0);
     lv_subject_init_int(&slot_can_load_subject_, 1);
+    lv_subject_init_int(&slot_can_purge_subject_, 1);
     lv_subject_init_int(&slot_mounts_tool_subject_, 0);
     lv_subject_init_int(&slot_unload_hint_visible_subject_, 0);
     lv_subject_init_string(&slot_unload_hint_subject_, slot_unload_hint_buf_, nullptr,
@@ -52,6 +55,7 @@ void AmsContextMenu::init_subjects() {
 
     lv_xml_register_subject(nullptr, "ams_slot_is_loaded", &slot_is_loaded_subject_);
     lv_xml_register_subject(nullptr, "ams_slot_can_load", &slot_can_load_subject_);
+    lv_xml_register_subject(nullptr, "ams_slot_can_purge", &slot_can_purge_subject_);
     lv_xml_register_subject(nullptr, "ams_slot_mounts_tool", &slot_mounts_tool_subject_);
     lv_xml_register_subject(nullptr, "ams_slot_unload_hint", &slot_unload_hint_subject_);
     lv_xml_register_subject(nullptr, "ams_slot_unload_hint_visible",
@@ -143,7 +147,8 @@ bool AmsContextMenu::show_near_widget(lv_obj_t* parent, int slot_index, lv_obj_t
     return result;
 }
 
-bool AmsContextMenu::show_for_external_spool(lv_obj_t* parent, lv_obj_t* anchor_widget) {
+bool AmsContextMenu::show_for_external_spool(lv_obj_t* parent, lv_obj_t* anchor_widget,
+                                             bool offer_toggle) {
     // Register callbacks once (idempotent)
     register_callbacks();
 
@@ -152,6 +157,7 @@ bool AmsContextMenu::show_for_external_spool(lv_obj_t* parent, lv_obj_t* anchor_
     pending_is_loaded_ = false;
     total_slots_ = 0;
     external_spool_mode_ = true;
+    external_offer_toggle_ = offer_toggle;
 
     // Base class handles: XML creation, on_created callback, positioning, and
     // claiming the active-menu slot the static callbacks resolve through.
@@ -188,20 +194,9 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
         const bool bypass_loaded =
             helix::ui::read_unload_target_loaded(backend, ext_sys, helix::ui::EXTERNAL_SPOOL_SLOT);
 
-        helix::ui::OpButtonState ext_state;
-        ext_state.slot_is_loaded = bypass_loaded;
-        // Nothing reports whether a spool is actually on the external holder, so
-        // the surface cannot answer this. Left unset, Load stays reachable and
-        // the dispatch's own refusal explains itself.
-        ext_state.slot_has_filament = std::nullopt;
-        ext_state.unload_available = bypass_loaded;
-        ext_state.system_busy = backend && ext_sys.is_busy();
-        ext_state.print_blocks_op =
-            helix::ui::print_blocks_filament_op(get_printer_state().get_print_lifecycle(),
-                                                backend && backend->filament_ops_self_home());
-        // A bypass unload feeds filament out through a heated toolhead; it is
-        // not one of the cold lane ops that stay reachable mid-print.
-        ext_state.unload_is_cold_lane_op = false;
+        const helix::ui::OpButtonState ext_state = helix::ui::build_external_spool_gating_state(
+            bypass_loaded, backend && ext_sys.is_busy(), get_printer_state().get_print_lifecycle(),
+            backend && backend->filament_ops_self_home());
 
         const helix::ui::OpButtonGating ext_gating = helix::ui::compute_op_button_gating(ext_state);
         lv_subject_set_int(&slot_can_load_subject_, ext_gating.load_disabled ? 0 : 1);
@@ -216,6 +211,29 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
         lv_subject_set_int(&slot_mounts_tool_subject_, 0);
         lv_subject_copy_string(&slot_unload_hint_subject_, "");
         lv_subject_set_int(&slot_unload_hint_visible_subject_, 0);
+
+        lv_subject_set_int(&slot_can_purge_subject_, ext_gating.purge_disabled ? 0 : 1);
+        if (lv_obj_t* btn_purge = lv_obj_find_by_name(menu_obj, "btn_purge")) {
+            lv_obj_remove_flag(btn_purge, LV_OBJ_FLAG_HIDDEN);
+        }
+
+        // The bypass toggle is on this menu so the external spool answers every
+        // question asked of it in one place. bypass_toggle_offered() is the same
+        // answer BypassToggleController refuses on, asked before the button is
+        // drawn rather than after the user taps it.
+        if (lv_obj_t* btn_bypass = lv_obj_find_by_name(menu_obj, "btn_bypass_toggle")) {
+            const bool bypass_offered =
+                backend &&
+                helix::bypass_toggle_offered(helix::bypass_available_for(ext_sys.supports_bypass),
+                                             ext_sys.has_hardware_bypass_sensor);
+            if (bypass_offered) {
+                lv_obj_remove_flag(btn_bypass, LV_OBJ_FLAG_HIDDEN);
+                // Names the action, not the state, so it reads as a command.
+                ui_button_set_text(btn_bypass, backend->is_bypass_active()
+                                                   ? lv_tr("Disable Bypass")
+                                                   : lv_tr("Enable Bypass"));
+            }
+        }
 
         // Set header to "External Spool"
         lv_obj_t* slot_header = lv_obj_find_by_name(menu_obj, "slot_header");
@@ -460,6 +478,16 @@ void AmsContextMenu::handle_unload() {
     }
 }
 
+void AmsContextMenu::handle_purge() {
+    spdlog::info("[AmsContextMenu] Purge requested");
+    dispatch_ams_action(MenuAction::PURGE);
+}
+
+void AmsContextMenu::handle_bypass_toggle() {
+    spdlog::info("[AmsContextMenu] Bypass toggle requested");
+    dispatch_ams_action(MenuAction::TOGGLE_BYPASS);
+}
+
 void AmsContextMenu::handle_gate_select() {
     spdlog::info("[AmsContextMenu] Select gate requested for slot {}", get_item_index());
     dispatch_ams_action(MenuAction::SELECT_GATE);
@@ -629,6 +657,8 @@ void AmsContextMenu::register_callbacks() {
         {"ams_context_clear_spool_cb", on_clear_spool_cb},
         {"ams_context_spoolman_cb", on_spoolman_cb},
         {"ams_context_scan_qr_cb", on_scan_qr_cb},
+        {"ams_context_purge_cb", on_purge_cb},
+        {"ams_context_bypass_toggle_cb", on_bypass_toggle_cb},
         {"ams_context_tool_changed_cb", on_tool_changed_cb},
         {"ams_context_backup_changed_cb", on_backup_changed_cb},
     });
@@ -681,6 +711,20 @@ void AmsContextMenu::on_edit_cb(lv_event_t* /*e*/) {
     auto* self = get_active_instance();
     if (self) {
         self->handle_edit();
+    }
+}
+
+void AmsContextMenu::on_purge_cb(lv_event_t* /*e*/) {
+    auto* self = get_active_instance();
+    if (self) {
+        self->handle_purge();
+    }
+}
+
+void AmsContextMenu::on_bypass_toggle_cb(lv_event_t* /*e*/) {
+    auto* self = get_active_instance();
+    if (self) {
+        self->handle_bypass_toggle();
     }
 }
 

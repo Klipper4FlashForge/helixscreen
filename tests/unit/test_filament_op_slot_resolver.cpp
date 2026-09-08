@@ -465,3 +465,56 @@ TEST_CASE("compute_op_button_gating: the AMS sidebar Unload answers the same rul
     CHECK_FALSE(sidebar(true, false, false, /*paused=*/true, /*self_homes=*/false).unload_disabled);
     CHECK(sidebar(true, false, false, /*paused=*/true, /*self_homes=*/true).unload_disabled);
 }
+
+TEST_CASE("compute_op_button_gating: Purge asks less than Load", "[filament][op_slot][op_gating]") {
+    using helix::ui::compute_op_button_gating;
+    using helix::ui::OpButtonState;
+
+    // Purge is about the nozzle, not a lane: an empty lane and an already-loaded
+    // toolhead both block Load and neither has anything to say about Purge.
+    OpButtonState s;
+    s.slot_is_loaded = true;
+    s.slot_has_filament = false;
+    CHECK(compute_op_button_gating(s).load_disabled);
+    CHECK_FALSE(compute_op_button_gating(s).purge_disabled);
+
+    // What Purge does ask is whether the machine is free to extrude at all.
+    OpButtonState busy;
+    busy.system_busy = true;
+    CHECK(compute_op_button_gating(busy).purge_disabled);
+
+    OpButtonState printing;
+    printing.print_blocks_op = true;
+    CHECK(compute_op_button_gating(printing).purge_disabled);
+}
+
+TEST_CASE("build_external_spool_gating_state: the bypass spool's fixed answers",
+          "[filament][op_slot][op_gating]") {
+    using helix::ui::build_external_spool_gating_state;
+    using helix::ui::compute_op_button_gating;
+
+    auto bypass = [](bool loaded, bool busy, bool printing, bool paused, bool self_homes) {
+        return compute_op_button_gating(build_external_spool_gating_state(
+            loaded, busy, helix::test::lifecycle_from_bools(printing, paused), self_homes));
+    };
+
+    // Nothing reports whether a spool sits on the external holder, so Load stays
+    // reachable and lets the dispatch explain itself. A surface that answered
+    // "no filament" here would grey out Load on a spool the user is looking at.
+    CHECK_FALSE(build_external_spool_gating_state(false, false, PrintState::Idle, false)
+                    .slot_has_filament.has_value());
+    CHECK_FALSE(bypass(false, false, false, false, false).load_disabled);
+
+    // Loaded: nothing to load into, something to unload.
+    CHECK(bypass(true, false, false, false, false).load_disabled);
+    CHECK_FALSE(bypass(true, false, false, false, false).unload_disabled);
+    CHECK(bypass(false, false, false, false, false).unload_disabled);
+
+    // A bypass unload pulls filament back through a heated toolhead, so it is
+    // NOT one of the cold lane ops that stay reachable mid-print.
+    CHECK(bypass(true, false, /*printing=*/true, false, false).unload_disabled);
+
+    // A busy AMS blocks everything, including the purge.
+    CHECK(bypass(true, /*busy=*/true, false, false, false).load_disabled);
+    CHECK(bypass(true, /*busy=*/true, false, false, false).purge_disabled);
+}

@@ -1101,22 +1101,6 @@ void AmsOperationSidebar::handle_unload() {
     handle_unload(-1);
 }
 
-void AmsOperationSidebar::handle_bypass_load() {
-    spdlog::info("[AmsSidebar] Bypass spool load requested");
-    // The continuation can land after an unload round trip, by which time the
-    // AMS panel that owns this sidebar may be gone.
-    auto tok = lifetime_.token();
-    bypass_toggle_.ensure_engaged_then([this, tok]() {
-        tok.defer("AmsOperationSidebar::bypass_load",
-                  [this]() { handle_load_with_preheat(helix::ui::EXTERNAL_SPOOL_SLOT); });
-    });
-}
-
-void AmsOperationSidebar::handle_bypass_unload() {
-    spdlog::info("[AmsSidebar] Bypass spool unload requested");
-    handle_unload(helix::ui::EXTERNAL_SPOOL_SLOT);
-}
-
 void AmsOperationSidebar::handle_unload(int slot_index) {
     spdlog::info("[AmsSidebar] Unload requested (slot={})", slot_index);
 

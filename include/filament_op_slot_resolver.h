@@ -74,10 +74,15 @@ namespace helix::ui {
     return slot;
 }
 
-/// Enabled/disabled state of a surface's Load and Unload/Purge buttons.
+/// Enabled/disabled state of a surface's Load, Unload and Purge buttons.
 struct OpButtonGating {
     bool load_disabled = false;
     bool unload_disabled = false;
+    /// Purge asks strictly less than Load: there is no lane to be empty and
+    /// nothing has to already be at the toolhead, only a machine free to
+    /// extrude. Stated here so the next surface to grow a Purge button reads
+    /// the answer instead of deriving a second one.
+    bool purge_disabled = false;
 };
 
 /**
@@ -209,7 +214,8 @@ struct OpButtonState {
     return {/*load_disabled=*/s.system_busy || s.print_blocks_op || s.slot_is_loaded ||
                 nothing_to_feed,
             /*unload_disabled=*/s.system_busy || !s.unload_available ||
-                (s.print_blocks_op && !s.unload_is_cold_lane_op)};
+                (s.print_blocks_op && !s.unload_is_cold_lane_op),
+            /*purge_disabled=*/s.system_busy || s.print_blocks_op};
 }
 
 /**
@@ -243,6 +249,40 @@ struct OpButtonState {
     // filament macro does not home itself (only AD5X IFS does). Gating on
     // print_active would keep this button greyed through the pause that is the
     // entire recovery workflow.
+    s.print_blocks_op = print_blocks_filament_op(lifecycle, backend_self_homes);
+    s.unload_is_cold_lane_op = false;
+    return s;
+}
+
+/**
+ * @brief The external (bypass) spool's Load/Unload/Purge buttons as an OpButtonState.
+ *
+ * Sibling of build_unload_gating_state(), and for the same reason: the field
+ * mapping is what must not fork. Two answers are fixed for bypass and are the
+ * whole point of stating them once —
+ *
+ *  - @c slot_has_filament stays unset. Nothing reports whether a spool is
+ *    physically on the external holder, so a surface that guessed false would
+ *    grey out Load on a spool the user is looking at. Unset keeps Load live and
+ *    lets the dispatch's own refusal do the explaining.
+ *  - @c unload_is_cold_lane_op is false. A bypass unload pulls filament back out
+ *    through a heated toolhead; it is not one of the cold lane ops (#995/#1199)
+ *    that stay reachable mid-print.
+ *
+ * @param bypass_loaded      read_unload_target_loaded() for EXTERNAL_SPOOL_SLOT.
+ * @param system_busy        AmsSystemInfo::is_busy(); false with no backend.
+ * @param lifecycle          The derived PrintState.
+ * @param backend_self_homes AmsBackend::filament_ops_self_home(); false with none.
+ */
+[[nodiscard]] inline OpButtonState build_external_spool_gating_state(bool bypass_loaded,
+                                                                     bool system_busy,
+                                                                     PrintState lifecycle,
+                                                                     bool backend_self_homes) {
+    OpButtonState s;
+    s.slot_is_loaded = bypass_loaded;
+    s.slot_has_filament = std::nullopt;
+    s.unload_available = bypass_loaded;
+    s.system_busy = system_busy;
     s.print_blocks_op = print_blocks_filament_op(lifecycle, backend_self_homes);
     s.unload_is_cold_lane_op = false;
     return s;

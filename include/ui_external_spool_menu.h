@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ui_ams_context_menu.h"
+#include "ui_bypass_toggle_controller.h"
 
 #include "lvgl.h"
 
@@ -12,40 +13,48 @@
 
 namespace helix::ui {
 
-/// What the owning panel does for the two menu actions this function cannot
-/// perform on its own. Both are optional; an unset hook makes its menu entry a
-/// no-op, which is what a panel with no operation sidebar wants.
+class AmsOperationSidebar;
+
+/// What a surface contributes to the External Spool menu.
+///
+/// Deliberately NOT "what the surface does when an entry is tapped": the rules
+/// that make a bypass op correct — engaging bypass before a load, above all —
+/// belong to the menu, so that every surface showing it gets them. A surface
+/// supplies only the parts that are genuinely its own.
 struct ExternalSpoolMenuHooks {
-    /// EDIT and SPOOLMAN. The bool requests the Spoolman spool picker directly
-    /// (true for SPOOLMAN / "Select Spool", false for EDIT / "Spool Info").
+    /// EDIT and SPOOLMAN. Unset, the menu raises the external-spool editor
+    /// itself, which needs only a parent screen and the global API.
     std::function<void(bool open_on_picker)> on_edit;
 
-    /// LOAD. Routed to the panel because the dispatch belongs to its operation
-    /// sidebar, which owns the stepper the op drives and the bypass-engage
-    /// chain a load may need first.
+    /// How this surface DISPATCHES a load, once bypass is engaged — not the
+    /// whole Load action. Unset, the menu dispatches through the shared
+    /// executor, which is right for a surface with no operation stepper.
     std::function<void()> on_load;
 
-    /// UNLOAD. Routed for the same reason as on_load.
+    /// Unload counterpart of on_load. Worth setting more often: a bypass unload
+    /// plans onto tier 1, so a surface with a stepper has something to show.
     std::function<void()> on_unload;
+
+    /// This surface's bypass controller. Drives the Enable/Disable Bypass entry
+    /// AND the engage that must precede a load — with bypass disengaged,
+    /// plan_load() refuses EXTERNAL_SPOOL_SLOT outright
+    /// (requires_slot_selection_for_load() is !is_bypass_active()), so a Load
+    /// offered without it is a dead end.
+    ///
+    /// Null hides the toggle entry and dispatches Load with no engage, which is
+    /// only correct where bypass cannot be driven at all.
+    BypassToggleController* toggle = nullptr;
 };
 
-/// Show the External Spool context menu (Load / Unload / Edit / Spoolman /
-/// Scan QR / Clear) anchored to a canvas widget. Replaces the duplicated
-/// handle_bypass_click body that used to live in both AmsPanel and
-/// AmsOverviewPanel.
+/// The hooks an AMS panel contributes: its operation sidebar dispatches Load and
+/// Unload so the stepper is built, and lends its bypass controller. Written once
+/// because AmsPanel and AmsOverviewPanel contribute exactly the same thing, and
+/// two copies of that answer is how the two panels drift.
 ///
-/// Load and Unload act on EXTERNAL_SPOOL_SLOT, which plan_load() and
-/// plan_unload() both resolve. Their enabled state is compute_op_button_gating()
-/// with that slot, decided in AmsContextMenu::on_created() — this function only
-/// routes the action.
-///
-/// @param parent_screen Parent screen for modal/overlay placement
-/// @param anchor_widget Canvas (or other widget) the menu attaches to
-/// @param context_menu  Owning panel's lazy-init unique_ptr — created on
-///                      first use, reused afterwards
-/// @param hooks         Panel-side actions; see ExternalSpoolMenuHooks. The
-///                      Scan QR and Clear actions go straight to AmsState and
-///                      don't need a panel hook.
+/// @param sidebar May be null; the hooks then fall back to the menu's own
+///                dispatch, which is correct but shows no stepper.
+[[nodiscard]] ExternalSpoolMenuHooks sidebar_external_spool_hooks(AmsOperationSidebar* sidebar);
+
 void show_external_spool_menu(lv_obj_t* parent_screen, lv_obj_t* anchor_widget,
                               std::unique_ptr<AmsContextMenu>& context_menu,
                               ExternalSpoolMenuHooks hooks);
