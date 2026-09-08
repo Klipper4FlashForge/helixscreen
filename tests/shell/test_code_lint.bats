@@ -1104,3 +1104,173 @@ EOF
     [ "$status" -eq 0 ]
     [ -z "$output" ]
 }
+
+# --- An OverlayBase cleanup() override must reach the base ---
+# OverlayBase::cleanup() is the only thing that invalidates object_lifetime_, the
+# guard whose whole point is surviving deactivation. A subclass that overrides
+# cleanup() and never calls the base leaves that guard live for the rest of the
+# process, so callbacks parked on it still fire into a torn-down overlay. The
+# wizard steps and the list views own an unrelated cleanup() and are not in this
+# hierarchy.
+
+check_overlay_cleanup_calls_base() {
+    local classes
+    classes=$(grep -rhoE 'class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*:[[:space:]]*public[[:space:]]+OverlayBase' \
+        "$@" --include='*.h' --include='*.cpp' 2>/dev/null \
+        | awk '{print $2}' | sort -u | paste -sd'|' -)
+    [ -n "$classes" ] || classes="__no_overlay_subclass__"
+
+    local hits="" file found inline
+    while IFS= read -r file; do
+        # An inline body carries no class name, so it is attributed by the file
+        # it sits in; an out-of-line one names its class and needs no such help.
+        inline=0
+        grep -q 'public[[:space:]]*OverlayBase' "$file" && inline=1
+        found=$(awk -v classes="$classes" -v allow_inline="$inline" '
+            BEGIN {
+                outofline = "^[ \t]*void[ \t]+(" classes ")::cleanup[ \t]*\\([ \t]*\\)"
+                inline_def = "void[ \t]+cleanup[ \t]*\\([ \t]*\\)[ \t]*(override[ \t]*)?\\{"
+            }
+            !in_body {
+                if ($0 ~ outofline || (allow_inline == 1 && $0 ~ inline_def)) {
+                    in_body = 1; body = ""; start = NR; depth = 0; opened = 0
+                }
+            }
+            in_body {
+                body = body $0 "\n"
+                o = gsub(/\{/, "{"); c = gsub(/\}/, "}")
+                if (o > 0) opened = 1
+                depth += o - c
+                if (opened && depth <= 0) {
+                    if (body !~ /OverlayBase::cleanup/) print FILENAME ":" start
+                    in_body = 0
+                }
+            }
+        ' "$file")
+        [ -n "$found" ] && hits+="${found}"$'\n'
+    done < <(grep -rl 'cleanup' "$@" --include='*.h' --include='*.cpp' 2>/dev/null)
+
+    if [ -n "$hits" ]; then
+        echo "an OverlayBase subclass that overrides cleanup() must call"
+        echo "OverlayBase::cleanup() — it is what invalidates both lifetime guards."
+        echo "Offending sites:"
+        echo "$hits"
+        return 1
+    fi
+    return 0
+}
+
+@test "every OverlayBase subclass overriding cleanup() calls the base" {
+    run check_overlay_cleanup_calls_base src include
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the cleanup gate examines the overrides that exist" {
+    # A pass that inspected nothing reads exactly like a pass that inspected
+    # everything, so the gate has to be shown finding the real overrides first.
+    local found
+    found=$(grep -rl 'OverlayBase::cleanup()' src --include='*.cpp' | wc -l | tr -d ' ')
+    [ "$found" -ge 10 ]
+}
+
+@test "the cleanup gate fires on a log-only override" {
+    local dir="${BATS_TEST_TMPDIR}/logonly"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_thing.h" <<'EOF'
+class ThingOverlay : public OverlayBase {
+  public:
+    void cleanup() override;
+};
+EOF
+    cat > "$dir/ui_overlay_thing.cpp" <<'EOF'
+void ThingOverlay::cleanup() {
+    spdlog::trace("[Thing] Cleanup");
+}
+EOF
+
+    run check_overlay_cleanup_calls_base "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ui_overlay_thing.cpp:1"* ]]
+}
+
+@test "the cleanup gate fires on an inline header override" {
+    local dir="${BATS_TEST_TMPDIR}/inline"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_thing.h" <<'EOF'
+class ThingOverlay : public OverlayBase {
+  public:
+    void cleanup() override {
+        stop_polling();
+    }
+};
+EOF
+
+    run check_overlay_cleanup_calls_base "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ui_overlay_thing.h:3"* ]]
+}
+
+@test "the cleanup gate reads each override separately, not the file as a whole" {
+    # One correct override in a file does not vouch for a second one beside it.
+    local dir="${BATS_TEST_TMPDIR}/twobodies"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_pair.h" <<'EOF'
+class FirstOverlay : public OverlayBase {
+    void cleanup() override;
+};
+class SecondOverlay : public OverlayBase {
+    void cleanup() override;
+};
+EOF
+    cat > "$dir/ui_overlay_pair.cpp" <<'EOF'
+void FirstOverlay::cleanup() {
+    stop_polling();
+    OverlayBase::cleanup();
+}
+
+void SecondOverlay::cleanup() {
+    stop_polling();
+}
+EOF
+
+    run check_overlay_cleanup_calls_base "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ui_overlay_pair.cpp:6"* ]]
+}
+
+@test "the cleanup gate stays quiet on a base call and on the other hierarchies" {
+    local dir="${BATS_TEST_TMPDIR}/quietcleanup"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_good.h" <<'EOF'
+class GoodOverlay : public OverlayBase {
+  public:
+    void cleanup() override;
+};
+EOF
+    cat > "$dir/ui_overlay_good.cpp" <<'EOF'
+void GoodOverlay::cleanup() {
+    if (timer_) {
+        lv_timer_cancel_safe(&timer_);
+    }
+    OverlayBase::cleanup();
+}
+EOF
+    cat > "$dir/ui_wizard_step_thing.cpp" <<'EOF'
+void WizardThingStep::cleanup() {
+    spdlog::trace("[WizardThing] Cleanup");
+}
+EOF
+    cat > "$dir/ui_thing_list_view.h" <<'EOF'
+class ThingListView : public ContainerDeleteNet {
+  public:
+    void cleanup() {
+        rows_.clear();
+    }
+};
+EOF
+
+    run check_overlay_cleanup_calls_base "$dir"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
