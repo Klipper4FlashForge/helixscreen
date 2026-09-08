@@ -141,8 +141,9 @@ TEST_CASE("populate_discovery: a macro_exclude heuristic actually excludes",
     nlohmann::json info = {{"hostname", "ad5m-pro"}};
     nlohmann::json cfg = {
         {"configfile", {{"settings", {{"printer", {{"kinematics", "corexy"}}}}}}}};
-    nlohmann::json objects = nlohmann::json::array(
-        {"extruder", "heater_bed", "mod_params", "gcode_macro SUPPORT_FORGE_X"});
+    nlohmann::json objects =
+        nlohmann::json::array({"extruder", "heater_bed", "mod_params",
+                               "gcode_macro SUPPORT_FORGE_X", "led chamber_light"});
 
     helix::PrinterDiscovery disc;
     helix::detect::populate_discovery(disc, objects, info, cfg);

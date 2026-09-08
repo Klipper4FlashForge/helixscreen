@@ -57,30 +57,20 @@ bool contains_ci(const std::string& haystack, const std::string& needle) {
     return lowercase(haystack).find(lowercase(needle)) != std::string::npos;
 }
 
+/// The name a pattern describes: "^box$" is the object "box".
+std::string unanchored(std::string pattern) {
+    if (!pattern.empty() && pattern.front() == '^')
+        pattern.erase(0, 1);
+    if (!pattern.empty() && pattern.back() == '$')
+        pattern.pop_back();
+    return pattern;
+}
+
 /// Entry ids the shipped database cannot tell apart today, with the shape of
 /// each collision. Removing an entry from this list is the way to claim the
 /// database fix that resolves it; the gate fails if the claim is not true.
 const std::map<std::string, std::string>& known_collisions() {
     static const std::map<std::string, std::string> known = {
-        {"flashforge_adventurer_5m",
-         "the Pro entry matches everything a plain 5M reports; the Pro's extra evidence "
-         "(chamber LED, '-pro' hostname) is absent on a plain machine and absence is not scored"},
-        {"flashforge_adventurer_5m_forgex",
-         "same plain-vs-Pro shape; the shared SUPPORT_FORGE_X macro is the base score for both"},
-        {"flashforge_ad5m_pro_forgex",
-         "the plain ForgeX entry ties the Pro on the Pro's own fingerprint: both lead on the "
-         "shared SUPPORT_FORGE_X macro and the extra-match bonus saturates"},
-        {"creality_k1_cfs",
-         "every Creality CFS entry leads on the same 95-point CFS box object and saturates the "
-         "bonus; K1 Max and K1C siblings tie on a K1 fingerprint"},
-        {"creality_k1_max_cfs", "same CFS box saturation as creality_k1_cfs"},
-        {"creality_k1c_cfs",
-         "same CFS box saturation, and 'k1' is a substring of 'k1c' so the plain K1 CFS entry "
-         "out-counts the K1C CFS entry on its own hostname"},
-        {"creality_k2_plus",
-         "K2 Plus and K2 Pro both lead on the shared CFS box object; the hostname and bed-size "
-         "signals that separate them are lost to the saturated bonus"},
-        {"creality_k2_pro", "same K2 Plus/Pro saturation"},
         {"zerog_mercury_one",
          "authors only corexy kinematics and a bed size, which any corexy machine of that size "
          "out-claims"},
@@ -98,9 +88,12 @@ const std::map<std::string, std::string>& known_collisions() {
 /// The hardware snapshot an entry authors for itself: every pattern its own
 /// heuristics look for, shaped the way PrinterDiscovery reports it, and nothing
 /// the entry does not mention. Fields the entry never scores stay empty rather
-/// than being guessed at, so the replay claims nothing the entry does not.
+/// than being guessed at, so the replay claims nothing the entry does not. The
+/// lists count as reported, the way a completed discovery leaves them, so an
+/// absence the entry authors for itself is a real absence.
 PrinterHardwareData fingerprint_of(const json& entry) {
     PrinterHardwareData hw;
+    hw.objects_reported = true;
     const json heuristics = entry.value("heuristics", json::array());
 
     // Hostname: one string satisfying every hostname_match pattern at once, most
@@ -136,19 +129,19 @@ PrinterHardwareData fingerprint_of(const json& entry) {
     bool volume_set = false;
     for (const auto& h : heuristics) {
         const std::string type = h.value("type", "");
-        const std::string pattern = h.value("pattern", "");
+        const std::string pattern = unanchored(h.value("pattern", ""));
 
-        if (type == "sensor_match") {
+        if (type == "sensor_match" || type == "sensor_required") {
             hw.sensors.push_back(pattern);
-        } else if (type == "fan_match") {
+        } else if (type == "fan_match" || type == "fan_required") {
             hw.fans.push_back(pattern);
         } else if (type == "fan_combo") {
             for (const auto& p : h.value("patterns", json::array()))
                 if (p.is_string())
                     hw.fans.push_back(p.get<std::string>());
-        } else if (type == "led_match") {
+        } else if (type == "led_match" || type == "led_required") {
             hw.leds.push_back(pattern);
-        } else if (type == "object_exists") {
+        } else if (type == "object_exists" || type == "object_required") {
             hw.printer_objects.push_back(pattern);
         } else if (type == "macro_match") {
             hw.printer_objects.push_back("gcode_macro " + pattern);

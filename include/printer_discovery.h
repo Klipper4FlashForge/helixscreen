@@ -58,6 +58,7 @@ class PrinterDiscovery {
         if (!objects.is_array()) {
             return;
         }
+        objects_reported_ = true;
 
         // Keep the raw list. Detection's object_exists / macro_match /
         // macro_exclude heuristics read printer_objects(), which 73 of the 94
@@ -891,6 +892,7 @@ class PrinterDiscovery {
         mcu_list_.clear();
         mcu_versions_.clear();
         printer_objects_.clear();
+        objects_reported_ = false;
     }
 
     // ========================================================================
@@ -1496,6 +1498,12 @@ class PrinterDiscovery {
         return printer_objects_;
     }
 
+    /// True once parse_objects() consumed an objects list: the hardware lists
+    /// above are then complete, and an empty one means the printer has none.
+    [[nodiscard]] bool objects_reported() const {
+        return objects_reported_;
+    }
+
   private:
     // Helper: convert string to uppercase
     static std::string to_upper(const std::string& str) {
@@ -1744,6 +1752,7 @@ class PrinterDiscovery {
     std::vector<std::string> mcu_list_;
     std::vector<std::pair<std::string, std::string>> mcu_versions_;
     std::vector<std::string> printer_objects_;
+    bool objects_reported_ = false;
 };
 
 } // namespace helix

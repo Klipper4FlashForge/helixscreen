@@ -316,17 +316,35 @@ PrinterDatabase g_database;
 // ============================================================================
 
 namespace {
-// Case-insensitive substring search
+// Case-insensitive substring search. A leading '^' pins the pattern to the
+// start of a name and a trailing '$' to its end, so "^box$" names exactly the
+// Klipper object "box" and not a "gcode_macro BOX_UNLOAD" that contains it.
 bool has_pattern(const std::vector<std::string>& objects, const std::string& pattern) {
     std::string pattern_lower = pattern;
     std::transform(pattern_lower.begin(), pattern_lower.end(), pattern_lower.begin(),
                    [](unsigned char c) { return std::tolower(c); });
 
-    return std::any_of(objects.begin(), objects.end(), [&pattern_lower](const std::string& obj) {
+    const bool at_start = !pattern_lower.empty() && pattern_lower.front() == '^';
+    const bool at_end = pattern_lower.size() > (at_start ? 1u : 0u) && pattern_lower.back() == '$';
+    const std::string core = pattern_lower.substr(
+        at_start ? 1 : 0, pattern_lower.size() - (at_start ? 1 : 0) - (at_end ? 1 : 0));
+
+    if (core.empty()) {
+        return false; // a bare anchor names nothing
+    }
+
+    return std::any_of(objects.begin(), objects.end(), [&](const std::string& obj) {
         std::string obj_lower = obj;
         std::transform(obj_lower.begin(), obj_lower.end(), obj_lower.begin(),
                        [](unsigned char c) { return std::tolower(c); });
-        return obj_lower.find(pattern_lower) != std::string::npos;
+        if (at_start && at_end)
+            return obj_lower == core;
+        if (at_start)
+            return obj_lower.rfind(core, 0) == 0;
+        if (at_end)
+            return obj_lower.size() >= core.size() &&
+                   obj_lower.compare(obj_lower.size() - core.size(), core.size(), core) == 0;
+        return obj_lower.find(core) != std::string::npos;
     });
 }
 
@@ -474,6 +492,35 @@ int execute_heuristic(const json& heuristic, const PrinterHardwareData& hardware
             spdlog::debug("[PrinterDetector] Matched {} pattern '{}' (confidence: {})", type,
                           pattern, confidence);
             return confidence;
+        }
+    } else if (type == "led_required" || type == "sensor_required" || type == "fan_required" ||
+               type == "object_required") {
+        // Absence as evidence: the entry's machine always carries this pattern,
+        // so a snapshot that lacks it is some other machine. Only a reported list
+        // can be missing something - an unreported one says nothing about the
+        // hardware, and firing on it would score a real match as the wrong
+        // model while discovery is still filling in.
+        if (!hardware.objects_reported) {
+            return 0;
+        }
+        auto field_data = get_field_data(hardware, field);
+        std::string pattern = heuristic.value("pattern", "");
+        if (!has_pattern(field_data, pattern)) {
+            spdlog::debug("[PrinterDetector] Excluded by {}: '{}' absent from {}", type, pattern,
+                          field);
+            return HEURISTIC_EXCLUDE;
+        }
+    } else if (type == "led_exclude" || type == "sensor_exclude" || type == "fan_exclude" ||
+               type == "object_exclude") {
+        // Presence as evidence against: the entry's machine never carries this
+        // pattern, so a snapshot that has it is some other machine. The
+        // counterpart of *_required for the sibling that lacks the hardware.
+        auto field_data = get_field_data(hardware, field);
+        std::string pattern = heuristic.value("pattern", "");
+        if (has_pattern(field_data, pattern)) {
+            spdlog::debug("[PrinterDetector] Excluded by {}: '{}' present in {}", type, pattern,
+                          field);
+            return HEURISTIC_EXCLUDE;
         }
     } else if (type == "hostname_exclude") {
         // If hostname matches this pattern, exclude this printer entirely
@@ -1930,6 +1977,7 @@ PrinterDetectionResult PrinterDetector::auto_detect(const helix::PrinterDiscover
     hw_data.mcu = discovery.mcu();
     hw_data.mcu_list = discovery.mcu_list();
     hw_data.cpu_arch = discovery.cpu_arch();
+    hw_data.objects_reported = discovery.objects_reported();
 
     return detect(hw_data);
 }

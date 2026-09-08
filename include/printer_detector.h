@@ -98,6 +98,12 @@ struct PrinterHardwareData {
     std::vector<std::string> mcu_list{}; ///< All MCU chips (primary + secondary, CAN toolheads)
     BuildVolume build_volume{};          ///< Build volume dimensions from bed_mesh
     std::string cpu_arch{};              ///< Host CPU architecture (e.g., "ARMv7", "MIPS")
+    /// True once an objects list was parsed, so heaters/sensors/fans/leds/
+    /// printer_objects are complete and an empty list means "none", not
+    /// "not reported yet". Absence-scoring heuristics (led_required) only
+    /// fire when this is set: an unreported list says nothing about the
+    /// hardware, and scoring it would turn a slow discovery into a wrong model.
+    bool objects_reported = false;
 };
 
 /**

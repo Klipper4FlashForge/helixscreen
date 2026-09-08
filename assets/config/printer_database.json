@@ -6,14 +6,22 @@
     "hostname_exclude": "Exclude this printer if the hostname matches this pattern",
     "kinematics_match": "Match against printer kinematics type (corexy, cartesian, delta, etc.)",
     "kinematics_exclude": "Exclude this printer if kinematics matches (e.g. cartesian excludes corexy-only brands)",
-    "object_exists": "Check if a Klipper object exists in /printer/objects/list",
+    "object_exists": "Check if a Klipper object exists in /printer/objects/list (substring; '^' pins the pattern to the start of a name and '$' to its end, so '^box$' is exactly the object 'box')",
     "stepper_count": "Count of Z steppers (z_count_1, z_count_2, z_count_3, z_count_4)",
     "sensor_match": "Match against temperature_sensor names",
     "fan_match": "Match against fan object names",
     "fan_combo": "Match multiple fan patterns together",
     "led_match": "Match against LED/neopixel object names",
+    "led_required": "Exclude this printer if the LED list was reported and lacks the pattern. Absence as evidence, for a sibling that differs from this entry only by hardware it carries; a list that was not reported yet never excludes.",
+    "sensor_required": "As led_required, over temperature sensor names",
+    "fan_required": "As led_required, over fan object names",
+    "object_required": "As led_required, over the full Klipper object list",
+    "led_exclude": "Exclude this printer if an LED matching the pattern is present. The counterpart of led_required, for the sibling that lacks the hardware.",
+    "sensor_exclude": "As led_exclude, over temperature sensor names",
+    "fan_exclude": "As led_exclude, over fan object names",
+    "object_exclude": "As led_exclude, over the full Klipper object list",
     "mcu_match": "Match against MCU chip type or serial pattern",
-    "build_volume_range": "Match against bed_mesh dimensions",
+    "build_volume_range": "Match against the X/Y stepper travel Klipper resolves from the configfile (position_max minus position_min per axis), not the bed mesh or the advertised print area. Travel is the print area plus whatever overtravel the config allows (the four entries authored from a real config show +10 to +58 mm), so a window drawn tightly around the marketing size misses the machine it describes; author min/max from a real configfile",
     "macro_match": "Match against G-code macro names (gcode_macro objects)",
     "macro_exclude": "Exclude this printer if a G-code macro is present",
     "tool_count": "Count of extruder tools (tool_count_1, tool_count_2, tool_count_4)",
@@ -128,6 +136,13 @@
           "reason": "Exclude AD5X ZMOD firmware (private _IFS_* macros are AD5X-only)"
         },
         {
+          "type": "led_exclude",
+          "field": "leds",
+          "pattern": "chamber_l",
+          "confidence": 0,
+          "reason": "A chamber light is the Pro's hardware; a machine carrying one is a 5M Pro, not a plain 5M"
+        },
+        {
           "type": "sensor_match",
           "field": "sensors",
           "pattern": "tvoc",
@@ -213,6 +228,13 @@
           "pattern": "_IFS_",
           "confidence": 0,
           "reason": "Exclude AD5X ZMOD firmware (private _IFS_* macros are AD5X-only)"
+        },
+        {
+          "type": "led_exclude",
+          "field": "leds",
+          "pattern": "chamber_l",
+          "confidence": 0,
+          "reason": "A chamber light is the Pro's hardware; a machine carrying one is a 5M Pro, not a plain 5M"
         },
         {
           "type": "macro_match",
@@ -339,6 +361,13 @@
           "reason": "Chamber light LED (corroborating only - 'chamber_light' is a generic name custom rigs use too; with max bonus it stays under the 70% high-confidence bar)"
         },
         {
+          "type": "led_required",
+          "field": "leds",
+          "pattern": "chamber_l",
+          "confidence": 0,
+          "reason": "The chamber light is the only hardware that separates a 5M Pro from a plain 5M; a machine reporting no chamber light is not a Pro"
+        },
+        {
           "type": "sensor_match",
           "field": "sensors",
           "pattern": "tvoc",
@@ -445,6 +474,13 @@
           "pattern": "chamber_l",
           "confidence": 55,
           "reason": "Chamber light LED (corroborating only - matches stock 'chamber_light' and ForgeX 'chamber_led', but custom rigs use those names too; with max bonus it stays under the 70% high-confidence bar)"
+        },
+        {
+          "type": "led_required",
+          "field": "leds",
+          "pattern": "chamber_l",
+          "confidence": 0,
+          "reason": "The chamber light is the only hardware that separates a 5M Pro from a plain 5M; a machine reporting no chamber light is not a Pro"
         },
         {
           "type": "macro_match",
@@ -1051,6 +1087,41 @@
           "reason": "Hostname contains 'k1'"
         },
         {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1c",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1-max",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1max",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1se",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1-se",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
           "type": "mcu_match",
           "field": "mcu",
           "pattern": "STM32H723",
@@ -1122,8 +1193,16 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected (K1 official upgrade)"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
+        },
+        {
+          "type": "object_required",
+          "field": "printer_objects",
+          "pattern": "^box$",
+          "confidence": 0,
+          "reason": "This entry is the CFS-equipped variant; a reported object list without the box object is the plain machine"
         },
         {
           "type": "build_volume_range",
@@ -1148,6 +1227,41 @@
           "pattern": "k1",
           "confidence": 80,
           "reason": "Hostname contains 'k1'"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1c",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1-max",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1max",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1se",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1-se",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
         },
         {
           "type": "mcu_match",
@@ -1320,8 +1434,16 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected (K1 official upgrade)"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
+        },
+        {
+          "type": "object_required",
+          "field": "printer_objects",
+          "pattern": "^box$",
+          "confidence": 0,
+          "reason": "This entry is the CFS-equipped variant; a reported object list without the box object is the plain machine"
         },
         {
           "type": "build_volume_range",
@@ -1422,8 +1544,9 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
         },
         {
           "type": "object_exists",
@@ -1558,8 +1681,9 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
         },
         {
           "type": "object_exists",
@@ -1772,8 +1896,16 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected (K1 official upgrade ≥ v2.3.5.33)"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
+        },
+        {
+          "type": "object_required",
+          "field": "printer_objects",
+          "pattern": "^box$",
+          "confidence": 0,
+          "reason": "This entry is the CFS-equipped variant; a reported object list without the box object is the plain machine"
         },
         {
           "type": "hostname_match",
