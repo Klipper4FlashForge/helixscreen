@@ -313,7 +313,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     // Assigned lane: material kept, and dimmed in lockstep with the spool visual.
     CHECK(std::string(lv_label_get_text(mat0)) == "PETG");
-    CHECK(lv_obj_get_style_text_opa(mat0, LV_PART_MAIN) == LV_OPA_20);
+    CHECK(lv_obj_get_style_text_opa(mat0, LV_PART_MAIN) == LV_OPA_30);
 
     // Unassigned lane: names its purpose, at full strength (nothing to ghost).
     CHECK(std::string(lv_label_get_text(mat1)) == std::string(lv_tr("Empty")));

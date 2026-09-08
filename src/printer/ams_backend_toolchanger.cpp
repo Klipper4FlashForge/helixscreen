@@ -4,6 +4,7 @@
 #include "ams_backend_toolchanger.h"
 
 #include "ams_error.h"
+#include "ams_fault_event.h"
 #include "ams_state.h"
 #include "ams_tool_map_sync.h"
 #include "i_moonraker_api.h"
@@ -432,10 +433,36 @@ PathSegment AmsBackendToolChanger::get_slot_filament_segment(int slot_index) con
     if (slot_index < 0 || slot_index >= static_cast<int>(tool_mounted_.size())) {
         return PathSegment::NONE;
     }
+    const auto* slot = system_info_.get_slot_global(slot_index);
+    if (!slot) {
+        return PathSegment::NONE;
+    }
 
-    // For tool changers, each slot is a complete tool with filament loaded
-    // through the nozzle — both mounted and docked tools have filament at nozzle
+    // A tool that is not in the machine has no strand to draw. Its dock reads
+    // vacant while it is not on the head, which is what stamps EMPTY.
+    if (slot->status == SlotStatus::EMPTY) {
+        return PathSegment::NONE;
+    }
+
+    // PARALLEL multi-toolhead: each tool carries its own hot end and its own
+    // filament, so a tool that is present is loaded to its own nozzle whether it
+    // is mounted or docked.
     return PathSegment::NOZZLE;
+}
+
+std::optional<helix::ErrorEvent> AmsBackendToolChanger::current_error() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Only the dock-sensor fault. Every other ERROR this backend raises comes
+    // from klipper-toolchanger's own status and reads correctly in the generic
+    // dialog, so it stays there.
+    if (!sensor_error_) {
+        return std::nullopt;
+    }
+    // Same sentence unload_blocked_reason() returns, so the dialog and the
+    // greyed-out Unmount beside it explain the fault in one wording.
+    return helix::make_ams_fault_event(
+        helix::ErrorSource::TOOLCHANGER, lv_tr("Dock sensors disagree"),
+        lv_tr("Dock sensors cannot tell which tool is mounted"), build_recovery_actions());
 }
 
 PathSegment AmsBackendToolChanger::infer_error_segment() const {
@@ -524,10 +551,19 @@ void AmsBackendToolChanger::handle_status_update(const nlohmann::json& notificat
 
 void AmsBackendToolChanger::apply_tool_sensor_locked(
     const helix::toolchanger_addon::ToolReading& reading) {
+    // Captured BEFORE the phase branches below overwrite the action. The closing
+    // grip of a swap and the resting closed gripper are the same wire state, and
+    // the only thing separating them is whether an operation was running.
+    // Reading system_info_.action afterwards would always say IDLE and lose that.
+    const bool was_mid_operation = pending_dispatch_action_.has_value() ||
+                                   system_info_.action == AmsAction::SELECTING ||
+                                   system_info_.action == AmsAction::UNLOADING;
+
     // -2 means the sensors cannot tell, which is NOT "no tool". Reporting -1
     // would invite a tool change against an unknown carriage state, so hold the
-    // last known tool and let the error surface instead.
-    if (reading.sensor_error) {
+    // last known tool and let the error surface instead. Which -2 readings are
+    // faults at all is sensor_error_is_fault()'s rule, not this function's.
+    if (helix::toolchanger_addon::sensor_error_is_fault(reading, was_mid_operation)) {
         if (!sensor_error_) {
             spdlog::warn("{} Dock sensors cannot identify the mounted tool", backend_log_tag());
         }
@@ -541,23 +577,29 @@ void AmsBackendToolChanger::apply_tool_sensor_locked(
     }
     sensor_error_ = false;
 
-    const int tool = reading.current_tool;
-    if (system_info_.current_tool != tool) {
-        spdlog::info("{} Dock sensors report tool {} (toolchanger said {})", backend_log_tag(),
-                     tool, system_info_.current_tool);
-    }
-    system_info_.current_tool = tool;
-    int seated_slot = -1;
-    if (tool >= 0) {
-        seated_slot = tool < static_cast<int>(system_info_.tool_to_slot_map.size())
-                          ? system_info_.tool_to_slot_map[static_cast<size_t>(tool)]
-                          : -1;
-        if (seated_slot < 0) {
-            seated_slot = tool;
+    // Only when the frame named the carriage. A delta carrying just the gripper
+    // or the phase says nothing about which tool is on the head, and answering
+    // -1 there withdraws the mounted tool from the unmount gate, its slot status
+    // and the active-slot highlight in one pass.
+    if (reading.current_tool.has_value() && *reading.current_tool >= -1) {
+        const int tool = *reading.current_tool;
+        if (system_info_.current_tool != tool) {
+            spdlog::info("{} Dock sensors report tool {} (toolchanger said {})", backend_log_tag(),
+                         tool, system_info_.current_tool);
         }
+        system_info_.current_tool = tool;
+        int seated_slot = -1;
+        if (tool >= 0) {
+            seated_slot = tool < static_cast<int>(system_info_.tool_to_slot_map.size())
+                              ? system_info_.tool_to_slot_map[static_cast<size_t>(tool)]
+                              : -1;
+            if (seated_slot < 0) {
+                seated_slot = tool;
+            }
+        }
+        system_info_.current_slot = seated_slot;
+        system_info_.filament_loaded = (tool >= 0);
     }
-    system_info_.current_slot = seated_slot;
-    system_info_.filament_loaded = (tool >= 0);
 
     // Dock occupancy, when the frame carried any. Merged rather than replaced:
     // Moonraker republishes only changed fields, so a frame naming two docks
@@ -589,17 +631,10 @@ void AmsBackendToolChanger::apply_tool_sensor_locked(
     }
 
     // The two controllers do not share a phase vocabulary. Irbis3D's `operation`
-    // names the direction; topi314's `state` only ever says "changing", which
-    // used to match none of these branches and left the action untouched for the
-    // whole swap - on that fork there is no [toolchanger] object either, so
-    // nothing else was setting it and only our own optimistic dispatch was.
-    // Captured BEFORE the branches below overwrite the action. The closing grip
-    // of a swap and the resting closed gripper are the same wire state, and the
-    // only thing separating them is whether an operation was running. Reading
-    // system_info_.action afterwards would always say IDLE and lose that.
-    const bool was_mid_operation = pending_dispatch_action_.has_value() ||
-                                   system_info_.action == AmsAction::SELECTING ||
-                                   system_info_.action == AmsAction::UNLOADING;
+    // names the direction; topi314's `state` only ever says "changing", so a
+    // swap there is one undifferentiated phase - on that fork there is no
+    // [toolchanger] object either, so nothing else sets the action and only our
+    // own optimistic dispatch does.
 
     // Set by the idle branch below, consumed after the phase is computed.
     bool operation_ended = false;

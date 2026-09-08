@@ -719,6 +719,7 @@
   <translation tag="Do not touch the printer during calibration" ru="Не трогайте принтер во время калибровки"/>
   <translation tag="Dock" ru="Парковать"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" ru="Датчики стыковки не могут определить, какой инструмент установлен"/>
+  <translation tag="Dock sensors disagree" ru="Противоречие датчиков стыковки"/>
   <translation tag="Dock tool" ru="Состыковать инструмент"/>
   <translation tag="Docking tool" ru="Парковка инструмента"/>
   <translation tag="Documentation" ru="Документация"/>

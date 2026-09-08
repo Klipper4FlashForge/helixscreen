@@ -380,7 +380,13 @@ TEST_CASE_METHOD(LVGLTestFixture, "AmsState publishes per-slot fill subject on s
     s0.total_weight_g = 1000.0f;
     mock_ptr->set_slot_info(0, s0);
 
-    // slot 1: empty lane → 0 (not present).
+    // slot 1: empty lane with NO recorded weight → 0. The weights are cleared
+    // explicitly: a real weight now outranks the empty status (an absent tool on
+    // a changer took its filament with it), so inheriting the mock's default
+    // weights here would be testing the other branch by accident.
+    SlotInfo s1;
+    s1.slot_index = 1; // remaining/total stay -1 (unknown)
+    mock_ptr->set_slot_info(1, s1);
     mock_ptr->force_slot_status(1, SlotStatus::EMPTY);
 
     // slot 2: present, metadata only (no usable weights) → full fallback.

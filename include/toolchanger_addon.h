@@ -62,10 +62,19 @@ struct Feeder {
 /// `toolchanger.tool_number` when a provider is present.
 struct ToolReading {
     /// 0..N-1 mounted, -1 nothing on the head, -2 the sensors cannot tell.
-    int current_tool = -1;
+    /// nullopt when this frame did not name it. Moonraker republishes only the
+    /// fields that CHANGED, so a frame silent about the carriage is not a frame
+    /// reporting an empty one - the same rule `docks` below is written to.
+    std::optional<int> current_tool;
     /// current_tool == -2. A distinct state from "no tool": the machine does not
     /// KNOW, and acting on a guess would drive the carriage into a dock.
     bool sensor_error = false;
+    /// The controller published `sensor_error` itself rather than us deriving it
+    /// from -2. Only Irbis3D publishes the flag, and only the flag is a fault on
+    /// its own: -2 is one value for two answers, a pin fault and "the switch
+    /// pattern matches no settled configuration". A swap in flight is always the
+    /// second, because the tool is between its dock and the head.
+    bool sensor_error_reported = false;
     /// The machine's phase word, or empty when the frame did not say.
     ///
     /// The two controllers do NOT share a vocabulary, and this is deliberately
@@ -164,5 +173,16 @@ std::vector<std::string> required_status_objects(const PrinterDiscovery& hw);
 /// none of its fields. Callers must treat nullopt as no news, never as cleared:
 /// Moonraker only republishes fields whose value CHANGED.
 std::optional<ToolReading> read_tool(const nlohmann::json& status);
+
+/// Whether a reading's sensor_error names a fault the user must act on, rather
+/// than the transitional geometry every swap produces.
+///
+/// `current_tool == -2` is one value for two answers upstream: a pin that read
+/// neither 0 nor 1, and a switch pattern matching none of the settled
+/// configurations. A tool in transit between its dock and the head is always the
+/// second. So only a flag the controller published itself, or a -2 it still
+/// reports once at rest, is a fault. topi314's controller draws the same line,
+/// escalating -2 to state:"error" only while its machine state is ready.
+[[nodiscard]] bool sensor_error_is_fault(const ToolReading& reading, bool swap_in_flight);
 
 } // namespace helix::toolchanger_addon

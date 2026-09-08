@@ -7,6 +7,7 @@
 
 #include "../tests/mocks/mock_printer_state.h"
 #include "gcode_parser.h"
+#include "moonraker_client_mock.h"
 #include "moonraker_client_mock_internal.h"
 #include "power_device_state.h"
 #include "runtime_config.h"
@@ -26,6 +27,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <random>
 #include <set>
 #include <sstream>
@@ -65,6 +67,44 @@ MoonrakerAPIMock::MoonrakerAPIMock(MoonrakerClient& client, PrinterState& state)
     rest_api_ = std::make_unique<MoonrakerRestAPIMock>(client, get_http_base_url());
     spoolman_api_ = std::make_unique<MoonrakerSpoolmanAPIMock>(client);
     timelapse_api_ = std::make_unique<MoonrakerTimelapseAPIMock>(client, get_http_base_url());
+
+    // MedusaHC drives the real AmsBackendToolChanger, and klipper-toolchanger
+    // reports no material, colour, brand or weight - the override store is the
+    // whole of filament identity there. Without these records every lane renders
+    // at AMS_DEFAULT_SLOT_COLOR, which makes colour and ghost bugs invisible.
+    // Outer key style is T<n> (lane_key_style_for), inner "lane" is 0-based.
+    if (MoonrakerClientMock::mock_medusa_variant() != MoonrakerClientMock::MedusaVariant::NONE) {
+        // Each lane mirrors a spool from init_mock_spools() - id, vendor,
+        // material, colour and weights - so the active-spool card and the lane
+        // it names cannot describe different filament. Four distinguishable
+        // colours with four different fill levels.
+        struct Lane {
+            int spoolman_id;
+            const char* material;
+            const char* brand;
+            const char* spool_name;
+            const char* color;
+            double remaining_g;
+        };
+        static constexpr Lane kLanes[] = {
+            {2, "Silk PLA", "eSUN", "Silk Blue", "#26DCD9", 750.0},
+            {4, "ABS", "Flashforge", "Fire Engine Red", "#D20000", 100.0},
+            {13, "PETG", "Bambu Lab", "Translucent Green PETG", "#29A261", 1000.0},
+            {5, "PETG", "Kingroon", "Signal Yellow", "#F4E111", 1000.0},
+        };
+        for (int i = 0; i < static_cast<int>(std::size(kLanes)); ++i) {
+            const Lane& l = kLanes[i];
+            mock_set_db_value("lane_data", "T" + std::to_string(i),
+                              json{{"lane", std::to_string(i)},
+                                   {"spoolman_id", l.spoolman_id},
+                                   {"material", l.material},
+                                   {"brand", l.brand},
+                                   {"spool_name", l.spool_name},
+                                   {"color", l.color},
+                                   {"remaining_weight_g", l.remaining_g},
+                                   {"total_weight_g", 1000.0}});
+        }
+    }
 }
 
 MoonrakerAdvancedAPIMock& MoonrakerAPIMock::advanced_mock() {
@@ -1477,6 +1517,13 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     // Create a realistic mock spool inventory
     mock_spools_.clear();
 
+    // The active spool is auto-assigned to the active tool on a changer, so on
+    // a MedusaHC mock it must be the spool lane T0 already names, or the
+    // "Current" card and the T0 lane describe different filament.
+    if (MoonrakerClientMock::mock_medusa_variant() != MoonrakerClientMock::MedusaVariant::NONE) {
+        mock_active_spool_id_ = 2;
+    }
+
     // Spool 1: Polymaker PLA - Jet Black (active, 85% remaining)
     SpoolInfo spool1;
     spool1.id = 1;
@@ -1821,6 +1868,13 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
                          "HELIX_MOCK_SPOOLMAN_SPOOLS",
                          mock_spools_.size());
         }
+    }
+
+    // One answer about which spool is active. The per-spool flag is hand-set on
+    // one entry in the inventory above, so deriving it here keeps it true after
+    // any mode has moved mock_active_spool_id_.
+    for (auto& spool : mock_spools_) {
+        spool.is_active = (spool.id == mock_active_spool_id_);
     }
 
     spdlog::debug("[MoonrakerAPIMock] Initialized {} mock spools", mock_spools_.size());
