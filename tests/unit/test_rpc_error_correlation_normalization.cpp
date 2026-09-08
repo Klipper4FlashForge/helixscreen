@@ -36,13 +36,11 @@
 #include "../../include/rpc_error_correlation.h"
 #include "../lvgl_test_fixture.h"
 #include "../test_helpers/gcode_error_router_test_access.h"
+#include "../test_helpers/log_capture.h"
 #include "gcode_error_router.h"
 #include "moonraker_request.h"
 #include "moonraker_request_tracker.h"
 #include "recovery_modal_presenter.h"
-
-#include <spdlog/sinks/ringbuffer_sink.h>
-#include <spdlog/spdlog.h>
 
 #include <atomic>
 #include <memory>
@@ -68,48 +66,6 @@ class MoonrakerRequestTrackerTestAccess {
 };
 
 namespace {
-
-/// RAII spdlog capture: collects formatted log lines so the test can count the
-/// toasts the user would actually have seen.
-class LogCapture {
-  public:
-    LogCapture() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(512)) {
-        logger_ = spdlog::default_logger();
-        prev_level_ = logger_->level();
-        sink_->set_level(spdlog::level::trace);
-        logger_->sinks().push_back(sink_);
-        logger_->set_level(spdlog::level::trace);
-    }
-
-    ~LogCapture() {
-        auto& sinks = logger_->sinks();
-        for (auto it = sinks.begin(); it != sinks.end(); ++it) {
-            if (*it == sink_) {
-                sinks.erase(it);
-                break;
-            }
-        }
-        logger_->set_level(prev_level_);
-    }
-
-    std::vector<std::string> lines() const {
-        return sink_->last_formatted(512);
-    }
-
-    int count_containing(const std::string& needle) const {
-        int n = 0;
-        for (const auto& l : lines()) {
-            if (l.find(needle) != std::string::npos)
-                ++n;
-        }
-        return n;
-    }
-
-  private:
-    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
-    std::shared_ptr<spdlog::logger> logger_;
-    spdlog::level::level_enum prev_level_;
-};
 
 /// A PendingRequest shaped like a jog: the caller raises its own error toast, so
 /// the tracker treats it as caller-handles-UI and records the correlation.
@@ -164,7 +120,7 @@ class CorrelationFixture : public LVGLTestFixture {
 
         ChannelResult out;
         {
-            LogCapture log;
+            LogCapture log(512);
 
             // ---- Channel (a): the REAL request tracker routes the RPC error ----
             MoonrakerRequestTracker tracker;
@@ -211,7 +167,7 @@ class CorrelationFixture : public LVGLTestFixture {
 
         ChannelResult out;
         {
-            LogCapture log;
+            LogCapture log(512);
 
             MoonrakerRequestTracker tracker;
             PendingRequest req;

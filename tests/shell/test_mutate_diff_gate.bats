@@ -182,6 +182,61 @@ mutate_auto() { ( cd "$WORK" && python3 scripts/mutate_diff.py --shards 1 "$@" )
     [[ "$output" == *"VERDICT: CLEAN"* ]]
 }
 
+# --- the run log ------------------------------------------------------------
+#
+# The log is opened with 'w' and carries every verdict and every suite's
+# stdout. Two trees sharing one path truncate and interleave each other, which
+# destroys the per-hunk attribution the gate exists to produce -- so the
+# default is named for the worktree, and the path the run reports is the path
+# it actually writes.
+
+@test "the default log is named for the worktree" {
+    stub_tests_that_detect
+    run mutate
+    [ "$status" -eq 0 ]
+    contains "log: /tmp/mutate-diff-$(basename "$WORK").log" "$output"
+}
+
+@test "two worktrees do not share a default log" {
+    stub_tests_that_detect
+    run mutate
+    [ "$status" -eq 0 ]
+    first=$(printf '%s\n' "$output" | sed -n 's/^log: //p')
+
+    # The same change in a tree that differs only in directory name, which is
+    # what parallel worktrees of one branch look like.
+    other="$(dirname "$WORK")/repo-elsewhere"
+    rm -rf "$other"
+    cp -a "$WORK" "$other"
+    run bash -c "cd '$other' && python3 scripts/mutate_diff.py --base '$BASE' --shards 1"
+    [ "$status" -eq 0 ]
+    second=$(printf '%s\n' "$output" | sed -n 's/^log: //p')
+
+    [ -n "$first" ]
+    [ -n "$second" ]
+    [ "$first" != "$second" ]
+}
+
+@test "an explicit --log outranks the per-worktree default" {
+    stub_tests_that_detect
+    run mutate --log "$BATS_TEST_TMPDIR/explicit.log"
+    [ "$status" -eq 0 ]
+    contains "log: $BATS_TEST_TMPDIR/explicit.log" "$output"
+    [ -f "$BATS_TEST_TMPDIR/explicit.log" ]
+}
+
+@test "--help works where there is no worktree to name the log after" {
+    outside="$BATS_TEST_TMPDIR/not-a-repo"
+    mkdir -p "$outside/scripts"
+    cp "$WORK/scripts/mutate_diff.py" "$WORK/scripts/diff_base.py" "$outside/scripts/"
+    if git -C "$outside" rev-parse --show-toplevel >/dev/null 2>&1; then
+        skip "the bats temp dir is itself inside a git repository"
+    fi
+    run bash -c "cd '$outside' && python3 scripts/mutate_diff.py --help"
+    [ "$status" -eq 0 ]
+    contains "--log" "$output"
+}
+
 # --- coverage honesty -------------------------------------------------------
 #
 # The gate's answer is cited in commit bodies as evidence that a change is
