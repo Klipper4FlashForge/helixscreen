@@ -3,6 +3,8 @@
 
 #include "ui_panel_filament.h"
 
+#include "ui_tool_chip.h"
+
 #include "ui_ams_edit_overlay.h"
 #include "ui_callback_helpers.h"
 #include "ui_component_keypad.h"
@@ -341,6 +343,10 @@ void FilamentPanel::init_subjects() {
         // Tool the panel's verbs act on. Seeded to the active tool in setup();
         // the tool row writes it and highlights from it.
         UI_MANAGED_SUBJECT_INT(selected_tool_subject_, 0, "filament_selected_tool", subjects_);
+        // The tool row's chips observe this subject but resolve it by name, so
+        // they cannot know whose it is. Hand them the token that says when it
+        // dies (see ui_tool_chip_set_selection_lifetime).
+        ui_tool_chip_set_selection_lifetime(subjects_lifetime_);
         UI_MANAGED_SUBJECT_INT(has_tool_subject_, 1, "filament_has_tool", subjects_);
         UI_MANAGED_SUBJECT_INT(tool_is_active_subject_, 1, "filament_tool_is_active", subjects_);
 
@@ -426,6 +432,12 @@ void FilamentPanel::deinit_subjects() {
     nozzle_target_observer_.reset();
     temp_observers_.clear();
     deinit_subjects_base(subjects_);
+    // The subjects above are gone; anything outside the panel still observing
+    // them (the tool row's chips watch filament_selected_tool) has to find out.
+    // A fresh token expires every guard built against the previous generation,
+    // so their reset() neuters instead of walking a freed subject.
+    subjects_lifetime_ = std::make_shared<bool>(true);
+    ui_tool_chip_set_selection_lifetime(subjects_lifetime_);
 }
 
 void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {

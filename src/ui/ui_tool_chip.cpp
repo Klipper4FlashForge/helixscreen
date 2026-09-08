@@ -130,9 +130,6 @@ struct ChipData {
     ObserverGuard ams_revision_obs;
     ObserverGuard ams_action_obs;
     ObserverGuard selected_obs;
-
-    /// Expires the observers above when the chip is deleted.
-    SubjectLifetime alive = std::make_shared<bool>(true);
 };
 
 ChipData* chip_data(lv_obj_t* obj) {
@@ -147,6 +144,11 @@ ChipData* chip_data(lv_obj_t* obj) {
 lv_subject_t* selected_subject() {
     return lv_xml_get_subject(nullptr, UI_TOOL_CHIP_SELECTED_SUBJECT);
 }
+
+/// Lifetime of whoever published UI_TOOL_CHIP_SELECTED_SUBJECT - see
+/// ui_tool_chip_set_selection_lifetime(). Empty until the panel sets it, which
+/// is why wire_observers() skips the observer rather than binding untracked.
+SubjectLifetime g_selection_lifetime;
 
 /**
  * @brief Resolve one tool's display state from ToolState + the AMS backend.
@@ -485,18 +487,32 @@ void wire_observers(lv_obj_t* chip, ChipData* d) {
     auto& ts = helix::ToolState::instance();
     auto on_change = [](lv_obj_t* c, int) { refresh(c); };
 
-    d->tools_version_obs = helix::ui::observe_int_sync<lv_obj_t>(ts.get_tools_version_subject(), chip,
-                                                      on_change, d->alive);
+    // Each guard holds the lifetime of the subject's OWNER, never the chip's
+    // own. A chip outlives what it watches in both directions that matter: the
+    // panel frees filament_selected_tool in its destructor without deleting
+    // these widgets, and tests re-init the singletons between cases. The chip's
+    // own death is already handled by LV_EVENT_DELETE resetting these guards -
+    // it was never what they needed to be told about.
+    const SubjectLifetime tool_lt = ts.get_subjects_lifetime();
+    const SubjectLifetime ams_lt = AmsState::instance().get_subjects_lifetime();
+
+    d->tools_version_obs = helix::ui::observe_int_sync<lv_obj_t>(ts.get_tools_version_subject(),
+                                                                 chip, on_change, tool_lt);
     d->active_tool_obs =
-        helix::ui::observe_int_sync<lv_obj_t>(ts.get_active_tool_subject(), chip, on_change, d->alive);
+        helix::ui::observe_int_sync<lv_obj_t>(ts.get_active_tool_subject(), chip, on_change,
+                                              tool_lt);
     d->ams_revision_obs = helix::ui::observe_int_sync<lv_obj_t>(
-        AmsState::instance().get_ams_data_revision_subject(), chip, on_change, d->alive);
+        AmsState::instance().get_ams_data_revision_subject(), chip, on_change, ams_lt);
     // The action subject is what moves on a tool change, so the inert look
     // arrives with the operation rather than a data revision later.
     d->ams_action_obs = helix::ui::observe_int_sync<lv_obj_t>(
-        AmsState::instance().get_ams_action_subject(), chip, on_change, d->alive);
-    if (lv_subject_t* sel = selected_subject()) {
-        d->selected_obs = helix::ui::observe_int_sync<lv_obj_t>(sel, chip, on_change, d->alive);
+        AmsState::instance().get_ams_action_subject(), chip, on_change, ams_lt);
+    if (lv_subject_t* sel = selected_subject(); sel && g_selection_lifetime) {
+        // The registrar's own token, not the global panel's: the subject is
+        // resolved by NAME, so whichever FilamentPanel called init_subjects()
+        // last owns it, and under test that is not the global instance.
+        d->selected_obs =
+            helix::ui::observe_int_sync<lv_obj_t>(sel, chip, on_change, g_selection_lifetime);
     }
 }
 
@@ -622,6 +638,10 @@ void ui_tool_chip_xml_apply(lv_xml_parser_state_t* state, const char** attrs) {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+void ui_tool_chip_set_selection_lifetime(SubjectLifetime lifetime) {
+    g_selection_lifetime = std::move(lifetime);
+}
 
 void ui_tool_chip_register_widget() {
     lv_xml_register_widget("tool_chip", ui_tool_chip_xml_create, ui_tool_chip_xml_apply);
