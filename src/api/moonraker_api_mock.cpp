@@ -7,6 +7,7 @@
 
 #include "../tests/mocks/mock_printer_state.h"
 #include "gcode_parser.h"
+#include "moonraker_client_mock.h"
 #include "moonraker_client_mock_internal.h"
 #include "power_device_state.h"
 #include "runtime_config.h"
@@ -26,6 +27,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <random>
 #include <set>
 #include <sstream>
@@ -65,6 +67,37 @@ MoonrakerAPIMock::MoonrakerAPIMock(MoonrakerClient& client, PrinterState& state)
     rest_api_ = std::make_unique<MoonrakerRestAPIMock>(client, get_http_base_url());
     spoolman_api_ = std::make_unique<MoonrakerSpoolmanAPIMock>(client);
     timelapse_api_ = std::make_unique<MoonrakerTimelapseAPIMock>(client, get_http_base_url());
+
+    // MedusaHC drives the real AmsBackendToolChanger, and klipper-toolchanger
+    // reports no material, colour, brand or weight - the override store is the
+    // whole of filament identity there. Without these records every lane renders
+    // at AMS_DEFAULT_SLOT_COLOR, which makes colour and ghost bugs invisible.
+    // Outer key style is T<n> (lane_key_style_for), inner "lane" is 0-based.
+    if (MoonrakerClientMock::mock_medusa_variant() != MoonrakerClientMock::MedusaVariant::NONE) {
+        struct Lane {
+            const char* material;
+            const char* brand;
+            const char* color;
+            const char* color_name;
+        };
+        static constexpr Lane kLanes[] = {
+            {"PLA", "Elegoo", "#00BCD4", "Cyan"},
+            {"PETG", "Prusament", "#FF6D00", "Orange"},
+            {"PLA", "Polymaker", "#E91E63", "Magenta"},
+            {"ABS", "Hatchbox", "#FFD600", "Yellow"},
+        };
+        for (int i = 0; i < static_cast<int>(std::size(kLanes)); ++i) {
+            const Lane& l = kLanes[i];
+            mock_set_db_value("lane_data", "T" + std::to_string(i),
+                              json{{"lane", std::to_string(i)},
+                                   {"material", l.material},
+                                   {"brand", l.brand},
+                                   {"color", l.color},
+                                   {"color_name", l.color_name},
+                                   {"remaining_weight_g", 750.0},
+                                   {"total_weight_g", 1000.0}});
+        }
+    }
 }
 
 MoonrakerAdvancedAPIMock& MoonrakerAPIMock::advanced_mock() {
