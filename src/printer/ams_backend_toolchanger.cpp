@@ -561,15 +561,9 @@ void AmsBackendToolChanger::apply_tool_sensor_locked(
 
     // -2 means the sensors cannot tell, which is NOT "no tool". Reporting -1
     // would invite a tool change against an unknown carriage state, so hold the
-    // last known tool and let the error surface instead.
-    //
-    // But -2 is one value for two answers. A swap has no settled switch pattern
-    // - the tool is between its dock and the head - and the firmware answers -2
-    // for that as readily as for a broken pin. Only a published sensor_error, or
-    // a -2 the machine still reports at rest, is a fault. topi314's controller
-    // draws the same line, escalating -2 to state:"error" only while its machine
-    // state is ready.
-    if (reading.sensor_error && (reading.sensor_error_reported || !was_mid_operation)) {
+    // last known tool and let the error surface instead. Which -2 readings are
+    // faults at all is sensor_error_is_fault()'s rule, not this function's.
+    if (helix::toolchanger_addon::sensor_error_is_fault(reading, was_mid_operation)) {
         if (!sensor_error_) {
             spdlog::warn("{} Dock sensors cannot identify the mounted tool", backend_log_tag());
         }

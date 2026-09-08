@@ -174,4 +174,15 @@ std::vector<std::string> required_status_objects(const PrinterDiscovery& hw);
 /// Moonraker only republishes fields whose value CHANGED.
 std::optional<ToolReading> read_tool(const nlohmann::json& status);
 
+/// Whether a reading's sensor_error names a fault the user must act on, rather
+/// than the transitional geometry every swap produces.
+///
+/// `current_tool == -2` is one value for two answers upstream: a pin that read
+/// neither 0 nor 1, and a switch pattern matching none of the settled
+/// configurations. A tool in transit between its dock and the head is always the
+/// second. So only a flag the controller published itself, or a -2 it still
+/// reports once at rest, is a fault. topi314's controller draws the same line,
+/// escalating -2 to state:"error" only while its machine state is ready.
+[[nodiscard]] bool sensor_error_is_fault(const ToolReading& reading, bool swap_in_flight);
+
 } // namespace helix::toolchanger_addon

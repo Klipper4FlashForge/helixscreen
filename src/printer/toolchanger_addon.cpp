@@ -412,4 +412,11 @@ std::optional<ToolReading> read_tool(const nlohmann::json& status) {
     return std::nullopt;
 }
 
+bool sensor_error_is_fault(const ToolReading& reading, bool swap_in_flight) {
+    if (!reading.sensor_error) {
+        return false;
+    }
+    return reading.sensor_error_reported || !swap_in_flight;
+}
+
 } // namespace helix::toolchanger_addon
