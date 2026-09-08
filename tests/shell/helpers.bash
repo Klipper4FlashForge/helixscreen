@@ -508,3 +508,20 @@ SHIM
     SUDO="$shim"
     export SUDO
 }
+
+# ---------------------------------------------------------------------------
+# quality-checks.sh defines qc_note/qc_count below every gate body, so a gate
+# lifted out and run standalone reaches a pass verdict with neither in scope.
+# Under `set -e` that is status 127 and the block dies mid-gate.
+#
+# Emits the real definitions rather than stubs, so assertions about what a gate
+# prints on its pass path stay honest. Callers eval the output, or prepend it to
+# an extracted block.
+qc_verdict_defs() {
+    local script="${1:-scripts/quality-checks.sh}"
+    local defs
+    defs="$(grep -E '^qc_(note|count)\(\) \{' "$script")"
+    [ "$(printf '%s\n' "$defs" | wc -l)" -eq 2 ] \
+        || fail "expected one-line qc_note and qc_count definitions in $script, got: $defs"
+    printf '%s\n' "$defs"
+}
