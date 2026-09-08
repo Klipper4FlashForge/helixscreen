@@ -457,6 +457,13 @@ void ToolOffsetCalibrationPanel::on_active_tool_changed(int tool) {
         lv_subject_copy_string(
             &status_, fmt::format(fmt::runtime(lv_tr("Calibrating T{}...")), tool).c_str());
     }
+    // The bookkeeping above runs whether or not the panel is on screen; the
+    // repaint is only for a visible panel - on_activate() redraws every row
+    // from the same state when it comes back (as the bed mesh panel stops its
+    // renderer while hidden and reloads on return).
+    if (!is_visible()) {
+        return;
+    }
     for (int i = 0; i < std::min(run_.tool_count(), MAX_TOOLS); ++i) {
         refresh_row_state(i);
     }
@@ -481,7 +488,9 @@ void ToolOffsetCalibrationPanel::on_tools_changed() {
             }
         }
     }
-    refresh_rows();
+    if (is_visible()) {
+        refresh_rows(); // hidden: on_activate() repaints from the same state
+    }
 }
 
 // ============================================================================
