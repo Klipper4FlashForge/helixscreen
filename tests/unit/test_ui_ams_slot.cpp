@@ -711,7 +711,7 @@ namespace {
 
 /// Result of examining the spool visual after status update.
 struct SpoolVisualState {
-    bool any_ghosted = false;      ///< true if any child has opa/bg_opa == LV_OPA_20
+    bool any_ghosted = false;      ///< true if any child has opa/bg_opa == LV_OPA_10
     bool any_spool_hidden = false; ///< true if spool_canvas or spool rings are hidden
     int child_count = 0;           ///< For diagnostic purposes
 };
@@ -740,7 +740,7 @@ SpoolVisualState inspect_spool_state(lv_obj_t* spool_container) {
     lv_opa_t bg_opa = lv_obj_get_style_bg_opa(spool_visual, LV_PART_MAIN);
     bool hidden = lv_obj_has_flag(spool_visual, LV_OBJ_FLAG_HIDDEN);
 
-    if (opa == LV_OPA_20 || bg_opa == LV_OPA_20) {
+    if (opa == LV_OPA_10 || bg_opa == LV_OPA_10) {
         st.any_ghosted = true;
     }
     if (hidden) {
