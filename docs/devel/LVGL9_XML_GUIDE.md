@@ -1581,6 +1581,51 @@ lv_bar_set_value(bar, 1, LV_ANIM_OFF);
 lv_bar_set_value(bar, 0, LV_ANIM_OFF);
 ```
 
+#### 7. Component Names Are File Basenames, Not Paths
+
+A component is named by its file's basename, so `ui_xml/micro/controls_panel.xml` and
+`ui_xml/controls_panel.xml` both register as `controls_panel`. Registering the second
+replaces the first for every later `lv_xml_create()` in that process, silently.
+
+Eight names exist in both the base tree and a variant directory: `app_layout`,
+`controls_panel`, `header_bar`, `navigation_bar`, `print_status_panel`,
+`print_tune_panel`, `theme_editor_overlay`, `theme_preview_overlay`.
+
+Tests feel this most, because registering everything under `ui_xml/` so nested
+components resolve is the obvious move and the wrong one:
+
+```cpp
+// ❌ WRONG - the micro variant replaces the base panel for the rest of the run
+for (const auto& f : all_xml_files) lv_xml_register_component_from_file(f.c_str());
+
+// ✅ CORRECT - base tree and components/ once, then the file under test
+//              immediately before building it
+register_base_and_components();
+lv_xml_register_component_from_file("A:ui_xml/micro/controls_panel.xml");
+lv_obj_t* panel = lv_xml_create(parent, "controls_panel", NULL);
+```
+
+A file whose `<view>` carries a name the base tree also uses cannot be built alongside
+the panel it shadows. Assert on its source text instead.
+
+#### 8. lv_obj_find_by_name() Searches Descendants Only
+
+It never tests the object handed to it, so a component carrying its name or its
+bindings on its own `<view>` element reads as missing:
+
+```cpp
+// ❌ WRONG - NULL when `root` IS the named widget
+lv_obj_t* w = lv_obj_find_by_name(root, "ams_current_tool");
+
+// ✅ CORRECT - test the root, then its descendants
+const char* root_name = lv_obj_get_name(root);
+lv_obj_t* w = (root_name && strcmp(root_name, "ams_current_tool") == 0)
+                  ? root
+                  : lv_obj_find_by_name(root, "ams_current_tool");
+```
+
+`ams_current_tool` and `probe_indicator` are both built this way.
+
 ### Debugging Checklist
 
 When layouts don't work:
