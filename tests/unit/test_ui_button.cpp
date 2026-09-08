@@ -188,7 +188,7 @@ TEST_CASE_METHOD(UiButtonTestFixture, "ui_button bind_icon updates icon from sub
 
     // Find the icon child
     lv_obj_t* icon = nullptr;
-    const char* expected_codepoint = ui_icon::lookup_codepoint("light");
+    const char* expected_codepoint = helix::ui::icon::lookup_codepoint("light");
 
     for (uint32_t i = 0; i < child_count; i++) {
         lv_obj_t* child = lv_obj_get_child(btn, i);
@@ -210,7 +210,7 @@ TEST_CASE_METHOD(UiButtonTestFixture, "ui_button bind_icon updates icon from sub
     process_lvgl(10);
 
     // Verify icon changed
-    const char* new_expected = ui_icon::lookup_codepoint("light_off");
+    const char* new_expected = helix::ui::icon::lookup_codepoint("light_off");
     INFO("Icon should update to 'light_off' codepoint after subject change");
     REQUIRE(strcmp(lv_label_get_text(icon), new_expected) == 0);
 }
@@ -233,7 +233,7 @@ TEST_CASE_METHOD(UiButtonTestFixture, "ui_button bind_icon creates icon if none 
         lv_obj_t* child = lv_obj_get_child(btn, i);
         if (lv_obj_check_type(child, &lv_label_class)) {
             const char* text = lv_label_get_text(child);
-            const char* expected_codepoint = ui_icon::lookup_codepoint("light");
+            const char* expected_codepoint = helix::ui::icon::lookup_codepoint("light");
             if (text && expected_codepoint && strcmp(text, expected_codepoint) == 0) {
                 icon = child;
                 break;
@@ -298,7 +298,7 @@ TEST_CASE_METHOD(UiButtonTestFixture,
         if (lv_obj_check_type(child, &lv_label_class)) {
             const char* text = lv_label_get_text(child);
             // Check for icon codepoint (either could be valid during creation)
-            const char* light_cp = ui_icon::lookup_codepoint("light");
+            const char* light_cp = helix::ui::icon::lookup_codepoint("light");
             if (text && light_cp && strcmp(text, light_cp) == 0) {
                 icon = child;
                 break;
@@ -309,7 +309,7 @@ TEST_CASE_METHOD(UiButtonTestFixture,
     // After bind_icon processing, icon should show subject value
     REQUIRE(icon != nullptr);
     INFO("bind_icon should override static icon attribute");
-    REQUIRE(strcmp(lv_label_get_text(icon), ui_icon::lookup_codepoint("light")) == 0);
+    REQUIRE(strcmp(lv_label_get_text(icon), helix::ui::icon::lookup_codepoint("light")) == 0);
 }
 
 // ============================================================================
@@ -327,8 +327,8 @@ TEST_CASE_METHOD(UiButtonTestFixture, "ui_button bind_op_state renders idle/busy
     lv_subject_init_int(&op_subject, 0);
     lv_xml_register_subject(nullptr, "test_op_subject", &op_subject);
 
-    const char* idle_cp = ui_icon::lookup_codepoint("light");
-    const char* check_cp = ui_icon::lookup_codepoint("check");
+    const char* idle_cp = helix::ui::icon::lookup_codepoint("light");
+    const char* check_cp = helix::ui::icon::lookup_codepoint("check");
     REQUIRE(idle_cp != nullptr);
     REQUIRE(check_cp != nullptr); // 'check' glyph must exist in the MDI font
 
@@ -399,7 +399,7 @@ TEST_CASE_METHOD(UiButtonTestFixture,
 
     lv_obj_t* icon = ui_button_get_icon(btn);
     REQUIRE(icon != nullptr);
-    REQUIRE(strcmp(lv_label_get_text(icon), ui_icon::lookup_codepoint("light")) == 0);
+    REQUIRE(strcmp(lv_label_get_text(icon), helix::ui::icon::lookup_codepoint("light")) == 0);
 }
 
 // ============================================================================
@@ -549,7 +549,8 @@ TEST_CASE_METHOD(UiButtonTestFixture,
     process_lvgl(10);
 
     // Icon must exist and the button must stack its children vertically.
-    const int32_t icon_idx = find_child_index_with_text(btn, ui_icon::lookup_codepoint("light"));
+    const int32_t icon_idx =
+        find_child_index_with_text(btn, helix::ui::icon::lookup_codepoint("light"));
     const int32_t label_idx = find_child_index_with_text(btn, "Light");
     INFO("icon child index=" << icon_idx << " label child index=" << label_idx);
     REQUIRE(icon_idx >= 0);
@@ -572,7 +573,8 @@ TEST_CASE_METHOD(UiButtonTestFixture,
     REQUIRE(btn != nullptr);
     process_lvgl(10);
 
-    const int32_t icon_idx = find_child_index_with_text(btn, ui_icon::lookup_codepoint("light"));
+    const int32_t icon_idx =
+        find_child_index_with_text(btn, helix::ui::icon::lookup_codepoint("light"));
     const int32_t label_idx = find_child_index_with_text(btn, "Light");
     REQUIRE(icon_idx >= 0);
     REQUIRE(label_idx >= 0);
@@ -594,7 +596,8 @@ TEST_CASE_METHOD(UiButtonTestFixture,
     REQUIRE(btn != nullptr);
     process_lvgl(10);
 
-    const int32_t icon_idx = find_child_index_with_text(btn, ui_icon::lookup_codepoint("light"));
+    const int32_t icon_idx =
+        find_child_index_with_text(btn, helix::ui::icon::lookup_codepoint("light"));
     const int32_t label_idx = find_child_index_with_text(btn, "Light");
     REQUIRE(icon_idx >= 0);
     REQUIRE(label_idx >= 0);
@@ -615,7 +618,8 @@ TEST_CASE_METHOD(UiButtonTestFixture,
     REQUIRE(btn != nullptr);
     process_lvgl(10);
 
-    const int32_t icon_idx = find_child_index_with_text(btn, ui_icon::lookup_codepoint("light"));
+    const int32_t icon_idx =
+        find_child_index_with_text(btn, helix::ui::icon::lookup_codepoint("light"));
     const int32_t label_idx = find_child_index_with_text(btn, "Light");
     REQUIRE(icon_idx >= 0);
     REQUIRE(label_idx >= 0);

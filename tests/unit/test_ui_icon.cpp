@@ -94,34 +94,34 @@ TEST_CASE("Icon codepoint lookup returns valid codepoints", "[ui_icon][codepoint
     IconTest fixture;
 
     // Test common icons
-    const char* home = ui_icon::lookup_codepoint("home");
+    const char* home = helix::ui::icon::lookup_codepoint("home");
     REQUIRE(home != nullptr);
 
-    const char* wifi = ui_icon::lookup_codepoint("wifi");
+    const char* wifi = helix::ui::icon::lookup_codepoint("wifi");
     REQUIRE(wifi != nullptr);
 
-    const char* settings = ui_icon::lookup_codepoint("cog");
+    const char* settings = helix::ui::icon::lookup_codepoint("cog");
     REQUIRE(settings != nullptr);
 }
 
 TEST_CASE("Icon codepoint lookup returns nullptr for unknown icons", "[ui_icon][codepoint]") {
     IconTest fixture;
 
-    const char* unknown = ui_icon::lookup_codepoint("nonexistent_icon_xyz");
+    const char* unknown = helix::ui::icon::lookup_codepoint("nonexistent_icon_xyz");
     REQUIRE(unknown == nullptr);
 }
 
 TEST_CASE("Icon codepoint lookup handles NULL", "[ui_icon][codepoint][error]") {
     IconTest fixture;
 
-    const char* result = ui_icon::lookup_codepoint(nullptr);
+    const char* result = helix::ui::icon::lookup_codepoint(nullptr);
     REQUIRE(result == nullptr);
 }
 
 TEST_CASE("Icon codepoint lookup handles empty string", "[ui_icon][codepoint][error]") {
     IconTest fixture;
 
-    const char* result = ui_icon::lookup_codepoint("");
+    const char* result = helix::ui::icon::lookup_codepoint("");
     REQUIRE(result == nullptr);
 }
 
@@ -132,7 +132,7 @@ TEST_CASE("Icon codepoint lookup handles empty string", "[ui_icon][codepoint][er
 TEST_CASE("strip_legacy_prefix removes mat_ prefix", "[ui_icon][legacy]") {
     IconTest fixture;
 
-    const char* result = ui_icon::strip_legacy_prefix("mat_home");
+    const char* result = helix::ui::icon::strip_legacy_prefix("mat_home");
     REQUIRE(strcmp(result, "home") == 0);
 }
 
@@ -142,35 +142,35 @@ TEST_CASE("strip_legacy_prefix does NOT strip _img suffix without mat_ prefix",
 
     // The implementation ONLY handles names starting with "mat_"
     // A plain "_img" suffix without "mat_" prefix is NOT stripped
-    const char* result = ui_icon::strip_legacy_prefix("home_img");
+    const char* result = helix::ui::icon::strip_legacy_prefix("home_img");
     REQUIRE(strcmp(result, "home_img") == 0); // Returns original, unchanged
 }
 
 TEST_CASE("strip_legacy_prefix removes both prefix and suffix", "[ui_icon][legacy]") {
     IconTest fixture;
 
-    const char* result = ui_icon::strip_legacy_prefix("mat_wifi_img");
+    const char* result = helix::ui::icon::strip_legacy_prefix("mat_wifi_img");
     REQUIRE(strcmp(result, "wifi") == 0);
 }
 
 TEST_CASE("strip_legacy_prefix returns original if no prefix/suffix", "[ui_icon][legacy]") {
     IconTest fixture;
 
-    const char* result = ui_icon::strip_legacy_prefix("wifi");
+    const char* result = helix::ui::icon::strip_legacy_prefix("wifi");
     REQUIRE(strcmp(result, "wifi") == 0);
 }
 
 TEST_CASE("strip_legacy_prefix handles NULL", "[ui_icon][legacy][error]") {
     IconTest fixture;
 
-    const char* result = ui_icon::strip_legacy_prefix(nullptr);
+    const char* result = helix::ui::icon::strip_legacy_prefix(nullptr);
     REQUIRE(result == nullptr);
 }
 
 TEST_CASE("strip_legacy_prefix handles empty string", "[ui_icon][legacy][error]") {
     IconTest fixture;
 
-    const char* result = ui_icon::strip_legacy_prefix("");
+    const char* result = helix::ui::icon::strip_legacy_prefix("");
     REQUIRE(result != nullptr);
     REQUIRE(strlen(result) == 0);
 }

@@ -859,7 +859,7 @@ void ThermistorWidget::ConfigurePicker::on_created(lv_obj_t* backdrop) {
             apply_icon_cell_highlight(cell, THERMISTOR_ICONS[i] == effective_icon);
 
             // Icon glyph
-            const char* cp = ui_icon::lookup_codepoint(THERMISTOR_ICONS[i]);
+            const char* cp = helix::ui::icon::lookup_codepoint(THERMISTOR_ICONS[i]);
             if (cp) {
                 lv_obj_t* icon = lv_label_create(cell);
                 lv_label_set_text(icon, cp);

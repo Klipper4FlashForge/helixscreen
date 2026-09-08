@@ -148,13 +148,13 @@ static void apply_source(lv_obj_t* obj, const char* src) {
     }
 
     // Try direct lookup first
-    const char* codepoint = ui_icon::lookup_codepoint(src);
+    const char* codepoint = lookup_codepoint(src);
 
     // If not found, try stripping legacy "mat_" prefix and "_img" suffix
     if (!codepoint) {
-        const char* stripped = ui_icon::strip_legacy_prefix(src);
+        const char* stripped = strip_legacy_prefix(src);
         if (stripped != src) {
-            codepoint = ui_icon::lookup_codepoint(stripped);
+            codepoint = lookup_codepoint(stripped);
         }
     }
 
@@ -163,7 +163,7 @@ static void apply_source(lv_obj_t* obj, const char* src) {
         spdlog::trace("[Icon] Set icon '{}' -> codepoint", src);
     } else {
         // Fallback to broken image icon
-        const char* fallback = ui_icon::lookup_codepoint("image_broken_variant");
+        const char* fallback = lookup_codepoint("image_broken_variant");
         if (fallback) {
             lv_label_set_text(obj, fallback);
         }

@@ -268,7 +268,7 @@ void FavoriteMacroConfigModal::populate_icon_grid() {
 
         apply_icon_cell_highlight(cell, CURATED_ICONS[i] == effective);
 
-        const char* cp = ui_icon::lookup_codepoint(CURATED_ICONS[i]);
+        const char* cp = helix::ui::icon::lookup_codepoint(CURATED_ICONS[i]);
         if (cp) {
             lv_obj_t* icon = lv_label_create(cell);
             lv_label_set_text(icon, cp);

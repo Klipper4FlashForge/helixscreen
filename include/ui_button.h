@@ -97,7 +97,7 @@ void ui_button_set_text(lv_obj_t* btn, const char* text);
 /**
  * @brief Change the icon of an existing ui_button at runtime
  *
- * Looks up the icon name via ui_icon::lookup_codepoint and updates the
+ * Looks up the icon name via helix::ui::icon::lookup_codepoint and updates the
  * icon label text. Safe to call on any lv_obj — returns silently if not
  * a ui_button or if the button has no icon.
  */

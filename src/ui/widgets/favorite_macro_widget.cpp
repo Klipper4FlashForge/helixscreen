@@ -120,7 +120,7 @@ void FavoriteMacroWidget::set_config(const nlohmann::json& config) {
     auto c = helix::favorite_macro_config_from_json(config);
     macro_name_ = c.macro;
     // Validate icon against codepoints — reject stale/invalid names
-    if (c.icon.empty() || ui_icon::lookup_codepoint(c.icon.c_str())) {
+    if (c.icon.empty() || helix::ui::icon::lookup_codepoint(c.icon.c_str())) {
         icon_name_ = c.icon;
     } else {
         spdlog::warn("[FavoriteMacroWidget] Unknown icon '{}' in config, using default", c.icon);

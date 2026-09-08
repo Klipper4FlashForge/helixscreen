@@ -168,7 +168,7 @@ static lv_obj_t* create_clear_button(lv_obj_t* textarea) {
     lv_obj_set_name(btn, "text_input_clear_btn");
 
     // Set the close-circle icon glyph
-    const char* glyph = ui_icon::lookup_codepoint("close_circle");
+    const char* glyph = helix::ui::icon::lookup_codepoint("close_circle");
     if (glyph) {
         lv_label_set_text(btn, glyph);
     }
