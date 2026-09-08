@@ -3,13 +3,17 @@
 
 /**
  * @file test_filament_manage_row_controls.cpp
- * @brief The filament card's manage row carries two mutually exclusive
- * controls, and tool count alone decides which one.
+ * @brief What the tool row offers, and when it appears at all.
  *
- * The tool selector belongs to every multi-tool printer: the options come from
- * ToolState, and handle_extruder_changed() issues a gcode Tn when no AMS
- * backend claims the tool. The Manage button navigates to the AMS panel, which
- * needs a backend, so it is the single-tool affordance (#1350).
+ * This is prestonbrown/helixscreen#1350's question - which control the row
+ * carries, decided by tool count - asked of the row that replaced it. The
+ * panel rebuild dropped the two mutually exclusive controls (a dropdown for
+ * multi-tool, a Manage button for single-tool) for one chip per tool plus a
+ * Manage button that is always there. So the question is no longer WHICH
+ * control shows but WHETHER the row does: filament_panel.xml hides it only
+ * when there is nothing to choose between, `tool_count le 1 and ams_type eq
+ * 0`, because that printer's spool is shown in the external-spool card
+ * instead.
  */
 
 #include "ui_panel_filament.h"
@@ -24,6 +28,7 @@
 
 #include <lvgl.h>
 #include <memory>
+#include <string>
 
 #include "../catch_amalgamated.hpp"
 
@@ -73,7 +78,7 @@ struct ManageRowHarness {
         panel->setup(root, fx.test_screen());
         fx.process_lvgl(30);
 
-        TA::populate_extruder_dropdown(*panel);
+        TA::seed_selected_tool(*panel);
     }
 
     ~ManageRowHarness() {
@@ -86,44 +91,55 @@ struct ManageRowHarness {
         REQUIRE(obj != nullptr);
         return lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
     }
+
+    /// The chips are built by a subject-bound <repeat> over tool_count, so
+    /// their presence - not a hidden flag - is what says how many tools the
+    /// row is offering.
+    [[nodiscard]] bool has_chip(int index) const {
+        return lv_obj_find_by_name(root, ("tool_chip_" + std::to_string(index)).c_str()) != nullptr;
+    }
 };
 
 } // namespace
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "Filament manage row: multi-tool without AMS gets the tool selector",
+TEST_CASE_METHOD(LVGLUITestFixture, "Tool row: multi-tool without AMS still gets a chip per tool",
                  "[filament][ui][tool]") {
     ManageRowHarness h(*this, {"extruder", "extruder1"}, AmsType::NONE);
 
     REQUIRE(ToolState::instance().is_multi_tool());
 
-    // The row is the container both controls live in; it must be on screen for
-    // either assertion below to describe what the user sees.
-    REQUIRE_FALSE(h.hidden("ams_manage_row"));
+    // Two tools is something to choose between, so the row shows even with no
+    // backend - this is the half of #1350 that said the selector belongs to
+    // every multi-tool printer, not only to one with an AMS.
+    CHECK_FALSE(h.hidden("tool_row"));
+    CHECK(h.has_chip(0));
+    CHECK(h.has_chip(1));
+    CHECK_FALSE(h.has_chip(2));
 
-    // Manage navigates to the AMS panel, which returns early with no backend.
-    CHECK(h.hidden("btn_manage_slots"));
-
-    // The tools exist in ToolState whether or not a backend claimed them.
-    CHECK_FALSE(h.hidden("extruder_selector_group"));
+    // Manage is no longer the single-tool alternative to a selector; it rides
+    // the row for every printer that has one.
+    CHECK_FALSE(h.hidden("btn_manage_slots"));
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "Filament manage row: single-tool with AMS gets Manage",
+TEST_CASE_METHOD(LVGLUITestFixture, "Tool row: single-tool with AMS keeps the row for Manage",
                  "[filament][ui][tool]") {
     ManageRowHarness h(*this, {"extruder"}, AmsType::AFC);
 
     REQUIRE_FALSE(ToolState::instance().is_multi_tool());
-    REQUIRE_FALSE(h.hidden("ams_manage_row"));
+
+    // One tool, but a backend whose slots the user needs a route to.
+    CHECK_FALSE(h.hidden("tool_row"));
     CHECK_FALSE(h.hidden("btn_manage_slots"));
-    CHECK(h.hidden("extruder_selector_group"));
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "Filament manage row: multi-tool with AMS gets the selector",
+TEST_CASE_METHOD(LVGLUITestFixture, "Tool row: single-tool without AMS hides the whole row",
                  "[filament][ui][tool]") {
-    ManageRowHarness h(*this, {"extruder", "extruder1"}, AmsType::AFC);
+    ManageRowHarness h(*this, {"extruder"}, AmsType::NONE);
 
-    REQUIRE(ToolState::instance().is_multi_tool());
-    REQUIRE_FALSE(h.hidden("ams_manage_row"));
-    CHECK(h.hidden("btn_manage_slots"));
-    CHECK_FALSE(h.hidden("extruder_selector_group"));
+    REQUIRE_FALSE(ToolState::instance().is_multi_tool());
+
+    // Nothing to choose between and no slots to manage. The spool for this
+    // printer is on the external-spool card, so a row here would be a chip
+    // that selects the only tool there is.
+    CHECK(h.hidden("tool_row"));
 }
