@@ -36,7 +36,10 @@
 #include <memory>
 #include <string>
 
-using helix::ui::modal_show_confirmation;
+// The AMS types moved into namespace helix upstream; this panel reads slot
+// and backend state, so it takes the same using-directive its sibling
+// calibration panels do rather than qualifying each name.
+using namespace helix;
 
 namespace {
 
@@ -389,22 +392,10 @@ void PACalibrationPanel::confirm_and_start() {
                           "print area, and repeats until it agrees with itself."),
                     fmt::format(fmt::runtime(lv_tr("About 3 minutes at {}°C.")), target_temp_));
 
-    modal_show_confirmation(
-        lv_tr("Before starting"), msg.c_str(), ModalSeverity::Warning, lv_tr("Start"),
-        [](lv_event_t* ev) {
-            (void)ev;
-            LVGL_SAFE_EVENT_CB_BEGIN("[PACal] confirm_start");
-            Modal::hide(Modal::get_top());
-            get_global_pa_cal_panel().begin_run();
-            LVGL_SAFE_EVENT_CB_END();
-        },
-        [](lv_event_t* ev) {
-            (void)ev;
-            LVGL_SAFE_EVENT_CB_BEGIN("[PACal] cancel_start");
-            Modal::hide(Modal::get_top());
-            LVGL_SAFE_EVENT_CB_END();
-        },
-        nullptr);
+    // modal_confirm() closes the dialog itself and takes std::functions, so
+    // there is no Modal::hide() here and a close-only cancel needs no callback.
+    helix::ui::modal_confirm(lv_tr("Before starting"), msg.c_str(), ModalSeverity::Warning,
+                             lv_tr("Start"), [] { get_global_pa_cal_panel().begin_run(); });
 }
 
 void PACalibrationPanel::begin_run() {

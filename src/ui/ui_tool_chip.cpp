@@ -28,6 +28,10 @@
 #include <cstring>
 #include <string>
 
+// The AMS types live in namespace helix; this widget reads slot and backend
+// state throughout, so it takes the directive rather than qualifying each use.
+using namespace helix;
+
 namespace {
 
 // ---------------------------------------------------------------------------

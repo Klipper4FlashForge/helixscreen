@@ -116,22 +116,12 @@ static void on_start_tool_offset_clicked(lv_event_t* e) {
         step->start_calibration();
         return;
     }
-    helix::ui::modal_show_confirmation(
-        lv_tr("Before calibrating"), hint, ModalSeverity::Warning, lv_tr("Start"),
-        [](lv_event_t* ev) {
-            LVGL_SAFE_EVENT_CB_BEGIN("[Wizard Tool Offset] confirm_start");
-            Modal::hide(Modal::get_top());
-            if (auto* s = get_wizard_tool_offset_step()) {
-                s->start_calibration();
-            }
-            LVGL_SAFE_EVENT_CB_END();
-        },
-        [](lv_event_t* ev) {
-            LVGL_SAFE_EVENT_CB_BEGIN("[Wizard Tool Offset] cancel_start");
-            Modal::hide(Modal::get_top());
-            LVGL_SAFE_EVENT_CB_END();
-        },
-        step);
+    helix::ui::modal_confirm(lv_tr("Before calibrating"), hint, ModalSeverity::Warning,
+                             lv_tr("Start"), [] {
+                                 if (auto* s = get_wizard_tool_offset_step()) {
+                                     s->start_calibration();
+                                 }
+                             });
 }
 
 static void on_cancel_tool_offset_clicked(lv_event_t* e) {
