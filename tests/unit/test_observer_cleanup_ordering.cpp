@@ -1092,7 +1092,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "ObserverGuard: a moved-from guard runs no cle
 // The shape the crash actually took: a factory returns its guard by value, so
 // the context outlives every temporary along the way and is still valid when
 // the subject notifies.
-TEST_CASE_METHOD(LVGLTestFixture, "ObserverGuard: a factory-returned guard survives its temporaries",
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "ObserverGuard: a factory-returned guard survives its temporaries",
                  "[observer_cleanup][crash_hardening][1446]") {
     lv_subject_t subject;
     lv_subject_init_int(&subject, 0);

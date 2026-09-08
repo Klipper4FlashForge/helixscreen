@@ -21,7 +21,6 @@
  */
 
 #include "../lvgl_test_fixture.h"
-
 #include "ams_backend_afc.h"
 #include "ams_backend_happy_hare.h"
 #include "filament_macro_profiles.h"
@@ -32,7 +31,6 @@
 #include "standard_macros.h"
 
 #include "../catch_amalgamated.hpp"
-
 #include "hv/json.hpp"
 
 using json = nlohmann::json;
@@ -100,8 +98,7 @@ TEST_CASE("macro_heats_hotend: QIDI's stock load/unload heat in their own body",
     REQUIRE(helix::filament_macros::macro_heats_hotend("M603"));
 }
 
-TEST_CASE("macro_heats_hotend: Klipper macro names are case-insensitive",
-          "[filament][preheat]") {
+TEST_CASE("macro_heats_hotend: Klipper macro names are case-insensitive", "[filament][preheat]") {
     REQUIRE(helix::filament_macros::macro_heats_hotend("m604"));
     REQUIRE(helix::filament_macros::macro_heats_hotend("m603"));
 }
@@ -130,8 +127,8 @@ TEST_CASE_METHOD(PreheatSkipFixture, "preheat_skip_reason: the user's setting ou
 
     // Including RawGcode, which no detection covers: the user is telling us they
     // want the cold pull (#978), and only they can know that.
-    for (FilamentTier tier : {FilamentTier::AmsBackend, FilamentTier::Macro,
-                              FilamentTier::RawGcode}) {
+    for (FilamentTier tier :
+         {FilamentTier::AmsBackend, FilamentTier::Macro, FilamentTier::RawGcode}) {
         ColdBackend backend;
         REQUIRE(helix::ui::preheat_skip_reason(plan_at(tier), StandardMacroSlot::LoadFilament,
                                                &backend) == PreheatSkip::UserOverride);
@@ -222,7 +219,8 @@ TEST_CASE_METHOD(PreheatSkipFixture, "preheat_skip_reason: a refused plan heats 
 // needs_home_confirmation
 // ============================================================================
 
-TEST_CASE_METHOD(PreheatSkipFixture, "needs_home_confirmation: an already-homed toolhead asks nobody",
+TEST_CASE_METHOD(PreheatSkipFixture,
+                 "needs_home_confirmation: an already-homed toolhead asks nobody",
                  "[filament][preheat][homing]") {
     detect_with({"LOAD_FILAMENT"});
     REQUIRE_FALSE(helix::ui::needs_home_confirmation(plan_at(FilamentTier::Macro),

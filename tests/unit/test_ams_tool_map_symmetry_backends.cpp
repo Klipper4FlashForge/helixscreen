@@ -612,7 +612,7 @@ TEST_CASE("Mock set_slot_info does not change slot status", "[ams][mock]") {
 
     helix::SlotInfo edit = backend.get_slot_info(1);
     edit.status = helix::SlotStatus::LOADED; // ignored
-    edit.material = "PETG";           // applied
+    edit.material = "PETG";                  // applied
     REQUIRE(backend.set_slot_info(1, edit).success());
 
     auto after = backend.get_slot_info(1);
