@@ -280,11 +280,11 @@ void mock_seed_ready() {
 // initial-state scenarios do that — so this stays thread-free, matching R1's
 // "no new BG surfaces" constraint.
 void mock_seed_ams() {
-    auto backend = std::make_unique<AmsBackendMock>(4);
+    auto backend = std::make_unique<helix::AmsBackendMock>(4);
     backend->set_multi_unit_mode(true);
     backend->start();
-    AmsState::instance().set_backend(std::move(backend));
-    AmsState::instance().sync_from_backend();
+    helix::AmsState::instance().set_backend(std::move(backend));
+    helix::AmsState::instance().sync_from_backend();
     spdlog::info("app_boot: mock AMS seeded (multi-unit)");
 }
 
@@ -462,7 +462,7 @@ void setup_discovery_callbacks_esp(MoonrakerManager& manager) {
                 // before dispatch" invariant Task 8 established. LED, standard
                 // macros, probe/humidity/width sensors, and camera-adjacent
                 // subsystems stay deferred (Task 8 review's enumeration).
-                AmsState::instance().init_backend_from_hardware(*snapshot, api, c);
+                helix::AmsState::instance().init_backend_from_hardware(*snapshot, api, c);
                 if (snapshot->has_filament_sensors()) {
                     auto& fsm = helix::FilamentSensorManager::instance();
                     fsm.discover_sensors(snapshot->filament_sensor_names());
