@@ -36,12 +36,12 @@
  * identity `E<n>` and that `T` means an AFC lane alias and nothing else.
  */
 
-#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
+#include "test_helpers/afc_test_access.h"
+#include "test_helpers/log_capture.h"
 #include "ui/ams_drawing_utils.h"
 
-#include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -95,44 +95,6 @@ std::set<std::string> distinct_lane_extruders(const nlohmann::json& status) {
     }
     return names;
 }
-
-/// RAII spdlog capture, so a warning aimed at the user can be asserted on.
-class LogCapture {
-  public:
-    LogCapture() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256)) {
-        logger_ = spdlog::default_logger();
-        prev_level_ = logger_->level();
-        sink_->set_level(spdlog::level::trace);
-        logger_->sinks().push_back(sink_);
-        logger_->set_level(spdlog::level::trace);
-    }
-
-    ~LogCapture() {
-        auto& sinks = logger_->sinks();
-        for (auto it = sinks.begin(); it != sinks.end(); ++it) {
-            if (*it == sink_) {
-                sinks.erase(it);
-                break;
-            }
-        }
-        logger_->set_level(prev_level_);
-    }
-
-    [[nodiscard]] int count_containing(const std::string& needle) const {
-        int n = 0;
-        for (const auto& l : sink_->last_formatted(256)) {
-            if (l.find(needle) != std::string::npos) {
-                ++n;
-            }
-        }
-        return n;
-    }
-
-  private:
-    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
-    std::shared_ptr<spdlog::logger> logger_;
-    spdlog::level::level_enum prev_level_;
-};
 
 /// The reporter's `[AFC_extruder eN] extruder_name:` lines, keyed lowercase the
 /// way Klipper publishes configfile section suffixes.
