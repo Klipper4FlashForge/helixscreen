@@ -2985,6 +2985,7 @@ translations:
   AI detection: AI 検出
   Monitor for print abnormalities (K2 Plus camera-based): 印刷異常を監視 (K2 Plus カメラベース)
   or type a macro name: またはマクロ名を入力
+  printer default: プリンター既定
   prints: 印刷
   remaining: 残り
   remaining before clog detection triggers: 残りで詰まり検出が作動します

@@ -3218,6 +3218,7 @@ translations:
   AI detection: AI-детекция
   Monitor for print abnormalities (K2 Plus camera-based): Отслеживание дефектов печати (на основе камеры K2 Plus)
   or type a macro name: или введите название макроса
+  printer default: по умолчанию для принтера
   prints: печатей
   remaining: осталось
   remaining before clog detection triggers: осталось до срабатывания обнаружения засора
