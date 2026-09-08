@@ -2057,14 +2057,28 @@ A coordinator session spawns worker sessions, hands each a scope, and merges the
 follows is the part of that protocol which is a property of this repo rather than of any one
 coordinator's plan.
 
-**Give a worker a queue, not a ticket.** On a cold 4-core cloud box the program binary takes about
-44 minutes and the test binary about another 55 before a worker can run anything — roughly an hour
-and a half of machine time that a one-issue scope pays in full and then throws away. A warm
-environment removes most of that, but the second cost does not go away: a worker that has already
-read a subsystem answers the next question in it far faster than a fresh session does. So scope a
-worker to an *area* with two to four related issues in dependency order, and say which ones may be
-dropped if time runs short. Sequence anything that touches the same files behind the change that
-moves them.
+**Give a worker a queue, not a ticket.** On a 4-core cloud box the program binary takes about 44
+minutes and the test binary another 55 before a worker can run anything — an hour and a half of
+machine time that a one-issue scope pays in full and then throws away. Nothing removes that cost:
+a prebuilt ccache measured 18.75% of calls hitting on a first build and 0.00% after a wide header
+moved, so a session that starts by building pays roughly the same either way (see the warm
+environment section). What a queue saves is the second cost, which is real: a worker that has
+already read a subsystem answers the next question in it far faster than a fresh session does.
+
+So scope a worker to an *area* with two to four related issues in dependency order, and say which
+may be dropped if time runs short. Sequence anything touching the same files behind the change that
+moves them, and keep shared counters — the ratchet baselines in `scripts/quality-checks.sh` — to one
+worker at a time, since two workers each ratcheting the same number is a guaranteed merge conflict
+over a line neither of them cares about.
+
+**A small finding in the diff's own neighbourhood is fixed, not filed.** Workers surface more than
+they were sent for, and an issue is the reflex — but an issue costs triage, a milestone, a label, a
+brief and a box, which for a twenty-minute refactor is more than the fix. If the finding is small and
+sits in code the worker has already read, tell it to fix it in the same branch and say so in the
+report. File one only when the work genuinely does not belong to that worker: it needs a decision
+somebody else owns, it is blocked on something external, it is large enough to want its own scope, or
+it lands in files another worker is holding. A queue that closes four issues and opens three has not
+moved as far as the count suggests.
 
 **Never leave a worker blocked on the coordinator.** A worker waiting for a merge to appear on
 `main` is an idle box. When a scope depends on work still in review, say so in the brief, name what

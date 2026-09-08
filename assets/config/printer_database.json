@@ -1560,7 +1560,7 @@
           "field": "printer_objects",
           "pattern": "fan_feedback",
           "confidence": 65,
-          "reason": "K2-specific fan RPM feedback"
+          "reason": "Creality fan-tachometer module. A captured real K1C reports it too, so it evidences Creality's range and not this model; the model is the hostname's and bed size's to name. Weight left as-is deliberately: re-scoring or dropping it wants a real K2 discovery snapshot, and no fixture has one"
         },
         {
           "type": "hostname_match",
@@ -1697,7 +1697,7 @@
           "field": "printer_objects",
           "pattern": "fan_feedback",
           "confidence": 65,
-          "reason": "K2-specific fan RPM feedback"
+          "reason": "Creality fan-tachometer module. A captured real K1C reports it too, so it evidences Creality's range and not this model; the model is the hostname's and bed size's to name. Weight left as-is deliberately: re-scoring or dropping it wants a real K2 discovery snapshot, and no fixture has one"
         },
         {
           "type": "hostname_match",

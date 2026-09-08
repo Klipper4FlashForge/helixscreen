@@ -17,6 +17,7 @@
  */
 
 #include "../lvgl_test_fixture.h"
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 
@@ -36,7 +37,7 @@ class AfcRetainsHelper : public AmsBackendAfc {
   public:
     AfcRetainsHelper() : AmsBackendAfc(nullptr, nullptr) {
         std::vector<std::string> names{"lane1", "lane2"};
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
     }
 
     /// Drive the live status path — the same feed the parse uses in

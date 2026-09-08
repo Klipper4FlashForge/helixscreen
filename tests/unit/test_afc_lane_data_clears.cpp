@@ -16,6 +16,7 @@
  * ejected lane still looked linked and whether a user's override was visible.
  */
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 
@@ -31,7 +32,7 @@ class AfcLaneDataClearHelper : public AmsBackendAfc {
   public:
     AfcLaneDataClearHelper() : AmsBackendAfc(nullptr, nullptr) {
         std::vector<std::string> names{"lane1", "lane2"};
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
     }
 
     /// Start from an arbitrary lane set, or from none at all (empty vector) to
@@ -39,21 +40,21 @@ class AfcLaneDataClearHelper : public AmsBackendAfc {
     explicit AfcLaneDataClearHelper(const std::vector<std::string>& names)
         : AmsBackendAfc(nullptr, nullptr) {
         if (!names.empty()) {
-            initialize_slots(names);
+            AfcTestAccess::initialize_slots(*this, names);
         }
     }
 
     [[nodiscard]] int slot_count() const {
-        return slots_.slot_count();
+        return AfcTestAccess::slots(*this).slot_count();
     }
 
     [[nodiscard]] std::string lane_name(int slot_index) const {
-        return slots_.name_of(slot_index);
+        return AfcTestAccess::slots(*this).name_of(slot_index);
     }
 
     void feed_lane_data(const nlohmann::json& lane_data) {
         std::lock_guard<std::mutex> lock(mutex_);
-        parse_lane_data(lane_data);
+        AfcTestAccess::parse_lane_data(*this, lane_data);
     }
 
     /// Drive the live status path, so a test can assert the two parsers agree.
@@ -67,7 +68,7 @@ class AfcLaneDataClearHelper : public AmsBackendAfc {
 
     void set_spool_id(int slot_index, int id) {
         std::lock_guard<std::mutex> lock(mutex_);
-        auto* entry = slots_.get_mut(slot_index);
+        auto* entry = AfcTestAccess::slots(*this).get_mut(slot_index);
         if (entry) {
             entry->info.spoolman_id = id;
         }
@@ -79,7 +80,7 @@ class AfcLaneDataClearHelper : public AmsBackendAfc {
 
     void set_override(int slot_index, const helix::ams::FilamentSlotOverride& o) {
         std::lock_guard<std::mutex> lock(mutex_);
-        overrides_[slot_index] = o;
+        AfcTestAccess::overrides(*this)[slot_index] = o;
     }
 
     [[nodiscard]] std::string brand(int slot_index) const {

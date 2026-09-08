@@ -23,6 +23,7 @@
  * tripped.
  */
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_mock.h"
 #include "ams_types.h"
@@ -41,7 +42,7 @@ class AfcPerSlotLoadedHelper : public AmsBackendAfc {
   public:
     AfcPerSlotLoadedHelper() : AmsBackendAfc(nullptr, nullptr) {
         std::vector<std::string> names{"lane1", "lane2", "lane3", "lane4"};
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
     }
 
     void feed(const nlohmann::json& params_inner) {
