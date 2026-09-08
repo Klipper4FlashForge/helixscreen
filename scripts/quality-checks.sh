@@ -1767,7 +1767,7 @@ if [ -f "scripts/check_namespace_compliance.py" ]; then
   # main dropped the Plugins overlay and retired three globals without
   # ratcheting, so the merge collects that slack too. 2239 -> 2238 is
   # ResolvedMacroScript and resolve_macro_script moving into helix::.
-  if python3 scripts/check_namespace_compliance.py --max-allowed 2217 --summary >/tmp/namespace_check.out 2>&1; then
+  if python3 scripts/check_namespace_compliance.py --max-allowed 2216 --summary >/tmp/namespace_check.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/namespace_check.out

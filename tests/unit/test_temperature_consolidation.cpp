@@ -388,7 +388,7 @@ TEST_CASE("classify_heat_state_with_mode: Maintaining at/below ceiling is Neutra
 
 TEST_CASE("classify_heat_state_with_mode: honors a custom tolerance in Maintaining mode",
           "[temperature][heat_state][chamber_mode]") {
-    // Decidegree-scale tolerance (20 = 2 degrees), mirroring HeatingIconAnimator's
+    // Decidegree-scale tolerance (20 = 2 degrees), mirroring helix::ui::HeatingIconAnimator's
     // TEMP_TOLERANCE usage.
     REQUIRE(classify_heat_state_with_mode(2015, 2000, helix::ChamberMode::Maintaining, 20) ==
             HeatState::Neutral);
