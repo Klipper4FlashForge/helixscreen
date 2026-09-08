@@ -15,12 +15,12 @@
  * - Sorted output by priority
  */
 
+#include "../test_helpers/log_capture.h"
 #include "../ui_test_utils.h"
 #include "device_display_name.h"
 #include "temperature_sensor_manager.h"
 #include "temperature_sensor_types.h"
 
-#include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/spdlog.h>
 
 #include <vector>
@@ -541,53 +541,7 @@ TEST_CASE_METHOD(TemperatureSensorTestFixture, "TemperatureSensorManager - edge 
 // Chamber Override Log Level
 // ============================================================================
 
-namespace {
-
-/// RAII spdlog capture that keeps each record's level, so "this is not a
-/// warning" is an assertion rather than an intention.
-class OverrideLogCapture {
-  public:
-    OverrideLogCapture() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256)) {
-        logger_ = spdlog::default_logger();
-        prev_level_ = logger_->level();
-        sink_->set_level(spdlog::level::trace);
-        logger_->sinks().push_back(sink_);
-        logger_->set_level(spdlog::level::trace);
-    }
-
-    ~OverrideLogCapture() {
-        auto& sinks = logger_->sinks();
-        for (auto it = sinks.begin(); it != sinks.end(); ++it) {
-            if (*it == sink_) {
-                sinks.erase(it);
-                break;
-            }
-        }
-        logger_->set_level(prev_level_);
-    }
-
-    OverrideLogCapture(const OverrideLogCapture&) = delete;
-    OverrideLogCapture& operator=(const OverrideLogCapture&) = delete;
-
-    /// Levels of every captured record whose text contains @p needle.
-    std::vector<spdlog::level::level_enum> levels_for(const std::string& needle) const {
-        std::vector<spdlog::level::level_enum> out;
-        for (const auto& msg : sink_->last_raw(256)) {
-            std::string text(msg.payload.data(), msg.payload.size());
-            if (text.find(needle) != std::string::npos) {
-                out.push_back(msg.level);
-            }
-        }
-        return out;
-    }
-
-  private:
-    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
-    std::shared_ptr<spdlog::logger> logger_;
-    spdlog::level::level_enum prev_level_;
-};
-
-} // namespace
+namespace {} // namespace
 
 TEST_CASE_METHOD(TemperatureSensorTestFixture,
                  "TemperatureSensorManager - unmatched chamber override is not a warning",
@@ -604,7 +558,7 @@ TEST_CASE_METHOD(TemperatureSensorTestFixture,
     }
     REQUIRE(had_chamber);
 
-    OverrideLogCapture log;
+    helix::LogCapture log;
     mgr().apply_chamber_sensor_override("temperature_sensor chamber_temp");
 
     // The override names nothing that was discovered, so the role is left unfilled.

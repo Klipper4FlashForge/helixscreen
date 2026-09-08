@@ -10,57 +10,10 @@
  */
 
 #include "../lvgl_test_fixture.h"
+#include "../test_helpers/log_capture.h"
 #include "ui/ui_widget_helpers.h"
 
-#include <spdlog/sinks/ostream_sink.h>
-#include <spdlog/spdlog.h>
-
-#include <sstream>
-
 #include "../catch_amalgamated.hpp"
-
-// ============================================================================
-// Log capture utility for verifying warning/error output
-// ============================================================================
-
-class LogCapture {
-  public:
-    LogCapture() {
-        // Create a sink that writes to our stringstream
-        auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(captured_);
-        sink->set_pattern("%v"); // Just the message, no timestamps/levels
-
-        // Create a logger with our capture sink
-        capture_logger_ = std::make_shared<spdlog::logger>("test_capture", sink);
-        capture_logger_->set_level(spdlog::level::trace);
-
-        // Save the default logger and replace it
-        original_logger_ = spdlog::default_logger();
-        spdlog::set_default_logger(capture_logger_);
-    }
-
-    ~LogCapture() {
-        // Restore original logger
-        spdlog::set_default_logger(original_logger_);
-    }
-
-    std::string get_captured() const {
-        return captured_.str();
-    }
-
-    void clear() {
-        captured_.str("");
-    }
-
-    bool contains(const std::string& text) const {
-        return captured_.str().find(text) != std::string::npos;
-    }
-
-  private:
-    std::ostringstream captured_;
-    std::shared_ptr<spdlog::logger> capture_logger_;
-    std::shared_ptr<spdlog::logger> original_logger_;
-};
 
 // ============================================================================
 // FIND_WIDGET tests
@@ -90,7 +43,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET assigns nullptr when widget not f
 
     lv_obj_t* result = reinterpret_cast<lv_obj_t*>(0xDEADBEEF); // Non-null sentinel
     {
-        LogCapture log; // Capture warnings
+        helix::TextLogCapture log; // Capture warnings
         FIND_WIDGET(result, parent, "nonexistent_widget", "TestPanel");
     }
 
@@ -100,7 +53,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET assigns nullptr when widget not f
 TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET logs warning when widget not found",
                  "[widget_helpers][logging]") {
     lv_obj_t* parent = lv_obj_create(test_screen());
-    LogCapture log;
+    helix::TextLogCapture log;
 
     lv_obj_t* result = nullptr;
     FIND_WIDGET(result, parent, "missing_widget", "MyPanel");
@@ -117,7 +70,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET does not log when widget found",
     lv_obj_t* child = lv_obj_create(parent);
     lv_obj_set_name(child, "existing_widget");
 
-    LogCapture log;
+    helix::TextLogCapture log;
 
     lv_obj_t* result = nullptr;
     FIND_WIDGET(result, parent, "existing_widget", "MyPanel");
@@ -133,7 +86,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET does not log when widget found",
 TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET_REQUIRED logs error when widget not found",
                  "[widget_helpers][logging]") {
     lv_obj_t* parent = lv_obj_create(test_screen());
-    LogCapture log;
+    helix::TextLogCapture log;
 
     lv_obj_t* result = nullptr;
     FIND_WIDGET_REQUIRED(result, parent, "critical_widget", "CriticalPanel");
@@ -164,7 +117,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET_REQUIRED finds existing widget",
 TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET_OPTIONAL does not log on failure",
                  "[widget_helpers][logging]") {
     lv_obj_t* parent = lv_obj_create(test_screen());
-    LogCapture log;
+    helix::TextLogCapture log;
 
     lv_obj_t* result = nullptr;
     FIND_WIDGET_OPTIONAL(result, parent, "optional_widget");
@@ -202,7 +155,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET_OPTIONAL returns nullptr for miss
 
 TEST_CASE_METHOD(LVGLTestFixture, "FIND_WIDGET handles null parent gracefully",
                  "[widget_helpers][edge]") {
-    LogCapture log;
+    helix::TextLogCapture log;
 
     lv_obj_t* result = reinterpret_cast<lv_obj_t*>(0xDEADBEEF);
     FIND_WIDGET(result, nullptr, "any_widget", "NullParentTest");

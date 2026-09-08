@@ -23,12 +23,10 @@
 #include "../helix_test_fixture.h"
 #include "../lvgl_test_fixture.h"
 #include "../test_helpers/config_test_access.h"
+#include "../test_helpers/log_capture.h"
 #include "config.h"
 #include "input_settings_manager.h"
 #include "input_settings_test_helpers.h"
-
-#include <spdlog/sinks/ringbuffer_sink.h>
-#include <spdlog/spdlog.h>
 
 #include <string>
 #include <vector>
@@ -53,55 +51,6 @@ class ConfigTypeFixture : public HelixTestFixture {
     void seed(const json& doc) {
         ConfigTestAccess::data(config) = doc;
     }
-};
-
-/// RAII spdlog capture, so "the user is told which key was ignored" is an
-/// assertion rather than an intention.
-class LogCapture {
-  public:
-    LogCapture() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256)) {
-        logger_ = spdlog::default_logger();
-        prev_level_ = logger_->level();
-        sink_->set_level(spdlog::level::trace);
-        logger_->sinks().push_back(sink_);
-        logger_->set_level(spdlog::level::trace);
-    }
-
-    ~LogCapture() {
-        auto& sinks = logger_->sinks();
-        for (auto it = sinks.begin(); it != sinks.end(); ++it) {
-            if (*it == sink_) {
-                sinks.erase(it);
-                break;
-            }
-        }
-        logger_->set_level(prev_level_);
-    }
-
-    LogCapture(const LogCapture&) = delete;
-    LogCapture& operator=(const LogCapture&) = delete;
-
-    /// True when some captured line contains every one of @p needles.
-    bool has_line_with(const std::vector<std::string>& needles) const {
-        for (const auto& line : sink_->last_formatted(256)) {
-            bool all = true;
-            for (const auto& needle : needles) {
-                if (line.find(needle) == std::string::npos) {
-                    all = false;
-                    break;
-                }
-            }
-            if (all) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-  private:
-    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
-    std::shared_ptr<spdlog::logger> logger_;
-    spdlog::level::level_enum prev_level_;
 };
 
 } // namespace
