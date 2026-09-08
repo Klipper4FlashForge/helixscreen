@@ -61,15 +61,19 @@ fi
 # this stays terse rather than replaying either log.
 ccache_summary() {
     command -v ccache >/dev/null 2>&1 || { printf 'not installed'; return; }
-    local stats files size
-    stats=$(ccache -s 2>/dev/null) || { printf 'stats unavailable'; return; }
-    files=$(printf '%s\n' "$stats" | grep -E '^ *Files( in cache)?:' | grep -oE '[0-9]+' | tail -1)
-    size=$(printf '%s\n' "$stats" | grep -E '^ *Cache size' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
-    if [ -n "$files" ] && [ -n "$size" ]; then
-        printf '%s files %s GB (hit rate resets per session)' "$files" "$size"
-    else
-        printf 'warm'
-    fi
+    local tarball size
+    # What env-setup.sh recorded at provisioning time is the authority on whether
+    # a cache was ever fetched. `ccache -s` can only describe the cache now, and
+    # says the least when it matters most: ccache 4.9.1 omits the "Files in cache"
+    # line entirely for an empty cache, so treating its absence as anything but
+    # empty reports a cold box as warm.
+    tarball=$(sed -n 's/^ccache_tarball: *//p' "$CLOUD_ENV_DIR/READY" 2>/dev/null | head -1)
+    size=$(ccache -s 2>/dev/null | grep -E '^ *Cache size' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+    [ -n "$size" ] || size=0
+    case "$size" in
+        0 | 0.0 | 0.00) printf 'EMPTY — %s' "${tarball:-provisioning status unknown}" ;;
+        *) printf '%s GB — %s (hit rate resets per session)' "$size" "${tarball:-provisioning status unknown}" ;;
+    esac
 }
 
 if [ -n "$FAILED_STEP" ]; then

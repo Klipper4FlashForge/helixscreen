@@ -145,15 +145,28 @@ step_ccache() {
     log "Step B: warming ccache from the build-cache release..."
     wait_for_apt || log "Step B: apt install did not finish in time, extracting anyway"
     mkdir -p /root/.cache
-    if curl -fsSL --retry 3 \
-        https://github.com/prestonbrown/helixscreen/releases/download/build-cache/ccache-linux-x64.tar.zst \
-        | tar --zstd -x -C /root/.cache; then
+    # Downloaded to a file rather than piped into tar, so a failure says which
+    # half failed. Piping collapses "the asset was not there" and "this image
+    # cannot unpack zstd" into one verdict, and a cold cache costs every session
+    # on this snapshot an hour — too expensive to leave unattributed.
+    local tarball=/tmp/helix-ccache.tar.zst rc=0
+    if ! curl -fsSL --retry 3 -o "$tarball" \
+        https://github.com/prestonbrown/helixscreen/releases/download/build-cache/ccache-linux-x64.tar.zst; then
+        rc=$?
+        log "Step B: download failed (curl exit $rc) — release asset unreachable or absent"
+    elif ! tar --zstd -xf "$tarball" -C /root/.cache; then
+        rc=$?
+        log "Step B: extract failed (tar exit $rc); zstd binary: $(command -v zstd || echo 'not installed')"
+        log "Step B: downloaded $(wc -c <"$tarball" 2>/dev/null || echo 0) bytes"
+    fi
+    rm -f "$tarball"
+    if [ "$rc" -eq 0 ]; then
         echo "landed" > "$CCACHE_STATUS_FILE"
         log "Step B done: ccache warmed"
     else
         rm -rf /root/.cache/ccache
         echo "cold start" > "$CCACHE_STATUS_FILE"
-        log "Step B done: cold start (no cache tarball available)"
+        log "Step B done: cold start (see the failure above for which half)"
     fi
 }
 
