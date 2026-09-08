@@ -1384,13 +1384,21 @@ VACUOUS_MAX ?= 38
 print-vacuous-max:
 	@echo "$(VACUOUS_MAX)"
 
-# --out is not optional: tests that shell out print ANSI status to stdout, and
-# with the report on stdout too the XML comes back complete but unparseable.
+# Same reason as print-vacuous-max: the nightly produces its own report and must
+# select the same cases this target does, or the two gates judge different runs.
+.PHONY: print-vacuous-filter
+print-vacuous-filter:
+	@echo "$(VACUOUS_FILTER)"
+
+# The run is a single unsharded process with its stdout discarded, so nothing
+# about it is visible from outside except the report growing. run_suite_report.sh
+# owns that: it prints where the run is, and stops it with the name of the case
+# it is sitting in rather than letting every gate downstream wait on a suite
+# that is not coming back. The nightly calls the same script.
 .PHONY: suite-report
 suite-report: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running suite with per-assertion reporting...$(RESET)"
-	$(Q)$(TEST_BIN) "$(VACUOUS_FILTER)" --reporter xml --success --out $(SUITE_REPORT) >/dev/null 2>&1 || true
-	$(Q)test -s $(SUITE_REPORT) || { echo "no report produced"; exit 1; }
+	$(Q)scripts/run_suite_report.sh $(TEST_BIN) "$(VACUOUS_FILTER)" $(SUITE_REPORT)
 
 .PHONY: test-vacuous
 test-vacuous: suite-report
