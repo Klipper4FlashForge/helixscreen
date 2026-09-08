@@ -75,6 +75,7 @@
 #include "usb_manager.h"
 #include "width_sensor_manager.h"
 #include "xml_registration.h"
+#include "z_offset_utils.h"
 
 #include <spdlog/spdlog.h>
 
@@ -248,6 +249,11 @@ void SubjectInitializer::init_core_and_state() {
 
     // Phase 3: AMS and filament sensor subjects
     init_ams_subjects();
+
+    // Z-offset save availability. Derived from PrinterState's strategy and
+    // machine-wide offset plus ToolState's per-tool dirty flag, so it registers
+    // after all three, and before any panel XML binds the name.
+    helix::zoffset::init_save_available_subject();
 
     // Phase 4: Navigation subjects — MUST register AFTER PrinterState/AmsState
     // so that in reverse deinit order, NavigationManager cleans up its observers

@@ -1015,3 +1015,128 @@ check_observer_guard_move_clears_cleanup() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"expected exactly 2"* ]]
 }
+
+# --- The Z-offset save-availability rule has ONE definition ---
+# "Is there an offset worth saving" is helix::zoffset::save_available(), published
+# to XML as the z_offset_save_available subject. An inline cond= that re-derives
+# it from any_tool_z_dirty is a second copy, and copies agree by convention until
+# one is widened and the others are not: a tool dirty on an axis the stale copy
+# does not ask about gets no save affordance, and SET_TOOL_PARAMETER is
+# runtime-only (prestonbrown/helixscreen#1517).
+
+zoffset_save_rule_copies() {
+    grep -rnE 'cond="[^"]*any_tool_z_dirty' "$@" 2>/dev/null || true
+}
+
+# Names every XML that offers the save without binding the published rule.
+#
+# The file list is DISCOVERED from the button names, not spelled out: a surface
+# added later, or a breakpoint override that gets its own copy of the button,
+# has to bind the rule too. A button binding something narrower is the failure
+# this catches — a micro-breakpoint Save that asks only about the machine-wide
+# offset hides itself over a dirty tool while the handler would save it.
+zoffset_save_button_files() {
+    grep -rlE 'name="(btn_save_z_offset|header_save_z_offset)"' "$@" 2>/dev/null || true
+}
+
+zoffset_save_buttons_unbound() {
+    local f
+    for f in "$@"; do
+        grep -qF 'subject="z_offset_save_available"' "$f" || echo "$f"
+    done
+}
+
+# The publisher observes subjects ToolState registers in init_ams_subjects(), so
+# initialising it earlier would attach to nothing and leave every save surface
+# bound to a subject that never moves. Silent in both directions: the XML binding
+# resolves, the button just never appears.
+zoffset_publisher_wiring() {
+    local f="${1:-src/application/subject_initializer.cpp}"
+    local ams init
+    ams=$(grep -n 'init_ams_subjects();' "$f" | tail -1 | cut -d: -f1)
+    init=$(grep -n 'zoffset::init_save_available_subject(' "$f" | head -1 | cut -d: -f1)
+    if [ -z "$ams" ]; then
+        echo "init_ams_subjects() call not found in $f"
+        return
+    fi
+    if [ -z "$init" ]; then
+        echo "init_save_available_subject() is never called in $f"
+        return
+    fi
+    [ "$init" -gt "$ams" ] || echo "init_save_available_subject() runs before init_ams_subjects()"
+}
+
+@test "the Z-offset save publisher is initialised after ToolState" {
+    run zoffset_publisher_wiring
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the Z-offset publisher gate fires when the call is missing or too early" {
+    local d="${BATS_TEST_TMPDIR}/zoffset_wiring"
+    mkdir -p "$d"
+    printf '%s\n' 'void f() {' '    init_ams_subjects();' '}' > "$d/missing.cpp"
+    run zoffset_publisher_wiring "$d/missing.cpp"
+    [ "$status" -eq 0 ]
+    contains "never called" "$output"
+
+    printf '%s\n' 'void f() {' '    helix::zoffset::init_save_available_subject();' \
+        '    init_ams_subjects();' '}' > "$d/early.cpp"
+    run zoffset_publisher_wiring "$d/early.cpp"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"before init_ams_subjects"* ]]
+}
+
+@test "no XML re-derives the Z-offset save rule from any_tool_z_dirty" {
+    run zoffset_save_rule_copies ui_xml/ --include='*.xml'
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the Z-offset save-rule gate fires on a reintroduced inline condition" {
+    local d="${BATS_TEST_TMPDIR}/zoffset_rule_copy"
+    mkdir -p "$d"
+    cat > "$d/offender.xml" <<'EOF'
+<ui_button name="btn_save_z_offset">
+  <bind_flag_if cond="z_offset_can_save and (gcode_z_offset ne 0 or any_tool_z_dirty)" flag="hidden" invert="true"/>
+</ui_button>
+EOF
+    run zoffset_save_rule_copies "$d" --include='*.xml'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"offender.xml"* ]]
+}
+
+@test "the Z-offset save-rule gate stays quiet on the published binding" {
+    local d="${BATS_TEST_TMPDIR}/zoffset_rule_ok"
+    mkdir -p "$d"
+    cat > "$d/ok.xml" <<'EOF'
+<ui_button name="btn_save_z_offset">
+  <bind_flag_if_eq subject="z_offset_save_available" flag="hidden" ref_value="0"/>
+</ui_button>
+EOF
+    run zoffset_save_rule_copies "$d" --include='*.xml'
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "every Z-offset save surface binds the published rule" {
+    local files
+    files=$(zoffset_save_button_files ui_xml/ --include='*.xml')
+    # Fail closed: an empty list would pass the emptiness check below having
+    # examined nothing.
+    [ "$(printf '%s\n' "$files" | grep -c .)" -ge 4 ]
+
+    run zoffset_save_buttons_unbound $files
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the Z-offset save-surface gate fires on a button that binds nothing" {
+    local d="${BATS_TEST_TMPDIR}/zoffset_unbound"
+    mkdir -p "$d"
+    printf '%s\n' '<ui_button name="btn_save_z_offset" hidden="true"/>' > "$d/offender.xml"
+
+    run zoffset_save_buttons_unbound "$d/offender.xml"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"offender.xml"* ]]
+}
