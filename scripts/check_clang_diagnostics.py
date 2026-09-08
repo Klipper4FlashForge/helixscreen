@@ -596,6 +596,23 @@ def _default_jobs() -> int:
     return max(1, min(8, cpus // 4)) if busy else max(1, min(8, cpus))
 
 
+def changed_cpp_paths(args, root) -> list[str]:
+    """C++ files this run would have checked, independent of the compile database.
+
+    select_entries() answers the same question but only for files the database
+    knows, which is no answer at all when the database is missing.
+    """
+    if args.files:
+        paths = list(args.files)
+    else:
+        base = git(root, "merge-base", "HEAD", "origin/main") or git(root, "merge-base", "HEAD", "main")
+        if not base:
+            return []
+        out = git(root, "diff", "--name-only", "--diff-filter=ACM", base)
+        paths = out.split("\n") if out else []
+    return [p for p in paths if p.endswith(TU_EXTENSIONS) or p.endswith(HEADER_EXTENSIONS)]
+
+
 def main() -> int:
     default_jobs = _default_jobs()
     ap = argparse.ArgumentParser(description="Syntax-check TUs with clang to catch GCC/clang divergence.")
@@ -623,7 +640,23 @@ def main() -> int:
 
     db = load_compile_db(root, args.compile_db_dir)
     if not db:
-        print("SKIP: clang syntax check -- no compile database (build the tree first)")
+        # Skipping here is right only when there was nothing to check anyway.
+        # With C++ in the diff and no database, this gate inspects none of it and
+        # a bare SKIP reads downstream as a pass — the shape that let an unbuilt
+        # release checkout report a clean divergence stage in one second.
+        changed = changed_cpp_paths(args, root)
+        if changed:
+            print(
+                f"clang syntax check: {len(changed)} changed C++ file(s) and no "
+                "compile database"
+            )
+            print(
+                "\nThe tree was never built, so this gate inspected nothing. Build it\n"
+                "(make -j && make test -j) and re-run; a green result from an unbuilt\n"
+                "tree is not a green result."
+            )
+            return 1
+        print("SKIP: clang syntax check -- no C++ changed and no compile database")
         return 0
 
     entries, untrusted, notes = select_entries(args, db, root)
@@ -633,7 +666,24 @@ def main() -> int:
     skipped_note = f", {len(untrusted)} skipped (stale compile command)" if untrusted else ""
 
     if not entries:
-        print(f"clang syntax check: no translation units to check{skipped_note}")
+        # A diff with no C++ in it has genuinely nothing to check. A diff full of
+        # C++ that yielded no compile commands is a different thing wearing the
+        # same result: the tree was never built, so the gate saw nothing and would
+        # report a clean bill of health for code it never compiled. The divergence
+        # this exists to catch is precisely what an unbuilt tree cannot show.
+        wanted = len(tus) + len(headers)
+        if wanted:
+            print(
+                f"clang syntax check: 0 of {wanted} changed C++ file(s) could be "
+                f"checked{skipped_note}"
+            )
+            print(
+                "\nNo compile commands were found for any of them, so this gate "
+                "verified nothing.\nBuild the tree (make -j && make test -j) and "
+                "re-run; a green result from an\nunbuilt tree is not a green result."
+            )
+            return 1
+        print(f"clang syntax check: no C++ files changed, nothing to check{skipped_note}")
         return 0
 
     print(f"clang syntax check: {len(entries)} TU(s) via {desc} (-j{args.jobs})")
