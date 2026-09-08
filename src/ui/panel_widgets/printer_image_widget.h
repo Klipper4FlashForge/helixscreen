@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "panel_widget.h"
 
 #include <string>
@@ -37,6 +38,9 @@ class PrinterImageWidget : public PanelWidget {
     /// XML event callback — opens printer manager overlay
     static void printer_manager_clicked_cb(lv_event_t* e);
 
+  protected:
+    void on_hooked_root_deleted() override;
+
   private:
     lv_obj_t* widget_obj_ = nullptr;
     lv_obj_t* parent_screen_ = nullptr;
@@ -49,6 +53,15 @@ class PrinterImageWidget : public PanelWidget {
     // (mid-rebuild grid) walked the freed descriptor off the heap end (#983/#1025).
     lv_timer_t* refresh_timer_ = nullptr;
     std::string current_source_path_; // Resolved source image (LVGL path)
+
+    /// Guards the cache-generation continuation, which runs from a worker thread
+    /// and touches this widget's LVGL tree.
+    helix::AsyncLifetimeGuard lifetime_;
+
+    /// One cache generation at a time. Every navigation back to the panel schedules
+    /// another cache check, and without this a second job would redo work already
+    /// running for the same source and size.
+    bool cache_job_inflight_ = false;
 
     void schedule_image_refresh();
     void schedule_cache_check();

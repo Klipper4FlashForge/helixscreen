@@ -441,41 +441,110 @@ TEST_CASE("Cache larger than the prerendered tier is sourced from the PNG",
 }
 
 // ============================================================================
-// Conditional cache invalidation
+// Cache naming and invalidation
 // ============================================================================
 
-// Every navigation back to the home panel refreshes the printer image, and the
-// scaled cache it would discard is rebuilt by a synchronous decode-and-resize on
-// the main thread — 1.5-2.0s on a two-core board, plus a flash write. A refresh
-// that resolves to the image already displayed must therefore leave the cache
-// alone; only a genuine change of image discards it.
-TEST_CASE("Printer image cache survives a refresh that resolves to the same path",
-          "[assets][printer][cache]") {
-    const std::string source =
-        "A:/printers/helix_same_path_" + std::to_string(::getpid()) + "-300.bin";
-    const std::filesystem::path cached = get_cached_printer_image_path(source, 233, 209);
+// Every navigation back to the home panel refreshes the printer image, and a
+// cache entry it can no longer name is rebuilt by a decode-and-resize costing
+// half a second per entry on a two-core board, plus a flash write. The name
+// therefore has to stay put for as long as the source bytes do, and has to move
+// the moment they change.
+TEST_CASE("Cached printer image path is keyed on the source file", "[assets][printer][cache]") {
+    const auto tmp =
+        std::filesystem::temp_directory_path() / ("helix_cache_key_" + std::to_string(::getpid()));
+    std::filesystem::create_directories(tmp);
+    const auto source_file = tmp / "helix-keyed-printer-300.bin";
+    std::ofstream(source_file, std::ios::binary) << "first revision";
+    const std::string source = "A:" + source_file.string();
 
-    // Stand in for a generated cache entry: invalidation matches on filename
-    // prefix and never reads the contents.
-    std::ofstream(cached, std::ios::binary) << "cached pixels";
-    REQUIRE(std::filesystem::exists(cached));
+    const std::string first = get_cached_printer_image_path(source, 233, 209);
 
-    SECTION("an unchanged path keeps the cache") {
-        CHECK(invalidate_printer_image_cache_if_changed(source, source) == 0);
-        CHECK(std::filesystem::exists(cached));
+    SECTION("an unchanged source names the same entry every time") {
+        CHECK(get_cached_printer_image_path(source, 233, 209) == first);
+        CHECK(get_cached_printer_image_path(source, 233, 209) == first);
     }
 
-    SECTION("a different image discards the old cache") {
-        const std::string other = "A:/printers/helix_other_" + std::to_string(::getpid()) + ".bin";
-        CHECK(invalidate_printer_image_cache_if_changed(source, other) == 1);
-        CHECK_FALSE(std::filesystem::exists(cached));
+    SECTION("different dimensions name different entries") {
+        CHECK(get_cached_printer_image_path(source, 234, 209) != first);
+        CHECK(get_cached_printer_image_path(source, 233, 210) != first);
     }
 
-    SECTION("the first refresh has no previous image to discard") {
-        CHECK(invalidate_printer_image_cache_if_changed("", source) == 0);
-        CHECK(std::filesystem::exists(cached));
+    SECTION("rewriting the source in place names a different entry") {
+        // The replacement differs in LENGTH as well as content. mtime granularity
+        // is a filesystem property — a coarse one can stamp both writes with the
+        // same instant — and the size moves the fingerprint regardless.
+        std::ofstream(source_file, std::ios::binary | std::ios::trunc)
+            << "second revision, materially longer than the first";
+        CHECK(get_cached_printer_image_path(source, 233, 209) != first);
+    }
+
+    SECTION("a source that cannot be stat'ed still names one deterministic entry") {
+        const std::string missing = "A:" + (tmp / "helix-absent-300.bin").string();
+        const std::string named = get_cached_printer_image_path(missing, 233, 209);
+        CHECK_FALSE(named.empty());
+        CHECK(get_cached_printer_image_path(missing, 233, 209) == named);
     }
 
     std::error_code ec;
-    std::filesystem::remove(cached, ec);
+    std::filesystem::remove_all(tmp, ec);
+}
+
+// A printer's PNG and its prerendered variants share a stem: "creality-k1-se.png"
+// beside "creality-k1-se-300.bin". Matching on the stem plus a dash alone lets an
+// invalidation of the PNG delete the caches of two other source images.
+TEST_CASE("Printer cache entries are attributed to one source image", "[assets][printer][cache]") {
+    const std::string stem = "helix_stem_" + std::to_string(::getpid());
+    const std::string png = "A:assets/images/printers/" + stem + ".png";
+    const std::string tier300 = "A:assets/images/printers/prerendered/" + stem + "-300.bin";
+
+    SECTION("the dimension segment separates a PNG from its prerendered variants") {
+        CHECK(printer_cache_entry_matches(stem + "-233x209-1700000000-4096.bin", png));
+        CHECK_FALSE(printer_cache_entry_matches(stem + "-300-233x209-1700000000-4096.bin", png));
+        CHECK_FALSE(printer_cache_entry_matches(stem + "-150-120x100-1700000000-2048.bin", png));
+
+        CHECK(printer_cache_entry_matches(stem + "-300-233x209-1700000000-4096.bin", tier300));
+        CHECK_FALSE(printer_cache_entry_matches(stem + "-233x209-1700000000-4096.bin", tier300));
+    }
+
+    SECTION("a name without a well-formed dimension segment is not ours") {
+        CHECK_FALSE(printer_cache_entry_matches(stem + "-x209-1-2.bin", png));
+        CHECK_FALSE(printer_cache_entry_matches(stem + "-233x-1-2.bin", png));
+        CHECK_FALSE(printer_cache_entry_matches(stem + "-233209-1-2.bin", png));
+        CHECK_FALSE(printer_cache_entry_matches(stem + "-233x209.bin", png));
+        CHECK_FALSE(printer_cache_entry_matches("other-233x209-1-2.bin", png));
+    }
+}
+
+// import_image() invalidates the sizes it just rewrote. Deleting the caches of the
+// neighbouring source images costs each of them a full regeneration on the next
+// refresh, for a file nobody touched.
+TEST_CASE("Invalidating a printer PNG spares the prerendered variants' caches",
+          "[assets][printer][cache]") {
+    const std::string stem = "helix_inval_" + std::to_string(::getpid());
+    const std::filesystem::path cache_dir = get_printer_image_cache_dir();
+    REQUIRE_FALSE(cache_dir.empty());
+
+    // Entries named the way get_cached_printer_image_path() names them. Invalidation
+    // matches on the filename and never reads the contents.
+    const auto png_entry = cache_dir / (stem + "-233x209-1700000000-4096.bin");
+    const auto tier300_entry = cache_dir / (stem + "-300-233x209-1700000001-4096.bin");
+    const auto tier150_entry = cache_dir / (stem + "-150-120x100-1700000002-2048.bin");
+    for (const auto& entry : {png_entry, tier300_entry, tier150_entry}) {
+        std::ofstream(entry, std::ios::binary) << "cached pixels";
+        REQUIRE(std::filesystem::exists(entry));
+    }
+
+    CHECK(invalidate_printer_image_cache("A:assets/images/printers/" + stem + ".png") == 1);
+    CHECK_FALSE(std::filesystem::exists(png_entry));
+    CHECK(std::filesystem::exists(tier300_entry));
+    CHECK(std::filesystem::exists(tier150_entry));
+
+    // Each prerendered variant still owns, and can still clear, its own entries.
+    CHECK(invalidate_printer_image_cache("A:assets/images/printers/prerendered/" + stem +
+                                         "-300.bin") == 1);
+    CHECK_FALSE(std::filesystem::exists(tier300_entry));
+    CHECK(std::filesystem::exists(tier150_entry));
+
+    std::error_code ec;
+    std::filesystem::remove(tier150_entry, ec);
 }
