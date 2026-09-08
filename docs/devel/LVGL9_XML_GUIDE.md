@@ -493,7 +493,15 @@ Full rule, both directions, and the tests that pin it:
 HelixScreen phases are in
 [`architecture/01-declarative-ui.md`](architecture/01-declarative-ui.md).
 Worked examples in this tree: `ui_xml/temp_graph_overlay.xml`
-(`temp_graph_mode`) and `ui_xml/header_bar.xml` (`any_tool_z_dirty`).
+(`temp_graph_mode`).
+
+There is a third way out when the same condition is needed on several surfaces
+*and* an operand comes from a Phase 9a `init_subjects()`: publish the answer as a
+plain subject from C++ and let every site bind that one name — a `subject="..."`
+reference resolves at view-create time, so the phase trap does not apply. That is
+what `z_offset_save_available` (`include/z_offset_utils.h#save_available`) does
+for the Z-offset save affordance. Reach for it only when repeating the `cond=`
+would put one rule in several files; a condition used once belongs inline.
 
 ##### HelixScreen examples
 
@@ -558,7 +566,7 @@ instead.
 
 **✅ Compound conditions are supported** via the expression evaluator (see "Expression Conditionals" above) — `cond="a or b gt c"` on `bind_flag_if`/`bind_state_if`/`bind_style_if`, or a `<subject_expr>` derived subject for a condition reused in multiple places. This replaces stacking several single-subject `bind_flag_if_*` elements or writing a hand-rolled C++ derived subject for "OR of two subjects" type logic.
 
-**Reuse alone does not pick `<subject_expr>`** — check the phase table above first. If any referenced subject comes from an `init_subjects()` (Phase 9a), the derived subject silently never registers and you must repeat the `cond=` at each site instead.
+**Reuse alone does not pick `<subject_expr>`** — check the phase table above first. If any referenced subject comes from an `init_subjects()` (Phase 9a), the derived subject silently never registers, so either repeat the `cond=` at each site or, when that would scatter one rule across several files, publish the answer as a C++ subject every site binds (see "Which phase registers the subject" above).
 
 **❌ Never put two flag bindings for the same flag on one widget.** The flag
 binds are two-way — a non-matching `bind_flag_if_eq` actively *removes* the flag

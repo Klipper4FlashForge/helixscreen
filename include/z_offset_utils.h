@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <lvgl.h>
 #include <optional>
 #include <string>
 
@@ -165,6 +166,50 @@ void apply_and_save(IMoonrakerAPI* api, helix::ui::SaveConfigWatch& save_watch,
                     ZOffsetCalibrationStrategy strategy, std::function<void()> on_success,
                     std::function<void(const std::string& error)> on_error,
                     PrinterState* ps = nullptr);
+
+/// The facts the "is there an offset worth saving" decision is made from.
+struct SaveAvailability {
+    /// The firmware does not persist the offset on its own, so a manual save is
+    /// the only thing that survives the next Klipper restart.
+    bool manual_save_supported = false;
+    /// The machine-wide gcode offset is non-zero.
+    bool global_dirty = false;
+    /// At least one tool's offset differs from what is persisted. Widening the
+    /// per-tool offsets to another axis widens this one read, and every surface
+    /// that asks the question follows.
+    bool tools_dirty = false;
+};
+
+/// Is there an offset worth saving?
+///
+/// The single definition of the rule every save surface asks. XML binds the
+/// `z_offset_save_available` subject; C++ calls this. A surface that re-derives
+/// its own answer can offer a save the save path says is unnecessary, or hide
+/// one the user needs.
+constexpr bool save_available(const SaveAvailability& facts) {
+    return facts.manual_save_supported && (facts.global_dirty || facts.tools_dirty);
+}
+
+/// Read the three facts from the live PrinterState and ToolState.
+[[nodiscard]] SaveAvailability current_save_availability();
+
+/// save_available() asked of live state. Use this at C++ call sites so the rule
+/// lives in exactly one place.
+[[nodiscard]] bool save_available();
+
+/// Publish `z_offset_save_available` (0/1) and keep it in step with the machine-
+/// wide offset, the per-tool dirty flag and the calibration strategy.
+///
+/// Call after BOTH PrinterState and ToolState have registered their subjects and
+/// before any panel XML is created: the observers attach to subjects those two
+/// own, and the bindings resolve the name at widget-create time.
+void init_save_available_subject(bool register_xml = true);
+
+/// Drop the observers and the subject. Idempotent.
+void deinit_save_available_subject();
+
+/// The published subject, or nullptr before init_save_available_subject().
+lv_subject_t* get_save_available_subject();
 
 /// Persist EVERY unsaved z-offset: the machine-wide one and each tool's.
 ///
