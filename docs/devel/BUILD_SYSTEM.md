@@ -2081,6 +2081,13 @@ pinned `clang-format` from `.venv`, so a worker runs `make venv-setup` before `m
 formats only the files its own diff touched. The sweep's `--auto-fix` reformats every file in
 `CLANG_FORMAT_BASELINE`, which belong to whoever is retiring them, not to the worker.
 
+**A push to a work branch costs a full CI run.** Build, Code Quality and XML Lint all fire on the
+`claude/**` namespace, and Build alone budgets 200 minutes. Push when the gates are green locally,
+never to find out whether they are — a red run on a work branch is a signal the worker skipped a
+check it could have run itself, and it queues behind everyone else's work. A coordinator asking for
+an early push to review in parallel is accepting that cost deliberately; a worker iterating against
+CI is not.
+
 **One OPT flavor per tree.** The pre-commit hook builds at the default optimization level, so a
 worker that builds with `OPT=0` makes every later hook run rewrite the objects it just wrote.
 Default everywhere, and never two `make` invocations in one tree at once.
