@@ -355,28 +355,40 @@ void FanSettingsOverlay::handle_fan_rename(const std::string& object_name,
 
 void FanSettingsOverlay::confirm_rename() {
     if (pending_rename_object_.empty()) {
+        spdlog::warn("[{}] Rename confirmed with no fan pending", get_name());
         cancel_rename();
         return;
     }
 
-    // Find the text input in the modal
-    lv_obj_t* input = lv_obj_find_by_name(lv_layer_top(), "fan_rename_new_name_input");
+    // Search the modal this overlay opened before falling back to a shared root.
+    // Modals are parented to the active screen and moved to the foreground, so a modal
+    // still finishing its exit sits earlier in child order than the live one, and
+    // lv_obj_find_by_name is a depth-first first-match walk that would return its input.
+    lv_obj_t* input = nullptr;
+    if (rename_modal_) {
+        input = lv_obj_find_by_name(rename_modal_, "fan_rename_new_name_input");
+    }
+    if (!input) {
+        input = lv_obj_find_by_name(lv_layer_top(), "fan_rename_new_name_input");
+    }
     if (!input) {
         input = lv_obj_find_by_name(lv_screen_active(), "fan_rename_new_name_input");
     }
 
-    std::string new_name;
-    if (input) {
-        const char* text = lv_textarea_get_text(input);
-        if (text && std::strlen(text) > 0) {
-            new_name = text;
-        }
+    if (!input) {
+        spdlog::error("[{}] Rename input not found, leaving '{}' unchanged", get_name(),
+                      pending_rename_object_);
+        cancel_rename();
+        return;
     }
 
-    if (!new_name.empty()) {
-        get_printer_state().rename_fan(pending_rename_object_, new_name);
-        spdlog::info("[{}] Renamed '{}' -> '{}'", get_name(), pending_rename_object_, new_name);
-    }
+    // An empty name is a request to revert: PrinterFanState::rename_fan restores the
+    // role or auto-generated name for the object.
+    const char* text = lv_textarea_get_text(input);
+    std::string new_name = text ? text : "";
+
+    get_printer_state().rename_fan(pending_rename_object_, new_name);
+    spdlog::info("[{}] Renamed '{}' -> '{}'", get_name(), pending_rename_object_, new_name);
 
     pending_rename_object_.clear();
 
@@ -392,6 +404,8 @@ void FanSettingsOverlay::confirm_rename() {
 }
 
 void FanSettingsOverlay::cancel_rename() {
+    spdlog::debug("[{}] Rename modal dismissed (pending: '{}')", get_name(),
+                  pending_rename_object_);
     pending_rename_object_.clear();
 
     if (rename_modal_) {
