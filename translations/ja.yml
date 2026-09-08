@@ -735,6 +735,7 @@ translations:
   Do not touch the printer during calibration: キャリブレーション中はプリンターに触れないでください
   Dock: ドック
   Dock sensors cannot tell which tool is mounted: ドックのセンサーでは、どのツールが装着されているか判別できません
+  Dock sensors disagree: ドックセンサーが不一致
   Dock tool: ツールを格納
   Docking tool: ツールを格納中
   Documentation: ドキュメント

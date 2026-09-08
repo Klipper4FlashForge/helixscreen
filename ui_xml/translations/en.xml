@@ -719,6 +719,7 @@
   <translation tag="Do not touch the printer during calibration" en="Do not touch the printer during calibration"/>
   <translation tag="Dock" en="Dock"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" en="Dock sensors cannot tell which tool is mounted"/>
+  <translation tag="Dock sensors disagree" en="Dock sensors disagree"/>
   <translation tag="Dock tool" en="Dock tool"/>
   <translation tag="Docking tool" en="Docking tool"/>
   <translation tag="Documentation" en="Documentation"/>

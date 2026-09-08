@@ -711,7 +711,7 @@ namespace {
 
 /// Result of examining the spool visual after status update.
 struct SpoolVisualState {
-    bool any_ghosted = false;      ///< true if any child has opa/bg_opa == LV_OPA_20
+    bool any_ghosted = false;      ///< true if any child has opa/bg_opa == LV_OPA_30
     bool any_spool_hidden = false; ///< true if spool_canvas or spool rings are hidden
     int child_count = 0;           ///< For diagnostic purposes
 };
@@ -740,7 +740,7 @@ SpoolVisualState inspect_spool_state(lv_obj_t* spool_container) {
     lv_opa_t bg_opa = lv_obj_get_style_bg_opa(spool_visual, LV_PART_MAIN);
     bool hidden = lv_obj_has_flag(spool_visual, LV_OBJ_FLAG_HIDDEN);
 
-    if (opa == LV_OPA_20 || bg_opa == LV_OPA_20) {
+    if (opa == LV_OPA_30 || bg_opa == LV_OPA_30) {
         st.any_ghosted = true;
     }
     if (hidden) {
@@ -852,7 +852,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot hides empty slot with no metadata 
     AmsState::instance().clear_backends();
 }
 
-TEST_CASE("SlotInfo::display_fill_level renders ghost lanes empty, present lanes by weight",
+TEST_CASE("SlotInfo::display_fill_level: a real weight wins, an unweighed ghost reads empty",
           "[ams][slot][1071][1367]") {
     // Ghost lane: EMPTY status, but a Spoolman link + material were RETAINED
     // across an eject (#1071), so has_filament_info() is true. The fill bar must
@@ -867,6 +867,18 @@ TEST_CASE("SlotInfo::display_fill_level renders ghost lanes empty, present lanes
     auto gfill = ghost.display_fill_level();
     REQUIRE(gfill.has_value());
     CHECK(*gfill == Catch::Approx(0.0f));
+
+    // Ghost lane WITH a recorded weight: the weight wins. An absent tool on a
+    // changer took its filament with it, so the spool still shows what is on it
+    // and the ghost alone says it is not in the machine.
+    SlotInfo ghost_weighed;
+    ghost_weighed.status = SlotStatus::EMPTY;
+    ghost_weighed.material = "ABS";
+    ghost_weighed.total_weight_g = 1000.0f;
+    ghost_weighed.remaining_weight_g = 750.0f;
+    auto gwfill = ghost_weighed.display_fill_level();
+    REQUIRE(gwfill.has_value());
+    CHECK(*gwfill == Catch::Approx(0.75f));
 
     // Present lane, both weights known: real remaining/total ratio.
     SlotInfo weighed;

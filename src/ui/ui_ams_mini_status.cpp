@@ -149,7 +149,7 @@ static bool slot_is_active_loaded(int slot_index) {
  *
  * Mirrors apply_slot_status() in ui_ams_slot.cpp: an empty lane that still
  * carries identity (Spoolman link, material, brand, or spool name — deliberately
- * NOT cleared on eject, #1071) renders its retained spool at LV_OPA_20 so it
+ * NOT cleared on eject, #1071) renders its retained spool at ams_draw::GHOST_OPA so it
  * reads as "assigned, not present" rather than "still loaded" (#1065). Call
  * AFTER spool_visual_set_color(), which resets bg_opa to COVER.
  */
@@ -960,7 +960,7 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         // Empty-lane presentation, ported from apply_slot_status() in
         // ui_ams_slot.cpp so a lane reads the same on both surfaces:
         //   present              -> full-strength spool, material text
-        //   ejected + assigned   -> spool KEPT, ghosted at LV_OPA_20, label
+        //   ejected + assigned   -> spool KEPT, ghosted at ams_draw::GHOST_OPA, label
         //                           ghosted with it ("assigned, not present")
         //   ejected + unassigned -> spool hidden, dashed placeholder, "Empty"
         const bool ghosted = !cd.present && cd.assigned;
@@ -968,7 +968,7 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         ams_draw::spool_visual_set_color(sv, lv_color_hex(cd.color_rgb));
         ams_draw::spool_visual_set_fill(sv, cd.fill_level);
         ams_draw::spool_visual_set_empty(sv, !cd.present && !cd.assigned);
-        spool_visual_set_ghost_opa(sv, ghosted ? LV_OPA_20 : LV_OPA_COVER);
+        spool_visual_set_ghost_opa(sv, ghosted ? ams_draw::GHOST_OPA : LV_OPA_COVER);
         lv_obj_t* badge =
             ams_draw::create_lane_badge(wrap, cd.lane_number, spool_size * 2 / 5, cd.active);
         if (badge) {
@@ -1022,7 +1022,7 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         if (fs)
             lv_obj_set_style_text_font(mat, fs, LV_PART_MAIN);
         lv_obj_set_style_text_color(mat, theme_manager_get_color("text"), LV_PART_MAIN);
-        lv_obj_set_style_text_opa(mat, ghosted ? LV_OPA_20 : LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_text_opa(mat, ghosted ? ams_draw::GHOST_OPA : LV_OPA_COVER, LV_PART_MAIN);
 
         if (stacked && !stacked_pct)
             continue; // the row had height for the name only
@@ -1046,7 +1046,7 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         lv_obj_set_style_text_color(pct, theme_manager_get_color("text_muted"), LV_PART_MAIN);
         // Ghost the whole text group together — a full-strength percent beside a
         // dimmed material would read as two different lanes.
-        lv_obj_set_style_text_opa(pct, ghosted ? LV_OPA_20 : LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_text_opa(pct, ghosted ? ams_draw::GHOST_OPA : LV_OPA_COVER, LV_PART_MAIN);
     }
 
     // Record the rendered signature so an identical subsequent sync can be skipped.

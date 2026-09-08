@@ -719,6 +719,7 @@
   <translation tag="Do not touch the printer during calibration" zh="校准期间请勿触碰打印机"/>
   <translation tag="Dock" zh="归位"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" zh="归位传感器无法判断当前安装的是哪个工具"/>
+  <translation tag="Dock sensors disagree" zh="归位传感器不一致"/>
   <translation tag="Dock tool" zh="归位工具"/>
   <translation tag="Docking tool" zh="正在归位工具"/>
   <translation tag="Documentation" zh="文档"/>

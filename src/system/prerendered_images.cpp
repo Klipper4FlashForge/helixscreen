@@ -12,6 +12,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cstring>
 #include <filesystem>
@@ -178,20 +179,19 @@ std::string get_printer_image_cache_dir() {
     return get_helix_cache_dir(PRINTER_CACHE_SUBDIR);
 }
 
+/// Filesystem path for an LVGL image path, which may carry the "A:" drive prefix.
+static std::string strip_lvgl_prefix(const std::string& path) {
+    if (path.size() >= 2 && path[0] == 'A' && path[1] == ':') {
+        return path.substr(2);
+    }
+    return path;
+}
+
 /// Extract a basename from an LVGL image path for use as cache key prefix.
 /// "A:assets/images/printers/prerendered/creality-k1c-150.bin" -> "creality-k1c-150"
 /// "A:assets/images/printers/creality-k1c.png" -> "creality-k1c"
 static std::string extract_source_basename(const std::string& source_image_path) {
-    std::string path = source_image_path;
-
-    // Strip LVGL "A:" prefix
-    if (path.size() >= 2 && path[0] == 'A' && path[1] == ':') {
-        path = path.substr(2);
-    }
-
-    // Extract filename and strip extension
-    std::filesystem::path p(path);
-    return p.stem().string();
+    return std::filesystem::path(strip_lvgl_prefix(source_image_path)).stem().string();
 }
 
 namespace {
@@ -229,23 +229,97 @@ int prerendered_tier_size(const std::string& fs_path) {
     return ec == std::errc() ? size : 0;
 }
 
+/// Source identity carried in a cache filename: last-write time and byte size,
+/// "0-0" for anything that is not a readable regular file so the name stays
+/// deterministic either way.
+///
+/// error_code overloads throughout — a stat is a probe, and the ESP32 VFS reports
+/// a missing path as ENODATA, which the throwing overloads treat as an error
+/// rather than "not found".
+std::string source_fingerprint(const std::string& fs_path) {
+    // Both halves unsigned: file_time_type's epoch is implementation-defined and
+    // is not the Unix one, so the tick count is routinely negative. The name only
+    // has to be a stable, distinct label for one revision of the bytes, and an
+    // unsigned rendering keeps a stray "-" out of the filename.
+    unsigned long long mtime = 0;
+    unsigned long long size = 0;
+
+    std::error_code kind_ec;
+    if (std::filesystem::is_regular_file(fs_path, kind_ec)) {
+        std::error_code time_ec;
+        const auto written = std::filesystem::last_write_time(fs_path, time_ec);
+        if (!time_ec) {
+            mtime = static_cast<unsigned long long>(written.time_since_epoch().count());
+        }
+        std::error_code size_ec;
+        const auto bytes = std::filesystem::file_size(fs_path, size_ec);
+        if (!size_ec) {
+            size = static_cast<unsigned long long>(bytes);
+        }
+    }
+    return std::to_string(mtime) + "-" + std::to_string(size);
+}
+
+/// Consume "<digits>" at `pos`, advancing it. False when there is no digit there.
+bool consume_digits(const std::string& s, size_t& pos) {
+    const size_t start = pos;
+    while (pos < s.size() && std::isdigit(static_cast<unsigned char>(s[pos]))) {
+        ++pos;
+    }
+    return pos > start;
+}
+
 } // namespace
 
 std::string get_cached_printer_image_path(const std::string& source_image_path, int width,
                                           int height) {
+    // The name carries the source's mtime and size, so an image rewritten in place
+    // under an existing filename resolves to a different entry and the one holding
+    // the old pixels is never consulted again.
+    //
+    // The fingerprint covers the REQUESTED source only. generate_cached_printer_image()
+    // may read the pixels from the full-resolution PNG instead when the request
+    // exceeds the prerendered tier, and a change to that PNG alone leaves this name
+    // unmoved.
     std::string cache_dir = get_printer_image_cache_dir();
     std::string basename = extract_source_basename(source_image_path);
     return cache_dir + "/" + basename + "-" + std::to_string(width) + "x" + std::to_string(height) +
-           ".bin";
+           "-" + source_fingerprint(strip_lvgl_prefix(source_image_path)) + ".bin";
+}
+
+bool printer_cache_entry_matches(const std::string& cache_filename,
+                                 const std::string& source_image_path) {
+    const std::string basename = extract_source_basename(source_image_path);
+    if (basename.empty()) {
+        return false;
+    }
+    const std::string prefix = basename + "-";
+    if (cache_filename.rfind(prefix, 0) != 0) {
+        return false;
+    }
+
+    // Past the basename the name must continue "<W>x<H>-", the dimension segment
+    // get_cached_printer_image_path() writes. That segment is what separates a
+    // PNG's own entries from those of the prerendered variants beside it:
+    // "creality-k1-se-" also prefixes "creality-k1-se-300-233x209-…", which caches
+    // a different source image.
+    size_t pos = prefix.size();
+    if (!consume_digits(cache_filename, pos)) {
+        return false;
+    }
+    if (pos >= cache_filename.size() || cache_filename[pos] != 'x') {
+        return false;
+    }
+    ++pos;
+    if (!consume_digits(cache_filename, pos)) {
+        return false;
+    }
+    return pos < cache_filename.size() && cache_filename[pos] == '-';
 }
 
 bool generate_cached_printer_image(const std::string& source_image_path, int width, int height,
                                    const std::string& output_path) {
-    // Strip LVGL "A:" prefix for filesystem access
-    std::string fs_path = source_image_path;
-    if (fs_path.size() >= 2 && fs_path[0] == 'A' && fs_path[1] == ':') {
-        fs_path = fs_path.substr(2);
-    }
+    std::string fs_path = strip_lvgl_prefix(source_image_path);
 
     // Upscaling from the prerendered tier would bake blur into the cache, which is
     // then kept forever. The tiers are 150px and 300px, but the widget can be much
@@ -446,7 +520,6 @@ int invalidate_printer_image_cache(const std::string& source_image_path) {
     }
 
     std::string cache_dir = get_printer_image_cache_dir();
-    std::string prefix = basename + "-";
     int removed = 0;
 
     try {
@@ -454,7 +527,7 @@ int invalidate_printer_image_cache(const std::string& source_image_path) {
             if (!std::filesystem::is_regular_file(entry.path()))
                 continue;
             std::string filename = entry.path().filename().string();
-            if (filename.rfind(prefix, 0) == 0) {
+            if (printer_cache_entry_matches(filename, source_image_path)) {
                 std::error_code ec;
                 std::filesystem::remove(entry.path(), ec);
                 if (!ec) {
@@ -471,14 +544,6 @@ int invalidate_printer_image_cache(const std::string& source_image_path) {
         spdlog::info("[PrinterCache] Invalidated {} cache entries for '{}'", removed, basename);
     }
     return removed;
-}
-
-int invalidate_printer_image_cache_if_changed(const std::string& current_image_path,
-                                              const std::string& new_image_path) {
-    if (current_image_path.empty() || current_image_path == new_image_path) {
-        return 0;
-    }
-    return invalidate_printer_image_cache(current_image_path);
 }
 
 } // namespace helix

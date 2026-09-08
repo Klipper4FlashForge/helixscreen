@@ -796,6 +796,7 @@ translations:
   Do not touch the printer during calibration: Не трогайте принтер во время калибровки
   Dock: Парковать
   Dock sensors cannot tell which tool is mounted: Датчики стыковки не могут определить, какой инструмент установлен
+  Dock sensors disagree: Противоречие датчиков стыковки
   Dock tool: Состыковать инструмент
   Docking tool: Парковка инструмента
   Documentation: Документация

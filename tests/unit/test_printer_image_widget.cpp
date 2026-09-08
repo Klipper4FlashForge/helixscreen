@@ -5,13 +5,31 @@
 #include "misc/lv_timer_private.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "prerendered_images.h"
 #include "src/ui/panel_widgets/printer_image_widget.h"
+
+#include <filesystem>
+#include <string>
 
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
 
 namespace {
+
+/// Call the first pending one-shot timer's callback. Returns whether one fired.
+/// Pumping them one at a time lets a test observe the state between two chained
+/// deferrals; neither this nor process_async_calls() drains the UpdateQueue, which
+/// runs off a repeating timer.
+bool fire_one_async_call() {
+    for (lv_timer_t* t = lv_timer_get_next(nullptr); t; t = lv_timer_get_next(t)) {
+        if (t->repeat_count > 0 && t->timer_cb) {
+            t->timer_cb(t);
+            return true;
+        }
+    }
+    return false;
+}
 
 /// Drain LVGL's one-shot timer queue (lv_async_call + our deferral timers) by
 /// calling each ready one-shot timer's callback once, repeating until none
@@ -20,18 +38,7 @@ namespace {
 /// timers created mid-tick, so we pump them explicitly.
 void process_async_calls() {
     for (int safety = 0; safety < 50; ++safety) {
-        bool fired = false;
-        lv_timer_t* t = lv_timer_get_next(nullptr);
-        while (t) {
-            lv_timer_t* next = lv_timer_get_next(t);
-            if (t->repeat_count > 0 && t->timer_cb) {
-                t->timer_cb(t);
-                fired = true;
-                break;
-            }
-            t = next;
-        }
-        if (!fired)
+        if (!fire_one_async_call())
             break;
     }
 }
@@ -104,4 +111,89 @@ TEST_CASE_METHOD(XMLTestFixture, "PrinterImageWidget defers image refresh out of
     }
 
     w.detach();
+}
+
+// Generating a scaled cache entry is a decode plus a resize — around half a second
+// per entry on a two-core MIPS board, and the panel schedules a cache check on
+// every activation. Run on the UI thread that is a freeze of exactly that length
+// each time the user returns home, so the miss goes to a worker and only the
+// finished result comes back. The hit stays synchronous: it is a stat and a
+// pointer swap, and deferring it would cost a visible frame on the source image.
+TEST_CASE_METHOD(XMLTestFixture, "PrinterImageWidget generates its image cache off the UI thread",
+                 "[panel_widget][printer_image][cache]") {
+    helix::init_widget_registrations();
+    helix::PanelWidgetManager::instance().init_widget_subjects();
+
+    lv_obj_t* container = lv_obj_create(test_screen());
+    lv_obj_set_size(container, 200, 200);
+    lv_obj_t* widget_obj = lv_obj_create(container);
+    lv_obj_set_size(widget_obj, 180, 180);
+    lv_obj_t* img = lv_image_create(widget_obj);
+    lv_obj_set_name(img, "printer_image");
+    // A fixed size: the cache check needs a laid-out image, and the dimensions are
+    // part of the entry's name.
+    lv_obj_set_size(img, 120, 90);
+    process_lvgl(5);
+
+    helix::PrinterImageWidget widget;
+    widget.attach(widget_obj, test_screen());
+
+    // Pump one deferral at a time and stop as soon as the refresh has applied a
+    // source. The cache check is the next timer in line, and the source it will be
+    // handed has to be read before it runs.
+    bool refreshed = false;
+    for (int i = 0; i < 10 && !refreshed; ++i) {
+        REQUIRE(fire_one_async_call());
+        refreshed = lv_image_get_src(img) != nullptr;
+    }
+    REQUIRE(refreshed);
+    const std::string source = static_cast<const char*>(lv_image_get_src(img));
+
+    const int32_t width_px = lv_obj_get_width(img);
+    const int32_t height_px = lv_obj_get_height(img);
+    REQUIRE(width_px > 0);
+    REQUIRE(height_px > 0);
+
+    const std::string cache_path =
+        helix::get_cached_printer_image_path(source, width_px, height_px);
+    const std::string cache_src = "A:" + cache_path;
+    std::error_code ec;
+    std::filesystem::remove(cache_path, ec); // force a miss even on a warm cache
+
+    // MISS: firing the cache check must not decode and resize on this thread. The
+    // widget stays on the CONTAIN-scaled source until a worker reports back — the
+    // same state a generation failure leaves behind, so nothing blanks meanwhile.
+    process_async_calls();
+    INFO("a cache miss must hand the generation to a worker, not run it inline");
+    CHECK(std::string(static_cast<const char*>(lv_image_get_src(img))) == source);
+
+    // The worker finishes and its deferred continuation swaps in the entry.
+    const bool applied = wait_until([&]() {
+        const auto* now = static_cast<const char*>(lv_image_get_src(img));
+        return now != nullptr && std::string(now) == cache_src;
+    });
+    if (!applied) {
+        widget.detach();
+        SKIP("no cacheable printer image in this tree (source '" + source + "')");
+    }
+    CHECK(std::filesystem::exists(cache_path));
+
+    // HIT: with the entry present the next activation resolves it on the UI thread.
+    // Only one-shot timers are pumped below, so the UpdateQueue is never drained and
+    // no worker result can be what lands.
+    process_lvgl(20); // settle any straggler from the generation above
+    widget.on_activate();
+
+    bool re_refreshed = false;
+    for (int i = 0; i < 10 && !re_refreshed; ++i) {
+        REQUIRE(fire_one_async_call());
+        re_refreshed = std::string(static_cast<const char*>(lv_image_get_src(img))) == source;
+    }
+    REQUIRE(re_refreshed);
+
+    process_async_calls(); // the cache check
+    CHECK(std::string(static_cast<const char*>(lv_image_get_src(img))) == cache_src);
+
+    widget.detach();
+    std::filesystem::remove(cache_path, ec);
 }

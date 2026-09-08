@@ -229,6 +229,7 @@ std::optional<ToolReading> read_medusahc(const nlohmann::json& obj) {
     // Irbis3D publishes sensor_error outright; both schemas encode it as -2.
     if (auto flag = bool_field(obj, "sensor_error")) {
         r.sensor_error = *flag;
+        r.sensor_error_reported = *flag;
         saw_anything = true;
     }
     if (r.current_tool == -2) {
@@ -409,6 +410,13 @@ std::optional<ToolReading> read_tool(const nlohmann::json& status) {
         }
     }
     return std::nullopt;
+}
+
+bool sensor_error_is_fault(const ToolReading& reading, bool swap_in_flight) {
+    if (!reading.sensor_error) {
+        return false;
+    }
+    return reading.sensor_error_reported || !swap_in_flight;
 }
 
 } // namespace helix::toolchanger_addon
