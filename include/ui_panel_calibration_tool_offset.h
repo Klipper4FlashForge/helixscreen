@@ -85,9 +85,6 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     void on_deactivate() override;
     void cleanup() override;
 
-    /// Push the overlay onto the navigation stack (create() must have run)
-    void show();
-
     /// Whether the connected printer can run the calibration at all.
     static bool printer_supports_calibration();
 

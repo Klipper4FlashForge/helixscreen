@@ -122,15 +122,6 @@ lv_obj_t* ToolOffsetCalibrationPanel::create(lv_obj_t* parent) {
     return overlay_root_;
 }
 
-void ToolOffsetCalibrationPanel::show() {
-    if (!overlay_root_) {
-        spdlog::error("[ToolOffsetCal] Cannot show: overlay not created");
-        return;
-    }
-    NavigationManager::instance().register_overlay_instance(overlay_root_, this);
-    NavigationManager::instance().push_overlay(overlay_root_);
-}
-
 void ToolOffsetCalibrationPanel::on_activate() {
     OverlayBase::on_activate();
 
