@@ -19,10 +19,8 @@
 #include "../../include/moonraker_client_mock.h"
 #include "../../include/printer_state.h"
 #include "../../lvgl/lvgl.h"
+#include "../test_helpers/log_capture.h"
 #include "../ui_test_utils.h"
-
-#include <spdlog/sinks/ringbuffer_sink.h>
-#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <atomic>
@@ -57,43 +55,6 @@ struct LVGLInitializerInputShaper {
 
 static LVGLInitializerInputShaper lvgl_init;
 
-/// RAII spdlog capture, so watchdog warnings can be asserted on.
-class LogCapture {
-  public:
-    LogCapture() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256)) {
-        logger_ = spdlog::default_logger();
-        prev_level_ = logger_->level();
-        sink_->set_level(spdlog::level::trace);
-        logger_->sinks().push_back(sink_);
-        logger_->set_level(spdlog::level::trace);
-    }
-
-    ~LogCapture() {
-        auto& sinks = logger_->sinks();
-        for (auto it = sinks.begin(); it != sinks.end(); ++it) {
-            if (*it == sink_) {
-                sinks.erase(it);
-                break;
-            }
-        }
-        logger_->set_level(prev_level_);
-    }
-
-    [[nodiscard]] int count_containing(const std::string& needle) const {
-        int n = 0;
-        for (const auto& l : sink_->last_formatted(256)) {
-            if (l.find(needle) != std::string::npos) {
-                ++n;
-            }
-        }
-        return n;
-    }
-
-  private:
-    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
-    std::shared_ptr<spdlog::logger> logger_;
-    spdlog::level::level_enum prev_level_;
-};
 } // namespace
 
 // ============================================================================

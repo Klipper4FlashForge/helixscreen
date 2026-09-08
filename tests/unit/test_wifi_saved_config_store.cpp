@@ -1,16 +1,13 @@
 // Copyright (C) 2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../test_helpers/log_capture.h"
 #include "data_root_resolver.h"
 #include "wifi_saved_config.h"
-
-#include <spdlog/sinks/ostream_sink.h>
-#include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -75,44 +72,6 @@ std::string make_temp_dir(const std::string& name) {
     std::filesystem::create_directories(dir);
     return dir;
 }
-
-/// RAII spdlog capture (mirrors tests/unit/test_widget_helpers.cpp's
-/// LogCapture): swaps in a logger that writes formatted messages only (no
-/// timestamp/level noise) into an in-memory buffer, restoring the previous
-/// default logger on scope exit. Used here to prove a secret never appears
-/// in ANY log line produced while it is in scope, at any level — the capture
-/// logger is set to trace, the most permissive level a real build could ever
-/// run at.
-class LogCapture {
-  public:
-    LogCapture() {
-        auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(captured_);
-        sink->set_pattern("%v");
-
-        capture_logger_ = std::make_shared<spdlog::logger>("test_capture", sink);
-        capture_logger_->set_level(spdlog::level::trace);
-
-        original_logger_ = spdlog::default_logger();
-        spdlog::set_default_logger(capture_logger_);
-    }
-
-    ~LogCapture() {
-        spdlog::set_default_logger(original_logger_);
-    }
-
-    std::string get_captured() const {
-        return captured_.str();
-    }
-
-    bool contains(const std::string& text) const {
-        return captured_.str().find(text) != std::string::npos;
-    }
-
-  private:
-    std::ostringstream captured_;
-    std::shared_ptr<spdlog::logger> capture_logger_;
-    std::shared_ptr<spdlog::logger> original_logger_;
-};
 
 } // namespace
 
@@ -290,7 +249,7 @@ TEST_CASE("A file truncated mid-PSK does not leak the PSK into the log",
         out << "[\n  {\n    \"ssid\": \"TestNet\",\n    \"psk\": \"" << secret_psk;
     }
 
-    LogCapture log;
+    helix::TextLogCapture log;
     const auto nets = helix::wifi::store::load();
     CHECK(nets.empty()); // corrupt file still degrades to "no networks", not a throw
 

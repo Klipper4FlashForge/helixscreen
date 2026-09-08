@@ -45,12 +45,10 @@
 #include "../../include/ui_error_reporting.h"
 #include "../lvgl_test_fixture.h"
 #include "../test_helpers/gcode_error_router_test_access.h"
+#include "../test_helpers/log_capture.h"
 #include "../test_helpers/printer_state_test_access.h"
 #include "gcode_error_router.h"
 #include "recovery_modal_presenter.h"
-
-#include <spdlog/sinks/ringbuffer_sink.h>
-#include <spdlog/spdlog.h>
 
 #include <string>
 #include <vector>
@@ -59,49 +57,7 @@
 
 using namespace helix;
 
-namespace {
-
-/// RAII spdlog capture: collects formatted log lines so the test can count the
-/// toasts the user would actually have seen. Swaps a dedicated capture logger
-/// into the default slot (restoring it after) rather than appending a sink to
-/// the current default logger: the mock's simulation threads log concurrently,
-/// and mutating the shared logger's sink vector races their sink_it_
-/// iteration (nightly TSAN, run 33248697758). Same shape as
-/// SplitButtonLogCapture in test_split_button.cpp.
-class LogCapture {
-  public:
-    LogCapture() : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(512)) {
-        sink_->set_level(spdlog::level::trace);
-        logger_ = std::make_shared<spdlog::logger>("jog_toast_capture", sink_);
-        logger_->set_level(spdlog::level::trace);
-        original_ = spdlog::default_logger();
-        spdlog::set_default_logger(logger_);
-    }
-
-    ~LogCapture() {
-        spdlog::set_default_logger(original_);
-    }
-
-    std::vector<std::string> lines() const {
-        return sink_->last_formatted(512);
-    }
-
-    int count_containing(const std::string& needle) const {
-        int n = 0;
-        for (const auto& l : lines()) {
-            if (l.find(needle) != std::string::npos)
-                ++n;
-        }
-        return n;
-    }
-
-  private:
-    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> sink_;
-    std::shared_ptr<spdlog::logger> logger_;
-    std::shared_ptr<spdlog::logger> original_;
-};
-
-} // namespace
+namespace {} // namespace
 
 TEST_CASE_METHOD(LVGLTestFixture, "mock jog rejection surfaces exactly one readable toast",
                  "[api][movement][errors][mock_fidelity][e2e]") {
@@ -129,7 +85,9 @@ TEST_CASE_METHOD(LVGLTestFixture, "mock jog rejection surfaces exactly one reada
 
     std::string rendered_toast;
     {
-        LogCapture log;
+        // Exclusive: the mock's simulation threads log concurrently, and
+        // pushing a sink onto the shared logger races their sink_it_ iteration.
+        ExclusiveLogCapture log(512);
 
         // The MotionPanel jog error handler, verbatim (ui_panel_motion.cpp).
         api.motion().move_relative(50.0, 0.0, 0.0, 6000.0, 600.0, nullptr,
