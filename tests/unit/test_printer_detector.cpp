@@ -1634,6 +1634,86 @@ TEST_CASE_METHOD(PrinterDetectorFixture,
     CHECK_FALSE(result.ambiguous());
 }
 
+// ----------------------------------------------------------------------------
+// Creality CFS family (prestonbrown/helixscreen#1498)
+// ----------------------------------------------------------------------------
+
+namespace {
+/// A CFS-equipped K1-series machine as its object list reports it; the caller
+/// names the model through the hostname.
+PrinterHardwareData creality_cfs_hardware(const std::string& hostname) {
+    PrinterHardwareData hardware{
+        .heaters = {"extruder", "heater_bed"},
+        .sensors = {"temperature_sensor chamber_temp", "temperature_fan chamber_fan"},
+        .fans = {"temperature_fan chamber_fan", "heater_fan hotend_fan"},
+        .hostname = hostname,
+        .printer_objects = {"extruder", "heater_bed", "temperature_sensor chamber_temp",
+                            "temperature_fan chamber_fan", "fan_feedback", "box",
+                            "gcode_macro BOX_UNLOAD"},
+        .kinematics = "corexy",
+        .mcu = "stm32h723xx"};
+    hardware.objects_reported = true;
+    return hardware;
+}
+} // namespace
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: an anchored object pattern names exactly that object",
+                 "[printer][object_exists][1498]") {
+    // The CFS entries look for "^box$": the Klipper object "box", not any name
+    // that merely contains the word. A K1 whose macros mention BOX_UNLOAD but
+    // whose object list has no "box" is a plain K1: the CFS entries require
+    // the object, so the plain entry is the only K1 left standing.
+    auto with_box = creality_cfs_hardware("k1");
+    CHECK(PrinterDetector::detect(with_box).type_name == "Creality K1 (with CFS)");
+
+    auto macros_only = creality_cfs_hardware("k1");
+    auto& objects = macros_only.printer_objects;
+    objects.erase(std::remove(objects.begin(), objects.end(), std::string("box")), objects.end());
+    REQUIRE(std::find(objects.begin(), objects.end(), "gcode_macro BOX_UNLOAD") != objects.end());
+    CHECK(PrinterDetector::detect(macros_only).type_name == "Creality K1");
+}
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: a K1-series sibling's hostname rules the plain K1 entries out",
+                 "[printer][hostname_exclude][1498]") {
+    // 'k1' is a substring of 'k1c', 'k1-max' and 'k1se', so without the
+    // exclusion the plain entries score every sibling's hostname and, on a
+    // K1C, out-count the K1C entry on its own name.
+    for (const char* host : {"k1c", "creality-k1-max", "k1se"}) {
+        INFO("hostname " << host);
+        auto result = PrinterDetector::detect(creality_cfs_hardware(host));
+        CHECK(result.type_name != "Creality K1");
+        CHECK(result.type_name != "Creality K1 (with CFS)");
+        CHECK(result.runner_up_type_name != "Creality K1");
+        CHECK(result.runner_up_type_name != "Creality K1 (with CFS)");
+    }
+}
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: the CFS box object narrows to the range, the hostname names "
+                 "the model",
+                 "[printer][1498]") {
+    // Every CFS-equipped Creality carries the box object, so scored as a
+    // model discriminator it decides between siblings on nothing: each of
+    // them leads on it and the saturating bonus flattens the rest. Scored as
+    // range evidence, the model hostnames lead and the siblings separate.
+    struct Expect {
+        const char* hostname;
+        const char* model;
+    };
+    for (const Expect& e :
+         {Expect{"k1c", "Creality K1C (with CFS)"}, Expect{"k1-max", "Creality K1 Max (with CFS)"},
+          Expect{"k1", "Creality K1 (with CFS)"}}) {
+        INFO("hostname " << e.hostname);
+        auto result = PrinterDetector::detect(creality_cfs_hardware(e.hostname));
+        CAPTURE(result.confidence, result.runner_up_type_name, result.runner_up_confidence,
+                result.margin(), result.tied_count);
+        CHECK(result.type_name == e.model);
+        CHECK_FALSE(result.ambiguous());
+    }
+}
+
 TEST_CASE("PrinterDetector: auto_detect carries the reported flag from discovery",
           "[printer][led_required][1498]") {
     // The flag is set by parsing an object list, never by hand: a discovery

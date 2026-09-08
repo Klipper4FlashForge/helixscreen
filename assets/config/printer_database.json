@@ -6,7 +6,7 @@
     "hostname_exclude": "Exclude this printer if the hostname matches this pattern",
     "kinematics_match": "Match against printer kinematics type (corexy, cartesian, delta, etc.)",
     "kinematics_exclude": "Exclude this printer if kinematics matches (e.g. cartesian excludes corexy-only brands)",
-    "object_exists": "Check if a Klipper object exists in /printer/objects/list",
+    "object_exists": "Check if a Klipper object exists in /printer/objects/list (substring; '^' pins the pattern to the start of a name and '$' to its end, so '^box$' is exactly the object 'box')",
     "stepper_count": "Count of Z steppers (z_count_1, z_count_2, z_count_3, z_count_4)",
     "sensor_match": "Match against temperature_sensor names",
     "fan_match": "Match against fan object names",
@@ -1087,6 +1087,41 @@
           "reason": "Hostname contains 'k1'"
         },
         {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1c",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1-max",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1max",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1se",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1-se",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
           "type": "mcu_match",
           "field": "mcu",
           "pattern": "STM32H723",
@@ -1158,8 +1193,16 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected (K1 official upgrade)"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
+        },
+        {
+          "type": "object_required",
+          "field": "printer_objects",
+          "pattern": "^box$",
+          "confidence": 0,
+          "reason": "This entry is the CFS-equipped variant; a reported object list without the box object is the plain machine"
         },
         {
           "type": "build_volume_range",
@@ -1184,6 +1227,41 @@
           "pattern": "k1",
           "confidence": 80,
           "reason": "Hostname contains 'k1'"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1c",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1-max",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1max",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1se",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
+        },
+        {
+          "type": "hostname_exclude",
+          "field": "hostname",
+          "pattern": "k1-se",
+          "confidence": 0,
+          "reason": "'k1' is a substring of every other K1-series hostname; a host naming a sibling is not a plain K1"
         },
         {
           "type": "mcu_match",
@@ -1356,8 +1434,16 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected (K1 official upgrade)"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
+        },
+        {
+          "type": "object_required",
+          "field": "printer_objects",
+          "pattern": "^box$",
+          "confidence": 0,
+          "reason": "This entry is the CFS-equipped variant; a reported object list without the box object is the plain machine"
         },
         {
           "type": "build_volume_range",
@@ -1458,8 +1544,9 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
         },
         {
           "type": "object_exists",
@@ -1594,8 +1681,9 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
         },
         {
           "type": "object_exists",
@@ -1808,8 +1896,16 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "^box$",
-          "confidence": 95,
-          "reason": "CFS filament system detected (K1 official upgrade ≥ v2.3.5.33)"
+          "confidence": 45,
+          "reason": "CFS box object. Every CFS-equipped Creality carries it, so it narrows a machine to the range and never to a model; the model is the hostname's and bed size's to name",
+          "corroborating": true
+        },
+        {
+          "type": "object_required",
+          "field": "printer_objects",
+          "pattern": "^box$",
+          "confidence": 0,
+          "reason": "This entry is the CFS-equipped variant; a reported object list without the box object is the plain machine"
         },
         {
           "type": "hostname_match",

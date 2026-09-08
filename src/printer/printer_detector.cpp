@@ -316,17 +316,35 @@ PrinterDatabase g_database;
 // ============================================================================
 
 namespace {
-// Case-insensitive substring search
+// Case-insensitive substring search. A leading '^' pins the pattern to the
+// start of a name and a trailing '$' to its end, so "^box$" names exactly the
+// Klipper object "box" and not a "gcode_macro BOX_UNLOAD" that contains it.
 bool has_pattern(const std::vector<std::string>& objects, const std::string& pattern) {
     std::string pattern_lower = pattern;
     std::transform(pattern_lower.begin(), pattern_lower.end(), pattern_lower.begin(),
                    [](unsigned char c) { return std::tolower(c); });
 
-    return std::any_of(objects.begin(), objects.end(), [&pattern_lower](const std::string& obj) {
+    const bool at_start = !pattern_lower.empty() && pattern_lower.front() == '^';
+    const bool at_end = pattern_lower.size() > (at_start ? 1u : 0u) && pattern_lower.back() == '$';
+    const std::string core = pattern_lower.substr(
+        at_start ? 1 : 0, pattern_lower.size() - (at_start ? 1 : 0) - (at_end ? 1 : 0));
+
+    if (core.empty()) {
+        return false; // a bare anchor names nothing
+    }
+
+    return std::any_of(objects.begin(), objects.end(), [&](const std::string& obj) {
         std::string obj_lower = obj;
         std::transform(obj_lower.begin(), obj_lower.end(), obj_lower.begin(),
                        [](unsigned char c) { return std::tolower(c); });
-        return obj_lower.find(pattern_lower) != std::string::npos;
+        if (at_start && at_end)
+            return obj_lower == core;
+        if (at_start)
+            return obj_lower.rfind(core, 0) == 0;
+        if (at_end)
+            return obj_lower.size() >= core.size() &&
+                   obj_lower.compare(obj_lower.size() - core.size(), core.size(), core) == 0;
+        return obj_lower.find(core) != std::string::npos;
     });
 }
 
