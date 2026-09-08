@@ -227,3 +227,30 @@ EOF
     grep -qF "checked 1 TU(s)" <<<"$output"
     grep -qF "1 skipped (stale compile command)" <<<"$output"
 }
+
+# The native build compiles src/ and include/; firmware/ is built by the ESP-IDF
+# job and never appears in this compile database. Treating that absence as an
+# unbuilt tree makes the gate unsatisfiable for a firmware-only change - the
+# remedy it prints ("build and re-run") cannot put those TUs in the database.
+# These pin the split: firmware alone is not a finding, and it must never mask a
+# native file that genuinely went unchecked.
+@test "gate passes a firmware-only change it cannot compile here" {
+    run python3 "$GATE" --compile-db-dir "$FIXTURE_DIR" \
+        firmware/helixscreen-esp32/components/helixapp/app_boot.cpp
+    [ "$status" -eq 0 ]
+    grep -qF "built by the ESP-IDF job" <<<"$output"
+}
+
+@test "gate reports a firmware-only change rather than claiming nothing changed" {
+    run python3 "$GATE" --compile-db-dir "$FIXTURE_DIR" \
+        firmware/helixscreen-esp32/components/helixapp/app_boot.cpp
+    [ "$status" -eq 0 ]
+    refute grep -qF "no C++ files changed" <<<"$output"
+}
+
+@test "a firmware file does not mask a native file the gate never checked" {
+    run python3 "$GATE" --compile-db-dir "$FIXTURE_DIR" \
+        src/printer/ams_state.cpp \
+        firmware/helixscreen-esp32/components/helixapp/app_boot.cpp
+    [ "$status" -ne 0 ]
+}

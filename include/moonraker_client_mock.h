@@ -1017,6 +1017,7 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      */
     bool is_mock_toolchanger() const;
 
+  public:
     /**
      * @brief Which MedusaHC shipping configuration the mock emulates.
      *
@@ -1041,11 +1042,12 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      * build an AmsBackendMock: try_create_mock() declines them so real discovery
      * runs and the production AmsBackendToolChanger drives the mock objects.
      */
-    MedusaVariant mock_medusa_variant() const;
+    static MedusaVariant mock_medusa_variant();
 
     /// Convenience: mock_medusa_variant() != MedusaVariant::NONE.
     bool is_mock_medusahc() const;
 
+  private:
     /**
      * @brief Rebuild hardware from current discovery lists (heaters, fans, sensors, etc.)
      *

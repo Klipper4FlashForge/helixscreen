@@ -120,6 +120,13 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     [[nodiscard]] PathTopology get_topology() const override;
     [[nodiscard]] PathSegment get_filament_segment() const override;
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
+
+    /// A dock-sensor fault is not a loading failure: nothing is being loaded and
+    /// a hot end changer has no filament path for the user to check. Publishing
+    /// it here routes it to AmsErrorBridge with this backend's own wording,
+    /// instead of the generic load dialog whose Retry would mount the very tool
+    /// the fault says nobody can vouch for.
+    [[nodiscard]] std::optional<helix::ErrorEvent> current_error() const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;
 
   protected:

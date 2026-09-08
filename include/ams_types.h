@@ -1041,11 +1041,20 @@ struct SlotInfo {
      * half-bar nobody reads as "unknown". Else nullopt (leave unchanged).
      */
     [[nodiscard]] std::optional<float> display_fill_level() const {
-        if (status == SlotStatus::EMPTY) {
-            return 0.0f;
-        }
+        // A real weight wins over presence. The spool graphic answers "how much
+        // is on this spool"; whether the lane is in the machine is carried by
+        // the ghost and the placeholder. Draining a spool that has a recorded
+        // weight asserts a second, different thing - that the spool itself is
+        // empty - which is wrong for a tool changer, where an absent tool took
+        // its filament with it.
         if (total_weight_g > 0.0f && remaining_weight_g >= 0.0f) {
             return remaining_weight_g / total_weight_g;
+        }
+        // No weight to go on: an absent lane reads empty rather than falling
+        // through to the metadata fallback below, which would render an ejected
+        // lane as a full spool.
+        if (status == SlotStatus::EMPTY) {
+            return 0.0f;
         }
         if (has_filament_info()) {
             return 1.0f;

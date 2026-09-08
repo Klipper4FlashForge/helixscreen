@@ -126,6 +126,27 @@ from merge_compile_commands import (  # noqa: E402
 TU_EXTENSIONS = (".cpp", ".cc", ".cxx", ".mm")
 HEADER_EXTENSIONS = (".h", ".hpp", ".hh", ".hxx", ".inc", ".ipp")
 
+# The native build compiles src/ and include/. A translation unit under firmware/
+# is built by the ESP-IDF job and never enters this compile database, so its
+# absence here is not evidence of an unbuilt tree and the "build and re-run"
+# remedy cannot reach it. Counting it as unaccounted for blocks every
+# firmware-only change from ever passing this gate.
+OUTSIDE_NATIVE_BUILD = ("firmware/",)
+
+
+def split_outside_native_build(paths: list[str], root: str) -> tuple[list[str], list[str]]:
+    """Split into (checkable by this gate, built only by the firmware job).
+
+    Paths arrive repo-relative from git and absolute from an explicit argument,
+    so both are resolved against the repo root before the prefix is compared.
+    """
+    here: list[str] = []
+    elsewhere: list[str] = []
+    for path in paths:
+        rel = os.path.relpath(os.path.join(root, path), root)
+        (elsewhere if rel.startswith(OUTSIDE_NATIVE_BUILD) else here).append(path)
+    return here, elsewhere
+
 # Compiler wrappers that may lead the command line; dropped before argv[0] is
 # rewritten to clang.
 WRAPPERS = {"ccache", "sccache", "distcc", "icecc", "time"}
@@ -644,7 +665,12 @@ def main() -> int:
         # With C++ in the diff and no database, this gate inspects none of it and
         # a bare SKIP reads downstream as a pass — the shape that let an unbuilt
         # release checkout report a clean divergence stage in one second.
-        changed = changed_cpp_paths(args, root)
+        changed, firmware_only = split_outside_native_build(changed_cpp_paths(args, root), root)
+        if firmware_only:
+            print(
+                f"  note: {len(firmware_only)} changed file(s) under firmware/ are "
+                "built by the ESP-IDF job, not by this tree"
+            )
         if changed:
             print(
                 f"clang syntax check: {len(changed)} changed C++ file(s) and no "
@@ -656,6 +682,12 @@ def main() -> int:
                 "tree is not a green result."
             )
             return 1
+        if firmware_only:
+            print(
+                f"clang syntax check: {len(firmware_only)} changed file(s), all built "
+                "by the firmware job, none checkable here"
+            )
+            return 0
         print("SKIP: clang syntax check -- no C++ changed and no compile database")
         return 0
 
@@ -671,8 +703,18 @@ def main() -> int:
         # same result: the tree was never built, so the gate saw nothing and would
         # report a clean bill of health for code it never compiled. The divergence
         # this exists to catch is precisely what an unbuilt tree cannot show.
-        wanted = len(changed_cpp_paths(args, root))
-        if wanted:
+        # A TU skipped as stale is a deliberate decline, not a gap: its recorded
+        # command describes an older build, so replaying it would judge the command
+        # rather than the code. Only the files still unaccounted for once those are
+        # subtracted mean the gate inspected nothing it was asked to.
+        checkable, firmware_only = split_outside_native_build(changed_cpp_paths(args, root), root)
+        if firmware_only:
+            print(
+                f"  note: {len(firmware_only)} changed file(s) under firmware/ are "
+                "built by the ESP-IDF job, not by this tree"
+            )
+        wanted = len(checkable)
+        if wanted > len(untrusted):
             print(
                 f"clang syntax check: 0 of {wanted} changed C++ file(s) could be "
                 f"checked{skipped_note}"
@@ -683,6 +725,18 @@ def main() -> int:
                 "re-run; a green result from an\nunbuilt tree is not a green result."
             )
             return 1
+        if wanted:
+            print(
+                f"clang syntax check: nothing to check in {wanted} changed C++ "
+                f"file(s){skipped_note}"
+            )
+            return 0
+        if firmware_only:
+            print(
+                f"clang syntax check: {len(firmware_only)} changed file(s), all built "
+                f"by the firmware job, none checkable here{skipped_note}"
+            )
+            return 0
         print(f"clang syntax check: no C++ files changed, nothing to check{skipped_note}")
         return 0
 

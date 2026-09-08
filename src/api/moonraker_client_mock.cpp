@@ -1389,7 +1389,7 @@ bool MoonrakerClientMock::is_mock_toolchanger() const {
     return ams_type == "toolchanger" || ams_type == "tool_changer" || ams_type == "tc";
 }
 
-MoonrakerClientMock::MedusaVariant MoonrakerClientMock::mock_medusa_variant() const {
+MoonrakerClientMock::MedusaVariant MoonrakerClientMock::mock_medusa_variant() {
     const char* ams_env = std::getenv("HELIX_MOCK_AMS");
     if (!ams_env || !ams_env[0]) {
         return MedusaVariant::NONE;
@@ -1575,6 +1575,10 @@ nlohmann::json MoonrakerClientMock::medusa_status_json() const {
     }
 
     constexpr int kToolCount = 4;
+    // Out of the machine entirely - not on the head and not in its dock. The
+    // ejected lane the ghost rendering and the EMPTY slot status need, and the
+    // state a user produces by lifting a hot end off the rack.
+    constexpr int kEjectedTool = 3;
     const int current = medusa_current_tool_.load();
     const int target = medusa_target_tool_.load();
     const bool sensor_error = medusa_sensor_error_.load();
@@ -1601,7 +1605,7 @@ nlohmann::json MoonrakerClientMock::medusa_status_json() const {
         nlohmann::json sensors;
         sensors["e"] = (current >= 0) ? 1 : 0;
         for (int i = 0; i < kToolCount; ++i) {
-            sensors["t" + std::to_string(i)] = (i == current) ? 0 : 1;
+            sensors["t" + std::to_string(i)] = (i == current || i == kEjectedTool) ? 0 : 1;
         }
         obj["sensors"] = sensors;
     } else {
@@ -1621,7 +1625,7 @@ nlohmann::json MoonrakerClientMock::medusa_status_json() const {
         obj["layer"] = 0;
         obj["head_loaded"] = (current >= 0);
         for (int i = 0; i < kToolCount; ++i) {
-            obj["tool" + std::to_string(i) + "_docked"] = (i != current);
+            obj["tool" + std::to_string(i) + "_docked"] = (i != current && i != kEjectedTool);
         }
     }
     return obj;

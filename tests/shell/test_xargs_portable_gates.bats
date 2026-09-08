@@ -26,9 +26,11 @@ run_shellcheck_gate() {
     section_time() { :; }
     STAGED_ONLY=false
     QC_TMP="$1"
+    QC_COUNTS="$1/counts"
+    eval "$2"
     eval "$(sed -n "/^qc_shellcheck() {/,/^}/p" scripts/quality-checks.sh)"
     qc_shellcheck
-  ' _ "$BATS_TEST_TMPDIR/qc"
+  ' _ "$BATS_TEST_TMPDIR/qc" "$(qc_verdict_defs)"
 }
 
 @test "no gate reads its file list with xargs -a" {

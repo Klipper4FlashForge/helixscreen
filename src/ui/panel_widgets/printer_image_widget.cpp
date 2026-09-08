@@ -9,6 +9,7 @@
 
 #include "app_globals.h"
 #include "config.h"
+#include "http_executor.h"
 #include "panel_widget_registry.h"
 #include "prerendered_images.h"
 #include "printer_detector.h"
@@ -96,6 +97,11 @@ void PrinterImageWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     // Store this pointer for event callback recovery
     lv_obj_set_user_data(widget_obj_, this);
 
+    // A raw lv_obj_delete() of the home page container gives the widget no
+    // detach(), and the cache-generation continuation would then walk a freed
+    // tree looking for the image child.
+    install_delete_hook(widget_obj_);
+
     // Set user_data on the printer_container child (where event_cb is registered in XML)
     // so the callback can recover this widget instance via lv_obj_get_user_data()
     auto* container = lv_obj_find_by_name(widget_obj_, "printer_container");
@@ -124,6 +130,14 @@ void PrinterImageWidget::detach() {
         cache_timer_ = nullptr;
     }
 
+    // Expire the cache-generation continuation before the tree it targets goes
+    // away. The worker keeps running to completion and still writes its entry, so
+    // the next attach finds a cache hit.
+    lifetime_.invalidate();
+    cache_job_inflight_ = false;
+
+    uninstall_delete_hook();
+
     if (widget_obj_) {
         auto* container = lv_obj_find_by_name(widget_obj_, "printer_container");
         if (container) {
@@ -136,6 +150,18 @@ void PrinterImageWidget::detach() {
     current_source_path_.clear();
 
     spdlog::debug("[PrinterImageWidget] Detached");
+}
+
+void PrinterImageWidget::on_hooked_root_deleted() {
+    // Runs inside LVGL's delete event: expire the guard and drop pointers only.
+    // The deferred timers below re-read widget_obj_ and bail on null, and the
+    // cache continuation is skipped by its expired token, so neither reaches the
+    // freed tree. A later detach() must not call lv_obj_set_user_data() on it
+    // either, which is why widget_obj_ is cleared here rather than there.
+    lifetime_.invalidate();
+    cache_job_inflight_ = false;
+    widget_obj_ = nullptr;
+    parent_screen_ = nullptr;
 }
 
 void PrinterImageWidget::on_activate() {
@@ -199,15 +225,14 @@ void PrinterImageWidget::refresh_printer_image() {
         source_path = PrinterImages::get_best_printer_image(printer_type);
     }
 
-    // The decoded copy LVGL holds is dropped on every refresh: an import can
-    // rewrite an image in place, so one path can hold different pixels over time.
-    // The scaled caches on disk are only stale when the path itself changes —
-    // check_or_generate_cache() rebuilds one synchronously on the main thread, so
-    // discarding a cache that still matches costs a visible stall per refresh.
+    // LVGL keys its decoded copy on the path alone, and an import can rewrite an
+    // image in place under that same path, so the decoded copy is dropped on every
+    // refresh. The scaled entries on disk need no such sweep: their names carry the
+    // source's mtime and size, so the entry holding the old pixels is never named
+    // again.
     if (!current_source_path_.empty()) {
         lv_image_cache_drop(current_source_path_.c_str());
     }
-    helix::invalidate_printer_image_cache_if_changed(current_source_path_, source_path);
 
     current_source_path_ = source_path;
 
@@ -303,19 +328,67 @@ void PrinterImageWidget::check_or_generate_cache() {
         return;
     }
 
-    // Cache miss — generate at exact dimensions
-    spdlog::debug("[PrinterImageWidget] Cache miss, generating {}x{} from '{}'", w, h,
-                  current_source_path_);
-
-    if (helix::generate_cached_printer_image(current_source_path_, w, h, cache_path)) {
-        std::string lvgl_path = "A:" + cache_path;
-        lv_image_set_src(img, lvgl_path.c_str());
-        lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CENTER);
-        spdlog::debug("[PrinterImageWidget] Cached and loaded: {} ({}x{})", cache_path, w, h);
-    } else {
-        // Generation failed — keep displaying with CONTAIN scaling (already set)
-        spdlog::warn("[PrinterImageWidget] Cache generation failed, using scaled source");
+    // Cache miss — generate off the UI thread. Decoding and resizing an image is
+    // half a second per entry on a two-core MIPS board, and every navigation back
+    // to this panel reaches here.
+    //
+    // Nothing blanks while the job runs: the widget keeps the CONTAIN-scaled source
+    // refresh_printer_image() set, which is the same state a generation failure
+    // leaves behind.
+    if (cache_job_inflight_) {
+        spdlog::debug("[PrinterImageWidget] Cache generation already running, skipping {}x{}", w,
+                      h);
+        return;
     }
+
+    const std::string source = current_source_path_;
+    spdlog::debug("[PrinterImageWidget] Cache miss, generating {}x{} from '{}'", w, h, source);
+
+    // Idempotent; covers unit tests and any call site reached before Application
+    // starts the pools.
+    helix::http::HttpExecutor::fast().start();
+
+    cache_job_inflight_ = true;
+    auto tok = lifetime_.token();
+    const int gen_w = static_cast<int>(w);
+    const int gen_h = static_cast<int>(h);
+
+    helix::http::HttpExecutor::fast().submit([this, tok, source, cache_path, gen_w, gen_h]() {
+        // Worker thread: no `this` access and no lv_* call. The generation reads
+        // and writes files and returns a plain bool.
+        const bool generated =
+            helix::generate_cached_printer_image(source, gen_w, gen_h, cache_path);
+
+        tok.defer("PrinterImageWidget::cache_generated", [this, source, cache_path, gen_w, gen_h,
+                                                          generated]() {
+            cache_job_inflight_ = false;
+
+            if (!widget_obj_ || current_source_path_ != source) {
+                // The widget resolved elsewhere while the worker ran. The
+                // entry stays on disk for whenever this source comes back.
+                spdlog::debug("[PrinterImageWidget] Cache for '{}' is no longer the "
+                              "displayed source, discarding result",
+                              source);
+                return;
+            }
+            if (!generated) {
+                spdlog::warn("[PrinterImageWidget] Cache generation failed, using scaled source");
+                return;
+            }
+
+            // Re-find the child: a rebuild between launch and completion
+            // replaces the tree under a recycled widget instance.
+            lv_obj_t* cached_img = lv_obj_find_by_name(widget_obj_, "printer_image");
+            if (!cached_img) {
+                return;
+            }
+            std::string lvgl_path = "A:" + cache_path;
+            lv_image_set_src(cached_img, lvgl_path.c_str());
+            lv_image_set_inner_align(cached_img, LV_IMAGE_ALIGN_CENTER);
+            spdlog::debug("[PrinterImageWidget] Cached and loaded: {} ({}x{})", cache_path, gen_w,
+                          gen_h);
+        });
+    });
 }
 
 void PrinterImageWidget::handle_printer_manager_clicked() {

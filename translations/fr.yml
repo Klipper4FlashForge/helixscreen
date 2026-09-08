@@ -817,6 +817,7 @@ translations:
     la calibration
   Dock: Ranger
   Dock sensors cannot tell which tool is mounted: Les capteurs du dock ne peuvent pas déterminer quel outil est monté
+  Dock sensors disagree: Capteurs du dock incohérents
   Dock tool: Ranger l'outil
   Docking tool: Rangement de l'outil
   Documentation: Documentation

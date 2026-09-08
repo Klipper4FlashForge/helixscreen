@@ -730,6 +730,7 @@ translations:
   Do not touch the printer during calibration: 校准期间请勿触碰打印机
   Dock: 归位
   Dock sensors cannot tell which tool is mounted: 归位传感器无法判断当前安装的是哪个工具
+  Dock sensors disagree: 归位传感器不一致
   Dock tool: 归位工具
   Docking tool: 正在归位工具
   Documentation: 文档

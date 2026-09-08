@@ -5,15 +5,12 @@
 # UI code from deleting a printer image cache it is about to need.
 #
 # invalidate_printer_image_cache(path) removes every generated scaled .bin for
-# that source image, and check_or_generate_cache() rebuilds one synchronously on
-# the main thread. A widget that re-resolves the same image on every activation
-# and invalidates unconditionally therefore pays a full decode-and-resize plus a
-# flash write each time the panel opens, and never keeps a cache long enough to
-# use it.
+# that source image, and each one costs a decode-and-resize plus a flash write to
+# rebuild. A widget that re-resolves the same image on every activation and
+# invalidates from there never keeps a cache long enough to use it.
 #
-# src/system/ is exempt because import_image() rewrites the pixels behind an
-# existing path: there the caches really are stale while the path is unchanged,
-# which is the one case the guarded form would wrongly skip.
+# src/system/ is exempt because import_image() owns the rewrite behind an existing
+# path, and clears the entries that can no longer be named.
 
 GATE="scripts/check_printer_image_invalidation.py"
 
@@ -23,18 +20,10 @@ setup() {
     mkdir -p "$FIXTURE/ui/panel_widgets" "$FIXTURE/system"
 }
 
-guarded_call() {
-    cat > "$FIXTURE/ui/panel_widgets/printer_image_widget.cpp" <<'EOF'
-void PrinterImageWidget::refresh_printer_image() {
-    helix::invalidate_printer_image_cache_if_changed(current_source_path_, source_path);
-}
-EOF
-}
-
 @test "the committed tree is clean" {
     run python3 "$GATE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"change-guarded"* ]]
+    [[ "$output" == *"no UI caller"* ]]
 }
 
 @test "an unguarded call in UI code fails" {
@@ -56,8 +45,12 @@ EOF
     [[ "$output" == *"ui_printer_manager_overlay.cpp:4"* ]]
 }
 
-@test "the guarded form alone is silent" {
-    guarded_call
+@test "a longer identifier starting with the name is not a call site" {
+    cat > "$FIXTURE/ui/panel_widgets/printer_image_widget.cpp" <<'EOF'
+void PrinterImageWidget::refresh_printer_image() {
+    helix::invalidate_printer_image_cache_entries_for(current_source_path_);
+}
+EOF
     run python3 "$GATE" --src "$FIXTURE"
     [ "$status" -eq 0 ]
 }
