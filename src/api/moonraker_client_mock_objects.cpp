@@ -31,6 +31,22 @@ static json chamber_heater_configfile_sections(const MoonrakerClientMock* self) 
     return sections;
 }
 
+// The toolchanger persona's calibration macro, as klipper-toolchanger's
+// example config defines it. Its description: is what the Tool Offsets
+// panel shows as the instruction text, read through MacroParamCache like
+// every other macro description; empty when the printer has no toolchanger,
+// as the object list then has no such macro either.
+static json toolchanger_configfile_sections(const MoonrakerClientMock* self) {
+    json sections = json::object();
+    if (self->hardware().has_tool_changer()) {
+        sections["gcode_macro CALIBRATE_TOOL_OFFSETS"] = {
+            {"gcode", "_CALIBRATE_TOOL_OFFSETS_IMPL"},
+            {"description",
+             "Measures every tool's XYZ offset on the nozzle sensor. Clean all nozzles first."}};
+    }
+    return sections;
+}
+
 json get_mock_gcode_macro_config() {
     json cfg;
     cfg["gcode_macro clean_nozzle"] = {
@@ -327,6 +343,9 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                 const json chamber_sections = chamber_heater_configfile_sections(self);
                 status_obj["configfile"]["settings"].merge_patch(chamber_sections);
                 status_obj["configfile"]["config"].merge_patch(chamber_sections);
+                const json toolchanger_sections = toolchanger_configfile_sections(self);
+                status_obj["configfile"]["settings"].merge_patch(toolchanger_sections);
+                status_obj["configfile"]["config"].merge_patch(toolchanger_sections);
 
                 // Whether a SAVE_CONFIG is owed, and for what. Klipper publishes
                 // these on configfile itself, not under settings/config, and
@@ -457,24 +476,6 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
 
     // printer.objects.subscribe - Subscribe to printer object updates
     // Returns initial state with eventtime (subsequent updates come via notify_status_update)
-    // printer.gcode.help - {command: description}. Only what the calibration
-    // screens read: a macro's `description:` is its on-screen instruction, and
-    // Klipper's placeholder for an undocumented macro is "G-Code macro".
-    registry["printer.gcode.help"] =
-        [](MoonrakerClientMock* self, const json& /*params*/,
-           std::function<void(const json&)> success_cb,
-           std::function<void(const MoonrakerError&)> /*error_cb*/) -> bool {
-        json help = json::object();
-        if (self->hardware().has_tool_changer()) {
-            help["CALIBRATE_TOOL_OFFSETS"] =
-                "Measures every tool's XYZ offset on the nozzle sensor. Clean all nozzles first.";
-        }
-        if (success_cb) {
-            success_cb(json{{"result", help}});
-        }
-        return true;
-    };
-
     registry["printer.objects.subscribe"] =
         [](MoonrakerClientMock* self, const json& params,
            std::function<void(const json&)> success_cb,
@@ -850,6 +851,9 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                 const json chamber_sections = chamber_heater_configfile_sections(self);
                 status_obj["configfile"]["settings"].merge_patch(chamber_sections);
                 status_obj["configfile"]["config"].merge_patch(chamber_sections);
+                const json toolchanger_sections = toolchanger_configfile_sections(self);
+                status_obj["configfile"]["settings"].merge_patch(toolchanger_sections);
+                status_obj["configfile"]["config"].merge_patch(toolchanger_sections);
 
                 // Whether a SAVE_CONFIG is owed, and for what. Klipper publishes
                 // these on configfile itself, not under settings/config, and

@@ -127,7 +127,6 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     /// ToolState's tools changed: during a run, a tool whose offsets moved
     /// since the run began has been measured
     void on_tools_changed();
-    void fetch_macro_description();
     /// The confirmation text: heat, probe, what to check first
     std::string start_prompt() const;
 

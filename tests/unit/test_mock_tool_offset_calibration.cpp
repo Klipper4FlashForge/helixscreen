@@ -146,13 +146,19 @@ TEST_CASE_METHOD(ToolCalFixture, "mock: HELIX_MOCK_TOOL_CAL_FAIL fails the run o
     CHECK_FALSE(saw("Selected tool 3 (T3)"));
 }
 
-TEST_CASE_METHOD(ToolCalFixture, "mock: printer.gcode.help describes the macro",
+TEST_CASE_METHOD(ToolCalFixture, "mock: the macro's description: is in configfile.config",
                  "[mock][toolchanger][tool_offset_cal]") {
-    json result;
+    // The panel's instruction text comes from MacroParamCache, which discovery
+    // fills from configfile.config; the persona has to publish the macro's
+    // section there, as a real printer.cfg would.
+    json config;
     client->send_jsonrpc(
-        "printer.gcode.help", json::object(), [&result](const json& r) { result = r["result"]; },
+        "printer.objects.query", json{{"objects", {{"configfile", nullptr}}}},
+        [&config](const json& r) { config = r["result"]["status"]["configfile"]["config"]; },
         [](const MoonrakerError&) {});
 
-    REQUIRE(result.contains("CALIBRATE_TOOL_OFFSETS"));
-    CHECK(result["CALIBRATE_TOOL_OFFSETS"].get<std::string>().find("offset") != std::string::npos);
+    REQUIRE(config.contains("gcode_macro CALIBRATE_TOOL_OFFSETS"));
+    const json& section = config["gcode_macro CALIBRATE_TOOL_OFFSETS"];
+    REQUIRE(section.contains("description"));
+    CHECK(section["description"].get<std::string>().find("offset") != std::string::npos);
 }

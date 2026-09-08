@@ -12,8 +12,8 @@
 #include "app_globals.h"
 #include "format_utils.h"
 #include "i_moonraker_api.h"
-#include "i_moonraker_client.h"
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "macro_param_cache.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
@@ -143,13 +143,17 @@ void ToolOffsetCalibrationPanel::on_activate() {
         lv_subject_copy_string(&status_, last_error_.empty() ? lv_tr("Ready to calibrate")
                                                              : last_error_.c_str());
     }
-    // Until the macro's own description arrives, say only what is true of
-    // every implementation: how it heats, probes and which tool it measures
+    // The macro's own description: is the instruction text, read from the
+    // cache discovery filled from configfile.config - as the macros panel
+    // reads every description. Without one, say only what is true of every
+    // implementation: how it heats, probes and which tool it measures
     // against is the macro's business, not this screen's.
-    lv_subject_copy_string(&hint_,
-                           lv_tr("Runs the printer's tool offset calibration for every tool."));
+    const std::string desc = helix::MacroParamCache::instance().get(cal::kMacro).description;
+    lv_subject_copy_string(&hint_, desc.empty()
+                                       ? lv_tr("Runs the printer's tool offset calibration "
+                                               "for every tool.")
+                                       : desc.c_str());
     refresh_rows();
-    fetch_macro_description();
 }
 
 void ToolOffsetCalibrationPanel::on_deactivate() {
@@ -478,29 +482,6 @@ void ToolOffsetCalibrationPanel::on_tools_changed() {
         }
     }
     refresh_rows();
-}
-
-void ToolOffsetCalibrationPanel::fetch_macro_description() {
-    auto* client = get_moonraker_client();
-    if (!client) {
-        return;
-    }
-    // printer.gcode.help -> {"CMD": "description", ...}; the macro's own
-    // `description:` is the instruction text when the config provides one.
-    client->send_jsonrpc(
-        "printer.gcode.help", nlohmann::json::object(),
-        lifetime_.bg_cb("ToolOffsetCal::gcode_help", [this](const nlohmann::json& resp) {
-            const nlohmann::json& result = resp.contains("result") ? resp["result"] : resp;
-            if (!subjects_initialized_ || !result.is_object() || !result.contains(cal::kMacro) ||
-                !result[cal::kMacro].is_string()) {
-                return;
-            }
-            const std::string desc = result[cal::kMacro].get<std::string>();
-            if (desc.empty() || desc == "G-Code macro") {
-                return; // Klipper's placeholder for a macro without description:
-            }
-            lv_subject_copy_string(&hint_, desc.c_str());
-        }));
 }
 
 // ============================================================================

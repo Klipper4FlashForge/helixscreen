@@ -334,7 +334,9 @@ blocks Klipper), and along the way the mock prints what the firmware prints — 
 N (TN)` per tool with a `toolchanger.tool_number` republish, the probe's `Probe made contact`
 lines, `Sensor location at x,y,z` for the first tool and `Tool offset is x,y,z` for the
 others — and writes each measured tool's X/Y/Z exactly as `_SAVE_TOOL_OFFSET` does (live +
-staged for SAVE_CONFIG). `printer.gcode.help` returns a description for the macro.
+staged for SAVE_CONFIG). The macro's `gcode_macro` section, `description:` included, is in
+`configfile.config`, so `MacroParamCache` carries the panel's instruction text as it does every
+other macro description.
 `HELIX_MOCK_TOOL_CAL_FAIL=<n>` makes tool `n`'s pass fail with the probe tolerance error, for
 the failure path. `tests/unit/test_mock_tool_offset_calibration.cpp` pins it.
 
