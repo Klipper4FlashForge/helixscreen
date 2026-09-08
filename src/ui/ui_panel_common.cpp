@@ -196,7 +196,7 @@ void ui_overlay_panel_setup_standard(lv_obj_t* panel, lv_obj_t* parent_screen,
                 lv_obj_get_width(parent_screen), lv_obj_get_height(parent_screen)))) {
             lv_obj_t* icon = lv_obj_get_child(back_btn, 0);
             if (icon) {
-                ui_icon_set_source(icon, "chevron_up");
+                helix::ui::icon::set_source(icon, "chevron_up");
             }
         }
     }

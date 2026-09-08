@@ -80,7 +80,7 @@ void ui_button_init();
  * icon_font_sm is responsive, and this widget resolves it once for the whole
  * process. Called from theme_manager_register_responsive_fonts() so a
  * breakpoint change reaches button icons too (#1210); see
- * ui_icon_invalidate_font_cache() for the same problem in <icon>.
+ * helix::ui::icon::invalidate_font_cache() for the same problem in <icon>.
  */
 void ui_button_invalidate_icon_font_cache();
 

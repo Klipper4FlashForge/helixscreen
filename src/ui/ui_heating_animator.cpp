@@ -216,9 +216,9 @@ void HeatingIconAnimator::stop_pulse() {
 
 void HeatingIconAnimator::tint(lv_obj_t* obj, bool with_color) const {
     if (with_color) {
-        ui_icon_set_color(obj, current_color_, current_opacity_);
+        helix::ui::icon::set_color(obj, current_color_, current_opacity_);
     } else {
-        ui_icon_set_opa(obj, current_opacity_);
+        helix::ui::icon::set_opa(obj, current_opacity_);
     }
 }
 

@@ -234,14 +234,16 @@ void LedWidget::update_light_icon() {
 
     // Set icon based on brightness level
     const char* icon_name = ui_brightness_to_lightbulb_icon(brightness);
-    ui_icon_set_source(light_icon_, icon_name);
+    helix::ui::icon::set_source(light_icon_, icon_name);
 
     // Calculate icon color from LED RGBW values
     if (brightness == 0) {
         // OFF state - use muted gray from design tokens
-        ui_icon_set_color(light_icon_, theme_manager_get_color("light_icon_off"), LV_OPA_COVER);
+        helix::ui::icon::set_color(light_icon_, theme_manager_get_color("light_icon_off"),
+                                   LV_OPA_COVER);
     } else if (!reported) {
-        ui_icon_set_color(light_icon_, theme_manager_get_color("light_icon_on"), LV_OPA_COVER);
+        helix::ui::icon::set_color(light_icon_, theme_manager_get_color("light_icon_on"),
+                                   LV_OPA_COVER);
     } else {
         // Get RGB values from PrinterState
         int r = lv_subject_get_int(printer_state_.get_led_r_subject());
@@ -268,7 +270,7 @@ void LedWidget::update_light_icon() {
             }
         }
 
-        ui_icon_set_color(light_icon_, icon_color, LV_OPA_COVER);
+        helix::ui::icon::set_color(light_icon_, icon_color, LV_OPA_COVER);
     }
 
     spdlog::trace("[LedWidget] Light icon: {} at {}%", icon_name, brightness);
@@ -279,7 +281,7 @@ void LedWidget::flash_light_icon() {
         return;
 
     // Flash gold briefly then fade back to muted
-    ui_icon_set_color(light_icon_, theme_manager_get_color("light_icon_on"), LV_OPA_COVER);
+    helix::ui::icon::set_color(light_icon_, theme_manager_get_color("light_icon_on"), LV_OPA_COVER);
 
     if (!DisplaySettingsManager::instance().get_animations_enabled()) {
         // No animations -- the next status update will restore the icon naturally
@@ -299,7 +301,7 @@ void LedWidget::flash_light_icon() {
     lv_anim_set_completed_cb(&anim, [](lv_anim_t* a) {
         auto* icon = static_cast<lv_obj_t*>(a->var);
         lv_obj_set_style_opa(icon, LV_OPA_COVER, 0);
-        ui_icon_set_color(icon, theme_manager_get_color("light_icon_off"), LV_OPA_COVER);
+        helix::ui::icon::set_color(icon, theme_manager_get_color("light_icon_off"), LV_OPA_COVER);
     });
     lv_anim_start(&anim);
 

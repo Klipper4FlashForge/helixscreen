@@ -40,50 +40,50 @@ class IconTest {
 // Public API Tests - NULL pointer handling
 // ============================================================================
 
-TEST_CASE("ui_icon_set_source handles NULL icon", "[ui_icon][api][error]") {
+TEST_CASE("helix::ui::icon::set_source handles NULL icon", "[ui_icon][api][error]") {
     IconTest fixture;
 
     // Should log error and return without crashing
-    REQUIRE_NOTHROW(ui_icon_set_source(nullptr, "home"));
+    REQUIRE_NOTHROW(helix::ui::icon::set_source(nullptr, "home"));
 }
 
-TEST_CASE("ui_icon_set_source handles NULL icon_name", "[ui_icon][api][error]") {
+TEST_CASE("helix::ui::icon::set_source handles NULL icon_name", "[ui_icon][api][error]") {
     IconTest fixture;
 
     // Should log error and return without crashing
     // Note: Using dummy pointer - function should check for NULL before dereferencing
-    REQUIRE_NOTHROW(ui_icon_set_source(reinterpret_cast<lv_obj_t*>(0x1), nullptr));
+    REQUIRE_NOTHROW(helix::ui::icon::set_source(reinterpret_cast<lv_obj_t*>(0x1), nullptr));
 }
 
-TEST_CASE("ui_icon_set_size handles NULL icon", "[ui_icon][api][error]") {
+TEST_CASE("helix::ui::icon::set_size handles NULL icon", "[ui_icon][api][error]") {
     IconTest fixture;
 
-    REQUIRE_NOTHROW(ui_icon_set_size(nullptr, "md"));
+    REQUIRE_NOTHROW(helix::ui::icon::set_size(nullptr, "md"));
 }
 
-TEST_CASE("ui_icon_set_size handles NULL size_str", "[ui_icon][api][error]") {
+TEST_CASE("helix::ui::icon::set_size handles NULL size_str", "[ui_icon][api][error]") {
     IconTest fixture;
 
-    REQUIRE_NOTHROW(ui_icon_set_size(reinterpret_cast<lv_obj_t*>(0x1), nullptr));
+    REQUIRE_NOTHROW(helix::ui::icon::set_size(reinterpret_cast<lv_obj_t*>(0x1), nullptr));
 }
 
-TEST_CASE("ui_icon_set_variant handles NULL icon", "[ui_icon][api][error]") {
+TEST_CASE("helix::ui::icon::set_variant handles NULL icon", "[ui_icon][api][error]") {
     IconTest fixture;
 
-    REQUIRE_NOTHROW(ui_icon_set_variant(nullptr, "primary"));
+    REQUIRE_NOTHROW(helix::ui::icon::set_variant(nullptr, "primary"));
 }
 
-TEST_CASE("ui_icon_set_variant handles NULL variant_str", "[ui_icon][api][error]") {
+TEST_CASE("helix::ui::icon::set_variant handles NULL variant_str", "[ui_icon][api][error]") {
     IconTest fixture;
 
-    REQUIRE_NOTHROW(ui_icon_set_variant(reinterpret_cast<lv_obj_t*>(0x1), nullptr));
+    REQUIRE_NOTHROW(helix::ui::icon::set_variant(reinterpret_cast<lv_obj_t*>(0x1), nullptr));
 }
 
-TEST_CASE("ui_icon_set_color handles NULL icon", "[ui_icon][api][error]") {
+TEST_CASE("helix::ui::icon::set_color handles NULL icon", "[ui_icon][api][error]") {
     IconTest fixture;
 
     lv_color_t color = lv_color_hex(0xFF0000);
-    REQUIRE_NOTHROW(ui_icon_set_color(nullptr, color, LV_OPA_COVER));
+    REQUIRE_NOTHROW(helix::ui::icon::set_color(nullptr, color, LV_OPA_COVER));
 }
 
 // ============================================================================
@@ -582,10 +582,10 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ui_icon: style matches shared style after t
 }
 
 // ============================================================================
-// API Tests - ui_icon_set_variant with new names
+// API Tests - helix::ui::icon::set_variant with new names
 // ============================================================================
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ui_icon_set_variant: accepts new variant names",
+TEST_CASE_METHOD(LVGLUITestFixture, "helix::ui::icon::set_variant: accepts new variant names",
                  "[reactive-icon][api]") {
     // Create a plain icon
     const char* attrs[] = {"src", "home", nullptr};
@@ -593,7 +593,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ui_icon_set_variant: accepts new variant na
     REQUIRE(icon != nullptr);
 
     // Set to 'text' variant using API
-    ui_icon_set_variant(icon, "text");
+    helix::ui::icon::set_variant(icon, "text");
     lv_color_t text_color = lv_obj_get_style_text_color(icon, LV_PART_MAIN);
 
     // Should match shared text style
@@ -603,7 +603,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ui_icon_set_variant: accepts new variant na
     REQUIRE(lv_color_eq(text_color, value.color));
 
     // Set to 'muted' variant using API
-    ui_icon_set_variant(icon, "muted");
+    helix::ui::icon::set_variant(icon, "muted");
     lv_color_t muted_color = lv_obj_get_style_text_color(icon, LV_PART_MAIN);
 
     // Should match shared muted style
@@ -612,7 +612,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ui_icon_set_variant: accepts new variant na
     REQUIRE(lv_color_eq(muted_color, value.color));
 
     // Set to 'danger' variant using API
-    ui_icon_set_variant(icon, "danger");
+    helix::ui::icon::set_variant(icon, "danger");
     lv_color_t danger_color = lv_obj_get_style_text_color(icon, LV_PART_MAIN);
 
     // Should match shared danger style

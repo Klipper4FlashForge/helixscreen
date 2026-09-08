@@ -558,7 +558,7 @@ void NozzleTempsWidget::update_row_display(lv_obj_t* temp_label, lv_obj_t* targe
         const char* variant = helix::ui::temperature::get_heating_state_variant(
             helix::ui::temperature::deci_to_degrees(temp_deci),
             helix::ui::temperature::deci_to_degrees(target_deci));
-        ui_icon_set_variant(bed_icon_, variant);
+        helix::ui::icon::set_variant(bed_icon_, variant);
     }
 
     if (target_deci > 0) {

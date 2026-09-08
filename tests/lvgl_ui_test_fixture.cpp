@@ -128,7 +128,7 @@ void LVGLUITestFixture::register_widgets() {
 
     // Register C++ widgets in dependency order
     // These are needed before XML components that embed them
-    ui_icon_register_widget();
+    helix::ui::icon::register_widget();
     ui_switch_register();
     ui_card_register();
     ui_temp_display_init();

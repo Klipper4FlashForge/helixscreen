@@ -1566,7 +1566,7 @@ void theme_manager_register_responsive_fonts(lv_display_t* display) {
     // loop above just re-pointed those constants. Without this, the first
     // <icon size="sm"> ever built pins the face for every icon that follows, so
     // a breakpoint change resizes type everywhere except the icons (#1210).
-    ui_icon_invalidate_font_cache();
+    helix::ui::icon::invalidate_font_cache();
     ui_button_invalidate_icon_font_cache();
     ui_split_button_invalidate_icon_font_cache();
 }
