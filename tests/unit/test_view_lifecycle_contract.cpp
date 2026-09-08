@@ -19,8 +19,10 @@
 
 #include "ui_nav_manager.h"
 #include "ui_panel_base.h"
+#include "ui_probe_overlay.h"
 #include "ui_update_queue.h"
 
+#include "../test_helpers/probe_overlay_test_access.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "overlay_base.h"
 #include "test_fixtures.h"
@@ -324,4 +326,43 @@ TEST_CASE_METHOD(MoonrakerTestFixture, "App shutdown reports Shutdown, not Navig
     REQUIRE_FALSE(nav.is_shutting_down());
     helix::ui::UpdateQueue::instance().drain();
     process_lvgl(50);
+}
+
+// ============================================================================
+// A concrete overlay inherits the sequence rather than restating it
+// ============================================================================
+
+// The cases above construct their own stubs, so they pin what the base does and
+// nothing about whether a real subclass still lets it happen. ProbeOverlay parks
+// its accuracy run and its config reads on these guards, so an override of
+// either half of the sequence that skips the invalidation leaves those callbacks
+// armed against a view that is gone.
+
+TEST_CASE_METHOD(MoonrakerTestFixture, "The probe overlay's deactivation drops screen-scoped work",
+                 "[lifecycle][probe][navigation]") {
+    ProbeOverlay overlay;
+    auto screen = ProbeOverlayTestAccess::screen_token(overlay);
+    auto object = ProbeOverlayTestAccess::object_token(overlay);
+    REQUIRE_FALSE(screen.expired());
+    REQUIRE_FALSE(object.expired());
+
+    overlay.on_deactivate(DeactivateReason::NavigateAway);
+
+    CHECK(screen.expired());
+    CHECK_FALSE(object.expired());
+}
+
+TEST_CASE_METHOD(MoonrakerTestFixture, "The probe overlay's cleanup() drops both guards",
+                 "[lifecycle][probe][navigation]") {
+    ProbeOverlay overlay;
+    auto screen = ProbeOverlayTestAccess::screen_token(overlay);
+    auto object = ProbeOverlayTestAccess::object_token(overlay);
+    REQUIRE_FALSE(screen.expired());
+    REQUIRE_FALSE(object.expired());
+
+    overlay.cleanup();
+
+    CHECK(screen.expired());
+    CHECK(object.expired());
+    CHECK(overlay.cleanup_called());
 }
