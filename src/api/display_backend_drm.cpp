@@ -621,14 +621,15 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
                         if (!needs_calibration_ && abs_x.maximum <= 0 && abs_y.maximum <= 0) {
                             needs_calibration_ = true;
                             needs_cal_forced_by_abs = true;
-                            spdlog::warn("[DRM Backend] ABS range is zero — forcing calibration");
+                            spdlog::warn(
+                                "[DRM Backend] ABS range is zero — panel needs affine calibration");
                         } else if (!needs_calibration_ &&
                                    helix::has_abs_display_mismatch(abs_x.maximum, abs_y.maximum,
                                                                    screen_width_, screen_height_)) {
                             needs_calibration_ = true;
                             needs_cal_forced_by_abs = true;
                             spdlog::warn("[DRM Backend] ABS range ({},{}) mismatches display "
-                                         "({}x{}) — forcing calibration",
+                                         "({}x{}) — panel needs affine calibration",
                                          abs_x.maximum, abs_y.maximum, screen_width_,
                                          screen_height_);
                         }
