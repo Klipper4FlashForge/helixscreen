@@ -1767,8 +1767,8 @@ if [ -f "scripts/check_namespace_compliance.py" ]; then
   # AMS value type, enum, constant and inline helper it declared at global
   # scope, plus the SlotInfo and DryingPreset forward declarations that
   # followed them. 2242 -> 2239 is main's own slack, picked up by the merge:
-  # dropping the Plugins overlay (be1e9a0) retired three globals without a
-  # ratchet.
+  # main dropped the Plugins overlay and retired three globals without
+  # ratcheting, so the merge collects that slack too.
   if python3 scripts/check_namespace_compliance.py --max-allowed 2239 --summary >/tmp/namespace_check.out 2>&1; then
     section_time $SECTION_START
     echo ""
