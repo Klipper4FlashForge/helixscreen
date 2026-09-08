@@ -21,7 +21,7 @@
     "fan_exclude": "As led_exclude, over fan object names",
     "object_exclude": "As led_exclude, over the full Klipper object list",
     "mcu_match": "Match against MCU chip type or serial pattern",
-    "build_volume_range": "Match against bed_mesh dimensions",
+    "build_volume_range": "Match against the X/Y stepper travel Klipper resolves from the configfile (position_max minus position_min per axis), not the bed mesh or the advertised print area. Travel is the print area plus whatever overtravel the config allows (the four entries authored from a real config show +10 to +58 mm), so a window drawn tightly around the marketing size misses the machine it describes; author min/max from a real configfile",
     "macro_match": "Match against G-code macro names (gcode_macro objects)",
     "macro_exclude": "Exclude this printer if a G-code macro is present",
     "tool_count": "Count of extruder tools (tool_count_1, tool_count_2, tool_count_4)",

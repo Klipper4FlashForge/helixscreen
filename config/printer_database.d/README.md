@@ -134,7 +134,7 @@ resolves to.
 | `object_exists` | Check if a Klipper object exists (substring; `^` and `$` pin the pattern to a name's start and end, so `^box$` is exactly `box`) |
 | `stepper_count` | Count Z steppers (z_count_1, z_count_2, etc.) |
 | `mcu_match` | Match MCU chip type |
-| `build_volume_range` | Match build volume dimensions |
+| `build_volume_range` | Match the X/Y stepper travel from the configfile (`position_max` minus `position_min`), which exceeds the advertised print area; author `min_x`/`max_x`/`min_y`/`max_y` from a real config |
 | `macro_match` | Match G-code macro names |
 
 ## Disabling a Bundled Printer

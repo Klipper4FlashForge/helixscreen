@@ -337,7 +337,7 @@ The printer database (`config/printer_database.json`) is the source of truth for
 | `fan_combo` | Match multiple fan patterns |
 | `led_match` | Match LED/neopixel names |
 | `mcu_match` | Match MCU chip type |
-| `build_volume_range` | Match bed dimensions |
+| `build_volume_range` | Match X/Y stepper travel from the configfile (not the bed mesh or print area) |
 | `macro_match` | Match G-code macro names |
 
 Detection scores are combined across multiple heuristics. A confidence of >= 70 is considered high-confidence.
