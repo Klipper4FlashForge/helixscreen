@@ -56,8 +56,8 @@
                from C++ because it names the action, not the state. -->
           <ui_button name="btn_bypass_toggle"
                      height="#button_height_sm" icon="arrow_left_right" text="Enable Bypass"
-                     translation_tag="Enable Bypass" variant="ghost"
-                     clickable="true" style_flex_main_place="start" hidden="true">
+                     translation_tag="Enable Bypass" variant="ghost" clickable="true" style_flex_main_place="start"
+                     hidden="true">
             <event_cb trigger="clicked" callback="ams_context_bypass_toggle_cb"/>
           </ui_button>
           <!-- Load Button -->
@@ -77,8 +77,8 @@
           <!-- Purge (external spool only; hidden for lanes). The lane menu has no
                purge action - purging is about what is at the nozzle, not a lane. -->
           <ui_button name="btn_purge"
-                     height="#button_height_sm" icon="water" text="Purge" translation_tag="Purge"
-                     variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
+                     height="#button_height_sm" icon="water" text="Purge" translation_tag="Purge" variant="ghost"
+                     clickable="true" style_flex_main_place="start" hidden="true">
             <bind_state_if_eq subject="ams_slot_can_purge" state="disabled" ref_value="0"/>
             <event_cb trigger="clicked" callback="ams_context_purge_cb"/>
           </ui_button>
