@@ -170,6 +170,8 @@ std::string shipped_sequence_for(const std::string& printer, StandardMacroSlot s
 
 } // namespace
 
+namespace helix {
+
 ResolvedMacroScript resolve_macro_script(const StandardMacroInfo& info, const std::string& profile,
                                          bool accept_fallback) {
     ResolvedMacroScript out;
@@ -188,6 +190,8 @@ ResolvedMacroScript resolve_macro_script(const StandardMacroInfo& info, const st
     }
     return out;
 }
+
+} // namespace helix
 
 void StandardMacros::init_slot_definitions() {
     slots_.clear();

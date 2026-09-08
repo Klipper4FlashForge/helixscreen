@@ -1767,8 +1767,9 @@ if [ -f "scripts/check_namespace_compliance.py" ]; then
   # scope, plus the SlotInfo and DryingPreset forward declarations that
   # followed them. 2242 -> 2239 is main's own slack, picked up by the merge:
   # main dropped the Plugins overlay and retired three globals without
-  # ratcheting, so the merge collects that slack too.
-  if python3 scripts/check_namespace_compliance.py --max-allowed 2239 --summary >/tmp/namespace_check.out 2>&1; then
+  # ratcheting, so the merge collects that slack too. 2239 -> 2238 is
+  # ResolvedMacroScript and resolve_macro_script moving into helix::.
+  if python3 scripts/check_namespace_compliance.py --max-allowed 2238 --summary >/tmp/namespace_check.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/namespace_check.out

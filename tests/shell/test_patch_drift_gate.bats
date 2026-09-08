@@ -439,3 +439,75 @@ print('ok')
     grep -qE "/${esc}\$" mk/patches.mk \
         || { echo "mk/patches.mk does not end a path with $name"; false; }
 }
+
+# ---------------------------------------------------------------------------
+# Which remedy gets printed. `make reapply-patches` repairs whatever checkout
+# the submodule path resolves to, so the advice is only safe when that path is
+# this tree's own. A tree sharing another's checkout is also the tree most
+# likely to be reported, since patches/ is per-branch.
+# ---------------------------------------------------------------------------
+
+# Move the fixture submodule outside the repo and leave a symlink behind: the
+# shape of a worktree whose lib/ entry points into another tree's checkout.
+share_sub_from_another_tree() {
+    SHARED_SUB="${BATS_TEST_TMPDIR:-$(mktemp -d)}/other-tree/lib/fake"
+    mkdir -p "$(dirname "$SHARED_SUB")"
+    mv "$SUB" "$SHARED_SUB"
+    ln -s "$SHARED_SUB" "$SUB"
+}
+
+# The drift used by both cases below: an applied patch grows a hunk the
+# submodule does not carry.
+edit_an_applied_patch() {
+    printf 'one\nALPHA\nALPHA_NEW\n' > "$SUB/one.txt"
+    git -C "$SUB" diff -- one.txt > "$ROOT/patches/alpha.patch"
+    printf 'one\nALPHA\n' > "$SUB/one.txt"
+}
+
+@test "drift in a symlinked submodule does not tell you to reapply" {
+    in_sync
+    share_sub_from_another_tree
+    edit_an_applied_patch
+
+    run_gate
+    [ "$status" -eq 1 ]
+    contains "Do NOT run" "$output"
+    # Naming the real target is the point: it is the tree that would be damaged.
+    contains "$SHARED_SUB" "$output"
+    contains "setup-worktree.sh --setup-only" "$output"
+    case "$output" in
+        *"Fix: make reapply-patches"*)
+            printf 'symlinked tree was told to reapply:\n%s\n' "$output" >&2
+            return 1
+            ;;
+    esac
+}
+
+@test "drift in a private submodule still tells you to reapply" {
+    in_sync
+    edit_an_applied_patch
+
+    run_gate
+    [ "$status" -eq 1 ]
+    contains "Fix: make reapply-patches" "$output"
+    case "$output" in
+        *"Do NOT run"*)
+            printf 'private checkout was refused the reapply remedy:\n%s\n' "$output" >&2
+            return 1
+            ;;
+    esac
+}
+
+@test "a symlinked submodule with no drift is not warned about" {
+    in_sync
+    share_sub_from_another_tree
+
+    run_gate
+    [ "$status" -eq 0 ]
+    case "$output" in
+        *"Do NOT run"*)
+            printf 'clean tree got a remedy it has no use for:\n%s\n' "$output" >&2
+            return 1
+            ;;
+    esac
+}
