@@ -834,6 +834,74 @@ TEST_CASE("Drain: the hourly producer alone outruns a single batch per window",
                              TelemetryManager::MAX_BATCH_SIZE) > hourly_events_per_send_interval);
 }
 
+TEST_CASE("Queue budget: an unattended send window fits the queue", "[telemetry][send][1476]") {
+    // With nobody touching the device the periodic timers are the whole
+    // producer set, and the queue is drained once per SEND_INTERVAL. A budget
+    // above MAX_QUEUE_SIZE is the number of events enqueue_event() discards
+    // unsent every day — on every platform, not only the K1-class ones where
+    // the drop log was read.
+    REQUIRE(TelemetryManager::UNATTENDED_EVENTS_PER_SEND_WINDOW <=
+            TelemetryManager::MAX_QUEUE_SIZE);
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture, "Queue: a day of unattended production survives to the send",
+                 "[telemetry][send][1476]") {
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+
+    // The hourly memory snapshot is one of the producers the budget counts, so
+    // enqueueing the whole budget through it reproduces a day's worth of
+    // unattended enqueue pressure without waiting on the timers.
+    for (size_t i = 0; i < TelemetryManager::UNATTENDED_EVENTS_PER_SEND_WINDOW; ++i) {
+        tm.record_memory_snapshot("hourly");
+    }
+
+    REQUIRE(tm.queue_size() == TelemetryManager::UNATTENDED_EVENTS_PER_SEND_WINDOW);
+    REQUIRE(TelemetryManagerTestAccess::events_dropped_since_send(tm) == 0);
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture, "Queue: a discarded event is counted, not silent",
+                 "[telemetry][send][1476]") {
+    // A queue at MAX_QUEUE_SIZE looks the same whether it just filled or has
+    // been shedding events for hours, so the count is the only thing that can
+    // tell the next batch's window is incomplete.
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+
+    for (size_t i = 0; i < TelemetryManager::MAX_QUEUE_SIZE; ++i) {
+        tm.record_session();
+    }
+    REQUIRE(TelemetryManagerTestAccess::events_dropped_since_send(tm) == 0);
+
+    tm.record_session();
+    REQUIRE(tm.queue_size() == TelemetryManager::MAX_QUEUE_SIZE);
+    REQUIRE(TelemetryManagerTestAccess::events_dropped_since_send(tm) == 1);
+
+    // The count covers the span since the last batch reached the server, so a
+    // batch that lands starts a fresh window rather than carrying the old
+    // shortfall into every send that follows.
+    tm.remove_sent_events(TelemetryManager::MAX_BATCH_SIZE);
+    REQUIRE(TelemetryManagerTestAccess::events_dropped_since_send(tm) == 0);
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture, "Queue: a purge ends the window the drop count describes",
+                 "[telemetry][send][1476]") {
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+
+    for (size_t i = 0; i < TelemetryManager::MAX_QUEUE_SIZE + 1; ++i) {
+        tm.record_session();
+    }
+    REQUIRE(TelemetryManagerTestAccess::events_dropped_since_send(tm) == 1);
+
+    // clear_queue() is the opt-out purge. Nothing it discards belongs to a
+    // batch anyone will send, so the shortfall it leaves is not one to report
+    // against the first batch of the next opt-in.
+    tm.clear_queue();
+    REQUIRE(tm.queue_size() == 0);
+    REQUIRE(TelemetryManagerTestAccess::events_dropped_since_send(tm) == 0);
+}
+
 TEST_CASE("Send delay: a healthy sender waits the full send interval", "[telemetry][send][1476]") {
     REQUIRE(TelemetryManager::next_attempt_delay(1) == TelemetryManager::SEND_INTERVAL);
 }

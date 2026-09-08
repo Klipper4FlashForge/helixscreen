@@ -864,6 +864,10 @@ nlohmann::json TelemetryManager::get_queue_snapshot() const {
 void TelemetryManager::clear_queue() {
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.clear();
+    // A purge ends the window the count describes. Carrying it forward would
+    // mark the first batch after the next opt-in as incomplete when nothing
+    // from that window was ever discarded.
+    events_dropped_since_send_ = 0;
     spdlog::info("[TelemetryManager] Queue cleared");
 }
 
@@ -883,6 +887,17 @@ void TelemetryManager::remove_sent_events(size_t count) {
     queue_.erase(queue_.begin(), queue_.begin() + static_cast<long>(to_remove));
     spdlog::debug("[TelemetryManager] Removed {} sent events, {} remaining", to_remove,
                   queue_.size());
+
+    // The server has no way to tell a quiet window from a lossy one, so a
+    // batch that follows a discard is an incomplete record of the span it
+    // covers. Reporting it here rather than in enqueue_event() costs one line
+    // per send window instead of one per discarded event.
+    if (events_dropped_since_send_ > 0) {
+        spdlog::warn("[TelemetryManager] {} events were discarded unsent before this batch — "
+                     "the window it covers is incomplete",
+                     events_dropped_since_send_);
+        events_dropped_since_send_ = 0;
+    }
 }
 
 void TelemetryManager::try_send(bool force) {
@@ -1399,6 +1414,7 @@ void TelemetryManager::enqueue_event(nlohmann::json event) {
 
     // Drop oldest if at capacity
     if (queue_.size() >= MAX_QUEUE_SIZE) {
+        events_dropped_since_send_++;
         spdlog::debug("[TelemetryManager] Queue at capacity ({}), dropping oldest event",
                       MAX_QUEUE_SIZE);
         queue_.erase(queue_.begin());
