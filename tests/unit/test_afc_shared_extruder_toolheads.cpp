@@ -36,6 +36,7 @@
  * identity `E<n>` and that `T` means an AFC lane alias and nothing else.
  */
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 #include "ui/ams_drawing_utils.h"
@@ -187,9 +188,9 @@ class AfcSharedExtruderHelper : public AmsBackendAfc {
     /// query_afc_configfile_topology() never runs.
     void seed_extruder_klipper_names(std::unordered_map<std::string, std::string> names) {
         std::lock_guard<std::mutex> lock(mutex_);
-        extruder_klipper_names_ = std::move(names);
-        configfile_answered_ = true; // stands in for the query having landed
-        extruder_tool_index_warned_.clear();
+        AfcTestAccess::extruder_klipper_names(*this) = std::move(names);
+        AfcTestAccess::configfile_answered(*this) = true; // stands in for the query having landed
+        AfcTestAccess::extruder_tool_index_warned(*this).clear();
     }
 };
 } // namespace helix

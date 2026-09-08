@@ -14,6 +14,7 @@
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/filament_panel_test_access.h"
 #include "afc_config_manager.h"
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_mock.h"
 #include "ams_state.h"
@@ -55,8 +56,8 @@ class AfcDelegatesHomingHelper : public AmsBackendAfc {
     AfcDelegatesHomingHelper() : AmsBackendAfc(nullptr, nullptr) {}
 
     void load_config(const char* content) {
-        afc_config_ = std::make_unique<AfcConfigManager>(nullptr);
-        afc_config_->load_from_string(content, "AFC/AFC.cfg");
+        AfcTestAccess::afc_config(*this) = std::make_unique<AfcConfigManager>(nullptr);
+        AfcTestAccess::afc_config(*this)->load_from_string(content, "AFC/AFC.cfg");
     }
 };
 } // namespace helix
@@ -97,12 +98,12 @@ class AfcDispatchHelper : public AmsBackendAfc {
   public:
     AfcDispatchHelper() : AmsBackendAfc(nullptr, nullptr) {
         std::vector<std::string> names{"lane1"};
-        initialize_slots(names);
+        AfcTestAccess::initialize_slots(*this, names);
     }
 
     void load_config(const char* content) {
-        afc_config_ = std::make_unique<AfcConfigManager>(nullptr);
-        afc_config_->load_from_string(content, "AFC/AFC.cfg");
+        AfcTestAccess::afc_config(*this) = std::make_unique<AfcConfigManager>(nullptr);
+        AfcTestAccess::afc_config(*this)->load_from_string(content, "AFC/AFC.cfg");
     }
 
     AmsError execute_gcode(const std::string& gcode) override {

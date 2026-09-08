@@ -1,9 +1,11 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "test_helpers/afc_test_access.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_happy_hare.h"
 #include "ams_types.h"
+#include "test_helpers/happy_hare_test_access.h"
 
 #include <algorithm>
 #include <vector>
@@ -213,7 +215,7 @@ class AfcErrorStateHelper : public AmsBackendAfc {
 
         system_info_.units.push_back(unit);
         system_info_.total_slots = count;
-        slots_.initialize("Box Turtle 1", names);
+        AfcTestAccess::slots(*this).initialize("Box Turtle 1", names);
     }
 
     void feed_status_update(const nlohmann::json& params_inner) {
@@ -241,16 +243,16 @@ class AfcErrorStateHelper : public AmsBackendAfc {
     }
 
     void set_buffer_names(const std::vector<std::string>& names) {
-        buffer_names_ = names;
+        AfcTestAccess::buffer_names(*this) = names;
     }
 
     const SlotInfo* get_slot(int idx) const {
-        const auto* entry = slots_.get(idx);
+        const auto* entry = AfcTestAccess::slots(*this).get(idx);
         return entry ? &entry->info : nullptr;
     }
 
     SlotInfo* get_slot_mut(int idx) {
-        auto* entry = slots_.get_mut(idx);
+        auto* entry = AfcTestAccess::slots(*this).get_mut(idx);
         return entry ? &entry->info : nullptr;
     }
 
@@ -521,9 +523,9 @@ class HappyHareErrorStateHelper : public AmsBackendHappyHare {
         for (int i = 0; i < count; ++i) {
             slot_names.push_back(std::to_string(i));
         }
-        slots_.initialize("MMU", slot_names);
+        HappyHareTestAccess::slots(*this).initialize("MMU", slot_names);
         for (int i = 0; i < count; ++i) {
-            auto* entry = slots_.get_mut(i);
+            auto* entry = HappyHareTestAccess::slots(*this).get_mut(i);
             if (entry) {
                 entry->info.status = SlotStatus::AVAILABLE;
                 entry->info.color_rgb = AMS_DEFAULT_SLOT_COLOR;
@@ -544,7 +546,7 @@ class HappyHareErrorStateHelper : public AmsBackendHappyHare {
     }
 
     const SlotInfo* get_slot(int idx) const {
-        const auto* entry = slots_.get(idx);
+        const auto* entry = HappyHareTestAccess::slots(*this).get(idx);
         return entry ? &entry->info : nullptr;
     }
 
