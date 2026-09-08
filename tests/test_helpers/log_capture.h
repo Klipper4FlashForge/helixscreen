@@ -79,6 +79,21 @@ class LogRing {
         return false;
     }
 
+    /// Levels of every captured record whose text contains @p needle, oldest
+    /// first. Reads the raw records rather than the formatted lines, so a test
+    /// can assert that something is logged at debug rather than at warn.
+    [[nodiscard]] std::vector<spdlog::level::level_enum>
+    levels_for(const std::string& needle) const {
+        std::vector<spdlog::level::level_enum> out;
+        for (const auto& msg : sink_->last_raw(capacity_)) {
+            const std::string text(msg.payload.data(), msg.payload.size());
+            if (text.find(needle) != std::string::npos) {
+                out.push_back(msg.level);
+            }
+        }
+        return out;
+    }
+
   protected:
     explicit LogRing(size_t capacity)
         : sink_(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(capacity)),
