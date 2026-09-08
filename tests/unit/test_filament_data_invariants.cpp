@@ -532,7 +532,7 @@ TEST_CASE("AD5X firmware material whitelist all resolves", "[filament][database]
     // guards. The stock AD5X firmware rejects anything outside the list, so these
     // are the only types that printer's picker can offer. If one stops resolving in
     // Layer A it inherits a 0 °C bed and no drying data, and the picker breaks.
-    for (const auto* type : AmsBackendAd5xIfs::STOCK_WHITELIST) {
+    for (const auto* type : helix::AmsBackendAd5xIfs::STOCK_WHITELIST) {
         INFO("AD5X whitelist type: " << type);
         auto mat = find_material(type);
         REQUIRE(mat.has_value());
@@ -575,22 +575,22 @@ TEST_CASE_METHOD(HelixTestFixture, "every mock-backend fixture material resolves
 
     // Each entry drives the mock into one scripted configuration. Adding a new
     // mock mode? Add it here so its fixture strings are covered too.
-    using ModeSetter = std::function<void(AmsBackendMock&)>;
+    using ModeSetter = std::function<void(helix::AmsBackendMock&)>;
     const std::vector<std::pair<const char*, ModeSetter>> MODES = {
-        {"default", [](AmsBackendMock&) {}},
-        {"tool_changer", [](AmsBackendMock& b) { b.set_tool_changer_mode(true); }},
-        {"afc", [](AmsBackendMock& b) { b.set_afc_mode(true); }},
-        {"multi_unit", [](AmsBackendMock& b) { b.set_multi_unit_mode(true); }},
-        {"mixed_topology", [](AmsBackendMock& b) { b.set_mixed_topology_mode(true); }},
-        {"vivid_mixed", [](AmsBackendMock& b) { b.set_vivid_mixed_mode(true); }},
-        {"htlf_toolchanger", [](AmsBackendMock& b) { b.set_htlf_toolchanger_mode(true); }},
-        {"ifs", [](AmsBackendMock& b) { b.set_ifs_mode(true); }},
-        {"snapmaker", [](AmsBackendMock& b) { b.set_snapmaker_mode(true); }},
+        {"default", [](helix::AmsBackendMock&) {}},
+        {"tool_changer", [](helix::AmsBackendMock& b) { b.set_tool_changer_mode(true); }},
+        {"afc", [](helix::AmsBackendMock& b) { b.set_afc_mode(true); }},
+        {"multi_unit", [](helix::AmsBackendMock& b) { b.set_multi_unit_mode(true); }},
+        {"mixed_topology", [](helix::AmsBackendMock& b) { b.set_mixed_topology_mode(true); }},
+        {"vivid_mixed", [](helix::AmsBackendMock& b) { b.set_vivid_mixed_mode(true); }},
+        {"htlf_toolchanger", [](helix::AmsBackendMock& b) { b.set_htlf_toolchanger_mode(true); }},
+        {"ifs", [](helix::AmsBackendMock& b) { b.set_ifs_mode(true); }},
+        {"snapmaker", [](helix::AmsBackendMock& b) { b.set_snapmaker_mode(true); }},
     };
 
     size_t checked = 0;
     for (const auto& [mode_name, apply_mode] : MODES) {
-        AmsBackendMock backend;
+        helix::AmsBackendMock backend;
         apply_mode(backend);
         backend.start();
 

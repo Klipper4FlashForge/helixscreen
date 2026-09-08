@@ -13,6 +13,8 @@
 #include <unordered_map>
 #include <vector>
 
+namespace helix {
+
 class ToolChangerTestAccess;
 
 /**
@@ -544,3 +546,5 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     // Per-tool mounted state (for quick lookup)
     std::vector<bool> tool_mounted_; ///< Which tools are mounted
 };
+
+} // namespace helix

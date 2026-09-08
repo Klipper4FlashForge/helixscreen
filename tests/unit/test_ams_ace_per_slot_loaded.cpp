@@ -30,15 +30,17 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::SlotStatus;
+
 using json = nlohmann::json;
 
 namespace {
 
 /// Drives the production paths: the WebSocket object path via
 /// handle_status_update(), and the REST fallback via the two poll parsers.
-class AcePerSlotLoadedHelper : public AmsBackendAce {
+class AcePerSlotLoadedHelper : public helix::AmsBackendAce {
   public:
-    AcePerSlotLoadedHelper() : AmsBackendAce(nullptr, nullptr) {}
+    AcePerSlotLoadedHelper() : helix::AmsBackendAce(nullptr, nullptr) {}
 
     /// Wrap an ACE object in a notify_status_update envelope under `key`
     /// ("filament_hub" for native GoKlipper, "ace" for community ValgACE).

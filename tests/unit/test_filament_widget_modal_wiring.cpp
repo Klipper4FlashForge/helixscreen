@@ -73,7 +73,7 @@ class TapModalFixture : public LVGLUITestFixture {
         // No AMS backend: the tile is only ever shown on printers without one,
         // and it keeps the dispatches on the macro/raw-gcode tiers where the
         // mock's gcode history can see them.
-        AmsState::instance().clear_backends();
+        helix::AmsState::instance().clear_backends();
 
         widget.attach(test_screen(), test_screen());
     }
@@ -82,7 +82,7 @@ class TapModalFixture : public LVGLUITestFixture {
         widget.detach();
         set_moonraker_api(previous_api_);
         StandardMacros::instance().reset();
-        AmsState::instance().clear_backends();
+        helix::AmsState::instance().clear_backends();
         helix::ui::UpdateQueue::instance().drain();
         mock_client.stop_temperature_simulation();
         mock_client.disconnect();

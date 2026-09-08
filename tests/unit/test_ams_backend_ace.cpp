@@ -23,6 +23,18 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AceTestAccess;
+using helix::AmsAction;
+using helix::AmsBackend;
+using helix::AmsBackendAce;
+using helix::AmsSystemInfo;
+using helix::AmsType;
+using helix::DryerInfo;
+using helix::PathSegment;
+using helix::PathTopology;
+using helix::SlotInfo;
+using helix::SlotStatus;
+
 using json = nlohmann::json;
 
 // Friend-class shim for FilamentSlotOverrideStore. Same idiom as IFS/Snapmaker
@@ -35,6 +47,8 @@ class FilamentSlotOverrideStoreTestAccess {
         store.cache_dir_ = std::move(dir);
     }
 };
+
+namespace helix {
 
 // Friend-class shim for AmsBackendAce — declared as friend in the backend
 // header. Gives tests narrow accessors for override state without going
@@ -83,6 +97,7 @@ class AceTestAccess {
         b.poll_slots();
     }
 };
+} // namespace helix
 
 namespace {
 // Per-test tmp cache dir — same idiom as IFS/Snapmaker tests.
@@ -225,11 +240,11 @@ TEST_CASE("ACE bypass not supported", "[ams][ace][bypass]") {
 
     auto err = helper.enable_bypass();
     REQUIRE(!err.success());
-    REQUIRE(err.result == AmsResult::NOT_SUPPORTED);
+    REQUIRE(err.result == helix::AmsResult::NOT_SUPPORTED);
 
     err = helper.disable_bypass();
     REQUIRE(!err.success());
-    REQUIRE(err.result == AmsResult::NOT_SUPPORTED);
+    REQUIRE(err.result == helix::AmsResult::NOT_SUPPORTED);
 }
 
 // ============================================================================

@@ -77,10 +77,10 @@ uint32_t resolved(const GCodeLayerRenderer& r, int tool) {
 class NoAmsBackend {
   public:
     NoAmsBackend() {
-        AmsState::instance().set_backend(nullptr);
+        helix::AmsState::instance().set_backend(nullptr);
     }
     ~NoAmsBackend() {
-        AmsState::instance().set_backend(nullptr);
+        helix::AmsState::instance().set_backend(nullptr);
     }
     NoAmsBackend(const NoAmsBackend&) = delete;
     NoAmsBackend& operator=(const NoAmsBackend&) = delete;
@@ -232,7 +232,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "a dead AMS answer retracts the viewer's appli
     NoAmsBackend no_backend;
     // Assert the setup reached the branch under test: this whole case is about
     // what happens when routed_tool_colors() comes back empty.
-    REQUIRE(AmsState::instance().routed_tool_colors().empty());
+    REQUIRE(helix::AmsState::instance().routed_tool_colors().empty());
 
     lv_obj_t* parent = lv_obj_create(lv_screen_active());
     REQUIRE(parent != nullptr);

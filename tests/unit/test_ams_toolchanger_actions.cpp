@@ -25,6 +25,10 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsAction;
+using helix::AmsType;
+using helix::PathTopology;
+
 // RAII helper to set up fast timing and restore on exit
 class FastTimingScopeTC {
   public:
@@ -48,7 +52,7 @@ class FastTimingScopeTC {
 
 TEST_CASE("Mock toolchanger mode gives PARALLEL topology and correct type",
           "[ams][toolchanger][toolchanger_actions]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
@@ -102,12 +106,12 @@ TEST_CASE("change_tool sets SELECTING immediately in mock toolchanger mode",
     std::mutex actions_mtx;
     std::vector<AmsAction> observed_actions;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(50); // Nonzero so operation is still in flight
     REQUIRE(backend.start());
     backend.set_event_callback([&](const std::string& event, const std::string&) {
-        if (event == AmsBackend::EVENT_STATE_CHANGED) {
+        if (event == helix::AmsBackend::EVENT_STATE_CHANGED) {
             auto action = backend.get_current_action();
             std::lock_guard<std::mutex> lock(actions_mtx);
             if (observed_actions.empty() || observed_actions.back() != action) {
@@ -159,7 +163,7 @@ TEST_CASE("Lockout rejects operations during in-flight tool change",
     // thread can clear the in-flight state before the immediate second call runs
     // — racing this test's whole premise. Use a real (un-scaled) delay long
     // enough that the operation is reliably still in-flight on slow CI.
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(500); // real ms — kept in-flight for the immediate reject check
     REQUIRE(backend.start());
@@ -172,7 +176,7 @@ TEST_CASE("Lockout rejects operations during in-flight tool change",
         // Immediately try another operation -- should be rejected as BUSY
         auto result2 = backend.change_tool(2);
         CHECK_FALSE(result2);
-        CHECK(result2.result == AmsResult::BUSY);
+        CHECK(result2.result == helix::AmsResult::BUSY);
 
         // Wait for first operation to complete
         std::this_thread::sleep_for(std::chrono::milliseconds(800));
@@ -184,7 +188,7 @@ TEST_CASE("Lockout rejects operations during in-flight tool change",
 
         auto result2 = backend.load_filament(2);
         CHECK_FALSE(result2);
-        CHECK(result2.result == AmsResult::BUSY);
+        CHECK(result2.result == helix::AmsResult::BUSY);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(800));
     }
@@ -195,7 +199,7 @@ TEST_CASE("Lockout rejects operations during in-flight tool change",
 
         auto result2 = backend.unload_active_filament();
         CHECK_FALSE(result2);
-        CHECK(result2.result == AmsResult::BUSY);
+        CHECK(result2.result == helix::AmsResult::BUSY);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(800));
     }
@@ -211,7 +215,7 @@ TEST_CASE("load_filament delegates to change_tool in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
     FastTimingScopeTC timing_guard;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     REQUIRE(backend.start());
@@ -236,13 +240,13 @@ TEST_CASE("load_filament delegates to change_tool in mock toolchanger mode",
     SECTION("load_filament with invalid slot returns error") {
         auto result = backend.load_filament(99);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_SLOT);
+        CHECK(result.result == helix::AmsResult::INVALID_SLOT);
     }
 
     SECTION("load_filament with negative slot returns error") {
         auto result = backend.load_filament(-1);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_SLOT);
+        CHECK(result.result == helix::AmsResult::INVALID_SLOT);
     }
 
     backend.stop();
@@ -254,7 +258,7 @@ TEST_CASE("load_filament delegates to change_tool in mock toolchanger mode",
 
 TEST_CASE("change_tool with invalid slot returns error in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
@@ -262,19 +266,19 @@ TEST_CASE("change_tool with invalid slot returns error in mock toolchanger mode"
     SECTION("negative tool number returns INVALID_TOOL") {
         auto result = backend.change_tool(-1);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_TOOL);
+        CHECK(result.result == helix::AmsResult::INVALID_TOOL);
     }
 
     SECTION("out-of-range tool number returns INVALID_TOOL") {
         auto result = backend.change_tool(99);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_TOOL);
+        CHECK(result.result == helix::AmsResult::INVALID_TOOL);
     }
 
     SECTION("tool number equal to slot count returns error") {
         auto result = backend.change_tool(4); // 0-3 are valid
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_TOOL);
+        CHECK(result.result == helix::AmsResult::INVALID_TOOL);
     }
 
     backend.stop();
@@ -288,7 +292,7 @@ TEST_CASE("unload_filament works in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
     FastTimingScopeTC timing_guard;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     REQUIRE(backend.start());
@@ -317,7 +321,7 @@ TEST_CASE("unload_filament works in mock toolchanger mode",
         // Second unload should fail — nothing loaded
         auto result = backend.unload_active_filament();
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::WRONG_STATE);
+        CHECK(result.result == helix::AmsResult::WRONG_STATE);
     }
 
     backend.stop();
@@ -331,7 +335,7 @@ TEST_CASE("Sequential tool changes succeed in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
     FastTimingScopeTC timing_guard;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     REQUIRE(backend.start());
@@ -383,7 +387,7 @@ TEST_CASE("change_tool on already-active tool in mock toolchanger mode",
           "[ams][toolchanger][toolchanger_actions]") {
     FastTimingScopeTC timing_guard;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     REQUIRE(backend.start());
@@ -412,7 +416,7 @@ TEST_CASE("change_tool on already-active tool in mock toolchanger mode",
 
 TEST_CASE("Operations rejected when mock toolchanger backend not started",
           "[ams][toolchanger][toolchanger_actions]") {
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(0);
     // Intentionally NOT calling start()
@@ -420,19 +424,19 @@ TEST_CASE("Operations rejected when mock toolchanger backend not started",
     SECTION("change_tool fails when not started") {
         auto result = backend.change_tool(0);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 
     SECTION("load_filament fails when not started") {
         auto result = backend.load_filament(0);
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 
     SECTION("unload_filament fails when not started") {
         auto result = backend.unload_active_filament();
         CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::NOT_CONNECTED);
+        CHECK(result.result == helix::AmsResult::NOT_CONNECTED);
     }
 }
 
@@ -448,13 +452,13 @@ TEST_CASE("Realistic mode tool change shows SELECTING phase in toolchanger mode"
     std::mutex actions_mtx;
     std::vector<AmsAction> observed_actions;
 
-    AmsBackendMock backend(4);
+    helix::AmsBackendMock backend(4);
     backend.set_tool_changer_mode(true);
     backend.set_operation_delay(10);
     backend.set_realistic_mode(true);
     REQUIRE(backend.start());
     backend.set_event_callback([&](const std::string& event, const std::string&) {
-        if (event == AmsBackend::EVENT_STATE_CHANGED) {
+        if (event == helix::AmsBackend::EVENT_STATE_CHANGED) {
             auto action = backend.get_current_action();
             std::lock_guard<std::mutex> lock(actions_mtx);
             if (observed_actions.empty() || observed_actions.back() != action) {

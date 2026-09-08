@@ -16,6 +16,24 @@
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
 
+using helix::ams_action_from_string;
+using helix::AmsAction;
+using helix::AmsError;
+using helix::AmsResult;
+using helix::AmsType;
+using helix::EncoderClogInfo;
+using helix::path_segment_from_happy_hare_pos;
+using helix::PathSegment;
+using helix::PathTopology;
+using helix::SlotInfo;
+using helix::SlotStatus;
+using helix::spoolman_mode_from_string;
+using helix::spoolman_mode_to_string;
+using helix::SpoolmanMode;
+using helix::StepOperationType;
+
+namespace helix {
+
 /**
  * @brief Test helper class providing access to AmsBackendHappyHare internals
  *
@@ -315,6 +333,8 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
         return false;
     }
 };
+} // namespace helix
+using helix::AmsBackendHappyHareTestHelper;
 
 // ============================================================================
 // set_slot_info() Persistence Tests - Happy Hare MMU_GATE_MAP
@@ -3690,7 +3710,7 @@ TEST_CASE("Happy Hare toolchange_phase_template: ops declare ordered phases",
 TEST_CASE_METHOD(LVGLTestFixture,
                  "Happy Hare narration: action transitions advance the step subject",
                  "[ams][happy_hare][narration][ui_integration]") {
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.init_subjects(true);
     ams.set_active_step_operation(StepOperationType::LOAD_SWAP);
     ams.set_narration_phase(-1, "");

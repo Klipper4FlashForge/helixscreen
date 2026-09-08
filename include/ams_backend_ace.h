@@ -17,6 +17,8 @@
 #include <thread>
 #include <unordered_map>
 
+namespace helix {
+
 /**
  * @file ams_backend_ace.h
  * @brief ACE (Anycubic ACE Pro) backend implementation
@@ -223,7 +225,7 @@ class AmsBackendAce : public AmsSubscriptionBackend {
     void parse_ace_object(const nlohmann::json& data);
 
   private:
-    friend class ::AceTestAccess;
+    friend class AceTestAccess;
 
     // ========================================================================
     // REST Fallback (for BunnyACE/DuckACE without get_status())
@@ -410,5 +412,7 @@ class AmsBackendAce : public AmsSubscriptionBackend {
     // writer/reader).
     std::unordered_map<int, SlotStatus> prev_slot_status_;
 };
+
+} // namespace helix
 
 #endif // HELIX_HAS_ACE

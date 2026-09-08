@@ -146,6 +146,8 @@ std::unordered_map<std::string, std::string> u1_configfile_extruder_names() {
 
 } // namespace
 
+namespace helix {
+
 // Not in the anonymous namespace: AmsBackendAfc befriends this by name.
 class AfcSharedExtruderHelper : public AmsBackendAfc {
   public:
@@ -190,6 +192,7 @@ class AfcSharedExtruderHelper : public AmsBackendAfc {
         extruder_tool_index_warned_.clear();
     }
 };
+} // namespace helix
 
 TEST_CASE("AFC shared extruders: two units on one extruder draw one toolhead",
           "[ams][afc][toolchanger][topology][shared_extruder]") {

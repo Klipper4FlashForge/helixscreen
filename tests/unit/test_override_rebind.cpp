@@ -28,6 +28,8 @@
 
 using namespace helix;
 
+namespace helix {
+
 class AfcRebindHelper : public AmsBackendAfc {
   public:
     AfcRebindHelper() : AmsBackendAfc(nullptr, nullptr) {
@@ -77,6 +79,7 @@ class AfcRebindHelper : public AmsBackendAfc {
         return own_write_expectation(slot_index, firmware_id);
     }
 };
+} // namespace helix
 
 namespace {
 

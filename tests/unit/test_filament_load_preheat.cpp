@@ -32,6 +32,9 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::SlotInfo;
+using helix::SlotStatus;
+
 using helix::ui::EXTERNAL_SPOOL_SLOT;
 using helix::ui::load_preheat_temp;
 using helix::ui::PreheatTarget;

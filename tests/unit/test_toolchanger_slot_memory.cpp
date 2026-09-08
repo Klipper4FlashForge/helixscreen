@@ -43,9 +43,9 @@
 
 namespace {
 
-class SlotMemoryHelper : public AmsBackendToolChanger {
+class SlotMemoryHelper : public helix::AmsBackendToolChanger {
   public:
-    explicit SlotMemoryHelper(int tool_count) : AmsBackendToolChanger(nullptr, nullptr) {
+    explicit SlotMemoryHelper(int tool_count) : helix::AmsBackendToolChanger(nullptr, nullptr) {
         set_tools(tool_count);
         running_ = true;
     }
@@ -54,13 +54,13 @@ class SlotMemoryHelper : public AmsBackendToolChanger {
         helix::ui::UpdateQueue::instance().drain();
     }
 
-    AmsError execute_gcode(const std::string& gcode) override {
+    helix::AmsError execute_gcode(const std::string& gcode) override {
         sent_.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string& gcode, std::function<void()>) override {
+    helix::AmsError execute_gcode(const std::string& gcode, std::function<void()>) override {
         sent_.push_back(gcode);
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
 
     /// Re-run discovery exactly as AmsState does on reconnect. This is the wipe.
@@ -125,8 +125,8 @@ struct ScopedCacheDir {
     }
 };
 
-SlotInfo blue_petg() {
-    SlotInfo info;
+helix::SlotInfo blue_petg() {
+    helix::SlotInfo info;
     info.color_rgb = 0x1E5AA8;
     info.color_name = "Blue";
     info.material = "PETG";
@@ -166,7 +166,7 @@ TEST_CASE("Rediscovery does not leak one tool's spool onto another",
     // Slot 0 was never edited: it must still read the untouched default, not
     // slot 1's colour.
     auto untouched = h.get_slot_info(0);
-    CHECK(untouched.color_rgb == AMS_DEFAULT_SLOT_COLOR);
+    CHECK(untouched.color_rgb == helix::AMS_DEFAULT_SLOT_COLOR);
     CHECK(untouched.material.empty());
 }
 
@@ -185,7 +185,7 @@ TEST_CASE("A status frame does not undo the user's edit", "[ams][toolchanger][sl
 
 TEST_CASE("persist=false is a preview, not a memory", "[ams][toolchanger][slot_memory]") {
     SlotMemoryHelper h(4);
-    SlotInfo info = blue_petg();
+    helix::SlotInfo info = blue_petg();
     REQUIRE(h.set_slot_info(1, info, /*persist=*/false).success());
 
     // Visible immediately, because set_slot_info still writes the live SlotInfo.
@@ -193,7 +193,7 @@ TEST_CASE("persist=false is a preview, not a memory", "[ams][toolchanger][slot_m
 
     // But nothing was staged, so the wipe takes it.
     h.set_tools(4);
-    CHECK(h.get_slot_info(1).color_rgb == AMS_DEFAULT_SLOT_COLOR);
+    CHECK(h.get_slot_info(1).color_rgb == helix::AMS_DEFAULT_SLOT_COLOR);
 }
 
 TEST_CASE("An edit that also remaps a tool keeps both", "[ams][toolchanger][slot_memory]") {
@@ -202,7 +202,7 @@ TEST_CASE("An edit that also remaps a tool keeps both", "[ams][toolchanger][slot
     // after it would silently drop the metadata on exactly this call.
     SlotMemoryHelper h(4);
 
-    SlotInfo info = blue_petg();
+    helix::SlotInfo info = blue_petg();
     info.mapped_tool = 3; // slot 1 should answer to T3
 
     REQUIRE(h.set_slot_info(1, info, /*persist=*/true).success());
@@ -228,10 +228,10 @@ namespace {
 
 /// A backend wired to a mock Moonraker, so additional_start_checks() actually
 /// builds the store and does the blocking load.
-class StoreBackedHelper : public AmsBackendToolChanger {
+class StoreBackedHelper : public helix::AmsBackendToolChanger {
   public:
     explicit StoreBackedHelper(IMoonrakerAPI* api, int tool_count)
-        : AmsBackendToolChanger(api, nullptr) {
+        : helix::AmsBackendToolChanger(api, nullptr) {
         std::vector<std::string> names;
         for (int i = 0; i < tool_count; ++i) {
             names.push_back("T" + std::to_string(i));
@@ -244,11 +244,11 @@ class StoreBackedHelper : public AmsBackendToolChanger {
         helix::ui::UpdateQueue::instance().drain();
     }
 
-    AmsError execute_gcode(const std::string&) override {
-        return AmsErrorHelper::success();
+    helix::AmsError execute_gcode(const std::string&) override {
+        return helix::AmsErrorHelper::success();
     }
-    AmsError execute_gcode(const std::string&, std::function<void()>) override {
-        return AmsErrorHelper::success();
+    helix::AmsError execute_gcode(const std::string&, std::function<void()>) override {
+        return helix::AmsErrorHelper::success();
     }
 };
 
@@ -265,13 +265,13 @@ TEST_CASE("Tool-changer slot metadata round-trips through Moonraker",
     // --- session 1: the user edits tool 1 -----------------------------------
     {
         StoreBackedHelper h(&api, 4);
-        ToolChangerTestAccess::call_on_started(h);
+        helix::ToolChangerTestAccess::call_on_started(h);
 
         // The SHARED namespace, not a private one. AFC and Happy Hare must use a
         // private namespace because their Klipper plugins own lane_data and AFC
         // wipes it every boot; klipper-toolchanger has no such plugin, so these
         // records are meant to interoperate.
-        CHECK(ToolChangerTestAccess::store_namespace(h) == "lane_data");
+        CHECK(helix::ToolChangerTestAccess::store_namespace(h) == "lane_data");
 
         REQUIRE(h.set_slot_info(1, blue_petg(), /*persist=*/true).success());
     }
@@ -296,9 +296,9 @@ TEST_CASE("Tool-changer slot metadata round-trips through Moonraker",
     {
         StoreBackedHelper fresh(&api, 4);
         // Before the load, the slot is whatever initialize_tools() built.
-        CHECK(fresh.get_slot_info(1).color_rgb == AMS_DEFAULT_SLOT_COLOR);
+        CHECK(fresh.get_slot_info(1).color_rgb == helix::AMS_DEFAULT_SLOT_COLOR);
 
-        ToolChangerTestAccess::call_on_started(fresh);
+        helix::ToolChangerTestAccess::call_on_started(fresh);
 
         // set_discovered_tools() ran in the constructor, before the store
         // loaded, so the slots predate the overrides. The load has to re-layer
@@ -310,7 +310,7 @@ TEST_CASE("Tool-changer slot metadata round-trips through Moonraker",
         CHECK(slot.spoolman_id == 42);
 
         // A tool the user never touched stays untouched.
-        CHECK(fresh.get_slot_info(0).color_rgb == AMS_DEFAULT_SLOT_COLOR);
+        CHECK(fresh.get_slot_info(0).color_rgb == helix::AMS_DEFAULT_SLOT_COLOR);
     }
 }
 
@@ -333,7 +333,7 @@ TEST_CASE("Starting with a live API does not deadlock",
     state.init_subjects(false);
     MoonrakerAPIMock api(client, state);
 
-    AmsBackendToolChanger backend(&api, &client);
+    helix::AmsBackendToolChanger backend(&api, &client);
     backend.set_discovered_tools({"T0", "T1"});
 
     // If the load moves back into additional_start_checks(), this call never

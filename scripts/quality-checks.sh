@@ -1755,11 +1755,23 @@ if [ -f "scripts/check_namespace_compliance.py" ]; then
   # theme_manager_get_readable_on (declaration + definition), a new member of
   # the global theme_manager_* family it sits in - every accessor in that header
   # is global scope, so putting this one alone in helix:: would make its call
-  # sites the odd ones out. 2336 -> 2337 is filament_op_execute.h forward-
-  # declaring AmsBackend and AmsError, which are global today and belong under
-  # helix:: (prestonbrown/helixscreen#1370); a forward declaration has to
-  # follow the type, so this entry retires when the types move, not before.
-  if python3 scripts/check_namespace_compliance.py --max-allowed 2337 --summary >/tmp/namespace_check.out 2>&1; then
+  # sites the odd ones out. 2336 -> 2337 was filament_op_execute.h forward-
+  # declaring the then-global AmsBackend and AmsError; that entry retires with
+  # the AMS layer's move under helix:: (#1370). 2337 -> 2298 is the AMS backend
+  # class layer: AmsBackend, AmsSubscriptionBackend, the concrete
+  # backends and the mock with their per-backend value structs and test-access
+  # forward declarations, AmsState, and the headers that forward-declared
+  # AmsBackend at global scope (filament_sensor_manager.h's test-access
+  # forward declarations went with the RunoutScopeTestAccess it shares with
+  # the Snapmaker backend). 2298 -> 2290 is ams_error.h (AmsResult, AmsError,
+  # AmsErrorHelper and the result-to-string helper) and ams_step_operation.h
+  # following the backends into helix::. 2290 -> 2242 is ams_types.h: every
+  # AMS value type, enum, constant and inline helper it declared at global
+  # scope, plus the SlotInfo and DryingPreset forward declarations that
+  # followed them. 2242 -> 2239 is main's own slack, picked up by the merge:
+  # dropping the Plugins overlay (be1e9a0) retired three globals without a
+  # ratchet.
+  if python3 scripts/check_namespace_compliance.py --max-allowed 2239 --summary >/tmp/namespace_check.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/namespace_check.out

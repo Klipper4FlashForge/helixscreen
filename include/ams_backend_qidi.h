@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+namespace helix {
+
 /// AMS backend stub for the QIDI Box filament changer.
 ///
 /// The QIDI Box is a 4-slot hub-style filament changer (chainable up to 16
@@ -317,5 +319,7 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     static int resolve_vendor_id(const std::map<int, std::string>& vendors,
                                  const std::string& brand);
 };
+
+} // namespace helix
 
 #endif // HELIX_HAS_QIDI

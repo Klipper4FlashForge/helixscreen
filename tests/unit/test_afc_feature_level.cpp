@@ -105,6 +105,8 @@ TEST_CASE("AFC feature detection accepts any field of the v1.2.0 block",
     }
 }
 
+namespace helix {
+
 /// Drives the real status path so the prefix learner can be asserted.
 class AfcFeatureLevelHelper : public AmsBackendAfc {
   public:
@@ -121,6 +123,7 @@ class AfcFeatureLevelHelper : public AmsBackendAfc {
         return lane_object_prefix_;
     }
 };
+} // namespace helix
 
 TEST_CASE("AFC feature probe learns the lane prefix from a status frame",
           "[ams][afc][feature-level]") {

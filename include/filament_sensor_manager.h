@@ -25,6 +25,8 @@ class IMoonrakerAPI;
 #include <utility>
 #include <vector>
 
+namespace helix {
+
 // Test-only friend (defined in tests/unit/test_runout_empty_lane_scope.cpp) used
 // to set per-sensor roles directly, bypassing the single-RUNOUT exclusivity in
 // set_sensor_role() so multi-lane (Snapmaker) runout scenarios can be exercised.
@@ -36,8 +38,6 @@ class BypassArmingTestAccess;
 class PostUnloadGraceTestAccess;
 
 class AmsBackend;
-
-namespace helix {
 
 enum class PrintJobState;
 
@@ -547,9 +547,9 @@ class FilamentSensorManager : public helix::sensors::ISensorManager {
 
   private:
     friend class FilamentSensorManagerTestAccess;
-    friend class ::RunoutScopeTestAccess;
-    friend class ::BypassArmingTestAccess;
-    friend class ::PostUnloadGraceTestAccess;
+    friend class RunoutScopeTestAccess;
+    friend class BypassArmingTestAccess;
+    friend class PostUnloadGraceTestAccess;
 
     FilamentSensorManager();
     ~FilamentSensorManager();
@@ -583,7 +583,7 @@ class FilamentSensorManager : public helix::sensors::ISensorManager {
     /// availability gate + per-lane scan).
     struct ScopedRunoutScan {
         std::vector<std::pair<int, int>> empty_lanes; ///< (tool, slot) genuinely empty
-        ::AmsBackend* backend = nullptr;              ///< active backend (nullptr -> no lane truth)
+        AmsBackend* backend = nullptr;                ///< active backend (nullptr -> no lane truth)
         bool no_used_tools = false;                   ///< tools_used was empty
         bool runout_configured = false;               ///< a RUNOUT-role sensor exists
         bool runout_enabled = false;                  ///< master && sensor enabled

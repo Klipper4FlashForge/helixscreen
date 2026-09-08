@@ -166,7 +166,7 @@ static void filament_path_click_cb(lv_event_t* e) {
 
     // For PARALLEL topology (tool changers), accept clicks on toolheads AND the
     // filament line/spool area (top half of canvas, above the sensor dots)
-    if (data->topology == static_cast<int>(PathTopology::PARALLEL) && data->slot_callback) {
+    if (data->topology == static_cast<int>(helix::PathTopology::PARALLEL) && data->slot_callback) {
         int32_t toolhead_y = y_off + (int32_t)(height * PARALLEL_TOOLHEAD_Y_RATIO);
         int32_t sensor_y = y_off + (int32_t)(height * PARALLEL_SENSOR_Y_RATIO);
         int32_t tool_scale = LV_MAX(6, data->theme.extruder_scale * 2 / 3);
@@ -367,10 +367,10 @@ static void filament_path_xml_apply(lv_xml_parser_state_t* state, const char** a
             data->active_slot = atoi(value);
             needs_redraw = true;
         } else if (strcmp(name, "filament_segment") == 0) {
-            data->filament_segment = LV_CLAMP(atoi(value), 0, PATH_SEGMENT_COUNT - 1);
+            data->filament_segment = LV_CLAMP(atoi(value), 0, helix::PATH_SEGMENT_COUNT - 1);
             needs_redraw = true;
         } else if (strcmp(name, "error_segment") == 0) {
-            data->error_segment = LV_CLAMP(atoi(value), 0, PATH_SEGMENT_COUNT - 1);
+            data->error_segment = LV_CLAMP(atoi(value), 0, helix::PATH_SEGMENT_COUNT - 1);
             needs_redraw = true;
         } else if (strcmp(name, "anim_progress") == 0) {
             data->anim.progress = LV_CLAMP(atoi(value), 0, 100);
@@ -523,7 +523,7 @@ void ui_filament_path_canvas_set_filament_segment(lv_obj_t* obj, int segment) {
     if (!data)
         return;
 
-    int new_segment = LV_CLAMP(segment, 0, PATH_SEGMENT_COUNT - 1);
+    int new_segment = LV_CLAMP(segment, 0, helix::PATH_SEGMENT_COUNT - 1);
 
     // When not in eject mode and the active slot has a prep sensor, clamp the
     // minimum displayed segment to LANE so the retract animation stops at the
@@ -531,8 +531,8 @@ void ui_filament_path_canvas_set_filament_segment(lv_obj_t* obj, int segment) {
     if (!data->eject_mode && data->active_slot >= 0 &&
         data->active_slot < FilamentPathData::MAX_SLOTS &&
         data->slot_has_prep_sensor[data->active_slot] && new_segment > 0 &&
-        new_segment < static_cast<int>(PathSegment::LANE)) {
-        new_segment = static_cast<int>(PathSegment::LANE);
+        new_segment < static_cast<int>(helix::PathSegment::LANE)) {
+        new_segment = static_cast<int>(helix::PathSegment::LANE);
     }
 
     int old_segment = data->filament_segment;
@@ -550,7 +550,7 @@ void ui_filament_path_canvas_set_filament_segment(lv_obj_t* obj, int segment) {
     // setup) are not real flow operations -- don't stop flow for those.
     if (data->anim.flow_active) {
         int step = std::abs(new_segment - old_segment);
-        bool is_terminal = (new_segment == 0 || new_segment == PATH_SEGMENT_COUNT - 1);
+        bool is_terminal = (new_segment == 0 || new_segment == helix::PATH_SEGMENT_COUNT - 1);
         if (is_terminal && step <= 2) {
             stop_flow_animation(obj, data);
         }
@@ -564,7 +564,7 @@ void ui_filament_path_canvas_set_error_segment(lv_obj_t* obj, int segment) {
     if (!data)
         return;
 
-    int new_error = LV_CLAMP(segment, 0, PATH_SEGMENT_COUNT - 1);
+    int new_error = LV_CLAMP(segment, 0, helix::PATH_SEGMENT_COUNT - 1);
     int old_error = data->error_segment;
 
     if (new_error == old_error)
@@ -631,8 +631,8 @@ void ui_filament_path_canvas_animate_segment(lv_obj_t* obj, int from_segment, in
     if (!data)
         return;
 
-    int from = LV_CLAMP(from_segment, 0, PATH_SEGMENT_COUNT - 1);
-    int to = LV_CLAMP(to_segment, 0, PATH_SEGMENT_COUNT - 1);
+    int from = LV_CLAMP(from_segment, 0, helix::PATH_SEGMENT_COUNT - 1);
+    int to = LV_CLAMP(to_segment, 0, helix::PATH_SEGMENT_COUNT - 1);
 
     if (from != to) {
         start_segment_animation(obj, data, from, to);
@@ -667,7 +667,7 @@ void ui_filament_path_canvas_set_slot_filament(lv_obj_t* obj, int slot_index, in
         return;
 
     auto& state = data->slot_filament_states[slot_index];
-    PathSegment new_segment = static_cast<PathSegment>(segment);
+    helix::PathSegment new_segment = static_cast<helix::PathSegment>(segment);
 
     if (state.segment != new_segment || state.color != color) {
         state.segment = new_segment;
@@ -681,7 +681,7 @@ void ui_filament_path_canvas_set_slot_filament(lv_obj_t* obj, int slot_index, in
 int ui_filament_path_canvas_get_slot_filament(lv_obj_t* obj, int slot_index) {
     auto* data = get_data(obj);
     if (!data || slot_index < 0 || slot_index >= FilamentPathData::MAX_SLOTS)
-        return static_cast<int>(PathSegment::NONE);
+        return static_cast<int>(helix::PathSegment::NONE);
     return static_cast<int>(data->slot_filament_states[slot_index].segment);
 }
 
@@ -773,8 +773,8 @@ void ui_filament_path_canvas_clear_slot_filaments(lv_obj_t* obj) {
 
     bool changed = false;
     for (int i = 0; i < FilamentPathData::MAX_SLOTS; i++) {
-        if (data->slot_filament_states[i].segment != PathSegment::NONE) {
-            data->slot_filament_states[i].segment = PathSegment::NONE;
+        if (data->slot_filament_states[i].segment != helix::PathSegment::NONE) {
+            data->slot_filament_states[i].segment = helix::PathSegment::NONE;
             data->slot_filament_states[i].color = 0x808080;
             changed = true;
         }

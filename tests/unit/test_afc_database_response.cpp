@@ -28,6 +28,8 @@
 using namespace helix;
 using json = nlohmann::json;
 
+namespace helix {
+
 /// Reaches the response-application methods without needing a live client.
 class AfcDatabaseResponseHelper : public AmsBackendAfc {
   public:
@@ -46,6 +48,7 @@ class AfcDatabaseResponseHelper : public AmsBackendAfc {
         return afc_version_;
     }
 };
+} // namespace helix
 
 namespace {
 

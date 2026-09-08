@@ -38,6 +38,8 @@
 #include <sstream>
 #include <thread>
 
+namespace helix {
+
 using json = nlohmann::json;
 
 namespace {
@@ -6665,5 +6667,7 @@ void AmsBackendAd5xIfs::check_action_timeout() {
         set_operation_detail_locked(timeout_detail);
     }
 }
+
+} // namespace helix
 
 #endif // HELIX_HAS_IFS

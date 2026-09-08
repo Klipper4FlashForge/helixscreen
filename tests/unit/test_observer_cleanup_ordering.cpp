@@ -256,16 +256,16 @@ TEST_CASE_METHOD(LVGLTestFixture, "Observer cleanup: cleanup resets all pending 
     // controller resolves its backend through AmsState, so the mock must be
     // installed there (same idiom as test_bypass_toggle_controller.cpp).
     get_printer_state().init_subjects(false);
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     ams.init_subjects(false);
-    auto owned = std::make_unique<AmsBackendMock>(4);
-    AmsBackendMock* backend = owned.get();
+    auto owned = std::make_unique<helix::AmsBackendMock>(4);
+    helix::AmsBackendMock* backend = owned.get();
     backend->set_operation_delay(0);
     ams.set_backend(std::move(owned));
     REQUIRE(backend->start());
     lv_subject_set_int(get_printer_state().get_print_state_enum_subject(),
                        static_cast<int>(helix::PrintJobState::STANDBY));
-    REQUIRE(backend->load_filament(0).result == AmsResult::SUCCESS);
+    REQUIRE(backend->load_filament(0).result == helix::AmsResult::SUCCESS);
     backend->wait_for_operation_thread();
     drain();
 

@@ -40,6 +40,8 @@ nlohmann::json tool_record(const char* color, const char* material, const char* 
 
 constexpr uint32_t kDefaultColor = AMS_DEFAULT_SLOT_COLOR;
 
+namespace helix {
+
 /// Namespace scope, not anonymous: ams_backend_afc.h befriends this by name.
 /// Slots known (post-discovery), mapping-free unless a stepper delta says
 /// otherwise. Pass an empty vector for the pre-discovery registry.
@@ -94,6 +96,7 @@ class AfcLaneDataToolKeyHelper : public AmsBackendAfc {
         return get_slot_info(slot_index).spoolman_id;
     }
 };
+} // namespace helix
 
 // ============================================================================
 // T(n) keys resolve through the tool mapping

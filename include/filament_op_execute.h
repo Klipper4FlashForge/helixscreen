@@ -27,8 +27,10 @@
 
 #include <functional>
 
+namespace helix {
 class AmsBackend;
 struct AmsError;
+} // namespace helix
 
 namespace helix::ui {
 

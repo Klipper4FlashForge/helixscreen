@@ -23,6 +23,8 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsType;
+
 namespace {
 
 // Build a discovery whose mmu_type() == `type`, with the minimum object list to

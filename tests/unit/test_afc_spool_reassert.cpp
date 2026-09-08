@@ -28,6 +28,8 @@
 
 using namespace helix;
 
+namespace helix {
+
 class AfcReassertHelper : public AmsBackendAfc {
   public:
     AfcReassertHelper() : AmsBackendAfc(nullptr, nullptr) {
@@ -93,6 +95,7 @@ class AfcReassertHelper : public AmsBackendAfc {
 
     std::vector<std::string> captured_gcodes;
 };
+} // namespace helix
 
 namespace {
 

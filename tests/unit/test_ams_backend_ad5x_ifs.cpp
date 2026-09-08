@@ -34,6 +34,25 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AMS_DEFAULT_SLOT_COLOR;
+using helix::AmsAction;
+using helix::AmsBackend;
+using helix::AmsBackendAfc;
+using helix::AmsError;
+using helix::AmsErrorHelper;
+using helix::AmsResult;
+using helix::AmsState;
+using helix::AmsSystemInfo;
+using helix::AmsType;
+using helix::PathSegment;
+using helix::PathTopology;
+using helix::SlotInfo;
+using helix::SlotStatus;
+using helix::StepOperationType;
+
+using helix::Ad5xIfsTestAccess;
+using helix::AmsBackendAd5xIfs;
+
 // Friend-class shim matching the one in test_filament_slot_override_store.cpp
 // (declared friend in filament_slot_override_store.h per L065). Allows our
 // Task 10 tests to redirect the store's read-cache to a per-test tmp dir so

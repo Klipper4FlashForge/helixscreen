@@ -26,7 +26,9 @@
 #include <vector>
 
 // Forward declarations
+namespace helix {
 class AmsBackend;
+} // namespace helix
 
 namespace helix::ui {
 

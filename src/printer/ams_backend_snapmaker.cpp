@@ -28,6 +28,8 @@
 #include <utility>
 #include <vector>
 
+namespace helix {
+
 namespace {
 
 // Snapmaker's recognized filament SUB_TYPE product lines. The RFID read path
@@ -2040,5 +2042,7 @@ std::string AmsBackendSnapmaker::preprint_gcode(const std::set<int>& tools_used,
     }
     return out;
 }
+
+} // namespace helix
 
 #endif // HELIX_HAS_SNAPMAKER

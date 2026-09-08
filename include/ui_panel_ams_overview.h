@@ -132,12 +132,12 @@ class AmsOverviewPanel : public PanelBase {
         lifetime_; ///< Guards deferred callbacks from accessing destroyed panel
 
     // === Setup Helpers ===
-    void create_unit_cards(const AmsSystemInfo& info);
+    void create_unit_cards(const helix::AmsSystemInfo& info);
     // The mini bars take no current_slot: the active-lane outline comes from the
     // per-slot active-loaded subject, not from comparing against current_slot.
-    void update_unit_card(UnitCard& card, const AmsUnit& unit);
-    void create_mini_bars(UnitCard& card, const AmsUnit& unit);
-    void refresh_system_path(const AmsSystemInfo& info, int current_slot);
+    void update_unit_card(UnitCard& card, const helix::AmsUnit& unit);
+    void create_mini_bars(UnitCard& card, const helix::AmsUnit& unit);
+    void refresh_system_path(const helix::AmsSystemInfo& info, int current_slot);
     /// Re-sample every unit card's centre and push it to the path canvas. Must run
     /// on every card-row scroll, not just on refresh - see on_cards_row_scrolled().
     /// @param relayout flush pending layout first; false on the scroll path, where
@@ -150,10 +150,10 @@ class AmsOverviewPanel : public PanelBase {
 
     // === Detail View Helpers ===
     void refresh_detail_if_needed(); ///< Lightweight refresh — only rebuilds on structural change
-    void create_detail_slots(const AmsUnit& unit);
+    void create_detail_slots(const helix::AmsUnit& unit);
     void destroy_detail_slots();
-    void setup_detail_path_canvas(const AmsUnit& unit, const AmsSystemInfo& info);
-    void update_detail_header(const AmsUnit& unit, const AmsSystemInfo& info);
+    void setup_detail_path_canvas(const helix::AmsUnit& unit, const helix::AmsSystemInfo& info);
+    void update_detail_header(const helix::AmsUnit& unit, const helix::AmsSystemInfo& info);
 
     // === Slot Interaction ===
     std::unique_ptr<helix::ui::AmsContextMenu> context_menu_; ///< Slot context menu (lazy init)

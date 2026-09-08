@@ -96,19 +96,20 @@ constexpr int EXPECTED_BACKEND_COUNT = 3
 /// to any other failure a backend might return first. Derived from the error
 /// factory rather than hardcoding copy, so reworded messages do not silently
 /// turn these assertions into tautologies.
-bool is_print_refusal(const AmsError& e) {
-    if (e.success() || e.result != AmsResult::WRONG_STATE) {
+bool is_print_refusal(const helix::AmsError& e) {
+    if (e.success() || e.result != helix::AmsResult::WRONG_STATE) {
         return false;
     }
     static const std::string printing_msg =
-        AmsErrorHelper::print_active(/*is_paused=*/false).user_msg;
-    static const std::string paused_msg = AmsErrorHelper::print_active(/*is_paused=*/true).user_msg;
+        helix::AmsErrorHelper::print_active(/*is_paused=*/false).user_msg;
+    static const std::string paused_msg =
+        helix::AmsErrorHelper::print_active(/*is_paused=*/true).user_msg;
     return e.user_msg == printing_msg || e.user_msg == paused_msg;
 }
 
 struct Op {
     const char* name;
-    std::function<AmsError(AmsBackend&)> invoke;
+    std::function<helix::AmsError(helix::AmsBackend&)> invoke;
 };
 
 /// The three ops that are toolhead motion on every backend by definition:
@@ -118,9 +119,9 @@ struct Op {
 /// classification below.
 const std::vector<Op>& motion_ops() {
     static const std::vector<Op> ops = {
-        {"load_filament", [](AmsBackend& b) { return b.load_filament(0); }},
-        {"unload_filament", [](AmsBackend& b) { return b.unload_filament(0); }},
-        {"change_tool", [](AmsBackend& b) { return b.change_tool(0); }},
+        {"load_filament", [](helix::AmsBackend& b) { return b.load_filament(0); }},
+        {"unload_filament", [](helix::AmsBackend& b) { return b.unload_filament(0); }},
+        {"change_tool", [](helix::AmsBackend& b) { return b.change_tool(0); }},
     };
     return ops;
 }
@@ -129,7 +130,7 @@ const std::vector<Op>& motion_ops() {
 /// reached the wire. Equality across two ops is how select_slot's "this really
 /// is a tool change" classification is derived without naming backends.
 struct Outcome {
-    AmsError err;
+    helix::AmsError err;
     std::vector<std::string> gcode;
 
     bool operator==(const Outcome& o) const {
@@ -156,8 +157,8 @@ struct FactoryGateFixture : public LVGLTestFixture {
     /// not a skip. That matters: a backend stuck at running_ == false refuses
     /// every op with not_connected, which would let a missing print gate sail
     /// through as "well, it refused".
-    std::unique_ptr<AmsBackend> build(AmsType type) {
-        auto backend = AmsBackend::create(type, api.get(), &mock_client);
+    std::unique_ptr<helix::AmsBackend> build(helix::AmsType type) {
+        auto backend = helix::AmsBackend::create(type, api.get(), &mock_client);
         if (!backend) {
             return nullptr;
         }
@@ -168,7 +169,7 @@ struct FactoryGateFixture : public LVGLTestFixture {
         // Tool Changer refuses to start until tools are discovered. A future
         // backend with its own start precondition trips the is_running()
         // REQUIRE below rather than quietly testing nothing.
-        if (auto* tc = dynamic_cast<AmsBackendToolChanger*>(backend.get())) {
+        if (auto* tc = dynamic_cast<helix::AmsBackendToolChanger*>(backend.get())) {
             tc->set_discovered_tools({"tool0", "tool1"});
         }
 
@@ -176,7 +177,7 @@ struct FactoryGateFixture : public LVGLTestFixture {
         REQUIRE(backend->is_running());
         // check_preconditions() refuses a busy AMS before it ever looks at print
         // state, so a backend that came up busy would mask the gate under test.
-        REQUIRE(backend->get_current_action() == AmsAction::IDLE);
+        REQUIRE(backend->get_current_action() == helix::AmsAction::IDLE);
 
         mock_client.clear_gcode_script_history();
         return backend;
@@ -185,7 +186,7 @@ struct FactoryGateFixture : public LVGLTestFixture {
     /// Run @p op on a freshly built backend and record everything observable.
     /// Fresh each time so one op's side effects (CFS stamps action=LOADING on
     /// dispatch) cannot change what the next one is allowed to do.
-    Outcome run(AmsType type, const std::function<AmsError(AmsBackend&)>& op) {
+    Outcome run(helix::AmsType type, const std::function<helix::AmsError(helix::AmsBackend&)>& op) {
         auto backend = build(type);
         REQUIRE(backend != nullptr);
         mock_client.clear_gcode_script_history();
@@ -202,11 +203,11 @@ struct FactoryGateFixture : public LVGLTestFixture {
     }
 
     /// Every AmsType this build can actually produce.
-    std::vector<AmsType> buildable_types() {
-        std::vector<AmsType> types;
+    std::vector<helix::AmsType> buildable_types() {
+        std::vector<helix::AmsType> types;
         for (int raw = 1; raw < AMS_TYPE_PROBE_LIMIT; ++raw) {
-            const auto type = static_cast<AmsType>(raw);
-            if (AmsBackend::create(type, api.get(), &mock_client)) {
+            const auto type = static_cast<helix::AmsType>(raw);
+            if (helix::AmsBackend::create(type, api.get(), &mock_client)) {
                 types.push_back(type);
             }
         }
@@ -235,9 +236,9 @@ TEST_CASE_METHOD(FactoryGateFixture, "AmsBackend::create builds a distinct backe
     CAPTURE(types.size());
     CHECK(types.size() >= EXPECTED_BACKEND_COUNT);
 
-    for (AmsType type : types) {
-        CAPTURE(ams_type_to_string(type));
-        auto backend = AmsBackend::create(type, api.get(), &mock_client);
+    for (helix::AmsType type : types) {
+        CAPTURE(helix::ams_type_to_string(type));
+        auto backend = helix::AmsBackend::create(type, api.get(), &mock_client);
         REQUIRE(backend != nullptr);
         CHECK(backend->get_type() == type);
     }
@@ -253,9 +254,9 @@ TEST_CASE_METHOD(FactoryGateFixture,
     set_print_state(helix::PrintJobState::PRINTING);
 
     int checked = 0;
-    for (AmsType type : buildable_types()) {
+    for (helix::AmsType type : buildable_types()) {
         for (const Op& op : motion_ops()) {
-            CAPTURE(ams_type_to_string(type), op.name);
+            CAPTURE(helix::ams_type_to_string(type), op.name);
 
             const Outcome out = run(type, op.invoke);
 
@@ -287,14 +288,14 @@ TEST_CASE_METHOD(FactoryGateFixture,
                  "[ams][safety][factory]") {
     set_print_state(helix::PrintJobState::PAUSED);
 
-    for (AmsType type : buildable_types()) {
+    for (helix::AmsType type : buildable_types()) {
         auto probe = build(type);
         REQUIRE(probe != nullptr);
         const bool self_homes = probe->filament_ops_self_home();
         probe.reset();
 
         for (const Op& op : motion_ops()) {
-            CAPTURE(ams_type_to_string(type), op.name, self_homes);
+            CAPTURE(helix::ams_type_to_string(type), op.name, self_homes);
 
             const Outcome out = run(type, op.invoke);
             CAPTURE(out.err.user_msg, out.err.technical_msg);
@@ -327,11 +328,11 @@ TEST_CASE_METHOD(FactoryGateFixture,
 
 TEST_CASE_METHOD(FactoryGateFixture, "select_slot is print-gated exactly when it is a tool change",
                  "[ams][safety][factory]") {
-    auto select_slot = [](AmsBackend& b) { return b.select_slot(0); };
-    auto change_tool = [](AmsBackend& b) { return b.change_tool(0); };
+    auto select_slot = [](helix::AmsBackend& b) { return b.select_slot(0); };
+    auto change_tool = [](helix::AmsBackend& b) { return b.change_tool(0); };
 
-    for (AmsType type : buildable_types()) {
-        CAPTURE(ams_type_to_string(type));
+    for (helix::AmsType type : buildable_types()) {
+        CAPTURE(helix::ams_type_to_string(type));
 
         // Classify on an idle printer, where no gate is in the way.
         set_print_state(helix::PrintJobState::STANDBY);

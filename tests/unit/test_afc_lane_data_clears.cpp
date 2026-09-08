@@ -25,6 +25,8 @@
 
 using namespace helix;
 
+namespace helix {
+
 class AfcLaneDataClearHelper : public AmsBackendAfc {
   public:
     AfcLaneDataClearHelper() : AmsBackendAfc(nullptr, nullptr) {
@@ -92,6 +94,7 @@ class AfcLaneDataClearHelper : public AmsBackendAfc {
         return get_slot_info(slot_index).spool_name;
     }
 };
+} // namespace helix
 
 namespace {
 

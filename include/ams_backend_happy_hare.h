@@ -15,6 +15,8 @@
 #include <optional>
 #include <string>
 
+namespace helix {
+
 /**
  * @file ams_backend_happy_hare.h
  * @brief Happy Hare MMU backend implementation
@@ -567,3 +569,5 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     /// Get the config default int for a given action key
     [[nodiscard]] int get_config_default_int(const std::string& key) const;
 };
+
+} // namespace helix

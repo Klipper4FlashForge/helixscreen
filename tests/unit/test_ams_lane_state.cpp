@@ -14,6 +14,9 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::SlotInfo;
+using helix::SlotStatus;
+
 using helix::ui::ASSUMED_FILL_LEVEL;
 using helix::ui::classify_lane;
 using helix::ui::lane_fill_level;

@@ -86,12 +86,12 @@ void BufferStatusModal::init_subjects() {
     subjects_initialized_ = true;
 }
 
-void BufferStatusModal::populate(const AmsSystemInfo& info, int effective_unit) {
+void BufferStatusModal::populate(const helix::AmsSystemInfo& info, int effective_unit) {
     // Cleared up front: the modal's subjects are static, so a message left from
     // a previous open would otherwise sit under a supported backend's body.
     lv_subject_copy_string(&unsupported_subject_, "");
 
-    if (info.type == AmsType::HAPPY_HARE) {
+    if (info.type == helix::AmsType::HAPPY_HARE) {
         lv_subject_set_int(&type_subject_, 1);
 
         // Description based on bias
@@ -144,7 +144,7 @@ void BufferStatusModal::populate(const AmsSystemInfo& info, int effective_unit) 
         // Meter visibility
         lv_subject_set_int(&show_meter_subject_, has_bias ? 1 : 0);
 
-    } else if (info.type == AmsType::AFC) {
+    } else if (info.type == helix::AmsType::AFC) {
         lv_subject_set_int(&type_subject_, 2);
         lv_subject_set_int(&show_meter_subject_, 0);
 
@@ -222,7 +222,7 @@ void BufferStatusModal::on_show() {
     }
 
     // Create UiBufferMeter programmatically in the meter column
-    bool has_bias = info_.type == AmsType::HAPPY_HARE && info_.sync_feedback_bias > -1.5f;
+    bool has_bias = info_.type == helix::AmsType::HAPPY_HARE && info_.sync_feedback_bias > -1.5f;
     if (has_bias && dialog()) {
         lv_obj_t* meter_col = lv_obj_find_by_name(dialog(), "meter_col");
         if (meter_col) {
@@ -239,7 +239,7 @@ void BufferStatusModal::on_show() {
     }
 }
 
-void BufferStatusModal::show_for(const AmsSystemInfo& info, int effective_unit) {
+void BufferStatusModal::show_for(const helix::AmsSystemInfo& info, int effective_unit) {
     auto modal = std::make_unique<BufferStatusModal>();
     modal->info_ = info;
     modal->effective_unit_ = effective_unit;

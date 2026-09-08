@@ -9,7 +9,9 @@
 
 #include <functional>
 
+namespace helix {
 class AmsBackend;
+} // namespace helix
 
 namespace helix::ui {
 

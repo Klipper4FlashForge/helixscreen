@@ -22,10 +22,10 @@
 #include "toolchanger_addon.h"
 
 class IMoonrakerAPI;
+namespace helix {
 #ifdef HELIX_ENABLE_MOCKS
 class AmsBackendMock;
 #endif
-namespace helix {
 class IMoonrakerClient;
 class PrinterDiscovery;
 } // namespace helix
@@ -45,6 +45,8 @@ typedef struct _lv_subject_t lv_subject_t;
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+namespace helix {
 
 /**
  * @brief Abstract interface for AMS/MMU backend implementations
@@ -2638,3 +2640,5 @@ class AmsBackend {
     mutable std::mutex authored_mappings_mutex_;
     std::map<int, int> authored_mappings_;
 };
+
+} // namespace helix

@@ -53,7 +53,7 @@ class ClogDetectionConfigModal : public Modal {
      * @return The gcode to send, or nullopt when the backend has no equivalent
      */
     [[nodiscard]] static std::optional<std::string>
-    build_detection_mode_gcode(AmsType type, int mode, float det_length);
+    build_detection_mode_gcode(helix::AmsType type, int mode, float det_length);
 
     const char* get_name() const override {
         return "Clog Detection Config";

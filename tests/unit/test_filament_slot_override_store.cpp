@@ -134,7 +134,7 @@ TEST_CASE("populate_temps_from_slot_info wires SlotInfo temps onto the override"
 
     SECTION("nozzle_temp_min < max → midpoint") {
         FilamentSlotOverride o;
-        SlotInfo info;
+        helix::SlotInfo info;
         info.bed_temp = 60;
         info.nozzle_temp_min = 200;
         info.nozzle_temp_max = 220;
@@ -147,7 +147,7 @@ TEST_CASE("populate_temps_from_slot_info wires SlotInfo temps onto the override"
         // Single-value materials (some firmware-tracked sources don't carry
         // a range) shouldn't fall through to the 0-leaves-fallback branch.
         FilamentSlotOverride o;
-        SlotInfo info;
+        helix::SlotInfo info;
         info.bed_temp = 65;
         info.nozzle_temp_min = 215;
         info.nozzle_temp_max = 215;
@@ -157,7 +157,7 @@ TEST_CASE("populate_temps_from_slot_info wires SlotInfo temps onto the override"
 
     SECTION("nozzle_temp_min set, max unset → just min") {
         FilamentSlotOverride o;
-        SlotInfo info;
+        helix::SlotInfo info;
         info.nozzle_temp_min = 215;
         // nozzle_temp_max = 0
         populate_temps_from_slot_info(o, info);
@@ -171,7 +171,7 @@ TEST_CASE("populate_temps_from_slot_info wires SlotInfo temps onto the override"
         // a stale value the SlotInfo didn't bring.
         o.bed_temp = 99;
         o.nozzle_temp = 99;
-        SlotInfo info;
+        helix::SlotInfo info;
         populate_temps_from_slot_info(o, info);
         CHECK(o.bed_temp == 0);
         CHECK(o.nozzle_temp == 0);
@@ -461,7 +461,7 @@ TEST_CASE("FilamentSlotOverrideStore lane_data carries the real Spoolman filamen
     spool.material = "PLA";
     spool.filament_name = "Ambrosia Pink"; // parse_spool_info maps filament.name here
 
-    SlotInfo slot;
+    helix::SlotInfo slot;
     apply_spool_to_slot(slot, spool);
 
     // The persist path every backend runs: SlotInfo identity → override.
@@ -2475,15 +2475,15 @@ TEST_CASE("lane_key_style_for maps AmsType to key style",
     // Tool changers → Tool. This is the fence against ever using
     // !is_filament_system() as the discriminator: SNAPMAKER is in BOTH lists
     // (ams_types.h), so that predicate would silently misclassify it.
-    CHECK(lane_key_style_for(AmsType::SNAPMAKER) == LaneKeyStyle::Tool);
-    CHECK(lane_key_style_for(AmsType::TOOL_CHANGER) == LaneKeyStyle::Tool);
+    CHECK(lane_key_style_for(helix::AmsType::SNAPMAKER) == LaneKeyStyle::Tool);
+    CHECK(lane_key_style_for(helix::AmsType::TOOL_CHANGER) == LaneKeyStyle::Tool);
     // Every filament-switching system → Lane.
-    CHECK(lane_key_style_for(AmsType::ACE) == LaneKeyStyle::Lane);
-    CHECK(lane_key_style_for(AmsType::CFS) == LaneKeyStyle::Lane);
-    CHECK(lane_key_style_for(AmsType::AD5X_IFS) == LaneKeyStyle::Lane);
-    CHECK(lane_key_style_for(AmsType::HAPPY_HARE) == LaneKeyStyle::Lane);
-    CHECK(lane_key_style_for(AmsType::AFC) == LaneKeyStyle::Lane);
-    CHECK(lane_key_style_for(AmsType::QIDI_BOX) == LaneKeyStyle::Lane);
+    CHECK(lane_key_style_for(helix::AmsType::ACE) == LaneKeyStyle::Lane);
+    CHECK(lane_key_style_for(helix::AmsType::CFS) == LaneKeyStyle::Lane);
+    CHECK(lane_key_style_for(helix::AmsType::AD5X_IFS) == LaneKeyStyle::Lane);
+    CHECK(lane_key_style_for(helix::AmsType::HAPPY_HARE) == LaneKeyStyle::Lane);
+    CHECK(lane_key_style_for(helix::AmsType::AFC) == LaneKeyStyle::Lane);
+    CHECK(lane_key_style_for(helix::AmsType::QIDI_BOX) == LaneKeyStyle::Lane);
 }
 
 // ---------------------------------------------------------------------------
@@ -3324,7 +3324,7 @@ TEST_CASE("FilamentSlotOverrideStore uses the namespace it was given",
 
 TEST_CASE("merge_override rule matrix", "[ams][override-merge]") {
     using helix::ams::merge_override;
-    SlotInfo slot;
+    helix::SlotInfo slot;
     const auto ovr_with = [](int id) {
         helix::ams::FilamentSlotOverride o;
         o.brand = "Polymaker";

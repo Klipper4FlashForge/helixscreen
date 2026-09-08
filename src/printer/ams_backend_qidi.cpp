@@ -31,6 +31,8 @@
 // convention used by afc_64.png, box_turtle_64.png, happy_hare_64.png, etc.
 // The QIDI wordmark / box silhouette is fine — no in-app scaling required.
 
+namespace helix {
+
 namespace {
 // Parse `"slot<N>"` into N when valid and within [0, slot_count).
 // Returns nullopt for the box_extras.py sentinel `"slot-1"` (nothing
@@ -1550,5 +1552,7 @@ AmsError AmsBackendQidi::stop_drying(int unit) {
     return execute_gcode("SET_HEATER_TEMPERATURE HEATER=heater_box" + std::to_string(box) +
                          " TARGET=0");
 }
+
+} // namespace helix
 
 #endif // HELIX_HAS_QIDI

@@ -49,10 +49,10 @@ namespace {
 // gating tests don't cross-pollinate their setup invariants.
 struct TrackerGatingFixture : LVGLTestFixture {
     int backend_idx = 0;
-    AmsBackendMock* mock = nullptr;
+    helix::AmsBackendMock* mock = nullptr;
 
     TrackerGatingFixture() {
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         auto& printer = get_printer_state();
 
         FilamentConsumptionTracker::instance().stop();
@@ -62,13 +62,13 @@ struct TrackerGatingFixture : LVGLTestFixture {
         printer.init_subjects(false);
         ams.clear_external_spool_info();
 
-        auto m = std::make_unique<AmsBackendMock>(4);
+        auto m = std::make_unique<helix::AmsBackendMock>(4);
         m->set_identity_extruder_mapping_for_testing(true);
         mock = m.get();
         backend_idx = ams.add_backend(std::move(m));
 
         for (int s = 0; s < 4; ++s) {
-            SlotInfo info = mock->get_slot_info(s);
+            helix::SlotInfo info = mock->get_slot_info(s);
             info.material = "PLA";
             info.remaining_weight_g = 1000.0f;
             info.total_weight_g = 1000.0f;
@@ -97,7 +97,7 @@ struct TrackerGatingFixture : LVGLTestFixture {
     ~TrackerGatingFixture() override {
         FilamentConsumptionTrackerTestAccess::force_print_state(PrintJobState::COMPLETE);
         FilamentConsumptionTracker::instance().stop();
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         ams.clear_backends();
         ams.clear_external_spool_info();
     }
@@ -110,7 +110,7 @@ TEST_CASE_METHOD(TrackerGatingFixture, "Gating: slot with spoolman_id != 0 not t
     // Link slot 0 to Spoolman BEFORE any delta arrives so the tracker's
     // per-tick re-gate (apply_delta top-of-loop) sees it and disables the
     // sink without decrementing.
-    SlotInfo info = mock->get_slot_info(0);
+    helix::SlotInfo info = mock->get_slot_info(0);
     info.spoolman_id = 42;
     mock->set_slot_info(0, info, /*persist=*/false);
 
@@ -168,7 +168,7 @@ TEST_CASE_METHOD(TrackerGatingFixture, "Mid-print edit rebaselines sink", "[trac
 
     // User edits mid-print to 800 g (delta from last_written_weight_g_
     // exceeds the 0.5 g rebaseline threshold).
-    SlotInfo info = mock->get_slot_info(0);
+    helix::SlotInfo info = mock->get_slot_info(0);
     info.remaining_weight_g = 800.0f;
     mock->set_slot_info(0, info, /*persist=*/false);
 
@@ -192,7 +192,7 @@ TEST_CASE_METHOD(TrackerGatingFixture,
     // Start slot 0 with unknown weight. The fixture's default snapshot at
     // PRINTING-edge already ran with weight=1000, so we force a fresh
     // snapshot cycle with the new -1 to land the sink in the inactive state.
-    SlotInfo info = mock->get_slot_info(0);
+    helix::SlotInfo info = mock->get_slot_info(0);
     info.remaining_weight_g = -1.0f;
     mock->set_slot_info(0, info, /*persist=*/false);
     FilamentConsumptionTrackerTestAccess::force_print_state(PrintJobState::COMPLETE);

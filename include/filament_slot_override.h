@@ -9,7 +9,9 @@
 // Forward declaration — full SlotInfo lives in ams_types.h. Forward-decl keeps
 // this header light (it's pulled into many backends) and avoids a transitive
 // pull-in of the much larger AMS type surface.
+namespace helix {
 struct SlotInfo;
+} // namespace helix
 
 namespace helix::ams {
 

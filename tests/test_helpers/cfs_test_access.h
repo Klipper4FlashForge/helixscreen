@@ -17,8 +17,10 @@
 
 #include "hv/json.hpp"
 
+namespace helix {
+
 // Friend-class shim for AmsBackendCfs -- declared as friend in the backend
-// header (`friend class ::CfsTestAccess;`). Gives tests narrow accessors for
+// header (`friend class helix::CfsTestAccess;`). Gives tests narrow accessors for
 // private override state and the homing-dispatch surface without going
 // through the public get_slot_info path (which layers apply_overrides on top
 // and obscures what the internal maps actually hold), and without widening
@@ -176,3 +178,4 @@ class CfsTestAccess {
         b.on_started();
     }
 };
+} // namespace helix

@@ -12,6 +12,8 @@
 #include <mutex>
 #include <thread>
 
+namespace helix {
+
 /**
  * @file ams_backend_mock.h
  * @brief Mock AMS backend for development and testing
@@ -929,3 +931,5 @@ class AmsBackendMock : public AmsBackend {
     // exercise per-extruder dispatch.
     bool identity_extruder_mapping_ = false;
 };
+
+} // namespace helix

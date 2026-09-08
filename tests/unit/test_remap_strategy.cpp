@@ -34,6 +34,13 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsBackend;
+using helix::AmsBackendMock;
+using helix::AmsError;
+using helix::AmsErrorHelper;
+
+using helix::Ad5xIfsTestAccess;
+
 namespace {
 
 // Minimal concrete subclass of the base to test the default.
@@ -48,17 +55,17 @@ class BaseProbe : public AmsBackend {
         return false;
     }
     void set_event_callback(EventCallback) override {}
-    [[nodiscard]] AmsSystemInfo get_system_info() const override {
+    [[nodiscard]] helix::AmsSystemInfo get_system_info() const override {
         return {};
     }
-    [[nodiscard]] AmsType get_type() const override {
-        return AmsType::NONE;
+    [[nodiscard]] helix::AmsType get_type() const override {
+        return helix::AmsType::NONE;
     }
-    [[nodiscard]] SlotInfo get_slot_info(int) const override {
+    [[nodiscard]] helix::SlotInfo get_slot_info(int) const override {
         return {};
     }
-    [[nodiscard]] AmsAction get_current_action() const override {
-        return AmsAction::IDLE;
+    [[nodiscard]] helix::AmsAction get_current_action() const override {
+        return helix::AmsAction::IDLE;
     }
     [[nodiscard]] int get_current_tool() const override {
         return -1;
@@ -69,17 +76,17 @@ class BaseProbe : public AmsBackend {
     [[nodiscard]] bool is_filament_loaded() const override {
         return false;
     }
-    [[nodiscard]] PathTopology get_topology() const override {
-        return PathTopology::LINEAR;
+    [[nodiscard]] helix::PathTopology get_topology() const override {
+        return helix::PathTopology::LINEAR;
     }
-    [[nodiscard]] PathSegment get_filament_segment() const override {
-        return PathSegment::NONE;
+    [[nodiscard]] helix::PathSegment get_filament_segment() const override {
+        return helix::PathSegment::NONE;
     }
-    [[nodiscard]] PathSegment get_slot_filament_segment(int) const override {
-        return PathSegment::NONE;
+    [[nodiscard]] helix::PathSegment get_slot_filament_segment(int) const override {
+        return helix::PathSegment::NONE;
     }
-    [[nodiscard]] PathSegment infer_error_segment() const override {
-        return PathSegment::NONE;
+    [[nodiscard]] helix::PathSegment infer_error_segment() const override {
+        return helix::PathSegment::NONE;
     }
     AmsError load_filament(int) override {
         return AmsErrorHelper::success();
@@ -102,7 +109,7 @@ class BaseProbe : public AmsBackend {
     AmsError cancel() override {
         return AmsErrorHelper::success();
     }
-    AmsError set_slot_info(int, const SlotInfo&, bool) override {
+    AmsError set_slot_info(int, const helix::SlotInfo&, bool) override {
         return AmsErrorHelper::success();
     }
     AmsError set_tool_mapping_impl(int, int) override {

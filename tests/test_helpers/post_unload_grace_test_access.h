@@ -7,6 +7,8 @@
 #include <chrono>
 #include <mutex>
 
+namespace helix {
+
 // Friend access to FilamentSensorManager (declared as a friend in its header;
 // the manager lives in namespace helix but the friend is a global-namespace
 // class, matching the RunoutScopeTestAccess / BypassArmingTestAccess shims).
@@ -35,3 +37,4 @@ class PostUnloadGraceTestAccess {
         mgr.startup_time_ = std::chrono::steady_clock::now() - std::chrono::minutes(1);
     }
 };
+} // namespace helix

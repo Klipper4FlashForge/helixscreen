@@ -18,11 +18,11 @@
 #include <utility>
 #include <vector>
 
-using namespace helix;
-
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
+
+namespace helix {
 
 AmsBackendToolChanger::AmsBackendToolChanger(IMoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
@@ -1535,3 +1535,5 @@ AmsError AmsBackendToolChanger::execute_device_action(const std::string& action_
     }
     return AmsErrorHelper::not_supported("Device action: " + action_id);
 }
+
+} // namespace helix

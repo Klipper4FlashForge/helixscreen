@@ -275,7 +275,7 @@ void sort_spools_by_recency(std::vector<SpoolInfo>& spools);
  * @param info Target SlotInfo to populate
  * @param spool Source SpoolInfo from Spoolman
  */
-inline void apply_spool_to_slot(SlotInfo& info, const SpoolInfo& spool) {
+inline void apply_spool_to_slot(helix::SlotInfo& info, const SpoolInfo& spool) {
     info.spoolman_id = spool.id;
     info.spoolman_filament_id = spool.filament_id;
     info.spoolman_vendor_id = spool.vendor_id;

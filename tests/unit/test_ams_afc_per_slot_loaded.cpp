@@ -33,6 +33,8 @@
 
 using namespace helix;
 
+namespace helix {
+
 /// Feeds the real Moonraker status path so the parse chain under test is the
 /// production one (parse_afc_state -> parse_afc_stepper -> parse_afc_extruder).
 class AfcPerSlotLoadedHelper : public AmsBackendAfc {
@@ -62,6 +64,7 @@ class AfcPerSlotLoadedHelper : public AmsBackendAfc {
         system_info_.filament_loaded = loaded;
     }
 };
+} // namespace helix
 
 namespace {
 

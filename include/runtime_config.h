@@ -341,7 +341,7 @@ struct RuntimeConfig {
  * @return true if, during a job, this backend surfaces the runout itself and
  *         the generic sensor-edge toast should stand down
  */
-bool backend_owns_runout_during_job(AmsType type);
+bool backend_owns_runout_during_job(helix::AmsType type);
 
 /**
  * @brief Get global runtime configuration

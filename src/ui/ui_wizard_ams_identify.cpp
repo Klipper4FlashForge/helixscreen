@@ -119,8 +119,8 @@ void WizardAmsIdentifyStep::update_display() {
         return;
     }
 
-    auto& ams = AmsState::instance();
-    AmsBackend* backend = ams.get_backend();
+    auto& ams = helix::AmsState::instance();
+    helix::AmsBackend* backend = ams.get_backend();
 
     // Update type via subject (reactive binding)
     std::string type_name = get_ams_type_name();
@@ -135,7 +135,8 @@ void WizardAmsIdentifyStep::update_display() {
     // Set logo image (imperative - images don't support bind_src)
     lv_obj_t* logo = lv_obj_find_by_name(screen_root_, "ams_logo");
     if (logo && backend) {
-        const char* logo_path = AmsState::get_logo_path(backend->get_system_info().type_name);
+        const char* logo_path =
+            helix::AmsState::get_logo_path(backend->get_system_info().type_name);
         if (logo_path && logo_path[0] != '\0') {
             lv_image_set_src(logo, logo_path);
             lv_obj_remove_flag(logo, LV_OBJ_FLAG_HIDDEN);
@@ -149,30 +150,30 @@ void WizardAmsIdentifyStep::update_display() {
 }
 
 std::string WizardAmsIdentifyStep::get_ams_type_name() const {
-    auto& ams = AmsState::instance();
-    AmsBackend* backend = ams.get_backend();
+    auto& ams = helix::AmsState::instance();
+    helix::AmsBackend* backend = ams.get_backend();
 
     if (!backend) {
         return lv_tr("Unknown");
     }
 
-    AmsType type = backend->get_type();
+    helix::AmsType type = backend->get_type();
     switch (type) {
-    case AmsType::AFC:
+    case helix::AmsType::AFC:
         return "AFC (Armored Turtle)";
-    case AmsType::HAPPY_HARE:
+    case helix::AmsType::HAPPY_HARE:
         return "Happy Hare MMU";
-    case AmsType::ACE:
+    case helix::AmsType::ACE:
         return "ACE";
-    case AmsType::TOOL_CHANGER:
+    case helix::AmsType::TOOL_CHANGER:
         return "Tool Changer";
-    case AmsType::AD5X_IFS:
+    case helix::AmsType::AD5X_IFS:
         return "FlashForge IFS";
-    case AmsType::CFS:
+    case helix::AmsType::CFS:
         return "Creality CFS";
-    case AmsType::SNAPMAKER:
+    case helix::AmsType::SNAPMAKER:
         return "Snapmaker SnapSwap";
-    case AmsType::QIDI_BOX:
+    case helix::AmsType::QIDI_BOX:
         return "QIDI Box"; // i18n: do not translate - product name
     default:
         return lv_tr("Unknown");
@@ -180,14 +181,14 @@ std::string WizardAmsIdentifyStep::get_ams_type_name() const {
 }
 
 std::string WizardAmsIdentifyStep::get_ams_details() const {
-    auto& ams = AmsState::instance();
-    AmsBackend* backend = ams.get_backend();
+    auto& ams = helix::AmsState::instance();
+    helix::AmsBackend* backend = ams.get_backend();
 
     if (!backend) {
         return lv_tr("System detected");
     }
 
-    AmsSystemInfo info = backend->get_system_info();
+    helix::AmsSystemInfo info = backend->get_system_info();
     std::string details;
 
     // Start with slot count if available
@@ -241,8 +242,8 @@ bool WizardAmsIdentifyStep::is_validated() const {
 // ============================================================================
 
 bool WizardAmsIdentifyStep::should_skip() const {
-    auto& ams = AmsState::instance();
-    AmsBackend* backend = ams.get_backend();
+    auto& ams = helix::AmsState::instance();
+    helix::AmsBackend* backend = ams.get_backend();
 
     // Skip if no backend available
     if (!backend) {
@@ -250,8 +251,8 @@ bool WizardAmsIdentifyStep::should_skip() const {
         return true;
     }
 
-    AmsType type = backend->get_type();
-    bool skip = (type == AmsType::NONE);
+    helix::AmsType type = backend->get_type();
+    bool skip = (type == helix::AmsType::NONE);
 
     if (skip) {
         spdlog::info("[{}] No AMS detected (type=NONE), skipping step", get_name());

@@ -30,6 +30,8 @@
 using namespace helix;
 using namespace std::chrono;
 
+namespace helix {
+
 class AfcActionTimeoutHelper : public AmsBackendAfc {
   public:
     /// @param with_lanes false leaves the slot registry uninitialized, which is
@@ -83,6 +85,7 @@ class AfcActionTimeoutHelper : public AmsBackendAfc {
         return action_start_time_;
     }
 };
+} // namespace helix
 
 namespace {
 

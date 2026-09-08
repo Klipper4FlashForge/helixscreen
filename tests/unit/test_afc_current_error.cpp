@@ -36,6 +36,8 @@
 
 using namespace helix;
 
+namespace helix {
+
 class AfcCurrentErrorHelper : public AmsBackendAfc {
   public:
     AfcCurrentErrorHelper() : AmsBackendAfc(nullptr, nullptr) {
@@ -75,6 +77,7 @@ class AfcCurrentErrorHelper : public AmsBackendAfc {
         return get_current_action();
     }
 };
+} // namespace helix
 
 namespace {
 

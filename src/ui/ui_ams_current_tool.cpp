@@ -75,7 +75,7 @@ static void on_widget_created(lv_obj_t* widget) {
     // Set initial color from current subject value
     // Using observer factory for type-safe lambda observer
     using helix::ui::observe_int_sync;
-    lv_subject_t* color_subject = AmsState::instance().get_current_color_subject();
+    lv_subject_t* color_subject = helix::AmsState::instance().get_current_color_subject();
     if (color_subject) {
         int color_int = lv_subject_get_int(color_subject);
         lv_color_t color = lv_color_hex(static_cast<uint32_t>(color_int));

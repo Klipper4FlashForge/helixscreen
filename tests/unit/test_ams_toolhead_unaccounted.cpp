@@ -54,6 +54,8 @@
 using json = nlohmann::json;
 using namespace helix;
 
+namespace helix {
+
 // File scope (NOT anonymous namespace): AfcHelper reaches private
 // initialize_slots() via a friend declaration in ams_backend_afc.h, which
 // names ::AfcHelper — an anonymous-namespace class would not match it.
@@ -80,6 +82,7 @@ class AfcHelper : public AmsBackendAfc {
         handle_status_update(notification);
     }
 };
+} // namespace helix
 
 namespace {
 class HhHelper : public AmsBackendHappyHare {

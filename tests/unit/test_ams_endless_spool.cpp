@@ -448,6 +448,8 @@ TEST_CASE("Backup eligibility separates a grade change from a material mismatch"
 // AFC - PerSlot, always enabled, SET_RUNOUT transport
 // =============================================================================
 
+namespace helix {
+
 class AmsBackendAfcEndlessSpoolHelper : public AmsBackendAfc {
   public:
     AmsBackendAfcEndlessSpoolHelper() : AmsBackendAfc(nullptr, nullptr) {}
@@ -498,6 +500,7 @@ class AmsBackendAfcEndlessSpoolHelper : public AmsBackendAfc {
         captured_gcodes.clear();
     }
 };
+} // namespace helix
 
 TEST_CASE("AFC endless spool - per-slot, always on", "[ams][endless_spool][afc]") {
     AmsBackendAfcEndlessSpoolHelper helper;
@@ -568,6 +571,8 @@ TEST_CASE("AFC endless spool - per-slot, always on", "[ams][endless_spool][afc]"
 // =============================================================================
 // Happy Hare - Group editing, gated on the ENABLE bit
 // =============================================================================
+
+namespace helix {
 
 class AmsBackendHappyHareEndlessSpoolHelper : public AmsBackendHappyHare {
   public:
@@ -647,6 +652,7 @@ class AmsBackendHappyHareEndlessSpoolHelper : public AmsBackendHappyHare {
                captured_gcodes.end();
     }
 };
+} // namespace helix
 
 TEST_CASE("Happy Hare endless spool - group editing", "[ams][endless_spool][happy_hare]") {
     AmsBackendHappyHareEndlessSpoolHelper helper;

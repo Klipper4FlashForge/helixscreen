@@ -10,6 +10,9 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsBackend;
+using helix::AmsState;
+
 /// This file had no fixture, so nothing drained the UpdateQueue. The AmsState
 /// tests below add backends and sync them, and AmsState defers its subject
 /// writes; each test returned with that work queued and handed it to whichever
@@ -31,8 +34,8 @@ TEST_CASE_METHOD(MultiBackendFixture, "PrinterDiscovery: single MMU detected as 
 
     const auto& systems = hw.detected_ams_systems();
     REQUIRE(systems.size() == 1);
-    REQUIRE(systems[0].type == AmsType::HAPPY_HARE);
-    REQUIRE(hw.mmu_type() == AmsType::HAPPY_HARE);
+    REQUIRE(systems[0].type == helix::AmsType::HAPPY_HARE);
+    REQUIRE(hw.mmu_type() == helix::AmsType::HAPPY_HARE);
 }
 
 TEST_CASE_METHOD(MultiBackendFixture, "PrinterDiscovery: toolchanger only detected as one system",
@@ -44,7 +47,7 @@ TEST_CASE_METHOD(MultiBackendFixture, "PrinterDiscovery: toolchanger only detect
 
     const auto& systems = hw.detected_ams_systems();
     REQUIRE(systems.size() == 1);
-    REQUIRE(systems[0].type == AmsType::TOOL_CHANGER);
+    REQUIRE(systems[0].type == helix::AmsType::TOOL_CHANGER);
 }
 
 TEST_CASE_METHOD(MultiBackendFixture,
@@ -59,7 +62,7 @@ TEST_CASE_METHOD(MultiBackendFixture,
     // Only the MMU should be registered — toolchanger is just tool switching
     const auto& systems = hw.detected_ams_systems();
     REQUIRE(systems.size() == 1);
-    REQUIRE(systems[0].type == AmsType::HAPPY_HARE);
+    REQUIRE(systems[0].type == helix::AmsType::HAPPY_HARE);
     // Toolchanger capability is still detected
     REQUIRE(hw.has_tool_changer());
 }
@@ -75,7 +78,7 @@ TEST_CASE_METHOD(MultiBackendFixture, "PrinterDiscovery: AFC + toolchanger prefe
     // Only AFC should be registered — toolchanger is just tool switching
     const auto& systems = hw.detected_ams_systems();
     REQUIRE(systems.size() == 1);
-    REQUIRE(systems[0].type == AmsType::AFC);
+    REQUIRE(systems[0].type == helix::AmsType::AFC);
     // Toolchanger capability is still detected
     REQUIRE(hw.has_tool_changer());
 }
@@ -87,7 +90,7 @@ TEST_CASE_METHOD(MultiBackendFixture, "PrinterDiscovery: no AMS detected returns
     hw.parse_objects(objects);
 
     REQUIRE(hw.detected_ams_systems().empty());
-    REQUIRE(hw.mmu_type() == AmsType::NONE);
+    REQUIRE(hw.mmu_type() == helix::AmsType::NONE);
 }
 
 // #1107: Anycubic Kobra S1 "mainline-Python ACE fork" registers its filament
@@ -105,8 +108,8 @@ TEST_CASE_METHOD(MultiBackendFixture,
 
     const auto& systems = hw.detected_ams_systems();
     REQUIRE(systems.size() == 1);
-    REQUIRE(systems[0].type == AmsType::ACE);
-    REQUIRE(hw.mmu_type() == AmsType::ACE);
+    REQUIRE(systems[0].type == helix::AmsType::ACE);
+    REQUIRE(hw.mmu_type() == helix::AmsType::ACE);
     REQUIRE(hw.ace_object_names() == std::vector<std::string>{"ace_instance_0"});
 }
 
@@ -122,8 +125,8 @@ TEST_CASE_METHOD(MultiBackendFixture,
 
     const auto& systems = hw.detected_ams_systems();
     REQUIRE(systems.size() == 1);
-    REQUIRE(systems[0].type == AmsType::ACE);
-    REQUIRE(hw.mmu_type() == AmsType::ACE);
+    REQUIRE(systems[0].type == helix::AmsType::ACE);
+    REQUIRE(hw.mmu_type() == helix::AmsType::ACE);
     REQUIRE(hw.ace_object_names() == std::vector<std::string>{"ace_instance_0", "ace_instance_1"});
 }
 
@@ -134,7 +137,7 @@ TEST_CASE_METHOD(MultiBackendFixture,
     nlohmann::json objects = nlohmann::json::array({"ace", "extruder", "heater_bed", "gcode_move"});
     hw.parse_objects(objects);
 
-    REQUIRE(hw.mmu_type() == AmsType::ACE);
+    REQUIRE(hw.mmu_type() == helix::AmsType::ACE);
     REQUIRE(hw.ace_object_names() == std::vector<std::string>{"ace"});
 }
 
@@ -327,7 +330,7 @@ TEST_CASE_METHOD(MultiBackendFixture, "AmsState: init_backends_from_hardware wit
     hw.parse_objects(objects);
 
     REQUIRE(hw.detected_ams_systems().size() == 1);
-    REQUIRE(hw.detected_ams_systems()[0].type == AmsType::TOOL_CHANGER);
+    REQUIRE(hw.detected_ams_systems()[0].type == helix::AmsType::TOOL_CHANGER);
 
     ams.deinit_subjects();
 }

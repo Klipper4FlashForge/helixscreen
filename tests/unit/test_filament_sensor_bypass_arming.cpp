@@ -43,6 +43,8 @@
 using namespace helix;
 using json = nlohmann::json;
 
+namespace helix {
+
 // Friend shim reaching the manager's private state — same idiom as
 // RunoutScopeTestAccess in test_runout_empty_lane_scope.cpp (per-TU class to
 // avoid an ODR clash).
@@ -59,6 +61,7 @@ class BypassArmingTestAccess {
         mgr.startup_time_ = std::chrono::steady_clock::now() - std::chrono::seconds(10);
     }
 };
+} // namespace helix
 
 namespace {
 /// Fixture with the mock pair + API; the gcode wire is the client mock's
@@ -205,6 +208,8 @@ class FilamentSlotOverrideStoreTestAccess {
     }
 };
 
+namespace helix {
+
 // Friend shim for AmsBackendAfc (declared in ams_backend_afc.h) — seeds lanes
 // without start(), same shape as test_ams_backend_afc.cpp's
 // AmsBackendAfcTestHelper::initialize_test_lanes_with_slots. Global scope so
@@ -242,6 +247,7 @@ class AfcBypassPublishTestAccess : public AmsBackendAfc {
         }
     }
 };
+} // namespace helix
 
 namespace {
 struct CfsTmpCacheDir {

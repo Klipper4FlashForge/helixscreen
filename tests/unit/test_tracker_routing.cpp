@@ -40,10 +40,10 @@ namespace {
 
 struct TrackerRoutingFixture : LVGLTestFixture {
     int backend_idx = 0;
-    AmsBackendMock* mock = nullptr;
+    helix::AmsBackendMock* mock = nullptr;
 
     TrackerRoutingFixture() {
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         auto& printer = get_printer_state();
 
         // Full teardown: the tracker is a singleton whose sink registry
@@ -56,7 +56,7 @@ struct TrackerRoutingFixture : LVGLTestFixture {
         ams.clear_external_spool_info();
 
         // Build a 4-slot mock with identity tool->slot mapping (extruder N == slot N).
-        auto m = std::make_unique<AmsBackendMock>(4);
+        auto m = std::make_unique<helix::AmsBackendMock>(4);
         m->set_identity_extruder_mapping_for_testing(true);
         mock = m.get();
         backend_idx = ams.add_backend(std::move(m));
@@ -64,7 +64,7 @@ struct TrackerRoutingFixture : LVGLTestFixture {
         // Seed every slot with a known, trackable configuration so per-slot
         // sinks become active on snapshot().
         for (int s = 0; s < 4; ++s) {
-            SlotInfo info = mock->get_slot_info(s);
+            helix::SlotInfo info = mock->get_slot_info(s);
             info.material = "PLA";
             info.remaining_weight_g = 1000.0f;
             info.total_weight_g = 1000.0f;
@@ -96,7 +96,7 @@ struct TrackerRoutingFixture : LVGLTestFixture {
     ~TrackerRoutingFixture() override {
         FilamentConsumptionTrackerTestAccess::force_print_state(PrintJobState::COMPLETE);
         FilamentConsumptionTracker::instance().stop();
-        auto& ams = AmsState::instance();
+        auto& ams = helix::AmsState::instance();
         ams.clear_backends();
         ams.clear_external_spool_info();
     }
@@ -166,7 +166,7 @@ TEST_CASE_METHOD(TrackerRoutingFixture, "Per-extruder dispatch ignores unmapped 
 TEST_CASE_METHOD(LVGLTestFixture,
                  "Aggregate routing: single-extruder multi-slot decrements only current_slot",
                  "[tracker][routing]") {
-    auto& ams = AmsState::instance();
+    auto& ams = helix::AmsState::instance();
     auto& printer = get_printer_state();
 
     FilamentConsumptionTracker::instance().stop();
@@ -178,15 +178,15 @@ TEST_CASE_METHOD(LVGLTestFixture,
 
     // Mock WITHOUT identity mapping: simulates HappyHare/CFS/ACE/IFS — one
     // extruder, multiple slots, active slot reported by get_current_slot().
-    auto m = std::make_unique<AmsBackendMock>(4);
-    AmsBackendMock* mock = m.get();
+    auto m = std::make_unique<helix::AmsBackendMock>(4);
+    helix::AmsBackendMock* mock = m.get();
     // Must start the mock so select_slot() is accepted (mock gate).
     mock->start();
     int idx = ams.add_backend(std::move(m));
     REQUIRE(idx == 0);
 
     for (int s = 0; s < 4; ++s) {
-        SlotInfo info = mock->get_slot_info(s);
+        helix::SlotInfo info = mock->get_slot_info(s);
         info.material = "PLA";
         info.remaining_weight_g = 1000.0f;
         info.total_weight_g = 1000.0f;

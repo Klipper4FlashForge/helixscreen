@@ -44,6 +44,14 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::AmsAction;
+using helix::AmsSystemInfo;
+using helix::AmsType;
+using helix::AmsUnit;
+using helix::PathTopology;
+using helix::SlotInfo;
+using helix::SlotStatus;
+
 using helix::ToolState;
 using helix::ToolTopology;
 using TA = helix::ui::FilamentPanelTestAccess;
@@ -55,9 +63,9 @@ namespace {
 // controls the system snapshot and observes the slot the executors dispatch.
 // Subclasses the production mock (test infrastructure per CLAUDE L065) so all the
 // unrelated pure-virtuals are already satisfied.
-class RecordingBackend : public AmsBackendMock {
+class RecordingBackend : public helix::AmsBackendMock {
   public:
-    RecordingBackend() : AmsBackendMock(4) {}
+    RecordingBackend() : helix::AmsBackendMock(4) {}
 
     AmsSystemInfo sys_{};  ///< Snapshot returned to the panel (test sets fields)
     int loaded_slot_ = -1; ///< Which slot reports "loaded at toolhead"
@@ -111,20 +119,20 @@ class RecordingBackend : public AmsBackendMock {
         return self_homes_;
     }
 
-    AmsError load_filament(int slot) override {
+    helix::AmsError load_filament(int slot) override {
         last_load_slot = slot;
         ++load_calls;
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError unload_filament(int slot) override {
+    helix::AmsError unload_filament(int slot) override {
         last_unload_slot = slot;
         ++unload_calls;
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
-    AmsError change_tool(int t) override {
+    helix::AmsError change_tool(int t) override {
         last_change_tool = t;
         ++change_tool_calls;
-        return AmsErrorHelper::success();
+        return helix::AmsErrorHelper::success();
     }
 };
 
@@ -143,15 +151,15 @@ struct OpSlotHarness {
         // The panel wires observers on ToolState + AmsState in its ctor, so their
         // subjects must exist first.
         ToolState::instance().init_subjects(true);
-        AmsState::instance().init_subjects(true);
+        helix::AmsState::instance().init_subjects(true);
 
         // Inject the recording backend + topology BEFORE constructing the panel.
         auto owned = std::make_unique<RecordingBackend>();
         owned->sys_ = sys;
         owned->loaded_slot_ = loaded_slot;
         mock = owned.get();
-        AmsState::instance().set_backend(std::move(owned));
-        AmsState::instance().sync_from_backend(); // publishes ams_type != NONE
+        helix::AmsState::instance().set_backend(std::move(owned));
+        helix::AmsState::instance().sync_from_backend(); // publishes ams_type != NONE
         ToolState::instance().set_ams_topology(topo);
 
         panel = std::make_unique<FilamentPanel>(fx.state(), fx.api());
@@ -182,9 +190,9 @@ struct OpSlotHarness {
         }
         fx.process_lvgl(10);
         panel.reset(); // dtor deinits subjects + removes observers (subjects valid)
-        AmsState::instance().set_backend(nullptr);
+        helix::AmsState::instance().set_backend(nullptr);
         ToolState::instance().clear_ams_topology();
-        AmsState::instance().deinit_subjects();
+        helix::AmsState::instance().deinit_subjects();
         ToolState::instance().deinit_subjects();
     }
 };
@@ -474,7 +482,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     REQUIRE(h.mock->change_tool_calls == 1);
 
     // Backend signals progress, then completion, via the shared AMS action subject.
-    lv_subject_t* action = AmsState::instance().get_ams_action_subject();
+    lv_subject_t* action = helix::AmsState::instance().get_ams_action_subject();
     lv_subject_set_int(action, static_cast<int>(AmsAction::LOADING));
     process_lvgl(10);
     lv_subject_set_int(action, static_cast<int>(AmsAction::IDLE));
@@ -746,7 +754,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "Filament panel greys Load/Unload while the 
     // An unload kicked off from the AMS panel. AmsSystemInfo::is_busy() is
     // "action is neither IDLE nor ERROR"; publishing it must re-gate here.
     h.mock->sys_.action = AmsAction::UNLOADING;
-    lv_subject_set_int(AmsState::instance().get_ams_action_subject(),
+    lv_subject_set_int(helix::AmsState::instance().get_ams_action_subject(),
                        static_cast<int>(AmsAction::UNLOADING));
     process_lvgl(10);
     CHECK(read("filament_load_disabled") == 1);
@@ -754,7 +762,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "Filament panel greys Load/Unload while the 
 
     // ...and hands them back when it finishes.
     h.mock->sys_.action = AmsAction::IDLE;
-    lv_subject_set_int(AmsState::instance().get_ams_action_subject(),
+    lv_subject_set_int(helix::AmsState::instance().get_ams_action_subject(),
                        static_cast<int>(AmsAction::IDLE));
     process_lvgl(10);
     CHECK(read("filament_unload_disabled") == 0);

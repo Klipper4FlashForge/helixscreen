@@ -50,7 +50,7 @@
 #include <unordered_map>
 #include <vector>
 
-using namespace helix;
+namespace helix {
 
 // Async callback data for thread-safe LVGL updates
 namespace {
@@ -3591,3 +3591,5 @@ void AmsState::commit_external_spool_edit(const SlotInfo& info, std::function<vo
         on_committed();
     }
 }
+
+} // namespace helix

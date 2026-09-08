@@ -77,7 +77,7 @@ TEST_CASE("SlotRegistry single-unit initialization", "[slot_registry][init]") {
         REQUIRE(entry->info.global_index == 0);
         REQUIRE(entry->info.slot_index == 0); // unit-local
         REQUIRE(entry->info.mapped_tool == -1);
-        REQUIRE(entry->info.status == SlotStatus::UNKNOWN);
+        REQUIRE(entry->info.status == helix::SlotStatus::UNKNOWN);
     }
 }
 
@@ -175,7 +175,7 @@ TEST_CASE("SlotRegistry reorganize preserves slot data", "[slot_registry][reorga
     reg.initialize("Unit_A", {"s0", "s1", "s2"});
     reg.get_mut(1)->info.color_rgb = 0xFF0000;
     reg.get_mut(1)->info.material = "PLA";
-    reg.get_mut(1)->info.status = SlotStatus::AVAILABLE;
+    reg.get_mut(1)->info.status = helix::SlotStatus::AVAILABLE;
     reg.get_mut(1)->sensors.prep = true;
     reg.get_mut(1)->sensors.load = true;
     reg.get_mut(1)->endless_spool_backup = 2;
@@ -194,7 +194,7 @@ TEST_CASE("SlotRegistry reorganize preserves slot data", "[slot_registry][reorga
         REQUIRE(entry->global_index == 0); // moved from 1 to 0
         REQUIRE(entry->info.color_rgb == 0xFF0000);
         REQUIRE(entry->info.material == "PLA");
-        REQUIRE(entry->info.status == SlotStatus::AVAILABLE);
+        REQUIRE(entry->info.status == helix::SlotStatus::AVAILABLE);
         REQUIRE(entry->sensors.prep == true);
         REQUIRE(entry->sensors.load == true);
         REQUIRE(entry->endless_spool_backup == 2);
@@ -236,7 +236,7 @@ TEST_CASE("SlotRegistry reorganize with new and removed slots", "[slot_registry]
     SECTION("s3 added with defaults") {
         const auto* s3 = reg.find_by_name("s3");
         REQUIRE(s3 != nullptr);
-        REQUIRE(s3->info.status == SlotStatus::UNKNOWN);
+        REQUIRE(s3->info.status == helix::SlotStatus::UNKNOWN);
     }
 
     SECTION("slot count updated") {
@@ -338,7 +338,7 @@ TEST_CASE("SlotRegistry build_system_info", "[slot_registry][snapshot]") {
     // Set some state
     reg.get_mut(0)->info.color_rgb = 0xFF0000;
     reg.get_mut(0)->info.material = "PLA";
-    reg.get_mut(0)->info.status = SlotStatus::AVAILABLE;
+    reg.get_mut(0)->info.status = helix::SlotStatus::AVAILABLE;
     reg.set_tool_mapping(0, 0);
     reg.set_tool_mapping(2, 1);
 
@@ -361,7 +361,7 @@ TEST_CASE("SlotRegistry build_system_info", "[slot_registry][snapshot]") {
     SECTION("slot data in units") {
         REQUIRE(info.units[0].slots[0].color_rgb == 0xFF0000);
         REQUIRE(info.units[0].slots[0].material == "PLA");
-        REQUIRE(info.units[0].slots[0].status == SlotStatus::AVAILABLE);
+        REQUIRE(info.units[0].slots[0].status == helix::SlotStatus::AVAILABLE);
         REQUIRE(info.units[0].slots[0].global_index == 0);
         REQUIRE(info.units[0].slots[0].slot_index == 0);
     }

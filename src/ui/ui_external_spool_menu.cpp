@@ -63,7 +63,7 @@ void show_external_spool_menu(lv_obj_t* parent_screen, lv_obj_t* anchor_widget,
                 scanner.show_for_active_spool(parent_screen, [](const SpoolInfo& spool) {
                     SlotInfo info;
                     apply_spool_to_slot(info, spool);
-                    ::AmsState::instance().commit_external_spool_edit(info);
+                    helix::AmsState::instance().commit_external_spool_edit(info);
                     spdlog::info("[ExternalSpoolMenu] QR scan assigned spool #{} to external spool",
                                  spool.id);
                 });
@@ -72,7 +72,7 @@ void show_external_spool_menu(lv_obj_t* parent_screen, lv_obj_t* anchor_widget,
             }
 
             case AmsContextMenu::MenuAction::CLEAR_SPOOL:
-                ::AmsState::instance().commit_external_spool_edit(SlotInfo{});
+                helix::AmsState::instance().commit_external_spool_edit(SlotInfo{});
                 NOTIFY_INFO(lv_tr("External spool cleared"));
                 break;
 

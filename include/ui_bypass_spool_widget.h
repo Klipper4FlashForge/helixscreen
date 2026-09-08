@@ -7,7 +7,9 @@
 
 #include <cstdint>
 
+namespace helix {
 class AmsBackend;
+} // namespace helix
 
 namespace helix::ui {
 

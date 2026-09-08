@@ -53,6 +53,8 @@ variable_cooling_tube_length: 15
 variable_cooling_tube_retraction: 35
 )";
 
+namespace helix {
+
 /**
  * @brief Test helper to access AmsBackendAfc private config members
  */
@@ -87,6 +89,7 @@ class AmsBackendAfcConfigHelper {
         backend.system_info_.tip_method = method;
     }
 };
+} // namespace helix
 
 // Helper to find action by ID
 static const DeviceAction* find_action(const std::vector<DeviceAction>& actions,

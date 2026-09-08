@@ -21,10 +21,10 @@
 
 // Forward declarations
 namespace helix {
-class PrinterState;
-}
-class IMoonrakerAPI;
 class AmsBackend;
+class PrinterState;
+} // namespace helix
+class IMoonrakerAPI;
 struct PrintFileData;
 class PrintStartControllerTestAccess; // test-only friend (global scope)
 

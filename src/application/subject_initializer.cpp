@@ -331,7 +331,7 @@ void SubjectInitializer::init_ams_subjects() {
 
     // Initialize AmsState subjects BEFORE panels so XML bindings can find ams_gate_count
     // Note: In mock mode, init_subjects() also creates the mock backend internally
-    AmsState::instance().init_subjects(true);
+    helix::AmsState::instance().init_subjects(true);
 
     // Initialize SpoolmanManager AFTER AmsState (it reads slot data from AmsState)
     SpoolmanManager::instance().init_subjects();

@@ -74,7 +74,7 @@ class IdleRunoutDispatchFixture : public LVGLTestFixture {
 
         // No AMS backend: the shape a basic runout-sensor printer has, and the
         // one the old code answered by navigating away.
-        AmsState::instance().clear_backends();
+        helix::AmsState::instance().clear_backends();
         // Empty cache => MacroParamKnowledge::UNKNOWN, i.e. the branch that WOULD
         // prompt. The only way to prove Suppress suppresses something.
         helix::MacroParamCache::instance().clear();
@@ -93,7 +93,7 @@ class IdleRunoutDispatchFixture : public LVGLTestFixture {
         set_moonraker_api(previous_api_);
         StandardMacros::instance().reset();
         helix::MacroParamCache::instance().clear();
-        AmsState::instance().clear_backends();
+        helix::AmsState::instance().clear_backends();
         helix::ui::UpdateQueue::instance().drain();
         mock_client.stop_temperature_simulation();
         mock_client.disconnect();
@@ -141,7 +141,7 @@ TEST_CASE_METHOD(IdleRunoutDispatchFixture,
                  "Idle runout load dispatches the macro instead of navigating away",
                  "[print_status_widget][dispatch][runout]") {
     configure_filament_macros();
-    REQUIRE(AmsState::instance().get_backend() == nullptr);
+    REQUIRE(helix::AmsState::instance().get_backend() == nullptr);
 
     const helix::PanelId before = NavigationManager::instance().get_active();
 

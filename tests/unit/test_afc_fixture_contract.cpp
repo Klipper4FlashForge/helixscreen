@@ -75,6 +75,8 @@ void require_keys(const nlohmann::json& j, const std::string& what,
 
 } // namespace
 
+namespace helix {
+
 class AfcFixtureHelper : public AmsBackendAfc {
   public:
     AfcFixtureHelper() : AmsBackendAfc(nullptr, nullptr) {
@@ -94,6 +96,7 @@ class AfcFixtureHelper : public AmsBackendAfc {
         feed(params);
     }
 };
+} // namespace helix
 
 // ============================================================================
 // Field presence — the keys our parsers read must still exist upstream

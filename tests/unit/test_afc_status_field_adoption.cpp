@@ -45,6 +45,8 @@
 using namespace helix;
 using json = nlohmann::json;
 
+namespace helix {
+
 /// Drives the real status parser with no client, the way the fixture-contract
 /// test does, and exposes the version member the readers under test write.
 class AfcStatusFieldHelper : public AmsBackendAfc {
@@ -78,6 +80,7 @@ class AfcStatusFieldHelper : public AmsBackendAfc {
         return afc_version_;
     }
 };
+} // namespace helix
 
 namespace {
 

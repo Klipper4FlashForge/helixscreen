@@ -26,8 +26,10 @@
 #include <vector>
 
 // Forward declarations
+namespace helix {
 class AmsBackend;
 struct DryingPreset;
+} // namespace helix
 
 namespace helix::ui {
 

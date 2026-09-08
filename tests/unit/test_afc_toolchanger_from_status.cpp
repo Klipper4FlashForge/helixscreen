@@ -49,6 +49,8 @@
 
 using namespace helix;
 
+namespace helix {
+
 class AfcToolchangerStatusHelper : public AmsBackendAfc {
   public:
     AfcToolchangerStatusHelper() : AmsBackendAfc(nullptr, nullptr) {
@@ -81,6 +83,7 @@ class AfcToolchangerStatusHelper : public AmsBackendAfc {
         return out;
     }
 };
+} // namespace helix
 
 namespace {
 
@@ -192,6 +195,8 @@ TEST_CASE("AFC.system still wins when present — it carries strictly more",
 // status-only answer; the `[AFC_Toolchanger …]` section in configfile.settings
 // is the only discriminator, and that case seeds it directly.
 
+namespace helix {
+
 /// Four lanes, gcode captured, driven only by fed status frames.
 class AfcStatusDispatchHelper : public AmsBackendAfc {
   public:
@@ -253,6 +258,7 @@ class AfcStatusDispatchHelper : public AmsBackendAfc {
 
     std::vector<std::string> captured;
 };
+} // namespace helix
 
 namespace {
 

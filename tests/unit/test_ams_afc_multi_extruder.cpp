@@ -46,6 +46,8 @@ using namespace helix;
 // Test helper for multi-extruder AFC parsing
 // ============================================================================
 
+namespace helix {
+
 /**
  * @brief Test helper exposing AFC internals for multi-extruder testing
  *
@@ -154,6 +156,7 @@ class AmsBackendAfcMultiExtruderHelper : public AmsBackendAfc {
         return false;
     }
 };
+} // namespace helix
 
 // ============================================================================
 // AfcExtruderInfo struct tests

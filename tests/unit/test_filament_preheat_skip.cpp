@@ -43,15 +43,15 @@ using helix::ui::PreheatSkip;
 namespace {
 
 /// AFC reports supports_auto_heat_on_load() == true.
-class AutoHeatBackend : public AmsBackendAfc {
+class AutoHeatBackend : public helix::AmsBackendAfc {
   public:
-    AutoHeatBackend() : AmsBackendAfc(nullptr, nullptr) {}
+    AutoHeatBackend() : helix::AmsBackendAfc(nullptr, nullptr) {}
 };
 
 /// Happy Hare does not override it, so it inherits the base "false".
-class ColdBackend : public AmsBackendHappyHare {
+class ColdBackend : public helix::AmsBackendHappyHare {
   public:
-    ColdBackend() : AmsBackendHappyHare(nullptr, nullptr) {}
+    ColdBackend() : helix::AmsBackendHappyHare(nullptr, nullptr) {}
 };
 
 FilamentOpPlan plan_at(FilamentTier tier) {

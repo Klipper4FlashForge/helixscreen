@@ -86,6 +86,6 @@ TEST_CASE("remap warning: a declared route that is not READY still warns",
     CHECK(PrintStartControllerTestAccess::should_warn_remap_unsupported(ad5x));
 
     // A printer.ifs frame carrying tool_map arms the gate.
-    Ad5xIfsTestAccess::deliver_identity_tool_map(ad5x);
+    helix::Ad5xIfsTestAccess::deliver_identity_tool_map(ad5x);
     CHECK_FALSE(PrintStartControllerTestAccess::should_warn_remap_unsupported(ad5x));
 }

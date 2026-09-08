@@ -584,5 +584,5 @@ bool PrinterHardware::is_ams_sensor(const std::string& sensor_name,
     // knowledge out of this hardware-introspection class so a new backend does
     // not have to edit it (#1054). Suppression stays gated on has_mmu() above so
     // a plain printer's "extruder" runout switch is never hidden.
-    return AmsBackend::sensor_belongs_to_backend(discovery.mmu_type(), bare, discovery);
+    return helix::AmsBackend::sensor_belongs_to_backend(discovery.mmu_type(), bare, discovery);
 }
