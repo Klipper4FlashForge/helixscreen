@@ -12,7 +12,7 @@ Physical tool changers have multiple complete toolheads that are swapped on the 
 ### Detection
 
 Tool counts come from three sources, in descending authority
-(`include/printer_discovery.h#PrinterDiscovery::parse_objects`):
+(`include/printer_discovery.h#PrinterDiscovery/parse_objects`):
 
 1. **`tool T*` objects** - created by klipper-toolchanger, and authoritative: a
    klipper-toolchanger name is arbitrary and `ASSIGN_TOOL` can remap it, so real objects
