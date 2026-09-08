@@ -91,12 +91,11 @@
     <!-- Subject name for reactive disabled state binding (empty = no binding) -->
     <prop name="action_button_disabled_subject" type="string" default=""/>
     <!-- Expression form of the above, for buttons whose disabled state depends on
-         more than one subject (e.g. "busy OR printer not reachable"). Use EITHER
-         this or action_button_disabled_subject, never both: two bindings on the
-         same LVGL state clobber each other, since each observer asserts both
-         polarities on every fire. Default "0" is a constant (no subjects), so it
-         fires once at bind and never again — which is why the binding below is
-         ordered BEFORE the subject binding, letting the subject form win. -->
+         more than one subject (e.g. "busy OR printer not reachable"). Setting both
+         this and action_button_disabled_subject is fine: bindings on one state OR
+         together, so the button is disabled while either holds. Default "0" is a
+         constant with no subjects, so a caller that sets neither gets a binding
+         that never asks for disabled. -->
     <prop name="action_button_disabled_cond" type="string" default="0"/>
     <!-- Optional int subject: 1 hides the action button entirely (per-view Save) -->
     <prop name="action_button_hidden_subject" type="string" default=""/>
@@ -155,8 +154,7 @@
                style_radius="$action_button_radius" style_bg_color="$action_button_bg_color"
                hidden="$hide_action_button" icon="$action_button_icon" icon_size="$action_button_icon_size"
                text="$action_button_text" translation_tag="$action_button_text_tag">
-      <!-- Expression-driven disabled binding. Must precede the subject binding below;
-           see the action_button_disabled_cond prop comment for why. -->
+      <!-- Two independent reasons to be disabled; they OR together. -->
       <bind_state_if cond="$action_button_disabled_cond" state="disabled"/>
       <!-- Reactive disabled state binding (enabled when subject exists and is non-empty) -->
       <bind_state_if_eq subject="$action_button_disabled_subject" state="disabled" ref_value="1"/>
@@ -187,13 +185,9 @@
     <ui_button name="header_save_z_offset"
                width="content" height="$action_button_height" style_max_height="#header_button_height"
                style_bg_color="#success" icon="check" icon_size="sm" hidden="true">
-      <!-- ONE binding, both conditions. Two flag bindings on the same widget
-           fight: bind_flag_if_eq is two-way, so a separate
-           `subject="z_offset_can_save" ref_value="0"` does not merely hide when
-           the firmware auto-saves — with the subject at 1 it REMOVES hidden,
-           overriding the dirty test beside it and leaving the button on screen
-           permanently. The Controls panel gets away with the pair only because
-           its two bindings sit on different widgets (button inside wrapper). -->
+      <!-- Shown only when there is something to save AND the firmware does not
+           save it for us. Bindings on one flag OR together, so a conjunction has
+           to be one expression rather than two lines. -->
       <bind_flag_if cond="z_offset_can_save and (gcode_z_offset ne 0 or any_tool_z_dirty)" flag="hidden" invert="true"/>
       <bind_state_if_eq subject="job_holds_machine" state="disabled" ref_value="1"/>
       <event_cb trigger="clicked" callback="on_header_save_z_offset"/>
