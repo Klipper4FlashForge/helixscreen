@@ -17,7 +17,7 @@ on:
 # lets a newer push cancel the older run there. main and release/** key on the
 # SHA instead, so every commit that lands keeps its own run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || ((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && github.sha || github.ref) }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (startsWith(github.ref, 'refs/heads/release/') && github.sha || github.ref) }}
   cancel-in-progress: true
 
 jobs:
