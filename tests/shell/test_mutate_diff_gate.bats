@@ -526,11 +526,13 @@ EOF
 @test "a shell script is mutated against the bats suite" {
     mkdir -p "$WORK/tests/shell" "$WORK/tests/python"
     printf '#!/bin/sh\necho old\n' > "$WORK/scripts/gate.sh"
-    cat > "$WORK/tests/shell/test_gate.bats" <<'EOF'
-@test "gate says new" {
-    grep -q new "$BATS_TEST_DIRNAME/../../scripts/gate.sh"
-}
-EOF
+    # Written with printf, not a heredoc: bats rewrites every line starting with
+    # @test as it loads THIS file, heredoc bodies included, so a heredoc would
+    # ship the fixture a bats_test_begin function and no test for bats to find.
+    printf '%s\n' \
+        '@test "gate says new" {' \
+        '    grep -q new "$BATS_TEST_DIRNAME/../../scripts/gate.sh"' \
+        '}' > "$WORK/tests/shell/test_gate.bats"
     printf 'def test_ok():\n    assert True\n' > "$WORK/tests/python/test_ok.py"
     git -C "$WORK" add src/feature.cpp scripts/gate.sh tests/shell/test_gate.bats tests/python/test_ok.py
     git -C "$WORK" commit -qm gate

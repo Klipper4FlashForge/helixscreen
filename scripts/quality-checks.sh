@@ -1798,6 +1798,14 @@ echo ""
 # ====================================================================
 # Declarative UI: no XML-owned widget driven imperatively from C++
 # ====================================================================
+# True when the caller has said this tree cannot answer the clang question. The
+# gate derives its repo root from its own location and needs a compile database
+# there; the pre-push isolated checkout has neither, and refusing to report green
+# off an unbuilt tree is correct, so the caller re-asks where a database exists.
+qc_clang_divergence_deferred() {
+  [ -n "${HELIX_QC_SKIP_CLANG_DIVERGENCE:-}" ]
+}
+
 qc_decl_ui() {
   local EXIT_CODE=0
 SECTION_START=$(date +%s)
@@ -1989,15 +1997,20 @@ echo -n "🐉 Checking clang/GCC divergence..."
 
 # Deliberately NOT in --staged-only: this is seconds per TU, and a changed header
 # fans out to every TU that includes it (json_utils.h reaches 29), which is too
-# slow to sit on every commit. pre-push runs this file in full mode inside an
-# isolated checkout of the pushed commit, so the class is still caught before
-# anything leaves the machine - just not on each commit.
+# slow to sit on every commit. pre-push runs this file in full mode, so the class
+# is still caught before anything leaves the machine - just not on each commit.
+# Its isolated checkout has no compile database of its own, so it defers this
+# gate and re-asks it in the tree that has one.
 #
 # The class: CI's Ubuntu job compiles with clang and -Werror while every build
 # here uses g++. v0.99.118 shipped a red build because GCC accepts a comparison
 # clang rejects (-Wtautological-type-limit-compare in json_utils.h, fixed in
 # 5d3ea331c). Nothing local could see it.
-if [ "$STAGED_ONLY" = false ] && [ -f "scripts/check_clang_diagnostics.py" ]; then
+if qc_clang_divergence_deferred; then
+  section_time $SECTION_START
+  echo ""
+  echo "⏭️  clang divergence: deferred to the tree that owns the compile database"
+elif [ "$STAGED_ONLY" = false ] && [ -f "scripts/check_clang_diagnostics.py" ]; then
   if python3 scripts/check_clang_diagnostics.py >/tmp/clang_diag.out 2>&1; then
     section_time $SECTION_START
     echo ""
