@@ -8,7 +8,7 @@ on:
 # than queued behind each other; main is keyed per-SHA so pushes there still
 # each get a build.
 concurrency:
-  group: esp32-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: esp32-build-${{ github.workflow }}-${{ github.event.pull_request.number || (startsWith(github.ref, 'refs/heads/release/') && github.sha || github.ref) }}
   cancel-in-progress: true
 
 jobs:
