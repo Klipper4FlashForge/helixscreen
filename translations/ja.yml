@@ -735,6 +735,7 @@ translations:
   Do not touch the printer during calibration: キャリブレーション中はプリンターに触れないでください
   Dock: ドック
   Dock sensors cannot tell which tool is mounted: ドックのセンサーでは、どのツールが装着されているか判別できません
+  Dock sensors disagree: ''
   Dock tool: ツールを格納
   Docking tool: ツールを格納中
   Documentation: ドキュメント
@@ -2574,6 +2575,7 @@ translations:
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : アニメーション付きスクリーンセーバーが印刷に干渉しないよう、このデバイスではオフになっています。設定 > ディスプレイで再度有効にできます。
+  The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.: ''
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   : フィラメントがノズルに到達しませんでした。CFSはエラーを報告していませんが、ツールヘッドセンサーはまだフィラメントを検出していません。スプールが正しく取り付けられ、フィラメント経路が塞がれていないことを確認して、再試行してください。
   The filament system reported an error: フィラメントシステムがエラーを報告しました

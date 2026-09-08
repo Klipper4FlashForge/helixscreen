@@ -69,6 +69,12 @@ struct ToolReading {
     /// current_tool == -2. A distinct state from "no tool": the machine does not
     /// KNOW, and acting on a guess would drive the carriage into a dock.
     bool sensor_error = false;
+    /// The controller published `sensor_error` itself rather than us deriving it
+    /// from -2. Only Irbis3D publishes the flag, and only the flag is a fault on
+    /// its own: -2 is one value for two answers, a pin fault and "the switch
+    /// pattern matches no settled configuration". A swap in flight is always the
+    /// second, because the tool is between its dock and the head.
+    bool sensor_error_reported = false;
     /// The machine's phase word, or empty when the frame did not say.
     ///
     /// The two controllers do NOT share a vocabulary, and this is deliberately

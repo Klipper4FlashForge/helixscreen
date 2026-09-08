@@ -730,6 +730,7 @@ translations:
   Do not touch the printer during calibration: 校准期间请勿触碰打印机
   Dock: 归位
   Dock sensors cannot tell which tool is mounted: 归位传感器无法判断当前安装的是哪个工具
+  Dock sensors disagree: ''
   Dock tool: 归位工具
   Docking tool: 正在归位工具
   Documentation: 文档
@@ -2565,6 +2566,7 @@ translations:
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : 为防止动画屏保干扰打印，已在此设备上将其关闭。您可以在设置 > 显示中重新启用。
+  The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.: ''
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   : 耗材未到达喷嘴。CFS 未报告错误，但工具头传感器仍未检测到耗材。请检查料盘是否放置到位、路径是否畅通，然后重试。
   The filament system reported an error: 耗材系统报告错误

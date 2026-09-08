@@ -817,6 +817,7 @@ translations:
     la calibration
   Dock: Ranger
   Dock sensors cannot tell which tool is mounted: Les capteurs du dock ne peuvent pas déterminer quel outil est monté
+  Dock sensors disagree: ''
   Dock tool: Ranger l'outil
   Docking tool: Rangement de l'outil
   Documentation: Documentation
@@ -2827,6 +2828,7 @@ translations:
   : L'économiseur d'écran animé a été désactivé sur cet appareil pour éviter qu'il
     n'interfère avec les impressions. Vous pouvez le réactiver dans Paramètres > Affichage
     et son.
+  The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.: ''
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   : Le filament n'est pas arrivé à la buse. Le CFS n'a signalé aucune erreur, mais le capteur de tête d'outil ne détecte toujours pas de filament. Vérifiez que la bobine est bien en place et que le chemin est dégagé, puis réessayez.
   The filament system reported an error: Le système de filament a signalé une erreur

@@ -719,6 +719,7 @@
   <translation tag="Do not touch the printer during calibration" zh="校准期间请勿触碰打印机"/>
   <translation tag="Dock" zh="归位"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" zh="归位传感器无法判断当前安装的是哪个工具"/>
+  <translation tag="Dock sensors disagree"/>
   <translation tag="Dock tool" zh="归位工具"/>
   <translation tag="Docking tool" zh="正在归位工具"/>
   <translation tag="Documentation" zh="文档"/>
@@ -2492,6 +2493,7 @@
   <translation tag="The Spoolman spool currently loaded" zh="当前装载的 Spoolman 料盘"/>
   <translation tag="The accelerometer stream stopped: %s. Check that Klipper is running, then retry." zh="加速度计数据流已停止：%s。请检查 Klipper 是否正在运行，然后重试。"/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." zh="为防止动画屏保干扰打印，已在此设备上将其关闭。您可以在设置 &gt; 显示中重新启用。"/>
+  <translation tag="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches."/>
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." zh="耗材未到达喷嘴。CFS 未报告错误，但工具头传感器仍未检测到耗材。请检查料盘是否放置到位、路径是否畅通，然后重试。"/>
   <translation tag="The filament system reported an error" zh="耗材系统报告错误"/>
   <translation tag="The heater will cycle on and off several times." zh="加热器将多次开关循环。"/>

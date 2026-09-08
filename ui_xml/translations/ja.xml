@@ -719,6 +719,7 @@
   <translation tag="Do not touch the printer during calibration" ja="キャリブレーション中はプリンターに触れないでください"/>
   <translation tag="Dock" ja="ドック"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" ja="ドックのセンサーでは、どのツールが装着されているか判別できません"/>
+  <translation tag="Dock sensors disagree"/>
   <translation tag="Dock tool" ja="ツールを格納"/>
   <translation tag="Docking tool" ja="ツールを格納中"/>
   <translation tag="Documentation" ja="ドキュメント"/>
@@ -2492,6 +2493,7 @@
   <translation tag="The Spoolman spool currently loaded" ja="現在装填中の Spoolman スプール"/>
   <translation tag="The accelerometer stream stopped: %s. Check that Klipper is running, then retry." ja="加速度センサーストリームが停止しました: %s。Klipperが実行中か確認してから再試行してください。"/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." ja="アニメーション付きスクリーンセーバーが印刷に干渉しないよう、このデバイスではオフになっています。設定 &gt; ディスプレイで再度有効にできます。"/>
+  <translation tag="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches."/>
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." ja="フィラメントがノズルに到達しませんでした。CFSはエラーを報告していませんが、ツールヘッドセンサーはまだフィラメントを検出していません。スプールが正しく取り付けられ、フィラメント経路が塞がれていないことを確認して、再試行してください。"/>
   <translation tag="The filament system reported an error" ja="フィラメントシステムがエラーを報告しました"/>
   <translation tag="The heater will cycle on and off several times." ja="ヒーターは数回オン/オフを繰り返します。"/>

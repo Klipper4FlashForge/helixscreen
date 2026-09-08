@@ -809,6 +809,7 @@ translations:
   Do not touch the printer during calibration: Não toque na impressora durante a calibração
   Dock: Encaixar
   Dock sensors cannot tell which tool is mounted: Sensores de encaixe não conseguem identificar qual ferramenta está montada
+  Dock sensors disagree: ''
   Dock tool: Encaixar ferramenta
   Docking tool: Encaixando ferramenta
   Documentation: Documentação
@@ -2806,6 +2807,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : O protetor de tela animado foi desativado neste dispositivo para evitar que interfira
     nas impressões. Você pode reativá-lo em Configurações > Tela.
+  The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.: ''
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   : O filamento não chegou ao bico. O CFS não reportou nenhum erro, mas o sensor do cabeçote ainda não detecta filamento. Verifique se o carretel está bem encaixado e se o caminho está livre, e tente novamente.
   The filament system reported an error: O sistema de filamento reportou um erro

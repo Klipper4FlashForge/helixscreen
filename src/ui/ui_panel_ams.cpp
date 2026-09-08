@@ -1513,6 +1513,14 @@ void AmsPanel::show_loading_error_modal() {
         return;
     }
 
+    // A backend that publishes its own fault owns the surface: AmsErrorBridge
+    // presents current_error() with that backend's title, wording and recovery
+    // actions. This dialog is the fallback for the ones that do not, and firing
+    // both stacks two dialogs on one fault.
+    if (backend->current_error().has_value()) {
+        return;
+    }
+
     // Create modal on first use (lazy initialization)
     if (!error_modal_) {
         error_modal_ = std::make_unique<helix::ui::AmsLoadingErrorModal>();

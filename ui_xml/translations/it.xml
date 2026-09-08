@@ -719,6 +719,7 @@
   <translation tag="Do not touch the printer during calibration" it="Non toccare la stampante durante la calibrazione"/>
   <translation tag="Dock" it="Aggancia"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" it="I sensori di aggancio non possono determinare quale utensile è montato"/>
+  <translation tag="Dock sensors disagree"/>
   <translation tag="Dock tool" it="Aggancia utensile"/>
   <translation tag="Docking tool" it="Rilascio utensile"/>
   <translation tag="Documentation" it="Documentazione"/>
@@ -2492,6 +2493,7 @@
   <translation tag="The Spoolman spool currently loaded" it="La bobina Spoolman caricata"/>
   <translation tag="The accelerometer stream stopped: %s. Check that Klipper is running, then retry." it="Lo stream dell&apos;accelerometro si è interrotto: %s. Verifica che Klipper sia in esecuzione, poi riprova."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." it="Il salvaschermo animato è stato disattivato su questo dispositivo per evitare che interferisca con le stampe. Puoi riattivarlo in Impostazioni &gt; Schermo."/>
+  <translation tag="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches."/>
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." it="Il filamento non ha raggiunto l&apos;ugello. Il CFS non ha segnalato errori, ma il sensore della testina ancora non rileva filamento. Verifica che la bobina sia ben inserita e che il percorso sia libero, poi riprova."/>
   <translation tag="The filament system reported an error" it="Il sistema filamento ha segnalato un errore"/>
   <translation tag="The heater will cycle on and off several times." it="Il riscaldatore si accenderà e spegnerà diverse volte."/>
