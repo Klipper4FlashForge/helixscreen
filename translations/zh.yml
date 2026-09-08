@@ -2974,6 +2974,7 @@ translations:
   AI detection: AI 检测
   Monitor for print abnormalities (K2 Plus camera-based): 监测打印异常（基于 K2 Plus 摄像头）
   or type a macro name: 或输入宏名称
+  printer default: 打印机默认
   prints: 打印次数
   remaining: 剩余
   remaining before clog detection triggers: 剩余即触发堵料检测

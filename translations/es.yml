@@ -3262,6 +3262,7 @@ translations:
   AI detection: Detección AI
   Monitor for print abnormalities (K2 Plus camera-based): Monitorear anomalías de impresión (basado en cámara del K2 Plus)
   or type a macro name: o escriba un nombre de macro
+  printer default: valor por defecto de la impresora
   prints: impresiones
   remaining: restante
   remaining before clog detection triggers: restante antes de que se active la detección
