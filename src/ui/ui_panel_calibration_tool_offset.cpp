@@ -282,7 +282,7 @@ void ToolOffsetCalibrationPanel::show_error(int step, const std::string& message
         body += "\n\n";
         body += message;
     }
-    helix::ui::modal_show_alert(title.c_str(), body.c_str(), ModalSeverity::Error, lv_tr("Close"));
+    helix::ui::modal_alert(title.c_str(), body.c_str(), ModalSeverity::Error, lv_tr("Close"));
 }
 
 void ToolOffsetCalibrationPanel::on_deactivate() {
@@ -361,22 +361,14 @@ void ToolOffsetCalibrationPanel::confirm_and_run(std::vector<int> tools) {
         lv_tr("Take the build plate off, and clean every nozzle. The printer checks the plate "
               "itself and will refuse if it is still on — but it cannot tell whether a nozzle "
               "is clean, so that part is on you. Tools must be cold and docked.");
-    helix::ui::modal_show_confirmation(
+    helix::ui::ConfirmOptions start_opts;
+    // g_pending_tools is the selection this dialog is meant to resolve, so a
+    // backdrop tap has to clear it too - otherwise it leaks into the next run.
+    start_opts.on_dismiss = [] { g_pending_tools.clear(); };
+    helix::ui::modal_confirm(
         lv_tr("Before calibrating"), msg.c_str(), ModalSeverity::Warning, lv_tr("Start"),
-        [](lv_event_t* ev) {
-            (void)ev;
-            LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] confirm_start");
-            Modal::hide(Modal::get_top());
-            get_global_tool_offset_cal_panel().begin_run(std::move(g_pending_tools));
-            LVGL_SAFE_EVENT_CB_END();
-        },
-        [](lv_event_t* ev) {
-            (void)ev;
-            LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] cancel_start");
-            Modal::hide(Modal::get_top());
-            LVGL_SAFE_EVENT_CB_END();
-        },
-        this);
+        [] { get_global_tool_offset_cal_panel().begin_run(std::move(g_pending_tools)); },
+        start_opts);
 }
 
 void ToolOffsetCalibrationPanel::on_start_clicked(lv_event_t* e) {
@@ -657,25 +649,12 @@ void ToolOffsetCalibrationPanel::save_calibration() {
     }
     // The restart is the whole reason Save is a separate step, and nothing
     // else on the screen says it happens.
-    helix::ui::modal_show_confirmation(
+    helix::ui::modal_confirm(
         lv_tr("Save offsets?"),
         lv_tr("This writes the offsets to the printer's config and restarts its firmware, "
               "which takes a few seconds. Until then they apply only to this session."),
         ModalSeverity::Warning, lv_tr("Save"),
-        [](lv_event_t* ev) {
-            (void)ev;
-            LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] confirm_save");
-            Modal::hide(Modal::get_top());
-            get_global_tool_offset_cal_panel().send_save_config();
-            LVGL_SAFE_EVENT_CB_END();
-        },
-        [](lv_event_t* ev) {
-            (void)ev;
-            LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] cancel_save");
-            Modal::hide(Modal::get_top());
-            LVGL_SAFE_EVENT_CB_END();
-        },
-        this);
+        [] { get_global_tool_offset_cal_panel().send_save_config(); });
 }
 
 void ToolOffsetCalibrationPanel::send_save_config() {
