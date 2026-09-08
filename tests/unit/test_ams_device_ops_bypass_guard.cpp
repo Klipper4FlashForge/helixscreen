@@ -45,7 +45,7 @@
 #include <thread>
 #include <vector>
 
-#include <fmt/format.h>
+#include <spdlog/fmt/fmt.h>
 
 #include "../catch_amalgamated.hpp"
 
