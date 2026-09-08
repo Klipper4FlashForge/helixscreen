@@ -458,11 +458,11 @@ std::optional<helix::ErrorEvent> AmsBackendToolChanger::current_error() const {
     if (!sensor_error_) {
         return std::nullopt;
     }
+    // Same sentence unload_blocked_reason() returns, so the dialog and the
+    // greyed-out Unmount beside it explain the fault in one wording.
     return helix::make_ams_fault_event(
         helix::ErrorSource::TOOLCHANGER, lv_tr("Dock sensors disagree"),
-        lv_tr("The dock switches cannot tell which tool is on the carriage. Check the dock and "
-              "toolhead switches."),
-        build_recovery_actions());
+        lv_tr("Dock sensors cannot tell which tool is mounted"), build_recovery_actions());
 }
 
 PathSegment AmsBackendToolChanger::infer_error_segment() const {

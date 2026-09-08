@@ -809,7 +809,7 @@ translations:
   Do not touch the printer during calibration: No toque la impresora durante la calibración
   Dock: Acoplar
   Dock sensors cannot tell which tool is mounted: Los sensores de acoplamiento no pueden indicar qué herramienta está montada
-  Dock sensors disagree: ''
+  Dock sensors disagree: Sensores de acoplamiento discrepantes
   Dock tool: Acoplar herramienta
   Docking tool: Acoplando herramienta
   Documentation: Documentación
@@ -2801,7 +2801,6 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : El salvapantallas animado se ha desactivado en este dispositivo para evitar que
     interfiera con las impresiones. Puede volver a activarlo en Ajustes > Pantalla.
-  The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.: ''
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   : El filamento no llegó a la boquilla. El CFS no informó ningún error, pero el sensor del cabezal sigue sin detectar filamento. Compruebe que la bobina esté bien colocada y que el recorrido esté despejado, y vuelva a intentarlo.
   The filament system reported an error: El sistema de filamento informó un error

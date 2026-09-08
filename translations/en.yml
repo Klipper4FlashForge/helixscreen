@@ -2739,7 +2739,6 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
-  The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.: The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   : The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   The filament system reported an error: The filament system reported an error

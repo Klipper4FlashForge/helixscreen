@@ -805,7 +805,7 @@ translations:
     calibrazione
   Dock: Aggancia
   Dock sensors cannot tell which tool is mounted: I sensori di aggancio non possono determinare quale utensile è montato
-  Dock sensors disagree: ''
+  Dock sensors disagree: Sensori di aggancio discordanti
   Dock tool: Aggancia utensile
   Docking tool: Rilascio utensile
   Documentation: Documentazione
@@ -2797,7 +2797,6 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : Il salvaschermo animato è stato disattivato su questo dispositivo per evitare
     che interferisca con le stampe. Puoi riattivarlo in Impostazioni > Schermo.
-  The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.: ''
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   : Il filamento non ha raggiunto l'ugello. Il CFS non ha segnalato errori, ma il sensore della testina ancora non rileva filamento. Verifica che la bobina sia ben inserita e che il percorso sia libero, poi riprova.
   The filament system reported an error: Il sistema filamento ha segnalato un errore

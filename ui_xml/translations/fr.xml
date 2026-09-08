@@ -719,7 +719,7 @@
   <translation tag="Do not touch the printer during calibration" fr="Ne touchez pas l&apos;imprimante pendant la calibration"/>
   <translation tag="Dock" fr="Ranger"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" fr="Les capteurs du dock ne peuvent pas déterminer quel outil est monté"/>
-  <translation tag="Dock sensors disagree"/>
+  <translation tag="Dock sensors disagree" fr="Capteurs du dock incohérents"/>
   <translation tag="Dock tool" fr="Ranger l&apos;outil"/>
   <translation tag="Docking tool" fr="Rangement de l&apos;outil"/>
   <translation tag="Documentation" fr="Documentation"/>
@@ -2493,7 +2493,6 @@
   <translation tag="The Spoolman spool currently loaded" fr="La bobine Spoolman actuellement chargée"/>
   <translation tag="The accelerometer stream stopped: %s. Check that Klipper is running, then retry." fr="Le flux de l&apos;accéléromètre s&apos;est arrêté : %s. Vérifiez que Klipper est en cours d&apos;exécution, puis réessayez."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." fr="L&apos;économiseur d&apos;écran animé a été désactivé sur cet appareil pour éviter qu&apos;il n&apos;interfère avec les impressions. Vous pouvez le réactiver dans Paramètres &gt; Affichage et son."/>
-  <translation tag="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches."/>
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." fr="Le filament n&apos;est pas arrivé à la buse. Le CFS n&apos;a signalé aucune erreur, mais le capteur de tête d&apos;outil ne détecte toujours pas de filament. Vérifiez que la bobine est bien en place et que le chemin est dégagé, puis réessayez."/>
   <translation tag="The filament system reported an error" fr="Le système de filament a signalé une erreur"/>
   <translation tag="The heater will cycle on and off several times." fr="Le chauffage s&apos;allumera et s&apos;éteindra plusieurs fois."/>

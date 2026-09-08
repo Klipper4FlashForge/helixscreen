@@ -796,7 +796,7 @@ translations:
   Do not touch the printer during calibration: Не трогайте принтер во время калибровки
   Dock: Парковать
   Dock sensors cannot tell which tool is mounted: Датчики стыковки не могут определить, какой инструмент установлен
-  Dock sensors disagree: ''
+  Dock sensors disagree: Противоречие датчиков стыковки
   Dock tool: Состыковать инструмент
   Docking tool: Парковка инструмента
   Documentation: Документация
@@ -2770,7 +2770,6 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : Анимированная заставка была отключена на данном устройстве, чтобы она не мешала
     печати. Вы можете снова включить её в Настройки > Дисплей.
-  The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.: ''
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   : Филамент не дошёл до сопла. CFS не сообщила об ошибке, но датчик печатающей головки по-прежнему не видит филамент. Проверьте, что катушка установлена правильно и путь свободен, затем повторите попытку.
   The filament system reported an error: Система филамента сообщила об ошибке

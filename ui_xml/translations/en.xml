@@ -2493,7 +2493,6 @@
   <translation tag="The Spoolman spool currently loaded" en="The Spoolman spool currently loaded"/>
   <translation tag="The accelerometer stream stopped: %s. Check that Klipper is running, then retry." en="The accelerometer stream stopped: %s. Check that Klipper is running, then retry."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." en="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display."/>
-  <translation tag="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches." en="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches."/>
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." en="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again."/>
   <translation tag="The filament system reported an error" en="The filament system reported an error"/>
   <translation tag="The heater will cycle on and off several times." en="The heater will cycle on and off several times."/>

@@ -719,7 +719,7 @@
   <translation tag="Do not touch the printer during calibration" pt="Não toque na impressora durante a calibração"/>
   <translation tag="Dock" pt="Encaixar"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" pt="Sensores de encaixe não conseguem identificar qual ferramenta está montada"/>
-  <translation tag="Dock sensors disagree"/>
+  <translation tag="Dock sensors disagree" pt="Sensores de encaixe divergentes"/>
   <translation tag="Dock tool" pt="Encaixar ferramenta"/>
   <translation tag="Docking tool" pt="Encaixando ferramenta"/>
   <translation tag="Documentation" pt="Documentação"/>
@@ -2493,7 +2493,6 @@
   <translation tag="The Spoolman spool currently loaded" pt="O carretel do Spoolman em uso"/>
   <translation tag="The accelerometer stream stopped: %s. Check that Klipper is running, then retry." pt="A transmissão do acelerômetro parou: %s. Verifique se o Klipper está em execução e tente novamente."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." pt="O protetor de tela animado foi desativado neste dispositivo para evitar que interfira nas impressões. Você pode reativá-lo em Configurações &gt; Tela."/>
-  <translation tag="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches."/>
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." pt="O filamento não chegou ao bico. O CFS não reportou nenhum erro, mas o sensor do cabeçote ainda não detecta filamento. Verifique se o carretel está bem encaixado e se o caminho está livre, e tente novamente."/>
   <translation tag="The filament system reported an error" pt="O sistema de filamento reportou um erro"/>
   <translation tag="The heater will cycle on and off several times." pt="O aquecedor ligará e desligará várias vezes."/>

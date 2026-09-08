@@ -814,7 +814,7 @@ translations:
     berühren
   Dock: Andocken
   Dock sensors cannot tell which tool is mounted: Dock-Sensoren können nicht erkennen, welches Werkzeug montiert ist
-  Dock sensors disagree: ''
+  Dock sensors disagree: Dock-Sensoren widersprüchlich
   Dock tool: Werkzeug andocken
   Docking tool: Werkzeug andocken
   Documentation: Dokumentation
@@ -2806,7 +2806,6 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : Der animierte Bildschirmschoner wurde auf diesem Gerät ausgeschaltet, um zu verhindern,
     dass er Drucke stört. Sie können ihn unter Einstellungen > Anzeige wieder aktivieren.
-  The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches.: ''
   ? The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again.
   : Das Filament hat die Düse nicht erreicht. Das CFS hat keinen Fehler gemeldet, aber der Werkzeugkopfsensor erkennt weiterhin kein Filament. Stellen Sie sicher, dass die Spule richtig sitzt und der Pfad frei ist, und versuchen Sie es erneut.
   The filament system reported an error: Das Filamentsystem meldete einen Fehler

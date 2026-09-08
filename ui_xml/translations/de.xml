@@ -719,7 +719,7 @@
   <translation tag="Do not touch the printer during calibration" de="Drucker während der Kalibrierung nicht berühren"/>
   <translation tag="Dock" de="Andocken"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" de="Dock-Sensoren können nicht erkennen, welches Werkzeug montiert ist"/>
-  <translation tag="Dock sensors disagree"/>
+  <translation tag="Dock sensors disagree" de="Dock-Sensoren widersprüchlich"/>
   <translation tag="Dock tool" de="Werkzeug andocken"/>
   <translation tag="Docking tool" de="Werkzeug andocken"/>
   <translation tag="Documentation" de="Dokumentation"/>
@@ -2493,7 +2493,6 @@
   <translation tag="The Spoolman spool currently loaded" de="Aktuell geladene Spoolman-Spule"/>
   <translation tag="The accelerometer stream stopped: %s. Check that Klipper is running, then retry." de="Der Beschleunigungssensor-Stream wurde beendet: %s. Prüfen Sie, ob Klipper läuft, und versuchen Sie es erneut."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." de="Der animierte Bildschirmschoner wurde auf diesem Gerät ausgeschaltet, um zu verhindern, dass er Drucke stört. Sie können ihn unter Einstellungen &gt; Anzeige wieder aktivieren."/>
-  <translation tag="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches."/>
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." de="Das Filament hat die Düse nicht erreicht. Das CFS hat keinen Fehler gemeldet, aber der Werkzeugkopfsensor erkennt weiterhin kein Filament. Stellen Sie sicher, dass die Spule richtig sitzt und der Pfad frei ist, und versuchen Sie es erneut."/>
   <translation tag="The filament system reported an error" de="Das Filamentsystem meldete einen Fehler"/>
   <translation tag="The heater will cycle on and off several times." de="Die Heizung wird mehrmals ein- und ausschalten."/>

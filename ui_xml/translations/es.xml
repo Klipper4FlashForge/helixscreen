@@ -719,7 +719,7 @@
   <translation tag="Do not touch the printer during calibration" es="No toque la impresora durante la calibración"/>
   <translation tag="Dock" es="Acoplar"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" es="Los sensores de acoplamiento no pueden indicar qué herramienta está montada"/>
-  <translation tag="Dock sensors disagree"/>
+  <translation tag="Dock sensors disagree" es="Sensores de acoplamiento discrepantes"/>
   <translation tag="Dock tool" es="Acoplar herramienta"/>
   <translation tag="Docking tool" es="Acoplando herramienta"/>
   <translation tag="Documentation" es="Documentación"/>
@@ -2493,7 +2493,6 @@
   <translation tag="The Spoolman spool currently loaded" es="La bobina de Spoolman cargada ahora"/>
   <translation tag="The accelerometer stream stopped: %s. Check that Klipper is running, then retry." es="El flujo del acelerómetro se detuvo: %s. Compruebe que Klipper esté en ejecución y vuelva a intentarlo."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." es="El salvapantallas animado se ha desactivado en este dispositivo para evitar que interfiera con las impresiones. Puede volver a activarlo en Ajustes &gt; Pantalla."/>
-  <translation tag="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches."/>
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." es="El filamento no llegó a la boquilla. El CFS no informó ningún error, pero el sensor del cabezal sigue sin detectar filamento. Compruebe que la bobina esté bien colocada y que el recorrido esté despejado, y vuelva a intentarlo."/>
   <translation tag="The filament system reported an error" es="El sistema de filamento informó un error"/>
   <translation tag="The heater will cycle on and off several times." es="El calentador se encenderá y apagará varias veces."/>

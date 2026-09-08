@@ -719,7 +719,7 @@
   <translation tag="Do not touch the printer during calibration" ru="Не трогайте принтер во время калибровки"/>
   <translation tag="Dock" ru="Парковать"/>
   <translation tag="Dock sensors cannot tell which tool is mounted" ru="Датчики стыковки не могут определить, какой инструмент установлен"/>
-  <translation tag="Dock sensors disagree"/>
+  <translation tag="Dock sensors disagree" ru="Противоречие датчиков стыковки"/>
   <translation tag="Dock tool" ru="Состыковать инструмент"/>
   <translation tag="Docking tool" ru="Парковка инструмента"/>
   <translation tag="Documentation" ru="Документация"/>
@@ -2493,7 +2493,6 @@
   <translation tag="The Spoolman spool currently loaded" ru="Текущая катушка Spoolman"/>
   <translation tag="The accelerometer stream stopped: %s. Check that Klipper is running, then retry." ru="Поток акселерометра остановлен: %s. Убедитесь, что Klipper запущен, и повторите попытку."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." ru="Анимированная заставка была отключена на данном устройстве, чтобы она не мешала печати. Вы можете снова включить её в Настройки &gt; Дисплей."/>
-  <translation tag="The dock switches cannot tell which tool is on the carriage. Check the dock and toolhead switches."/>
   <translation tag="The filament did not reach the nozzle. The CFS reported no error, but the toolhead sensor still sees no filament. Check that the spool is seated and the path is clear, then try again." ru="Филамент не дошёл до сопла. CFS не сообщила об ошибке, но датчик печатающей головки по-прежнему не видит филамент. Проверьте, что катушка установлена правильно и путь свободен, затем повторите попытку."/>
   <translation tag="The filament system reported an error" ru="Система филамента сообщила об ошибке"/>
   <translation tag="The heater will cycle on and off several times." ru="Нагреватель будет несколько раз включаться и выключаться."/>
