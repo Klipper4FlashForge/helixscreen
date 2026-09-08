@@ -1,0 +1,159 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Cross-compile check for the FlashForge Creator 5 Pro.
+#
+# The Creator 5 Pro is this fork's reason to exist, and until now nothing built
+# it outside a release: release.yml carries the platform in its matrix, but that
+# workflow only runs on a `v*` tag. A regression in mk/cross.mk, the toolchain
+# image or any MIPS-sensitive code therefore stayed invisible until release day.
+# This job builds the same artifact the release builds, on every push.
+#
+# The mechanics are lifted from release.yml's cross-compile job (buildx image
+# with a GHA-scoped cache, ccache on a bind mount, swap for the static link)
+# rather than reinvented, so the two cannot drift in how they build.
+
+name: Creator 5 Build
+
+on:
+  push:
+    branches:
+      - creator5
+      - "claude/**"
+      - "!claude/report-*"
+  pull_request:
+    branches: [ creator5 ]
+  workflow_dispatch:
+
+# A toolchain build plus a full cross-compile holds a runner for the better part
+# of an hour, and a work branch is often pushed again long before it finishes.
+# Newer pushes to the same ref supersede older ones; PRs key on their number.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-creator5:
+    name: Cross-compile (Creator 5 Pro)
+    runs-on: ubuntu-22.04
+    # release.yml budgets 180 for its worst platform (Pi, which builds twice).
+    # creator5 is a single static target and lands well inside this; the margin
+    # is for a cold ccache plus a cold toolchain image on the same run.
+    timeout-minutes: 120
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        submodules: false
+
+    - name: Initialize submodules
+      uses: ./.github/actions/init-submodules
+
+    # The runner ships nearly full of preinstalled SDKs this build never uses,
+    # and the toolchain image plus a sysroot is not small.
+    - name: Free up disk space
+      run: |
+        df -h /
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+        df -h /
+
+    # The static link is one big ld process; swap lets it page rather than be
+    # OOM-killed, and costs wall time only if the peak is actually exceeded.
+    - name: Add swap for the link peak
+      run: |
+        sudo fallocate -l 8G /swapfile-helix || sudo dd if=/dev/zero of=/swapfile-helix bs=1M count=8192
+        sudo chmod 600 /swapfile-helix
+        sudo mkswap /swapfile-helix
+        sudo swapon /swapfile-helix
+        free -h
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    # Unlike release.yml's restore-only step, this workflow runs on branch refs
+    # and so may SAVE: its cache lands in a scope later runs can read. Keyed by
+    # SHA with a prefix fallback, which is the usual write-through shape.
+    - name: Restore ccache
+      uses: actions/cache/restore@v5
+      id: ccache-restore
+      with:
+        path: /tmp/.ccache-creator5
+        key: ccache-creator5-${{ github.sha }}
+        restore-keys: |
+          ccache-creator5-
+
+    # CCACHE_DIR must be set explicitly on the docker runs below: without it
+    # ccache never reads <dir>/ccache.conf and silently keeps its 5 GB default.
+    - name: Configure ccache
+      run: |
+        mkdir -p /tmp/.ccache-creator5
+        printf 'max_size = 2G\ncompression = true\n' > /tmp/.ccache-creator5/ccache.conf
+
+    - name: Build the Creator 5 toolchain image
+      run: |
+        docker buildx build \
+          --cache-from type=gha,scope=toolchain-creator5 \
+          --cache-to type=gha,mode=max,scope=toolchain-creator5 \
+          --load \
+          -t helixscreen/toolchain-creator5 \
+          -f docker/Dockerfile.creator5 \
+          docker/
+
+    # HELIX_PACKAGING=1 matches release.yml exactly. It is what strips the
+    # remote-control server out, so this job builds the binary that actually
+    # ships rather than a dev-configuration one that could differ.
+    - name: Cross-compile for the Creator 5 Pro
+      run: |
+        docker run --rm \
+          -v "${{ github.workspace }}":/src \
+          -v /tmp/.ccache-creator5:/root/.cache/ccache \
+          -e CCACHE_DIR=/root/.cache/ccache \
+          -w /src \
+          helixscreen/toolchain-creator5 \
+          make PLATFORM_TARGET=creator5 HELIX_PACKAGING=1 SKIP_OPTIONAL_DEPS=1 -j$(nproc)
+
+    - name: Show ccache stats
+      run: |
+        docker run --rm \
+          -v /tmp/.ccache-creator5:/root/.cache/ccache \
+          -e CCACHE_DIR=/root/.cache/ccache \
+          helixscreen/toolchain-creator5 \
+          ccache -s
+
+    - name: Save ccache
+      if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: /tmp/.ccache-creator5
+        key: ccache-creator5-${{ github.sha }}
+
+    # docker wrote into build/ as root; later steps and the upload run as the
+    # runner user.
+    - name: Fix build directory ownership
+      run: sudo chown -R $(id -u):$(id -g) build/
+
+    # Proves the binary is the shape the device's kernel will accept. A
+    # legacy-NaN or dynamically-linked result loads as ENOEXEC there, which is
+    # exactly the class of regression this workflow exists to catch, and it is
+    # invisible in a link that otherwise succeeds.
+    - name: Verify the binary targets MIPS NaN2008 and is static
+      run: |
+        file build/creator5/bin/helix-screen
+        readelf -h build/creator5/bin/helix-screen | grep -qi 'mips' \
+          || { echo "::error::not a MIPS binary"; exit 1; }
+        readelf -h build/creator5/bin/helix-screen | grep -qi 'nan2008' \
+          || { echo "::error::built without NaN2008 - the Creator 5 kernel rejects this"; exit 1; }
+        file build/creator5/bin/helix-screen | grep -q 'statically linked' \
+          || { echo "::error::not statically linked"; exit 1; }
+
+    - name: Upload the Creator 5 binary
+      uses: actions/upload-artifact@v7
+      with:
+        name: helix-screen-creator5-${{ github.sha }}
+        path: |
+          build/creator5/bin/helix-screen
+          build/creator5/bin/helix-splash
+        # A build check, not a distribution channel - releases come from
+        # release.yml. Short retention keeps these out of the storage budget.
+        retention-days: 7
+        if-no-files-found: error

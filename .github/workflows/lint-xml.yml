@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+      # This fork's trunk. Upstream's list names `main` only, so without this
+      # every workflow below skipped every push to the branch we actually
+      # develop on.
+      - creator5
       - "claude/**"
       # Report branches carry a worker's STATUS.md over a full tree. Nothing
       # in them is code, and each push otherwise queues a whole build.
@@ -18,7 +22,7 @@ on:
       - 'mk/tools.mk'
       - '.github/workflows/lint-xml.yml'
   pull_request:
-    branches: [ main, "release/**" ]
+    branches: [ main, creator5, "release/**" ]
     paths:
       - 'ui_xml/**'
       - 'src/ui/**'
