@@ -286,9 +286,9 @@ Font-based MDI icons (~50KB total vs ~4.6MB for images).
 
 **C++ API:**
 ```cpp
-ui_icon_set_source(icon, "wifi_strength_4");
-ui_icon_set_size(icon, "lg");
-ui_icon_set_variant(icon, "accent");
+helix::ui::icon::set_source(icon, "wifi_strength_4");
+helix::ui::icon::set_size(icon, "lg");
+helix::ui::icon::set_variant(icon, "accent");
 ```
 
 **Adding icons:** canonical path in [DEVELOPMENT.md](DEVELOPMENT.md) § "Icon & Font Workflow" (header edit + `make regen-fonts`).

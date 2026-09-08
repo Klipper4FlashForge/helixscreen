@@ -322,11 +322,11 @@ lv_obj_t* create_icon(lv_obj_t* parent, const char* icon_name) {
     if (!icon_name || strlen(icon_name) == 0)
         return nullptr;
 
-    const char* codepoint = ui_icon::lookup_codepoint(icon_name);
+    const char* codepoint = helix::ui::icon::lookup_codepoint(icon_name);
     if (!codepoint) {
-        const char* stripped = ui_icon::strip_legacy_prefix(icon_name);
+        const char* stripped = helix::ui::icon::strip_legacy_prefix(icon_name);
         if (stripped != icon_name) {
-            codepoint = ui_icon::lookup_codepoint(stripped);
+            codepoint = helix::ui::icon::lookup_codepoint(stripped);
         }
     }
     if (!codepoint) {
@@ -502,7 +502,7 @@ void* ui_split_button_create(lv_xml_parser_state_t* state, const char** attrs) {
 
     // Chevron down icon
     lv_obj_t* chevron = lv_label_create(data->arrow_btn);
-    const char* chevron_cp = ui_icon::lookup_codepoint("chevron_down");
+    const char* chevron_cp = helix::ui::icon::lookup_codepoint("chevron_down");
     if (chevron_cp) {
         lv_label_set_text(chevron, chevron_cp);
     }

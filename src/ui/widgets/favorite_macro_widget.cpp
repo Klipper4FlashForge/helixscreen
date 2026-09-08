@@ -120,7 +120,7 @@ void FavoriteMacroWidget::set_config(const nlohmann::json& config) {
     auto c = helix::favorite_macro_config_from_json(config);
     macro_name_ = c.macro;
     // Validate icon against codepoints — reject stale/invalid names
-    if (c.icon.empty() || ui_icon::lookup_codepoint(c.icon.c_str())) {
+    if (c.icon.empty() || helix::ui::icon::lookup_codepoint(c.icon.c_str())) {
         icon_name_ = c.icon;
     } else {
         spdlog::warn("[FavoriteMacroWidget] Unknown icon '{}' in config, using default", c.icon);
@@ -252,15 +252,15 @@ void FavoriteMacroWidget::update_display() {
         const char* effective_icon = "script_text";
         if (!unconfigured)
             effective_icon = icon_name_.empty() ? "play" : icon_name_.c_str();
-        ui_icon_set_source(icon_label_, effective_icon);
+        helix::ui::icon::set_source(icon_label_, effective_icon);
 
         // Apply custom color when configured, muted when unconfigured
         if (icon_color_ != 0 && !unconfigured) {
-            ui_icon_set_color(icon_label_, lv_color_hex(icon_color_), LV_OPA_COVER);
+            helix::ui::icon::set_color(icon_label_, lv_color_hex(icon_color_), LV_OPA_COVER);
         } else if (unconfigured) {
-            ui_icon_set_variant(icon_label_, "secondary");
+            helix::ui::icon::set_variant(icon_label_, "secondary");
         } else {
-            ui_icon_set_variant(icon_label_, "secondary");
+            helix::ui::icon::set_variant(icon_label_, "secondary");
         }
     }
 

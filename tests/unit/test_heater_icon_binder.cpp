@@ -102,7 +102,7 @@ lv_obj_t* create_icon_root(lv_obj_t* parent, const char* icon_name) {
     return root;
 }
 
-// The animator applies its thermal-state color via ui_icon_set_color(), which
+// The animator applies its thermal-state color via helix::ui::icon::set_color(), which
 // is plain lv_obj_set_style_text_color(). Reading it back is a black-box way
 // to observe whether HeaterIconBinder actually reached animator_.update(),
 // without reaching into its private animator_ member.

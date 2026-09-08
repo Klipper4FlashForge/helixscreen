@@ -18,7 +18,7 @@
 // Source: https://pictogrammers.com/library/mdi/
 // =============================================================================
 
-namespace ui_icon {
+namespace helix::ui::icon {
 
 // Icon codepoint mapping structure
 struct IconMapping {
@@ -408,4 +408,4 @@ inline const char* strip_legacy_prefix(const char* legacy_name) {
     return stripped;
 }
 
-} // namespace ui_icon
+} // namespace helix::ui::icon

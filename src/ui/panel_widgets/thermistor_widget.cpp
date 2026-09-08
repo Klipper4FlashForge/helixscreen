@@ -197,7 +197,7 @@ void ThermistorWidget::attach_single() {
     lv_obj_t* icon_obj = lv_obj_find_by_name(widget_obj_, "thermistor_icon");
     if (icon_obj) {
         const char* icon = icon_name_.empty() ? DEFAULT_ICON : icon_name_.c_str();
-        ui_icon_set_source(icon_obj, icon);
+        helix::ui::icon::set_source(icon_obj, icon);
     }
 
     // If no sensor saved (set_config provided none), auto-select first available
@@ -542,7 +542,7 @@ void ThermistorWidget::select_icon(const std::string& name) {
         widget_obj_ ? lv_obj_find_by_name(widget_obj_, "thermistor_icon") : nullptr;
     if (icon_obj) {
         const char* effective = icon_name_.empty() ? DEFAULT_ICON : icon_name_.c_str();
-        ui_icon_set_source(icon_obj, effective);
+        helix::ui::icon::set_source(icon_obj, effective);
     }
 
     // Move the selection ring if the grid that raised this is still on screen
@@ -859,7 +859,7 @@ void ThermistorWidget::ConfigurePicker::on_created(lv_obj_t* backdrop) {
             apply_icon_cell_highlight(cell, THERMISTOR_ICONS[i] == effective_icon);
 
             // Icon glyph
-            const char* cp = ui_icon::lookup_codepoint(THERMISTOR_ICONS[i]);
+            const char* cp = helix::ui::icon::lookup_codepoint(THERMISTOR_ICONS[i]);
             if (cp) {
                 lv_obj_t* icon = lv_label_create(cell);
                 lv_label_set_text(icon, cp);

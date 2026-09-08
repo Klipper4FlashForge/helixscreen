@@ -95,7 +95,7 @@ void PrinterSwitchMenu::populate_printer_list() {
         icon_font_name ? lv_xml_get_font(nullptr, icon_font_name) : body_font;
 
     // Get check icon codepoint from our icon system
-    const char* check_codepoint = ui_icon::lookup_codepoint("check");
+    const char* check_codepoint = helix::ui::icon::lookup_codepoint("check");
 
     for (const auto& id : printer_ids) {
         bool is_active = (id == active_id);

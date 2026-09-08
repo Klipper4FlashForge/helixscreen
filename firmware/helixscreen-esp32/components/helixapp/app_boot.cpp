@@ -189,7 +189,7 @@ HostPort parse_moonraker_kconfig_url(const std::string& url) {
 // VIEWER=0) — it still registers a stub <gcode_viewer> widget so XML that names
 // it parses.
 void register_widgets() {
-    ui_icon_register_widget();
+    helix::ui::icon::register_widget();
     ui_status_pill_register_widget();
     ui_switch_register();
     ui_card_register();

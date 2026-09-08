@@ -234,7 +234,7 @@ TEST_CASE("get_heating_state_variant: agrees with get_heating_state_color across
           "[temperature][heater_variant]") {
     // The variant string must map to the same theme token the color function
     // resolves, for every state. (Color is token-resolved; variant is the token
-    // family name used by ui_icon_set_variant.)
+    // family name used by helix::ui::icon::set_variant.)
     auto same = [](int cur, int tgt, const char* token) {
         auto color = get_heating_state_color(cur, tgt);
         auto expected = theme_manager_get_color(token);
@@ -388,7 +388,7 @@ TEST_CASE("classify_heat_state_with_mode: Maintaining at/below ceiling is Neutra
 
 TEST_CASE("classify_heat_state_with_mode: honors a custom tolerance in Maintaining mode",
           "[temperature][heat_state][chamber_mode]") {
-    // Decidegree-scale tolerance (20 = 2 degrees), mirroring HeatingIconAnimator's
+    // Decidegree-scale tolerance (20 = 2 degrees), mirroring helix::ui::HeatingIconAnimator's
     // TEMP_TOLERANCE usage.
     REQUIRE(classify_heat_state_with_mode(2015, 2000, helix::ChamberMode::Maintaining, 20) ==
             HeatState::Neutral);

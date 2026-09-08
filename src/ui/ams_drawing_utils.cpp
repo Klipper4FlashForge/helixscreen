@@ -864,7 +864,7 @@ SpoolVisual create_spool_visual(lv_obj_t* container, int32_t spool_size) {
         lv_obj_add_flag(ph, LV_OBJ_FLAG_HIDDEN);
 
         // Plus icon centered in circle to communicate "empty, add filament"
-        const char* plus_glyph = ui_icon::lookup_codepoint("plus");
+        const char* plus_glyph = helix::ui::icon::lookup_codepoint("plus");
         if (plus_glyph) {
             lv_obj_t* plus = lv_label_create(ph);
             lv_label_set_text(plus, plus_glyph);
