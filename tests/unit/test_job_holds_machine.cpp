@@ -273,7 +273,7 @@ TEST_CASE("no toolhead-guarding XML binding is left on the raw print_active subj
         // The full form, including the direction. Counting only the subject name
         // would let ref_value="0" through - controls disabled when idle and live
         // while printing, the exact inversion - and the census would still read
-        // 21. Only the bypass tile has its direction pinned behaviourally.
+        // 23. Only the bypass tile has its direction pinned behaviourally.
         size_t pos = 0;
         const std::string needle =
             "<bind_state_if_eq subject=\"job_holds_machine\" state=\"disabled\" ref_value=\"1\"/>";
@@ -302,5 +302,9 @@ TEST_CASE("no toolhead-guarding XML binding is left on the raw print_active subj
 
     // The census count. If a binding is legitimately added or removed, update
     // this - the number existing is what makes a silent drop visible.
-    REQUIRE(derived_bindings == 21);
+    //
+    // 21 -> 23: controls_panel.xml gained the Tool Offsets and Pressure Advance
+    // calibration buttons, both of which reach the toolhead and so carry the
+    // same job_holds_machine guard as the buttons beside them.
+    REQUIRE(derived_bindings == 23);
 }
