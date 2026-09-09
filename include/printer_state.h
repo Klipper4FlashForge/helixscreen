@@ -2171,35 +2171,6 @@ class PrinterState {
     void set_hardware_validation_result(const HardwareValidationResult& result);
 
     /**
-     * @brief Get hardware has issues subject for UI binding
-     *
-     * Integer subject: 0=no issues, 1=has issues.
-     * Use with bind_flag_if_eq to show/hide Hardware Health section.
-     */
-    lv_subject_t* get_hardware_has_issues_subject() {
-        return hardware_validation_state_.get_hardware_has_issues_subject();
-    }
-
-    /**
-     * @brief Get hardware issue count subject for UI binding
-     *
-     * Integer subject with total number of validation issues.
-     */
-    lv_subject_t* get_hardware_issue_count_subject() {
-        return hardware_validation_state_.get_hardware_issue_count_subject();
-    }
-
-    /**
-     * @brief Get hardware max severity subject for UI binding
-     *
-     * Integer subject: 0=info, 1=warning, 2=critical.
-     * Use for styling (color) based on severity.
-     */
-    lv_subject_t* get_hardware_max_severity_subject() {
-        return hardware_validation_state_.get_hardware_max_severity_subject();
-    }
-
-    /**
      * @brief Get the headline badge level subject
      *
      * Integer subject: 0=ok, 1=attention, 2=critical. Bind appearance to this
@@ -2208,16 +2179,6 @@ class PrinterState {
      */
     lv_subject_t* get_hardware_status_level_subject() {
         return hardware_validation_state_.get_hardware_status_level_subject();
-    }
-
-    /**
-     * @brief Get hardware validation version subject
-     *
-     * Integer subject incremented when validation changes.
-     * UI should observe to refresh dynamic lists.
-     */
-    lv_subject_t* get_hardware_validation_version_subject() {
-        return hardware_validation_state_.get_hardware_validation_version_subject();
     }
 
     /**
@@ -2472,11 +2433,11 @@ class PrinterState {
     // Note: Version subjects (klipper_version_, moonraker_version_) are now managed
     // by versions_state_ component
 
-    // Note: Hardware validation subjects (hardware_has_issues_, hardware_issue_count_,
-    // hardware_max_severity_, hardware_validation_version_, hardware_critical_count_,
-    // hardware_warning_count_, hardware_info_count_, hardware_session_count_,
-    // hardware_status_title_, hardware_status_detail_, hardware_issues_label_,
-    // hardware_validation_result_) are now managed by hardware_validation_state_ component
+    // Note: Hardware validation subjects (hardware_status_level_,
+    // hardware_critical_count_, hardware_warning_count_, hardware_info_count_,
+    // hardware_session_count_, hardware_status_title_, hardware_status_detail_,
+    // hardware_issues_label_, hardware_validation_result_) are managed by the
+    // hardware_validation_state_ component
 
     // Note: tracked_led_name_ is now managed by led_state_component_
 

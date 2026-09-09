@@ -30,11 +30,7 @@ void PrinterHardwareValidationState::init_subjects(bool register_xml) {
                   register_xml);
 
     // Initialize hardware validation subjects
-    INIT_SUBJECT_INT(hardware_has_issues, 0, subjects_, register_xml);
-    INIT_SUBJECT_INT(hardware_issue_count, 0, subjects_, register_xml);
-    INIT_SUBJECT_INT(hardware_max_severity, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(hardware_status_level, 0, subjects_, register_xml);
-    INIT_SUBJECT_INT(hardware_validation_version, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(hardware_critical_count, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(hardware_warning_count, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(hardware_info_count, 0, subjects_, register_xml);
@@ -63,9 +59,6 @@ void PrinterHardwareValidationState::set_hardware_validation_result(
     hardware_validation_result_ = result;
 
     // Update summary subjects
-    lv_subject_set_int(&hardware_has_issues_, result.has_issues() ? 1 : 0);
-    lv_subject_set_int(&hardware_issue_count_, static_cast<int>(result.total_issue_count()));
-    lv_subject_set_int(&hardware_max_severity_, static_cast<int>(result.max_severity()));
     lv_subject_set_int(&hardware_status_level_, static_cast<int>(result.headline_level()));
 
     // Update category counts
@@ -125,13 +118,9 @@ void PrinterHardwareValidationState::set_hardware_validation_result(
     }
     lv_subject_copy_string(&hardware_issues_label_, hardware_issues_label_buf_);
 
-    // Increment version to notify UI observers
-    int version = lv_subject_get_int(&hardware_validation_version_);
-    lv_subject_set_int(&hardware_validation_version_, version + 1);
-
     spdlog::debug("[PrinterHardwareValidationState] Hardware validation updated: {} issues, "
-                  "max_severity={}",
-                  result.total_issue_count(), static_cast<int>(result.max_severity()));
+                  "status_level={}",
+                  result.total_issue_count(), static_cast<int>(result.headline_level()));
 }
 
 void PrinterHardwareValidationState::remove_hardware_issue(const std::string& hardware_name) {
