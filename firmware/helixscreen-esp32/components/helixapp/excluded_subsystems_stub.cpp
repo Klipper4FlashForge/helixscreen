@@ -127,7 +127,7 @@ lv_obj_t* TimelapseInstallOverlay::create(lv_obj_t*) {
     return nullptr;
 }
 void TimelapseInstallOverlay::on_activate() {}
-void TimelapseInstallOverlay::on_deactivate() {}
+void TimelapseInstallOverlay::on_deactivating(DeactivateReason) {}
 void TimelapseInstallOverlay::cleanup() {}
 
 TimelapseInstallOverlay& get_global_timelapse_install() {
@@ -144,7 +144,7 @@ lv_obj_t* TimelapseSettingsOverlay::create(lv_obj_t*) {
     return nullptr;
 }
 void TimelapseSettingsOverlay::on_activate() {}
-void TimelapseSettingsOverlay::on_deactivate() {}
+void TimelapseSettingsOverlay::on_deactivating(DeactivateReason) {}
 void TimelapseSettingsOverlay::cleanup() {}
 
 TimelapseSettingsOverlay& get_global_timelapse_settings() {
