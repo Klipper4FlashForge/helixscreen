@@ -476,15 +476,13 @@ void PrinterManagerOverlay::on_activate() {
     refresh_printer_info();
 }
 
-void PrinterManagerOverlay::on_deactivate() {
+void PrinterManagerOverlay::on_deactivating(DeactivateReason) {
     // Save any in-progress name edit before overlay closes
     // (user expects typing a name and navigating away to save it)
     if (lv_subject_get_int(&name_editing_) != 0) {
         finish_name_edit();
         KeyboardManager::instance().hide();
     }
-
-    OverlayBase::on_deactivate();
 }
 
 // =============================================================================

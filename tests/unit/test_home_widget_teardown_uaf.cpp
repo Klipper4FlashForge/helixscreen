@@ -36,6 +36,7 @@
 #endif
 #include "../test_helpers/network_widget_test_access.h"
 #include "../test_helpers/print_stats_test_access.h"
+#include "../test_helpers/scoped_runtime_config.h"
 #include "../test_helpers/shutdown_widget_test_access.h"
 #include "../test_helpers/tool_switcher_test_access.h"
 #include "../test_helpers/update_queue_test_access.h"
@@ -832,7 +833,27 @@ TEST_CASE_METHOD(HomeWidgetTeardownFixture,
 // that subject dies first.
 // --------------------------------------------------------------------------
 
-TEST_CASE_METHOD(HomeWidgetTeardownFixture,
+/// Pins the WiFi backend to its mock for the two cases below.
+///
+/// NetworkWidget::attach() reaches get_wifi_manager(), the process-lifetime
+/// WiFi singleton, whose backend is chosen once for the whole process. With
+/// test_mode off, WifiBackend::create() builds the real platform backend, and
+/// its start_async() worker probes this machine's live network state through
+/// nmcli/wpa_cli. That thread has no join site: the singleton is deliberately
+/// never destroyed, and ~WiFiManager -> backend_->stop() is the only place the
+/// backend's threads are joined, so the sanitizer sees a leaked thread at exit.
+/// The mock backend runs its init on the caller's thread and spawns none.
+struct NetworkWidgetTeardownFixture : HomeWidgetTeardownFixture {
+    ScopedRuntimeConfig scoped_config_;
+
+    NetworkWidgetTeardownFixture() {
+        auto* rc = get_runtime_config();
+        rc->test_mode = true;
+        rc->use_real_wifi = false;
+    }
+};
+
+TEST_CASE_METHOD(NetworkWidgetTeardownFixture,
                  "network drops its cached root when the page tree is deleted raw",
                  "[network_widget][teardown][uaf]") {
     auto widget = std::make_unique<NetworkWidget>();
@@ -859,7 +880,7 @@ TEST_CASE_METHOD(HomeWidgetTeardownFixture,
     SUCCEED("detach after a raw page delete touched no freed memory");
 }
 
-TEST_CASE_METHOD(HomeWidgetTeardownFixture,
+TEST_CASE_METHOD(NetworkWidgetTeardownFixture,
                  "network uninstalls its delete hook when destroyed before its tree",
                  "[network_widget][teardown][uaf]") {
     auto widget = std::make_unique<NetworkWidget>();

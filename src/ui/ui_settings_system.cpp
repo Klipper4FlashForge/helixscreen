@@ -129,10 +129,6 @@ void SystemSettingsOverlay::on_activate() {
     init_log_level_dropdown();
 }
 
-void SystemSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // INTERNAL INITIALIZATION
 // ============================================================================

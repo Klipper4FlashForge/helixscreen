@@ -307,21 +307,24 @@ class AmsOperationSidebar {
                                       const std::map<std::string, std::string>& params);
     void send_filament_fallback_gcode(bool is_load);
 
-    // ---- Unload button gating (filament_op_slot_resolver.h) -----------------
-    // Recompute the sidebar Unload button's enabled state from the SAME
+    // ---- Action button gating (filament_op_slot_resolver.h) -----------------
+    // Recompute every gated sidebar button and publish the results on
+    // ams_sidebar_unload_disabled, ams_sidebar_reset_disabled and
+    // ams_sidebar_check_gates_disabled. Unload comes from the same
     // compute_op_button_gating() rule the filament panel and the AMS context
-    // menu use, and publish it on ams_sidebar_unload_disabled.
-    //
-    // The sidebar had no print-state term at all, so its Unload stayed tappable
-    // through a print or a runout pause, dispatched, and ate the backend's
-    // "Cannot run filament operation while printing" refusal.
-    void refresh_unload_gating();
+    // menu use; Reset and Check slots come from compute_machine_op_gating().
+    void refresh_button_gating();
 
-    // Live inputs for refresh_unload_gating(), also consulted by handle_unload()
+    // Live inputs for refresh_button_gating(), also consulted by handle_unload()
     // so the dispatch cannot run when the button should have been greyed.
     [[nodiscard]] helix::ui::OpButtonState read_unload_gating_state() const;
 
-    // Observers feeding refresh_unload_gating(). ams_action / current_slot are
+    // The Reset / Check-slots half, likewise re-read by handle_reset() and
+    // handle_check_gates(). Neither backend call asks check_preconditions() for
+    // the print term, so these two reads are the only guard on those paths.
+    [[nodiscard]] helix::ui::MachineOpGating read_machine_op_gating() const;
+
+    // Observers feeding refresh_button_gating(). ams_action / current_slot are
     // already watched above; these two are the terms the sidebar never had.
     ObserverGuard filament_loaded_observer_;
     ObserverGuard print_state_observer_;

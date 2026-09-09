@@ -53,9 +53,11 @@
  *         visible_ = true;
  *     }
  *
- *     void on_deactivate() override {
+ *   protected:
+ *     void on_deactivating(DeactivateReason reason) override {
  *         // Stop scanning, cancel pending operations, etc.
- *         visible_ = false;
+ *         // No base call: the base runs this hook and then invalidates
+ *         // lifetime_ on its own.
  *     }
  * };
  * @endcode
@@ -65,7 +67,6 @@
 
 #pragma once
 
-#include "async_lifetime_guard.h"
 #include "lvgl/lvgl.h"
 #include "panel_lifecycle.h"
 
@@ -79,13 +80,14 @@
  * @brief Abstract base class for overlay panels with lifecycle management
  *
  * Provides shared infrastructure for overlay panels including:
- * - Lifecycle hooks (on_activate/on_deactivate) called by NavigationManager
+ * - Lifecycle hooks (on_activate/on_deactivating) called by NavigationManager
  * - Two-phase initialization (init_subjects -> create -> register_callbacks)
  * - Async-safe cleanup pattern
  *
  * @implements IPanelLifecycle for NavigationManager dispatch
+ * @see ViewLifecycleBase for the two lifetime guards and which one to use
  */
-class OverlayBase : public IPanelLifecycle {
+class OverlayBase : public ViewLifecycleBase {
   public:
     /**
      * @brief Virtual destructor for proper cleanup
@@ -149,21 +151,12 @@ class OverlayBase : public IPanelLifecycle {
     void on_activate() override;
 
     /**
-     * @brief Called when overlay is being hidden
-     *
-     * Override to stop scanning, cancel pending operations, pause timers.
-     * Called by NavigationManager before slide-out animation starts.
-     * Default implementation sets visible_ = false.
-     */
-    void on_deactivate() override;
-
-    /**
      * @brief Rebuild this overlay's widget tree from its XML component
      *
      * Dev-only. Called by NavigationManager after XML hot-reload re-registers
-     * a component. Invokes on_deactivate() to drop state, calls create() for
-     * a new widget, rekeys NavigationManager maps, restores visibility, and
-     * schedules async deletion of the old widget.
+     * a component. Deactivates with DeactivateReason::Rebuild to drop state,
+     * calls create() for a new widget, rekeys NavigationManager maps, restores
+     * visibility, and schedules async deletion of the old widget.
      *
      * @return true if rebuilt, false if no current widget or create() failed
      */
@@ -173,7 +166,9 @@ class OverlayBase : public IPanelLifecycle {
      * @brief Clean up resources for async-safe destruction
      *
      * Call this before destroying the overlay to handle any pending
-     * async callbacks safely. Sets cleanup_called_ flag.
+     * async callbacks safely. Invalidates BOTH lifetime guards — including
+     * object_lifetime_, whose whole point is surviving deactivation — and sets
+     * cleanup_called_.
      */
     virtual void cleanup();
 
@@ -277,11 +272,6 @@ class OverlayBase : public IPanelLifecycle {
     bool visible_ = false;              ///< True when overlay is visible
     bool cleanup_called_ = false;       ///< True after cleanup() called
 
-    /// Async callback safety. Automatically invalidated on cleanup()/on_deactivate().
-    /// Subclasses use lifetime_.defer(...) or lifetime_.token() for
-    /// bg-thread callbacks that need to touch UI.
-    helix::AsyncLifetimeGuard lifetime_;
-
     /**
      * @brief Called after widget tree is destroyed by destroy_overlay_ui()
      *
@@ -350,4 +340,7 @@ class OverlayBase : public IPanelLifecycle {
         subjects_initialized_ = false;
         spdlog::trace("[{}] Subjects deinitialized", get_name());
     }
+
+  private:
+    void on_view_hidden() override;
 };

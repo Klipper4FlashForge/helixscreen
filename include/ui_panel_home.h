@@ -43,7 +43,7 @@ class HomePanel : public PanelBase {
     /// Re-run the finalize pass on the new tree.
     void repopulate() override;
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
     const char* get_name() const override {
         return "Home Panel";
     }

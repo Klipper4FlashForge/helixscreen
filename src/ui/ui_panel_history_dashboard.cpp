@@ -312,8 +312,8 @@ void HistoryDashboardPanel::on_activate() {
     refresh_data();
 }
 
-void HistoryDashboardPanel::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void HistoryDashboardPanel::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     is_active_ = false;
 
@@ -324,7 +324,6 @@ void HistoryDashboardPanel::on_deactivate() {
     }
 
     // Call base class last
-    OverlayBase::on_deactivate();
 }
 
 // ============================================================================

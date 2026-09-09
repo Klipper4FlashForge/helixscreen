@@ -438,7 +438,7 @@ void ControlsPanel::on_activate() {
     spdlog::trace("[{}] Panel activated, refreshed macro buttons", get_name());
 }
 
-void ControlsPanel::on_deactivate() {
+void ControlsPanel::on_deactivating(DeactivateReason) {
     active_ = false;
     spdlog::trace("[{}] Panel deactivated, observer callbacks will skip UI updates", get_name());
 }
@@ -613,13 +613,13 @@ void ControlsPanel::register_observers() {
         [](ControlsPanel* self, int /* version */) {
             if (!self->active_)
                 return;
-            // Defer rebuild (#80) AND use safe_clean_children (#776): lifetime_.defer
+            // Defer rebuild (#80) AND use safe_clean_children (#776): object_lifetime_.defer
             // moves the rebuild off the observer callback's stack, and
             // safe_clean_children escapes UpdateQueue::process_pending() so sync
             // lv_obj_clean() can't corrupt LVGL's event linked list.
             if (!self->fans_rebuild_pending_) {
                 self->fans_rebuild_pending_ = true;
-                self->lifetime_.defer("ControlsPanel::populate_secondary_fans", [self]() {
+                self->object_lifetime_.defer("ControlsPanel::populate_secondary_fans", [self]() {
                     self->fans_rebuild_pending_ = false;
                     if (self->active_ && self->secondary_fans_list_)
                         self->populate_secondary_fans();
@@ -654,13 +654,13 @@ void ControlsPanel::register_observers() {
         [](ControlsPanel* self, int /* count */) {
             if (!self->active_)
                 return;
-            // Defer rebuild (#80) AND use safe_clean_children (#776): lifetime_.defer
+            // Defer rebuild (#80) AND use safe_clean_children (#776): object_lifetime_.defer
             // moves the rebuild off the observer callback's stack, and
             // safe_clean_children escapes UpdateQueue::process_pending() so sync
             // lv_obj_clean() can't corrupt LVGL's event linked list.
             if (!self->temps_rebuild_pending_) {
                 self->temps_rebuild_pending_ = true;
-                self->lifetime_.defer("ControlsPanel::populate_secondary_temps", [self]() {
+                self->object_lifetime_.defer("ControlsPanel::populate_secondary_temps", [self]() {
                     self->temps_rebuild_pending_ = false;
                     if (self->active_ && self->secondary_temps_list_)
                         self->populate_secondary_temps();
@@ -1083,19 +1083,18 @@ void ControlsPanel::handle_save_z_offset() {
     if (helix::zoffset::is_auto_saved(strategy))
         return;
 
+    // The rule the button's own visibility binds to, so a click that got through
+    // cannot mean something different from what the button offered. Asking only
+    // about the machine-wide offset here would refuse the save on exactly the
+    // case the button is shown for: a tool adjusted while the global stayed 0.
+    if (!helix::zoffset::save_available()) {
+        spdlog::debug("[{}] No Z-offset adjustment to save", get_name());
+        return;
+    }
+
     int offset_microns = 0;
     if (auto* subj = printer_state_.get_gcode_z_offset_subject()) {
         offset_microns = lv_subject_get_int(subj);
-    }
-
-    // Nothing dirty at all — machine-wide OR any tool. Checking only the
-    // machine-wide offset here would refuse the save on exactly the case the
-    // button is now shown for: a tool adjusted while the global stayed 0.
-    const bool tools_dirty =
-        lv_subject_get_int(helix::ToolState::instance().get_any_tool_z_dirty_subject()) == 1;
-    if (offset_microns == 0 && !tools_dirty) {
-        spdlog::debug("[{}] No Z-offset adjustment to save", get_name());
-        return;
     }
 
     spdlog::info("[{}] Save Z-offset clicked: {:+.3f}mm", get_name(),
@@ -1111,7 +1110,7 @@ void ControlsPanel::handle_save_z_offset() {
     helix::ui::ConfirmOptions opts;
     opts.on_cancel = [this] { handle_save_z_offset_cancel(); };
     opts.on_dismiss = [this] { save_z_offset_confirmation_dialog_.release(); }; // drop the handle
-    opts.owner_token = lifetime_.token();
+    opts.owner_token = object_lifetime_.token();
 
     save_z_offset_confirmation_dialog_ = helix::ui::modal_confirm(
         lv_tr("Save Z-Offset?"), confirm_msg, ModalSeverity::Warning, lv_tr("Save"),
@@ -1160,14 +1159,14 @@ void ControlsPanel::handle_save_z_offset_confirm() {
 
     NOTIFY_INFO(lv_tr("Saving Z-offset..."));
 
-    auto tok = lifetime_.token();
+    auto tok = object_lifetime_.token();
     // save_dirty_offsets(), not apply_and_save(): on a tool changer the button
     // is shown when EITHER the machine-wide offset or any tool's is dirty (the
     // same condition the header button carries), so saving only the machine-wide
     // one would silently drop the tool the user actually adjusted.
     helix::zoffset::save_dirty_offsets(
         api_, save_config_watch_, strategy, printer_state_.get_discovery(),
-        lv_subject_get_int(printer_state_.get_gcode_z_offset_subject()) != 0,
+        helix::zoffset::current_save_availability().global_dirty,
         [this, tok, offset_mm]() {
             tok.defer("ControlsPanel::save_z_offset_done", [this, offset_mm]() {
                 NOTIFY_SUCCESS(lv_tr("Z-offset saved ({:+.3f}mm). Klipper restarting..."),
@@ -1353,12 +1352,12 @@ void ControlsPanel::run_quick_action(uint32_t timeout_ms, const QuickActionText&
     // Moonraker replies land on a network thread. bg_cb defers the whole body to
     // the main thread atomically, which a bare expired() check followed by an
     // inline mutation does not (L081 Mechanism C).
-    dispatch(lifetime_.bg_cb("ControlsPanel::quick_action_ok",
-                             [this, msg = text.completed]() {
-                                 operation_guard_.end();
-                                 NOTIFY_SUCCESS(fmt::runtime(msg.c_str()));
-                             }),
-             lifetime_.bg_cb(
+    dispatch(object_lifetime_.bg_cb("ControlsPanel::quick_action_ok",
+                                    [this, msg = text.completed]() {
+                                        operation_guard_.end();
+                                        NOTIFY_SUCCESS(fmt::runtime(msg.c_str()));
+                                    }),
+             object_lifetime_.bg_cb(
                  "ControlsPanel::quick_action_error", [this, text](const MoonrakerError& err) {
                      operation_guard_.end();
                      if (err.type == MoonrakerErrorType::TIMEOUT) {
@@ -1470,7 +1469,7 @@ void ControlsPanel::execute_macro(size_t index) {
     std::string msg = fmt::format(lv_tr("Run {}?"), info.translated_name());
     helix::ui::ConfirmOptions opts;
     opts.on_dismiss = [this] { macro_run_confirmation_dialog_.release(); };
-    opts.owner_token = lifetime_.token();
+    opts.owner_token = object_lifetime_.token();
     macro_run_confirmation_dialog_ = helix::ui::modal_confirm(
         lv_tr("Run Macro?"), msg.c_str(), ModalSeverity::Info, lv_tr("Run"),
         [this, index] {
@@ -1560,7 +1559,7 @@ void ControlsPanel::handle_motors_clicked() {
     helix::ui::ConfirmOptions opts;
     opts.on_cancel = [this] { handle_motors_cancel(); };
     opts.on_dismiss = [this] { motors_confirmation_dialog_.release(); }; // drop the handle
-    opts.owner_token = lifetime_.token();
+    opts.owner_token = object_lifetime_.token();
 
     // ModalGuard's operator= hides any previous dialog before assigning new one
     motors_confirmation_dialog_ = helix::ui::modal_confirm(

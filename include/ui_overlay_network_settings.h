@@ -143,7 +143,7 @@ class NetworkSettingsOverlay : public OverlayBase {
      *
      * Stops WiFi scanning, cancels network tests.
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     /**
      * @brief Clean up resources for async-safe destruction

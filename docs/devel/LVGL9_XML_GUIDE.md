@@ -493,7 +493,15 @@ Full rule, both directions, and the tests that pin it:
 HelixScreen phases are in
 [`architecture/01-declarative-ui.md`](architecture/01-declarative-ui.md).
 Worked examples in this tree: `ui_xml/temp_graph_overlay.xml`
-(`temp_graph_mode`) and `ui_xml/header_bar.xml` (`any_tool_z_dirty`).
+(`temp_graph_mode`).
+
+There is a third way out when the same condition is needed on several surfaces
+*and* an operand comes from a Phase 9a `init_subjects()`: publish the answer as a
+plain subject from C++ and let every site bind that one name — a `subject="..."`
+reference resolves at view-create time, so the phase trap does not apply. That is
+what `z_offset_save_available` (`include/z_offset_utils.h#save_available`) does
+for the Z-offset save affordance. Reach for it only when repeating the `cond=`
+would put one rule in several files; a condition used once belongs inline.
 
 ##### HelixScreen examples
 
@@ -558,15 +566,17 @@ instead.
 
 **✅ Compound conditions are supported** via the expression evaluator (see "Expression Conditionals" above) — `cond="a or b gt c"` on `bind_flag_if`/`bind_state_if`/`bind_style_if`, or a `<subject_expr>` derived subject for a condition reused in multiple places. This replaces stacking several single-subject `bind_flag_if_*` elements or writing a hand-rolled C++ derived subject for "OR of two subjects" type logic.
 
-**Reuse alone does not pick `<subject_expr>`** — check the phase table above first. If any referenced subject comes from an `init_subjects()` (Phase 9a), the derived subject silently never registers and you must repeat the `cond=` at each site instead.
+**Reuse alone does not pick `<subject_expr>`** — check the phase table above first. If any referenced subject comes from an `init_subjects()` (Phase 9a), the derived subject silently never registers, so either repeat the `cond=` at each site or, when that would scatter one rule across several files, publish the answer as a C++ subject every site binds (see "Which phase registers the subject" above).
 
-**❌ Never put two flag bindings for the same flag on one widget.** The flag
-binds are two-way — a non-matching `bind_flag_if_eq` actively *removes* the flag
-rather than abstaining — so two of them do not AND, they overwrite each other.
-Combine into one expression (`cond="can and dirty"`) instead. Two binds for one
-flag are safe only on different widgets, which is why the broken form can look
-correct in nested markup. Worked example and the tests that pin it:
-[`lib/helix-xml/docs/BINDINGS.md` § *The flag binds are two-way*](../../lib/helix-xml/docs/BINDINGS.md#the-flag-binds-are-two-way).
+**✅ Several bindings on one flag or state OR together.** Give each independent
+reason its own line — a widget disabled while a job holds the machine *or* while
+an operation is running gets two `bind_state_if_eq` elements, and the state is
+applied while either holds, in whatever order the subjects notify. What that
+does *not* give you is the conjunction: two bindings never AND, so a condition
+that needs one is a single expression (`cond="can and dirty"`). Composition is
+per widget and per property; it never reaches an ancestor's binding on the same
+flag. Worked example and the tests that pin it:
+[`lib/helix-xml/docs/BINDINGS.md` § *Several bindings on one property OR together*](../../lib/helix-xml/docs/BINDINGS.md#several-bindings-on-one-property-or-together).
 
 #### Repeating fragments with `<repeat>`
 
@@ -1570,6 +1580,51 @@ Bar shows FULL instead of empty when created with `cur_value=0` and XML sets `va
 lv_bar_set_value(bar, 1, LV_ANIM_OFF);
 lv_bar_set_value(bar, 0, LV_ANIM_OFF);
 ```
+
+#### 7. Component Names Are File Basenames, Not Paths
+
+A component is named by its file's basename, so `ui_xml/micro/controls_panel.xml` and
+`ui_xml/controls_panel.xml` both register as `controls_panel`. Registering the second
+replaces the first for every later `lv_xml_create()` in that process, silently.
+
+Eight names exist in both the base tree and a variant directory: `app_layout`,
+`controls_panel`, `header_bar`, `navigation_bar`, `print_status_panel`,
+`print_tune_panel`, `theme_editor_overlay`, `theme_preview_overlay`.
+
+Tests feel this most, because registering everything under `ui_xml/` so nested
+components resolve is the obvious move and the wrong one:
+
+```cpp
+// ❌ WRONG - the micro variant replaces the base panel for the rest of the run
+for (const auto& f : all_xml_files) lv_xml_register_component_from_file(f.c_str());
+
+// ✅ CORRECT - base tree and components/ once, then the file under test
+//              immediately before building it
+register_base_and_components();
+lv_xml_register_component_from_file("A:ui_xml/micro/controls_panel.xml");
+lv_obj_t* panel = lv_xml_create(parent, "controls_panel", NULL);
+```
+
+A file whose `<view>` carries a name the base tree also uses cannot be built alongside
+the panel it shadows. Assert on its source text instead.
+
+#### 8. lv_obj_find_by_name() Searches Descendants Only
+
+It never tests the object handed to it, so a component carrying its name or its
+bindings on its own `<view>` element reads as missing:
+
+```cpp
+// ❌ WRONG - NULL when `root` IS the named widget
+lv_obj_t* w = lv_obj_find_by_name(root, "ams_current_tool");
+
+// ✅ CORRECT - test the root, then its descendants
+const char* root_name = lv_obj_get_name(root);
+lv_obj_t* w = (root_name && strcmp(root_name, "ams_current_tool") == 0)
+                  ? root
+                  : lv_obj_find_by_name(root, "ams_current_tool");
+```
+
+`ams_current_tool` and `probe_indicator` are both built this way.
 
 ### Debugging Checklist
 

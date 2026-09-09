@@ -127,7 +127,7 @@ class SpoolmanOverlay : public OverlayBase {
      * back on dismissal the manager's refcount can never reach zero and the
      * poll timer runs for the life of the process.
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     //
     // === Public API ===

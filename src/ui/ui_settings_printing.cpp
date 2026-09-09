@@ -143,10 +143,6 @@ void PrintingSettingsOverlay::on_activate() {
     init_z_movement_dropdown();
 }
 
-void PrintingSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // DROPDOWN INITIALIZATION
 // ============================================================================

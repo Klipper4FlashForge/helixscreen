@@ -145,8 +145,7 @@ void FanSettingsOverlay::on_activate() {
     populate_fans();
 }
 
-void FanSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
+void FanSettingsOverlay::on_deactivating(DeactivateReason) {
     cancel_rename(); // Dismiss rename modal if open
 }
 

@@ -61,7 +61,7 @@ class ConsolePanel : public OverlayBase {
 
     // === Lifecycle hooks ===
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
     void on_ui_destroyed() override;
 
     /// Send the current G-code command from the input field via Moonraker

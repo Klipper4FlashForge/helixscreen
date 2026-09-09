@@ -41,7 +41,7 @@ class TimelapseInstallOverlay : public OverlayBase {
     }
 
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
     void cleanup() override;
 
     lv_obj_t* get_panel() const {

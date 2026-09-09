@@ -240,8 +240,8 @@ void MachineLimitsOverlay::on_activate() {
     query_and_show(nullptr);
 }
 
-void MachineLimitsOverlay::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void MachineLimitsOverlay::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     // Flush any pending debounced apply before leaving
     if (apply_timer_) {
@@ -249,9 +249,6 @@ void MachineLimitsOverlay::on_deactivate() {
         apply_timer_ = nullptr;
         apply_limits();
     }
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 // ============================================================================

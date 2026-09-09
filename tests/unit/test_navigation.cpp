@@ -344,7 +344,7 @@ class MockPanelLifecycle : public IPanelLifecycle {
     void on_activate() override {
         activate_count_++;
     }
-    void on_deactivate() override {
+    void on_deactivate(DeactivateReason) override {
         deactivate_count_++;
     }
     const char* get_name() const override {

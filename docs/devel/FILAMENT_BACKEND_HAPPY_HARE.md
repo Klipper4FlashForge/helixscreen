@@ -34,8 +34,9 @@ Klipper object `mmu` in `printer.objects.list` sets `AmsType::HAPPY_HARE`.
 | `MMU_UNLOAD` | Unload current filament |
 | `MMU_SELECT GATE={n}` | Select gate without loading |
 | `T{n}` | Tool change (unload + load) |
-| `MMU_HOME` | Home the selector (reset) |
+| `MMU_HOME` | Home the selector (reset). Unloads first unless already unloaded — see Reset vs Recover |
 | `MMU_RECOVER` | Attempt error recovery |
+| `MMU_CHECK_GATE` | Probe every gate sensor (sidebar **Check slots**). Physical: parks the toolhead and unloads/reloads each gate, and Happy Hare does not refuse it mid-print, so the sidebar gates it |
 | `MMU_TTG_MAP TOOL={n} GATE={g}` | Set tool-to-gate mapping |
 | `MMU_SELECT_BYPASS` | Select bypass position |
 
@@ -96,6 +97,12 @@ to `is_tool_changer(get_type())`, which is false for an MMU.
 ### Reset vs Recover
 
 - **Reset** (`reset()`) sends `MMU_HOME` to home the selector. Used for general state reset.
+  It is not state-only: bare `MMU_HOME` carries no `FORCE_UNLOAD`, and Happy Hare's selector
+  `home()` runs its unload sequence whenever `filament_pos` is not `UNLOADED` before homing.
+  Happy Hare's own `check_if_printing()` guard is on `MMU_PRELOAD` alone, so the firmware
+  accepts this mid-print. Happy Hare is therefore the one backend answering
+  `reset_moves_filament()` true, which is what lets the AMS sidebar grey its Reset button
+  while a job owns the machine (`include/filament_op_slot_resolver.h#compute_machine_op_gating`).
 - **Recover** (`recover()`) sends `MMU_RECOVER` to attempt error recovery without full re-homing.
 - **Clear fault** (`clear_fault(slot_index)`) is a third, gate-scoped door onto the same command.
   Happy Hare overrides the base default (which forwards to `cancel()`): `slot_index >= 0` sends

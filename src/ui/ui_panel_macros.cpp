@@ -179,8 +179,8 @@ void MacrosPanel::on_activate() {
     });
 }
 
-void MacrosPanel::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void MacrosPanel::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     // Leaving the panel (back button / nav-away) discards any unsaved edit-mode
     // changes: only the header Save persists pending_hidden_.
@@ -189,7 +189,6 @@ void MacrosPanel::on_deactivate() {
     }
 
     // Call base class (invalidates lifetime_)
-    OverlayBase::on_deactivate();
 }
 
 void MacrosPanel::on_ui_destroyed() {

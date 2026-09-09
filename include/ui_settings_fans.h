@@ -67,7 +67,7 @@ class FanSettingsOverlay : public OverlayBase {
     void on_activate() override;
 
     /// Called when overlay is being hidden
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     /// Handle fan rename via keyboard modal (callable from any overlay)
     void handle_fan_rename(const std::string& object_name, const std::string& current_name);

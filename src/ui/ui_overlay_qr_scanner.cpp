@@ -215,7 +215,7 @@ void QrScannerOverlay::on_activate() {
     spdlog::debug("[{}] Activated", get_name());
 }
 
-void QrScannerOverlay::on_deactivate() {
+void QrScannerOverlay::on_deactivating(DeactivateReason) {
     // Expire all outstanding lifetime tokens FIRST, before any cleanup.
     // Camera BG thread may be mid-frame with a valid token; invalidating
     // early ensures queued lambdas are skipped. (#632)
@@ -244,8 +244,6 @@ void QrScannerOverlay::on_deactivate() {
     // Clear callbacks to prevent stale references on reuse
     result_callback_ = nullptr;
     cancel_callback_ = nullptr;
-
-    OverlayBase::on_deactivate();
     spdlog::debug("[{}] Deactivated", get_name());
 }
 

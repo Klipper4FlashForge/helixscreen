@@ -134,7 +134,7 @@ lv_obj_t* SpoolmanOverlay::create(lv_obj_t*) {
 }
 void SpoolmanOverlay::on_ui_destroyed() {}
 void SpoolmanOverlay::on_activate() {}
-void SpoolmanOverlay::on_deactivate() {}
+void SpoolmanOverlay::on_deactivating(DeactivateReason) {}
 void SpoolmanOverlay::show(lv_obj_t*) {}
 SpoolmanOverlay& get_spoolman_overlay() {
     static SpoolmanOverlay overlay;
@@ -187,7 +187,7 @@ lv_obj_t* SpoolmanPanel::create(lv_obj_t*) {
     return nullptr;
 }
 void SpoolmanPanel::on_activate() {}
-void SpoolmanPanel::on_deactivate() {}
+void SpoolmanPanel::on_deactivating(DeactivateReason) {}
 
 SpoolmanPanel& get_global_spoolman_panel() {
     static SpoolmanPanel panel;

@@ -70,9 +70,6 @@ class PowerPanel : public PanelBase {
   private:
     lv_obj_t* cached_overlay_ = nullptr; // Single shared overlay widget
 
-    // Guards async API callbacks from accessing a destroyed instance
-    helix::AsyncLifetimeGuard lifetime_;
-
     // Subject manager for automatic cleanup
     SubjectManager subjects_;
 

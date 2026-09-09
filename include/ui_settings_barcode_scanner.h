@@ -37,7 +37,7 @@ class BarcodeScannerSettingsOverlay : public OverlayBase {
 
   protected:
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
   private:
     void refresh_current_selection_label();

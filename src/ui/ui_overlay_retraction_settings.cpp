@@ -158,9 +158,8 @@ void RetractionSettingsOverlay::on_activate() {
     sync_from_printer_state();
 }
 
-void RetractionSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void RetractionSettingsOverlay::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 }
 
 void RetractionSettingsOverlay::cleanup() {

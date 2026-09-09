@@ -227,9 +227,7 @@ void LedControlOverlay::on_activate() {
                   current_color_);
 }
 
-void LedControlOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-
+void LedControlOverlay::on_deactivating(DeactivateReason) {
     // Stop live color updates + persist state
     auto& controller = LedController::instance();
     if (controller.is_initialized()) {

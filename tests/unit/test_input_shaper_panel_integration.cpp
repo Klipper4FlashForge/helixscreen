@@ -200,7 +200,7 @@ class InputShaperDeltaFixture : public LVGLUITestFixture {
     }
 
     ~InputShaperDeltaFixture() override {
-        panel_->on_deactivate();
+        panel_->on_deactivate(DeactivateReason::NavigateAway);
         helix::ui::UpdateQueue::instance().drain();
 
         // Drop the panel's subjects BEFORE the view: the view's bind observers

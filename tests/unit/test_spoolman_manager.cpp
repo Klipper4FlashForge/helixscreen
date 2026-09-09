@@ -378,7 +378,7 @@ TEST_CASE_METHOD(SpoolmanFixture, "SpoolmanOverlay: repeated opens do not leak p
     REQUIRE(OverlayTA::holds_poll_ref(overlay));
 
     // Dismissal gives it back
-    overlay.on_deactivate();
+    overlay.on_deactivate(DeactivateReason::NavigateAway);
     REQUIRE(TA::poll_refcount(mgr) == 0);
     REQUIRE_FALSE(OverlayTA::holds_poll_ref(overlay));
 
@@ -386,7 +386,7 @@ TEST_CASE_METHOD(SpoolmanFixture, "SpoolmanOverlay: repeated opens do not leak p
     OverlayTA::apply_sync(overlay, true);
     REQUIRE(TA::poll_refcount(mgr) == 1);
 
-    overlay.on_deactivate();
+    overlay.on_deactivate(DeactivateReason::NavigateAway);
     REQUIRE(TA::poll_refcount(mgr) == 0);
 }
 
@@ -404,7 +404,7 @@ TEST_CASE_METHOD(SpoolmanFixture, "SpoolmanOverlay: repeated sync apply takes on
     OverlayTA::apply_sync(overlay, true);
     REQUIRE(TA::poll_refcount(mgr) == 1);
 
-    overlay.on_deactivate();
+    overlay.on_deactivate(DeactivateReason::NavigateAway);
     REQUIRE(TA::poll_refcount(mgr) == 0);
 }
 
@@ -423,8 +423,8 @@ TEST_CASE_METHOD(SpoolmanFixture,
     // Overlay opened with sync disabled — it never took a reference, so applying
     // "disabled" and dismissing must leave the panel's reference alone
     OverlayTA::apply_sync(overlay, false);
-    overlay.on_deactivate();
-    overlay.on_deactivate();
+    overlay.on_deactivate(DeactivateReason::NavigateAway);
+    overlay.on_deactivate(DeactivateReason::NavigateAway);
     REQUIRE(TA::poll_refcount(mgr) == 1);
 
     // Same for a dismissal that follows a toggle-off
@@ -432,6 +432,6 @@ TEST_CASE_METHOD(SpoolmanFixture,
     REQUIRE(TA::poll_refcount(mgr) == 2);
     OverlayTA::apply_sync(overlay, false);
     REQUIRE(TA::poll_refcount(mgr) == 1);
-    overlay.on_deactivate();
+    overlay.on_deactivate(DeactivateReason::NavigateAway);
     REQUIRE(TA::poll_refcount(mgr) == 1);
 }

@@ -50,6 +50,7 @@
 #include "ams_types.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
+#include "print_lifecycle_state.h"
 #include "printer_state.h"
 
 #include <functional>
@@ -352,4 +353,87 @@ TEST_CASE_METHOD(FactoryGateFixture, "select_slot is print-gated exactly when it
             CHECK_FALSE(is_print_refusal(printing.err));
         }
     }
+}
+
+// ============================================================================
+// reset() is NOT print-gated anywhere, so the affordance carries the whole guard
+//
+// Every backend's reset() calls check_preconditions() with the default
+// requires_toolhead_motion = false, so refuse_if_printing() never runs for it.
+// The AMS sidebar's Reset button therefore greys itself from
+// reset_moves_filament(), and a backend answering that wrongly is invisible at
+// the backend layer: a wrong true deletes a live recovery path (CFS
+// BOX_ERROR_CLEAR, AFC's lane picker) mid-job, a wrong false offers Happy Hare's
+// MMU_HOME during a print (prestonbrown/helixscreen#1523).
+// ============================================================================
+
+TEST_CASE_METHOD(FactoryGateFixture, "reset_moves_filament is claimed by Happy Hare alone",
+                 "[ams][safety][factory]") {
+    int claimed = 0;
+    for (helix::AmsType type : buildable_types()) {
+        CAPTURE(helix::ams_type_to_string(type));
+        auto backend = build(type);
+        REQUIRE(backend != nullptr);
+
+        const bool moves = backend->reset_moves_filament();
+        CHECK(moves == (type == helix::AmsType::HAPPY_HARE));
+        if (moves) {
+            ++claimed;
+        }
+    }
+    // A loop that built nothing would pass every CHECK above by iterating zero
+    // times; this is what makes that collapse loud.
+    CHECK(claimed == 1);
+}
+
+// ============================================================================
+// The backend gate and the greyed button are ONE rule, not two that agree
+//
+// helix::print_blocks_filament_op() is the authority. refuse_if_printing() maps
+// its answer onto an AmsError; the AMS sidebar, filament panel and AMS context
+// menu map the same answer onto a disabled button. A surface that offered what
+// the backend refuses is a guaranteed-failure dead end, and one that greys what
+// the backend allows hides the pause-then-swap recovery.
+//
+// Neither side is spelled out here: the expectation is computed from the
+// predicate and compared against what the backend actually did, so this stays
+// true if the rule itself changes and goes red the moment the two diverge.
+// ============================================================================
+
+TEST_CASE_METHOD(FactoryGateFixture, "the backend refusal matches print_blocks_filament_op",
+                 "[ams][safety][factory]") {
+    auto unload = [](helix::AmsBackend& b) { return b.unload_filament(0); };
+
+    int compared = 0;
+    for (helix::AmsType type : buildable_types()) {
+        CAPTURE(helix::ams_type_to_string(type));
+
+        // filament_ops_self_home() is the backend's half of the rule's input.
+        const bool self_homes = build(type)->filament_ops_self_home();
+
+        for (helix::PrintJobState wire :
+             {helix::PrintJobState::STANDBY, helix::PrintJobState::PRINTING,
+              helix::PrintJobState::PAUSED}) {
+            set_print_state(wire);
+
+            // Read the lifecycle the backend will actually see rather than
+            // assuming the wire state maps to it one-for-one.
+            const PrintState lifecycle = state.get_print_lifecycle();
+            const bool expected = helix::print_blocks_filament_op(lifecycle, self_homes);
+
+            const Outcome out = run(type, unload);
+            CAPTURE(static_cast<int>(wire), static_cast<int>(lifecycle), self_homes, expected,
+                    out.err.user_msg);
+
+            CHECK(is_print_refusal(out.err) == expected);
+            if (expected) {
+                // A refusal that still reached the wire would be no guard at all.
+                CHECK(out.gcode.empty());
+            }
+            ++compared;
+        }
+    }
+    // Guards against a loop that compared nothing: 3 states over at least the
+    // unconditionally-built backends.
+    CHECK(compared >= EXPECTED_BACKEND_COUNT * 3);
 }
