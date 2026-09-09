@@ -165,9 +165,9 @@ _release_matrix_platforms() {
     [ -n "$worker" ]
 
     # Platforms this fork builds that upstream's worker refuses ON PURPOSE.
-    # crash.helixscreen.org is upstream's deployment, and prestonbrown's
-    # b6549ca1f added the gate precisely to keep reports from binaries they did
-    # not build out of their tracker -- our addresses resolve against no symbol
+    # crash.helixscreen.org is upstream's deployment, and upstream added the
+    # allowlist precisely to keep reports from binaries they did not build out
+    # of their tracker -- our addresses resolve against no symbol
     # file they publish. So the app->worker direction cannot hold for creator5
     # while we post to their endpoint, and forcing it would only reverse their
     # decision in a file we do not deploy. The worker->app direction still has
