@@ -35,6 +35,8 @@ void NotificationHistory::add(const NotificationHistoryEntry& entry) {
         head_index_ = (head_index_ + 1) % MAX_ENTRIES;
     }
 
+    ++version_;
+
     spdlog::trace("[Notification History] Added notification to history: severity={}, message='{}'",
                   static_cast<int>(entry.severity), entry.message);
 }
@@ -126,6 +128,7 @@ void NotificationHistory::clear() {
     entries_.clear();
     head_index_ = 0;
     buffer_full_ = false;
+    ++version_;
 
     spdlog::debug("[Notification History] Cleared notification history");
 }
@@ -133,6 +136,11 @@ void NotificationHistory::clear() {
 size_t NotificationHistory::count() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return entries_.size();
+}
+
+uint64_t NotificationHistory::version() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return version_;
 }
 
 void NotificationHistory::seed_test_data() {

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ui_notification_history.h"
+#include "ui_observer_guard.h"
 #include "ui_panel_base.h"
 
 #include "subject_managed_panel.h"
@@ -89,8 +90,8 @@ class NotificationHistoryPanel : public PanelBase {
     /**
      * @brief Refresh the notification list
      *
-     * Called when panel is shown or after clear.
-     * Rebuilds the list from NotificationHistory service.
+     * Rebuilds the list from NotificationHistory service. Called when the panel
+     * is shown, after clear, and whenever the history revision subject changes.
      */
     void refresh();
 
@@ -111,6 +112,15 @@ class NotificationHistoryPanel : public PanelBase {
     /// Has entries subject (1 = has entries, 0 = empty)
     lv_subject_t has_entries_subject_;
 
+    /// Fires refresh() when a notification arrives while the panel is open.
+    /// No paired SubjectLifetime: the subject belongs to the NotificationManager
+    /// singletons, which outlive the panel (and this observer is reset in
+    /// deinit_subjects() while the subject is still live).
+    ObserverGuard history_version_observer_;
+
+    /// Last revision applied by the observer (0 = none; subject values start at 1).
+    int32_t last_applied_history_version_ = 0;
+
     //
     // === Private Helpers ===
     //
@@ -130,6 +140,15 @@ class NotificationHistoryPanel : public PanelBase {
     //
 
     void handle_clear_clicked();
+
+    /**
+     * @brief Handle a history revision change observed from NotificationManager
+     *
+     * Skips revisions already applied (refresh marks entries read without
+     * bumping the revision, but double-publishes can arrive) and rebuilds
+     * the list from the store.
+     */
+    void handle_history_version_change(int32_t version);
 
     //
     // === Per-item click context ===
