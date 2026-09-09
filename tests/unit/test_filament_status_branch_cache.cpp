@@ -63,10 +63,17 @@ struct StatusHarness {
         // reads "Select material to begin" for heating and ready alike and the
         // case cannot tell the two apart. One tool over "extruder" restores the
         // single-extruder shape these arms were written against.
+        // Both halves, in the order PrinterDiscovery::apply() runs them.
+        // init_extruders() is what gives PrinterState a temp subject per heater;
+        // without it get_extruder_temp_subject("extruder") returns nullptr, the
+        // observer binds to nothing, and the tool built below is a tool whose
+        // temperature can never arrive.
         helix::PrinterDiscovery hw;
         hw.parse_objects(nlohmann::json::array({"extruder", "heater_bed", "gcode_move"}));
+        fx.state().init_extruders(hw.heaters());
         ToolState::instance().init_tools(hw);
         REQUIRE(ToolState::instance().tool_count() == 1);
+        REQUIRE(fx.state().get_extruder_temp_subject("extruder") != nullptr);
 
         panel = std::make_unique<FilamentPanel>(fx.state(), fx.api());
         panel->init_subjects();
