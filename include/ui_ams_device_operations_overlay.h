@@ -180,6 +180,14 @@ class AmsDeviceOperationsOverlay : public OverlayBase {
     /// Container for section list rows
     lv_obj_t* section_list_container_ = nullptr;
 
+    /// Owns every subject below, and must be declared ahead of them and of
+    /// bypass_toggle_ so it is torn down last. That teardown withdraws each
+    /// XML-scope name before freeing the storage the name resolves to:
+    /// StaticPanelRegistry::destroy_all() frees this overlay mid-process, and a
+    /// name left behind hands the next lv_xml_create() that binds it freed
+    /// memory (prestonbrown/helixscreen#1536).
+    SubjectManager subjects_;
+
     /// Subject for system info text (e.g. "System: AFC · v1.2.3")
     lv_subject_t system_info_subject_;
 
