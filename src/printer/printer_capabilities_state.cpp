@@ -10,10 +10,9 @@
 
 #include "printer_capabilities_state.h"
 
-#include "pa_calibration.h"
-
 #include "ui_update_queue.h"
 
+#include "pa_calibration.h"
 #include "sound_manager.h"
 #include "state/subject_macros.h"
 #include "webcam_selection.h"
@@ -186,10 +185,9 @@ void PrinterCapabilitiesState::set_hardware(const PrinterDiscovery& hardware,
 
     // Tool offset calibration — same gate as
     // ToolOffsetCalibrationPanel::printer_supports_calibration()
-    lv_subject_set_int(&printer_has_tool_offset_cal_,
-                       (hardware.has_tool_changer() && hardware.has_macro("CALIBRATE_TOOL_OFFSETS"))
-                           ? 1
-                           : 0);
+    lv_subject_set_int(
+        &printer_has_tool_offset_cal_,
+        (hardware.has_tool_changer() && hardware.has_macro("CALIBRATE_TOOL_OFFSETS")) ? 1 : 0);
 
     // Automatic pressure advance calibration. Which firmwares can measure it,
     // and how, belongs to helix::pacal — this only asks whether one matched.

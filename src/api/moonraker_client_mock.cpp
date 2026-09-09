@@ -1817,8 +1817,8 @@ void MoonrakerClientMock::populate_hardware() {
         // FlashForge Creator 5 Pro — 4-head tool changer, enclosed, heated chamber.
         // Object names mirror assets/config/presets/creator5.json so the mock and
         // the shipped preset describe the same machine.
-        discovery_.heaters() = {"heater_bed",  "extruder",  "extruder1",
-                                "extruder2",   "extruder3", "heater_generic chamber_heater"};
+        discovery_.heaters() = {"heater_bed", "extruder",  "extruder1",
+                                "extruder2",  "extruder3", "heater_generic chamber_heater"};
         discovery_.sensors() = {"heater_bed", // Bed thermistor (Klipper naming: bare heater name)
                                 "extruder",   // Hotend thermistors, one per head
                                 "extruder1",
@@ -5298,8 +5298,7 @@ void MoonrakerClientMock::temperature_simulation_loop() {
                 const double step = std::clamp(goal - temp, -3.0, 3.0);
                 const double next = std::abs(goal - temp) < 0.5 ? goal : temp + step;
                 extra_extruder_temp_[slot].store(next);
-                status_obj[kExtraExtruders[slot]] = {{"temperature", next},
-                                                     {"target", target}};
+                status_obj[kExtraExtruders[slot]] = {{"temperature", next}, {"target", target}};
             }
         }
 
@@ -5792,8 +5791,8 @@ bool MoonrakerClientMock::simulate_pa_calibration(
     // The applied value, in the shape Klipper's own SET_PRESSURE_ADVANCE echoes
     // it — which is exactly what the collector's result pattern matches.
     due += std::chrono::milliseconds(STEP_MS);
-    pending_pa_lines_.push_back({due, "// pressure_advance: 0.041200", true, std::move(success_cb),
-                                 std::move(error_cb)});
+    pending_pa_lines_.push_back(
+        {due, "// pressure_advance: 0.041200", true, std::move(success_cb), std::move(error_cb)});
 
     spdlog::info("[MoonrakerClientMock] SM_PRINT_FLOW_CALIBRATE: simulating {} candidates (~{}s)",
                  CANDIDATES, ((CANDIDATES + 1) * STEP_MS) / 1000);
@@ -5981,9 +5980,8 @@ void MoonrakerClientMock::service_pending_tool_cals() {
             const double nozzle_z = 1.4726 + cal.tool * 0.0287;
             dispatch_gcode_response(fmt::format("// T{}: offset = ({:.4f}, {:.4f}, {:.4f})",
                                                 cal.tool, nozzle_x, nozzle_y, nozzle_z));
-            dispatch_gcode_response(
-                "// offsets a toolchange applies (X/Y vs T0; Z absolute:"
-                " nozzle_z - station_z + z_adjust):");
+            dispatch_gcode_response("// offsets a toolchange applies (X/Y vs T0; Z absolute:"
+                                    " nozzle_z - station_z + z_adjust):");
             dispatch_gcode_response(fmt::format("//   T{}: dX {:+.4f}  dY {:+.4f}  Z {:+.4f}",
                                                 cal.tool, nozzle_x - 16.5051, nozzle_y - 212.7750,
                                                 nozzle_z - MOCK_STATION_Z));

@@ -4,10 +4,12 @@
 #include "ui_tool_chip.h"
 
 #include "ui_observer_guard.h"
+#include "ui_panel_ams_overview.h" // navigate_to_ams_panel
+#include "ui_temperature_utils.h"
 
 #include "ams_state.h"
-#include "app_globals.h"
 #include "ams_types.h"
+#include "app_globals.h"
 #include "filament_op_slot_resolver.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "helix-xml/src/xml/lv_xml_parser.h"
@@ -16,9 +18,7 @@
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "theme_manager.h"
-#include "ui_temperature_utils.h"
 #include "tool_state.h"
-#include "ui_panel_ams_overview.h" // navigate_to_ams_panel
 
 #include <spdlog/spdlog.h>
 
@@ -74,16 +74,16 @@ constexpr int32_t MIN_WIDTH_FOR_GRAMS_PX = 118;
  * there is no partially-updated chip to reason about.
  */
 struct ChipModel {
-    bool valid = false;      ///< The tool index still exists
-    std::string id;          ///< "T0"
-    std::string material;    ///< "PETG", or "—" when nothing is mounted
+    bool valid = false;   ///< The tool index still exists
+    std::string id;       ///< "T0"
+    std::string material; ///< "PETG", or "—" when nothing is mounted
     bool has_material = false;
-    bool loaded = false;     ///< Filament from this tool is at the toolhead
-    bool selected = false;   ///< The panel's verbs act on this tool
-    uint32_t color = 0;      ///< Material colour, 0xRRGGBB
+    bool loaded = false;   ///< Filament from this tool is at the toolhead
+    bool selected = false; ///< The panel's verbs act on this tool
+    uint32_t color = 0;    ///< Material colour, 0xRRGGBB
     bool has_color = false;
-    float fraction = -1.0f;  ///< Spool remaining, 0..1; <0 = unknown
-    std::string remaining;   ///< "480g", or "" when unknown
+    float fraction = -1.0f; ///< Spool remaining, 0..1; <0 = unknown
+    std::string remaining;  ///< "480g", or "" when unknown
     /// An AMS operation — a tool change included — is already running. Starting
     /// a second one is a guaranteed refusal, so the row goes inert instead.
     bool busy = false;
@@ -251,9 +251,8 @@ void apply_model(lv_obj_t* chip, ChipData* d, const ChipModel& m) {
     // the toolhead, a dim placeholder otherwise. That is the whole "which of
     // these is loaded" signal, so it must not also fire for a merely-mounted spool.
     if (d->dot) {
-        const lv_color_t dot_color = (m.loaded && m.has_color)
-                                         ? lv_color_hex(m.color)
-                                         : theme_manager_get_color("border");
+        const lv_color_t dot_color =
+            (m.loaded && m.has_color) ? lv_color_hex(m.color) : theme_manager_get_color("border");
         lv_obj_set_style_bg_color(d->dot, dot_color, LV_PART_MAIN);
     }
 
@@ -261,7 +260,6 @@ void apply_model(lv_obj_t* chip, ChipData* d, const ChipModel& m) {
     // finishes. Fading the whole row says that once, rather than letting every
     // tap produce a refusal toast.
     lv_obj_set_style_opa(chip, m.busy ? LV_OPA_50 : LV_OPA_COVER, LV_PART_MAIN);
-
 
     if (d->id_label) {
         lv_label_set_text(d->id_label, m.id.c_str());
@@ -498,9 +496,8 @@ void wire_observers(lv_obj_t* chip, ChipData* d) {
 
     d->tools_version_obs = helix::ui::observe_int_sync<lv_obj_t>(ts.get_tools_version_subject(),
                                                                  chip, on_change, tool_lt);
-    d->active_tool_obs =
-        helix::ui::observe_int_sync<lv_obj_t>(ts.get_active_tool_subject(), chip, on_change,
-                                              tool_lt);
+    d->active_tool_obs = helix::ui::observe_int_sync<lv_obj_t>(ts.get_active_tool_subject(), chip,
+                                                               on_change, tool_lt);
     d->ams_revision_obs = helix::ui::observe_int_sync<lv_obj_t>(
         AmsState::instance().get_ams_data_revision_subject(), chip, on_change, ams_lt);
     // The action subject is what moves on a tool change, so the inert look

@@ -64,7 +64,8 @@ TEST_CASE_METHOD(WizardToolOffsetStepTestFixture, "WizardToolOffsetStep - should
     helix::wizard::StepContext ctx;
 
     SECTION("Skipped on a single-tool printer") {
-        set_printer_objects({"heater_bed", "extruder", "fan", "gcode_macro CALIBRATE_TOOL_OFFSETS"});
+        set_printer_objects(
+            {"heater_bed", "extruder", "fan", "gcode_macro CALIBRATE_TOOL_OFFSETS"});
         REQUIRE(step.should_skip(ctx) == true);
     }
 

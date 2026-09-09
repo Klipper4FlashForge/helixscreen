@@ -241,8 +241,7 @@ bool WizardToolOffsetStep::tools_already_calibrated() {
 bool WizardToolOffsetStep::should_skip(const helix::wizard::StepContext& ctx) const {
     (void)ctx; // capability-gated: the macro is the printer's declaration
     if (!printer_supports_calibration()) {
-        spdlog::debug("[{}] No toolchanger + {} macro, skipping step", get_name(),
-                      CALIBRATE_MACRO);
+        spdlog::debug("[{}] No toolchanger + {} macro, skipping step", get_name(), CALIBRATE_MACRO);
         return true;
     }
     if (!calibration_complete_ && tools_already_calibrated()) {
@@ -287,15 +286,14 @@ void WizardToolOffsetStep::start_calibration() {
     // Moonraker's printer.gcode.script answers when the macro finishes, so the
     // success callback IS the completion signal. Four tools of probing can run
     // well past the 5-minute macro ceiling.
-    api->execute_gcode(
-        CALIBRATE_MACRO,
-        lifetime_.bg_cb("WizardToolOffsetStep::calibrate_done",
-                        [this]() { on_calibration_finished(true, ""); }),
-        lifetime_.bg_cb("WizardToolOffsetStep::calibrate_error",
-                        [this](const MoonrakerError& err) {
-                            on_calibration_finished(false, err.message);
-                        }),
-        IMoonrakerAPI::PRE_START_MACRO_TIMEOUT_MS);
+    api->execute_gcode(CALIBRATE_MACRO,
+                       lifetime_.bg_cb("WizardToolOffsetStep::calibrate_done",
+                                       [this]() { on_calibration_finished(true, ""); }),
+                       lifetime_.bg_cb("WizardToolOffsetStep::calibrate_error",
+                                       [this](const MoonrakerError& err) {
+                                           on_calibration_finished(false, err.message);
+                                       }),
+                       IMoonrakerAPI::PRE_START_MACRO_TIMEOUT_MS);
 }
 
 void WizardToolOffsetStep::on_calibration_finished(bool ok, const std::string& error) {
@@ -345,10 +343,12 @@ bool WizardToolOffsetStep::abort_in_progress_calibration() {
         api->emergency_stop(
             [api]() {
                 spdlog::debug("[Wizard Tool Offset] M112 sent, restarting firmware");
-                api->restart_firmware([]() {}, [](const MoonrakerError& err) {
-                    spdlog::error("[Wizard Tool Offset] Firmware restart failed: {}",
-                                  err.message);
-                });
+                api->restart_firmware([]() {},
+                                      [](const MoonrakerError& err) {
+                                          spdlog::error(
+                                              "[Wizard Tool Offset] Firmware restart failed: {}",
+                                              err.message);
+                                      });
             },
             [](const MoonrakerError& err) {
                 spdlog::error("[Wizard Tool Offset] Emergency stop failed: {}", err.message);
@@ -435,8 +435,7 @@ void WizardToolOffsetStep::fetch_macro_description() {
     client->send_jsonrpc(
         "printer.gcode.help", nlohmann::json::object(),
         lifetime_.bg_cb("WizardToolOffsetStep::gcode_help", [this](const nlohmann::json& resp) {
-            const nlohmann::json& result =
-                resp.contains("result") ? resp["result"] : resp;
+            const nlohmann::json& result = resp.contains("result") ? resp["result"] : resp;
             if (!result.is_object() || !result.contains(CALIBRATE_MACRO) ||
                 !result[CALIBRATE_MACRO].is_string()) {
                 return;

@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "overlay_base.h"
 #include "ui_observer_guard.h"
 
+#include "overlay_base.h"
 #include "pa_calibration.h"
 #include "subject_managed_panel.h"
 
