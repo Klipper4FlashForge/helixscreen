@@ -2481,12 +2481,17 @@ void MoonrakerAdvancedAPI::start_mpc_calibrate(
     api_.execute_gcode(
         cmd, nullptr,
         [collector, on_error](const MoonrakerError& err) {
+            // The notify_gcode_response collector — not this RPC — is the authority
+            // for MPC_CALIBRATE completion. The calibration keeps running past the RPC
+            // ceiling (prestonbrown/helixscreen#1544), so on timeout we keep the
+            // collector registered for the eventual result block, exactly like
+            // PID_CALIBRATE (#988). A genuine RPC error is still terminal.
             if (err.type == MoonrakerErrorType::TIMEOUT) {
-                spdlog::warn("[MoonrakerAPI] MPC_CALIBRATE response timed out "
-                             "(calibration may still be running)");
-            } else {
-                spdlog::error("[MoonrakerAPI] Failed to send MPC_CALIBRATE: {}", err.message);
+                spdlog::warn("[MoonrakerAPI] MPC_CALIBRATE RPC timed out; collector still "
+                             "listening for result (calibration may still be running)");
+                return;
             }
+            spdlog::error("[MoonrakerAPI] Failed to send MPC_CALIBRATE: {}", err.message);
             collector->mark_completed();
             collector->unregister();
             if (on_error)
