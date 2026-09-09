@@ -31,7 +31,7 @@ class TimelapseVideosOverlay : public OverlayBase {
     }
 
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
     void cleanup() override;
 
     void set_api(IMoonrakerAPI* api) {

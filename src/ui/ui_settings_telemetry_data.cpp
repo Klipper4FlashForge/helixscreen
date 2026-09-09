@@ -145,10 +145,6 @@ void TelemetryDataOverlay::on_activate() {
     populate_events();
 }
 
-void TelemetryDataOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // INTERNAL METHODS
 // ============================================================================

@@ -331,17 +331,16 @@ void AmsEditOverlay::on_activate() {
     update_spoolman_button_state();
 }
 
-void AmsEditOverlay::on_deactivate() {
+void AmsEditOverlay::on_deactivating(DeactivateReason) {
     // Fires when POPPED **and** when COVERED (e.g. QR scanner pushed on top).
     // Must NOT fire completion or reset the view subject — session state
     // resets happen in show_for_slot(). Base invalidates lifetime_ (pending
     // Spoolman fetches for this activation are dropped; token() re-arms).
-    OverlayBase::on_deactivate();
     // A pending debounced search belongs to the session being left; firing it
     // into a covered or popped picker is wasted work at best. show_for_slot()
     // re-arms state on the next open.
     picker_search_debounce_.cancel();
-    spdlog::debug("[AmsEditOverlay] on_deactivate()");
+    spdlog::debug("[AmsEditOverlay] on_deactivating()");
 }
 
 // ============================================================================

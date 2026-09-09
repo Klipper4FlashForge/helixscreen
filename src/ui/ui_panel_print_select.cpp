@@ -206,7 +206,7 @@ PrintSelectPanel::~PrintSelectPanel() {
     // apply callbacks still queued on the UpdateQueue no-op on their next tick
     // instead of dereferencing this freed panel (the guard's own dtor also does
     // this, but doing it first makes cancellation deterministic at teardown start).
-    lifetime_.invalidate();
+    object_lifetime_.invalidate();
 
     // Deinitialize subjects first to disconnect observers [L041]
     deinit_subjects();
@@ -463,7 +463,7 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     // Initialize file data provider for Moonraker files
     file_provider_ = std::make_unique<helix::ui::PrintSelectFileProvider>();
     file_provider_->set_api(api_);
-    file_provider_->set_on_files_ready([self, token = self->lifetime_.token()](
+    file_provider_->set_on_files_ready([self, token = self->object_lifetime_.token()](
                                            std::vector<PrintFileData>&& files) {
         spdlog::trace("[{}] on_files_ready callback: received {} items from provider",
                       self->get_name(), files.size());
@@ -654,24 +654,25 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
                                         static_cast<size_t>(visible_end));
         });
     });
-    file_provider_->set_on_error([self, token = self->lifetime_.token()](const std::string& error) {
-        LOG_ERROR_INTERNAL("[{}] File list refresh error: {}", self->get_name(), error);
-        token.defer([self, error]() {
-            self->refresh_guard_.release();
-            if (dir_error_should_reset_to_root(error, self->path_navigator_.is_at_root())) {
-                // The current directory no longer exists on the server (e.g. a
-                // FlashForge path-doubling artifact). Retrying it would wedge the
-                // panel, so fall back to root instead of looping (TJVQDCZ6).
-                spdlog::warn("[{}] Current directory missing ('{}'); falling back to root",
-                             self->get_name(), error);
-                self->path_navigator_.reset();
-                self->current_path_.clear();
-                self->refresh_files(/*force=*/true);
-                return;
-            }
-            NOTIFY_ERROR(lv_tr("Failed to refresh file list"));
+    file_provider_->set_on_error(
+        [self, token = self->object_lifetime_.token()](const std::string& error) {
+            LOG_ERROR_INTERNAL("[{}] File list refresh error: {}", self->get_name(), error);
+            token.defer([self, error]() {
+                self->refresh_guard_.release();
+                if (dir_error_should_reset_to_root(error, self->path_navigator_.is_at_root())) {
+                    // The current directory no longer exists on the server (e.g. a
+                    // FlashForge path-doubling artifact). Retrying it would wedge the
+                    // panel, so fall back to root instead of looping (TJVQDCZ6).
+                    spdlog::warn("[{}] Current directory missing ('{}'); falling back to root",
+                                 self->get_name(), error);
+                    self->path_navigator_.reset();
+                    self->current_path_.clear();
+                    self->refresh_files(/*force=*/true);
+                    return;
+                }
+                NOTIFY_ERROR(lv_tr("Failed to refresh file list"));
+            });
         });
-    });
 
     // Create detail view (confirmation dialog created on-demand)
     create_detail_view();
@@ -1004,7 +1005,7 @@ void PrintSelectPanel::fetch_metadata_range(size_t start, size_t end) {
             // No self->member access on bg — everything member-touching is inside tok.defer
             // so the nav-generation check moves into each deferred body. (#L081 Mech-C)
             [self, i, filename, file_path, captured_gen,
-             token = self->lifetime_.token()](const FileMetadata& metadata) {
+             token = self->object_lifetime_.token()](const FileMetadata& metadata) {
                 // Pure local computation — no self access.
                 // Empty metadata means file hasn't been scanned yet (e.g. USB symlinks).
                 bool metadata_empty = metadata.thumbnails.empty() && metadata.estimated_time == 0;
@@ -1061,7 +1062,7 @@ void PrintSelectPanel::fetch_metadata_range(size_t start, size_t end) {
             },
             // Metadata error callback. Same pattern: nav-gen check moves into the defer body.
             [self, i, filename, file_path, captured_gen,
-             token = self->lifetime_.token()](const MoonrakerError& error) {
+             token = self->object_lifetime_.token()](const MoonrakerError& error) {
                 token.defer("PrintSelectPanel::metadata_error_metascan", [self, i, filename,
                                                                           file_path, captured_gen,
                                                                           token, error]() {
@@ -1273,7 +1274,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
             // UpdateQueue tick; if the panel is torn down before then (e.g. user
             // navigates away mid-scroll), the deferred apply must no-op instead of
             // dereferencing the freed panel (use-after-free → glibc heap abort).
-            auto panel_tok = self->lifetime_.token();
+            auto panel_tok = self->object_lifetime_.token();
 
             // Same hazard, for the pieces the bg-thread callbacks below need.
             // get_name() is virtual, so calling it on a torn-down panel dispatches
@@ -1930,7 +1931,7 @@ void PrintSelectPanel::on_activate() {
     }
 }
 
-void PrintSelectPanel::on_deactivate() {
+void PrintSelectPanel::on_deactivating(DeactivateReason) {
     // Restore opacity if we were in "Print Last" pass-through mode
     if (return_to_home_on_close_) {
         if (panel_) {
@@ -1942,7 +1943,7 @@ void PrintSelectPanel::on_deactivate() {
 
     // A navbar switch already closes the overlay (NavigationManager tears it down
     // before calling this), so is_visible() is false and clearing the flag is enough.
-    // A rebuild() calls on_deactivate() directly with no stack teardown, so a still-open
+    // A rebuild() calls on_deactivating() directly with no stack teardown, so a still-open
     // overlay needs an explicit hide_detail_view()/go_back() here; gating on is_visible()
     // keeps that from popping the wrong panel_stack_ entry in the navbar case.
     if (detail_view_open_) {
@@ -2971,7 +2972,7 @@ void PrintSelectPanel::apply_remap(const std::vector<helix::ToolMapping>& update
 void PrintSelectPanel::delete_file() {
     std::string filename_to_delete(selected_filename_buffer_);
     auto* self = this;
-    auto token = lifetime_.token();
+    auto token = object_lifetime_.token();
 
     if (api_) {
         // Construct full path: gcodes/<current_path>/<filename>

@@ -73,7 +73,7 @@ class RecordingPanel : public PanelBase {
             NavigationManager::instance().set_active(PanelId::Home);
         }
     }
-    void on_deactivate() override {
+    void on_deactivating(DeactivateReason) override {
         ++deactivates;
     }
 
@@ -89,7 +89,7 @@ class RecordingOverlay : public IPanelLifecycle {
     void on_activate() override {
         ++activates;
     }
-    void on_deactivate() override {
+    void on_deactivate(DeactivateReason) override {
         ++deactivates;
     }
     const char* get_name() const override {

@@ -522,7 +522,7 @@ void HeaterTempPanelLifecycle::on_activate() {
     }
 }
 
-void HeaterTempPanelLifecycle::on_deactivate() {
+void HeaterTempPanelLifecycle::on_deactivate(DeactivateReason) {
     if (panel_) {
         panel_->on_panel_deactivate(type_);
     }

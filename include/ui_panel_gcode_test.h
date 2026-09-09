@@ -85,7 +85,7 @@ class GcodeTestPanel : public PanelBase {
      *
      * Pauses G-code viewer rendering to save CPU cycles.
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     const char* get_name() const override {
         return "G-Code Test Panel";

@@ -220,8 +220,8 @@ void SpoolWizardOverlay::on_activate() {
     load_vendors();
 }
 
-void SpoolWizardOverlay::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void SpoolWizardOverlay::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     // Close create vendor modal if open
     if (create_vendor_dialog_) {
@@ -234,8 +234,6 @@ void SpoolWizardOverlay::on_deactivate() {
         Modal::hide(create_filament_dialog_);
         create_filament_dialog_ = nullptr;
     }
-
-    OverlayBase::on_deactivate();
 }
 
 void SpoolWizardOverlay::reset_state() {

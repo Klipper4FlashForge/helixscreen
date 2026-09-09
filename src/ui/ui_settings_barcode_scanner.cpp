@@ -255,14 +255,13 @@ void BarcodeScannerSettingsOverlay::on_activate() {
     populate_bt_dropdown();
 }
 
-void BarcodeScannerSettingsOverlay::on_deactivate() {
+void BarcodeScannerSettingsOverlay::on_deactivating(DeactivateReason) {
     stop_bt_discovery();
     s_active_instance_ = nullptr;
     usb_list_ = nullptr;
     bt_dropdown_ = nullptr;
     btn_bt_pair_ = nullptr;
     btn_bt_forget_ = nullptr;
-    OverlayBase::on_deactivate();
 }
 
 // ============================================================================

@@ -1228,10 +1228,9 @@ void PrintStatusPanel::on_activate() {
     crash_handler::breadcrumb::note("pstat_act", "exit");
 }
 
-void PrintStatusPanel::on_deactivate() {
-    OverlayBase::on_deactivate(); // Sets visible_ = false
+void PrintStatusPanel::on_deactivating(DeactivateReason) {
     is_active_ = false;
-    spdlog::debug("[{}] on_deactivate()", get_name());
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     // Cancel pending deferred G-code load (panel is no longer visible)
     if (gcode_load_timer_) {

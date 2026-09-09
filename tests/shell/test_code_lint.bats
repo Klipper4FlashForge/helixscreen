@@ -1080,3 +1080,385 @@ check_backend_single_test_friend() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"no friend declaration"* ]]
 }
+# --- No on_deactivate() overrides on panels and overlays ---
+# ViewLifecycleBase makes on_deactivate(DeactivateReason) final and dispatches to
+# on_deactivating(reason), so a subclass re-declaring the no-argument spelling
+# overrides nothing: it compiles, it is never called, and the work it meant to do
+# silently stops happening. PanelWidget is a separate hierarchy with its own
+# on_deactivate() hook and keeps the name.
+
+check_no_on_deactivate_overrides() {
+    local hits=""
+    local file found
+    while IFS= read -r file; do
+        # The widget hierarchy, by directory and by the base it names — an
+        # implementation file mentions PanelWidget only via its own header.
+        case "$file" in */panel_widgets/*) continue ;; esac
+        grep -q 'PanelWidget' "$file" && continue
+        found=$(grep -nE '(\bvoid[[:space:]]+on_deactivate[[:space:]]*\(\)|::on_deactivate[[:space:]]*\(\))' "$file")
+        [ -n "$found" ] && hits+="${file}:${found}"$'\n'
+    done < <(grep -rl 'on_deactivate' "$@" --include='*.h' --include='*.cpp' 2>/dev/null)
+
+    if [ -n "$hits" ]; then
+        echo "on_deactivate() is final on ViewLifecycleBase — override"
+        echo "on_deactivating(DeactivateReason) instead. Offending sites:"
+        echo "$hits"
+        return 1
+    fi
+    return 0
+}
+
+@test "no panel or overlay declares a no-argument on_deactivate() override" {
+    run check_no_on_deactivate_overrides src include
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the on_deactivate gate fires on a reintroduced override" {
+    local dir="${BATS_TEST_TMPDIR}/reintroduced"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_thing.h" <<'EOF'
+class ThingOverlay : public OverlayBase {
+    void on_deactivate() override;
+};
+EOF
+
+    run check_no_on_deactivate_overrides "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"on_deactivating(DeactivateReason)"* ]]
+}
+
+@test "the on_deactivate gate fires on an out-of-line definition" {
+    local dir="${BATS_TEST_TMPDIR}/outofline"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_thing.cpp" <<'EOF'
+void ThingOverlay::on_deactivate() {
+    stop_scanning();
+}
+EOF
+
+    run check_no_on_deactivate_overrides "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ui_overlay_thing.cpp"* ]]
+}
+
+@test "the on_deactivate gate stays quiet on the hook, PanelWidget and prose" {
+    local dir="${BATS_TEST_TMPDIR}/quiet"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_migrated.h" <<'EOF'
+/// Fires when the overlay is popped; on_deactivate() reaches this via the base.
+class MigratedOverlay : public OverlayBase {
+  protected:
+    void on_deactivating(DeactivateReason reason) override;
+};
+EOF
+    cat > "$dir/clock_widget.h" <<'EOF'
+class ClockWidget : public PanelWidget {
+    void on_deactivate() override;
+};
+EOF
+    cat > "$dir/panel_lifecycle.h" <<'EOF'
+class ViewLifecycleBase : public IPanelLifecycle {
+  public:
+    void on_deactivate(DeactivateReason reason) final;
+};
+EOF
+
+    run check_no_on_deactivate_overrides "$dir"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+# --- An OverlayBase cleanup() override must reach the base ---
+# OverlayBase::cleanup() is the only thing that invalidates object_lifetime_, the
+# guard whose whole point is surviving deactivation. A subclass that overrides
+# cleanup() and never calls the base leaves that guard live for the rest of the
+# process, so callbacks parked on it still fire into a torn-down overlay. The
+# wizard steps and the list views own an unrelated cleanup() and are not in this
+# hierarchy.
+
+check_overlay_cleanup_calls_base() {
+    local classes
+    classes=$(grep -rhoE 'class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*:[[:space:]]*public[[:space:]]+OverlayBase' \
+        "$@" --include='*.h' --include='*.cpp' 2>/dev/null \
+        | awk '{print $2}' | sort -u | paste -sd'|' -)
+    [ -n "$classes" ] || classes="__no_overlay_subclass__"
+
+    local hits="" file found inline
+    while IFS= read -r file; do
+        # An inline body carries no class name, so it is attributed by the file
+        # it sits in; an out-of-line one names its class and needs no such help.
+        inline=0
+        grep -q 'public[[:space:]]*OverlayBase' "$file" && inline=1
+        found=$(awk -v classes="$classes" -v allow_inline="$inline" '
+            BEGIN {
+                outofline = "^[ \t]*void[ \t]+(" classes ")::cleanup[ \t]*\\([ \t]*\\)"
+                inline_def = "void[ \t]+cleanup[ \t]*\\([ \t]*\\)[ \t]*(override[ \t]*)?\\{"
+            }
+            !in_body {
+                if ($0 ~ outofline || (allow_inline == 1 && $0 ~ inline_def)) {
+                    in_body = 1; body = ""; start = NR; depth = 0; opened = 0
+                }
+            }
+            in_body {
+                body = body $0 "\n"
+                o = gsub(/\{/, "{"); c = gsub(/\}/, "}")
+                if (o > 0) opened = 1
+                depth += o - c
+                if (opened && depth <= 0) {
+                    if (body !~ /OverlayBase::cleanup/) print FILENAME ":" start
+                    in_body = 0
+                }
+            }
+        ' "$file")
+        [ -n "$found" ] && hits+="${found}"$'\n'
+    done < <(grep -rl 'cleanup' "$@" --include='*.h' --include='*.cpp' 2>/dev/null)
+
+    if [ -n "$hits" ]; then
+        echo "an OverlayBase subclass that overrides cleanup() must call"
+        echo "OverlayBase::cleanup() — it is what invalidates both lifetime guards."
+        echo "Offending sites:"
+        echo "$hits"
+        return 1
+    fi
+    return 0
+}
+
+@test "every OverlayBase subclass overriding cleanup() calls the base" {
+    run check_overlay_cleanup_calls_base src include
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the cleanup gate examines the overrides that exist" {
+    # A pass that inspected nothing reads exactly like a pass that inspected
+    # everything, so the gate has to be shown finding the real overrides first.
+    local found
+    found=$(grep -rl 'OverlayBase::cleanup()' src --include='*.cpp' | wc -l | tr -d ' ')
+    [ "$found" -ge 10 ]
+}
+
+@test "the cleanup gate fires on a log-only override" {
+    local dir="${BATS_TEST_TMPDIR}/logonly"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_thing.h" <<'EOF'
+class ThingOverlay : public OverlayBase {
+  public:
+    void cleanup() override;
+};
+EOF
+    cat > "$dir/ui_overlay_thing.cpp" <<'EOF'
+void ThingOverlay::cleanup() {
+    spdlog::trace("[Thing] Cleanup");
+}
+EOF
+
+    run check_overlay_cleanup_calls_base "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ui_overlay_thing.cpp:1"* ]]
+}
+
+@test "the cleanup gate fires on an inline header override" {
+    local dir="${BATS_TEST_TMPDIR}/inline"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_thing.h" <<'EOF'
+class ThingOverlay : public OverlayBase {
+  public:
+    void cleanup() override {
+        stop_polling();
+    }
+};
+EOF
+
+    run check_overlay_cleanup_calls_base "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ui_overlay_thing.h:3"* ]]
+}
+
+@test "the cleanup gate reads each override separately, not the file as a whole" {
+    # One correct override in a file does not vouch for a second one beside it.
+    local dir="${BATS_TEST_TMPDIR}/twobodies"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_pair.h" <<'EOF'
+class FirstOverlay : public OverlayBase {
+    void cleanup() override;
+};
+class SecondOverlay : public OverlayBase {
+    void cleanup() override;
+};
+EOF
+    cat > "$dir/ui_overlay_pair.cpp" <<'EOF'
+void FirstOverlay::cleanup() {
+    stop_polling();
+    OverlayBase::cleanup();
+}
+
+void SecondOverlay::cleanup() {
+    stop_polling();
+}
+EOF
+
+    run check_overlay_cleanup_calls_base "$dir"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ui_overlay_pair.cpp:6"* ]]
+}
+
+@test "the cleanup gate stays quiet on a base call and on the other hierarchies" {
+    local dir="${BATS_TEST_TMPDIR}/quietcleanup"
+    mkdir -p "$dir"
+    cat > "$dir/ui_overlay_good.h" <<'EOF'
+class GoodOverlay : public OverlayBase {
+  public:
+    void cleanup() override;
+};
+EOF
+    cat > "$dir/ui_overlay_good.cpp" <<'EOF'
+void GoodOverlay::cleanup() {
+    if (timer_) {
+        lv_timer_cancel_safe(&timer_);
+    }
+    OverlayBase::cleanup();
+}
+EOF
+    cat > "$dir/ui_wizard_step_thing.cpp" <<'EOF'
+void WizardThingStep::cleanup() {
+    spdlog::trace("[WizardThing] Cleanup");
+}
+EOF
+    cat > "$dir/ui_thing_list_view.h" <<'EOF'
+class ThingListView : public ContainerDeleteNet {
+  public:
+    void cleanup() {
+        rows_.clear();
+    }
+};
+EOF
+
+    run check_overlay_cleanup_calls_base "$dir"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+# --- The Z-offset save-availability rule has ONE definition ---
+# "Is there an offset worth saving" is helix::zoffset::save_available(), published
+# to XML as the z_offset_save_available subject. An inline cond= that re-derives
+# it from any_tool_z_dirty is a second copy, and copies agree by convention until
+# one is widened and the others are not: a tool dirty on an axis the stale copy
+# does not ask about gets no save affordance, and SET_TOOL_PARAMETER is
+# runtime-only (prestonbrown/helixscreen#1517).
+
+zoffset_save_rule_copies() {
+    grep -rnE 'cond="[^"]*any_tool_z_dirty' "$@" 2>/dev/null || true
+}
+
+# Names every XML that offers the save without binding the published rule.
+#
+# The file list is DISCOVERED from the button names, not spelled out: a surface
+# added later, or a breakpoint override that gets its own copy of the button,
+# has to bind the rule too. A button binding something narrower is the failure
+# this catches — a micro-breakpoint Save that asks only about the machine-wide
+# offset hides itself over a dirty tool while the handler would save it.
+zoffset_save_button_files() {
+    grep -rlE 'name="(btn_save_z_offset|header_save_z_offset)"' "$@" 2>/dev/null || true
+}
+
+zoffset_save_buttons_unbound() {
+    local f
+    for f in "$@"; do
+        grep -qF 'subject="z_offset_save_available"' "$f" || echo "$f"
+    done
+}
+
+# The publisher observes subjects ToolState registers in init_ams_subjects(), so
+# initialising it earlier would attach to nothing and leave every save surface
+# bound to a subject that never moves. Silent in both directions: the XML binding
+# resolves, the button just never appears.
+zoffset_publisher_wiring() {
+    local f="${1:-src/application/subject_initializer.cpp}"
+    local ams init
+    ams=$(grep -n 'init_ams_subjects();' "$f" | tail -1 | cut -d: -f1)
+    init=$(grep -n 'zoffset::init_save_available_subject(' "$f" | head -1 | cut -d: -f1)
+    if [ -z "$ams" ]; then
+        echo "init_ams_subjects() call not found in $f"
+        return
+    fi
+    if [ -z "$init" ]; then
+        echo "init_save_available_subject() is never called in $f"
+        return
+    fi
+    [ "$init" -gt "$ams" ] || echo "init_save_available_subject() runs before init_ams_subjects()"
+}
+
+@test "the Z-offset save publisher is initialised after ToolState" {
+    run zoffset_publisher_wiring
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the Z-offset publisher gate fires when the call is missing or too early" {
+    local d="${BATS_TEST_TMPDIR}/zoffset_wiring"
+    mkdir -p "$d"
+    printf '%s\n' 'void f() {' '    init_ams_subjects();' '}' > "$d/missing.cpp"
+    run zoffset_publisher_wiring "$d/missing.cpp"
+    [ "$status" -eq 0 ]
+    contains "never called" "$output"
+
+    printf '%s\n' 'void f() {' '    helix::zoffset::init_save_available_subject();' \
+        '    init_ams_subjects();' '}' > "$d/early.cpp"
+    run zoffset_publisher_wiring "$d/early.cpp"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"before init_ams_subjects"* ]]
+}
+
+@test "no XML re-derives the Z-offset save rule from any_tool_z_dirty" {
+    run zoffset_save_rule_copies ui_xml/ --include='*.xml'
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the Z-offset save-rule gate fires on a reintroduced inline condition" {
+    local d="${BATS_TEST_TMPDIR}/zoffset_rule_copy"
+    mkdir -p "$d"
+    cat > "$d/offender.xml" <<'EOF'
+<ui_button name="btn_save_z_offset">
+  <bind_flag_if cond="z_offset_can_save and (gcode_z_offset ne 0 or any_tool_z_dirty)" flag="hidden" invert="true"/>
+</ui_button>
+EOF
+    run zoffset_save_rule_copies "$d" --include='*.xml'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"offender.xml"* ]]
+}
+
+@test "the Z-offset save-rule gate stays quiet on the published binding" {
+    local d="${BATS_TEST_TMPDIR}/zoffset_rule_ok"
+    mkdir -p "$d"
+    cat > "$d/ok.xml" <<'EOF'
+<ui_button name="btn_save_z_offset">
+  <bind_flag_if_eq subject="z_offset_save_available" flag="hidden" ref_value="0"/>
+</ui_button>
+EOF
+    run zoffset_save_rule_copies "$d" --include='*.xml'
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "every Z-offset save surface binds the published rule" {
+    local files
+    files=$(zoffset_save_button_files ui_xml/ --include='*.xml')
+    # Fail closed: an empty list would pass the emptiness check below having
+    # examined nothing.
+    [ "$(printf '%s\n' "$files" | grep -c .)" -ge 4 ]
+
+    run zoffset_save_buttons_unbound $files
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "the Z-offset save-surface gate fires on a button that binds nothing" {
+    local d="${BATS_TEST_TMPDIR}/zoffset_unbound"
+    mkdir -p "$d"
+    printf '%s\n' '<ui_button name="btn_save_z_offset" hidden="true"/>' > "$d/offender.xml"
+
+    run zoffset_save_buttons_unbound "$d/offender.xml"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"offender.xml"* ]]
+}

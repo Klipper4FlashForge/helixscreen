@@ -189,14 +189,13 @@ void TimelapseVideosOverlay::on_activate() {
         });
 }
 
-void TimelapseVideosOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
+void TimelapseVideosOverlay::on_deactivating(DeactivateReason) {
     clear_video_grid();
 
     // Unregister render-complete callback to avoid dangling references
     helix::TimelapseState::instance().set_on_render_complete(nullptr);
 
-    spdlog::debug("[{}] on_deactivate()", get_name());
+    spdlog::debug("[{}] on_deactivating()", get_name());
 }
 
 void TimelapseVideosOverlay::cleanup() {
@@ -966,9 +965,7 @@ void TimelapseVideosOverlay::on_activate() {
     OverlayBase::on_activate();
 }
 
-void TimelapseVideosOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
+void TimelapseVideosOverlay::on_deactivating(DeactivateReason) {}
 
 void TimelapseVideosOverlay::cleanup() {
     OverlayBase::cleanup();

@@ -69,7 +69,7 @@ class AmsPanel : public PanelBase {
     void init_subjects() override;
     void setup(lv_obj_t* panel, lv_obj_t* parent_screen) override;
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     /// Whether THIS panel currently holds a SpoolmanManager polling reference.
     ///
@@ -182,8 +182,6 @@ class AmsPanel : public PanelBase {
     ObserverGuard
         supports_bypass_observer_;         ///< Bypass node appears/disappears with backend support
     ObserverGuard bypass_active_observer_; ///< Active ring follows bypass engage/disengage
-    helix::AsyncLifetimeGuard
-        lifetime_; ///< Guards deferred callbacks from accessing destroyed panel
     bool backend_rebuild_pending_ = false; ///< Coalesces rapid backend count changes
     bool slot_creation_pending_ = false;   ///< Coalesces rapid slot count changes
     bool path_update_pending_ = false;     ///< Coalesces rapid path state changes

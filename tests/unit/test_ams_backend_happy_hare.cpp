@@ -7,9 +7,9 @@
 #include "ams_backend_happy_hare.h"
 #include "ams_state.h"
 #include "ams_types.h"
-#include "test_helpers/happy_hare_test_access.h"
 #include "hh_defaults.h"
 #include "moonraker_api.h"
+#include "test_helpers/happy_hare_test_access.h"
 
 #include <algorithm>
 #include <vector>
@@ -3516,6 +3516,20 @@ TEST_CASE("Happy Hare check_all_gates sends bare MMU_CHECK_GATE", "[ams][happy_h
 TEST_CASE("Happy Hare advertises gate-check capability", "[ams][happy_hare][capability]") {
     AmsBackendHappyHareTestHelper helper;
     REQUIRE(helper.supports_gate_check());
+}
+
+// reset() sends bare MMU_HOME, and with no FORCE_UNLOAD parameter Happy Hare
+// runs its unload sequence before homing the selector whenever filament_pos is
+// not UNLOADED. That is the whole reason the sidebar may grey Reset here and
+// nowhere else, so the capability has to answer true (prestonbrown/helixscreen#1523).
+TEST_CASE("Happy Hare declares that reset moves filament", "[ams][happy_hare][capability]") {
+    AmsBackendHappyHareTestHelper helper;
+    REQUIRE(helper.reset_moves_filament());
+    // The command the capability describes.
+    helper.initialize_test_gates(4);
+    helper.set_running(true);
+    REQUIRE(helper.reset().success());
+    REQUIRE(helper.has_gcode("MMU_HOME"));
 }
 
 TEST_CASE("Happy Hare check_gate fails when not running", "[ams][happy_hare]") {

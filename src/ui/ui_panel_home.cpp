@@ -753,7 +753,7 @@ void HomePanel::on_activate() {
     helix::tour::FirstRunTour::instance().maybe_start();
 }
 
-void HomePanel::on_deactivate() {
+void HomePanel::on_deactivating(DeactivateReason) {
     panel_active_ = false;
     // Exit grid edit mode if active, UNLESS the widget catalog overlay is open
     // (push_overlay triggers on_deactivate, but edit mode must survive)

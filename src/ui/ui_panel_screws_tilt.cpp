@@ -294,7 +294,7 @@ void ScrewsTiltPanel::on_activate() {
     }
 }
 
-void ScrewsTiltPanel::on_deactivate() {
+void ScrewsTiltPanel::on_deactivating(DeactivateReason) {
     if (state_ == State::PROBING) {
         // Cancel ongoing probe via Moonraker
         if (api_) {
@@ -305,8 +305,6 @@ void ScrewsTiltPanel::on_deactivate() {
 
     // Clean up dynamic indicators
     clear_results();
-
-    OverlayBase::on_deactivate();
     spdlog::debug("[ScrewsTilt] Deactivated");
 }
 

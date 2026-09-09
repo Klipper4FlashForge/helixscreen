@@ -134,10 +134,6 @@ void SensorSettingsOverlay::on_activate() {
     populate_all_sensors();
 }
 
-void SensorSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // SWITCH SENSORS (Filament Runout/Motion)
 // ============================================================================

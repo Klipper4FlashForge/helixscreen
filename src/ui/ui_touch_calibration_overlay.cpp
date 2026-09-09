@@ -496,8 +496,8 @@ void TouchCalibrationOverlay::on_activate() {
     update_crosshair_position();
 }
 
-void TouchCalibrationOverlay::on_deactivate() {
-    spdlog::debug("[{}] on_deactivate()", get_name());
+void TouchCalibrationOverlay::on_deactivating(DeactivateReason) {
+    spdlog::debug("[{}] on_deactivating()", get_name());
 
     // Reparent the capture surface + Cancel chip back into the overlay subtree
     // BEFORE the slide-out, so a live full-screen touch target doesn't linger on
@@ -510,7 +510,7 @@ void TouchCalibrationOverlay::on_deactivate() {
     }
 
     // Restore the pre-session calibration and re-enable the affine transform.
-    // The navigation stack calls on_deactivate() — NOT cleanup() — on a plain
+    // The navigation stack calls on_deactivating() — NOT cleanup() — on a plain
     // dismiss, so this is the path that must re-arm touch. Without it, aborting
     // recalibration before accepting left the affine disabled until the next
     // reboot, so touch reverted to raw/unscaled coordinates (#943).
@@ -521,9 +521,6 @@ void TouchCalibrationOverlay::on_deactivate() {
         // Re-allow the global debug-touches ripple now that the overlay is gone.
         dm->set_touch_calibration_active(false);
     }
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 // ============================================================================

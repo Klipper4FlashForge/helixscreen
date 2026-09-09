@@ -55,8 +55,6 @@ class ProbeOverlay : public OverlayBase {
     }
 
     void on_activate() override;
-    void on_deactivate() override;
-    void cleanup() override;
 
     //
     // === Public API ===

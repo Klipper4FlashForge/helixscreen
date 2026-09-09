@@ -40,7 +40,7 @@ class AmsOverviewPanel : public PanelBase {
     void init_subjects() override;
     void setup(lv_obj_t* panel, lv_obj_t* parent_screen) override;
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     [[nodiscard]] const char* get_name() const override {
         return "AMS Overview";
@@ -128,8 +128,6 @@ class AmsOverviewPanel : public PanelBase {
     ObserverGuard external_spool_observer_; ///< Reactive updates when external spool color changes
     ObserverGuard bypass_active_observer_;  ///< Active ring follows bypass engage/disengage
     bool units_rebuild_pending_ = false; ///< Coalesces rapid slots_version observer notifications
-    helix::AsyncLifetimeGuard
-        lifetime_; ///< Guards deferred callbacks from accessing destroyed panel
 
     // === Setup Helpers ===
     void create_unit_cards(const helix::AmsSystemInfo& info);

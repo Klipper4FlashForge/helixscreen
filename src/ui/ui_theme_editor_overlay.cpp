@@ -165,8 +165,7 @@ void ThemeEditorOverlay::on_activate() {
     spdlog::debug("[{}] Activated", get_name());
 }
 
-void ThemeEditorOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
+void ThemeEditorOverlay::on_deactivating(DeactivateReason) {
     spdlog::debug("[{}] Deactivated", get_name());
 }
 

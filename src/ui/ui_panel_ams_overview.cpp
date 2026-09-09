@@ -144,14 +144,14 @@ void AmsOverviewPanel::init_subjects() {
                     return;
                 }
                 // Defer rebuild (#80) AND use safe_clean_children
-                // in refresh_units callees (#776): lifetime_.defer
+                // in refresh_units callees (#776): object_lifetime_.defer
                 // moves work off the observer callback's stack, and
                 // safe_clean_children schedules child deletion via
                 // lv_obj_delete_async so sync lv_obj_clean() can't
                 // corrupt LVGL's event linked list.
                 if (!self->units_rebuild_pending_) {
                     self->units_rebuild_pending_ = true;
-                    self->lifetime_.defer("AmsOverviewPanel::refresh_units", [self]() {
+                    self->object_lifetime_.defer("AmsOverviewPanel::refresh_units", [self]() {
                         self->units_rebuild_pending_ = false;
                         if (self->panel_ && self->cards_row_ && self->detail_unit_index_ < 0)
                             self->refresh_units();
@@ -171,7 +171,7 @@ void AmsOverviewPanel::init_subjects() {
                 }
                 if (!self->units_rebuild_pending_) {
                     self->units_rebuild_pending_ = true;
-                    self->lifetime_.defer("AmsOverviewPanel::refresh_units/slot", [self]() {
+                    self->object_lifetime_.defer("AmsOverviewPanel::refresh_units/slot", [self]() {
                         self->units_rebuild_pending_ = false;
                         if (self->panel_ && self->cards_row_ && self->detail_unit_index_ < 0)
                             self->refresh_units();
@@ -283,7 +283,7 @@ void AmsOverviewPanel::on_activate() {
     }
 }
 
-void AmsOverviewPanel::on_deactivate() {
+void AmsOverviewPanel::on_deactivating(DeactivateReason) {
     spdlog::debug("[{}] Deactivated", get_name());
 
     // Reset to overview mode so next open starts at the cards view

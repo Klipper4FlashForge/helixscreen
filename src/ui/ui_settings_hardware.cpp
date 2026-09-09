@@ -149,10 +149,6 @@ void HardwareSettingsOverlay::on_activate() {
     // All rows are action rows with no local state to initialize
 }
 
-void HardwareSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // STATIC CALLBACKS
 // ============================================================================

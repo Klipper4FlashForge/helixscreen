@@ -63,7 +63,7 @@ class AboutSettingsOverlay : public OverlayBase {
     }
 
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     //
     // === UI Creation ===

@@ -289,35 +289,18 @@ AmsError AmsSubscriptionBackend::check_preconditions(bool requires_toolhead_moti
 }
 
 AmsError AmsSubscriptionBackend::refuse_if_printing() const {
-    // Refuse toolhead-motion filament ops while a print OWNS the toolhead.
+    // The AmsError face of print_blocks_filament_op(), which states the rule and
+    // why each lifecycle answers as it does. Only the parts specific to being
+    // the BACKEND end of it live here.
     //
-    // PRINTING is always refused: the nozzle is laying plastic and any filament
-    // move collides with the job.
-    //
-    // PAUSED splits on filament_ops_self_home(). Pause-then-swap is the runout /
-    // colour-change recovery workflow — pause_resume has saved the gcode state,
-    // the job resumes where it left off, and this is exactly what a user does
-    // from Mainsail. Refusing it universally made HelixScreen the only surface
-    // that could not perform the recovery Klipper had just asked for. What still
-    // has to be refused is a backend whose firmware macro homes ITSELF: on the
-    // loadcell-Z AD5X, `_IFS_REMOVE_CURRENT_PRUTOK` runs a buried `_G28` that
-    // probes the nozzle down into the part, tripping ZMOD's ZCONTROL_AUTO into a
-    // Klipper shutdown (bundle XWPBR2DX, commit 329e731e9). Layer 1's gcode-send
-    // guard never sees that `_G28`, so it must be stopped here, before the op.
-    //
-    // Relaxing PAUSED does NOT widen what homing can reach the printer:
-    // helix::api::reject_homing_during_active_print() still refuses every
-    // app-emitted G28 while PRINTING or PAUSED, and ensure_homed_then() only
-    // emits one when toolhead.homed_axes lacks "xyz" — which a paused print,
-    // homed by construction, never does.
-    //
-    // PREPARING is refused like PRINTING. Asked of the raw print_stats.state
-    // this window was invisible — a host-side pre-start block reads STANDBY (or
-    // the previous job's terminal state) for its whole duration — so a filament
-    // op was accepted while the pre-start G-code homed and probed. Note that
-    // Layer 1 deliberately does NOT extend to Preparing: it would refuse the
-    // app's own pre-start block, which is itself sent through execute_gcode()
-    // and may contain a G28. That is why this guard has to cover the window.
+    // This layer has to cover the window Layer 1 cannot. Layer 1
+    // (helix::api::reject_homing_during_active_print) refuses every app-emitted
+    // G28 while PRINTING or PAUSED, but it cannot see a `_G28` buried inside a
+    // firmware macro, which is what filament_ops_self_home() reports and why a
+    // self-homing backend is refused even while paused (bundle XWPBR2DX). Layer 1
+    // also deliberately stops short of PREPARING — it would refuse the app's own
+    // pre-start block, sent through execute_gcode() and free to contain a G28 —
+    // so PREPARING has to be caught here or nowhere.
     //
     // api_ can be null in unit tests / cold-boot; when it is, print state is
     // unknown and we do not block (mirrors ensure_homed_then's null-client path).
@@ -325,15 +308,17 @@ AmsError AmsSubscriptionBackend::refuse_if_printing() const {
         return AmsErrorHelper::success();
     }
     const auto lifecycle = api_->printer_state().get_print_lifecycle();
-    if (!job_holds_machine(lifecycle)) {
-        return AmsErrorHelper::success();
-    }
     const bool is_paused = (lifecycle == PrintState::Paused);
     const bool self_homes = filament_ops_self_home();
-    if (is_paused && !self_homes) {
-        spdlog::info("{} Allowing filament operation on a PAUSED print "
-                     "(backend does not self-home; Layer 1 still blocks any G28)",
-                     backend_log_tag());
+    // print_blocks_filament_op() is the rule, shared with every surface that
+    // greys a filament-op button. This function's job is to map its answer onto
+    // an AmsError, not to decide it a second time.
+    if (!print_blocks_filament_op(lifecycle, self_homes)) {
+        if (is_paused) {
+            spdlog::info("{} Allowing filament operation on a PAUSED print "
+                         "(backend does not self-home; Layer 1 still blocks any G28)",
+                         backend_log_tag());
+        }
         return AmsErrorHelper::success();
     }
     spdlog::warn("{} Refusing filament operation while a print is active (lifecycle={}, "

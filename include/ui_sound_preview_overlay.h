@@ -22,7 +22,7 @@ class SoundPreviewOverlay : public OverlayBase {
     }
 
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     void show(lv_obj_t* parent_screen);
 

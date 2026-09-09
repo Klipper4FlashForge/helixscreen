@@ -149,10 +149,6 @@ void SafetySettingsOverlay::on_activate() {
     init_completion_alert_dropdown();
 }
 
-void SafetySettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // WIDGET INITIALIZATION
 // ============================================================================

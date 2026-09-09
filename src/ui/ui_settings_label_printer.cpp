@@ -299,11 +299,10 @@ void LabelPrinterSettingsOverlay::on_activate() {
     inputs_initialized_ = true;
 }
 
-void LabelPrinterSettingsOverlay::on_deactivate() {
+void LabelPrinterSettingsOverlay::on_deactivating(DeactivateReason) {
     stop_label_printer_discovery();
     stop_usb_detection();
     stop_bt_discovery();
-    OverlayBase::on_deactivate();
 }
 
 // ============================================================================

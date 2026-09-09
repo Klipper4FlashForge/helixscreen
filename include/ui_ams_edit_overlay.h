@@ -84,7 +84,7 @@ class AmsEditOverlay : public OverlayBase {
         return "AMS Slot Editor";
     }
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
     void on_ui_destroyed() override;
     /// The catalog selector's options, the color swatch and the logistics field
     /// text are populated on view entry, not by the XML — re-apply them for the

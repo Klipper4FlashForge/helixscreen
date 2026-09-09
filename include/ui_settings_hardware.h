@@ -34,7 +34,6 @@ class HardwareSettingsOverlay : public OverlayBase {
     }
 
     void on_activate() override;
-    void on_deactivate() override;
 
     // === UI Creation ===
 

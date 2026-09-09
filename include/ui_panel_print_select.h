@@ -293,7 +293,7 @@ class PrintSelectPanel : public PanelBase {
      * This handles the case where set_api() was called before WebSocket connection.
      */
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     //
     // === Public API ===
@@ -732,9 +732,6 @@ class PrintSelectPanel : public PanelBase {
 
     /// Observer for PrintHistoryManager - updates file status when history changes
     helix::HistoryChangedCallback history_observer_;
-
-    /// Guards async API callbacks from accessing a destroyed instance
-    helix::AsyncLifetimeGuard lifetime_;
 
     /// Compatibility alive flag for ThumbnailLoadContext (which uses shared_ptr<atomic<bool>> API)
     std::shared_ptr<std::atomic<bool>> thumbnail_alive_ = std::make_shared<std::atomic<bool>>(true);
