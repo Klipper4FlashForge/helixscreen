@@ -103,6 +103,7 @@ jobs:
         timeout_minutes: 20
         max_attempts: 3
         command: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
           sudo apt-get update
           sudo apt-get install -y \
             libsdl2-dev clang make python3 python3-venv npm \
@@ -213,6 +214,7 @@ jobs:
 
     - name: Install runtime deps
       run: |
+        sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
         sudo apt-get update
         sudo apt-get install -y libsdl2-dev libfmt-dev libcairo2 libpango-1.0-0 libpng16-16 libjpeg8 libnl-3-200 libnl-genl-3-200
 
@@ -327,6 +329,7 @@ jobs:
 
     - name: Install runtime deps
       run: |
+        sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
         sudo apt-get update
         sudo apt-get install -y libsdl2-dev libfmt-dev libcairo2 libpango-1.0-0 libpng16-16 libjpeg8 libnl-3-200 libnl-genl-3-200
 
@@ -404,6 +407,7 @@ jobs:
         timeout_minutes: 20
         max_attempts: 3
         command: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
           sudo apt-get update
           sudo apt-get install -y \
             libsdl2-dev clang make python3 python3-venv npm \
@@ -497,6 +501,7 @@ jobs:
         timeout_minutes: 20
         max_attempts: 3
         command: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
           sudo apt-get update
           sudo apt-get install -y \
             libsdl2-dev clang make python3 python3-venv npm \
@@ -734,6 +739,7 @@ jobs:
 
     - name: Install runtime deps
       run: |
+        sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
         sudo apt-get update
         sudo apt-get install -y libsdl2-dev libfmt-dev libcairo2 libpango-1.0-0 libpng16-16 libjpeg8 libnl-3-200 libnl-genl-3-200
 
@@ -803,6 +809,7 @@ jobs:
 
     - name: Install runtime deps
       run: |
+        sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
         sudo apt-get update
         sudo apt-get install -y libsdl2-dev libfmt-dev libcairo2 libpango-1.0-0 libpng16-16 libjpeg8 libnl-3-200 libnl-genl-3-200
 
@@ -873,6 +880,7 @@ jobs:
 
     - name: Install runtime deps
       run: |
+        sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
         sudo apt-get update
         sudo apt-get install -y libsdl2-dev libfmt-dev libcairo2 libpango-1.0-0 libpng16-16 libjpeg8 libnl-3-200 libnl-genl-3-200
 
