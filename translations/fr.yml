@@ -63,6 +63,7 @@ translations:
   12 Hour: 12 heures
   120 seconds: 120 secondes
   15 seconds: 15 secondes
+  170-300 °C: ''
   180°: 180°
   180° Upside Down: 180° à l'envers
   2 min: '2 min'
@@ -128,6 +129,7 @@ translations:
   Abort failed: Échec de l'annulation
   Aborting AFC operation...: Annulation de l'opération AFC...
   About: À propos
+  About 3 minutes at {}°C.: ''
   Accel to Decel: Accél. à Décél.
   Acceleration to deceleration limit (mm/s²): Limite d'accélération à décélération
     (mm/s²)
@@ -254,6 +256,7 @@ translations:
   Automatic: Automatique
   Automatic Heater Control Calibration: Calibration automatique du chauffage
   Automatic LED Control: Contrôle LED automatique
+  Automatic calibration: ''
   Aux: Aux
   Available: Disponible
   Available Networks: Réseaux disponibles
@@ -298,6 +301,7 @@ translations:
   Bed temp must be 0-200°C: La température du plateau doit être entre 0 et 200°C
   Bed warming timed out: Préchauffage du plateau — délai dépassé
   Before calibrating: ''
+  Before starting: ''
   Belt A: Courroie A
   Belt A (front right) is tighter by %.0f Hz. Tighten belt B, on the front left, or loosen belt A.: La courroie A (avant droite) est plus tendue de %.0f Hz. Tendez la courroie B, à l'avant gauche, ou détendez la courroie A.
   Belt A frequency locked: Fréquence de la courroie A verrouillée
@@ -400,8 +404,6 @@ translations:
   Calibrate your touchscreen for accurate input: Calibrer votre écran tactile pour
     une saisie précise
   Calibrated: Calibré
-  'Calibrating Probe...': ''
-  'Calibrating bed mesh...': ''
   Calibrating Probe...: Calibration de la sonde...
   Calibrating bed mesh...: Calibration du maillage du plateau...
   Calibrating now: ''
@@ -687,6 +689,7 @@ translations:
   Copied to clipboard!: Copié dans le presse-papiers !
   Copy Command: Copier la commande
   Copy failed - use SSH manually: Copie échouée - utilisez SSH manuellement
+  Copy it into this filament's slicer profile — the printer keeps nothing.: ''
   Corner roundness: Arrondi des coins
   Correction (Ki): Correction (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: Impossible
@@ -1151,7 +1154,9 @@ translations:
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
   : Le filament est encore à la buse après le déchargement. La coupe ou la rétractation n'a peut-être pas abouti. Dégagez la tête d'outil avant de charger une autre bobine.
   'Filament load failed: {}': 'Échec du chargement du filament : {}'
+  Filament must be loaded in the extruder, and the build plate on with nothing in the way of the head.: ''
   Filament operation failed: Échec de l'opération filament
+  'Filament operation failed: {}': ''
   Filament operation timed out: Opération filament — délai dépassé
   Filament ran out - nothing at the toolhead and the print is paused.: 'Filament épuisé - plus rien à la tête d''outil et l''impression est en pause.'
   ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
@@ -1283,6 +1288,8 @@ translations:
   Heating bed to $1°C...: Chauffe du plateau à $1°C...
   Heating bed...: Chauffe du plateau...
   Heating chamber...: Chauffe de la chambre...
+  Heating is nearly the whole wait. You can leave the screen — the run stops.: ''
+  Heating nozzle: ''
   Heating nozzle to $1°C...: Chauffe de la buse à $1°C...
   Heating nozzle...: Chauffe de la buse...
   Heating to %d°C... %.0f°C: Chauffe à %d°C... %.0f°C
@@ -1447,6 +1454,7 @@ translations:
     l'aide au dépannage et proposer des fonctionnalités.
   Just now: À l'instant
   Just queued: 'Tout juste mis en file'
+  K so far: ''
   KEYBOARD LAYOUT: DISPOSITION DU CLAVIER
   KLICKY CONTROLS: COMMANDES KLICKY
   Keep Navigation Bar: Conserver la barre de navigation
@@ -1502,6 +1510,7 @@ translations:
   Last: Dernière
   # Source: history_dashboard_panel.xml:114
   Last 7 days: '7 derniers jours'
+  Last measured: ''
   Last print cancelled: Dernière impression annulée
   Last print failed: Dernière impression échouée
   Later: Plus tard
@@ -1660,7 +1669,9 @@ translations:
   'Measure each tool''s nozzle position so all tools print in the same place': ''
   Measured (shaper off): Mesuré (shaper désactivé)
   Measured filament diameter: Diamètre du filament mesuré
+  Measured pressure advance: ''
   Measurement Failed: Échec de la mesure
+  Measuring: ''
   Measuring accelerometer noise...: 'Mesure du bruit de l''accéléromètre...'
   Measuring now: ''
   Measuring vibrations... {}%: 'Mesure des vibrations... {}%'
@@ -1695,6 +1706,7 @@ translations:
   'Motors disable failed: {}': 'Échec de la désactivation des moteurs : {}'
   Motors disabled: Moteurs désactivés
   Mount: Monter
+  Mount this tool first: ''
   Move: Déplacer
   Move paper back and forth while adjusting. Stop when paper catches slightly but still slides.: Déplacez
     le papier d'avant en arrière pendant l'ajustement. Arrêtez quand le papier accroche
@@ -1797,6 +1809,7 @@ translations:
   No humidity sensor detected: 'Aucun capteur d''humidité détecté'
   No images found on USB drive: Aucune image trouvée sur la clé USB
   No jobs in queue: Aucun travail en file
+  No macro configured — set one in Settings: ''
   No macro devices configured: Aucun appareil de macro configuré
   No macros available: Aucune macro disponible
   No matching prints: Aucune impression correspondante
@@ -1831,6 +1844,7 @@ translations:
   No target printer configured: Aucune imprimante cible configurée
   No temperature sensors detected: 'Aucun capteur de température détecté'
   No timelapse videos found: Aucune vidéo timelapse trouvée
+  No tool selected: ''
   No vendors found: Aucun fournisseur trouvé
   No video player installed - showing the timelapse library: 'Aucun lecteur vidéo installé – affichage de la bibliothèque timelapse'
   ? "No webcam detected.\nA webcam is required for timelapse."
@@ -1858,6 +1872,7 @@ translations:
   Notes: Notes
   Notes (optional): Notes (facultatif)
   Nothing to remap: Rien à réaffecter
+  Nothing was changed. Temperature and material are kept, so a retry is one tap.: ''
   Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed.: ''
   Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed.: ''
   Notification: Notification
@@ -1929,6 +1944,7 @@ translations:
   Output Device: Périphérique de sortie
   Output Mode: Mode de sortie
   Output Pin: Broche de sortie
+  Outside the usual {:.2f}-{:.2f} for a {} extruder — worth measuring again before trusting it.: ''
   Overheating: Surchauffe
   'Overlay Visits: ': 'Visites de superposition : '
   Overlays Opened: Superpositions ouvertes
@@ -1994,6 +2010,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Choisir
   Pick Color: Choisir la couleur
+  Pick one in the row above — heat and filament both belong to a tool.: ''
   Pick up tool: Prendre l'outil
   Picking up tool: Prise de l'outil
   Pill: Pilule
@@ -2064,6 +2081,8 @@ translations:
   Presets: Préréglages
   Press Abort to stop: Appuyez sur Abandonner pour arrêter
   Press Scan to search: Appuyez sur Scanner pour rechercher
+  Pressure Adv.: ''
+  Pressure Advance: ''
   'Pressure:': 'Pression :'
   Preview Sounds: Aperçu des sons
   Previous: Précédent
@@ -2151,6 +2170,7 @@ translations:
   Printer is not paired — pair it first: L'imprimante n'est pas appairée — appairez-la
     d'abord
   Printer name: Nom de l'imprimante
+  Printer not connected: ''
   Printer not ready: Imprimante non prête
   Printer ready: Imprimante prête
   Printer type mismatch: Type d'imprimante incompatible
@@ -2243,6 +2263,7 @@ translations:
   Raspberry Pi: Raspberry Pi
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
   Re-identify: Ré-identifier
+  Re-measure: ''
   Re-probe: Re-palper
   Re-read spool RFID tags and remaining length: 'Relire les étiquettes RFID des bobines et la longueur restante'
   Re-syncs Happy Hare's tracked state with the hardware.: Resynchronise l'état suivi
@@ -2297,6 +2318,7 @@ translations:
   Release filament: Relâcher le filament
   Release or grip the filament by hand: Relâcher ou saisir le filament à la main
   Release the filament: Relâcher le filament
+  Remaining: ''
   Remaining (g): Restant (g)
   Remaining Weight (g): Poids restant (g)
   Remap Tool: Réassigner l'outil
@@ -2420,6 +2442,7 @@ translations:
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): Charger/décharger
     le filament même lorsque la buse est froide (pour les macros qui chauffent la
     buse elles-mêmes)
+  Run stopped: ''
   Run test sequence on all lanes: 'Exécuter la séquence de test sur toutes les voies'
   Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: Lancez l'installateur HelixScreen avec --update depuis un terminal sur cette imprimante. Scannez pour obtenir la commande adaptée à votre plateforme.
   Run {}?: Exécuter {} ?
@@ -2815,6 +2838,7 @@ translations:
   Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d: Appuyez sur
     la cible (point %1$d sur 3) — appui %2$d sur %3$d
   Tap to assign: Appuyez pour assigner
+  Target: ''
   Target Frequency: Fréquence cible
   Target Temperature: Température cible
   Target Version: Version cible
@@ -2880,15 +2904,19 @@ translations:
     plusieurs fois.
   ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   : La bobine chargée est {}, mais ce fichier a été tranché pour {}. Un filament chargé fonctionne à un débit plus faible et nécessite une buse durcie.
-  : "Le moteur fait vibrer la courroie tandis qu'un stroboscope clignote à la même fréquence. Lorsque la courroie semble immobile (figée), vous avez trouvé la fréquence de résonance.\n\nUtilisez les boutons de fréquence pour balayer les valeurs jusqu'à ce que la courroie paraisse immobile, puis verrouillez la lecture."
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
+  : "Le moteur fait vibrer la courroie tandis qu'un stroboscope clignote à la même fréquence. Lorsque la courroie semble immobile (figée), vous avez trouvé la fréquence de résonance.\n\nUtilisez les boutons de fréquence pour balayer les valeurs jusqu'à ce que la courroie paraisse immobile, puis verrouillez la lecture."
+  The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself.: ''
   The offsets are saved when setup finishes. Recalibrate anytime from the console.: ''
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   : L'impression est en pause. Changer d'outil maintenant déplace la tête d'impression et remplace le filament au niveau de la buse. Reprenez l'impression une fois le changement terminé.
+  The printer extrudes in a corner and repeats until the readings agree. You do not judge anything by eye.: ''
   The printer gave no reason.: ''
   The printer halted this print and cannot resume it. Restart from the beginning?: L'imprimante
     a arrêté cette impression et ne peut pas la reprendre. Redémarrer depuis le début
     ?
+  ? The printer heats the nozzle, extrudes a few short test moves in a corner of the plate, and measures them itself. It repeats until the readings agree, then reports one number.
+  : ''
   The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: L'imprimante n'est pas référencée. Continuer référencera tous les axes et déplacera la tête d'outil. Assurez-vous que le plateau est dégagé.
   The printer lost power during a print. It can resume where it left off.: 'L''imprimante
     a été mise hors tension pendant une impression. Elle peut reprendre là où elle
@@ -2990,8 +3018,8 @@ translations:
   This will restart Klipper firmware. Any active operations will be interrupted.: Le
     firmware Klipper sera redémarré. Les opérations actives seront interrompues.
   This will restart Klipper.: Cela redémarrera Klipper.
-  : ''
   ? This writes the offsets to the printer's config and restarts its firmware, which takes a few seconds. Until then they apply only to this session.
+  : ''
   This will save the Z-offset and restart Klipper to write the configuration. The printer will briefly disconnect.: Cela enregistrera le Z-offset et redémarrera Klipper pour enregistrer la configuration. L'imprimante se déconnectera brièvement.
   Thorough: Approfondi
   Thumbnail Only: Miniature uniquement
@@ -3068,6 +3096,7 @@ translations:
   Trigger: Déclencheur
   'Troubleshooting:': 'Dépannage :'
   Try adjusting your search or filters: Essayez d'ajuster votre recherche ou vos filtres
+  Try again: ''
   Tune: Régler
   Tuning tower enabled - start a print to test: Tour de réglage activée - lancez une
     impression pour tester
@@ -3080,9 +3109,11 @@ translations:
   Turn the extruder heater off after a load or unload finishes: Éteindre le chauffage de l'extrudeur après un chargement ou un déchargement
   Turn the picture to match how the screen is mounted. Applies after restart.: Fait pivoter l'image selon l'orientation de montage de l'écran. Prend effet après redémarrage.
   Turn the printer's lights on or off: Allumer ou éteindre les lumières
+  Two to three minutes, nearly all of it heating. You judge nothing by eye.: ''
   Type: Type
   Type to preview input field...: Tapez pour prévisualiser le champ de saisie...
   'Type:': 'Type :'
+  Typical for a {} extruder ({:.2f}-{:.2f}).: ''
   T{} calibration was refused: ''
   T{} shares slot with T{}: T{} partage lemplacement avec T{}
   UI Scale: Échelle de l'interface
@@ -3324,6 +3355,7 @@ translations:
   Z-offset saved - Klipper restarting...: Z-offset enregistré - Redémarrage de Klipper...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
+  attempt {}: ''
   bed: plateau
   by Preston Brown: par Preston Brown
   chamber heater: chauffage du caisson
@@ -3354,8 +3386,10 @@ translations:
   locating the bore... {}s: ''
   locating the reference: ''
   locating the reference... {}s: ''
+  locked: ''
   mm before clog: mm avant bouchon
   needs: nécessite
+  no tool: ''
   not detected: non détecté
   nozzle: buse
   of: de
@@ -3378,6 +3412,7 @@ translations:
   started: lancé
   steppers: moteurs pas à pas
   tall: de haut
+  target {}°: ''
   tool(s): outil(s)
   used: utilisé
   v%s available: v%s disponible
