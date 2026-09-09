@@ -26,8 +26,6 @@ static const BindGroup kDoubleBindWidgets[] = {
     {"filament_panel", "btn_purge", BindKind::State, "disabled", {{"filament_safety_warning_visible", 0}, {"filament_operation_in_progress", 0}, {"filament_unload_disabled", 0}}, 3, {{0, 1}, {1, 1}, {2, 1}}, 3, true},
     {"filament_panel", "btn_extrude", BindKind::State, "disabled", {{"filament_safety_warning_visible", 0}, {"filament_operation_in_progress", 0}}, 2, {{0, 1}, {1, 1}}, 2, true},
     {"filament_panel", "btn_retract", BindKind::State, "disabled", {{"filament_safety_warning_visible", 0}, {"filament_operation_in_progress", 0}}, 2, {{0, 1}, {1, 1}}, 2, true},
-    {"hardware_health_overlay", "status_icon_container_warn", BindKind::Flag, "hidden", {{"hardware_has_issues", -1}, {"hardware_max_severity", 0}}, 2, {{0, 0}, {1, 2}}, 2, true},
-    {"hardware_health_overlay", "status_icon_container_crit", BindKind::Flag, "hidden", {{"hardware_has_issues", -1}, {"hardware_max_severity", 2}}, 2, {{0, 0}, {1, 3}}, 2, true},
     {"micro/controls_panel", "light_button", BindKind::State, "disabled", {{"printer_connection_state", 2}, {"led_command_in_flight", 0}}, 2, {{0, 3}, {1, 1}}, 2, true},
     {"micro/controls_panel", "btn_qgl", BindKind::State, "disabled", {{"job_holds_machine", 0}, {"controls_operation_in_progress", 0}}, 2, {{0, 1}, {1, 1}}, 2, true},
     {"micro/controls_panel", "btn_z_tilt", BindKind::State, "disabled", {{"job_holds_machine", 0}, {"controls_operation_in_progress", 0}}, 2, {{0, 1}, {1, 1}}, 2, true},
@@ -51,4 +49,4 @@ static constexpr int kUndrivableGroups = 2;
 
 // Total groups in ui_xml/. A new double-bind widget moves this, which is the
 // point: it has to be regenerated and re-run rather than silently uncovered.
-static constexpr int kTotalGroups = 31;
+static constexpr int kTotalGroups = 29;
