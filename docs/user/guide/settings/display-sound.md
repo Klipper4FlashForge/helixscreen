@@ -262,7 +262,7 @@ The first five (button press, toggles, navigation) are **UI sounds** and respect
 |----------|-------------|
 | **Desktop (SDL)** | Full audio synthesis through your computer speakers. Best sound quality. |
 | **ALSA (Linux)** | Direct audio output on devices with ALSA sound support. 4-voice polyphony with MOD/MED tracker music support for richer sound themes. |
-| **Creality AD5M / AD5M Pro** | Hardware PWM buzzer. Supports different tones and volume levels. |
+| **FlashForge AD5M / AD5M Pro** | Hardware PWM buzzer. Supports different tones and volume levels. |
 | **Other Klipper printers** | Beeper commands sent through Moonraker. Requires `[output_pin beeper]` in your Klipper config. Basic beep tones only. |
 
 If no audio hardware is detected, the sound options are hidden entirely.

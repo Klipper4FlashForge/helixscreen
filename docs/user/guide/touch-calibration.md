@@ -4,7 +4,7 @@ Touch calibration maps the raw coordinates from your touchscreen to the actual p
 
 **Which screens need calibration?**
 
-- **Resistive touchscreens** — Common on budget printers like the Creality AD5M (sun4i_ts) and Nebula Pad (NS2009). These almost always need calibration.
+- **Resistive touchscreens** — Common on budget printers like the FlashForge AD5M (sun4i_ts) and Nebula Pad (NS2009). These almost always need calibration.
 - **Most capacitive touchscreens** — Goodix, FocalTech, and similar controllers come factory-calibrated. No calibration needed.
 - **USB touchscreens** — BTT HDMI displays and generic USB HID screens report pre-mapped coordinates. No calibration needed.
 - **Raspberry Pi Official Touchscreen** — Factory calibrated. No calibration needed.
@@ -313,7 +313,7 @@ HELIX_DISPLAY_ROTATION=90
 
 | Device / Screen | Type | Needs Calibration? | Notes |
 |----------------|------|-------------------|-------|
-| Creality AD5M built-in | Resistive (sun4i_ts) | Yes | Auto-detected |
+| FlashForge AD5M built-in | Resistive (sun4i_ts) | Yes | Auto-detected |
 | Nebula Pad | Resistive (NS2009) | Yes | Auto-detected |
 | Creality K1C built-in | Capacitive (goodix-ts) | No | Declared ABS range matches the panel, so the wizard auto-skips |
 | Creality K2 Plus built-in | Capacitive (gt9xxnew_ts) | No | Declared ABS range matches the panel, so the wizard auto-skips |
