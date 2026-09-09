@@ -2093,6 +2093,17 @@ resolve_platform_hook_key() {
         snapmaker-u1)  platform_hook="snapmaker-u1" ;;
     esac
 
+    # A QIDI-class SBC reports platform pi, whose hooks are no-ops, so its
+    # stock screen would only ever come down at install time. Select its own
+    # hooks by the same fingerprint that vetoes M1 detection.
+    case "$platform" in
+        pi|pi32)
+            if _is_qidi_class_sbc; then
+                platform_hook="qidi"
+            fi
+            ;;
+    esac
+
     # A probed mod host outranks both dispatches above. HOST_PLATFORM_HOOK_KEY
     # is set only when the mod's own tree layout was found, and names the
     # payload layout that rig actually runs. Without this a Forge-X AD5X

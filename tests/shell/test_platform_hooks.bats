@@ -8,7 +8,7 @@
 load helpers
 
 HOOKS_DIR="assets/config/platform"
-HOOK_FILES="hooks-ad5m-forgex.sh hooks-ad5m-kmod.sh hooks-ad5m-zmod.sh hooks-pi.sh hooks-k1.sh hooks-k2.sh hooks-snapmaker-u1.sh"
+HOOK_FILES="hooks-qidi.sh hooks-ad5m-forgex.sh hooks-ad5m-kmod.sh hooks-ad5m-zmod.sh hooks-pi.sh hooks-k1.sh hooks-k2.sh hooks-snapmaker-u1.sh"
 REQUIRED_FUNCTIONS="platform_stop_competing_uis platform_enable_backlight platform_wait_for_services platform_pre_start platform_post_stop"
 
 # --- Hook contract tests: every hook file must define all 5 functions ---
@@ -287,6 +287,41 @@ INIT_SCRIPT="config/helixscreen.init"
     grep -q 'stop)' "$INIT_SCRIPT"
     grep -q 'restart' "$INIT_SCRIPT"
     grep -q 'status)' "$INIT_SCRIPT"
+}
+
+@test "qidi hooks define all required functions" {
+    ( . "$HOOKS_DIR/hooks-qidi.sh"
+      for func in $REQUIRED_FUNCTIONS; do
+          type "$func" >/dev/null 2>&1
+      done )
+}
+
+# The hook ships to the device and runs at boot with none of the installer
+# library available, so it carries its own copy of what the stock screen looks
+# like. Two hand-written copies of one rule drift; this is the gate.
+@test "qidi hook and the installer agree on the stock screen's shape" {
+    run sh -c '
+        . scripts/lib/installer/competing_uis.sh
+        want_bins="$QIDI_STOCK_UI_BINS"
+        want_pat="$QIDI_STOCK_UI_EXEC_PATTERN"
+        unset QIDI_STOCK_UI_BINS QIDI_STOCK_UI_EXEC_PATTERN
+        . assets/config/platform/hooks-qidi.sh
+        [ "$want_bins" = "$QIDI_STOCK_UI_BINS" ] || { echo "BINS drift"; exit 1; }
+        [ "$want_pat" = "$QIDI_STOCK_UI_EXEC_PATTERN" ] || { echo "PATTERN drift"; exit 1; }
+    '
+    [ "$status" -eq 0 ]
+}
+
+# The unit must go down before the process is killed: the stock unit is
+# Restart=always with StartLimitIntervalSec=0 and its start script relaunches
+# the client under taskset, so a kill while the unit is live respawns it.
+@test "qidi hook: the unit loop comes before the process loop" {
+    local hook="$HOOKS_DIR/hooks-qidi.sh" unit_line bin_line
+    unit_line=$(grep -nF 'for _qidi_path in /etc/systemd/system' "$hook" | cut -d: -f1)
+    bin_line=$(grep -nF 'for _qidi_bin in $QIDI_STOCK_UI_BINS' "$hook" | cut -d: -f1)
+    [ -n "$unit_line" ]
+    [ -n "$bin_line" ]
+    [ "$unit_line" -lt "$bin_line" ]
 }
 
 # --- Bundle integrity tests ---
