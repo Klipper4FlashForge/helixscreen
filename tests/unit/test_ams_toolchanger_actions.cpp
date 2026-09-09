@@ -46,6 +46,21 @@ class FastTimingScopeTC {
     double original_speedup_ = 1.0;
 };
 
+/// A tool change is unload-then-load; a fixed margin underneath the first
+/// phase asserts the end of the operation before it can have happened
+/// (prestonbrown/helixscreen#1539). Poll instead: finishes as soon as the
+/// transition lands, and fails only if it genuinely never does.
+bool wait_until_ams_idle(helix::AmsBackendMock& backend, std::chrono::milliseconds ceiling) {
+    const auto deadline = std::chrono::steady_clock::now() + ceiling;
+    do {
+        if (backend.get_current_action() == AmsAction::IDLE) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    } while (std::chrono::steady_clock::now() < deadline);
+    return false;
+}
+
 // =============================================================================
 // Mock toolchanger mode basics
 // =============================================================================
@@ -223,8 +238,7 @@ TEST_CASE("load_filament delegates to change_tool in mock toolchanger mode",
     SECTION("load_filament succeeds and mounts the requested tool") {
         // Unload first so we can load a specific tool
         backend.unload_active_filament();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        REQUIRE(backend.get_current_action() == AmsAction::IDLE);
+        REQUIRE(wait_until_ams_idle(backend, std::chrono::seconds(10)));
 
         auto result = backend.load_filament(2);
         REQUIRE(result);
@@ -304,8 +318,7 @@ TEST_CASE("unload_filament works in mock toolchanger mode",
         auto result = backend.unload_active_filament();
         REQUIRE(result);
 
-        // Wait for completion
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        REQUIRE(wait_until_ams_idle(backend, std::chrono::seconds(10)));
 
         CHECK(backend.get_current_action() == AmsAction::IDLE);
         CHECK_FALSE(backend.is_filament_loaded());
@@ -344,8 +357,7 @@ TEST_CASE("Sequential tool changes succeed in mock toolchanger mode",
         // First tool change to T0 (may already be loaded, but the mock allows it)
         auto result1 = backend.change_tool(0);
         REQUIRE(result1);
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        REQUIRE(backend.get_current_action() == AmsAction::IDLE);
+        REQUIRE(wait_until_ams_idle(backend, std::chrono::seconds(10)));
 
         auto info1 = backend.get_system_info();
         CHECK(info1.current_slot == 0);
@@ -354,8 +366,7 @@ TEST_CASE("Sequential tool changes succeed in mock toolchanger mode",
         // Second tool change to T1
         auto result2 = backend.change_tool(1);
         REQUIRE(result2);
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        REQUIRE(backend.get_current_action() == AmsAction::IDLE);
+        REQUIRE(wait_until_ams_idle(backend, std::chrono::seconds(10)));
 
         auto info2 = backend.get_system_info();
         CHECK(info2.current_slot == 1);
@@ -367,8 +378,7 @@ TEST_CASE("Sequential tool changes succeed in mock toolchanger mode",
             CAPTURE(t);
             auto result = backend.change_tool(t);
             REQUIRE(result);
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            REQUIRE(backend.get_current_action() == AmsAction::IDLE);
+            REQUIRE(wait_until_ams_idle(backend, std::chrono::seconds(10)));
 
             auto info = backend.get_system_info();
             CHECK(info.current_slot == t);
@@ -402,7 +412,7 @@ TEST_CASE("change_tool on already-active tool in mock toolchanger mode",
         auto result = backend.change_tool(0);
         REQUIRE(result);
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        REQUIRE(wait_until_ams_idle(backend, std::chrono::seconds(10)));
         CHECK(backend.get_current_action() == AmsAction::IDLE);
         CHECK(backend.get_current_slot() == 0);
     }
