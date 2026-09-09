@@ -180,9 +180,9 @@ class ScrollMotionFixture : public XMLTestFixture {
     std::optional<std::string> rendered_text(lv_obj_t* label) {
         std::optional<std::string> drawn;
         lv_obj_add_event_cb(label, capture_drawn_text, LV_EVENT_DRAW_TASK_ADDED, &drawn);
-        // The suite's displays render into a buffer nobody reads; one of them
-        // was created without a flush callback, and a refresh on that display
-        // waits forever for a flush that never completes.
+        // The suite's displays render into a buffer nobody reads, and some are
+        // created without a flush callback, so a refresh of one never completes
+        // its flush. Give this one a callback that reports the flush done.
         lv_display_t* display = lv_obj_get_display(label);
         lv_display_set_flush_cb(display, [](lv_display_t* d, const lv_area_t*, uint8_t*) {
             lv_display_flush_ready(d);
