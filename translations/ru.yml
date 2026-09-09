@@ -2841,8 +2841,6 @@ translations:
     включаться и выключаться.
   ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   : Загружена катушка {}, но файл нарезан для {}. Филамент с наполнителем печатается с меньшим потоком и требует закалённого сопла.
-  ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
-  : "Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным, затем зафиксируйте показание."
   The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself.: Сопло делает несколько коротких тестовых выдавливаний в углу, вне области печати, и повторяет их, пока измерения не совпадут.
   The offsets are saved when setup finishes. Recalibrate anytime from the console.: Смещения сохраняются по завершении настройки. Перекалибровать можно в любой момент из консоли.
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.

@@ -2899,8 +2899,6 @@ translations:
     plusieurs fois.
   ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   : La bobine chargée est {}, mais ce fichier a été tranché pour {}. Un filament chargé fonctionne à un débit plus faible et nécessite une buse durcie.
-  ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
-  : "Le moteur fait vibrer la courroie tandis qu'un stroboscope clignote à la même fréquence. Lorsque la courroie semble immobile (figée), vous avez trouvé la fréquence de résonance.\n\nUtilisez les boutons de fréquence pour balayer les valeurs jusqu'à ce que la courroie paraisse immobile, puis verrouillez la lecture."
   The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself.: La buse extrude quelques courts mouvements de test dans un coin, hors de la zone d'impression, et recommence jusqu'à ce que les mesures concordent.
   The offsets are saved when setup finishes. Recalibrate anytime from the console.: Les décalages sont enregistrés à la fin de la configuration. Vous pouvez recalibrer à tout moment depuis la console.
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.

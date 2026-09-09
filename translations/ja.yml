@@ -2645,8 +2645,6 @@ translations:
   The heater will cycle on and off several times.: ヒーターは数回オン/オフを繰り返します。
   ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   : 装填中のスプールは {} ですが、このファイルは {} 用にスライスされています。充填材入りフィラメントはフローレートが低くなり、硬化ノズルが必要です。
-  ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
-  : "モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。"
   The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself.: ノズルが印刷領域から離れた隅で短いテスト押し出しを数回行い、測定値が一致するまで繰り返します。
   The offsets are saved when setup finishes. Recalibrate anytime from the console.: オフセットはセットアップの完了時に保存されます。コンソールからいつでも再キャリブレーションできます。
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
