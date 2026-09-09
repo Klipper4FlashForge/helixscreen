@@ -64,9 +64,6 @@ FanSettingsOverlay::FanSettingsOverlay() {
 }
 
 FanSettingsOverlay::~FanSettingsOverlay() {
-    if (rename_subject_initialized_ && lv_is_initialized()) {
-        lv_subject_deinit(&fan_rename_old_name_);
-    }
     spdlog::trace("[{}] Destroyed", get_name());
 }
 
@@ -329,10 +326,8 @@ void FanSettingsOverlay::handle_fan_rename(const std::string& object_name,
 
     // Lazy-init the subject on first use (avoids startup init order issues)
     if (!rename_subject_initialized_) {
-        std::memset(rename_old_name_buf_, 0, sizeof(rename_old_name_buf_));
-        lv_subject_init_string(&fan_rename_old_name_, rename_old_name_buf_, nullptr,
-                               sizeof(rename_old_name_buf_), "");
-        lv_xml_register_subject(nullptr, "fan_rename_old_name", &fan_rename_old_name_);
+        UI_MANAGED_SUBJECT_STRING(fan_rename_old_name_, rename_old_name_buf_, "",
+                                  "fan_rename_old_name", subjects_);
         rename_subject_initialized_ = true;
     }
 

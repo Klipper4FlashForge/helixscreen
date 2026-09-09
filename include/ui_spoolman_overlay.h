@@ -19,6 +19,7 @@
 
 #include "moonraker_config_manager.h"
 #include "overlay_base.h"
+#include "subject_managed_panel.h"
 #include "system/moonraker_local_probe.h"
 
 #include <lvgl/lvgl.h>
@@ -259,6 +260,10 @@ class SpoolmanOverlay : public OverlayBase {
 
     /// Interval dropdown widget
     lv_obj_t* interval_dropdown_ = nullptr;
+
+    /// SubjectManager, declared ahead of the subjects it owns so it tears down
+    /// after them (names withdraw before storage dies).
+    SubjectManager subjects_;
 
     /// Subject for sync enabled state (0=disabled, 1=enabled)
     lv_subject_t sync_enabled_subject_;

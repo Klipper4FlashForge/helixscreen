@@ -5,6 +5,7 @@
 
 #include "lvgl/lvgl.h"
 #include "overlay_base.h"
+#include "subject_managed_panel.h"
 
 #include <string>
 
@@ -51,6 +52,10 @@ class MaterialTempsOverlay : public OverlayBase {
     void populate_material_list();
     void show_edit_view(const std::string& material_name);
     void show_list_view();
+
+    // SubjectManager, declared ahead of the subjects it owns so it tears down
+    // after them (names withdraw before storage dies).
+    SubjectManager subjects_;
 
     // Subject for toggling between list/edit views (0=list, 1=edit)
     lv_subject_t editing_subject_;

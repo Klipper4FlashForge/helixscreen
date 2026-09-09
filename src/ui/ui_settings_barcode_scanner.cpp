@@ -66,13 +66,6 @@ BarcodeScannerSettingsOverlay::~BarcodeScannerSettingsOverlay() {
     // while the process continues, promote the discovery thread to joinable.
     stop_bt_discovery();
 
-    if (subjects_initialized_) {
-        lv_subject_deinit(&bt_available_subject_);
-        lv_subject_deinit(&bt_discovering_subject_);
-        lv_subject_deinit(&keymap_index_subject_);
-        lv_subject_deinit(&current_device_label_subject_);
-    }
-
     if (bt_ctx_) {
         auto& loader = helix::bluetooth::BluetoothLoader::instance();
         if (loader.deinit) {
@@ -93,11 +86,10 @@ void BarcodeScannerSettingsOverlay::init_subjects() {
         return;
 
     auto& loader = helix::bluetooth::BluetoothLoader::instance();
-    lv_subject_init_int(&bt_available_subject_, loader.is_available() ? 1 : 0);
-    lv_xml_register_subject(nullptr, "scanner_bt_available", &bt_available_subject_);
+    UI_MANAGED_SUBJECT_INT(bt_available_subject_, loader.is_available() ? 1 : 0,
+                           "scanner_bt_available", subjects_);
 
-    lv_subject_init_int(&bt_discovering_subject_, 0);
-    lv_xml_register_subject(nullptr, "scanner_bt_discovering", &bt_discovering_subject_);
+    UI_MANAGED_SUBJECT_INT(bt_discovering_subject_, 0, "scanner_bt_discovering", subjects_);
 
     const std::string km = helix::SettingsManager::instance().get_scanner_keymap();
     int km_idx = 0;
@@ -105,14 +97,10 @@ void BarcodeScannerSettingsOverlay::init_subjects() {
         km_idx = 1;
     else if (km == "azerty")
         km_idx = 2;
-    lv_subject_init_int(&keymap_index_subject_, km_idx);
-    lv_xml_register_subject(nullptr, "scanner_keymap_index", &keymap_index_subject_);
+    UI_MANAGED_SUBJECT_INT(keymap_index_subject_, km_idx, "scanner_keymap_index", subjects_);
 
-    current_device_label_buf_[0] = '\0';
-    lv_subject_init_string(&current_device_label_subject_, current_device_label_buf_, nullptr,
-                           sizeof(current_device_label_buf_), current_device_label_buf_);
-    lv_xml_register_subject(nullptr, "scanner_current_device_label",
-                            &current_device_label_subject_);
+    UI_MANAGED_SUBJECT_STRING(current_device_label_subject_, current_device_label_buf_, "",
+                              "scanner_current_device_label", subjects_);
 
     subjects_initialized_ = true;
     spdlog::debug("[{}] Subjects initialized", get_name());

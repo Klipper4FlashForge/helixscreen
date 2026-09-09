@@ -78,10 +78,6 @@ DisplaySoundSettingsOverlay::DisplaySoundSettingsOverlay() {
 }
 
 DisplaySoundSettingsOverlay::~DisplaySoundSettingsOverlay() {
-    if (subjects_initialized_ && lv_is_initialized()) {
-        lv_subject_deinit(&brightness_value_subject_);
-        lv_subject_deinit(&theme_apply_disabled_subject_);
-    }
     spdlog::trace("[{}] Destroyed", get_name());
 }
 
@@ -96,13 +92,11 @@ void DisplaySoundSettingsOverlay::init_subjects() {
 
     // Brightness value subject for label binding
     snprintf(brightness_value_buf_, sizeof(brightness_value_buf_), "100%%");
-    lv_subject_init_string(&brightness_value_subject_, brightness_value_buf_, nullptr,
-                           sizeof(brightness_value_buf_), brightness_value_buf_);
-    lv_xml_register_subject(nullptr, "brightness_value", &brightness_value_subject_);
+    UI_MANAGED_SUBJECT_STRING(brightness_value_subject_, brightness_value_buf_,
+                              brightness_value_buf_, "brightness_value", subjects_);
 
     // Theme Apply button disabled subject (1=disabled initially)
-    lv_subject_init_int(&theme_apply_disabled_subject_, 1);
-    lv_xml_register_subject(nullptr, "theme_apply_disabled", &theme_apply_disabled_subject_);
+    UI_MANAGED_SUBJECT_INT(theme_apply_disabled_subject_, 1, "theme_apply_disabled", subjects_);
 
     subjects_initialized_ = true;
     spdlog::debug("[{}] Subjects initialized", get_name());

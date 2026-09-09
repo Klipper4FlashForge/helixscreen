@@ -5,6 +5,7 @@
 #include "async_lifetime_guard.h"
 #include "input_device_scanner.h"
 #include "overlay_base.h"
+#include "subject_managed_panel.h"
 
 #include <atomic>
 #include <memory>
@@ -70,6 +71,7 @@ class BarcodeScannerSettingsOverlay : public OverlayBase {
     static void on_bs_bt_forget(lv_event_t* e);
 
     // Subjects (global scope — single-instance overlay)
+    SubjectManager subjects_; // declared ahead: tears down after the subjects it owns
     lv_subject_t bt_available_subject_{};
     lv_subject_t bt_discovering_subject_{};
     lv_subject_t keymap_index_subject_{};

@@ -23,6 +23,7 @@
 #pragma once
 
 #include "overlay_base.h"
+#include "subject_managed_panel.h"
 
 #include <lvgl.h>
 #include <string>
@@ -95,6 +96,7 @@ class FanSettingsOverlay : public OverlayBase {
     // Rename modal state
     lv_obj_t* rename_modal_ = nullptr;
     std::string pending_rename_object_;
+    SubjectManager subjects_; // declared ahead: tears down after the subject it owns
     char rename_old_name_buf_[64] = {};
     lv_subject_t fan_rename_old_name_{}; ///< Subject for bind_text in modal
     bool rename_subject_initialized_ = false;
