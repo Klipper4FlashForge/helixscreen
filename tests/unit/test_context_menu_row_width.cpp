@@ -57,6 +57,13 @@ class BareContextMenu : public helix::ui::ContextMenu {
 
 // Stands in for external-spool mode at the base-class contract: every action in
 // the Filament group is hidden before the card is measured.
+//
+// The Material group goes with it. This fork splits the tool and material axes
+// on a tool changer (ec6883533), so ams_context_menu.xml carries three groups
+// where upstream has two, and leaving Material populated would leave TWO groups
+// standing -- at which point the heading SHOULD survive and the case below
+// would be asserting the opposite of what it is named for. Emptying it keeps
+// the premise "exactly one group is left" true.
 class EmptyFilamentColumnMenu : public BareContextMenu {
     // Not required to compile — the base already satisfies the pure virtual — but
     // active_as<> matches on the exact tag, so a derived menu must claim its own.
@@ -64,7 +71,9 @@ class EmptyFilamentColumnMenu : public BareContextMenu {
 
   protected:
     void on_created(lv_obj_t* menu) override {
-        for (const char* name : {"btn_load", "btn_unload", "btn_gate_select", "btn_gate_check"}) {
+        for (const char* name :
+             {"btn_load", "btn_unload", "btn_gate_select", "btn_gate_check", "btn_material_load",
+              "btn_material_unload", "btn_material_purge"}) {
             if (lv_obj_t* btn = lv_obj_find_by_name(menu, name))
                 lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
         }

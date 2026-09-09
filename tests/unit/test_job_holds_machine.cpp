@@ -306,5 +306,10 @@ TEST_CASE("no toolhead-guarding XML binding is left on the raw print_active subj
     // 21 -> 23: controls_panel.xml gained the Tool Offsets and Pressure Advance
     // calibration buttons, both of which reach the toolhead and so carry the
     // same job_holds_machine guard as the buttons beside them.
-    REQUIRE(derived_bindings == 23);
+    //
+    // 23 -> 25: the same two buttons in micro/controls_panel.xml. A layout
+    // variant replaces its base wholesale, so the guard has to be spelled again
+    // there or the micro screen offers both buttons mid-print --
+    // check_variant_parity.py is what noticed they were missing entirely.
+    REQUIRE(derived_bindings == 25);
 }
