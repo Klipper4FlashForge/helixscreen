@@ -6,7 +6,7 @@
  * @brief The chamber icon and the chamber temp-label MUST resolve the exact
  * same color for every (mode, current, target) combination.
  *
- * The bug this pins: HeaterIconBinder/HeatingIconAnimator classified the
+ * The bug this pins: HeaterIconBinder/helix::ui::HeatingIconAnimator classified the
  * chamber icon with the plain (mode-unaware) classify_heat_state(), so a
  * chamber in Maintaining mode — where the "target" is a cooling CEILING, not
  * a heat goal — pulsed heating-red while the label beside it (which already
@@ -147,7 +147,7 @@ TEST_CASE_METHOD(XMLTestFixture,
 }
 
 // The pulse-suppression side of the fix (Maintaining must never pulse, even
-// when cold) is covered directly against HeatingIconAnimator in
+// when cold) is covered directly against helix::ui::HeatingIconAnimator in
 // test_heating_animator_state.cpp — lv_anim_get() keys off the animator
 // instance as its `var`, which is a private member here (animator_), so that
 // check cannot be written against HeaterIconBinder without reaching into it.

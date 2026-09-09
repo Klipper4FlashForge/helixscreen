@@ -3,7 +3,7 @@
 #
 # Meta-tests for scripts/check_icon_names.py — the icon-name resolution gate.
 #
-# `<icon src="NAME">` resolves NAME through ui_icon::lookup_codepoint() at
+# `<icon src="NAME">` resolves NAME through helix::ui::icon::lookup_codepoint() at
 # runtime. A name absent from include/ui_icon_codepoints.h does not fail the
 # build and does not abort the panel: the widget substitutes
 # image_broken_variant and logs one warning, so the user sees a broken-image

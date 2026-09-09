@@ -5,7 +5,7 @@
 # Lint gate: every icon name written in ui_xml/ must exist in the codepoint table.
 #
 # WHY THIS NEEDS A GATE
-#   `<icon src="NAME">` resolves NAME through ui_icon::lookup_codepoint() at
+#   `<icon src="NAME">` resolves NAME through helix::ui::icon::lookup_codepoint() at
 #   runtime. A name that is not in the table does not fail, does not abort, and
 #   does not stop the panel from building — it logs one warning and substitutes
 #   `image_broken_variant`. The user sees a broken-image glyph next to real

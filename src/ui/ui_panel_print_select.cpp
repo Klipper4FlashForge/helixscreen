@@ -699,7 +699,7 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
         // Start in list mode instead of default card mode
         current_view_mode_ = PrintSelectViewMode::LIST;
         lv_subject_set_int(&view_mode_subject_, 1);
-        ui_icon_set_source(view_toggle_icon_, "grid_view");
+        helix::ui::icon::set_source(view_toggle_icon_, "grid_view");
         spdlog::debug("[{}] Starting in list view mode (CLI flag)", get_name());
     }
 
@@ -825,7 +825,7 @@ void PrintSelectPanel::toggle_view() {
         lv_subject_set_int(&view_mode_subject_, 1);
 
         // Update icon to show grid_view (indicates you can switch back to card view)
-        ui_icon_set_source(view_toggle_icon_, "grid_view");
+        helix::ui::icon::set_source(view_toggle_icon_, "grid_view");
         spdlog::debug("[{}] Switched to list view", get_name());
 
         // Populate list view (initializes pool if needed)
@@ -846,7 +846,7 @@ void PrintSelectPanel::toggle_view() {
         lv_subject_set_int(&view_mode_subject_, 0);
 
         // Update icon to show list (indicates you can switch to list view)
-        ui_icon_set_source(view_toggle_icon_, "list");
+        helix::ui::icon::set_source(view_toggle_icon_, "list");
         spdlog::debug("[{}] Switched to card view", get_name());
 
         // Repopulate card view

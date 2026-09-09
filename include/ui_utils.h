@@ -49,7 +49,7 @@ lv_coord_t ui_get_responsive_header_height(lv_coord_t screen_height);
  * lightbulb_on (100%).
  *
  * @param brightness LED brightness 0-100%
- * @return Icon name string for ui_icon_set_source()
+ * @return Icon name string for helix::ui::icon::set_source()
  */
 const char* ui_brightness_to_lightbulb_icon(int brightness);
 

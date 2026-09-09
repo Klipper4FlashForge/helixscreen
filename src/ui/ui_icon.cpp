@@ -21,6 +21,8 @@
 
 #include <cstring>
 
+namespace helix::ui::icon {
+
 /**
  * Icon size enum - maps to MDI font sizes
  */
@@ -117,7 +119,7 @@ static const lv_font_t* get_font_for_size(IconSize size) {
     return font;
 }
 
-void ui_icon_invalidate_font_cache() {
+void invalidate_font_cache() {
     for (bool& r : s_font_resolved) {
         r = false;
     }
@@ -146,13 +148,13 @@ static void apply_source(lv_obj_t* obj, const char* src) {
     }
 
     // Try direct lookup first
-    const char* codepoint = ui_icon::lookup_codepoint(src);
+    const char* codepoint = lookup_codepoint(src);
 
     // If not found, try stripping legacy "mat_" prefix and "_img" suffix
     if (!codepoint) {
-        const char* stripped = ui_icon::strip_legacy_prefix(src);
+        const char* stripped = strip_legacy_prefix(src);
         if (stripped != src) {
-            codepoint = ui_icon::lookup_codepoint(stripped);
+            codepoint = lookup_codepoint(stripped);
         }
     }
 
@@ -161,7 +163,7 @@ static void apply_source(lv_obj_t* obj, const char* src) {
         spdlog::trace("[Icon] Set icon '{}' -> codepoint", src);
     } else {
         // Fallback to broken image icon
-        const char* fallback = ui_icon::lookup_codepoint("image_broken_variant");
+        const char* fallback = lookup_codepoint("image_broken_variant");
         if (fallback) {
             lv_label_set_text(obj, fallback);
         }
@@ -249,16 +251,16 @@ static void ui_icon_xml_apply(lv_xml_parser_state_t* state, const char** attrs) 
 /**
  * Register the icon widget with LVGL's XML system
  */
-void ui_icon_register_widget() {
+void register_widget() {
     lv_xml_register_widget("icon", ui_icon_xml_create, ui_icon_xml_apply);
     spdlog::trace("[Icon] Font-based icon widget registered with XML system");
 }
 
 // Public API implementations
 
-void ui_icon_set_source(lv_obj_t* icon, const char* icon_name) {
+void set_source(lv_obj_t* icon, const char* icon_name) {
     if (!icon || !icon_name) {
-        spdlog::error("[Icon] Invalid parameters to ui_icon_set_source");
+        spdlog::error("[Icon] Invalid parameters to set_source");
         return;
     }
 
@@ -266,9 +268,9 @@ void ui_icon_set_source(lv_obj_t* icon, const char* icon_name) {
     spdlog::trace("[Icon] Changed icon source to '{}'", icon_name);
 }
 
-void ui_icon_set_size(lv_obj_t* icon, const char* size_str) {
+void set_size(lv_obj_t* icon, const char* size_str) {
     if (!icon || !size_str) {
-        spdlog::error("[Icon] Invalid parameters to ui_icon_set_size");
+        spdlog::error("[Icon] Invalid parameters to set_size");
         return;
     }
 
@@ -277,9 +279,9 @@ void ui_icon_set_size(lv_obj_t* icon, const char* size_str) {
     spdlog::trace("[Icon] Changed icon size to '{}'", size_str);
 }
 
-void ui_icon_set_variant(lv_obj_t* icon, const char* variant_str) {
+void set_variant(lv_obj_t* icon, const char* variant_str) {
     if (!icon || !variant_str) {
-        spdlog::error("[Icon] Invalid parameters to ui_icon_set_variant");
+        spdlog::error("[Icon] Invalid parameters to set_variant");
         return;
     }
 
@@ -288,35 +290,23 @@ void ui_icon_set_variant(lv_obj_t* icon, const char* variant_str) {
     spdlog::trace("[Icon] Changed icon variant to '{}'", variant_str);
 }
 
-void ui_icon_set_color(lv_obj_t* icon, lv_color_t color, lv_opa_t opa) {
+void set_color(lv_obj_t* icon, lv_color_t color, lv_opa_t opa) {
     if (!icon) {
-        spdlog::error("[Icon] Invalid icon parameter to ui_icon_set_color");
+        spdlog::error("[Icon] Invalid icon parameter to set_color");
         return;
     }
 
     lv_obj_set_style_text_color(icon, color, LV_PART_MAIN);
-    ui_icon_set_opa(icon, opa);
+    set_opa(icon, opa);
 }
 
-void ui_icon_set_opa(lv_obj_t* icon, lv_opa_t opa) {  // NAMESPACE_OK: joins the global ui_icon_* API; the family moves together (prestonbrown/helixscreen#1443)
+void set_opa(lv_obj_t* icon, lv_opa_t opa) {
     if (!icon) {
-        spdlog::error("[Icon] Invalid icon parameter to ui_icon_set_opa");
+        spdlog::error("[Icon] Invalid icon parameter to set_opa");
         return;
     }
 
     lv_obj_set_style_text_opa(icon, opa, LV_PART_MAIN);
 }
 
-void ui_icon_set_clickable(lv_obj_t* icon, bool clickable) {
-    if (!icon) {
-        spdlog::error("[Icon] Invalid icon parameter to ui_icon_set_clickable");
-        return;
-    }
-
-    if (clickable) {
-        lv_obj_add_flag(icon, LV_OBJ_FLAG_CLICKABLE);
-    } else {
-        lv_obj_remove_flag(icon, LV_OBJ_FLAG_CLICKABLE);
-    }
-    spdlog::trace("[Icon] Set clickable: {}", clickable);
-}
+} // namespace helix::ui::icon

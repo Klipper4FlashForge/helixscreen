@@ -316,8 +316,8 @@ static void show_rich_completion_modal(PrintJobState state, const char* filename
     // Icon src/variant must be set imperatively (no XML binding support for icon properties)
     lv_obj_t* icon_widget = lv_obj_find_by_name(dialog, "status_icon");
     if (icon_widget) {
-        ui_icon_set_source(icon_widget, icon_src);
-        ui_icon_set_variant(icon_widget, icon_variant);
+        helix::ui::icon::set_source(icon_widget, icon_src);
+        helix::ui::icon::set_variant(icon_widget, icon_variant);
     }
 
     // Celebrate successful prints with confetti (respects animations setting)

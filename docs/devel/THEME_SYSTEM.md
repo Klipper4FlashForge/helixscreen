@@ -439,9 +439,9 @@ Icon sizes map directly to fixed-size icon fonts (not responsive):
 
 **C++ API:**
 ```cpp
-ui_icon_set_source(icon, "check");
-ui_icon_set_size(icon, "md");
-ui_icon_set_variant(icon, "success");
+helix::ui::icon::set_source(icon, "check");
+helix::ui::icon::set_size(icon, "md");
+helix::ui::icon::set_variant(icon, "success");
 ```
 
 ### Status Indicators

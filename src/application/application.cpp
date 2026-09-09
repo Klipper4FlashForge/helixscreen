@@ -1809,7 +1809,7 @@ void Application::run_rotation_probe_and_layout() {
 }
 
 bool Application::register_widgets() {
-    ui_icon_register_widget();
+    helix::ui::icon::register_widget();
     ui_status_pill_register_widget();
     ui_switch_register();
     ui_card_register();

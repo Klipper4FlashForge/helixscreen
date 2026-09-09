@@ -413,12 +413,12 @@ lv_obj_t* create_button_icon(lv_obj_t* btn, const char* icon_name,
     }
 
     // Lookup icon codepoint
-    const char* codepoint = ui_icon::lookup_codepoint(icon_name);
+    const char* codepoint = helix::ui::icon::lookup_codepoint(icon_name);
     if (!codepoint) {
         // Try stripping legacy prefix
-        const char* stripped = ui_icon::strip_legacy_prefix(icon_name);
+        const char* stripped = helix::ui::icon::strip_legacy_prefix(icon_name);
         if (stripped != icon_name) {
-            codepoint = ui_icon::lookup_codepoint(stripped);
+            codepoint = helix::ui::icon::lookup_codepoint(stripped);
         }
     }
 
@@ -736,12 +736,12 @@ void icon_subject_observer_cb(lv_observer_t* observer, lv_subject_t* subject) {
         spdlog::trace("[ui_button] bind_icon: updated to codepoint");
     } else {
         // Value is an icon name - look up the codepoint
-        const char* codepoint = ui_icon::lookup_codepoint(icon_value);
+        const char* codepoint = helix::ui::icon::lookup_codepoint(icon_value);
         if (!codepoint) {
             // Try stripping legacy prefix
-            const char* stripped = ui_icon::strip_legacy_prefix(icon_value);
+            const char* stripped = helix::ui::icon::strip_legacy_prefix(icon_value);
             if (stripped != icon_value) {
-                codepoint = ui_icon::lookup_codepoint(stripped);
+                codepoint = helix::ui::icon::lookup_codepoint(stripped);
             }
         }
 
@@ -839,7 +839,7 @@ void apply_op_state(lv_obj_t* btn, UiButtonData* data, int op_state) {
             op_spinner_anim::stop(data->op_spinner);
             lv_obj_add_flag(data->op_spinner, LV_OBJ_FLAG_HIDDEN);
         }
-        const char* check_cp = ui_icon::lookup_codepoint("check");
+        const char* check_cp = helix::ui::icon::lookup_codepoint("check");
         if (check_cp) {
             lv_label_set_text(data->icon, check_cp);
         }
@@ -1013,12 +1013,12 @@ void ui_button_apply(lv_xml_parser_state_t* state, const char** attrs) {
                     lv_label_set_text(data->icon, icon_value);
                 } else {
                     // Value is an icon name - look up the codepoint
-                    const char* codepoint = ui_icon::lookup_codepoint(icon_value);
+                    const char* codepoint = helix::ui::icon::lookup_codepoint(icon_value);
                     if (!codepoint) {
                         // Try stripping legacy prefix
-                        const char* stripped = ui_icon::strip_legacy_prefix(icon_value);
+                        const char* stripped = helix::ui::icon::strip_legacy_prefix(icon_value);
                         if (stripped != icon_value) {
-                            codepoint = ui_icon::lookup_codepoint(stripped);
+                            codepoint = helix::ui::icon::lookup_codepoint(stripped);
                         }
                     }
                     if (codepoint) {
@@ -1174,11 +1174,11 @@ void ui_button_set_icon(lv_obj_t* btn, const char* icon_name) {
         return;
     }
 
-    const char* codepoint = ui_icon::lookup_codepoint(icon_name);
+    const char* codepoint = helix::ui::icon::lookup_codepoint(icon_name);
     if (!codepoint) {
-        const char* stripped = ui_icon::strip_legacy_prefix(icon_name);
+        const char* stripped = helix::ui::icon::strip_legacy_prefix(icon_name);
         if (stripped != icon_name) {
-            codepoint = ui_icon::lookup_codepoint(stripped);
+            codepoint = helix::ui::icon::lookup_codepoint(stripped);
         }
     }
     if (!codepoint) {

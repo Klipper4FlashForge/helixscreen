@@ -76,20 +76,20 @@ static const char* severity_to_string(ToastSeverity s) {
 static void severity_to_icon(ToastSeverity s, const char*& glyph, const char*& color_token) {
     switch (s) {
     case ToastSeverity::SUCCESS:
-        glyph = ui_icon::lookup_codepoint("check");
+        glyph = helix::ui::icon::lookup_codepoint("check");
         color_token = "#success";
         break;
     case ToastSeverity::WARNING:
-        glyph = ui_icon::lookup_codepoint("triangle_exclamation");
+        glyph = helix::ui::icon::lookup_codepoint("triangle_exclamation");
         color_token = "#warning";
         break;
     case ToastSeverity::ERROR:
-        glyph = ui_icon::lookup_codepoint("triangle_exclamation");
+        glyph = helix::ui::icon::lookup_codepoint("triangle_exclamation");
         color_token = "#danger";
         break;
     case ToastSeverity::INFO:
     default:
-        glyph = ui_icon::lookup_codepoint("info_circle");
+        glyph = helix::ui::icon::lookup_codepoint("info_circle");
         color_token = "#info";
         break;
     }

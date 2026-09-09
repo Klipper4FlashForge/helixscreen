@@ -608,8 +608,8 @@ void FilamentPanel::update_status_icon(const char* icon_name, const char* varian
         return;
 
     // Update icon imperatively using ui_icon API
-    ui_icon_set_source(status_icon_, icon_name);
-    ui_icon_set_variant(status_icon_, variant);
+    helix::ui::icon::set_source(status_icon_, icon_name);
+    helix::ui::icon::set_variant(status_icon_, variant);
 }
 
 void FilamentPanel::update_status() {

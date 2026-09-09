@@ -992,7 +992,7 @@ void ControlsPanel::populate_secondary_fans() {
         if (fan->is_controllable) {
             lv_label_set_text(indicator, LV_SYMBOL_RIGHT);
         } else {
-            lv_label_set_text(indicator, ui_icon::lookup_codepoint("alpha_a_circle"));
+            lv_label_set_text(indicator, helix::ui::icon::lookup_codepoint("alpha_a_circle"));
         }
         lv_obj_set_style_text_color(indicator, theme_manager_get_color("secondary"), 0);
         lv_obj_set_style_text_font(indicator, &mdi_icons_16, 0);
@@ -1027,7 +1027,7 @@ void ControlsPanel::populate_secondary_fans() {
 
         // Chevron right indicator
         lv_obj_t* chevron = lv_label_create(more_row);
-        lv_label_set_text(chevron, ui_icon::lookup_codepoint("chevron_right"));
+        lv_label_set_text(chevron, helix::ui::icon::lookup_codepoint("chevron_right"));
         lv_obj_set_style_text_color(chevron, theme_manager_get_color("secondary"), 0);
         lv_obj_set_style_text_font(chevron, &mdi_icons_16, 0);
 
@@ -1838,7 +1838,7 @@ void ControlsPanel::populate_secondary_temps() {
 
         // Thermometer icon
         lv_obj_t* icon = lv_label_create(row);
-        lv_label_set_text(icon, ui_icon::lookup_codepoint("thermometer"));
+        lv_label_set_text(icon, helix::ui::icon::lookup_codepoint("thermometer"));
         lv_obj_set_style_text_color(icon, theme_manager_get_color("secondary"), 0);
         lv_obj_set_style_text_font(icon, &mdi_icons_16, 0);
 
@@ -1869,7 +1869,7 @@ void ControlsPanel::populate_secondary_temps() {
         lv_obj_set_style_text_font(more_label, theme_manager_get_font("font_small"), 0);
 
         lv_obj_t* chevron = lv_label_create(more_row);
-        lv_label_set_text(chevron, ui_icon::lookup_codepoint("chevron_right"));
+        lv_label_set_text(chevron, helix::ui::icon::lookup_codepoint("chevron_right"));
         lv_obj_set_style_text_color(chevron, theme_manager_get_color("secondary"), 0);
         lv_obj_set_style_text_font(chevron, &mdi_icons_16, 0);
 

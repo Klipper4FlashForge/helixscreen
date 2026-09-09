@@ -73,7 +73,11 @@ jobs:
         hash_dir = false
         sloppiness = pch_defines,time_macros
         compiler_check = content
-        max_size = 5G
+        # The tarball ships as a GitHub release asset, which rejects anything at
+        # or above 2 GiB. ccache stores its objects compressed, so zstd over the
+        # cache dir gains almost nothing and the tarball tracks the cache size
+        # closely - this ceiling is what keeps the upload publishable.
+        max_size = 1800M
         EOF
 
     - name: Restore the previous ccache
@@ -107,6 +111,19 @@ jobs:
 
     - name: Package the ccache tarball
       run: tar -C ~/.cache --zstd -cf ccache-linux-x64.tar.zst ccache
+
+    # A release asset at or above 2 GiB is refused with an HTTP 422 that names
+    # only the byte count, several steps after the cause. Fail here instead,
+    # where the fix is in view.
+    - name: Check the tarball fits a release asset
+      run: |
+        limit=2147483648
+        size=$(stat -c%s ccache-linux-x64.tar.zst)
+        echo "tarball: $size bytes (limit $limit)"
+        if [ "$size" -ge "$limit" ]; then
+          echo "::error::ccache tarball is $size bytes, at or over the ${limit}-byte release-asset limit. Lower max_size in the Configure ccache step."
+          exit 1
+        fi
 
     - name: Write the cache manifest
       run: |

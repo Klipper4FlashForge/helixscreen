@@ -1001,15 +1001,15 @@ void PrintSelectDetailView::update_history_status(FileHistoryStatus status, int 
 
     case FileHistoryStatus::CURRENTLY_PRINTING:
         lv_obj_remove_flag(history_status_row_, LV_OBJ_FLAG_HIDDEN);
-        ui_icon_set_source(history_status_icon_, "clock");
-        ui_icon_set_variant(history_status_icon_, "accent");
+        helix::ui::icon::set_source(history_status_icon_, "clock");
+        helix::ui::icon::set_variant(history_status_icon_, "accent");
         lv_label_set_text(history_status_label_, lv_tr("Currently printing"));
         break;
 
     case FileHistoryStatus::COMPLETED: {
         lv_obj_remove_flag(history_status_row_, LV_OBJ_FLAG_HIDDEN);
-        ui_icon_set_source(history_status_icon_, "check");
-        ui_icon_set_variant(history_status_icon_, "success");
+        helix::ui::icon::set_source(history_status_icon_, "check");
+        helix::ui::icon::set_variant(history_status_icon_, "success");
         // Format: "Printed N time(s)"
         char buf[64];
         snprintf(buf, sizeof(buf),
@@ -1020,15 +1020,15 @@ void PrintSelectDetailView::update_history_status(FileHistoryStatus status, int 
 
     case FileHistoryStatus::FAILED:
         lv_obj_remove_flag(history_status_row_, LV_OBJ_FLAG_HIDDEN);
-        ui_icon_set_source(history_status_icon_, "alert");
-        ui_icon_set_variant(history_status_icon_, "error");
+        helix::ui::icon::set_source(history_status_icon_, "alert");
+        helix::ui::icon::set_variant(history_status_icon_, "error");
         lv_label_set_text(history_status_label_, lv_tr("Last print failed"));
         break;
 
     case FileHistoryStatus::CANCELLED:
         lv_obj_remove_flag(history_status_row_, LV_OBJ_FLAG_HIDDEN);
-        ui_icon_set_source(history_status_icon_, "cancel");
-        ui_icon_set_variant(history_status_icon_, "warning");
+        helix::ui::icon::set_source(history_status_icon_, "cancel");
+        helix::ui::icon::set_variant(history_status_icon_, "warning");
         lv_label_set_text(history_status_label_, lv_tr("Last print cancelled"));
         break;
     }

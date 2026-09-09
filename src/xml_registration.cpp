@@ -248,7 +248,7 @@ static void on_toggle_password_visibility(lv_event_t* e) {
     // Swap icon: eye_off when hidden (password mode), eye when visible
     auto* icon = (lv_obj_t*)lv_obj_find_by_name(btn, "eye_toggle_icon");
     if (icon) {
-        const char* cp = ui_icon::lookup_codepoint(was_password ? "eye" : "eye_off");
+        const char* cp = helix::ui::icon::lookup_codepoint(was_password ? "eye" : "eye_off");
         if (cp)
             lv_label_set_text(icon, cp);
     }

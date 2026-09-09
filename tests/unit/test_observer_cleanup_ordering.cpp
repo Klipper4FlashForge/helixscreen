@@ -824,7 +824,7 @@ TEST_CASE_METHOD(
 }
 
 // ============================================================================
-// HeatingIconAnimator cleanup ordering pattern
+// helix::ui::HeatingIconAnimator cleanup ordering pattern
 //
 // The fix ensures icon_ = nullptr BEFORE theme_observer_.reset() in detach().
 // This prevents cascading theme observer callbacks from accessing a freed icon.

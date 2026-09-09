@@ -1113,7 +1113,7 @@ void FanStackWidget::ConfigurePicker::on_created(lv_obj_t* backdrop) {
         apply_icon_cell_highlight(cell, FAN_ICONS[i] == effective_icon);
 
         // Icon glyph
-        const char* cp = ui_icon::lookup_codepoint(FAN_ICONS[i]);
+        const char* cp = helix::ui::icon::lookup_codepoint(FAN_ICONS[i]);
         if (cp) {
             lv_obj_t* icon = lv_label_create(cell);
             lv_label_set_text(icon, cp);

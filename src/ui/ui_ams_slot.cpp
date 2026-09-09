@@ -106,7 +106,7 @@ struct AmsSlotData {
     bool is_pulsing = false;
 };
 
-// Note: Icons are accessed via ui_icon::lookup_codepoint() from ui_icon_codepoints.h
+// Note: Icons are accessed via helix::ui::icon::lookup_codepoint() from ui_icon_codepoints.h
 
 // Static registry mapping lv_obj_t* -> AmsSlotData*
 // Used for safe cleanup during lv_deinit() when user_data may be unreliable
