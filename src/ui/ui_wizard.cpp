@@ -3,6 +3,7 @@
 
 #include "ui_wizard.h"
 
+#include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
 #include "ui_keyboard_manager.h"
 #include "ui_nav_manager.h"
@@ -15,14 +16,13 @@
 #include "ui_wizard_fan_select.h"
 #include "ui_wizard_filament_sensor_select.h"
 #include "ui_wizard_heater_select.h"
-#include "ui_emergency_stop.h"
 #include "ui_wizard_input_shaper.h"
-#include "ui_wizard_tool_offset.h"
 #include "ui_wizard_language_chooser.h"
 #include "ui_wizard_led_select.h"
 #include "ui_wizard_printer_identify.h"
 #include "ui_wizard_summary.h"
 #include "ui_wizard_telemetry.h"
+#include "ui_wizard_tool_offset.h"
 #include "ui_wizard_touch_calibration.h"
 #include "ui_wizard_wifi.h"
 

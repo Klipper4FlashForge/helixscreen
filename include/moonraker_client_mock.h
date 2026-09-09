@@ -50,9 +50,9 @@ using MethodHandler =
 class MoonrakerClientMock : public helix::MoonrakerClient {
   public:
     enum class PrinterType {
-        VORON_24,           // Voron 2.4 (CoreXY, chamber heating)
-        VORON_TRIDENT,      // Voron Trident (3Z, CoreXY)
-        CREALITY_K1,        // Creality K1/K1 Max (bed slinger style)
+        VORON_24,            // Voron 2.4 (CoreXY, chamber heating)
+        VORON_TRIDENT,       // Voron Trident (3Z, CoreXY)
+        CREALITY_K1,         // Creality K1/K1 Max (bed slinger style)
         FLASHFORGE_AD5M,     // FlashForge Adventurer 5M (enclosed)
         FLASHFORGE_CREATOR5, // FlashForge Creator 5 Pro (4-head tool changer)
         GENERIC_COREXY,      // Generic CoreXY printer
@@ -1037,9 +1037,9 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
      *
      * @return true if the script was handled here
      */
-    bool simulate_tool_offset_calibration(
-        const std::string& script, std::function<void(const nlohmann::json&)> success_cb,
-        std::function<void(const MoonrakerError&)> error_cb);
+    bool simulate_tool_offset_calibration(const std::string& script,
+                                          std::function<void(const nlohmann::json&)> success_cb,
+                                          std::function<void(const MoonrakerError&)> error_cb);
 
     /**
      * @brief Simulate an automatic pressure-advance run
@@ -1559,12 +1559,12 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     // aimed at one of these heaters overwrites its own entry and nothing else.
     std::atomic<double> extra_extruder_temp_[3]{{150.0}, {248.0}, {200.0}};
     std::atomic<double> extra_extruder_target_[3]{{250.0}, {250.0}, {0.0}};
-    std::atomic<double> bed_temp_{25.0};       // Current temperature
-    std::atomic<double> bed_target_{0.0};      // Target temperature (0 = off)
-    std::atomic<double> chamber_temp_{25.0};   // Chamber temp (25-45°C, passive sensor)
-    std::atomic<double> chamber_target_{0.0};  // Chamber target temperature (0 = off)
-    std::atomic<double> mcu_temp_{42.0};       // MCU temp (40-55°C, stable with small variation)
-    std::atomic<double> host_temp_{52.0};      // Host/RPi temp (45-65°C, correlates with load)
+    std::atomic<double> bed_temp_{25.0};      // Current temperature
+    std::atomic<double> bed_target_{0.0};     // Target temperature (0 = off)
+    std::atomic<double> chamber_temp_{25.0};  // Chamber temp (25-45°C, passive sensor)
+    std::atomic<double> chamber_target_{0.0}; // Chamber target temperature (0 = off)
+    std::atomic<double> mcu_temp_{42.0};      // MCU temp (40-55°C, stable with small variation)
+    std::atomic<double> host_temp_{52.0};     // Host/RPi temp (45-65°C, correlates with load)
 
     // Position simulation state.
     // The three axes are individually atomic, but a multi-axis move and the

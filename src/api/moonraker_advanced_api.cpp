@@ -2903,8 +2903,8 @@ void MoonrakerAdvancedAPI::start_pa_calibrate(const helix::pacal::Procedure& pro
     spdlog::info("[MoonrakerAPI] Starting pressure advance calibration: {} ({})", proc.start_gcode,
                  proc.provider);
 
-    auto collector = std::make_shared<PACalibrateCollector>(
-        client_, proc, std::move(on_complete), on_error, std::move(on_progress));
+    auto collector = std::make_shared<PACalibrateCollector>(client_, proc, std::move(on_complete),
+                                                            on_error, std::move(on_progress));
     collector->start();
 
     const std::string command_word = proc.command_word;

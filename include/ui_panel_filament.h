@@ -590,7 +590,6 @@ class FilamentPanel : public PanelBase {
     }
 
   private:
-
     void update_multi_filament_card_visibility();
     void apply_left_column_sizing(bool external_spool_mode);
     void handle_selected_tool_changed();

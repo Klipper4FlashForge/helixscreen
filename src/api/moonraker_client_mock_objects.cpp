@@ -344,8 +344,7 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                 }
                 // Staged-but-unsaved calibration; the tool-offset panel shows
                 // Save on this alone, not only after a run of its own.
-                status_obj["configfile"]["save_config_pending"] =
-                    self->mock_save_config_pending();
+                status_obj["configfile"]["save_config_pending"] = self->mock_save_config_pending();
             }
 
             // ff_tool_offset / ff_tool <n> — the Creator 5 tool-offset state
@@ -356,9 +355,8 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                                                     {"station_y", 212.6393},
                                                     {"station_z", MOCK_STATION_Z_VALUE}};
                 } else {
-                    status_obj["ff_tool_offset"] = {{"station_x", nullptr},
-                                                    {"station_y", nullptr},
-                                                    {"station_z", nullptr}};
+                    status_obj["ff_tool_offset"] = {
+                        {"station_x", nullptr}, {"station_y", nullptr}, {"station_z", nullptr}};
                 }
             }
             for (int tool = 0; tool < 4; ++tool) {

@@ -487,8 +487,8 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
 // against the tool currently on the carriage.
 // ============================================================================
 
-void AmsContextMenu::configure_material_column(lv_obj_t* menu_obj, int slot_index,
-                                               bool system_busy, bool print_blocks_op) {
+void AmsContextMenu::configure_material_column(lv_obj_t* menu_obj, int slot_index, bool system_busy,
+                                               bool print_blocks_op) {
     (void)menu_obj;
     if (!backend_ || !backend_->has_separate_material_ops()) {
         // Stays hidden, and tidy_column_groups() drops the empty column. The

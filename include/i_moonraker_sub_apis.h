@@ -249,8 +249,7 @@ class IAdvancedAPI {
     /// firmware has reported so far, against how many a run typically makes,
     /// and the candidate K that attempt tried. `k_so_far` is <= 0 when the
     /// firmware reports an attempt without a value.
-    using PAProgressCallback =
-        std::function<void(int attempt, int expected, float k_so_far)>;
+    using PAProgressCallback = std::function<void(int attempt, int expected, float k_so_far)>;
 
     /// Result struct for MPC calibration
     struct MPCResult {

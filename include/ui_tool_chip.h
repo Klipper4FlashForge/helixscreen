@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "lvgl/lvgl.h"
-
 #include "ui_observer_guard.h" // SubjectLifetime
+
+#include "lvgl/lvgl.h"
 
 /**
  * @file ui_tool_chip.h

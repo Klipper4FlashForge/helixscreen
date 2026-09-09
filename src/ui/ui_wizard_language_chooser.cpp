@@ -27,14 +27,14 @@ extern lv_subject_t connection_test_passed;
 
 // Welcome text in each supported language (cycles during animation)
 static const char* WELCOME_TRANSLATIONS[] = {
-    "Welcome!",          // en
-    "Willkommen!",       // de
-    "Bienvenue!",        // fr
-    "¡Bienvenido!",      // es
-    "Bem-vindo!",        // pt
-    "Benvenuto!",        // it
-    "欢迎！",            // zh
-    "ようこそ！",        // ja
+    "Welcome!",     // en
+    "Willkommen!",  // de
+    "Bienvenue!",   // fr
+    "¡Bienvenido!", // es
+    "Bem-vindo!",   // pt
+    "Benvenuto!",   // it
+    "欢迎！",       // zh
+    "ようこそ！",   // ja
 };
 static constexpr int WELCOME_COUNT = 8;
 
