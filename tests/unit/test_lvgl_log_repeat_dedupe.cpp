@@ -199,3 +199,28 @@ TEST_CASE("LVGL log handler: init-time suppression does not spend a tag's one re
     warn_missing_tag(tag);
     CHECK(logs.in_ring(tag) == 1);
 }
+
+TEST_CASE("LVGL log handler: a retired sink drops LVGL traffic without touching spdlog",
+          "[logging][lvgl][1473]") {
+    helix::logging::register_lvgl_log_handler();
+    LevelCapture logs;
+
+    const std::string tag = unique_tag("retired");
+
+    // The probe reaches spdlog while the sink is armed.
+    warn_missing_tag(tag);
+    REQUIRE(logs.total(tag) == 1);
+
+    // Retired: the record is dropped inside the callback, before any spdlog
+    // call. During static destruction this is what keeps lv_subject_deinit's
+    // LV_LOG_WARN out of a freed logger.
+    helix::logging::retire_lvgl_log_handler();
+    warn_missing_tag(tag);
+    CHECK(logs.total(tag) == 1);
+
+    // Re-armed, the same message routes again (the dedupe class also keeps its
+    // first-occurrence entry from before the retirement, so this is a repeat).
+    helix::logging::register_lvgl_log_handler();
+    warn_missing_tag(tag);
+    CHECK(logs.total(tag) == 2);
+}
