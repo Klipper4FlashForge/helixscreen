@@ -37,6 +37,15 @@ class ITouchCalibrationView {
     }
 };
 
+/// What became of a commit. A bare bool cannot carry it: "nothing worth writing"
+/// and "written, but the device could not take it right now" call for different
+/// things from the view, and only the second is worth a toast.
+enum class CommitOutcome {
+    NoCalibration, ///< No usable matrix; nothing was written
+    Persisted,     ///< Written to config, but the device did not accept it
+    Applied,       ///< Written and live on the device
+};
+
 /// Behaviour that genuinely differs between the two entry points.
 struct TouchCalibrationPolicy {
     /// Let the user test the matrix and press Accept. The wizard accepts as soon
@@ -92,12 +101,17 @@ class TouchCalibrationController {
     /// A finger-lift on the capture surface.
     void on_release();
 
+    /// Put the device back on the pre-session calibration, leaving the session
+    /// armed for another capture attempt. What an unattended revert needs - a
+    /// verify timeout or a broken-matrix fast-revert - where the view is not
+    /// restarting the point sequence itself.
+    void revert_candidate();
+
     /// Throw the candidate away and start the point sequence again.
     void retry();
 
     /// Persist the calibration and close the session.
-    /// @return true when a calibration was written
-    bool commit();
+    CommitOutcome commit();
 
     /// Abandon the session without persisting.
     void abort();

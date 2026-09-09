@@ -135,7 +135,7 @@ TEST_CASE("controller: an unsolved session commits nothing", "[touch-calibration
 
     // No calibration has been solved, so there is nothing to persist and the
     // device must be left alone rather than handed an invalid matrix.
-    REQUIRE(controller.commit() == false);
+    REQUIRE(controller.commit() == CommitOutcome::NoCalibration);
     REQUIRE(sink.stored.valid == false);
 }
 

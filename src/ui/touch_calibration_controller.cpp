@@ -144,13 +144,17 @@ void TouchCalibrationController::on_release() {
     }
 }
 
+void TouchCalibrationController::revert_candidate() {
+    if (ICalibrationSink* s = sink()) {
+        session_.revert_for_retry(*s);
+    }
+}
+
 void TouchCalibrationController::retry() {
     if (!panel_) {
         return;
     }
-    if (ICalibrationSink* s = sink()) {
-        session_.revert_for_retry(*s);
-    }
+    revert_candidate();
     clear_pending();
 
     // panel_->retry() only leaves VERIFY, and a view that auto-accepts may already
@@ -169,7 +173,7 @@ void TouchCalibrationController::retry() {
     }
 }
 
-bool TouchCalibrationController::commit() {
+CommitOutcome TouchCalibrationController::commit() {
     const TouchCalibration* cal = nullptr;
     TouchRangeFit fit{};
 
@@ -185,7 +189,7 @@ bool TouchCalibrationController::commit() {
     // matrices the residual check rejects.
     if (!cal || !cal->valid || !is_calibration_valid(*cal)) {
         spdlog::error("[TouchCalController] No usable calibration to commit");
-        return false;
+        return CommitOutcome::NoCalibration;
     }
 
     const bool applied = commit_calibration_result(sink(), *cal, fit);
@@ -198,7 +202,7 @@ bool TouchCalibrationController::commit() {
 
     clear_pending();
     session_.commit();
-    return applied;
+    return applied ? CommitOutcome::Applied : CommitOutcome::Persisted;
 }
 
 void TouchCalibrationController::abort() {

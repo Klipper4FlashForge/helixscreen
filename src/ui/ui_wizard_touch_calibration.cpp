@@ -304,11 +304,12 @@ bool WizardTouchCalibrationStep::commit_calibration() {
 
     // This is where the evdev range is first re-programmed: everything up to
     // 'Next' is revertible through the session, which only handles the affine.
-    const bool committed = controller_.commit();
-    if (committed) {
-        spdlog::info("[{}] Calibration committed to config", get_name());
+    const helix::ui::CommitOutcome outcome = controller_.commit();
+    if (outcome == helix::ui::CommitOutcome::NoCalibration) {
+        return false;
     }
-    return committed;
+    spdlog::info("[{}] Calibration committed to config", get_name());
+    return true;
 }
 
 bool WizardTouchCalibrationStep::should_skip() const {
