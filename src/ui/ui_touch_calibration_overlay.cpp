@@ -134,9 +134,7 @@ TouchCalibrationOverlay::TouchCalibrationOverlay() {
 
         // Revert to the pre-session calibration and disable affine for the next
         // capture attempt.
-        if (helix::ICalibrationSink* sink = controller_.sink()) {
-            controller_.session().revert_for_retry(*sink);
-        }
+        controller_.revert_candidate();
 
         // Restarting forever is the trap: a user who cannot press Accept under
         // this panel's mapping will not be able to press it on the next pass
@@ -187,7 +185,7 @@ TouchCalibrationOverlay::TouchCalibrationOverlay() {
     //
     // The session backup stays armed, so Retry, a timeout, a fast-revert, and a
     // plain dismiss all still revert to the pre-session calibration; only Accept
-    // calls controller_.session().commit() and keeps this matrix.
+    // commits through the controller and keeps this matrix.
     controller_.panel()->set_verify_entry_callback([this]() {
         helix::ICalibrationSink* sink = controller_.sink();
         const TouchCalibration* fresh =
@@ -214,9 +212,7 @@ TouchCalibrationOverlay::TouchCalibrationOverlay() {
         spdlog::warn("[{}] Fast-revert: broken matrix detected, reverting", get_name());
 
         // Revert to the pre-session calibration and disable affine for retry.
-        if (helix::ICalibrationSink* sink = controller_.sink()) {
-            controller_.session().revert_for_retry(*sink);
-        }
+        controller_.revert_candidate();
 
         // Shares the timeout's budget: a fast-revert also sends the user back
         // into capture without them asking, so on its own it is the same loop.
@@ -528,25 +524,16 @@ void TouchCalibrationOverlay::handle_accept_clicked() {
         return;
     }
 
-    // Get calibration data before accepting
-    const TouchCalibration* cal = controller_.panel()->get_calibration();
-    if (!cal || !cal->valid) {
+    // Persist and install. The controller decides between the affine-only shape and
+    // the evdev-range shape, clears the other, and applies the same validity test
+    // the wizard does, so the two cannot drift apart on any of it (#1259, #1276).
+    const helix::ui::CommitOutcome outcome = controller_.commit();
+    if (outcome == helix::ui::CommitOutcome::NoCalibration) {
         spdlog::error("[{}] No valid calibration to accept", get_name());
         return;
     }
 
-    // Persist and install. commit_calibration_result() decides between the
-    // affine-only shape and the evdev-range shape and clears the other, so the
-    // wizard and this overlay cannot drift apart on that decision (#1259, #1276).
-    const bool applied = helix::commit_calibration_result(controller_.sink(), *cal,
-                                                          controller_.panel()->get_range_fit());
-
-    if (Config* config = Config::get_instance()) {
-        config->save();
-        spdlog::info("[{}] Calibration saved to config", get_name());
-    }
-
-    if (applied) {
+    if (outcome == helix::ui::CommitOutcome::Applied) {
         spdlog::info("[{}] Calibration applied to touch input", get_name());
     } else {
 #ifndef HELIX_DISPLAY_FBDEV
@@ -559,8 +546,6 @@ void TouchCalibrationOverlay::handle_accept_clicked() {
                       get_name());
     }
 
-    // Calibration accepted — keep it; teardown must not revert it.
-    controller_.session().commit();
     unattended_verify_rounds_ = 0;
 
     // Reset accept button text for next calibration
