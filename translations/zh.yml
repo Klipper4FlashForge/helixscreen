@@ -2641,8 +2641,6 @@ translations:
   The heater will cycle on and off several times.: 加热器将多次开关循环。
   ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   : 当前装载的料盘是 {}，但此文件为 {} 切片。填充耗材需要以更低的流量运行，且需要硬化喷嘴。
-  ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
-  : "电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"
   The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself.: 喷嘴会在打印区域之外的角落做几段短测试挤出，并反复进行直到测量结果一致。
   The offsets are saved when setup finishes. Recalibrate anytime from the console.: 偏移会在设置完成时保存。你可以随时从控制台重新校准。
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.

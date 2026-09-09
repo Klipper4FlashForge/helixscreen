@@ -2873,8 +2873,6 @@ translations:
     spegnerà diverse volte.
   ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   : La bobina caricata è {}, ma questo file è stato sezionato per {}. Il filamento con cariche richiede un flusso più basso e un ugello indurito.
-  ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
-  : "Il motore fa vibrare la cinghia mentre una luce stroboscopica lampeggia alla stessa frequenza. Quando la cinghia sembra ferma (immobile), hai trovato la frequenza di risonanza.\n\nUsa i pulsanti della frequenza per scorrere i valori finché la cinghia non appare ferma, poi blocca la lettura."
   The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself.: L'ugello estrude alcuni brevi movimenti di prova in un angolo, fuori dall'area di stampa, e ripete finché le misure non concordano.
   The offsets are saved when setup finishes. Recalibrate anytime from the console.: Gli offset vengono salvati al termine della configurazione. Puoi ricalibrare in qualsiasi momento dalla console.
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
