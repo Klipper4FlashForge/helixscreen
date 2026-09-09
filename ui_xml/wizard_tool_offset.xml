@@ -27,8 +27,8 @@
                    text="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."
                    translation_tag="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."
                    style_text_align="center"/>
-        <text_small width="100%" bind_text="wizard_tool_offset_hint" style_text_align="center"
-                    style_text_color="#text_muted"/>
+        <text_small width="100%"
+                    bind_text="wizard_tool_offset_hint" style_text_align="center" style_text_color="#text_muted"/>
       </lv_obj>
 
       <!-- Status + console mirror -->
@@ -40,8 +40,8 @@
           <bind_flag_if_eq subject="wizard_tool_offset_active" flag="hidden" ref_value="0"/>
         </spinner>
 
-        <text_small width="100%" bind_text="wizard_tool_offset_log" style_text_align="center"
-                    style_text_color="#text_muted">
+        <text_small width="100%"
+                    bind_text="wizard_tool_offset_log" style_text_align="center" style_text_color="#text_muted">
           <bind_flag_if_eq subject="wizard_tool_offset_started" flag="hidden" ref_value="0"/>
         </text_small>
 

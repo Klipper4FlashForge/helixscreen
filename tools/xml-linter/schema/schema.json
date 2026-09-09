@@ -1903,6 +1903,14 @@
     "pluck_animation": {
       "attributes": {},
       "inherits": "lv_obj"
+    },
+    "tool_chip": {
+      "attributes": {
+        "index": {
+          "type": "string"
+        }
+      },
+      "inherits": "lv_obj"
     }
   },
   "enums": {
@@ -2848,7 +2856,8 @@
     "setting_group",
     "ams_lane_bar",
     "belt_trace",
-    "pluck_animation"
+    "pluck_animation",
+    "tool_chip"
   ],
   "runtime_constants": [
     "accent_bar_gap",
@@ -3116,12 +3125,6 @@
     "field_w_text_large",
     "field_w_text_medium",
     "field_w_text_small",
-    "filament_ams_row_h",
-    "filament_ams_row_h_large",
-    "filament_ams_row_h_medium",
-    "filament_ams_row_h_micro",
-    "filament_ams_row_h_small",
-    "filament_ams_row_h_tiny",
     "filament_error",
     "filament_hub_bg_dark",
     "filament_hub_bg_light",
@@ -3155,6 +3158,14 @@
     "font_body_tiny",
     "font_body_xlarge",
     "font_body_xxlarge",
+    "font_display",
+    "font_display_large",
+    "font_display_medium",
+    "font_display_micro",
+    "font_display_small",
+    "font_display_tiny",
+    "font_display_xlarge",
+    "font_display_xxlarge",
     "font_heading",
     "font_heading_large",
     "font_heading_medium",
@@ -3220,6 +3231,12 @@
     "header_height_tiny",
     "header_height_xlarge",
     "header_height_xxlarge",
+    "heat_row_h",
+    "heat_row_h_large",
+    "heat_row_h_medium",
+    "heat_row_h_micro",
+    "heat_row_h_small",
+    "heat_row_h_tiny",
     "hex_placeholder",
     "hidden_connecting_height",
     "hidden_connecting_height_large",
@@ -3619,11 +3636,6 @@
     "temp_card_height_tiny",
     "temp_card_height_xlarge",
     "temp_card_height_xxlarge",
-    "temp_card_spacing",
-    "temp_card_spacing_large",
-    "temp_card_spacing_medium",
-    "temp_card_spacing_small",
-    "temp_card_spacing_tiny",
     "temp_gradient_cold",
     "temp_gradient_hot",
     "temp_gradient_warm",
@@ -3648,6 +3660,12 @@
     "text_subtle",
     "theme_swatch_size",
     "thumbnail_height",
+    "tool_chip_h",
+    "tool_chip_h_large",
+    "tool_chip_h_medium",
+    "tool_chip_h_micro",
+    "tool_chip_h_small",
+    "tool_chip_h_tiny",
     "toolhead_body",
     "tray_bg",
     "tray_border",
