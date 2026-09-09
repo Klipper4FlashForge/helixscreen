@@ -56,8 +56,8 @@
                from C++ because it names the action, not the state. -->
           <ui_button name="btn_bypass_toggle"
                      height="#button_height_sm" icon="arrow_left_right" text="Enable Bypass"
-                     translation_tag="Enable Bypass" variant="ghost"
-                     clickable="true" style_flex_main_place="start" hidden="true">
+                     translation_tag="Enable Bypass" variant="ghost" clickable="true" style_flex_main_place="start"
+                     hidden="true">
             <event_cb trigger="clicked" callback="ams_context_bypass_toggle_cb"/>
           </ui_button>
           <!-- Load Button -->
@@ -77,8 +77,8 @@
           <!-- Purge (external spool only; hidden for lanes). The lane menu has no
                purge action - purging is about what is at the nozzle, not a lane. -->
           <ui_button name="btn_purge"
-                     height="#button_height_sm" icon="water" text="Purge" translation_tag="Purge"
-                     variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
+                     height="#button_height_sm" icon="water" text="Purge" translation_tag="Purge" variant="ghost"
+                     clickable="true" style_flex_main_place="start" hidden="true">
             <bind_state_if_eq subject="ams_slot_can_purge" state="disabled" ref_value="0"/>
             <event_cb trigger="clicked" callback="ams_context_purge_cb"/>
           </ui_button>
@@ -136,8 +136,8 @@
             <event_cb trigger="clicked" callback="ams_context_material_load_cb"/>
           </ui_button>
           <ui_button name="btn_material_unload"
-                     height="#button_height_sm" icon="z_farther" text="Unload" translation_tag="Unload"
-                     variant="ghost" clickable="true" style_flex_main_place="start">
+                     height="#button_height_sm" icon="z_farther" text="Unload" translation_tag="Unload" variant="ghost"
+                     clickable="true" style_flex_main_place="start">
             <bind_state_if_eq subject="ams_slot_tool_mounted" state="disabled" ref_value="0"/>
             <event_cb trigger="clicked" callback="ams_context_material_unload_cb"/>
           </ui_button>
@@ -151,8 +151,8 @@
                extruder, so the tool has to be on the carriage first. Revealed
                from C++ rather than left as a dead button with no explanation. -->
           <text_small name="material_mount_hint"
-                      width="100%" long_mode="wrap" text="Mount this tool first"
-                      translation_tag="Mount this tool first" style_text_color="#text_muted" hidden="true">
+                      width="100%" long_mode="wrap" text="Mount this tool first" translation_tag="Mount this tool first"
+                      style_text_color="#text_muted" hidden="true">
             <bind_flag_if_eq subject="ams_slot_tool_mounted" flag="hidden" ref_value="1"/>
           </text_small>
         </lv_obj>

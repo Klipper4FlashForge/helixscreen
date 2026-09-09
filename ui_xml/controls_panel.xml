@@ -385,9 +385,8 @@
                  Row 2 rather than row 1: row 1 already reaches three cells on a
                  tool changer, and a fourth clips its labels. -->
             <ui_button name="btn_pa_cal"
-                       height="100%" flex_grow="1" icon="gauge" text="Pressure Adv."
-                       translation_tag="Pressure Adv." icon_position="top" style_bg_opa="0"
-                       style_border_width="0" hidden="true">
+                       height="100%" flex_grow="1" icon="gauge" text="Pressure Adv." translation_tag="Pressure Adv."
+                       icon_position="top" style_bg_opa="0" style_border_width="0" hidden="true">
               <bind_flag_if_eq subject="printer_has_pa_cal" flag="hidden" ref_value="0"/>
               <bind_state_if_eq subject="job_holds_machine" state="disabled" ref_value="1"/>
               <event_cb trigger="clicked" callback="on_calibration_pa"/>
