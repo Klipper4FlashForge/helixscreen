@@ -16,10 +16,11 @@ namespace helix {
  *
  * Extracted from PrinterState as part of god class decomposition.
  *
- * ## Subjects (11 total):
+ * ## Subjects (12 total):
  * - hardware_has_issues_ (int): 0=no issues, 1=has issues
  * - hardware_issue_count_ (int): Total number of validation issues
  * - hardware_max_severity_ (int): 0=info, 1=warning, 2=critical
+ * - hardware_status_level_ (int): 0=ok, 1=attention, 2=critical (headline badge)
  * - hardware_critical_count_ (int): Count of critical issues
  * - hardware_warning_count_ (int): Count of warning issues
  * - hardware_info_count_ (int): Count of info issues
@@ -105,6 +106,17 @@ class PrinterHardwareValidationState {
      */
     lv_subject_t* get_hardware_max_severity_subject() {
         return &hardware_max_severity_;
+    }
+
+    /**
+     * @brief Get the headline badge level subject for UI binding
+     *
+     * Integer subject: 0=ok, 1=attention, 2=critical. Each headline badge in
+     * hardware_health_overlay binds to exactly one of these values, so the
+     * XML never has to decode a HardwareIssueSeverity ordinal itself.
+     */
+    lv_subject_t* get_hardware_status_level_subject() {
+        return &hardware_status_level_;
     }
 
     /**
@@ -206,6 +218,7 @@ class PrinterHardwareValidationState {
     lv_subject_t hardware_has_issues_{};         // Integer: 0=no issues, 1=has issues
     lv_subject_t hardware_issue_count_{};        // Integer: total number of issues
     lv_subject_t hardware_max_severity_{};       // Integer: 0=info, 1=warning, 2=critical
+    lv_subject_t hardware_status_level_{};       // Integer: 0=ok, 1=attention, 2=critical
     lv_subject_t hardware_validation_version_{}; // Integer: incremented on validation change
     lv_subject_t hardware_critical_count_{};     // Integer: count of critical issues
     lv_subject_t hardware_warning_count_{};      // Integer: count of warning issues

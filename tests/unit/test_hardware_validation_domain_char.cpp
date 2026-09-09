@@ -8,10 +8,11 @@
  * These tests capture the CURRENT behavior of hardware validation subjects
  * in PrinterState before extraction to a dedicated state class.
  *
- * Hardware validation subjects (11 total):
+ * Hardware validation subjects (12 total):
  * - hardware_has_issues_ (int) - 0=no issues, 1=has issues
  * - hardware_issue_count_ (int) - total count of all issues
  * - hardware_max_severity_ (int) - 0=INFO, 1=WARNING, 2=CRITICAL
+ * - hardware_status_level_ (int) - 0=OK, 1=ATTENTION, 2=CRITICAL
  * - hardware_critical_count_ (int) - count of critical issues
  * - hardware_warning_count_ (int) - count of warning (expected_missing) issues
  * - hardware_info_count_ (int) - count of info (newly_discovered) issues
@@ -748,4 +749,60 @@ TEST_CASE("Hardware validation characterization: subjects survive reset_for_test
 
     REQUIRE(state.has_hardware_issues() == true);
     REQUIRE(lv_subject_get_int(state.get_hardware_issue_count_subject()) == 1);
+}
+
+// ============================================================================
+// Headline Badge Level Tests
+// ============================================================================
+
+TEST_CASE("Hardware validation characterization: status_level drives the headline badge",
+          "[characterization][hardware-validation][setter]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(true);
+
+    lv_subject_t* level = get_subject_by_name("hardware_status_level");
+    REQUIRE(level != nullptr);
+
+    SECTION("a clean result selects the OK badge") {
+        state.set_hardware_validation_result(HardwareValidationResult{});
+
+        REQUIRE(lv_subject_get_int(level) == 0);
+    }
+
+    SECTION("info-only issues select the attention badge, not the OK badge") {
+        HardwareValidationResult result;
+        result.newly_discovered.push_back(make_info("neopixel toolhead_lights"));
+        state.set_hardware_validation_result(result);
+
+        REQUIRE(lv_subject_get_int(state.get_hardware_max_severity_subject()) == 0);
+        REQUIRE(lv_subject_get_int(level) == 1);
+    }
+
+    SECTION("warning issues select the attention badge") {
+        HardwareValidationResult result;
+        result.expected_missing.push_back(make_warning("temperature_sensor chamber"));
+        state.set_hardware_validation_result(result);
+
+        REQUIRE(lv_subject_get_int(level) == 1);
+    }
+
+    SECTION("critical issues select the critical badge") {
+        HardwareValidationResult result;
+        result.critical_missing.push_back(make_critical("extruder"));
+        state.set_hardware_validation_result(result);
+
+        REQUIRE(lv_subject_get_int(level) == 2);
+    }
+
+    SECTION("critical alongside info still selects the critical badge") {
+        HardwareValidationResult result;
+        result.newly_discovered.push_back(make_info("fan_generic exhaust_fan"));
+        result.critical_missing.push_back(make_critical("heater_bed"));
+        state.set_hardware_validation_result(result);
+
+        REQUIRE(lv_subject_get_int(level) == 2);
+    }
 }

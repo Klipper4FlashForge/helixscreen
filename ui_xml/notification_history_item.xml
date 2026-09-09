@@ -26,8 +26,7 @@
                 text="#icon_triangle_exclamation" hidden="true" style_text_font="mdi_icons_24"
                 style_text_color="#warning"/>
       <lv_label name="icon_error"
-                text="#icon_triangle_exclamation" hidden="true" style_text_font="mdi_icons_24"
-                style_text_color="#danger"/>
+                text="#icon_alert_octagon" hidden="true" style_text_font="mdi_icons_24" style_text_color="#danger"/>
     </lv_obj>
     <!-- Content column (flex grow) -->
     <lv_obj flex_grow="1"

@@ -33,6 +33,7 @@ void PrinterHardwareValidationState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(hardware_has_issues, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(hardware_issue_count, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(hardware_max_severity, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(hardware_status_level, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(hardware_validation_version, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(hardware_critical_count, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(hardware_warning_count, 0, subjects_, register_xml);
@@ -65,6 +66,7 @@ void PrinterHardwareValidationState::set_hardware_validation_result(
     lv_subject_set_int(&hardware_has_issues_, result.has_issues() ? 1 : 0);
     lv_subject_set_int(&hardware_issue_count_, static_cast<int>(result.total_issue_count()));
     lv_subject_set_int(&hardware_max_severity_, static_cast<int>(result.max_severity()));
+    lv_subject_set_int(&hardware_status_level_, static_cast<int>(result.headline_level()));
 
     // Update category counts
     lv_subject_set_int(&hardware_critical_count_, static_cast<int>(result.critical_missing.size()));
