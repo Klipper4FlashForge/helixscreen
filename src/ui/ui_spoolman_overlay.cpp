@@ -76,11 +76,6 @@ SpoolmanOverlay::SpoolmanOverlay() {
 }
 
 SpoolmanOverlay::~SpoolmanOverlay() {
-    if (subjects_initialized_ && lv_is_initialized()) {
-        lv_subject_deinit(&sync_enabled_subject_);
-        lv_subject_deinit(&refresh_interval_subject_);
-        lv_subject_deinit(&scanner_device_status_subject_);
-    }
     spdlog::trace("[{}] Destroyed", get_name());
 }
 
@@ -94,21 +89,20 @@ void SpoolmanOverlay::init_subjects() {
     }
 
     // Initialize sync enabled subject (default: true/enabled)
-    lv_subject_init_int(&sync_enabled_subject_, DEFAULT_SYNC_ENABLED ? 1 : 0);
-    lv_xml_register_subject(nullptr, "ams_spoolman_sync_enabled", &sync_enabled_subject_);
+    UI_MANAGED_SUBJECT_INT(sync_enabled_subject_, DEFAULT_SYNC_ENABLED ? 1 : 0,
+                           "ams_spoolman_sync_enabled", subjects_);
 
     // Initialize refresh interval subject (default: 30 seconds)
-    lv_subject_init_int(&refresh_interval_subject_, DEFAULT_REFRESH_INTERVAL_SECONDS);
-    lv_xml_register_subject(nullptr, "ams_spoolman_refresh_interval", &refresh_interval_subject_);
+    UI_MANAGED_SUBJECT_INT(refresh_interval_subject_, DEFAULT_REFRESH_INTERVAL_SECONDS,
+                           "ams_spoolman_refresh_interval", subjects_);
 
     // Initialize scanner device status subject
     auto scanner_name = helix::SettingsManager::instance().get_scanner_device_name();
     auto scanner_id = helix::SettingsManager::instance().get_scanner_device_id();
     const char* status = scanner_id.empty() ? lv_tr("Auto-detect") : scanner_name.c_str();
     snprintf(scanner_status_buf_, sizeof(scanner_status_buf_), "%s", status);
-    lv_subject_init_string(&scanner_device_status_subject_, scanner_status_buf_, nullptr,
-                           sizeof(scanner_status_buf_), scanner_status_buf_);
-    lv_xml_register_subject(nullptr, "scanner_device_status", &scanner_device_status_subject_);
+    UI_MANAGED_SUBJECT_STRING(scanner_device_status_subject_, scanner_status_buf_,
+                              scanner_status_buf_, "scanner_device_status", subjects_);
 
     subjects_initialized_ = true;
     spdlog::debug("[{}] Subjects initialized", get_name());

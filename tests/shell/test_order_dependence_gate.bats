@@ -271,3 +271,33 @@ STUB
     [ -f "$(ev)/names.txt" ]
     grep -q "case A" "$(ev)/names.txt"
 }
+
+@test "a name Catch2's --input-file reader would drop or mangle is escaped" {
+    # Catch2 strips any spec line starting with '#' as a comment, and re-quotes
+    # a line that does not already start with '"'. An issue-numbered case name
+    # is therefore removed from the spec entirely, and a name carrying a quote
+    # is re-quoted into a spec that matches nothing.
+    cat > "$WORK/full.xml" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<Catch2TestRun name="t">
+  <TestCase name="#1127 seeding state costs no extra bytes" filename="tests/unit/test_x.cpp" line="1">
+    <OverallResult success="true" skips="0"/>
+  </TestCase>
+  <TestCase name="a root with permissions &quot;r&quot; is not writable" filename="tests/unit/test_x.cpp" line="9">
+    <OverallResult success="true" skips="0"/>
+  </TestCase>
+</Catch2TestRun>
+EOF
+    stub_binary true true
+    rm -f /tmp/last-spec.txt
+    run gate --list
+    [ -f /tmp/last-spec.txt ]
+    # A line the reader treats as a comment never reaches the spec parser, and a
+    # spec file with every line commented out is no filter at all.
+    if grep -q '^#' /tmp/last-spec.txt; then
+        echo "spec line still begins with # - Catch2 drops it" >&2
+        return 1
+    fi
+    grep -q '\\#1127 seeding state' /tmp/last-spec.txt
+    grep -q 'permissions \\"r\\" is not writable' /tmp/last-spec.txt
+}

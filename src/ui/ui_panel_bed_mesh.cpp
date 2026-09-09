@@ -198,17 +198,20 @@ void BedMeshPanel::init_subjects() {
             // Initialize with 5-arg form: (subject, buf, prev_buf, size, initial_value)
             lv_subject_init_string(&profile_name_subjects_[idx], name_buf, nullptr,
                                    profile_name_bufs_[idx].size(), "");
-            lv_xml_register_subject(nullptr, name_key.c_str(), &profile_name_subjects_[idx]);
-            subjects_.register_subject(&profile_name_subjects_[idx]);
+            helix::xml::register_subject_in_current_scope(name_key.c_str(),
+                                                          &profile_name_subjects_[idx]);
+            subjects_.register_subject(&profile_name_subjects_[idx], name_key.c_str());
 
             lv_subject_init_string(&profile_range_subjects_[idx], range_buf, nullptr,
                                    profile_range_bufs_[idx].size(), "");
-            lv_xml_register_subject(nullptr, range_key.c_str(), &profile_range_subjects_[idx]);
-            subjects_.register_subject(&profile_range_subjects_[idx]);
+            helix::xml::register_subject_in_current_scope(range_key.c_str(),
+                                                          &profile_range_subjects_[idx]);
+            subjects_.register_subject(&profile_range_subjects_[idx], range_key.c_str());
 
             lv_subject_init_int(&profile_active_subjects_[idx], 0);
-            lv_xml_register_subject(nullptr, active_key.c_str(), &profile_active_subjects_[idx]);
-            subjects_.register_subject(&profile_active_subjects_[idx]);
+            helix::xml::register_subject_in_current_scope(active_key.c_str(),
+                                                          &profile_active_subjects_[idx]);
+            subjects_.register_subject(&profile_active_subjects_[idx], active_key.c_str());
         }
 
         // Modal state subjects (NOT visibility - internal state only)

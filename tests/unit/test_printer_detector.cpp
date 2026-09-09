@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../test_helpers/config_test_access.h"
+#include "app_globals.h"
 #include "config.h"
 #include "data_root_resolver.h"
 #include "printer_detector.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
-#include "app_globals.h"
 #include "wizard_config_paths.h"
 
 #include <algorithm>
@@ -5680,8 +5680,7 @@ TEST_CASE_METHOD(PrinterDetectorFixture,
     REQUIRE(result.confidence > result.runner_up_confidence + 20);
 }
 
-TEST_CASE_METHOD(PrinterDetectorFixture,
-                 "PrinterDetector: class evidence alone identifies nothing",
+TEST_CASE_METHOD(PrinterDetectorFixture, "PrinterDetector: class evidence alone identifies nothing",
                  "[printer][detector]") {
     SECTION("a chamber sensor on a nameless corexy rig names no printer") {
         // Every enclosed machine has these two. If they can identify, they pick
@@ -5731,8 +5730,7 @@ TEST_CASE_METHOD(PrinterDetectorFixture,
     REQUIRE(result.type_name != "Voron 0.2");
 }
 
-TEST_CASE_METHOD(PrinterDetectorFixture,
-                 "PrinterDetector: a real Qidi X-Max 3 is still identified",
+TEST_CASE_METHOD(PrinterDetectorFixture, "PrinterDetector: a real Qidi X-Max 3 is still identified",
                  "[printer][detector]") {
     // The demotion must cost the Qidi nothing when its own evidence is present:
     // the chamber HEATER, the M141/M191 macros and the hostname all name it.
@@ -5776,8 +5774,9 @@ TEST_CASE("PrinterDetector: type mismatch decline reasons are distinguishable", 
 
     SECTION("A near-miss reports ConfidenceTooLow and names the gap it missed") {
         REQUIRE(PrinterDetector::classify_type_mismatch(
-                    "Voron Trident", "Creality K2 Plus", PrinterDetector::MISMATCH_MIN_CONFIDENCE - 1,
-                    "", PrinterDetector::DETECT_MIN_MARGIN) == MD::ConfidenceTooLow);
+                    "Voron Trident", "Creality K2 Plus",
+                    PrinterDetector::MISMATCH_MIN_CONFIDENCE - 1, "",
+                    PrinterDetector::DETECT_MIN_MARGIN) == MD::ConfidenceTooLow);
     }
 
     SECTION("A model that only tied its rivals reports Ambiguous, not a low score") {
@@ -5806,10 +5805,9 @@ TEST_CASE("PrinterDetector: type mismatch decline reasons are distinguishable", 
     }
 
     SECTION("A previously answered prompt reports AlreadyDismissed") {
-        REQUIRE(PrinterDetector::classify_type_mismatch("Voron Trident", "Creality K2 Plus", 95,
-                                                        "Voron Trident",
-                                                        PrinterDetector::DETECT_MIN_MARGIN) ==
-                MD::AlreadyDismissed);
+        REQUIRE(PrinterDetector::classify_type_mismatch(
+                    "Voron Trident", "Creality K2 Plus", 95, "Voron Trident",
+                    PrinterDetector::DETECT_MIN_MARGIN) == MD::AlreadyDismissed);
     }
 
     SECTION("Every decision has its own log tag") {
@@ -5905,6 +5903,95 @@ TEST_CASE_METHOD(helix::VariantPresetFixture,
     CHECK_FALSE(detected);
 
     CHECK(get_printer_state().get_printer_type() == "Voron 2.4");
+
+    get_printer_state().set_printer_type_sync("");
+    TearDown();
+}
+
+// ============================================================================
+// Preset installs: nobody is asked, so detection has to decide
+// ============================================================================
+
+namespace {
+
+// Elegoo Centauri Carbon on COSMOS firmware, from its objects.list. Its
+// hostname is "cosmos", which matches none of the database's Elegoo hostname
+// patterns, so it identifies on load_cell_probe alone and lands below the
+// auto-save bar.
+helix::PrinterDiscovery cc1_discovery() {
+    helix::PrinterDiscovery discovery;
+    discovery.parse_objects({"gcode",
+                             "webhooks",
+                             "configfile",
+                             "mcu",
+                             "mcu bed",
+                             "mcu hotend",
+                             "heaters",
+                             "heater_fan extruder",
+                             "fan",
+                             "heater_bed",
+                             "bed_mesh",
+                             "probe",
+                             "load_cell_probe",
+                             "filament_switch_sensor filament_sensor",
+                             "led case",
+                             "led hotend",
+                             "temperature_sensor chamber",
+                             "fan_generic aux_fan",
+                             "fan_generic case_fan",
+                             "temperature_sensor mcu_toolhead",
+                             "temperature_sensor mcu_bed",
+                             "temperature_host mainboard",
+                             "temperature_fan mainboard",
+                             "screws_tilt_adjust",
+                             "toolhead",
+                             "extruder"});
+    discovery.set_hostname("cosmos");
+    discovery.set_kinematics("corexy");
+    return discovery;
+}
+
+} // namespace
+
+// A platform package seeds its preset into settings.json, and the wizard skips
+// every hardware step on such an install, so a printer left without a type
+// there keeps the generic image for good. A win too weak to auto-save is still
+// the answer when the package already named the machine and nothing will ask.
+TEST_CASE_METHOD(helix::VariantPresetFixture,
+                 "auto_detect_and_save names the Centauri Carbon from its cc1 package",
+                 "[printer_detector][preset]") {
+    SetUp();
+    get_printer_state().set_printer_type_sync("");
+
+    auto discovery = cc1_discovery();
+
+    auto probe = PrinterDetector::auto_detect(discovery);
+    CAPTURE(probe.type_name, probe.confidence, probe.margin());
+    REQUIRE_FALSE(PrinterDetector::meets_autosave_threshold(probe));
+
+    config.set_preset("cc1");
+    REQUIRE(PrinterDetector::auto_detect_and_save(discovery, &config));
+    CHECK(config.get<std::string>(config.df() + helix::wizard::PRINTER_TYPE, "") ==
+          "Elegoo Centauri Carbon");
+    CHECK(get_printer_state().get_printer_type() == "Elegoo Centauri Carbon");
+
+    get_printer_state().set_printer_type_sync("");
+    TearDown();
+}
+
+// Without a preset the wizard still asks, so a weak win stays open for the user
+// to answer rather than being settled behind their back.
+TEST_CASE_METHOD(helix::VariantPresetFixture,
+                 "auto_detect_and_save leaves a weak win unset with no preset",
+                 "[printer_detector][preset]") {
+    SetUp();
+    get_printer_state().set_printer_type_sync("");
+
+    auto discovery = cc1_discovery();
+    REQUIRE(config.get_preset().empty());
+
+    CHECK_FALSE(PrinterDetector::auto_detect_and_save(discovery, &config));
+    CHECK(config.get<std::string>(config.df() + helix::wizard::PRINTER_TYPE, "").empty());
 
     get_printer_state().set_printer_type_sync("");
     TearDown();

@@ -282,6 +282,31 @@ void log_subject_debug_info(lv_subject_t* ptr) {
     }
 }
 
+/// True while the spdlog-routed sink is in service.
+///
+/// SubjectManager::deinit_all() runs during static destruction and calls
+/// lv_subject_deinit(), whose lv_observer_remove() emits LV_LOG_WARN for a
+/// null-subject observer. spdlog's registry is a lazily constructed
+/// function-local static, so it registers for destruction after load-time
+/// statics and is torn down BEFORE a static SubjectManager takes the full
+/// deinit path — a routed log there reads a freed logger. Zero-initialized
+/// before any dynamic initialization and never destroyed (trivially
+/// destructible), so it stays readable for the whole process; the retirement
+/// anchor below flips it off when the sink's own lifetime ends, which happens
+/// while spdlog is still alive because the anchor is constructed at
+/// registration, after the first spdlog use.
+static std::atomic<bool> s_sink_alive{false};
+
+/// Retired by its destructor when static teardown reaches it. Function-local
+/// so it is constructed at first registration — after spdlog's registry —
+/// and therefore destroyed before it: the window where the sink still routes
+/// into a dead logger never opens in the reverse order.
+struct SinkLifetimeAnchor {
+    ~SinkLifetimeAnchor() {
+        helix::logging::retire_lvgl_log_handler();
+    }
+};
+
 /**
  * @brief LVGL log callback that routes to spdlog
  *
@@ -292,6 +317,13 @@ void log_subject_debug_info(lv_subject_t* ptr) {
  * @param buf Log message buffer (null-terminated)
  */
 void lvgl_log_callback(lv_log_level_t level, const char* buf) {
+    // The sink is retired during static destruction: LVGL can still emit
+    // through it (lv_subject_deinit -> lv_observer_remove -> LV_LOG_WARN)
+    // after spdlog is gone, so drop the record rather than touch a freed
+    // logger.
+    if (!s_sink_alive.load(std::memory_order_acquire)) {
+        return;
+    }
     // Strip trailing newline if present (spdlog adds its own)
     std::string msg(buf);
     while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')) {
@@ -440,8 +472,17 @@ namespace helix {
 namespace logging {
 
 void register_lvgl_log_handler() {
+    // Constructed at first registration, destroyed during static teardown —
+    // after spdlog's registry, so the retirement it performs still runs while
+    // the logger is alive.
+    static const SinkLifetimeAnchor anchor;
+    s_sink_alive.store(true, std::memory_order_release);
     lv_log_register_print_cb(lvgl_log_callback);
     spdlog::trace("[Logging] Registered custom LVGL log handler");
+}
+
+void retire_lvgl_log_handler() {
+    s_sink_alive.store(false, std::memory_order_release);
 }
 
 void set_suppress_translation_warnings(bool suppress) {

@@ -768,6 +768,7 @@ bool ToastManager::is_visible() const {
 
 // Stub for notification manager functions (tests don't have notification UI)
 #include "ui_notification.h"
+#include "ui_notification_history.h"
 #include "ui_notification_manager.h"
 #include "ui_printer_status_icon.h"
 
@@ -785,8 +786,22 @@ void ui_notification_deinit() {
     spdlog::debug("[Test Stub] ui_notification_deinit: no-op in tests");
 }
 
+static lv_subject_t s_test_notification_history_version_subject;
+static int32_t s_test_last_published_history_version = 0;
+static bool s_test_notification_subjects_initialized = false;
+
+// Mirrors NotificationManager::publish_history_version(): the real object is
+// out of the test link, but the panel's observer contract (bump revision on
+// add/clear, never on mark_all_read) is what the notification panel tests pin.
 void helix::ui::notification_refresh_from_history() {
-    // No-op in tests
+    if (!s_test_notification_subjects_initialized) {
+        return;
+    }
+    const int32_t narrowed = static_cast<int32_t>(NotificationHistory::instance().version());
+    if (narrowed != s_test_last_published_history_version) {
+        s_test_last_published_history_version = narrowed;
+        lv_subject_set_int(&s_test_notification_history_version_subject, narrowed);
+    }
 }
 
 // Stub for app_request_restart (tests don't restart)
@@ -1093,11 +1108,11 @@ lv_subject_t& get_wizard_active_subject() {
 
 // Stub for ui_notification_init_subjects (creates test subjects for notification badge)
 static lv_subject_t s_test_notification_count_subject;
-static bool s_test_notification_subjects_initialized = false;
 
 void helix::ui::notification_init_subjects() {
     if (!s_test_notification_subjects_initialized) {
         lv_subject_init_int(&s_test_notification_count_subject, 0);
+        lv_subject_init_int(&s_test_notification_history_version_subject, 0);
         s_test_notification_subjects_initialized = true;
         spdlog::debug("[Test Stub] ui_notification_init_subjects: subjects initialized");
     }
@@ -1106,9 +1121,14 @@ void helix::ui::notification_init_subjects() {
 void helix::ui::notification_deinit_subjects() {
     if (s_test_notification_subjects_initialized) {
         lv_subject_deinit(&s_test_notification_count_subject);
+        lv_subject_deinit(&s_test_notification_history_version_subject);
         s_test_notification_subjects_initialized = false;
         spdlog::debug("[Test Stub] ui_notification_deinit_subjects: subjects deinitialized");
     }
+}
+
+lv_subject_t* helix::ui::notification_history_version_subject() {
+    return &s_test_notification_history_version_subject;
 }
 
 void helix::ui::notification_register_callbacks() {

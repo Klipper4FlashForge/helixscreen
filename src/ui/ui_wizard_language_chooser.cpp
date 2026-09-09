@@ -84,12 +84,6 @@ WizardLanguageChooserStep::WizardLanguageChooserStep() {
 WizardLanguageChooserStep::~WizardLanguageChooserStep() {
     // Timer guard handles cleanup automatically via RAII
 
-    // Deinitialize subjects to disconnect observers before destruction
-    if (subjects_initialized_) {
-        lv_subject_deinit(&welcome_text_);
-        subjects_initialized_ = false;
-    }
-
     screen_root_ = nullptr;
 }
 
@@ -109,9 +103,8 @@ void WizardLanguageChooserStep::init_subjects() {
     // Initialize welcome text subject with string buffer
     strncpy(welcome_buffer_, WELCOME_TRANSLATIONS[0], sizeof(welcome_buffer_) - 1);
     welcome_buffer_[sizeof(welcome_buffer_) - 1] = '\0';
-    lv_subject_init_string(&welcome_text_, welcome_buffer_, nullptr, sizeof(welcome_buffer_),
-                           welcome_buffer_);
-    lv_xml_register_subject(nullptr, "wizard_welcome_text", &welcome_text_);
+    UI_MANAGED_SUBJECT_STRING(welcome_text_, welcome_buffer_, welcome_buffer_,
+                              "wizard_welcome_text", subjects_);
 
     subjects_initialized_ = true;
     spdlog::debug("[{}] Subjects initialized", get_name());

@@ -29,6 +29,17 @@ namespace logging {
 void register_lvgl_log_handler();
 
 /**
+ * @brief Retire the sink: subsequent LVGL logs are dropped without touching spdlog
+ *
+ * The sink's lifetime is anchored to the first registration, so its static
+ * destruction retires it while spdlog is still alive. Late LVGL log traffic
+ * during static teardown (lv_subject_deinit -> lv_observer_remove ->
+ * LV_LOG_WARN) is a no-op instead of a read into a freed logger. Callable
+ * explicitly by tests; register_lvgl_log_handler() re-arms it.
+ */
+void retire_lvgl_log_handler();
+
+/**
  * @brief Suppress LVGL translation warnings (downgrade to trace)
  *
  * When true, translation-related LVGL warnings (missing language, missing tag)

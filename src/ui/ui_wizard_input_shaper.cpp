@@ -62,17 +62,6 @@ WizardInputShaperStep::~WizardInputShaperStep() {
     // ordering explicit).
     cancel_analysis_display();
 
-    // Deinitialize subjects to disconnect observers before destruction
-    // NOTE: lv_subject_deinit() is safe to call even during shutdown
-    if (subjects_initialized_) {
-        lv_subject_deinit(&calibration_status_);
-        lv_subject_deinit(&calibration_progress_);
-        lv_subject_deinit(&calibration_started_);
-        lv_subject_deinit(&calibration_active_);
-        lv_subject_deinit(&calibration_indeterminate_);
-        subjects_initialized_ = false;
-    }
-
     // NOTE: Do NOT log here - spdlog may be destroyed first
     screen_root_ = nullptr;
 }
@@ -93,24 +82,23 @@ void WizardInputShaperStep::init_subjects() {
     // Initialize status subject with string buffer
     strncpy(status_buffer_, "Ready to calibrate", sizeof(status_buffer_) - 1);
     status_buffer_[sizeof(status_buffer_) - 1] = '\0';
-    lv_subject_init_string(&calibration_status_, status_buffer_, nullptr, sizeof(status_buffer_),
-                           status_buffer_);
-    lv_xml_register_subject(nullptr, "wizard_input_shaper_status", &calibration_status_);
+    UI_MANAGED_SUBJECT_STRING(calibration_status_, status_buffer_, status_buffer_,
+                              "wizard_input_shaper_status", subjects_);
 
     // Initialize progress subject
-    helix::ui::wizard::init_int_subject(&calibration_progress_, 0, "wizard_input_shaper_progress");
+    UI_MANAGED_SUBJECT_INT(calibration_progress_, 0, "wizard_input_shaper_progress", subjects_);
 
     // Initialize started subject (controls Start button and skip hint visibility)
-    helix::ui::wizard::init_int_subject(&calibration_started_, 0, "wizard_input_shaper_started");
+    UI_MANAGED_SUBJECT_INT(calibration_started_, 0, "wizard_input_shaper_started", subjects_);
 
     // Initialize active subject (controls Cancel button visibility — 1 only while
     // calibration is in flight; cleared on complete / cancel / error)
-    helix::ui::wizard::init_int_subject(&calibration_active_, 0, "wizard_input_shaper_active");
+    UI_MANAGED_SUBJECT_INT(calibration_active_, 0, "wizard_input_shaper_active", subjects_);
 
     // Initialize indeterminate subject (1 during the offline analysis phase:
     // hides the bar, shows the spinner)
-    helix::ui::wizard::init_int_subject(&calibration_indeterminate_, 0,
-                                        "wizard_input_shaper_indeterminate");
+    UI_MANAGED_SUBJECT_INT(calibration_indeterminate_, 0, "wizard_input_shaper_indeterminate",
+                           subjects_);
 
     subjects_initialized_ = true;
     spdlog::debug("[{}] Subjects initialized", get_name());

@@ -7,6 +7,7 @@
 #include "async_lifetime_guard.h"
 #include "input_shaper_calibrator.h"
 #include "lvgl/lvgl.h"
+#include "subject_managed_panel.h"
 #include "wizard_step.h"
 
 #include <atomic>
@@ -281,6 +282,10 @@ class WizardInputShaperStep : public helix::wizard::Step {
   private:
     // Screen instance
     lv_obj_t* screen_root_ = nullptr;
+
+    // SubjectManager, declared ahead of the subjects it owns so it tears down
+    // after them (names withdraw before storage dies).
+    SubjectManager subjects_;
 
     // Subjects
     lv_subject_t calibration_status_;

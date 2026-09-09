@@ -7,6 +7,7 @@
 #include "lvgl/lvgl.h"
 #include "mdns_discovery.h"
 #include "overlay_base.h"
+#include "subject_managed_panel.h"
 #include "usb_printer_detector.h"
 
 #include <atomic>
@@ -87,6 +88,7 @@ class LabelPrinterSettingsOverlay : public OverlayBase {
     std::vector<DiscoveredPrinter> raw_printers_;        ///< temp buffer for raw TCP results
     std::vector<DiscoveredPrinter> ipp_printers_;        ///< temp buffer for IPP results
     std::vector<DiscoveredNetworkPrinter> discovered_network_printers_; ///< merged list
+    SubjectManager subjects_;             // declared ahead: tears down after the subjects it owns
     lv_subject_t ipp_selected_subject_{}; ///< 0=not IPP, 1=IPP protocol selected
 
     // USB printer detection

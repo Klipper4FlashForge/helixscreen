@@ -120,6 +120,8 @@ void NotificationManager::init_subjects() {
                                "notification_count_text", subjects_);
     UI_MANAGED_SUBJECT_INT(notification_severity_subject_, NOTIFICATION_SEVERITY_INFO,
                            "notification_severity", subjects_);
+    UI_MANAGED_SUBJECT_INT(notification_history_version_subject_, 0, "notification_history_version",
+                           subjects_);
 
     subjects_initialized_ = true;
 
@@ -296,6 +298,30 @@ void helix::ui::notification_refresh_from_history() {
         }
     }
     NotificationManager::instance().update_notification(status);
+
+    // Publish the history revision so the open notification panel can rebuild
+    // its list when an entry arrives (prestonbrown/helixscreen#1525).
+    NotificationManager::instance().publish_history_version();
+}
+
+void NotificationManager::publish_history_version() {
+    if (!subjects_initialized_) {
+        return;
+    }
+    uint64_t version = NotificationHistory::instance().version();
+    if (version == last_published_history_version_) {
+        return;
+    }
+    last_published_history_version_ = version;
+    lv_subject_set_int(&notification_history_version_subject_, static_cast<int32_t>(version));
+}
+
+lv_subject_t* NotificationManager::history_version_subject() {
+    return subjects_initialized_ ? &notification_history_version_subject_ : nullptr;
+}
+
+lv_subject_t* helix::ui::notification_history_version_subject() {
+    return NotificationManager::instance().history_version_subject();
 }
 
 void helix::ui::notification_deinit_subjects() {

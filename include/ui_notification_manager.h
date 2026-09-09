@@ -60,6 +60,7 @@ class NotificationManager {
      * - notification_count (int: badge count, 0=hidden)
      * - notification_count_text (string: formatted count)
      * - notification_severity (int: 0=info, 1=warning, 2=error)
+     * - notification_history_version (int: history revision, bumped on add/clear)
      */
     void init_subjects();
 
@@ -81,6 +82,22 @@ class NotificationManager {
      * @param count Number of unread notifications (0 hides badge)
      */
     void update_notification_count(size_t count);
+
+    /**
+     * @brief Publish the history revision to the version subject
+     *
+     * Compares NotificationHistory::version() against the last published value
+     * and sets notification_history_version only on a change. Must be called
+     * on the LVGL main thread; notification_refresh_from_history() does that.
+     */
+    void publish_history_version();
+
+    /**
+     * @brief Get the history version subject for observer attachment
+     *
+     * @return Subject pointer, or nullptr before init_subjects()
+     */
+    lv_subject_t* history_version_subject();
 
     /**
      * @brief Deinitialize subjects for clean shutdown
@@ -116,6 +133,7 @@ class NotificationManager {
     lv_subject_t notification_count_subject_{};
     lv_subject_t notification_count_text_subject_{};
     lv_subject_t notification_severity_subject_{}; // 0=info, 1=warning, 2=error
+    lv_subject_t notification_history_version_subject_{};
 
     // Notification count text buffer (for string subject)
     char notification_count_text_buf_[8] = "0";
@@ -125,6 +143,9 @@ class NotificationManager {
 
     // Track previous notification count for pulse animation (only pulse on increase)
     size_t previous_notification_count_ = 0;
+
+    // Last history revision published to notification_history_version
+    uint64_t last_published_history_version_ = 0;
 
     bool subjects_initialized_ = false;
     bool callbacks_registered_ = false;
@@ -177,5 +198,12 @@ void notification_update_count(size_t count);
  * (ERROR > WARNING > INFO; NONE when nothing is unread) to the badge color.
  */
 void notification_refresh_from_history();
+
+/**
+ * @brief Get the subject that fires when the history revision changes
+ *
+ * @return Subject pointer, or nullptr before notification_init_subjects()
+ */
+lv_subject_t* notification_history_version_subject();
 
 } // namespace helix::ui

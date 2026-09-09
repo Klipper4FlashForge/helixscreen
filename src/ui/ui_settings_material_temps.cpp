@@ -51,12 +51,6 @@ MaterialTempsOverlay::MaterialTempsOverlay() {
 }
 
 MaterialTempsOverlay::~MaterialTempsOverlay() {
-    if (subjects_initialized_ && lv_is_initialized()) {
-        lv_subject_deinit(&has_macro_subject_);
-        lv_subject_deinit(&editing_subject_);
-        lv_subject_deinit(&edit_name_subject_);
-        lv_subject_deinit(&edit_defaults_subject_);
-    }
     spdlog::trace("[{}] Destroyed", get_name());
 }
 
@@ -70,22 +64,16 @@ void MaterialTempsOverlay::init_subjects() {
     }
 
     // View toggle subject: 0=list, 1=editing
-    lv_subject_init_int(&editing_subject_, 0);
-    lv_xml_register_subject(nullptr, "material_editing", &editing_subject_);
+    UI_MANAGED_SUBJECT_INT(editing_subject_, 0, "material_editing", subjects_);
 
     // Edit view text subjects
-    edit_name_buf_[0] = '\0';
-    lv_subject_init_string(&edit_name_subject_, edit_name_buf_, nullptr, sizeof(edit_name_buf_),
-                           edit_name_buf_);
-    lv_xml_register_subject(nullptr, "material_edit_name", &edit_name_subject_);
+    UI_MANAGED_SUBJECT_STRING(edit_name_subject_, edit_name_buf_, "", "material_edit_name",
+                              subjects_);
 
-    edit_defaults_buf_[0] = '\0';
-    lv_subject_init_string(&edit_defaults_subject_, edit_defaults_buf_, nullptr,
-                           sizeof(edit_defaults_buf_), edit_defaults_buf_);
-    lv_xml_register_subject(nullptr, "material_edit_defaults", &edit_defaults_subject_);
+    UI_MANAGED_SUBJECT_STRING(edit_defaults_subject_, edit_defaults_buf_, "",
+                              "material_edit_defaults", subjects_);
 
-    lv_subject_init_int(&has_macro_subject_, 0);
-    lv_xml_register_subject(nullptr, "material_has_macro", &has_macro_subject_);
+    UI_MANAGED_SUBJECT_INT(has_macro_subject_, 0, "material_has_macro", subjects_);
 
     subjects_initialized_ = true;
     spdlog::debug("[{}] Subjects initialized", get_name());
