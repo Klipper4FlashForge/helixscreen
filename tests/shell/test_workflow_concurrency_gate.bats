@@ -89,7 +89,7 @@ assert '!claude/report-*' in branches, 'push branches do not exclude claude/repo
     [ "$checked" -gt 0 ] || fail "examined no workflows"
 }
 
-@test "only release/** keys on the SHA; main lets a newer push supersede" {
+@test "release/** keys on the SHA; main collapses the queue without cancelling" {
     local checked=0
     while read -r wf; do
         [ -n "$wf" ] || continue
@@ -99,8 +99,8 @@ import yaml
 doc = yaml.safe_load(open('$wf'))
 group = str(doc['concurrency']['group'])
 assert 'refs/heads/main' not in group, (
-    'group special-cases main, so main runs never cancel each other and the queue '
-    'fills with superseded work: %s' % group)
+    'group special-cases main, so each main commit gets its own group and the '
+    'queue fills instead of collapsing to the newest: %s' % group)
 assert 'refs/heads/release/' in group and 'github.sha' in group, (
     'group does not keep a per-commit run for release/**: %s' % group)
 assert 'github.ref' in group, 'group never falls back to the ref: %s' % group
@@ -108,4 +108,27 @@ assert 'github.ref' in group, 'group never falls back to the ref: %s' % group
         [ "$status" -eq 0 ] || fail "$wf: $output"
     done <<< "$(claude_push_workflows)"
     [ "$checked" -gt 0 ] || fail "examined no workflows"
+}
+
+# A run that outlives the gap between two pushes never reports on main, and main
+# then reads green because it was never measured rather than because it passed.
+# Short workflows are not listed: they finish inside the gap, so cancelling them
+# costs nothing.
+@test "the long-running workflows do not cancel their in-flight run on main" {
+    local checked=0
+    for wf in .github/workflows/build.yml .github/workflows/esp32-build.yml; do
+        [ -f "$wf" ] || fail "$wf: missing"
+        checked=$((checked + 1))
+        run python3 -c "
+import yaml
+cancel = str(yaml.safe_load(open('$wf'))['concurrency']['cancel-in-progress'])
+assert cancel != 'True', (
+    'cancels in-flight everywhere, so a burst of pushes to main completes '
+    'nothing: cancel-in-progress=%s' % cancel)
+assert 'refs/heads/main' in cancel, (
+    'nothing exempts main from cancellation: cancel-in-progress=%s' % cancel)
+"
+        [ "$status" -eq 0 ] || fail "$wf: $output"
+    done
+    [ "$checked" -eq 2 ] || fail "examined $checked workflows, expected 2"
 }

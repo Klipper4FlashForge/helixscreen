@@ -14,11 +14,17 @@ on:
 
 # A push to a claude/** work branch is superseded within minutes on a busy day,
 # and this workflow can hold a runner for hours. Keying the group on the ref
-# lets a newer push cancel the older run there. main and release/** key on the
-# SHA instead, so every commit that lands keeps its own run.
+# lets a newer push cancel the older run there. release/** keys on the SHA
+# instead, so every commit that lands keeps its own run.
+#
+# main keys on the ref but does NOT cancel: an in-flight run finishes, and of the
+# runs queued behind it only the newest survives, so a burst of pushes leaves one
+# completing run and one pending rather than a pile. Cancelling instead means a
+# busy hour completes nothing at all and main reads green because it was never
+# measured, which is not the same thing.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || (startsWith(github.ref, 'refs/heads/release/') && github.sha || github.ref) }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   compile-ubuntu:

@@ -12,8 +12,8 @@
 # (scripts/cloud/session-start.sh) tolerates that absence.
 #
 # `--deps-only` restricts this to the apt install step and propagates its
-# real exit status, so a CI caller (the build-cache workflow, via `sudo`) can
-# wrap it in a retry and actually observe failure.
+# real exit status, so a CI caller invoking it via `sudo` can wrap it in a retry
+# and actually observe failure.
 #
 # No repo checkout exists while this runs — every path here is either a
 # system path or an explicit clone/fetch of prestonbrown/helixscreen.
@@ -174,8 +174,8 @@ step_venv() {
 # ccache.conf: base_dir strips the repo checkout prefix from every source
 # path so a build under a different absolute path (a CI runner, a later
 # worktree) still hits objects this warmed. HELIX_CCACHE_BASE_DIR overrides it
-# for a caller whose checkout does not live under /home/user (the build-cache
-# workflow computes its own value for the runner's checkout instead).
+# for a caller whose checkout does not live under /home/user, such as a CI runner
+# computing its own value.
 mkdir -p /root/.config/ccache
 cat > /root/.config/ccache/ccache.conf <<EOF
 cache_dir = /root/.cache/ccache

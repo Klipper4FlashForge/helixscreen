@@ -2,8 +2,12 @@ name: Nightly Full Test Suite
 
 on:
   schedule:
-    # Run at 4:00 AM UTC every day (11 PM ET / 8 PM PT)
-    - cron: '0 4 * * *'
+    # GitHub queues scheduled workflows and the delay is worst on the hour, so
+    # this fires hours after the time it names: at '0 4' it landed 08:22-10:34
+    # UTC across ten runs. An off-hour, off-peak minute shortens that queue, and
+    # starting the evening before lands the results before morning either way.
+    # Re-measure the actual fire times before trusting any target hour.
+    - cron: '37 23 * * *'
   workflow_dispatch:  # Allow manual trigger
 
 # Cancel in-progress nightly runs (only one should run at a time)

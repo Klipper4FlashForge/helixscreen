@@ -164,7 +164,7 @@ each screen maps to a navigation recipe in `screenshot-recipes.sh`, the single s
 ### Cloud Sessions
 | Script | Purpose |
 |--------|---------|
-| `cloud/env-setup.sh` | Claude Code cloud environment setup script: runs once, as root, before the repo is cloned, then the filesystem is snapshotted. Installs build deps, warms a ccache from the `build-cache` release tarball, seeds a full clone for submodule alternates, prebuilds a Python venv. `--deps-only` restricts it to the apt step and propagates its exit status, for `.github/workflows/build-cache.yml`'s own use. See `docs/devel/BUILD_SYSTEM.md` § "Cloud sessions: the warm environment" |
+| `cloud/env-setup.sh` | Claude Code cloud environment setup script: runs once, as root, before the repo is cloned, then the filesystem is snapshotted. Installs build deps, seeds a full clone for submodule alternates, prebuilds a Python venv. It installs and configures ccache but fetches no prebuilt one - see BUILD_SYSTEM.md for the measurement behind that. `--deps-only` restricts it to the apt step and propagates its exit status for a CI caller. See `docs/devel/BUILD_SYSTEM.md` § "Cloud sessions: the warm environment" |
 | `cloud/session-start.sh` | `SessionStart` hook (`.claude/settings.json`) finishing the per-session half of the above: wires the seed clone in as a submodule alternate, runs `git submodule update`, points `.venv` at the prebuilt one. A no-op on any machine that never ran `env-setup.sh`. Gated by `tests/shell/test_cloud_session_start.bats` |
 
 ### Subdirectories
