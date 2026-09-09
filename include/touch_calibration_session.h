@@ -45,6 +45,19 @@ struct ICalibrationSink {
         return false;
     }
 
+    /// Mark that a calibration capture is on screen.
+    ///
+    /// The global debug-touch ripple is suppressed while this is true: the
+    /// calibration draws its own, and affine is disabled during capture so the
+    /// global one would render raw coordinates (#943).
+    ///
+    /// Defaulted to a no-op so fakes need not care. It lives here rather than
+    /// being reached for on DisplayManager directly, so a caller holding a sink
+    /// never needs a second handle on the display to run a capture.
+    virtual void set_capture_active(bool active) {
+        (void)active;
+    }
+
     /// Discard the device's stored calibration, leaving it uncalibrated.
     ///
     /// Distinct from disable_affine(), which only suppresses the stored matrix:
