@@ -65,6 +65,7 @@ translation agents (the relevant column is injected into their prompts).
 | Edit | Bearbeiten | Editar | Modifier | Modifica | 編集 | Editar | Редактировать | 编辑 |
 | Retry | Wiederholen | Reintentar | Réessayer | Riprova | 再試行 | Tentar Novamente | Повторить | 重试 |
 | Install | Installieren | Instalar | Installer | Installa | インストール | Instalar | Установить | 安装 |
+| Uninstall | Deinstallieren | Desinstalar | Désinstaller | Disinstalla | アンインストール | Desinstalar | Удалить | 卸载 |
 | Update | Aktualisieren | Actualizar | Mettre à jour | Aggiorna | 更新 | Atualizar | Обновить | 更新 |
 | Print | Drucken | Imprimir | Imprimer | Stampa | 印刷 | Imprimir | Печать | 打印 |
 | Pause | Pause | Pausar | Pause | Pausa | 一時停止 | Pausar | Пауза | 暂停 |
@@ -103,4 +104,4 @@ translation agents (the relevant column is injected into their prompts).
 |---|---|---|---|---|---|---|---|---|
 | Bluetooth not available | Bluetooth nicht verfügbar | Bluetooth no disponible | Bluetooth non disponible | Bluetooth non disponibile | Bluetooth が利用できません | Bluetooth não disponível | Bluetooth недоступен | 蓝牙不可用 |
 
-<!-- Terms not yet translated in every locale (skipped): Uninstall, Disabled -->
+<!-- Terms not yet translated in every locale (skipped): Disabled -->
