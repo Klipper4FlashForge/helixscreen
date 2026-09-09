@@ -14,6 +14,7 @@
 
 #include "app_globals.h"
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "observer_factory.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
 #include "system/update_checker.h"
@@ -61,6 +62,7 @@ void NotificationHistoryPanel::deinit_subjects() {
     if (!subjects_initialized_) {
         return;
     }
+    history_version_observer_.reset();
     subjects_.deinit_all();
     subjects_initialized_ = false;
     spdlog::debug("[{}] Subjects deinitialized", get_name());
@@ -85,6 +87,22 @@ void NotificationHistoryPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     // Hide Clear All button when there are no notifications
     if (action_btn) {
         lv_obj_bind_flag_if_eq(action_btn, &has_entries_subject_, LV_OBJ_FLAG_HIDDEN, 0);
+    }
+
+    // Refresh the list when a notification arrives while the panel is open.
+    // The observer attaches at most once per panel lifetime — setup() runs
+    // again on every reopen, and the subject is owned by the manager singleton
+    // that outlives this panel.
+    if (!history_version_observer_) {
+        lv_subject_t* version_subject = helix::ui::notification_history_version_subject();
+        if (version_subject) {
+            history_version_observer_ = helix::ui::observe_int_sync<NotificationHistoryPanel>(
+                version_subject, this, [](NotificationHistoryPanel* p, int value) {
+                    p->handle_history_version_change(value);
+                });
+        } else {
+            spdlog::warn("[{}] Notification history version subject not initialized", get_name());
+        }
     }
 
     // Populate list
@@ -208,8 +226,20 @@ std::string NotificationHistoryPanel::format_timestamp(uint64_t timestamp_ms) {
 // BUTTON HANDLERS
 // ============================================================================
 
+void NotificationHistoryPanel::handle_history_version_change(int32_t version) {
+    if (version == last_applied_history_version_) {
+        return;
+    }
+    last_applied_history_version_ = version;
+    refresh();
+}
+
 void NotificationHistoryPanel::handle_clear_clicked() {
     history_.clear();
+    // clear() bumps the store revision; the manager publishes it on its next
+    // badge refresh. Record it now so that publish does not rebuild the list
+    // again once it lands.
+    last_applied_history_version_ = static_cast<int32_t>(history_.version());
     refresh();
     spdlog::info("[{}] History cleared by user", get_name());
 }
