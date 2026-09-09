@@ -67,8 +67,7 @@ struct AsyncSyncData {
 } // namespace
 
 // Declared in ams_tool_topology.h; see there for what nullopt means to callers.
-std::optional<helix::ToolTopology> helix::build_ams_topology(AmsBackend* backend,
-                                                             int backend_index) {
+std::optional<helix::ToolTopology> build_ams_topology(AmsBackend* backend, int backend_index) {
     if (!backend)
         return std::nullopt;
     // Table ownership, NOT remap capability. Two different questions that part
