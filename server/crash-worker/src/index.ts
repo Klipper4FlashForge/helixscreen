@@ -254,6 +254,7 @@ const KNOWN_PLATFORMS = new Set([
   "ad5m",
   "ad5x",
   "cc1",
+  "creator5",
   "esp32",
   "k1",
   "k2",
