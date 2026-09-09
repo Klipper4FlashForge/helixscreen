@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# The QIDI stock screen unit is `makerbase-client` on firmware 1.1.1 and older
+# The QIDI stock screen unit is `makerbase-client` on firmware 1.1.x
 # and `qidi-client` on 01.01.02+. These cover the name list plus the two shapes
 # it cannot reach: a unit found by the QIDI path in its ExecStart, and the
 # `QD_Q2/bin/client` binary whose basename is too generic for pidof.
@@ -180,7 +180,7 @@ EOF
 @test "qidi handler: never touches the helixscreen unit" {
     local systemctl_log="$BATS_TEST_TMPDIR/systemctl.log"
     # Our own unit legitimately mentions a QIDI-looking install path.
-    write_unit "helixscreen.service" "/home/mks/QD_Q2/../helixscreen/bin/helix-launcher.sh" >/dev/null
+    write_unit "helixscreen.service" "/home/mks/QD_Q2/bin/../../helixscreen/bin/helix-launcher.sh" >/dev/null
     mock_command_script "systemctl" "echo \"\$@\" >> \"$systemctl_log\"; exit 0"
 
     found_any=false
@@ -201,6 +201,50 @@ EOF
 
     [ ! -f "$systemctl_log" ] || refute_grep "disable" "$systemctl_log"
     [ ! -f "$DISABLED_SERVICES_FILE" ]
+}
+
+@test "qidi handler: spares a unit that runs from outside the screen's bin directory" {
+    # The vendor's support units for wifi, MAC and device id are not the
+    # screen. Matching the stock tree root would reach whatever it puts there.
+    local systemctl_log="$BATS_TEST_TMPDIR/systemctl.log"
+    write_unit "makerbase-wlan0.service" "/home/mks/QD_Q2/net/wpa_helper.sh" >/dev/null
+    mock_command_script "systemctl" "echo \"\$@\" >> \"$systemctl_log\"; exit 0"
+
+    found_any=false
+    run stop_qidi_competing_uis
+    [ "$status" -eq 0 ]
+
+    [ ! -f "$systemctl_log" ] || refute_grep "makerbase-wlan0" "$systemctl_log"
+    [ ! -f "$DISABLED_SERVICES_FILE" ] || refute_grep "makerbase-wlan0" "$DISABLED_SERVICES_FILE"
+}
+
+# --- ordering: the unit goes down before the binary ---
+
+@test "qidi handler: disables the unit before it touches the client binary" {
+    # The stock unit sets Restart=always with StartLimitIntervalSec=0, and its
+    # start script runs the client a second time under taskset when the first
+    # exits. A process killed while its unit is still live therefore comes
+    # straight back, once a second, with no start limit to stop it.
+    local order="$BATS_TEST_TMPDIR/order.log" bin
+    bin="$(write_qd_client mks)"
+    write_unit "makerbase-client.service" "bash /home/mks/QD_Q2/bin/start.sh" >/dev/null
+
+    mock_command_script "systemctl" "echo \"systemctl \$@\" >> \"$order\"; exit 0"
+    kill_process_by_path() { echo "kill $1" >> "$order"; return 0; }
+    export -f kill_process_by_path
+
+    found_any=false
+    run stop_qidi_competing_uis
+    [ "$status" -eq 0 ]
+
+    grep -qF "systemctl disable makerbase-client.service" "$order"
+
+    local first_systemctl first_kill
+    first_systemctl="$(grep -n '^systemctl ' "$order" | head -1 | cut -d: -f1)"
+    first_kill="$(grep -n '^kill ' "$order" | head -1 | cut -d: -f1)"
+    [ -n "$first_systemctl" ]
+    [ -n "$first_kill" ]
+    [ "$first_systemctl" -lt "$first_kill" ]
 }
 
 # --- the empty-sweep report ---

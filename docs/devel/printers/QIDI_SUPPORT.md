@@ -119,7 +119,7 @@ scp build-pi/bin/helix-screen root@<qidi-ip>:/usr/local/bin/
 ssh root@<qidi-ip>
 
 # Stop the stock screen FIRST (see below) -- the unit is makerbase-client on
-# firmware 1.1.1 and older, qidi-client on 01.01.02+
+# firmware 1.1.x, qidi-client on 01.01.02+
 systemctl stop makerbase-client qidi-client
 
 helix-screen

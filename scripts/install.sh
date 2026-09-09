@@ -4163,28 +4163,31 @@ uninstall_forgex() {
 # firmware 01.01.02+: systemd unit `qidi-client` runs the `qidiclient` binary with
 # Restart=always, so the systemd stop+disable in the loop below is what actually keeps it
 # down; the bare `qidiclient` entry is the process-kill backstop) (#1047).
-# `makerbase-client` is the stock screen unit on QIDI firmware 1.1.1 and older;
+# `makerbase-client` is the stock screen unit on QIDI firmware 1.1.x;
 # the loop is is-active gated, so it is a no-op on a host that does not run it.
 COMPETING_UIS="guppyscreen GuppyScreen grumpyscreen Grumpyscreen KlipperScreen klipperscreen featherscreen FeatherScreen mksclient qidi-client qidiclient makerbase-client"
 
-# The stock screen unit is `makerbase-client` on firmware 1.1.1 and older and
+# The stock screen unit is `makerbase-client` on firmware 1.1.x and
 # `qidi-client` on 01.01.02+, and both are in COMPETING_UIS above. Two shapes
 # stay out of a name list's reach:
 #
 #   - The unit runs /home/<klipper-user>/QD_Q2/bin/client, which outlives the
 #     unit as a bare process. Its basename is `client`, so pidof would match
 #     unrelated processes on a general-purpose SBC; it is matched by full path.
-#   - A unit a later firmware renames still has to exec a QIDI path, so units
-#     are discovered by what their ExecStart runs rather than by what they are
-#     called. This arm is not is-active gated, so a stock screen that is enabled
-#     but stopped is disabled too instead of returning at the next boot, and it
+#   - A unit a later firmware renames still has to exec the screen out of the
+#     stock tree's bin directory, so units are discovered by what their
+#     ExecStart runs rather than by what they are called. The tree root alone
+#     is not the match: it would also reach any support unit the vendor places
+#     under it, and disabling one of those can cost the user their network.
+#     This arm is not is-active gated, so a stock screen that is enabled but
+#     stopped is disabled too instead of returning at the next boot, and it
 #     folds case because a unit name's capitalisation is the vendor's to change.
 #
 # Nothing either arm matches can exist off a QIDI box, so the handler needs no
 # hostname gate. Both arms are reversible and recorded, so uninstall's
 # reenable_disabled_services() puts the stock screen back.
 QIDI_STOCK_UI_BINS="/home/mks/QD_Q2/bin/client /home/qidi/QD_Q2/bin/client"
-QIDI_STOCK_UI_EXEC_PATTERN='QD_Q2|qidiclient|qidi-client|makerbase-client'
+QIDI_STOCK_UI_EXEC_PATTERN='QD_Q2/bin/|qidiclient|qidi-client|makerbase-client'
 
 # Wayland compositors that hold the DRM/KMS master. On Armbian/Pi-class boards
 # (e.g. BTT CB1) KlipperScreen commonly runs *inside* one of these; the
@@ -4351,17 +4354,11 @@ _host_ships_a_stock_ui() {
 stop_qidi_competing_uis() {
     local bin unit unit_path
 
-    for bin in $QIDI_STOCK_UI_BINS; do
-        [ -f "$bin" ] || continue
-        log_info "Stopping stock QIDI UI ($bin)..."
-        kill_process_by_path "$bin" || true
-        # Persistent disable: without the execute bit whatever launches it at
-        # boot fails to exec. Recorded so uninstall's chmod +x restores it.
-        $SUDO chmod a-x "$bin" 2>/dev/null || true
-        record_disabled_service "sysv-chmod" "$bin"
-        found_any=true
-    done
-
+    # Units before binaries: the stock screen unit sets Restart=always with
+    # StartLimitIntervalSec=0, and its start script runs the client a second
+    # time under taskset when the first exits. A process killed while its unit
+    # is still live comes straight back, once a second, with nothing to
+    # throttle it. Disabling the unit first removes both respawn paths.
     for unit_path in /etc/systemd/system/*.service /lib/systemd/system/*.service; do
         [ -f "$unit_path" ] || continue
         unit=$(basename "$unit_path")
@@ -4374,6 +4371,17 @@ stop_qidi_competing_uis() {
         $SUDO systemctl stop "$unit" 2>/dev/null || true
         $SUDO systemctl disable "$unit" 2>/dev/null || true
         record_disabled_service "systemd" "$unit"
+        found_any=true
+    done
+
+    for bin in $QIDI_STOCK_UI_BINS; do
+        [ -f "$bin" ] || continue
+        log_info "Stopping stock QIDI UI ($bin)..."
+        kill_process_by_path "$bin" || true
+        # Persistent disable: without the execute bit whatever launches it at
+        # boot fails to exec. Recorded so uninstall's chmod +x restores it.
+        $SUDO chmod a-x "$bin" 2>/dev/null || true
+        record_disabled_service "sysv-chmod" "$bin"
         found_any=true
     done
 }
