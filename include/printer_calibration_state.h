@@ -108,6 +108,14 @@ class PrinterCalibrationState {
         return &idle_timeout_printing_;
     }
 
+    /// Lifetime-token overload: observers on the idle subject must hold the
+    /// token because deinit_subjects() (printer switch, test re-init) frees
+    /// the subject under them.
+    lv_subject_t* get_idle_timeout_printing_subject(std::shared_ptr<bool>& lifetime) {
+        lifetime = idle_timeout_printing_lifetime_;
+        return &idle_timeout_printing_;
+    }
+
     /**
      * @brief Debounced busy flag for the blocking-operation guard
      *
@@ -221,6 +229,9 @@ class PrinterCalibrationState {
 
     // idle_timeout.state == "Printing" flag (Klipper's canonical busy indicator)
     lv_subject_t idle_timeout_printing_{}; // 0=not printing/busy, 1=state == "Printing"
+    /// False once deinit_subjects() frees the subject. Handed to observers so
+    /// their removal can tell a live subject from a freed one.
+    std::shared_ptr<bool> idle_timeout_printing_lifetime_;
 
     // Debounced view of the same flag, used by the blocking-op guard. The subject
     // above stays the literal Klipper state; this one waits for it to settle.

@@ -1053,7 +1053,6 @@ src/print/print_history_manager.cpp
 src/printer/filament_mapper.cpp
 src/system/pwm_sound_backend.cpp
 src/system/update_checker.cpp
-src/ui/filament_op_execute.cpp
 "
 CF_OK=false
 if qc_resolve_clang_format; then CF_OK=true; fi

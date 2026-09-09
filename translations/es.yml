@@ -406,8 +406,10 @@ translations:
   Calibration failed - touch targets more precisely.: Calibración fallida – toca los
     objetivos con más precisión.
   Calibration kept timing out. Your previous settings were kept.: La calibración siguió agotando el tiempo de espera. Se conservó su configuración anterior.
+  Calibration may still be running — printer connection was interrupted: ''
   Calibration may still be running — response timed out: La calibración puede seguir
     en curso — tiempo de espera agotado
+  Calibration move may still be running — printer connection was interrupted: ''
   Calibration move may still be running — response timed out: El movimiento de calibración
     puede seguir en curso — tiempo de espera agotado
   Calibration saved but cannot apply on SDL display: Calibración guardada pero no
@@ -646,6 +648,7 @@ translations:
     para continuar
   Connection successful!: ¡Conexión exitosa!
   Connection timeout: Tiempo de conexión agotado
+  Connection to printer lost — operation may still be running: ''
   Connects: Conexiones
   Console: Consola
   Console Settings: Ajustes de Consola

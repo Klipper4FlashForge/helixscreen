@@ -401,8 +401,10 @@ translations:
   Calibration failed - touch targets more precisely.: Калибровка не удалась – нажимайте
     на цели точнее.
   Calibration kept timing out. Your previous settings were kept.: Калибровка постоянно завершалась по тайм-ауту. Прежние настройки сохранены.
+  Calibration may still be running — printer connection was interrupted: ''
   Calibration may still be running — response timed out: Калибровка может ещё выполняться
     — время ожидания истекло
+  Calibration move may still be running — printer connection was interrupted: ''
   Calibration move may still be running — response timed out: Движение калибровки
     может ещё выполняться — время ожидания истекло
   Calibration saved but cannot apply on SDL display: Калибровка сохранена, но не может
@@ -635,6 +637,7 @@ translations:
     быть успешно проверено
   Connection successful!: Соединение успешно!
   Connection timeout: Тайм-аут соединения
+  Connection to printer lost — operation may still be running: ''
   Connects: Подключения
   Console: Консоль
   Console Settings: Настройки консоли

@@ -369,7 +369,9 @@
   <translation tag="Calibration complete! Press &apos;Next&apos; to continue." en="Calibration complete! Press &apos;Next&apos; to continue."/>
   <translation tag="Calibration failed - touch targets more precisely." en="Calibration failed - touch targets more precisely."/>
   <translation tag="Calibration kept timing out. Your previous settings were kept." en="Calibration kept timing out. Your previous settings were kept."/>
+  <translation tag="Calibration may still be running — printer connection was interrupted" en="Calibration may still be running — printer connection was interrupted"/>
   <translation tag="Calibration may still be running — response timed out" en="Calibration may still be running — response timed out"/>
+  <translation tag="Calibration move may still be running — printer connection was interrupted" en="Calibration move may still be running — printer connection was interrupted"/>
   <translation tag="Calibration move may still be running — response timed out" en="Calibration move may still be running — response timed out"/>
   <translation tag="Calibration saved but cannot apply on SDL display" en="Calibration saved but cannot apply on SDL display"/>
   <translation tag="Calibration started" en="Calibration started"/>
@@ -567,6 +569,7 @@
   <translation tag="Connection must be tested successfully to continue" en="Connection must be tested successfully to continue"/>
   <translation tag="Connection successful!" en="Connection successful!"/>
   <translation tag="Connection timeout" en="Connection timeout"/>
+  <translation tag="Connection to printer lost — operation may still be running" en="Connection to printer lost — operation may still be running"/>
   <translation tag="Connects" en="Connects"/>
   <translation tag="Console" en="Console"/>
   <translation tag="Console Settings" en="Console Settings"/>
