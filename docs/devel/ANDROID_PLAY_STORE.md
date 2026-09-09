@@ -2,17 +2,41 @@
 
 How the CI pipeline ships `helix-screen` to Google Play, and the one-time manual setup required before the automated upload can work.
 
-## Where to pick up — 2026-08-15
+## Where to pick up — 2026-09-09
+
+**The API 36 deadline has passed, and it now gates everything below.** Google has required
+`targetSdkVersion 36` for new submissions *and* for updates since **2026-08-31**. `v1.0.0`
+ships `compileSdkVersion 35` / `targetSdkVersion 35`, so the AAB on that release would be
+**rejected on upload**. Nothing in the manual bring-up sequence is worth starting until this is
+resolved, because step 4 is a manual AAB upload and that is the step that would bounce.
+
+Two ways forward, and they are not exclusive:
+
+- **Bump to API 36.** Required eventually regardless, since every update published from here
+  needs it. Not purely mechanical: `compileSdk`/`targetSdk` move together and API 36 forces
+  behavioural changes that need checking on a real device, so this is 1.1 work rather than a
+  1.0 patch.
+- **Request the extension to 2026-11-01.** Play Console offers it; it buys time for the bump
+  without blocking the Console bring-up (steps 1-3, which do not involve an artifact).
+
+**Also confirmed unset as of 2026-09-09:** `PLAY_SERVICE_ACCOUNT_JSON` is not in the repository
+secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and
+`ANDROID_KEY_PASSWORD` are). So `publish-android` is still skipping cleanly on every tag, which
+is the intended behaviour and not a fault. Steps 1-6 below remain entirely undone.
+
+**Unaffected by any of this:** every tag still produces signed APKs and an AAB attached to the
+GitHub release. `v1.0.0` did. Sideloading is unchanged.
+
+### Status as of 2026-08-15, still accurate
 
 **Package-name registration cleared.** `org.helixscreen.app` is verified against the upload
 key's fingerprint `41:B4:26:42:44:FF:90:FA:11:BD:37:56:21:10:C2:E2:66:F4:AB:42:FB:49:87:62:75:49:BF:AF:DE:65:A8:AC`.
 The ownership-challenge stub at `~/.android-keystore/adi-registration/` has done its job and can
 be deleted once Play Console shows the package with `Keys: 1`.
 
-**Deadline that now governs the sequence: 2026-08-31.** New app submissions and app updates must
-target **API 36** (Android 16) from that date; extensions to 2026-11-01 can be requested. We are
-on `targetSdkVersion 35`, which is accepted only up to 2026-08-30. See "Target API level" below —
-it decides whether the first upload goes in as-is or waits for an SDK bump.
+**The 2026-08-31 API 36 deadline was the open question at the time and has since passed.** See
+the current status above; the "Target API level" section below still describes the requirement
+correctly.
 
 **Pre-flight on the artifact — done 2026-08-15, all green.** `helixscreen-android-v0.99.113.aab`
 is staged at `~/Downloads/` and was checked directly rather than assumed:
@@ -44,7 +68,7 @@ Steps 1-3 are unaffected by the target-API question and can be done now.
 requirement moves to **API 36 on 2026-08-31**, for new submissions *and* for updates to existing
 apps. Two consequences:
 
-- Uploading v0.99.113 on or before 2026-08-30 is accepted as-is. After that date the same file is rejected.
+- Uploading on or before 2026-08-30 would have been accepted as-is. That window closed; any AAB targeting API 35 is now rejected.
 - Either way, **every update published after 2026-08-31 needs API 36**, so the bump is required soon regardless of when the first upload happens.
 
 The lower-risk sequence is to get the first manual upload in on 35 — its only job is to enroll
