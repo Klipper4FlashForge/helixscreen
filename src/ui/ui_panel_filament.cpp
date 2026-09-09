@@ -608,8 +608,8 @@ void FilamentPanel::update_status_icon(const char* icon_name, const char* varian
         return;
 
     // Update icon imperatively using ui_icon API
-    ui_icon_set_source(status_icon_, icon_name);
-    ui_icon_set_variant(status_icon_, variant);
+    helix::ui::icon::set_source(status_icon_, icon_name);
+    helix::ui::icon::set_variant(status_icon_, variant);
 }
 
 void FilamentPanel::update_status() {
@@ -2459,8 +2459,7 @@ bool FilamentPanel::needs_ui_preheat(const helix::ui::FilamentOpPlan& plan,
     const auto skip =
         helix::ui::preheat_skip_reason(plan, slot, AmsState::instance().get_backend());
     if (skip != helix::ui::PreheatSkip::None) {
-        spdlog::info("[{}] Skipping preheat — {}", get_name(),
-                     helix::ui::preheat_skip_name(skip));
+        spdlog::info("[{}] Skipping preheat — {}", get_name(), helix::ui::preheat_skip_name(skip));
         return false;
     }
     return true;

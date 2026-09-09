@@ -214,7 +214,7 @@ void HomePanel::build_carousel() {
         lv_obj_remove_flag(plus_btn, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t* plus_label = lv_label_create(plus_btn);
-        lv_label_set_text(plus_label, ui_icon::lookup_codepoint("plus"));
+        lv_label_set_text(plus_label, helix::ui::icon::lookup_codepoint("plus"));
         lv_obj_set_style_text_font(plus_label, &mdi_icons_32, LV_PART_MAIN);
         lv_obj_set_style_text_color(plus_label, theme_manager_get_color("secondary"), LV_PART_MAIN);
         lv_obj_align(plus_label, LV_ALIGN_CENTER, 0, 0);
@@ -279,7 +279,7 @@ void HomePanel::build_carousel() {
             lv_obj_remove_flag(arrow, LV_OBJ_FLAG_SCROLLABLE);
 
             lv_obj_t* label = lv_label_create(arrow);
-            lv_label_set_text(label, ui_icon::lookup_codepoint(icon_name));
+            lv_label_set_text(label, helix::ui::icon::lookup_codepoint(icon_name));
             lv_obj_set_style_text_font(label, &mdi_icons_24, LV_PART_MAIN);
             lv_obj_set_style_text_color(label, theme_manager_get_color("text"), LV_PART_MAIN);
             lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);

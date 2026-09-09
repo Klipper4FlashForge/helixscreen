@@ -271,18 +271,18 @@ void PowerDeviceWidget::update_display(int status) {
         // Apply icon — for paired icons, toggle between on/off variants
         const char* base_icon = icon_name_.empty() ? DEFAULT_ICON : icon_name_.c_str();
         const char* effective_icon = resolve_icon_for_state(base_icon, status);
-        ui_icon_set_source(icon_obj_, effective_icon);
+        helix::ui::icon::set_source(icon_obj_, effective_icon);
 
         switch (status) {
         case 1:
-            ui_icon_set_variant(icon_obj_, "danger");
+            helix::ui::icon::set_variant(icon_obj_, "danger");
             break;
         case 0:
         case 2:
-            ui_icon_set_variant(icon_obj_, "muted");
+            helix::ui::icon::set_variant(icon_obj_, "muted");
             break;
         default:
-            ui_icon_set_variant(icon_obj_, "secondary");
+            helix::ui::icon::set_variant(icon_obj_, "secondary");
             break;
         }
     }
@@ -625,7 +625,7 @@ void PowerDeviceWidget::show_device_picker() {
         apply_icon_cell_highlight(cell, POWER_ICONS[i] == effective_icon);
 
         // Icon glyph
-        const char* cp = ui_icon::lookup_codepoint(POWER_ICONS[i]);
+        const char* cp = helix::ui::icon::lookup_codepoint(POWER_ICONS[i]);
         if (cp) {
             lv_obj_t* icon = lv_label_create(cell);
             lv_label_set_text(icon, cp);
@@ -890,7 +890,7 @@ void PowerDeviceWidget::select_icon(const std::string& name) {
     // Update the widget icon immediately
     if (icon_obj_) {
         const char* effective = icon_name_.empty() ? DEFAULT_ICON : icon_name_.c_str();
-        ui_icon_set_source(icon_obj_, effective);
+        helix::ui::icon::set_source(icon_obj_, effective);
     }
 
     // Update icon grid highlights if picker is still open
@@ -1025,8 +1025,8 @@ void PowerDeviceWidget::update_all_devices_display(bool any_on) {
     if (icon_obj_) {
         const char* base_icon = icon_name_.empty() ? DEFAULT_ICON : icon_name_.c_str();
         const char* effective_icon = resolve_icon_for_state(base_icon, any_on ? 1 : 0);
-        ui_icon_set_source(icon_obj_, effective_icon);
-        ui_icon_set_variant(icon_obj_, any_on ? "danger" : "muted");
+        helix::ui::icon::set_source(icon_obj_, effective_icon);
+        helix::ui::icon::set_variant(icon_obj_, any_on ? "danger" : "muted");
     }
 
     if (lock_icon_) {

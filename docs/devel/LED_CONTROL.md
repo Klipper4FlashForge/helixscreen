@@ -406,10 +406,10 @@ Without step 3, the subscription would only start after the widget attaches, and
 void LedWidget::update_light_icon() {
     int brightness = lv_subject_get_int(printer_state_.get_led_brightness_subject());
     const char* icon_name = ui_brightness_to_lightbulb_icon(brightness);
-    ui_icon_set_source(light_icon_, icon_name);
+    helix::ui::icon::set_source(light_icon_, icon_name);
 
     if (brightness == 0) {
-        ui_icon_set_color(light_icon_, theme_manager_get_color("light_icon_off"), LV_OPA_COVER);
+        helix::ui::icon::set_color(light_icon_, theme_manager_get_color("light_icon_off"), LV_OPA_COVER);
     } else {
         int r = lv_subject_get_int(printer_state_.get_led_r_subject());
         int g = lv_subject_get_int(printer_state_.get_led_g_subject());

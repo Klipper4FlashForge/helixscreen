@@ -80,7 +80,7 @@ void ui_button_init();
  * icon_font_sm is responsive, and this widget resolves it once for the whole
  * process. Called from theme_manager_register_responsive_fonts() so a
  * breakpoint change reaches button icons too (#1210); see
- * ui_icon_invalidate_font_cache() for the same problem in <icon>.
+ * helix::ui::icon::invalidate_font_cache() for the same problem in <icon>.
  */
 void ui_button_invalidate_icon_font_cache();
 
@@ -97,7 +97,7 @@ void ui_button_set_text(lv_obj_t* btn, const char* text);
 /**
  * @brief Change the icon of an existing ui_button at runtime
  *
- * Looks up the icon name via ui_icon::lookup_codepoint and updates the
+ * Looks up the icon name via helix::ui::icon::lookup_codepoint and updates the
  * icon label text. Safe to call on any lv_obj — returns silently if not
  * a ui_button or if the button has no icon.
  */

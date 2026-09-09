@@ -521,8 +521,8 @@ void FilamentCatalogSelector::rebuild_product_list() {
     lv_color_t accent = theme_manager_get_color("primary");
     lv_color_t text_color = theme_manager_get_color("text");
     lv_color_t muted = theme_manager_get_color("text_muted");
-    const char* check = ui_icon::lookup_codepoint("check");
-    const char* pencil = ui_icon::lookup_codepoint("pencil");
+    const char* check = helix::ui::icon::lookup_codepoint("check");
+    const char* pencil = helix::ui::icon::lookup_codepoint("pencil");
     const std::string family = current_type();
 
     for (const auto* p : ordered_products_for(current_vendor(), family)) {

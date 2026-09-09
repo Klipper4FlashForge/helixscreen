@@ -293,7 +293,7 @@ void JobQueueModal::populate_job_list() {
         }
 
         // Delete icon (right side) — plain clickable label, no button chrome
-        const char* trash_glyph = ui_icon::lookup_codepoint("trash_can_outline");
+        const char* trash_glyph = helix::ui::icon::lookup_codepoint("trash_can_outline");
         lv_obj_t* del_icon = lv_label_create(row);
         lv_label_set_text(del_icon, trash_glyph ? trash_glyph : "X");
         lv_obj_set_style_text_color(del_icon, danger_color, 0);
