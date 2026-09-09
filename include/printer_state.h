@@ -2171,42 +2171,14 @@ class PrinterState {
     void set_hardware_validation_result(const HardwareValidationResult& result);
 
     /**
-     * @brief Get hardware has issues subject for UI binding
+     * @brief Get the headline badge level subject
      *
-     * Integer subject: 0=no issues, 1=has issues.
-     * Use with bind_flag_if_eq to show/hide Hardware Health section.
+     * Integer subject: 0=ok, 1=attention, 2=critical. Bind appearance to this
+     * rather than to a raw HardwareIssueSeverity, so every surface agrees on
+     * which findings count as merely worth attention.
      */
-    lv_subject_t* get_hardware_has_issues_subject() {
-        return hardware_validation_state_.get_hardware_has_issues_subject();
-    }
-
-    /**
-     * @brief Get hardware issue count subject for UI binding
-     *
-     * Integer subject with total number of validation issues.
-     */
-    lv_subject_t* get_hardware_issue_count_subject() {
-        return hardware_validation_state_.get_hardware_issue_count_subject();
-    }
-
-    /**
-     * @brief Get hardware max severity subject for UI binding
-     *
-     * Integer subject: 0=info, 1=warning, 2=critical.
-     * Use for styling (color) based on severity.
-     */
-    lv_subject_t* get_hardware_max_severity_subject() {
-        return hardware_validation_state_.get_hardware_max_severity_subject();
-    }
-
-    /**
-     * @brief Get hardware validation version subject
-     *
-     * Integer subject incremented when validation changes.
-     * UI should observe to refresh dynamic lists.
-     */
-    lv_subject_t* get_hardware_validation_version_subject() {
-        return hardware_validation_state_.get_hardware_validation_version_subject();
+    lv_subject_t* get_hardware_status_level_subject() {
+        return hardware_validation_state_.get_hardware_status_level_subject();
     }
 
     /**
@@ -2338,16 +2310,6 @@ class PrinterState {
     }
 
     /**
-     * @brief Get the multi-printer enabled subject
-     *
-     * Integer subject: 1 when multiple printers are configured, 0 otherwise.
-     * Use with bind_flag_if_eq in XML to show/hide multi-printer UI elements.
-     */
-    lv_subject_t* get_multi_printer_enabled_subject() {
-        return &multi_printer_enabled_;
-    }
-
-    /**
      * @brief Set the active printer display name
      *
      * Updates the string subject with the given name. Main-thread only.
@@ -2355,15 +2317,6 @@ class PrinterState {
      * @param name Human-readable printer name
      */
     void set_active_printer_name(const std::string& name);
-
-    /**
-     * @brief Set whether multiple printers are configured
-     *
-     * Updates the integer subject. Main-thread only.
-     *
-     * @param enabled true if more than one printer is configured
-     */
-    void set_multi_printer_enabled(bool enabled);
 
   private:
     /// RAII manager for automatic subject cleanup - deinits all subjects on destruction
@@ -2461,11 +2414,11 @@ class PrinterState {
     // Note: Version subjects (klipper_version_, moonraker_version_) are now managed
     // by versions_state_ component
 
-    // Note: Hardware validation subjects (hardware_has_issues_, hardware_issue_count_,
-    // hardware_max_severity_, hardware_validation_version_, hardware_critical_count_,
-    // hardware_warning_count_, hardware_info_count_, hardware_session_count_,
-    // hardware_status_title_, hardware_status_detail_, hardware_issues_label_,
-    // hardware_validation_result_) are now managed by hardware_validation_state_ component
+    // Note: Hardware validation subjects (hardware_status_level_,
+    // hardware_critical_count_, hardware_warning_count_, hardware_info_count_,
+    // hardware_session_count_, hardware_status_title_, hardware_status_detail_,
+    // hardware_issues_label_, hardware_validation_result_) are managed by the
+    // hardware_validation_state_ component
 
     // Note: tracked_led_name_ is now managed by led_state_component_
 
@@ -2479,7 +2432,6 @@ class PrinterState {
     // Multi-printer subjects (owned directly by PrinterState)
     lv_subject_t active_printer_name_;
     char active_printer_name_buf_[128];
-    lv_subject_t multi_printer_enabled_;
 
     // JSON cache for complex data
     json json_state_;

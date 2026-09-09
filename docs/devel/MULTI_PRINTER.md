@@ -10,7 +10,7 @@ Multi-printer management allows users to configure, switch between, add, and del
 
 Key properties:
 
-- **Opt-in via a user setting** -- the navbar printer badge is gated on the `show_printer_switcher` setting (Settings > Printers). The old `<beta_feature>` wrappers around the entry points were removed; the `multi_printer_enabled` subject still exists and reflects whether more than one printer is configured.
+- **Opt-in via a user setting** -- the navbar printer badge is gated on the `show_printer_switcher` setting (Settings > Printers). The old `<beta_feature>` wrappers around the entry points were removed. Printer count does not gate the badge on its own: `show_printer_switcher` is the single source of truth, and a config migration defaults it off for single-printer setups.
 - **Config schema v4** -- per-printer data lives under `/printers/{id}/`, with `df()` routing dynamically to the active printer
 - **Soft restart** -- switching printers tears down and reinitializes the entire printer state without restarting the application or LVGL display
 
@@ -29,7 +29,7 @@ Key properties:
 | `src/ui/ui_printer_manager_overlay.cpp` | "Manage Printers" button in Printer Manager overlay |
 | `src/ui/ui_panel_settings.cpp` | "Printers" row in Settings panel |
 | `src/ui/ui_nav_manager.cpp` | Printer badge click handler, switch/add callbacks, `PrinterSwitchMenu` ownership |
-| `include/printer_state.h` | `active_printer_name_`, `multi_printer_enabled_` subjects |
+| `include/printer_state.h` | `active_printer_name_` subject |
 | `src/printer/printer_state.cpp` | Subject initialization and setters |
 | `include/wizard_config_paths.h` | Per-printer vs device-level config path constants |
 | `ui_xml/printer_switch_menu.xml` | Context menu layout (backdrop, printer list, add button) |
@@ -74,7 +74,6 @@ NavigationManager (callback bridge)
 | Subject | Type | Description |
 |---------|------|-------------|
 | `active_printer_name` | string | Human-readable name of the active printer, bound to navbar badge label |
-| `multi_printer_enabled` | int (0/1) | 1 when more than one printer is configured. Reflects printer count. |
 | `show_printer_switcher` | int (0/1) | User setting (Settings > Printers). Controls navbar badge visibility. |
 
 The navbar badge is gated on the `show_printer_switcher` setting:
@@ -247,7 +246,7 @@ Switching printers performs a "soft restart" -- the LVGL display stays alive, bu
 ```
  1. Reinitialize UpdateQueue (before moonraker — background threads need the queue)
  2. Init core subjects (PrinterState, AmsState, etc.)
- 2b. Set multi-printer subjects (active_printer_name, multi_printer_enabled) from config
+ 2b. Seed active_printer_name from config
  3. Init Moonraker (creates client + API + history managers)
  4. Init panel subjects (with API injection + post-init)
  5. Recreate UI (app_layout from XML, wire navigation + printer callbacks)
@@ -356,7 +355,7 @@ PrinterListOverlay → user taps delete icon on a row
     3. If deleted printer was active:
        queue_update → go_back() + trigger_printer_switch(remaining.front())
     4. If deleted printer was inactive:
-       queue_update → update multi_printer_enabled subject + repopulate list
+       queue_update → repopulate list
 ```
 
 `Config::remove_printer()` prevents deleting the last printer:
@@ -488,7 +487,7 @@ void MySingleton::init_subjects() {
 
 In `--test` mode (SDL desktop build), press the **P** key:
 
-- **First press**: Creates a test printer ("Voron 2.4" with ID "voron-24") and enables the `multi_printer_enabled` subject so the navbar badge appears
+- **First press**: Creates a test printer ("Voron 2.4" with ID "voron-24"). The navbar badge appears only if `show_printer_switcher` is on
 - **Subsequent presses**: Cycles through configured printers, triggering a full soft restart each time
 
 This exercises the entire switch_printer flow without needing real hardware.

@@ -750,18 +750,6 @@ void SettingsPanel::setup_action_handlers() {
         spdlog::trace("[{}]   ✓ Factory reset action row", get_name());
     }
 
-    // === Hardware Health Row (reactive label binding) ===
-    lv_obj_t* hardware_health_row = lv_obj_find_by_name(panel_, "row_hardware_health");
-    if (hardware_health_row) {
-        lv_obj_t* label = lv_obj_find_by_name(hardware_health_row, "label");
-        if (label) {
-            // Bind to subject with %s format (string passthrough)
-            lv_label_bind_text(label, get_printer_state().get_hardware_issues_label_subject(),
-                               "%s");
-            spdlog::trace("[{}]   ✓ Hardware health row with reactive label", get_name());
-        }
-    }
-
     // === Touch Calibration Row (reactive description binding) ===
     lv_obj_t* touch_cal_row = lv_obj_find_by_name(panel_, "row_touch_calibration");
     if (touch_cal_row) {

@@ -246,14 +246,8 @@ void PrinterListOverlay::handle_delete_printer(const std::string& printer_id) {
             } else {
                 // Defer repopulation out of modal callback to avoid widget
                 // mutation mid-event
-                helix::ui::queue_update([]() {
-                    auto* c = Config::get_instance();
-                    if (c) {
-                        auto remaining = c->get_printer_ids();
-                        get_printer_state().set_multi_printer_enabled(remaining.size() > 1);
-                    }
-                    get_printer_list_overlay().populate_printer_list();
-                });
+                helix::ui::queue_update(
+                    []() { get_printer_list_overlay().populate_printer_list(); });
             }
         }
     });

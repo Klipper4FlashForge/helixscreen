@@ -969,22 +969,6 @@ class AmsState {
         return &dryer_time_text_;
     }
 
-    /**
-     * @brief Get dryer modal temperature text subject
-     * @return Subject holding formatted temp string (e.g., "55°C")
-     */
-    lv_subject_t* get_dryer_modal_temp_text_subject() {
-        return &dryer_modal_temp_text_;
-    }
-
-    /**
-     * @brief Get dryer modal duration text subject
-     * @return Subject holding formatted duration string (e.g., "4h", "4h 30m")
-     */
-    lv_subject_t* get_dryer_modal_duration_text_subject() {
-        return &dryer_modal_duration_text_;
-    }
-
     /// Get subject for formatted dryer humidity text (e.g., "35%" or "---")
     [[nodiscard]] lv_subject_t* get_dryer_humidity_text_subject();
 
@@ -1926,10 +1910,6 @@ class AmsState {
     lv_subject_t dryer_info_visible_; ///< 1 when info bar should show
 
     // Dryer modal editing subjects (user-adjustable values)
-    lv_subject_t dryer_modal_temp_text_;
-    char dryer_modal_temp_text_buf_[16];
-    lv_subject_t dryer_modal_duration_text_;
-    char dryer_modal_duration_text_buf_[16];
     lv_subject_t modal_target_temp_;  ///< Modal's target temp in °C (raw int subject)
     lv_subject_t modal_duration_min_; ///< Modal's duration in minutes (raw int subject)
 

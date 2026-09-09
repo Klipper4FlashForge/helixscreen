@@ -761,14 +761,12 @@ int Application::run(int argc, char** argv) {
         return 1;
     }
 
-    // Set multi-printer subjects from config (needed for navbar badge binding)
+    // Seed the active printer's display name from config
     {
-        auto printer_ids = m_config->get_printer_ids();
         auto active_id = m_config->get_active_printer_id();
         std::string printer_name =
             m_config->get<std::string>(m_config->df() + "printer_name", active_id);
         get_printer_state().set_active_printer_name(printer_name);
-        get_printer_state().set_multi_printer_enabled(printer_ids.size() > 1);
     }
 
     // Phase 9b: Initialize Moonraker (creates client + API)
@@ -4590,8 +4588,6 @@ void Application::handle_keyboard_shortcuts() {
                     test_data["moonraker_port"] = 7125;
                     m_config->add_printer("voron-24", test_data);
                     m_config->save();
-                    // Update subjects so the badge appears
-                    get_printer_state().set_multi_printer_enabled(true);
                 }
             },
             [this]() { return get_runtime_config()->is_test_mode() && m_config; });
@@ -5036,14 +5032,12 @@ void Application::init_printer_state() {
         return;
     }
 
-    // 2b. Set multi-printer subjects from config
+    // 2b. Seed the active printer's display name from config
     {
-        auto printer_ids = m_config->get_printer_ids();
         auto active_id = m_config->get_active_printer_id();
         std::string printer_name =
             m_config->get<std::string>(m_config->df() + "printer_name", active_id);
         get_printer_state().set_active_printer_name(printer_name);
-        get_printer_state().set_multi_printer_enabled(printer_ids.size() > 1);
     }
 
     // 3. Initialize Moonraker (creates client + API + history managers)
