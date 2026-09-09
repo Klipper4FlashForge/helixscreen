@@ -31,6 +31,7 @@
 #include "../test_helpers/filament_panel_test_access.h"
 #include "ams_state.h"
 #include "helix-xml/src/xml/lv_xml.h"
+#include "printer_discovery.h"
 #include "printer_state.h"
 #include "tool_state.h"
 
@@ -53,6 +54,19 @@ struct StatusHarness {
         // The panel wires observers on ToolState + AmsState in its ctor.
         ToolState::instance().init_subjects(true);
         AmsState::instance().init_subjects(true);
+
+        // ...and it binds its nozzle observers to the SELECTED TOOL's heater,
+        // not to "extruder" (this fork aims the panel at the tool it is showing).
+        // With no tools built, bind_nozzle_observers() finds an empty heater
+        // name, drops both observers, and every temperature below arrives
+        // nowhere -- leaving the panel in the Cold arm, where the status line
+        // reads "Select material to begin" for heating and ready alike and the
+        // case cannot tell the two apart. One tool over "extruder" restores the
+        // single-extruder shape these arms were written against.
+        helix::PrinterDiscovery hw;
+        hw.parse_objects(nlohmann::json::array({"extruder", "heater_bed", "gcode_move"}));
+        ToolState::instance().init_tools(hw);
+        REQUIRE(ToolState::instance().tool_count() == 1);
 
         panel = std::make_unique<FilamentPanel>(fx.state(), fx.api());
         panel->init_subjects();
