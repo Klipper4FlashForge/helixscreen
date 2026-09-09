@@ -449,6 +449,7 @@ translations:
   'Cannot start print: not connected to printer': 'Невозможно начать печать: не подключено
     к принтеру'
   'Cannot start print: printer is {}': 'Невозможно начать печать: принтер {}'
+  Cannot save offsets while printing: Нельзя сохранить смещения во время печати
   Cannot unload while a print is active: Нельзя выгрузить во время печати
   'Capabilities: ': 'Возможности: '
   Cartographer scan calibrate sent — use Z-Offset panel to adjust: Cartographer сканирующая

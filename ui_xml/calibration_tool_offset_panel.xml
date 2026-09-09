@@ -135,8 +135,11 @@
                    flex_grow="2" variant="warning" text="Save offsets" translation_tag="Save offsets">
           <event_cb trigger="clicked" callback="on_tool_cal_save"/>
           <bind_flag_if_eq subject="any_tool_offset_dirty" flag="hidden" ref_value="0"/>
-          <!-- Save restarts Klipper; never under a run that is moving the machine. -->
-          <bind_state_if_eq subject="tool_cal_active" state="disabled" ref_value="1"/>
+          <!-- Save restarts Klipper: never while a job holds the machine, and never
+               under a run that is moving it. One compound bind, not two - each
+               bind_state_* sets or clears the state on its own, so a second one
+               would undo the first (see test_job_holds_machine.cpp). -->
+          <bind_state_if cond="job_holds_machine eq 1 or tool_cal_active eq 1" state="disabled"/>
         </ui_button>
       </lv_obj>
     </lv_obj>

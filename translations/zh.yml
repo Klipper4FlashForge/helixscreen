@@ -406,6 +406,7 @@ translations:
   'Cannot start print: internal error': '无法开始打印: 内部错误'
   'Cannot start print: not connected to printer': '无法开始打印: 未连接打印机'
   'Cannot start print: printer is {}': '无法开始打印: 打印机状态为 {}'
+  Cannot save offsets while printing: 打印时无法保存偏移
   Cannot unload while a print is active: 打印时无法卸载
   'Capabilities: ': '功能: '
   Cartographer scan calibrate sent — use Z-Offset panel to adjust: Cartographer扫描校准已发送

@@ -456,6 +456,7 @@ translations:
     não conectado à impressora'
   'Cannot start print: printer is {}': 'Não é possível iniciar impressão: impressora
     está {}'
+  Cannot save offsets while printing: Não é possível salvar offsets durante a impressão
   Cannot unload while a print is active: Não é possível descarregar enquanto uma impressão está ativa
   'Capabilities: ': 'Capacidades: '
   Cartographer scan calibrate sent — use Z-Offset panel to adjust: Cartographer calibração

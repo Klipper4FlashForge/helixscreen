@@ -440,6 +440,7 @@ translations:
   'Cannot start print: not connected to printer': 'Cannot start print: not connected
     to printer'
   'Cannot start print: printer is {}': 'Cannot start print: printer is {}'
+  Cannot save offsets while printing: Cannot save offsets while printing
   Cannot unload while a print is active: Cannot unload while a print is active
   'Capabilities: ': 'Capabilities: '
   Cartographer scan calibrate sent — use Z-Offset panel to adjust: Cartographer scan

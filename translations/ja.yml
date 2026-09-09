@@ -409,6 +409,7 @@ translations:
   'Cannot start print: internal error': '印刷を開始できません: 内部エラー'
   'Cannot start print: not connected to printer': '印刷を開始できません: プリンター未接続'
   'Cannot start print: printer is {}': '印刷を開始できません: プリンターは {} 状態です'
+  Cannot save offsets while printing: 印刷中はオフセットを保存できません
   Cannot unload while a print is active: 印刷中は排出できません
   'Capabilities: ': '機能: '
   Cartographer scan calibrate sent — use Z-Offset panel to adjust: Cartographerスキャンキャリブレーション送信済み
