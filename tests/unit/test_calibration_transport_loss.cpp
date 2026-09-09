@@ -41,6 +41,9 @@ namespace {
 struct TransportLossFixture : public LVGLUITestFixture {
     TransportLossFixture() : mock_client_(MoonrakerClientMock::PrinterType::VORON_24) {
         state().init_subjects(false);
+        // The drivers arm the follow-up against the GLOBAL printer state's
+        // idle subject — initialize it too, or the arm silently no-ops there.
+        get_printer_state().init_subjects(false);
         state().set_klippy_state_sync(helix::KlippyState::READY);
         api_ = std::make_unique<MoonrakerAPI>(mock_client_, state());
     }
@@ -237,4 +240,39 @@ TEST_CASE_METHOD(TransportLossFixture,
     settle();
     REQUIRE(error_.load());
     REQUIRE_FALSE(success_.load());
+}
+
+TEST_CASE_METHOD(TransportLossFixture,
+                 "Line-driven collectors fail honestly after the edge grace window",
+                 "[calibration][transport][1543]") {
+    lv_subject_t* idle = global_idle_subject();
+    REQUIRE(idle != nullptr);
+    lv_subject_set_int(idle, 1); // in-flight macro holds the printer busy
+
+    mock_client_.force_next_gcode_error(MoonrakerErrorType::CONNECTION_LOST,
+                                        "Connection to printer lost", "PID_CALIBRATE");
+
+    api_->advanced().start_pid_calibrate(
+        "heater_bed", 60, [this](float, float, float) { success_.store(true); },
+        [this](const MoonrakerError& err) {
+            captured_error_ = err.message;
+            error_.store(true);
+        });
+
+    settle();
+    REQUIRE_FALSE(error_.load());
+
+    // The socket comes back with no result lines behind it: idle edge, and the
+    // collector waits out the grace window before concluding the results were
+    // lost. process_lvgl() moves virtual time, so the 3s window elapses fast.
+    lv_subject_set_int(idle, 0);
+    settle();
+    REQUIRE_FALSE(error_.load()); // grace still running
+
+    process_lvgl(4000);
+    settle();
+
+    REQUIRE(error_.load());
+    REQUIRE_FALSE(success_.load());
+    REQUIRE(captured_error_.find("result unavailable") != std::string::npos);
 }

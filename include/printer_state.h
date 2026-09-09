@@ -2049,6 +2049,14 @@ class PrinterState {
         return calibration_state_.get_idle_timeout_printing_subject();
     }
 
+    /// Lifetime-token overload — observers on the idle subject must take it:
+    /// PrinterCalibrationState frees the subject on deinit (printer switch,
+    /// test re-init) and the token is how a pending guard knows the node is
+    /// gone.
+    lv_subject_t* get_idle_timeout_printing_subject(std::shared_ptr<bool>& lifetime) {
+        return calibration_state_.get_idle_timeout_printing_subject(lifetime);
+    }
+
     /**
      * @brief Debounced idle_timeout busy flag backing is_blocking_operation_active()
      *
