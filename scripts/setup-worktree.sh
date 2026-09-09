@@ -186,6 +186,10 @@ BRANCH=""
 WORKTREE_PATH=""
 BASE_REF=""
 NO_FETCH=false
+# What the branch was actually cut from, carried to the closing summary.
+CREATED_BASE=""
+CREATED_BASE_SHA=""
+EXCLUDED_COMMITS=0
 EXPLICIT_PATH=""
 
 while [[ $# -gt 0 ]]; do
@@ -394,9 +398,20 @@ if [[ "$SETUP_ONLY" == "false" ]]; then
             echo -e "${YELLOW}Branch '$BRANCH' doesn't exist, creating from ${BOLD}$BASE${RESET}${YELLOW}:${RESET}"
             echo -e "  ${CYAN}$BASE_DESC${RESET}"
             LOCAL_ONLY="$(git -C "$MAIN_TREE" rev-list --count "$BASE..HEAD" 2>/dev/null || echo 0)"
-            if [[ "$LOCAL_ONLY" != "0" ]]; then
+            # Only worth saying when the base was picked FOR you. An explicit
+            # --base onto another line (a backport, say) leaves hundreds of
+            # commits behind by design, and counting them there is noise.
+            if [[ -z "$BASE_REF" && "$LOCAL_ONLY" != "0" ]]; then
                 echo -e "${YELLOW}  local HEAD has $LOCAL_ONLY commit(s) not in $BASE, excluded from this branch${RESET}"
                 echo -e "${YELLOW}  re-run with --base HEAD if you meant to build on them${RESET}"
+            fi
+            # Repeated in the closing summary. A build can run for minutes after
+            # this point, so a reader who sees only the tail of the log would
+            # otherwise never learn which base the branch was cut from.
+            CREATED_BASE="$BASE"
+            CREATED_BASE_SHA="$(git -C "$MAIN_TREE" rev-parse --short "$BASE")"
+            if [[ -z "$BASE_REF" ]]; then
+                EXCLUDED_COMMITS="$LOCAL_ONLY"
             fi
             git -C "$MAIN_TREE" worktree add -b "$BRANCH" "$WORKTREE_PATH" "$BASE"
         fi
@@ -1458,6 +1473,14 @@ fi
 echo ""
 echo -e "${GREEN}${BOLD}✓ Worktree setup complete!${RESET}"
 echo ""
+if [[ -n "$CREATED_BASE" ]]; then
+    echo -e "Branched from ${BOLD}$CREATED_BASE${RESET} (${CYAN}$CREATED_BASE_SHA${RESET})"
+    if [[ "$EXCLUDED_COMMITS" != "0" ]]; then
+        echo -e "${YELLOW}${BOLD}  $EXCLUDED_COMMITS commit(s) on local HEAD are NOT in this branch.${RESET}"
+        echo -e "${YELLOW}  To build on them instead: remove this worktree and re-run with --base HEAD${RESET}"
+    fi
+    echo ""
+fi
 echo -e "To work in this worktree:"
 echo -e "  ${CYAN}cd $WORKTREE_PATH${RESET}"
 echo ""
