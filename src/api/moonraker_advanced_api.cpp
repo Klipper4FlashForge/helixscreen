@@ -500,18 +500,20 @@ class CalibrationCollectorCore { // NAMESPACE_OK: sibling to the six collectors 
                         return;
                     }
                     const bool still_busy = idle_subject && lv_subject_get_int(idle_subject) == 1;
+                    // Both out BEFORE disarm: disarm clears the members, and
+                    // the missed-edge branch below must still reach the idle
+                    // completion (on_command_finished / result-unavailable).
                     auto on_unrecovered = std::move(fallback_.on_unrecovered);
+                    auto on_idle_missed = std::move(fallback_.on_idle);
                     disarm_idle_fallback();
                     if (!on_unrecovered)
                         return;
                     if (still_busy) {
                         on_unrecovered("printer still busy after extended wait");
-                    } else {
+                    } else if (on_idle_missed) {
                         // Subject re-read says idle: the edge itself was missed,
                         // not the completion. Same outcome as the observer path.
-                        auto on_idle = std::move(fallback_.on_idle);
-                        if (on_idle)
-                            on_idle();
+                        on_idle_missed();
                     }
                 });
             });
