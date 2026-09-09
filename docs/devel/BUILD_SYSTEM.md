@@ -2016,24 +2016,42 @@ pieces below must never run uninvited. On a warmed cloud VM, once the repo exist
 objects instead of fetching them), runs that submodule init, and symlinks `.venv` to the prebuilt
 one before reconciling it with `make venv-setup`.
 
-**Nothing prefetches a ccache, and the measurement is why.** `.github/workflows/build-cache.yml`
-still publishes a `ccache-linux-x64.tar.zst` asset on the `build-cache` release tag, but
-`env-setup.sh` no longer downloads it. Measured on a cloud box: of the calls a first build made
-against that cache, 18.75% hit; of the 955 compilations in a rebuild after 191 files moved under a
-new namespace, **none** did. The percentage a session reads from `ccache -s` at startup is the
-tarball's own banked history — it never grows from that number, it only dilutes as the box builds.
-A full `make test` took about 85 minutes with 98% on screen.
+**Nothing prefetches a ccache, and the measurement is why.** Measured on a cloud box: of the calls
+a first build made against a published ccache snapshot, 18.75% hit; of the 955 compilations in a
+rebuild after 191 files moved under a new namespace, **none** did. The percentage a session reads
+from `ccache -s` at startup is the snapshot's own banked history — it never grows from that number,
+it only dilutes as the box builds. A full `make test` took about 85 minutes with 98% on screen.
 
-The asset is left published for anyone who wants to fetch one by hand; it is simply not worth 1.4 GB
-and a failure path on every provisioning. ccache itself is still installed and configured, and earns
-its keep within a session.
+ccache itself is still installed and configured, and earns its keep *within* a session. What does
+not pay for itself is shipping a prebuilt one between machines.
 
-`ccache-warm.yml` / `cache-prune.yml` are a different pipeline entirely — they warm and prune the
-Actions-cache ccache behind this repo's cross-compile CI, where the cache is restored from the
-previous run on the same branch rather than from a snapshot, so the staleness above does not apply.
-Nothing here touches those. The `compiler_check = content` setting stays in the generated
-`ccache.conf`: a cached object is reused only when the compiler that made it is byte-identical to
-the one asking.
+### Do not re-add a prebuilt ccache snapshot
+
+A `build-cache` workflow used to publish `ccache-linux-x64.tar.zst` as a release asset on a
+`build-cache` tag. It is gone, and the bar for bringing anything like it back is high, because the
+costs are easy to miss and the benefit was measured at the numbers above:
+
+- **No consumer.** `env-setup.sh` never fetched it. It ran on every push to `main` plus daily,
+  12-28 minutes warm and 117 cold, to produce something only a human could use by hand.
+- **A silent size ceiling.** A GitHub release asset must be under 2 GiB. The snapshot grew past it
+  and the upload began failing with a bare `HTTP 422: size must be less than 2147483648`, several
+  steps after the cause. It stayed broken for weeks without anyone noticing, precisely because
+  nothing downstream depended on it.
+- **A cache pinned at its own ceiling is a decaying asset.** Capping `max_size` under the 2 GiB
+  limit keeps it publishable but makes it evict internally on every run, so the hit rate that was
+  already 18.75% only falls further as the tree grows.
+
+If someone wants to revisit this, the case has to start with a *measurement on the target machine*
+showing a hit rate that survives a refactor - not with a faster transport or a bigger size limit.
+R2 would sidestep the 2 GiB cap (credentials already exist for releases), so "we ran out of room"
+is not by itself a reason to rebuild this.
+
+`ccache-warm.yml` and `cache-prune.yml` are a different pipeline and are unaffected: they warm and
+prune the Actions-cache ccache behind this repo's cross-compile CI, restored from the previous run
+on the same branch rather than from a snapshot, so the staleness above does not apply to them.
+
+The `compiler_check = content` setting stays in the generated `ccache.conf`: a cached object is
+reused only when the compiler that made it is byte-identical to the one asking.
 
 **Pasting the setup script into the environment dialog.** The platform wants the script inline, not
 a path, so the pasted script re-fetches the real one and never blocks environment creation on a
@@ -2050,13 +2068,6 @@ translation unit's command line, and ccache's direct mode hashes the full comman
 `VERSION.txt` bump misses the *entire* project's cache exactly once, the same way it does for
 regular CI (see the comment above `VERSION_DEFINES`). `HELIX_GIT_HASH` deliberately avoids this by
 reaching only one generated header instead of every TU.
-
-**The `build-cache` tag is not a version.** It is a release only in the GitHub sense — a place to
-attach a binary asset — never a HelixScreen release. The update checker discards any release whose
-tag does not parse as a semantic version
-(`src/system/update_checker.cpp#"parse_github_release(const json& j"`, via
-`src/util/version.cpp#parse_version`),
-so `build-cache` is invisible to it.
 
 ## Briefing a cloud worker
 
