@@ -427,8 +427,8 @@ void NetworkSettingsOverlay::on_activate() {
     }
 }
 
-void NetworkSettingsOverlay::on_deactivate() {
-    spdlog::debug("[NetworkSettingsOverlay] on_deactivate()");
+void NetworkSettingsOverlay::on_deactivating(DeactivateReason) {
+    spdlog::debug("[NetworkSettingsOverlay] on_deactivating()");
 
     // Stop scanning
     if (wifi_manager_) {
@@ -441,9 +441,6 @@ void NetworkSettingsOverlay::on_deactivate() {
         network_tester_->cancel();
         lv_subject_set_int(&test_running_, 0);
     }
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 // ============================================================================

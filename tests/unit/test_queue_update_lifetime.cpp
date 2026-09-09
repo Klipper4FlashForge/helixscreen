@@ -144,7 +144,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "SpoolWizard vendor load is dropped when the o
     REQUIRE(wizard.all_vendors().empty());
 
     // User backs out of the wizard before the response is applied.
-    wizard.on_deactivate();
+    wizard.on_deactivate(DeactivateReason::NavigateAway);
 
     UpdateQueue::instance().drain();
 
@@ -345,7 +345,7 @@ template <typename Panel> class ScopedPanelApi {
         panel_.set_api(client, api);
     }
     ~ScopedPanelApi() {
-        panel_.on_deactivate();
+        panel_.on_deactivate(DeactivateReason::NavigateAway);
         panel_.set_api(nullptr, nullptr);
     }
     ScopedPanelApi(const ScopedPanelApi&) = delete;
@@ -454,7 +454,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "InputShaperPanel drops the config query once 
     panel.on_activate();
     REQUIRE(UpdateQueue::instance().pending_count() > 0);
 
-    panel.on_deactivate(); // OverlayBase::on_deactivate() invalidates lifetime_
+    panel.on_deactivate(
+        DeactivateReason::NavigateAway); // OverlayBase::on_deactivate() invalidates lifetime_
 
     UpdateQueue::instance().drain();
 

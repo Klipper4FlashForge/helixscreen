@@ -371,8 +371,8 @@ void PIDCalibrationPanel::on_activate() {
     }
 }
 
-void PIDCalibrationPanel::on_deactivate() {
-    spdlog::debug("[PIDCal] on_deactivate()");
+void PIDCalibrationPanel::on_deactivating(DeactivateReason) {
+    spdlog::debug("[PIDCal] on_deactivating()");
 
     // Stop progress tracking
     stop_progress_tracking();
@@ -391,9 +391,6 @@ void PIDCalibrationPanel::on_deactivate() {
             api_->execute_gcode("TURN_OFF_HEATERS", nullptr, nullptr);
         }
     }
-
-    // Call base class
-    OverlayBase::on_deactivate();
 }
 
 void PIDCalibrationPanel::cleanup() {

@@ -18,7 +18,6 @@ class PrinterListOverlay : public OverlayBase {
     void register_callbacks() override;
     lv_obj_t* create(lv_obj_t* parent) override;
     void on_activate() override;
-    void on_deactivate() override;
 
     const char* get_name() const override {
         return "Printer List";

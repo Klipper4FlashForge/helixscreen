@@ -3039,7 +3039,7 @@ void FilamentPanel::show_load_warning() {
         spdlog::debug("[FilamentPanel] Load cancelled by user");
     };
     opts.on_dismiss = drop_handle;
-    opts.owner_token = lifetime_.token();
+    opts.owner_token = object_lifetime_.token();
     load_warning_dialog_ = helix::ui::modal_confirm(
         lv_tr("Filament Detected"),
         lv_tr("The toolhead sensor indicates filament is already loaded. "
@@ -3073,7 +3073,7 @@ void FilamentPanel::show_unload_warning() {
         spdlog::debug("[FilamentPanel] Unload cancelled by user");
     };
     opts.on_dismiss = drop_unload_handle;
-    opts.owner_token = lifetime_.token();
+    opts.owner_token = object_lifetime_.token();
     unload_warning_dialog_ = helix::ui::modal_confirm(
         lv_tr("No Filament Detected"),
         lv_tr("The toolhead sensor indicates no filament is present. "

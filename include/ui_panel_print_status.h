@@ -115,7 +115,7 @@ class PrintStatusPanel : public OverlayBase {
      *
      * Pauses G-code viewer rendering to save CPU cycles.
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     /**
      * @brief Clean up resources for async-safe destruction

@@ -5,6 +5,7 @@
 #include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
 #include "ui_modal.h"
+#include "ui_observer_guard.h"
 #include "ui_toast_manager.h"
 
 #include "app_globals.h"
@@ -12,7 +13,9 @@
 #include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "save_config_restart.h"
+#include "state/subject_macros.h"
 #include "static_subject_registry.h"
+#include "subject_managed_panel.h"
 #include "tool_offsets.h"
 #include "tool_state.h"
 #include "toolhead_homing.h"
@@ -295,6 +298,128 @@ AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double session_base_mm
     return AdjustResult{delta_mm, new_offset, true, false};
 }
 
+// ============================================================================
+// Save availability
+// ============================================================================
+
+SaveAvailability current_save_availability() {
+    PrinterState& ps = get_printer_state();
+    SaveAvailability facts;
+    // The published form of "the strategy is not FIRMWARE_MANAGED", so the C++
+    // answer and the XML bindings are computed from the same input.
+    facts.manual_save_supported = lv_subject_get_int(ps.get_z_offset_can_save_subject()) != 0;
+    facts.global_dirty = lv_subject_get_int(ps.get_gcode_z_offset_subject()) != 0;
+    facts.tools_dirty =
+        lv_subject_get_int(helix::ToolState::instance().get_any_tool_z_dirty_subject()) == 1;
+    return facts;
+}
+
+bool save_available() {
+    return save_available(current_save_availability());
+}
+
+namespace {
+
+void republish_save_available(lv_observer_t*, lv_subject_t*);
+
+/// Publishes `z_offset_save_available` and holds the observers that keep it
+/// current.
+///
+/// A `<subject_expr>` cannot express this rule: it resolves its operands when
+/// the component is REGISTERED, and `any_tool_z_dirty` does not exist until
+/// ToolState::init_subjects(). Publishing the answer from C++ is what lets every
+/// surface bind one name instead of repeating the expression at each site
+/// (docs/devel/LVGL9_XML_GUIDE.md § "Expression Conditionals").
+///
+/// Held in an optional rather than as plain statics so the observers are dropped
+/// from a StaticSubjectRegistry deinit, while LVGL is still up.
+struct SaveAvailabilityPublisher {
+    SubjectManager subjects;
+    lv_subject_t z_offset_save_available_{};
+    ObserverGuard global_offset_obs;
+    ObserverGuard tools_dirty_obs;
+    ObserverGuard can_save_obs;
+
+    void init(bool register_xml) {
+        INIT_SUBJECT_INT(z_offset_save_available, 0, subjects, register_xml);
+
+        PrinterState& ps = get_printer_state();
+        auto& ts = helix::ToolState::instance();
+        observe(global_offset_obs, ps.get_gcode_z_offset_subject(), ps.get_subjects_lifetime());
+        observe(can_save_obs, ps.get_z_offset_can_save_subject(), ps.get_subjects_lifetime());
+        observe(tools_dirty_obs, ts.get_any_tool_z_dirty_subject(), ts.get_subjects_lifetime());
+    }
+
+    void publish(int available) {
+        if (lv_subject_get_int(&z_offset_save_available_) != available) {
+            lv_subject_set_int(&z_offset_save_available_, available);
+        }
+    }
+
+  private:
+    /// Observe @p subject under @p owner's lifetime token, so which of the two
+    /// tears down first cannot matter.
+    static void observe(ObserverGuard& guard, lv_subject_t* subject, const SubjectLifetime& owner) {
+        if (!subject) {
+            return;
+        }
+        guard = ObserverGuard(subject, republish_save_available, nullptr);
+        guard.set_alive_token(owner);
+    }
+};
+
+std::optional<SaveAvailabilityPublisher>& save_available_storage() {
+    static std::optional<SaveAvailabilityPublisher> storage;
+    return storage;
+}
+
+void republish_save_available(lv_observer_t*, lv_subject_t*) {
+    auto& storage = save_available_storage();
+    if (!storage) {
+        return;
+    }
+    storage->publish(save_available() ? 1 : 0);
+}
+
+} // namespace
+
+void init_save_available_subject(bool register_xml) {
+    auto& storage = save_available_storage();
+    if (storage) {
+        spdlog::debug("[zoffset] save-availability subject already initialized, skipping");
+        return;
+    }
+
+    storage.emplace();
+    // Attaching an observer notifies it once, so this also publishes the answer
+    // for the state the app is already in. It has to: a printer that reconnects
+    // with an offset already set never writes one afterwards, and the subject
+    // would sit at its 0 default over an unsaved offset.
+    storage->init(register_xml);
+
+    StaticSubjectRegistry::instance().register_deinit("zoffset::save_available",
+                                                      deinit_save_available_subject);
+}
+
+void deinit_save_available_subject() {
+    auto& storage = save_available_storage();
+    if (!storage) {
+        return;
+    }
+    // Observers first: a notification arriving after deinit_all() would write to
+    // a freed subject.
+    storage->global_offset_obs.reset();
+    storage->can_save_obs.reset();
+    storage->tools_dirty_obs.reset();
+    storage->subjects.deinit_all();
+    storage.reset();
+}
+
+lv_subject_t* get_save_available_subject() {
+    auto& storage = save_available_storage();
+    return storage ? &storage->z_offset_save_available_ : nullptr;
+}
+
 namespace {
 
 /// Owns the header button's SaveConfigWatch. Not a function-local static of the
@@ -333,12 +458,11 @@ void run_shared_save() {
         NOTIFY_ERROR("{}", lv_tr("No printer connection"));
         return;
     }
-    const bool global_dirty = lv_subject_get_int(ps.get_gcode_z_offset_subject()) != 0;
-
     NOTIFY_INFO(lv_tr("Saving Z-offset..."));
     save_dirty_offsets(
         api, shared_save_watch(), ps.get_z_offset_calibration_strategy(), ps.get_discovery(),
-        global_dirty, []() { NOTIFY_SUCCESS("{}", lv_tr("Z-offset saved")); },
+        current_save_availability().global_dirty,
+        []() { NOTIFY_SUCCESS("{}", lv_tr("Z-offset saved")); },
         [](const std::string& error) { NOTIFY_ERROR("{}", error); }, &ps);
 }
 
@@ -346,17 +470,16 @@ void run_shared_save() {
 
 void save_dirty_offsets_shared() {
     PrinterState& ps = get_printer_state();
-    const bool global_dirty = lv_subject_get_int(ps.get_gcode_z_offset_subject()) != 0;
-    const bool tools_dirty =
-        lv_subject_get_int(helix::ToolState::instance().get_any_tool_z_dirty_subject()) == 1;
+    const SaveAvailability facts = current_save_availability();
 
     // Only warn when a restart is actually coming. The machine-wide save always
     // ends in SAVE_CONFIG, and so does a tool-only save on firmware that stages
     // its parameters — but a firmware that persists immediately restarts
     // nothing, and a confirmation promising a disconnect would be a lie.
     const bool restart_expected =
-        global_dirty ||
-        (tools_dirty && helix::tool_offsets::persist_requires_save_config(ps.get_discovery()));
+        facts.global_dirty ||
+        (facts.tools_dirty &&
+         helix::tool_offsets::persist_requires_save_config(ps.get_discovery()));
 
     if (!restart_expected) {
         run_shared_save();

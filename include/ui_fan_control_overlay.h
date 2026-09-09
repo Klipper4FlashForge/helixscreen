@@ -84,7 +84,7 @@ class FanControlOverlay : public OverlayBase {
      *
      * Unsubscribes from fans_version subject.
      */
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
     /**
      * @brief Clean up resources for async-safe destruction

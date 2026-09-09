@@ -296,9 +296,7 @@ void AmsEnvironmentOverlay::on_activate() {
     spdlog::trace("[{}] Activated", get_name());
 }
 
-void AmsEnvironmentOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-
+void AmsEnvironmentOverlay::on_deactivating(DeactivateReason) {
     env_temp_observer_.reset();
     env_humidity_observer_.reset();
     dryer_active_observer_.reset();

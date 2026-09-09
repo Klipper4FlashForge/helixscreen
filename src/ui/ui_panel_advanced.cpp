@@ -264,7 +264,7 @@ void AdvancedPanel::on_advanced_power_clicked(lv_event_t* /*e*/) {
 
 void AdvancedPanel::handle_power_clicked() {
     spdlog::debug("[{}] Power row clicked — opening shutdown dialog", get_name());
-    helix::show_shutdown_dialog(api_, shutdown_modal_, shutdown_lifetime_, lv_screen_active());
+    helix::show_shutdown_dialog(api_, shutdown_modal_, object_lifetime_, lv_screen_active());
 }
 
 // ============================================================================
@@ -318,7 +318,7 @@ void AdvancedPanel::handle_helix_plugin_uninstall_clicked() {
     spdlog::debug("[{}] HelixPrint Plugin Uninstall clicked", get_name());
 
     helix::ui::ConfirmOptions opts;
-    opts.owner_token = lifetime_.token();
+    opts.owner_token = object_lifetime_.token();
     helix::ui::modal_confirm(
         lv_tr("Uninstall HelixPrint Plugin?"),
         lv_tr("This removes the plugin's macros and its Moonraker component from the printer "

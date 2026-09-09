@@ -54,7 +54,7 @@ class MacrosPanel : public OverlayBase {
 
     // === Lifecycle hooks ===
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
 
   protected:
     /**

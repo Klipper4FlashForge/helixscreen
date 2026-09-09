@@ -255,10 +255,6 @@ void DisplaySoundSettingsOverlay::on_activate() {
 #endif
 }
 
-void DisplaySoundSettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // APPEARANCE INIT METHODS
 // ============================================================================

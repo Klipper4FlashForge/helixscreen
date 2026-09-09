@@ -129,8 +129,10 @@ class RetractionSettingsOverlay : public OverlayBase {
         return "Retraction Settings";
     }
     void on_activate() override;
-    void on_deactivate() override;
     void cleanup() override;
+
+  protected:
+    void on_deactivating(DeactivateReason reason) override;
 
   private:
     void send_retraction_settings();
@@ -234,7 +236,7 @@ void RetractionSettingsOverlay::on_activate() {
 }
 ```
 
-`on_activate()` runs every time the overlay becomes visible. For a settings overlay, this is where you pull the current values from `PrinterState` and seed the UI. `on_deactivate()` runs when it's dismissed — clean up timers, stop polling, etc.
+`on_activate()` runs every time the overlay becomes visible. For a settings overlay, this is where you pull the current values from `PrinterState` and seed the UI. `on_deactivating(reason)` runs when it's dismissed — clean up timers, stop polling, etc. It is a hook, not an override of `on_deactivate()`: the base calls it and then invalidates `lifetime_` on its own, so there is no base call to make. `reason` says whether the user navigated away, the app is shutting down, or XML hot-reload is rebuilding the widget tree.
 
 **3d. Event handlers**
 
@@ -349,7 +351,7 @@ The retraction overlay is the pattern the codebase *has*. Here's the pattern it'
 **What stays the same:**
 
 - Inheriting `OverlayBase`.
-- The `init_subjects()` / `create()` / `on_activate()` / `on_deactivate()` / `cleanup()` lifecycle.
+- The `init_subjects()` / `create()` / `on_activate()` / `on_deactivating()` / `cleanup()` lifecycle.
 - The XML structure — this is purely a C++ pattern change.
 - `SubjectManager` for subject cleanup.
 

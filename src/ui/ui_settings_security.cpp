@@ -133,10 +133,6 @@ void SecuritySettingsOverlay::on_activate() {
     init_auto_lock_toggle();
 }
 
-void SecuritySettingsOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // ============================================================================
 // INTERNAL HELPERS
 // ============================================================================

@@ -180,8 +180,14 @@ jobs:
 
     # `always()`: banking a partial ccache after a failed/timed-out build is the
     # whole point — see the restore step above.
+    #
+    # Only main and release/** save. The repo shares one 10 GB Actions cache and
+    # GitHub evicts LRU across all of it, so a 1.7 GB generation per work branch
+    # crowds out the entries every push restores from. A work branch still gets a
+    # warm start: the `ccache-ubuntu-22.04-` prefix above resolves to the default
+    # branch's generation, which is readable from every ref.
     - name: Save ccache
-      if: always()
+      if: always() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
       uses: actions/cache/save@v5
       with:
         path: ~/.cache/ccache
@@ -369,8 +375,13 @@ jobs:
         restore-keys: |
           deps-macos-14-
 
-    - name: Cache ccache
-      uses: actions/cache@v5
+    # Restore and save are split so the save can be limited to one ref. macOS is
+    # a development platform, never a deployment target, so this job is a
+    # portability check rather than something a release depends on - it does not
+    # earn a slice of the shared 10 GB cache on every long-lived branch. A
+    # release/** run still restores the default branch's generation.
+    - name: Restore ccache
+      uses: actions/cache/restore@v5
       with:
         path: ~/Library/Caches/ccache
         key: ccache-macos-14-${{ github.sha }}
@@ -418,6 +429,13 @@ jobs:
         make -j$(sysctl -n hw.ncpu)
         echo "HelixScreen built successfully"
         ccache -s
+
+    - name: Save ccache
+      if: always() && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@v5
+      with:
+        path: ~/Library/Caches/ccache
+        key: ccache-macos-14-${{ github.sha }}
 
     - name: Verify binary
       run: |

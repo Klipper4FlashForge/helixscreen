@@ -446,12 +446,10 @@ void SpoolmanOverlay::on_activate() {
     }
 }
 
-void SpoolmanOverlay::on_deactivate() {
+void SpoolmanOverlay::on_deactivating(DeactivateReason) {
     // Give back the poll reference load_from_database() took. The panel underneath
     // takes its own on activation, so dropping ours here does not starve it of data.
     set_poll_ref(false);
-
-    OverlayBase::on_deactivate();
 }
 
 // ============================================================================

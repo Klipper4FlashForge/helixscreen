@@ -120,7 +120,7 @@ class HeaterTempPanelLifecycle : public IPanelLifecycle {
         return name_;
     }
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivate(DeactivateReason reason) override;
 
     helix::HeaterType type() const {
         return type_;

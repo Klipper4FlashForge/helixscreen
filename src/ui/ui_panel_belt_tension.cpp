@@ -714,8 +714,8 @@ void BeltTensionPanel::on_activate() {
     }
 }
 
-void BeltTensionPanel::on_deactivate() {
-    spdlog::debug("[BeltTension] on_deactivate()");
+void BeltTensionPanel::on_deactivating(DeactivateReason) {
+    spdlog::debug("[BeltTension] on_deactivating()");
 
     // Abandon an in-progress run. POSITION may have a park move outstanding and
     // LISTEN is the live meter; both must not survive the panel going away.
@@ -729,8 +729,6 @@ void BeltTensionPanel::on_deactivate() {
         }
         set_view_state(ViewState::START);
     }
-
-    OverlayBase::on_deactivate();
 }
 
 void BeltTensionPanel::cleanup() {

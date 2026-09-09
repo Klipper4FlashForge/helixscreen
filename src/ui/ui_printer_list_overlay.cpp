@@ -118,10 +118,6 @@ void PrinterListOverlay::on_activate() {
     populate_printer_list();
 }
 
-void PrinterListOverlay::on_deactivate() {
-    OverlayBase::on_deactivate();
-}
-
 // =============================================================================
 // Printer List Population
 // =============================================================================

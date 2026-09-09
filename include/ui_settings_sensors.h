@@ -154,13 +154,6 @@ class SensorSettingsOverlay : public OverlayBase {
      */
     void on_activate() override;
 
-    /**
-     * @brief Called when overlay is being hidden
-     *
-     * Calls OverlayBase::on_deactivate().
-     */
-    void on_deactivate() override;
-
     //
     // === Event Handlers (public for static callbacks) ===
     //
