@@ -1367,7 +1367,7 @@ creator5-docker: ensure-docker
 		$(MAKE) docker-toolchain-creator5; \
 	fi
 	$(call ensure-ccache-dir,creator5)
-	$(Q)scripts/cross-compile-lock.sh docker run --rm --user $$(id -u):$$(id -g) -e MAKEFLAGS= -v "$(PWD)":/src $(DOCKER_HOST_CONTEXT) -w /src $(call docker-ccache-args,creator5) helixscreen/toolchain-creator5 \
+	$(Q)scripts/cross-compile-lock.sh docker run --rm --user $$(id -u):$$(id -g) -e MAKEFLAGS= -v "$(CURDIR)":/src $(DOCKER_HOST_CONTEXT) -w /src $(call docker-ccache-args,creator5) helixscreen/toolchain-creator5 \
 		make PLATFORM_TARGET=creator5 SKIP_OPTIONAL_DEPS=1 $(if $(ENABLE_REMOTE_CONTROL),ENABLE_REMOTE_CONTROL=$(ENABLE_REMOTE_CONTROL)) -j$(NPROC_DOCKER_RUN)
 	@mkdir -p build/creator5/certs
 	@docker run --rm helixscreen/toolchain-creator5 cat /etc/ssl/certs/ca-certificates.crt > build/creator5/certs/ca-certificates.crt 2>/dev/null \
