@@ -58,7 +58,7 @@
   <translation tag="12 Hour" fr="12 heures"/>
   <translation tag="120 seconds" fr="120 secondes"/>
   <translation tag="15 seconds" fr="15 secondes"/>
-  <translation tag="170-300 °C"/>
+  <translation tag="170-300 °C" fr="170-300 °C"/>
   <translation tag="180°" fr="180°"/>
   <translation tag="180° Upside Down" fr="180° à l&apos;envers"/>
   <translation tag="2 min" fr="2 min"/>
@@ -121,7 +121,7 @@
   <translation tag="Abort failed" fr="Échec de l&apos;annulation"/>
   <translation tag="Aborting AFC operation..." fr="Annulation de l&apos;opération AFC..."/>
   <translation tag="About" fr="À propos"/>
-  <translation tag="About 3 minutes at {}°C."/>
+  <translation tag="About 3 minutes at {}°C." fr="Environ 3 minutes à {}°C."/>
   <translation tag="Accel to Decel" fr="Accél. à Décél."/>
   <translation tag="Acceleration to deceleration limit (mm/s²)" fr="Limite d&apos;accélération à décélération (mm/s²)"/>
   <translation tag="Accelerometer" fr="Accéléromètre"/>
@@ -223,7 +223,7 @@
   <translation tag="Automatic" fr="Automatique"/>
   <translation tag="Automatic Heater Control Calibration" fr="Calibration automatique du chauffage"/>
   <translation tag="Automatic LED Control" fr="Contrôle LED automatique"/>
-  <translation tag="Automatic calibration"/>
+  <translation tag="Automatic calibration" fr="Calibration automatique"/>
   <translation tag="Aux" fr="Aux"/>
   <translation tag="Available" fr="Disponible"/>
   <translation tag="Available Networks" fr="Réseaux disponibles"/>
@@ -267,8 +267,8 @@
   <translation tag="Bed target set to {}°C" fr="Cible plateau réglée à {}°C"/>
   <translation tag="Bed temp must be 0-200°C" fr="La température du plateau doit être entre 0 et 200°C"/>
   <translation tag="Bed warming timed out" fr="Préchauffage du plateau — délai dépassé"/>
-  <translation tag="Before calibrating"/>
-  <translation tag="Before starting"/>
+  <translation tag="Before calibrating" fr="Avant la calibration"/>
+  <translation tag="Before starting" fr="Avant de commencer"/>
   <translation tag="Belt A" fr="Courroie A"/>
   <translation tag="Belt A (front right) is tighter by %.0f Hz. Tighten belt B, on the front left, or loosen belt A." fr="La courroie A (avant droite) est plus tendue de %.0f Hz. Tendez la courroie B, à l&apos;avant gauche, ou détendez la courroie A."/>
   <translation tag="Belt A frequency locked" fr="Fréquence de la courroie A verrouillée"/>
@@ -359,14 +359,14 @@
   <translation tag="Calibrate X" fr="Calibrer X"/>
   <translation tag="Calibrate Y" fr="Calibrer Y"/>
   <translation tag="Calibrate and tune scroll feel" fr="Calibrer et ajuster le défilement"/>
-  <translation tag="Calibrate everything"/>
+  <translation tag="Calibrate everything" fr="Tout calibrer"/>
   <translation tag="Calibrate input shaping to reduce ringing artifacts in prints" fr="Calibrer l&apos;input shaping pour réduire les artefacts d&apos;ondulation"/>
   <translation tag="Calibrate your touchscreen for accurate input" fr="Calibrer votre écran tactile pour une saisie précise"/>
   <translation tag="Calibrated" fr="Calibré"/>
   <translation tag="Calibrating Probe..." fr="Calibration de la sonde..."/>
   <translation tag="Calibrating bed mesh..." fr="Calibration du maillage du plateau..."/>
-  <translation tag="Calibrating now"/>
-  <translation tag="Calibrating tool offsets... {}s"/>
+  <translation tag="Calibrating now" fr="Calibration en cours"/>
+  <translation tag="Calibrating tool offsets... {}s" fr="Calibration des décalages d&apos;outil... {}s"/>
   <translation tag="Calibrating {} axis..." fr="Calibration de l&apos;axe {}..."/>
   <translation tag="Calibrating..." fr="Calibration..."/>
   <translation tag="Calibration &amp; Tools" fr="Calibration et outils"/>
@@ -377,8 +377,8 @@
   <translation tag="Calibration complete" fr="Calibration terminée"/>
   <translation tag="Calibration complete!" fr="Calibration terminée !"/>
   <translation tag="Calibration complete! Press &apos;Next&apos; to continue." fr="Calibration terminée ! Appuyez sur &apos;Suivant&apos; pour continuer."/>
-  <translation tag="Calibration complete."/>
-  <translation tag="Calibration failed"/>
+  <translation tag="Calibration complete." fr="Calibration terminée."/>
+  <translation tag="Calibration failed" fr="Échec de la calibration"/>
   <translation tag="Calibration failed - touch targets more precisely." fr="Échec de calibration – touchez les cibles plus précisément."/>
   <translation tag="Calibration kept timing out. Your previous settings were kept." fr="La calibration a expiré à plusieurs reprises. Vos paramètres précédents ont été conservés."/>
   <translation tag="Calibration may still be running — printer connection was interrupted"/>
@@ -602,7 +602,7 @@
   <translation tag="Copied to clipboard!" fr="Copié dans le presse-papiers !"/>
   <translation tag="Copy Command" fr="Copier la commande"/>
   <translation tag="Copy failed - use SSH manually" fr="Copie échouée - utilisez SSH manuellement"/>
-  <translation tag="Copy it into this filament&apos;s slicer profile — the printer keeps nothing."/>
+  <translation tag="Copy it into this filament&apos;s slicer profile — the printer keeps nothing." fr="Copiez-le dans le profil de slicer de ce filament — l&apos;imprimante ne conserve rien."/>
   <translation tag="Corner roundness" fr="Arrondi des coins"/>
   <translation tag="Correction (Ki)" fr="Correction (Ki)"/>
   <translation tag="Could not analyze PRINT_START macro. Some print options may be unavailable." fr="Impossible d&apos;analyser la macro PRINT_START. Certaines options d&apos;impression peuvent être indisponibles."/>
@@ -1024,9 +1024,9 @@
   <translation tag="Filament is pulling tight" fr="Le filament est sous tension"/>
   <translation tag="Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool." fr="Le filament est encore à la buse après le déchargement. La coupe ou la rétractation n&apos;a peut-être pas abouti. Dégagez la tête d&apos;outil avant de charger une autre bobine."/>
   <translation tag="Filament load failed: {}" fr="Échec du chargement du filament : {}"/>
-  <translation tag="Filament must be loaded in the extruder, and the build plate on with nothing in the way of the head."/>
+  <translation tag="Filament must be loaded in the extruder, and the build plate on with nothing in the way of the head." fr="Le filament doit être chargé dans l&apos;extrudeur et le plateau en place, sans rien qui gêne la tête."/>
   <translation tag="Filament operation failed" fr="Échec de l&apos;opération filament"/>
-  <translation tag="Filament operation failed: {}"/>
+  <translation tag="Filament operation failed: {}" fr="Échec de l&apos;opération filament : {}"/>
   <translation tag="Filament operation timed out" fr="Opération filament — délai dépassé"/>
   <translation tag="Filament ran out - nothing at the toolhead and the print is paused." fr="Filament épuisé - plus rien à la tête d&apos;outil et l&apos;impression est en pause."/>
   <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume." fr="Filament épuisé et le CFS n&apos;a trouvé aucune bobine compatible vers laquelle basculer. Chargez une bobine de même matériau et de même couleur, puis reprenez."/>
@@ -1146,8 +1146,8 @@
   <translation tag="Heating bed to $1°C..." fr="Chauffe du plateau à $1°C..."/>
   <translation tag="Heating bed..." fr="Chauffe du plateau..."/>
   <translation tag="Heating chamber..." fr="Chauffe de la chambre..."/>
-  <translation tag="Heating is nearly the whole wait. You can leave the screen — the run stops."/>
-  <translation tag="Heating nozzle"/>
+  <translation tag="Heating is nearly the whole wait. You can leave the screen — the run stops." fr="Le chauffage occupe presque toute l&apos;attente. Vous pouvez quitter l&apos;écran — la mesure s&apos;arrête alors."/>
+  <translation tag="Heating nozzle" fr="Chauffage de la buse"/>
   <translation tag="Heating nozzle to $1°C..." fr="Chauffe de la buse à $1°C..."/>
   <translation tag="Heating nozzle..." fr="Chauffe de la buse..."/>
   <translation tag="Heating to %d°C... %.0f°C" fr="Chauffe à %d°C... %.0f°C"/>
@@ -1284,7 +1284,7 @@
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." fr="Rejoignez la communauté HelixScreen sur Discord pour discuter, obtenir des conseils, de l&apos;aide au dépannage et proposer des fonctionnalités."/>
   <translation tag="Just now" fr="À l&apos;instant"/>
   <translation tag="Just queued" fr="Tout juste mis en file"/>
-  <translation tag="K so far"/>
+  <translation tag="K so far" fr="K jusqu&apos;ici"/>
   <translation tag="KEYBOARD LAYOUT" fr="DISPOSITION DU CLAVIER"/>
   <translation tag="KLICKY CONTROLS" fr="COMMANDES KLICKY"/>
   <translation tag="Keep Navigation Bar" fr="Conserver la barre de navigation"/>
@@ -1330,7 +1330,7 @@
   <translation tag="Language, theme, brightness, and sound" fr="Langue, thème, luminosité et son"/>
   <translation tag="Last" fr="Dernière"/>
   <translation tag="Last 7 days" fr="7 derniers jours"/>
-  <translation tag="Last measured"/>
+  <translation tag="Last measured" fr="Dernière mesure"/>
   <translation tag="Last print cancelled" fr="Dernière impression annulée"/>
   <translation tag="Last print failed" fr="Dernière impression échouée"/>
   <translation tag="Later" fr="Plus tard"/>
@@ -1469,18 +1469,18 @@
   <translation tag="Maximum" fr="Maximum"/>
   <translation tag="Maximum acceleration (mm/s²)" fr="Accélération maximale (mm/s²)"/>
   <translation tag="Maximum toolhead speed (mm/s)" fr="Vitesse maximale de la tête d&apos;outil (mm/s)"/>
-  <translation tag="Measure"/>
+  <translation tag="Measure" fr="Mesurer"/>
   <translation tag="Measure and compare belt path frequencies" fr="Mesurer et comparer les fréquences des chemins de courroie"/>
   <translation tag="Measure belt path frequencies" fr="Mesurer les fréquences des chemins de courroie"/>
-  <translation tag="Measure each tool&apos;s nozzle position"/>
-  <translation tag="Measure each tool&apos;s nozzle position so all tools print in the same place"/>
+  <translation tag="Measure each tool&apos;s nozzle position" fr="Mesurer la position de la buse de chaque outil"/>
+  <translation tag="Measure each tool&apos;s nozzle position so all tools print in the same place" fr="Mesurer la position de la buse de chaque outil pour que tous impriment au même endroit"/>
   <translation tag="Measured (shaper off)" fr="Mesuré (shaper désactivé)"/>
   <translation tag="Measured filament diameter" fr="Diamètre du filament mesuré"/>
-  <translation tag="Measured pressure advance"/>
+  <translation tag="Measured pressure advance" fr="Pressure Advance mesuré"/>
   <translation tag="Measurement Failed" fr="Échec de la mesure"/>
-  <translation tag="Measuring"/>
+  <translation tag="Measuring" fr="Mesure en cours"/>
   <translation tag="Measuring accelerometer noise..." fr="Mesure du bruit de l&apos;accéléromètre..."/>
-  <translation tag="Measuring now"/>
+  <translation tag="Measuring now" fr="Mesure en cours"/>
   <translation tag="Measuring vibrations... {}%" fr="Mesure des vibrations... {}%"/>
   <translation tag="Median %.0f Hz" fr="Médiane %.0f Hz"/>
   <translation tag="Memory" fr="Mémoire"/>
@@ -1511,7 +1511,7 @@
   <translation tag="Motors disable failed: {}" fr="Échec de la désactivation des moteurs : {}"/>
   <translation tag="Motors disabled" fr="Moteurs désactivés"/>
   <translation tag="Mount" fr="Monter"/>
-  <translation tag="Mount this tool first"/>
+  <translation tag="Mount this tool first" fr="Montez d&apos;abord cet outil"/>
   <translation tag="Move" fr="Déplacer"/>
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." fr="Déplacez le papier d&apos;avant en arrière pendant l&apos;ajustement. Arrêtez quand le papier accroche légèrement mais glisse encore."/>
   <translation tag="Move selector" fr="Déplacer le sélecteur"/>
@@ -1601,7 +1601,7 @@
   <translation tag="No humidity sensor detected" fr="Aucun capteur d&apos;humidité détecté"/>
   <translation tag="No images found on USB drive" fr="Aucune image trouvée sur la clé USB"/>
   <translation tag="No jobs in queue" fr="Aucun travail en file"/>
-  <translation tag="No macro configured — set one in Settings"/>
+  <translation tag="No macro configured — set one in Settings" fr="Aucune macro configurée — définissez-en une dans Paramètres"/>
   <translation tag="No macro devices configured" fr="Aucun appareil de macro configuré"/>
   <translation tag="No macros available" fr="Aucune macro disponible"/>
   <translation tag="No matching prints" fr="Aucune impression correspondante"/>
@@ -1634,7 +1634,7 @@
   <translation tag="No target printer configured" fr="Aucune imprimante cible configurée"/>
   <translation tag="No temperature sensors detected" fr="Aucun capteur de température détecté"/>
   <translation tag="No timelapse videos found" fr="Aucune vidéo timelapse trouvée"/>
-  <translation tag="No tool selected"/>
+  <translation tag="No tool selected" fr="Aucun outil sélectionné"/>
   <translation tag="No vendors found" fr="Aucun fournisseur trouvé"/>
   <translation tag="No video player installed - showing the timelapse library" fr="Aucun lecteur vidéo installé – affichage de la bibliothèque timelapse"/>
   <translation tag="No webcam detected.&#10;A webcam is required for timelapse." fr="Aucune webcam détectée.&#10;Une webcam est requise pour le timelapse."/>
@@ -1654,16 +1654,16 @@
   <translation tag="Not connected to the printer" fr="Non connecté à l&apos;imprimante"/>
   <translation tag="Not detected" fr="Non détecté"/>
   <translation tag="Not in your spools? Set it up" fr="Pas dans vos bobines ? Configurez-la"/>
-  <translation tag="Not measured"/>
+  <translation tag="Not measured" fr="Non mesuré"/>
   <translation tag="Not now" fr="Pas maintenant"/>
   <translation tag="Not yet available on this display" fr="Pas encore disponible sur cet écran"/>
   <translation tag="Not yet calibrated" fr="Pas encore calibré"/>
   <translation tag="Notes" fr="Notes"/>
   <translation tag="Notes (optional)" fr="Notes (facultatif)"/>
   <translation tag="Nothing to remap" fr="Rien à réaffecter"/>
-  <translation tag="Nothing was changed. Temperature and material are kept, so a retry is one tap."/>
-  <translation tag="Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed."/>
-  <translation tag="Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed."/>
+  <translation tag="Nothing was changed. Temperature and material are kept, so a retry is one tap." fr="Rien n&apos;a été modifié. La température et le matériau sont conservés : réessayer ne demande qu&apos;une pression."/>
+  <translation tag="Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed." fr="Rien n&apos;a été modifié. C&apos;est en général une buse encrassée, ou le plateau resté en place."/>
+  <translation tag="Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed." fr="Rien n&apos;a été modifié. En général une buse encrassée, ou le plateau resté en place."/>
   <translation tag="Notification" fr="Notification"/>
   <translation tag="Notifications" fr="Notifications"/>
   <translation tag="Notify when print finishes" fr="Notifier à la fin de l&apos;impression"/>
@@ -1699,7 +1699,7 @@
   <translation tag="Objects" fr="Objets"/>
   <translation tag="Off" fr="Éteint"/>
   <translation tag="Off:" fr="Arrêt :"/>
-  <translation tag="Offsets saved"/>
+  <translation tag="Offsets saved" fr="Décalages enregistrés"/>
   <translation tag="Old setting on today&apos;s data: {} residual - now: {}" fr="Ancien réglage sur les données du jour : {} résiduel - maintenant : {}"/>
   <translation tag="On" fr="Allumé"/>
   <translation tag="On and Off macros must be different" fr="Les macros On et Off doivent être différentes"/>
@@ -1729,7 +1729,7 @@
   <translation tag="Output Device" fr="Périphérique de sortie"/>
   <translation tag="Output Mode" fr="Mode de sortie"/>
   <translation tag="Output Pin" fr="Broche de sortie"/>
-  <translation tag="Outside the usual {:.2f}-{:.2f} for a {} extruder — worth measuring again before trusting it."/>
+  <translation tag="Outside the usual {:.2f}-{:.2f} for a {} extruder — worth measuring again before trusting it." fr="En dehors des {:.2f}-{:.2f} habituels pour un extrudeur {} — mieux vaut remesurer avant de s&apos;y fier."/>
   <translation tag="Overheating" fr="Surchauffe"/>
   <translation tag="Overlay Visits: " fr="Visites de superposition : "/>
   <translation tag="Overlays Opened" fr="Superpositions ouvertes"/>
@@ -1791,7 +1791,7 @@
   <translation tag="Phomemo M110" fr="Phomemo M110"/>
   <translation tag="Pick" fr="Choisir"/>
   <translation tag="Pick Color" fr="Choisir la couleur"/>
-  <translation tag="Pick one in the row above — heat and filament both belong to a tool."/>
+  <translation tag="Pick one in the row above — heat and filament both belong to a tool." fr="Choisissez-en un dans la rangée ci-dessus — le chauffage et le filament appartiennent tous deux à un outil."/>
   <translation tag="Pick up tool" fr="Prendre l&apos;outil"/>
   <translation tag="Picking up tool" fr="Prise de l&apos;outil"/>
   <translation tag="Pill" fr="Pilule"/>
@@ -1850,8 +1850,8 @@
   <translation tag="Presets" fr="Préréglages"/>
   <translation tag="Press Abort to stop" fr="Appuyez sur Abandonner pour arrêter"/>
   <translation tag="Press Scan to search" fr="Appuyez sur Scanner pour rechercher"/>
-  <translation tag="Pressure Adv."/>
-  <translation tag="Pressure Advance"/>
+  <translation tag="Pressure Adv." fr="Pressure Adv."/>
+  <translation tag="Pressure Advance" fr="Pressure Advance"/>
   <translation tag="Pressure:" fr="Pression :"/>
   <translation tag="Preview Sounds" fr="Aperçu des sons"/>
   <translation tag="Previous" fr="Précédent"/>
@@ -1914,7 +1914,7 @@
   <translation tag="Printer Setup: Language" fr="Config. imprimante : Langue"/>
   <translation tag="Printer Setup: Network" fr="Config. imprimante : Réseau"/>
   <translation tag="Printer Setup: Review" fr="Config. imprimante : Récapitulatif"/>
-  <translation tag="Printer Setup: Tool Offsets"/>
+  <translation tag="Printer Setup: Tool Offsets" fr="Configuration de l&apos;imprimante : décalages d&apos;outil"/>
   <translation tag="Printer Setup: Touch Calibration" fr="Config. imprimante : Calibration tactile"/>
   <translation tag="Printer Shutdown" fr="Arrêt de l&apos;imprimante"/>
   <translation tag="Printer Type" fr="Type d&apos;imprimante"/>
@@ -1929,7 +1929,7 @@
   <translation tag="Printer is busy - {} stays in the queue" fr="L&apos;imprimante est occupée – {} reste dans la file"/>
   <translation tag="Printer is not paired — pair it first" fr="L&apos;imprimante n&apos;est pas appairée — appairez-la d&apos;abord"/>
   <translation tag="Printer name" fr="Nom de l&apos;imprimante"/>
-  <translation tag="Printer not connected"/>
+  <translation tag="Printer not connected" fr="Imprimante non connectée"/>
   <translation tag="Printer not ready" fr="Imprimante non prête"/>
   <translation tag="Printer ready" fr="Imprimante prête"/>
   <translation tag="Printer type mismatch" fr="Type d&apos;imprimante incompatible"/>
@@ -1991,7 +1991,7 @@
   <translation tag="Quad Gantry Level started..." fr="Quad Gantry Level démarré..."/>
   <translation tag="Queue: Paused" fr="File : En pause"/>
   <translation tag="Queue: Ready" fr="File : Prête"/>
-  <translation tag="Queued"/>
+  <translation tag="Queued" fr="En file"/>
   <translation tag="Queued print jobs" fr="Travaux d&apos;impression en file"/>
   <translation tag="Queued {}h {}m ago" fr="Mis en file il y a {} h {} min"/>
   <translation tag="Queued {}m ago" fr="Mis en file il y a {} min"/>
@@ -2005,7 +2005,7 @@
   <translation tag="Quick preheat with material selection" fr="Préchauffage rapide avec sélection du matériau"/>
   <translation tag="Quick toggle, long press for full control" fr="Bascule rapide, appui long pour le contrôle complet"/>
   <translation tag="Quick tool switching for multi-tool printers" fr="Changement d&apos;outil rapide pour imprimantes multi-outils"/>
-  <translation tag="REF"/>
+  <translation tag="REF" fr="RÉF"/>
   <translation tag="RFCOMM connect failed" fr="Échec de la connexion RFCOMM"/>
   <translation tag="RFCOMM connect failed: " fr="Échec de la connexion RFCOMM : "/>
   <translation tag="RSS" fr="RSS"/>
@@ -2014,7 +2014,7 @@
   <translation tag="Raspberry Pi" fr="Raspberry Pi"/>
   <translation tag="Raspberry Pi (32-bit)" fr="Raspberry Pi (32-bit)"/>
   <translation tag="Re-identify" fr="Ré-identifier"/>
-  <translation tag="Re-measure"/>
+  <translation tag="Re-measure" fr="Remesurer"/>
   <translation tag="Re-probe" fr="Re-palper"/>
   <translation tag="Re-read spool RFID tags and remaining length" fr="Relire les étiquettes RFID des bobines et la longueur restante"/>
   <translation tag="Re-syncs Happy Hare&apos;s tracked state with the hardware." fr="Resynchronise l&apos;état suivi par Happy Hare avec le matériel."/>
@@ -2022,7 +2022,7 @@
   <translation tag="Ready" fr="Prêt"/>
   <translation tag="Ready for filament operations" fr="Prêt pour les opérations filament"/>
   <translation tag="Ready to Apply" fr="Prêt à appliquer"/>
-  <translation tag="Ready to calibrate"/>
+  <translation tag="Ready to calibrate" fr="Prêt à calibrer"/>
   <translation tag="Ready to pluck" fr="Prêt à pincer"/>
   <translation tag="Reason" fr="Raison"/>
   <translation tag="Reason: {}&#10;&#10;The printer cannot resume this print. Restart from the beginning?" fr="Raison : {}&#10;&#10;L&apos;imprimante ne peut pas reprendre cette impression. Recommencer depuis le début ?"/>
@@ -2043,14 +2043,14 @@
   <translation tag="Recovery failed" fr="Échec de la récupération"/>
   <translation tag="Recovery failed: " fr="Échec de la récupération : "/>
   <translation tag="Recovery failed: {}" fr="Échec de la récupération : {}"/>
-  <translation tag="Redo"/>
+  <translation tag="Redo" fr="Refaire"/>
   <translation tag="Reduce Sensitivity" fr="Réduire la sensibilité"/>
   <translation tag="Reduce ringing and ghosting artifacts" fr="Réduire les artefacts d&apos;ondulation et de ghosting"/>
   <translation tag="Reduce vibration artifacts like ringing and ghosting" fr="Réduire les artefacts de vibration comme l&apos;ondulation et le ghosting"/>
   <translation tag="Refeeding filament — this may take a minute" fr="Réalimentation du filament — cela peut prendre une minute"/>
-  <translation tag="Reference measurement was refused"/>
-  <translation tag="Reference — the fixed point every tool is measured against"/>
-  <translation tag="Reference — the fixed point every tool is measured against (mm)"/>
+  <translation tag="Reference measurement was refused" fr="La mesure de référence a été refusée"/>
+  <translation tag="Reference — the fixed point every tool is measured against" fr="Référence — le point fixe par rapport auquel chaque outil est mesuré"/>
+  <translation tag="Reference — the fixed point every tool is measured against (mm)" fr="Référence — le point fixe par rapport auquel chaque outil est mesuré (mm)"/>
   <translation tag="Refill the spool, then Resume." fr="Rechargez la bobine, puis reprenez."/>
   <translation tag="Refresh" fr="Rafraîchir"/>
   <translation tag="Refresh Interval" fr="Intervalle de rafraîchissement"/>
@@ -2061,7 +2061,7 @@
   <translation tag="Release filament" fr="Relâcher le filament"/>
   <translation tag="Release or grip the filament by hand" fr="Relâcher ou saisir le filament à la main"/>
   <translation tag="Release the filament" fr="Relâcher le filament"/>
-  <translation tag="Remaining"/>
+  <translation tag="Remaining" fr="Restant"/>
   <translation tag="Remaining (g)" fr="Restant (g)"/>
   <translation tag="Remaining Weight (g)" fr="Poids restant (g)"/>
   <translation tag="Remap Tool" fr="Réassigner l&apos;outil"/>
@@ -2072,7 +2072,7 @@
   <translation tag="Remove PIN" fr="Supprimer le PIN"/>
   <translation tag="Remove Spoolman?" fr="Supprimer Spoolman ?"/>
   <translation tag="Remove plugin from printer" fr="Supprimer le plugin de l&apos;imprimante"/>
-  <translation tag="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position."/>
+  <translation tag="Remove the build plate before starting. The printer will pick up each tool and measure its nozzle position." fr="Retirez le plateau avant de commencer. L&apos;imprimante prendra chaque outil et mesurera la position de sa buse."/>
   <translation tag="Remove the bypass spool from the toolhead first" fr="Retirez d&apos;abord la bobine de bypass de la tête d&apos;outil"/>
   <translation tag="Rename" fr="Renommer"/>
   <translation tag="Rename Fan" fr="Renommer le ventilateur"/>
@@ -2176,7 +2176,7 @@
   <translation tag="Run a macro you choose, in one tap" fr="Lancer une macro choisie en un appui"/>
   <translation tag="Run brush cleaning sequence" fr="Exécuter la séquence de nettoyage par brosse"/>
   <translation tag="Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves)" fr="Charger/décharger le filament même lorsque la buse est froide (pour les macros qui chauffent la buse elles-mêmes)"/>
-  <translation tag="Run stopped"/>
+  <translation tag="Run stopped" fr="Mesure arrêtée"/>
   <translation tag="Run test sequence on all lanes" fr="Exécuter la séquence de test sur toutes les voies"/>
   <translation tag="Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform." fr="Lancez l&apos;installateur HelixScreen avec --update depuis un terminal sur cette imprimante. Scannez pour obtenir la commande adaptée à votre plateforme."/>
   <translation tag="Run {}?" fr="Exécuter {} ?"/>
@@ -2211,8 +2211,8 @@
   <translation tag="Save Z-Offset?" fr="Enregistrer le Z-Offset ?"/>
   <translation tag="Save changes to persist them across restarts?" fr="Enregistrer les modifications pour les conserver après redémarrage ?"/>
   <translation tag="Save failed: {}" fr="Échec de l&apos;enregistrement : {}"/>
-  <translation tag="Save offsets"/>
-  <translation tag="Save offsets?"/>
+  <translation tag="Save offsets" fr="Enregistrer les décalages"/>
+  <translation tag="Save offsets?" fr="Enregistrer les décalages ?"/>
   <translation tag="Save to Spoolman" fr="Enregistrer dans Spoolman"/>
   <translation tag="Saved Z-Offset" fr="Z-Offset enregistré"/>
   <translation tag="Saved to crash_report.txt (QR not available)" fr="Enregistré dans crash_report.txt (QR non disponible)"/>
@@ -2222,7 +2222,7 @@
   <translation tag="Saving Z-offset..." fr="Enregistrement du Z-offset..."/>
   <translation tag="Saving config... Klipper will restart." fr="Enregistrement de la config... Klipper va redémarrer."/>
   <translation tag="Saving will restart Klipper and CANCEL any active print!" fr="L&apos;enregistrement redémarrera Klipper et ANNULERA toute impression active !"/>
-  <translation tag="Saving — Klipper is restarting..."/>
+  <translation tag="Saving — Klipper is restarting..." fr="Enregistrement — Klipper redémarre..."/>
   <translation tag="Scan" fr="Scanner"/>
   <translation tag="Scan Cal" fr="Cal balayage"/>
   <translation tag="Scan QR Code" fr="Scanner le QR code"/>
@@ -2325,7 +2325,7 @@
   <translation tag="Setup" fr="Configuration"/>
   <translation tag="Setup Complete!" fr="Configuration terminée !"/>
   <translation tag="Setup Timelapse" fr="Configurer le timelapse"/>
-  <translation tag="Setup continues once the tool offsets are known."/>
+  <translation tag="Setup continues once the tool offsets are known." fr="La configuration se poursuit une fois les décalages d&apos;outil connus."/>
   <translation tag="Shadow Intensity" fr="Intensité de l&apos;ombre"/>
   <translation tag="Share Usage Data" fr="Partager les données d&apos;utilisation"/>
   <translation tag="Share anonymous usage statistics to help us make HelixScreen better. No personal data is ever collected." fr="Partagez des statistiques d&apos;utilisation anonymes pour nous aider à améliorer HelixScreen. Aucune donnée personnelle n&apos;est jamais collectée."/>
@@ -2457,11 +2457,11 @@
   <translation tag="Stop Print?" fr="Arrêter l&apos;impression ?"/>
   <translation tag="Stop failed" fr="Échec de l&apos;arrêt"/>
   <translation tag="Stop printing &quot;{}&quot;?&#10;&#10;This cannot be undone after 5 seconds." fr="Arrêter l&apos;impression de &quot;{}&quot; ?&#10;&#10;Cette action sera irréversible après 5 secondes."/>
-  <translation tag="Stopped"/>
+  <translation tag="Stopped" fr="Arrêté"/>
   <translation tag="Stopped between Hub and Toolhead" fr="Arrêté entre le Hub et la tête d&apos;outil"/>
   <translation tag="Stopped between Lane and Hub" fr="Arrêté entre la voie et le Hub"/>
   <translation tag="Stopped between Spool and Lane" fr="Arrêté entre la bobine et la voie"/>
-  <translation tag="Stopping after the current step..."/>
+  <translation tag="Stopping after the current step..." fr="Arrêt après l&apos;étape en cours..."/>
   <translation tag="Stops all motion. Requires firmware restart." fr="Arrête tout mouvement. Nécessite un redémarrage du firmware."/>
   <translation tag="Stow" fr="Ranger"/>
   <translation tag="Subtle" fr="Subtil"/>
@@ -2501,8 +2501,8 @@
   <translation tag="TOGGLE: {}" fr="BASCULER : {}"/>
   <translation tag="TOOLS" fr="OUTILS"/>
   <translation tag="TPU" fr="TPU"/>
-  <translation tag="Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on."/>
-  <translation tag="Take the build plate off, and clean every nozzle. The printer checks the plate itself and will refuse if it is still on — but it cannot tell whether a nozzle is clean, so that part is on you. Tools must be cold and docked."/>
+  <translation tag="Take the build plate off and clean every nozzle. Tools should be cold and docked. The printer checks the plate itself and will refuse if it is still on." fr="Retirez le plateau et nettoyez chaque buse. Les outils doivent être froids et rangés. L&apos;imprimante vérifie elle-même le plateau et refusera tant qu&apos;il est en place."/>
+  <translation tag="Take the build plate off, and clean every nozzle. The printer checks the plate itself and will refuse if it is still on — but it cannot tell whether a nozzle is clean, so that part is on you. Tools must be cold and docked." fr="Retirez le plateau et nettoyez chaque buse. L&apos;imprimante vérifie elle-même le plateau et refusera tant qu&apos;il est en place — mais elle ne peut pas savoir si une buse est propre : cette partie vous revient. Les outils doivent être froids et rangés."/>
   <translation tag="Takes 3-5 min. Do not interrupt." fr="Prend 3-5 min. Ne pas interrompre."/>
   <translation tag="Tap + to add" fr="Touchez + pour ajouter"/>
   <translation tag="Tap again to confirm this orientation" fr="Appuyez à nouveau pour confirmer cette orientation"/>
@@ -2513,7 +2513,7 @@
   <translation tag="Tap anywhere to begin calibration" fr="Appuyez n&apos;importe où pour démarrer la calibration"/>
   <translation tag="Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d" fr="Appuyez sur la cible (point %1$d sur 3) — appui %2$d sur %3$d"/>
   <translation tag="Tap to assign" fr="Appuyez pour assigner"/>
-  <translation tag="Target"/>
+  <translation tag="Target" fr="Cible"/>
   <translation tag="Target Frequency" fr="Fréquence cible"/>
   <translation tag="Target Temperature" fr="Température cible"/>
   <translation tag="Target Version" fr="Version cible"/>
@@ -2565,13 +2565,13 @@
   <translation tag="The heater will cycle on and off several times." fr="Le chauffage s&apos;allumera et s&apos;éteindra plusieurs fois."/>
   <translation tag="The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle." fr="La bobine chargée est {}, mais ce fichier a été tranché pour {}. Un filament chargé fonctionne à un débit plus faible et nécessite une buse durcie."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.&#10;&#10;Use the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." fr="Le moteur fait vibrer la courroie tandis qu&apos;un stroboscope clignote à la même fréquence. Lorsque la courroie semble immobile (figée), vous avez trouvé la fréquence de résonance.&#10;&#10;Utilisez les boutons de fréquence pour balayer les valeurs jusqu&apos;à ce que la courroie paraisse immobile, puis verrouillez la lecture."/>
-  <translation tag="The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself."/>
-  <translation tag="The offsets are saved when setup finishes. Recalibrate anytime from the console."/>
+  <translation tag="The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself." fr="La buse extrude quelques courts mouvements de test dans un coin, hors de la zone d&apos;impression, et recommence jusqu&apos;à ce que les mesures concordent."/>
+  <translation tag="The offsets are saved when setup finishes. Recalibrate anytime from the console." fr="Les décalages sont enregistrés à la fin de la configuration. Vous pouvez recalibrer à tout moment depuis la console."/>
   <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." fr="L&apos;impression est en pause. Changer d&apos;outil maintenant déplace la tête d&apos;impression et remplace le filament au niveau de la buse. Reprenez l&apos;impression une fois le changement terminé."/>
-  <translation tag="The printer extrudes in a corner and repeats until the readings agree. You do not judge anything by eye."/>
-  <translation tag="The printer gave no reason."/>
+  <translation tag="The printer extrudes in a corner and repeats until the readings agree. You do not judge anything by eye." fr="L&apos;imprimante extrude dans un coin et recommence jusqu&apos;à ce que les lectures concordent. Vous n&apos;avez rien à juger à l&apos;œil."/>
+  <translation tag="The printer gave no reason." fr="L&apos;imprimante n&apos;a donné aucune raison."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" fr="L&apos;imprimante a arrêté cette impression et ne peut pas la reprendre. Redémarrer depuis le début ?"/>
-  <translation tag="The printer heats the nozzle, extrudes a few short test moves in a corner of the plate, and measures them itself. It repeats until the readings agree, then reports one number."/>
+  <translation tag="The printer heats the nozzle, extrudes a few short test moves in a corner of the plate, and measures them itself. It repeats until the readings agree, then reports one number." fr="L&apos;imprimante chauffe la buse, extrude quelques courts mouvements de test dans un coin du plateau et les mesure elle-même. Elle recommence jusqu&apos;à ce que les lectures concordent, puis annonce une seule valeur."/>
   <translation tag="The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear." fr="L&apos;imprimante n&apos;est pas référencée. Continuer référencera tous les axes et déplacera la tête d&apos;outil. Assurez-vous que le plateau est dégagé."/>
   <translation tag="The printer lost power during a print. It can resume where it left off." fr="L&apos;imprimante a été mise hors tension pendant une impression. Elle peut reprendre là où elle s&apos;est arrêtée."/>
   <translation tag="The printer lost power during a print. The resumed layer may not line up exactly." fr="L&apos;imprimante a été mise hors tension pendant une impression. La couche reprise peut ne pas s&apos;aligner exactement."/>
@@ -2626,7 +2626,7 @@
   <translation tag="This will restart Klipper firmware. Any active operations will be interrupted." fr="Le firmware Klipper sera redémarré. Les opérations actives seront interrompues."/>
   <translation tag="This will restart Klipper." fr="Cela redémarrera Klipper."/>
   <translation tag="This will save the Z-offset and restart Klipper to write the configuration. The printer will briefly disconnect." fr="Cela enregistrera le Z-offset et redémarrera Klipper pour enregistrer la configuration. L&apos;imprimante se déconnectera brièvement."/>
-  <translation tag="This writes the offsets to the printer&apos;s config and restarts its firmware, which takes a few seconds. Until then they apply only to this session."/>
+  <translation tag="This writes the offsets to the printer&apos;s config and restarts its firmware, which takes a few seconds. Until then they apply only to this session." fr="Cela écrit les décalages dans la configuration de l&apos;imprimante et redémarre son firmware, ce qui prend quelques secondes. D&apos;ici là, ils ne s&apos;appliquent qu&apos;à cette session."/>
   <translation tag="Thorough" fr="Approfondi"/>
   <translation tag="Thumbnail Only" fr="Miniature uniquement"/>
   <translation tag="Thumbnail: " fr="Miniature : "/>
@@ -2666,14 +2666,14 @@
   <translation tag="Too soft - pluck harder" fr="Trop faible - pincez plus fort"/>
   <translation tag="Tool" fr="Outil"/>
   <translation tag="Tool Changer" fr="Changeur d&apos;outils"/>
-  <translation tag="Tool Offsets"/>
+  <translation tag="Tool Offsets" fr="Décalages d&apos;outil"/>
   <translation tag="Tool Switcher" fr="Sélecteur d&apos;outil"/>
   <translation tag="Tool change failed: {}" fr="Échec du changement d&apos;outil : {}"/>
   <translation tag="Tool mapping failed" fr="Échec de la correspondance d&apos;outils"/>
   <translation tag="Tool swap" fr="Changement d&apos;outil"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." fr="Outil {} → Voie {} : aucun filament chargé."/>
   <translation tag="Tool {} → Slot {}: no filament loaded." fr="Outil {} → Slot {} : aucun filament chargé."/>
-  <translation tag="ToolOffset"/>
+  <translation tag="ToolOffset" fr="ToolOffset"/>
   <translation tag="Toolhead" fr="Tête d&apos;outil"/>
   <translation tag="Toolhead LED" fr="LED de la tête d&apos;outil"/>
   <translation tag="Toolhead Sensor" fr="Capteur de tête d&apos;outil"/>
@@ -2681,8 +2681,8 @@
   <translation tag="Toolhead jam" fr="Bourrage de la tête d&apos;outil"/>
   <translation tag="Toolhead, G-code, limits, and materials" fr="Tête d&apos;outil, G-code, limites et matériaux"/>
   <translation tag="Tools Used" fr="Outils utilisés"/>
-  <translation tag="Tools — each nozzle&apos;s measured position"/>
-  <translation tag="Tools — nozzle position, and Z height over the reference (mm)"/>
+  <translation tag="Tools — each nozzle&apos;s measured position" fr="Outils — la position mesurée de chaque buse"/>
+  <translation tag="Tools — nozzle position, and Z height over the reference (mm)" fr="Outils — position de la buse et hauteur Z au-dessus de la référence (mm)"/>
   <translation tag="Tools: " fr="Outils : "/>
   <translation tag="Total Prints" fr="Total des impressions"/>
   <translation tag="Total prints, success rate, and time" fr="Impressions, taux de réussite et durée"/>
@@ -2699,7 +2699,7 @@
   <translation tag="Trigger" fr="Déclencheur"/>
   <translation tag="Troubleshooting:" fr="Dépannage :"/>
   <translation tag="Try adjusting your search or filters" fr="Essayez d&apos;ajuster votre recherche ou vos filtres"/>
-  <translation tag="Try again"/>
+  <translation tag="Try again" fr="Réessayer"/>
   <translation tag="Tune" fr="Régler"/>
   <translation tag="Tuning tower enabled - start a print to test" fr="Tour de réglage activée - lancez une impression pour tester"/>
   <translation tag="Turbo" fr="Turbo"/>
@@ -2711,12 +2711,12 @@
   <translation tag="Turn the extruder heater off after a load or unload finishes" fr="Éteindre le chauffage de l&apos;extrudeur après un chargement ou un déchargement"/>
   <translation tag="Turn the picture to match how the screen is mounted. Applies after restart." fr="Fait pivoter l&apos;image selon l&apos;orientation de montage de l&apos;écran. Prend effet après redémarrage."/>
   <translation tag="Turn the printer&apos;s lights on or off" fr="Allumer ou éteindre les lumières"/>
-  <translation tag="Two to three minutes, nearly all of it heating. You judge nothing by eye."/>
+  <translation tag="Two to three minutes, nearly all of it heating. You judge nothing by eye." fr="Deux à trois minutes, presque uniquement du chauffage. Vous n&apos;avez rien à juger à l&apos;œil."/>
   <translation tag="Type" fr="Type"/>
   <translation tag="Type to preview input field..." fr="Tapez pour prévisualiser le champ de saisie..."/>
   <translation tag="Type:" fr="Type :"/>
-  <translation tag="Typical for a {} extruder ({:.2f}-{:.2f})."/>
-  <translation tag="T{} calibration was refused"/>
+  <translation tag="Typical for a {} extruder ({:.2f}-{:.2f})." fr="Typique pour un extrudeur {} ({:.2f}-{:.2f})."/>
+  <translation tag="T{} calibration was refused" fr="La calibration de T{} a été refusée"/>
   <translation tag="T{} shares slot with T{}" fr="T{} partage lemplacement avec T{}"/>
   <translation tag="UI Scale" fr="Échelle de l&apos;interface"/>
   <translation tag="UI Sounds" fr="Sons de l&apos;interface"/>
@@ -2902,7 +2902,7 @@
   <translation tag="Z Offset" fr="Z Offset"/>
   <translation tag="Z Range" fr="Plage Z"/>
   <translation tag="Z Tilt Adjust..." fr="Ajustement inclinaison Z..."/>
-  <translation tag="Z gap"/>
+  <translation tag="Z gap" fr="Écart Z"/>
   <translation tag="Z probes for bed leveling and mesh generation" fr="Sondes Z pour la mise à niveau du plateau et la génération de maillage"/>
   <translation tag="Z-Off:" fr="Z-Off :"/>
   <translation tag="Z-Offset" fr="Z-Offset"/>
@@ -2923,7 +2923,7 @@
   <translation tag="Z-offset saved - Klipper restarting..." fr="Z-offset enregistré - Redémarrage de Klipper..."/>
   <translation tag="Z:" fr="Z:"/>
   <translation tag="Z: 0.000" fr="Z: 0.000"/>
-  <translation tag="attempt {}"/>
+  <translation tag="attempt {}" fr="tentative {}"/>
   <translation tag="bed" fr="plateau"/>
   <translation tag="by Preston Brown" fr="par Preston Brown"/>
   <translation tag="chamber heater" fr="chauffage du caisson"/>
@@ -2940,43 +2940,43 @@
   <translation tag="enable" fr="activer"/>
   <translation tag="enabled" fr="activé"/>
   <translation tag="error" fr="erreur"/>
-  <translation tag="every tool depends on this"/>
+  <translation tag="every tool depends on this" fr="chaque outil en dépend"/>
   <translation tag="extruder" fr="extrudeur"/>
   <translation tag="extruder(s)" fr="extrudeur(s)"/>
   <translation tag="extruders" fr="extrudeurs"/>
   <translation tag="fans" fr="ventilateurs"/>
   <translation tag="heated bed" fr="plateau chauffant"/>
   <translation tag="idle" fr="inactif"/>
-  <translation tag="last attempt was refused"/>
+  <translation tag="last attempt was refused" fr="la dernière tentative a été refusée"/>
   <translation tag="layers" fr="couches"/>
   <translation tag="left" fr="restant"/>
-  <translation tag="locating the bore"/>
-  <translation tag="locating the bore... {}s"/>
-  <translation tag="locating the reference"/>
-  <translation tag="locating the reference... {}s"/>
-  <translation tag="locked"/>
+  <translation tag="locating the bore" fr="localisation de l&apos;alésage"/>
+  <translation tag="locating the bore... {}s" fr="localisation de l&apos;alésage... {}s"/>
+  <translation tag="locating the reference" fr="localisation de la référence"/>
+  <translation tag="locating the reference... {}s" fr="localisation de la référence... {}s"/>
+  <translation tag="locked" fr="verrouillé"/>
   <translation tag="mm before clog" fr="mm avant bouchon"/>
   <translation tag="needs" fr="nécessite"/>
-  <translation tag="no tool"/>
+  <translation tag="no tool" fr="aucun outil"/>
   <translation tag="not detected" fr="non détecté"/>
   <translation tag="nozzle" fr="buse"/>
   <translation tag="of" fr="de"/>
   <translation tag="off" fr="éteint"/>
   <translation tag="or type a macro name" fr="ou saisissez un nom de macro"/>
   <translation tag="printer default" fr="par défaut de l’imprimante"/>
-  <translation tag="printing with it will be refused"/>
+  <translation tag="printing with it will be refused" fr="toute impression avec lui sera refusée"/>
   <translation tag="prints" fr="impressions"/>
-  <translation tag="probing nozzle"/>
-  <translation tag="probing nozzle... {}s"/>
+  <translation tag="probing nozzle" fr="palpage de la buse"/>
+  <translation tag="probing nozzle... {}s" fr="palpage de la buse... {}s"/>
   <translation tag="remaining" fr="restant"/>
   <translation tag="remaining before clog detection triggers" fr="restant avant le déclenchement de la détection de bouchon"/>
   <translation tag="rendering" fr="rendu en cours"/>
-  <translation tag="skipped — stopping"/>
+  <translation tag="skipped — stopping" fr="ignoré — arrêt en cours"/>
   <translation tag="slots)" fr="emplacements)"/>
   <translation tag="started" fr="lancé"/>
   <translation tag="steppers" fr="moteurs pas à pas"/>
   <translation tag="tall" fr="de haut"/>
-  <translation tag="target {}°"/>
+  <translation tag="target {}°" fr="cible {}°"/>
   <translation tag="tool(s)" fr="outil(s)"/>
   <translation tag="used" fr="utilisé"/>
   <translation tag="v%s available" fr="v%s disponible"/>
