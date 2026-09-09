@@ -312,3 +312,62 @@ TEST_CASE_METHOD(MPCCalibrateTestFixture,
     REQUIRE(success_count == 1);
     REQUIRE(error_count == 0);
 }
+
+TEST_CASE_METHOD(MPCCalibrateTestFixture,
+                 "MPC calibrate survives RPC timeout and still delivers result",
+                 "[mpc_collector]") {
+    // Regression for #1544: the calibration outlives the RPC ceiling (PID_CALIBRATE has
+    // the same property, #988). When the execute_gcode RPC times out, the collector
+    // must keep listening so the later result block still completes the run.
+    mock_client_.force_next_gcode_error(MoonrakerErrorType::TIMEOUT,
+                                        "Request timed out after 10 min", "MPC_CALIBRATE");
+
+    api_->advanced().start_mpc_calibrate(
+        "extruder", 200, 3,
+        [this](const MPCResult& result) {
+            captured_result_ = result;
+            result_received_.store(true);
+        },
+        [this](const MoonrakerError& err) {
+            captured_error_ = err.message;
+            error_received_.store(true);
+        });
+
+    // The RPC has already "timed out" synchronously above. Klipper finishes afterwards.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    mock_client_.dispatch_gcode_response("Finished MPC calibration heater=extruder");
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    mock_client_.dispatch_gcode_response("block_heat_capacity=18.5432 [J/K]");
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    mock_client_.dispatch_gcode_response("sensor_responsiveness=0.123456 [K/s/K]");
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    mock_client_.dispatch_gcode_response("ambient_transfer=0.078901 [W/K]");
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    mock_client_.dispatch_gcode_response("fan_ambient_transfer=0.12, 0.18, 0.25 [W/K]");
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    REQUIRE(result_received_.load());
+    REQUIRE_FALSE(error_received_.load());
+    REQUIRE(captured_result_.block_heat_capacity == Catch::Approx(18.5432f).margin(0.001f));
+}
+
+TEST_CASE_METHOD(MPCCalibrateTestFixture, "MPC calibrate non-timeout RPC error still fails fast",
+                 "[mpc_collector]") {
+    // A genuine RPC error, not a timeout, must still tear the collector down and report
+    // failure — only TIMEOUT means "keep listening".
+    mock_client_.force_next_gcode_error(MoonrakerErrorType::JSON_RPC_ERROR,
+                                        "Heater extruder not configured", "MPC_CALIBRATE");
+
+    api_->advanced().start_mpc_calibrate(
+        "extruder", 200, 3, [this](const MPCResult&) { result_received_.store(true); },
+        [this](const MoonrakerError& err) {
+            captured_error_ = err.message;
+            error_received_.store(true);
+        });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    REQUIRE(error_received_.load());
+    REQUIRE_FALSE(result_received_.load());
+    REQUIRE(captured_error_.find("Heater extruder not configured") != std::string::npos);
+}
