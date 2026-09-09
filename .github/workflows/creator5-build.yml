@@ -28,7 +28,7 @@ on:
 # of an hour, and a work branch is often pushed again long before it finishes.
 # Newer pushes to the same ref supersede older ones; PRs key on their number.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (startsWith(github.ref, 'refs/heads/release/') && github.sha || github.ref) }}
   cancel-in-progress: true
 
 jobs:
