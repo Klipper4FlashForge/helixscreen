@@ -73,6 +73,8 @@ MACRO_REGISTER_RE = re.compile(
     r'(?<![A-Za-z_])INIT_SUBJECT_(?:INT_VOLATILE|INT|STRING)\s*\(\s*([a-z_0-9]+)')
 # The member a registration hands over, so reads can be matched by pointer name.
 MEMBER_RE = re.compile(r'&\s*([A-Za-z_][A-Za-z_0-9]*)')
+# An accessor body that only yields the subject's address.
+HANDOVER_RE = re.compile(r'return\s+&\s*[A-Za-z_][A-Za-z_0-9]*\s*;')
 # Any XML attribute that names a subject: bind_text=, bind_value=, subject=, ...
 XML_REF_RE = re.compile(r'(?:bind_[a-z_]+|subject)="([^"]+)"')
 # Expression attributes name subjects as bare identifiers: cond="a or b gt c".
@@ -175,6 +177,14 @@ def mask_registrations(text: str) -> str:
     windows stay aligned with the offsets READ_SITE_RE reports.
     """
     out = list(text)
+    # `return &subject_;` hands the subject over; it does not read it. The body
+    # sits in the owner's header among that class's other inline reads, so left
+    # in the text it falls inside a neighbouring read window and satisfies the
+    # member check for itself - the same self-clearing a registration would do.
+    for m in HANDOVER_RE.finditer(text):
+        for j in range(m.start(), m.end()):
+            if out[j] != "\n":
+                out[j] = " "
     spans = [m.start() for m in REGISTER_RE.finditer(text)]
     spans += [m.start() for m in MACRO_REGISTER_RE.finditer(text)]
     for start in sorted(spans):
@@ -231,7 +241,10 @@ def main() -> int:
         # owner's accessor, whose identifier swallows the subject name whole:
         # lv_label_bind_text(label, state.get_hardware_issues_label_subject(), ...)
         # tokenises as one word, so neither the name nor the member is spelled.
-        if re.search(r'\bget_' + re.escape(name) + r'_subject\b', read_text):
+        # Only a CALL counts: the accessor's own definition sits in the header
+        # beside the owner's other inline reads, so accepting the bare
+        # identifier would let an uncalled getter clear its own subject.
+        if re.search(r'[.>:]\s*get_' + re.escape(name) + r'_subject\s*\(', read_text):
             return True
         for mem in members.get(name, ()):
             if re.search(r'\b' + re.escape(mem) + r'\b', read_text):

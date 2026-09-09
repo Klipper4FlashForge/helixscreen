@@ -761,9 +761,8 @@ int Application::run(int argc, char** argv) {
         return 1;
     }
 
-    // Set multi-printer subjects from config (needed for navbar badge binding)
+    // Seed the active printer's display name from config
     {
-        auto printer_ids = m_config->get_printer_ids();
         auto active_id = m_config->get_active_printer_id();
         std::string printer_name =
             m_config->get<std::string>(m_config->df() + "printer_name", active_id);
@@ -5033,9 +5032,8 @@ void Application::init_printer_state() {
         return;
     }
 
-    // 2b. Set multi-printer subjects from config
+    // 2b. Seed the active printer's display name from config
     {
-        auto printer_ids = m_config->get_printer_ids();
         auto active_id = m_config->get_active_printer_id();
         std::string printer_name =
             m_config->get<std::string>(m_config->df() + "printer_name", active_id);

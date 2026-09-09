@@ -8,10 +8,7 @@
  * These tests capture the CURRENT behavior of hardware validation subjects
  * in PrinterState before extraction to a dedicated state class.
  *
- * Hardware validation subjects (12 total):
- * - hardware_has_issues_ (int) - 0=no issues, 1=has issues
- * - hardware_issue_count_ (int) - total count of all issues
- * - hardware_max_severity_ (int) - 0=INFO, 1=WARNING, 2=CRITICAL
+ * Hardware validation subjects (8 total):
  * - hardware_status_level_ (int) - 0=OK, 1=ATTENTION, 2=CRITICAL
  * - hardware_critical_count_ (int) - count of critical issues
  * - hardware_warning_count_ (int) - count of warning (expected_missing) issues
@@ -20,7 +17,6 @@
  * - hardware_status_title_ (string) - "All Healthy" or "X Issues Detected"
  * - hardware_status_detail_ (string) - e.g., "1 critical, 2 missing, 1 new"
  * - hardware_issues_label_ (string) - "1 Hardware Issue" or "5 Hardware Issues"
- * - hardware_validation_version_ (int) - increments on validation change
  *
  * Update mechanism:
  * - set_hardware_validation_result(HardwareValidationResult) - synchronous
