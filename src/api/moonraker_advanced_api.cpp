@@ -518,10 +518,24 @@ class CalibrationCollectorCore { // NAMESPACE_OK: sibling to the six collectors 
     }
 
     void disarm_idle_fallback() {
+        // Move the owner callbacks out first: they capture the collector's
+        // own shared_ptr, and they are the last thing standing between a
+        // completed calibration and its collector's destruction. Destroying
+        // them here — at scope exit, after all member access in this function
+        // is done — releases that final reference on the main thread, which
+        // is exactly where the fallback's LVGL teardown must stay anyway
+        // (C1). Leaving them in place would turn every completed calibration
+        // into a shared_ptr self-cycle that lives for the process.
+        std::function<void()> dead_idle = std::move(fallback_.on_idle);
+        std::function<void(const std::string&)> dead_unrecovered =
+            std::move(fallback_.on_unrecovered);
         fallback_.armed = false;
         fallback_.observer.reset();
         fallback_.backstop.end();
         fallback_.grace.end();
+        // The locals' destructors at scope exit are the release point.
+        static_cast<void>(dead_idle);
+        static_cast<void>(dead_unrecovered);
     }
 
     [[nodiscard]] bool registered() const {
