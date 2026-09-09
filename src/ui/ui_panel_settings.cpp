@@ -327,9 +327,8 @@ void SettingsPanel::init_subjects() {
     DisplayManager* dm = DisplayManager::instance();
     bool show_touch_cal = dm && dm->supports_touch_calibration();
 #endif
-    lv_subject_init_int(&show_touch_calibration_subject_, show_touch_cal ? 1 : 0);
-    subjects_.register_subject(&show_touch_calibration_subject_);
-    lv_xml_register_subject(nullptr, "show_touch_calibration", &show_touch_calibration_subject_);
+    UI_MANAGED_SUBJECT_INT(show_touch_calibration_subject_, show_touch_cal ? 1 : 0,
+                           "show_touch_calibration", subjects_);
 
     // Note: show_beta_features subject is initialized globally in app_globals.cpp
 
@@ -341,9 +340,8 @@ void SettingsPanel::init_subjects() {
     // out of scope (ethernet_manager.h still resolves to the
     // helixapp_platform_stubs.cpp seam; no ESP32 wired-network HIL exists).
     bool show_network_settings = !on_android;
-    lv_subject_init_int(&show_network_settings_subject_, show_network_settings ? 1 : 0);
-    subjects_.register_subject(&show_network_settings_subject_);
-    lv_xml_register_subject(nullptr, "show_network_settings", &show_network_settings_subject_);
+    UI_MANAGED_SUBJECT_INT(show_network_settings_subject_, show_network_settings ? 1 : 0,
+                           "show_network_settings", subjects_);
 
     // Update checker runs on all platforms — on Android, "Install Update"
     // redirects to the Play Store instead of self-updating.
@@ -357,19 +355,15 @@ void SettingsPanel::init_subjects() {
     // about it.
     bool externally_managed = updates_externally_managed();
     bool install_suppressed = update_install_suppressed();
-    lv_subject_init_int(&show_update_settings_subject_, update_checks_suppressed() ? 0 : 1);
-    subjects_.register_subject(&show_update_settings_subject_);
-    lv_xml_register_subject(nullptr, "show_update_settings", &show_update_settings_subject_);
+    UI_MANAGED_SUBJECT_INT(show_update_settings_subject_, update_checks_suppressed() ? 0 : 1,
+                           "show_update_settings", subjects_);
 
-    lv_subject_init_int(&updates_firmware_managed_subject_, externally_managed ? 1 : 0);
-    subjects_.register_subject(&updates_firmware_managed_subject_);
-    lv_xml_register_subject(nullptr, "updates_firmware_managed",
-                            &updates_firmware_managed_subject_);
+    UI_MANAGED_SUBJECT_INT(updates_firmware_managed_subject_, externally_managed ? 1 : 0,
+                           "updates_firmware_managed", subjects_);
 
-    lv_subject_init_int(&updates_unavailable_subject_,
-                        (install_suppressed && !externally_managed) ? 1 : 0);
-    subjects_.register_subject(&updates_unavailable_subject_);
-    lv_xml_register_subject(nullptr, "updates_unavailable", &updates_unavailable_subject_);
+    UI_MANAGED_SUBJECT_INT(updates_unavailable_subject_,
+                           (install_suppressed && !externally_managed) ? 1 : 0,
+                           "updates_unavailable", subjects_);
 
     // Touch calibration status - show "Calibrated" or "Not calibrated" in row description
     Config* config = Config::get_instance();

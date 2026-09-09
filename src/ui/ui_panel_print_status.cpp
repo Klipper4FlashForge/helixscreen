@@ -789,9 +789,9 @@ void PrintStatusPanel::init_subjects() {
 
     // Exclude objects availability (0=hidden, 1=visible - shown when >= 2 objects defined)
     // Note: subject already initialized in constructor (needed before observer fires)
-    lv_xml_register_subject(nullptr, "exclude_objects_available",
-                            &exclude_objects_available_subject_);
-    subjects_.register_subject(&exclude_objects_available_subject_);
+    helix::xml::register_subject_in_current_scope("exclude_objects_available",
+                                                  &exclude_objects_available_subject_);
+    subjects_.register_subject(&exclude_objects_available_subject_, "exclude_objects_available");
     SubjectDebugRegistry::instance().register_subject(&exclude_objects_available_subject_,
                                                       "exclude_objects_available",
                                                       LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);

@@ -64,6 +64,7 @@
 #pragma once
 
 #include "helix/xml/scoped_subject_registry.h"
+#include "helix_lvgl_anomaly.h"
 #include "lvgl/lvgl.h"
 #include "subject_debug_registry.h"
 
@@ -162,13 +163,15 @@ class SubjectManager {
      * Safe to call multiple times - subsequent calls are no-ops.
      *
      * @note Checks lv_is_initialized() to handle static destruction order safely
-     * @note Never logs. A SubjectManager owned by a static reaches this through
-     *       the C++ atexit chain, and spdlog's registry - a lazily built
-     *       function-local static - is torn down before any object created
-     *       during dynamic initialization, so a log call here reads a freed
-     *       logger. An app that ran Application::shutdown() arrives with an
-     *       empty subjects_ and returns above; a binary that never does (every
-     *       unit test) takes the full path.
+     * @note Never calls spdlog (lint-enforced). A SubjectManager owned by a
+     *       static reaches this through the C++ atexit chain, and spdlog's
+     *       registry - a lazily built function-local static - is torn down
+     *       before any object created during dynamic initialization, so a log
+     *       call here reads a freed logger. The nameless-registration trap
+     *       below reports through helix_lvgl_anomaly (telemetry), which is
+     *       itself teardown-safe. An app that ran Application::shutdown()
+     *       arrives with an empty subjects_ and returns above; a binary that
+     *       never does (every unit test) takes the full path.
      * @note Each subject's XML-scope name is withdrawn before the subject is freed,
      *       so a name can never outlive the storage it resolves to. Owners that do
      *       not live for the whole process (a panel held by a stack-allocated test
@@ -203,8 +206,28 @@ class SubjectManager {
             // pointing at dead memory, and the next lv_xml_create() that binds
             // it reads freed storage. Unregistering turns that into a clean
             // "subject not found" instead.
-            if (i < subject_names_.size() && !subject_names_[i].empty()) {
-                helix::xml::unregister_subject_in_current_scope(subject_names_[i].c_str());
+            const char* registered_name = (i < subject_names_.size() && !subject_names_[i].empty())
+                                              ? subject_names_[i].c_str()
+                                              : nullptr;
+            if (registered_name) {
+                helix::xml::unregister_subject_in_current_scope(registered_name);
+            } else if (const SubjectDebugInfo* info =
+                           SubjectDebugRegistry::instance().lookup(subject)) {
+                // Registered without a name while the subject IS published
+                // under one (through a raw register or a macro elsewhere): the
+                // call site reads as RAII-correct, and the scope name would
+                // outlive this teardown. Withdraw it and make the trap loud
+                // via the anomaly channel — no logging can run here: this body
+                // reaches the C++ atexit chain, where spdlog may already be
+                // gone (and LV_LOG_* is banned in app code regardless).
+                helix_lvgl_anomaly("subject_manager_nameless_registered", info->name.c_str());
+                // Only withdraw when the name still resolves to THIS subject: a
+                // newer owner may have re-published the same name at a
+                // different address, and dropping that entry would strand its
+                // live bindings.
+                if (SubjectDebugRegistry::instance().lookup_by_name(info->name) == subject) {
+                    helix::xml::unregister_subject_in_current_scope(info->name.c_str());
+                }
             }
             // Same reasoning for the debug registry, which is also keyed by a
             // pointer that is about to dangle. Safe during static destruction:

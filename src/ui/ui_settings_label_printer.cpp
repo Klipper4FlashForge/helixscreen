@@ -146,13 +146,6 @@ LabelPrinterSettingsOverlay::~LabelPrinterSettingsOverlay() {
     stop_usb_detection();
     stop_bt_discovery();
 
-    // Deinit subjects
-    if (subjects_initialized_) {
-        lv_subject_deinit(&bt_scanning_subject_);
-        lv_subject_deinit(&test_printing_subject_);
-        lv_subject_deinit(&ipp_selected_subject_);
-    }
-
     // Deinit BT context only in destructor, not in stop_bt_discovery()
     if (bt_ctx_) {
         auto& loader = helix::bluetooth::BluetoothLoader::instance();
@@ -177,23 +170,24 @@ void LabelPrinterSettingsOverlay::init_subjects() {
     // Ensure manager subjects are initialized (reads config for initial value)
     LabelPrinterSettingsManager::instance().init_subjects();
 
-    // Register C++-owned subject globally so XML bind_flag_if_not_eq can find it
+    // Register C++-owned subject globally so XML bind_flag_if_not_eq can find it.
+    // Deliberately NOT registered with subjects_: the name aliases
+    // LabelPrinterSettingsManager's subject (owner registered as
+    // "label_printer_type"), a process-lifetime singleton — its storage
+    // outlives this overlay, so the name never dangles (prestonbrown/helixscreen#1538).
     lv_xml_register_subject(nullptr, "printer_type_subject",
                             LabelPrinterSettingsManager::instance().subject_printer_type());
 
     // BT scanning state subject (0=idle, 1=scanning)
-    lv_subject_init_int(&bt_scanning_subject_, 0);
-    lv_xml_register_subject(nullptr, "bt_scanning", &bt_scanning_subject_);
-    lv_subject_init_int(&test_printing_subject_, 0);
-    lv_xml_register_subject(nullptr, "test_printing", &test_printing_subject_);
+    UI_MANAGED_SUBJECT_INT(bt_scanning_subject_, 0, "bt_scanning", subjects_);
+    UI_MANAGED_SUBJECT_INT(test_printing_subject_, 0, "test_printing", subjects_);
 
     // IPP selected subject (0=not IPP, 1=IPP protocol selected within network type)
     int ipp_initial = (LabelPrinterSettingsManager::instance().get_printer_type() == "network" &&
                        LabelPrinterSettingsManager::instance().get_printer_protocol() == "ipp")
                           ? 1
                           : 0;
-    lv_subject_init_int(&ipp_selected_subject_, ipp_initial);
-    lv_xml_register_subject(nullptr, "ipp_selected", &ipp_selected_subject_);
+    UI_MANAGED_SUBJECT_INT(ipp_selected_subject_, ipp_initial, "ipp_selected", subjects_);
 
     subjects_initialized_ = true;
     spdlog::debug("[{}] Subjects initialized", get_name());

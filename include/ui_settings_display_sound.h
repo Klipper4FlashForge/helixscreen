@@ -25,6 +25,7 @@
 
 #include "lvgl/lvgl.h"
 #include "overlay_base.h"
+#include "subject_managed_panel.h"
 #include "theme_loader.h"
 
 #include <string>
@@ -172,6 +173,10 @@ class DisplaySoundSettingsOverlay : public OverlayBase {
     std::string preview_theme_name_;
     /// Cached theme list (populated when explorer opens, avoids re-parsing on every toggle)
     std::vector<helix::ThemeInfo> cached_themes_;
+
+    /// SubjectManager, declared ahead of the subjects it owns so it tears down
+    /// after them (names withdraw before storage dies).
+    SubjectManager subjects_;
 
     /// Subject for brightness value label binding
     lv_subject_t brightness_value_subject_;
