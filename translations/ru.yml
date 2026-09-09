@@ -61,6 +61,7 @@ translations:
   12 Hour: 12 часов
   120 seconds: 120 секунд
   15 seconds: 15 секунд
+  170-300 °C: ''
   180°: 180°
   180° Upside Down: 180° вверх ногами
   2 min: '2 мин'
@@ -124,6 +125,7 @@ translations:
   Abort failed: Ошибка прерывания
   Aborting AFC operation...: Прерывание операции AFC...
   About: О программе
+  About 3 minutes at {}°C.: ''
   Accel to Decel: Ускорение к торможению
   Acceleration to deceleration limit (mm/s²): Предел ускорения к торможению (мм/с²)
   Accelerometer: Акселерометр
@@ -244,6 +246,7 @@ translations:
   Automatic: Автоматический
   Automatic Heater Control Calibration: Автоматическая калибровка нагревателя
   Automatic LED Control: Автоматическое управление LED
+  Automatic calibration: ''
   Aux: Доп
   Available: Доступен
   Available Networks: Доступные сети
@@ -288,6 +291,7 @@ translations:
   Bed temp must be 0-200°C: Температура стола должна быть 0-200°C
   Bed warming timed out: Нагрев стола — время ожидания истекло
   Before calibrating: ''
+  Before starting: ''
   Belt A: Ремень A
   Belt A (front right) is tighter by %.0f Hz. Tighten belt B, on the front left, or loosen belt A.: Ремень A (спереди справа) туже на %.0f Гц. Подтяните ремень B спереди слева или ослабьте ремень A.
   Belt A frequency locked: Частота ремня A зафиксирована
@@ -389,8 +393,6 @@ translations:
   Calibrate your touchscreen for accurate input: Калибровка сенсорного экрана для
     точного ввода
   Calibrated: Откалиброван
-  'Calibrating Probe...': ''
-  'Calibrating bed mesh...': ''
   Calibrating Probe...: Калибровка зонда...
   Calibrating bed mesh...: Калибровка сетки стола...
   Calibrating now: ''
@@ -666,6 +668,7 @@ translations:
   Copied to clipboard!: Скопировано в буфер обмена!
   Copy Command: Копировать команду
   Copy failed - use SSH manually: Ошибка копирования - используйте SSH вручную
+  Copy it into this filament's slicer profile — the printer keeps nothing.: ''
   Corner roundness: Скругление углов
   Correction (Ki): Коррекция (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: Не
@@ -1116,7 +1119,9 @@ translations:
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
   : После выгрузки филамент всё ещё находится у сопла. Отрезание или втягивание могло не завершиться. Очистите печатающую головку перед загрузкой другой катушки.
   'Filament load failed: {}': 'Ошибка загрузки филамента: {}'
+  Filament must be loaded in the extruder, and the build plate on with nothing in the way of the head.: ''
   Filament operation failed: Операция с филаментом не удалась
+  'Filament operation failed: {}': ''
   Filament operation timed out: Операция с филаментом — время ожидания истекло
   Filament ran out - nothing at the toolhead and the print is paused.: 'Филамент закончился - у печатающей головки ничего нет, печать приостановлена.'
   ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
@@ -1247,6 +1252,8 @@ translations:
   Heating bed to $1°C...: Нагрев стола до $1°C...
   Heating bed...: Нагрев стола...
   Heating chamber...: Нагрев камеры...
+  Heating is nearly the whole wait. You can leave the screen — the run stops.: ''
+  Heating nozzle: ''
   Heating nozzle to $1°C...: Нагрев сопла до $1°C...
   Heating nozzle...: Нагрев сопла...
   Heating to %d°C... %.0f°C: Нагрев до %d°C... %.0f°C
@@ -1409,6 +1416,7 @@ translations:
     неполадок и предложений новых функций.
   Just now: Только что
   Just queued: 'Только что в очереди'
+  K so far: ''
   KEYBOARD LAYOUT: РАСКЛАДКА КЛАВИАТУРЫ
   KLICKY CONTROLS: УПРАВЛЕНИЕ KLICKY
   Keep Navigation Bar: Сохранить панель навигации
@@ -1464,6 +1472,7 @@ translations:
   Last: Последняя
   # Source: history_dashboard_panel.xml:114
   Last 7 days: 'Последние 7 дней'
+  Last measured: ''
   Last print cancelled: Последняя печать отменена
   Last print failed: Последняя печать не удалась
   Later: Позже
@@ -1620,7 +1629,9 @@ translations:
   'Measure each tool''s nozzle position so all tools print in the same place': ''
   Measured (shaper off): Измерено (шейпер выключен)
   Measured filament diameter: Измеренный диаметр филамента
+  Measured pressure advance: ''
   Measurement Failed: Измерение не удалось
+  Measuring: ''
   Measuring accelerometer noise...: 'Измерение шума акселерометра...'
   Measuring now: ''
   Measuring vibrations... {}%: 'Измерение вибраций... {}%'
@@ -1654,6 +1665,7 @@ translations:
   'Motors disable failed: {}': 'Ошибка отключения моторов: {}'
   Motors disabled: Моторы отключены
   Mount: Установить
+  Mount this tool first: ''
   Move: Двигать
   Move paper back and forth while adjusting. Stop when paper catches slightly but still slides.: Перемещайте
     бумагу вперёд-назад во время регулировки. Остановитесь, когда бумага слегка цепляется,
@@ -1755,6 +1767,7 @@ translations:
   No humidity sensor detected: 'Датчик влажности не обнаружен'
   No images found on USB drive: Изображения на USB-накопителе не найдены
   No jobs in queue: Очередь пуста
+  No macro configured — set one in Settings: ''
   No macro devices configured: Макро-устройства не настроены
   No macros available: Нет доступных макросов
   No matching prints: Нет совпадающих печатей
@@ -1789,6 +1802,7 @@ translations:
   No target printer configured: Целевой принтер не настроен
   No temperature sensors detected: 'Датчики температуры не обнаружены'
   No timelapse videos found: Таймлапс-видео не найдены
+  No tool selected: ''
   No vendors found: Производители не найдены
   No video player installed - showing the timelapse library: 'Видеоплеер не установлен – показана библиотека таймлапсов'
   ? "No webcam detected.\nA webcam is required for timelapse."
@@ -1816,6 +1830,7 @@ translations:
   Notes: Заметки
   Notes (optional): Заметки (необязательно)
   Nothing to remap: Нечего переназначать
+  Nothing was changed. Temperature and material are kept, so a retry is one tap.: ''
   Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed.: ''
   Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed.: ''
   Notification: Уведомление
@@ -1885,6 +1900,7 @@ translations:
   Output Device: Устройство вывода
   Output Mode: Режим вывода
   Output Pin: Выходной пин
+  Outside the usual {:.2f}-{:.2f} for a {} extruder — worth measuring again before trusting it.: ''
   Overheating: Перегрев
   'Overlay Visits: ': 'Посещений оверлея: '
   Overlays Opened: Открыто оверлеев
@@ -1949,6 +1965,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Выбрать
   Pick Color: Выбрать цвет
+  Pick one in the row above — heat and filament both belong to a tool.: ''
   Pick up tool: Забрать инструмент
   Picking up tool: Захват инструмента
   Pill: Овал
@@ -2016,6 +2033,8 @@ translations:
   Presets: Пресеты
   Press Abort to stop: Нажмите «Прервать», чтобы остановить
   Press Scan to search: Нажмите «Поиск» для сканирования
+  Pressure Adv.: ''
+  Pressure Advance: ''
   'Pressure:': 'Давление:'
   Preview Sounds: Предпросмотр звуков
   Previous: Прежняя
@@ -2101,6 +2120,7 @@ translations:
   Printer is busy - {} stays in the queue: 'Принтер занят – {} остаётся в очереди'
   Printer is not paired — pair it first: Принтер не сопряжён — сначала выполните сопряжение
   Printer name: Название принтера
+  Printer not connected: ''
   Printer not ready: Принтер не готов
   Printer ready: Принтер готов
   Printer type mismatch: Несоответствие типа принтера
@@ -2193,6 +2213,7 @@ translations:
   Raspberry Pi: Raspberry Pi
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
   Re-identify: Определить снова
+  Re-measure: ''
   Re-probe: Перепроверить
   Re-read spool RFID tags and remaining length: 'Перечитать RFID-метки катушек и остаток'
   Re-syncs Happy Hare's tracked state with the hardware.: Повторно синхронизирует
@@ -2245,6 +2266,7 @@ translations:
   Release filament: Отпустить филамент
   Release or grip the filament by hand: Отпустите или зажмите филамент вручную
   Release the filament: Отпустить филамент
+  Remaining: ''
   Remaining (g): Осталось (г)
   Remaining Weight (g): Оставшийся вес (г)
   Remap Tool: Переназначить инструмент
@@ -2367,6 +2389,7 @@ translations:
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): Выполнять
     загрузку/выгрузку филамента даже при холодном сопле (для макросов, которые сами
     нагревают сопло)
+  Run stopped: ''
   Run test sequence on all lanes: 'Запустить тестовую последовательность на всех слотах'
   Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: Запустите установщик HelixScreen с ключом --update в терминале на этом принтере. Отсканируйте код, чтобы получить команду для вашей платформы.
   Run {}?: Запустить {}?
@@ -2753,6 +2776,7 @@ translations:
   Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d: Нажмите на
     перекрестие (точка %1$d из 3) — касание %2$d из %3$d
   Tap to assign: Нажмите для назначения
+  Target: ''
   Target Frequency: Целевая частота
   Target Temperature: Целевая температура
   Target Version: Целевая версия
@@ -2817,14 +2841,18 @@ translations:
     включаться и выключаться.
   ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   : Загружена катушка {}, но файл нарезан для {}. Филамент с наполнителем печатается с меньшим потоком и требует закалённого сопла.
-  : "Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным, затем зафиксируйте показание."
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
+  : "Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным, затем зафиксируйте показание."
+  The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself.: ''
   The offsets are saved when setup finishes. Recalibrate anytime from the console.: ''
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   : Печать на паузе. Смена инструмента сейчас переместит печатающую головку и заменит филамент в сопле. Возобновите печать после завершения смены.
+  The printer extrudes in a corner and repeats until the readings agree. You do not judge anything by eye.: ''
   The printer gave no reason.: ''
   The printer halted this print and cannot resume it. Restart from the beginning?: Принтер
     остановил эту печать и не может её возобновить. Начать с начала?
+  ? The printer heats the nozzle, extrudes a few short test moves in a corner of the plate, and measures them itself. It repeats until the readings agree, then reports one number.
+  : ''
   The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: Принтер не запаркован. Продолжение выполнит парковку всех осей, печатающая головка переместится. Убедитесь, что стол свободен.
   The printer lost power during a print. It can resume where it left off.: Принтер потерял питание во время печати. Он может продолжить с места остановки.
   The printer lost power during a print. The resumed layer may not line up exactly.: Принтер потерял питание во время печати. Возобновлённый слой может не совпасть точно.
@@ -2913,8 +2941,8 @@ translations:
   This will restart Klipper firmware. Any active operations will be interrupted.: Прошивка
     Klipper будет перезапущена. Активные операции будут прерваны.
   This will restart Klipper.: Это перезапустит Klipper.
-  : ''
   ? This writes the offsets to the printer's config and restarts its firmware, which takes a few seconds. Until then they apply only to this session.
+  : ''
   This will save the Z-offset and restart Klipper to write the configuration. The printer will briefly disconnect.: Z-offset будет сохранён, и Klipper перезапустится для записи конфигурации. Принтер ненадолго отключится.
   Thorough: Тщательно
   Thumbnail Only: Только миниатюра
@@ -2961,8 +2989,8 @@ translations:
   'Tool change failed: {}': 'Ошибка смены инструмента: {}'
   Tool mapping failed: Ошибка сопоставления инструмента
   Tool swap: Смена инструмента
-    загружен.'
   'Tool {} → Lane {}: no filament loaded.': 'Инструмент {} → Слот {}: филамент не
+    загружен.'
   'Tool {} → Slot {}: no filament loaded.': 'Инструмент {} → Слот {}: филамент не загружен.'
   ToolOffset: ''
   Toolhead: 'Печатающая головка'
@@ -2991,6 +3019,7 @@ translations:
   Trigger: Триггер
   'Troubleshooting:': 'Устранение неполадок:'
   Try adjusting your search or filters: Попробуйте изменить поиск или фильтры
+  Try again: ''
   Tune: Настройка
   Tuning tower enabled - start a print to test: Башня настройки включена — начните
     печать для теста
@@ -3003,9 +3032,11 @@ translations:
   Turn the extruder heater off after a load or unload finishes: Выключать нагреватель экструдера после загрузки или выгрузки
   Turn the picture to match how the screen is mounted. Applies after restart.: Поворачивает изображение в соответствии с положением экрана. Применяется после перезапуска.
   Turn the printer's lights on or off: Включить или выключить подсветку
+  Two to three minutes, nearly all of it heating. You judge nothing by eye.: ''
   Type: Тип
   Type to preview input field...: Введите для предпросмотра поля ввода...
   'Type:': 'Тип:'
+  Typical for a {} extruder ({:.2f}-{:.2f}).: ''
   T{} calibration was refused: ''
   T{} shares slot with T{}: T{} использует общий слот с T{}
   UI Scale: Масштаб интерфейса
@@ -3239,6 +3270,7 @@ translations:
   Z-offset saved - Klipper restarting...: Z-смещение сохранено — Klipper перезапускается...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
+  attempt {}: ''
   bed: стол
   by Preston Brown: от Preston Brown
   chamber heater: нагреватель камеры
@@ -3269,8 +3301,10 @@ translations:
   locating the bore... {}s: ''
   locating the reference: ''
   locating the reference... {}s: ''
+  locked: ''
   mm before clog: мм до засора
   needs: требуется
+  no tool: ''
   not detected: не обнаружено
   nozzle: сопло
   of: из
@@ -3292,6 +3326,7 @@ translations:
   started: запущено
   steppers: шаговые двигатели
   tall: высотой
+  target {}°: ''
   tool(s): инструмент(ы)
   used: использ.
   v%s available: Доступна v%s

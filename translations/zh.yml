@@ -58,6 +58,7 @@ translations:
   12 Hour: 12 小时
   120 seconds: 120 秒
   15 seconds: 15 秒
+  170-300 °C: ''
   180°: 180°
   180° Upside Down: 180° 上下颠倒
   2 min: '2分钟'
@@ -118,6 +119,7 @@ translations:
   Abort failed: 中止失败
   Aborting AFC operation...: 正在中止AFC操作...
   About: 关于
+  About 3 minutes at {}°C.: ''
   Accel to Decel: 加速到减速
   Acceleration to deceleration limit (mm/s²): 加速到减速限制 (mm/s²)
   Accelerometer: 加速度传感器
@@ -222,6 +224,7 @@ translations:
   Automatic: 自动
   Automatic Heater Control Calibration: 自动加热控制校准
   Automatic LED Control: 自动 LED 控制
+  Automatic calibration: ''
   Aux: 辅助
   Available: 可用
   Available Networks: 可用网络
@@ -266,6 +269,7 @@ translations:
   Bed temp must be 0-200°C: 热床温度必须为 0-200°C
   Bed warming timed out: 热床加热超时
   Before calibrating: ''
+  Before starting: ''
   Belt A: 皮带 A
   Belt A (front right) is tighter by %.0f Hz. Tighten belt B, on the front left, or loosen belt A.: 皮带 A（前右）偏紧 %.0f Hz。请拉紧前左的皮带 B，或松开皮带 A。
   Belt A frequency locked: 皮带 A 频率已锁定
@@ -362,8 +366,6 @@ translations:
   Calibrate input shaping to reduce ringing artifacts in prints: 校准输入整形以减少打印中的振纹
   Calibrate your touchscreen for accurate input: 校准触摸屏以确保输入准确
   Calibrated: 已校准
-  'Calibrating Probe...': ''
-  'Calibrating bed mesh...': ''
   Calibrating Probe...: 正在校准探针...
   Calibrating bed mesh...: 正在校准热床网格...
   Calibrating now: ''
@@ -603,6 +605,7 @@ translations:
   Copied to clipboard!: 已复制到剪贴板！
   Copy Command: 复制命令
   Copy failed - use SSH manually: 复制失败 - 请手动使用 SSH
+  Copy it into this filament's slicer profile — the printer keeps nothing.: ''
   Corner roundness: 圆角程度
   Correction (Ki): 校正 (Ki)
   Could not analyze PRINT_START macro. Some print options may be unavailable.: 无法分析
@@ -1032,7 +1035,9 @@ translations:
   ? Filament is still at the nozzle after unloading. The cut or retract may not have completed. Clear the toolhead before loading another spool.
   : 卸载后耗材仍留在喷嘴处。切断或回抽可能未完成。请先清理工具头，再装载其他料盘。
   'Filament load failed: {}': '耗材加载失败: {}'
+  Filament must be loaded in the extruder, and the build plate on with nothing in the way of the head.: ''
   Filament operation failed: 耗材操作失败
+  'Filament operation failed: {}': ''
   Filament operation timed out: 耗材操作超时
   Filament ran out - nothing at the toolhead and the print is paused.: '耗材已用尽 - 工具头处没有耗材，打印已暂停。'
   ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
@@ -1158,6 +1163,8 @@ translations:
   Heating bed to $1°C...: 正在加热热床至 $1°C...
   Heating bed...: 正在加热热床...
   Heating chamber...: 正在加热腔体...
+  Heating is nearly the whole wait. You can leave the screen — the run stops.: ''
+  Heating nozzle: ''
   Heating nozzle to $1°C...: 正在加热喷嘴至 $1°C...
   Heating nozzle...: 正在加热喷嘴...
   Heating to %d°C... %.0f°C: 加热至 %d°C... %.0f°C
@@ -1301,6 +1308,7 @@ translations:
     HelixScreen 的 Discord 社区，参与讨论、获取技巧、故障排除帮助和功能请求。
   Just now: 刚刚
   Just queued: '刚刚加入队列'
+  K so far: ''
   KEYBOARD LAYOUT: 键盘布局
   KLICKY CONTROLS: KLICKY 控制
   Keep Navigation Bar: 保留导航栏
@@ -1351,6 +1359,7 @@ translations:
   Last: 最近
   # Source: history_dashboard_panel.xml:114
   Last 7 days: '最近 7 天'
+  Last measured: ''
   Last print cancelled: 上次打印已取消
   Last print failed: 上次打印失败
   Later: 稍后
@@ -1496,7 +1505,9 @@ translations:
   'Measure each tool''s nozzle position so all tools print in the same place': ''
   Measured (shaper off): 实测（关闭整形）
   Measured filament diameter: 测量的耗材直径
+  Measured pressure advance: ''
   Measurement Failed: 测量失败
+  Measuring: ''
   Measuring accelerometer noise...: '正在测量加速度计噪声...'
   Measuring now: ''
   Measuring vibrations... {}%: '正在测量振动... {}%'
@@ -1530,6 +1541,7 @@ translations:
   'Motors disable failed: {}': '禁用电机失败: {}'
   Motors disabled: 电机已禁用
   Mount: 装上
+  Mount this tool first: ''
   Move: 移动
   Move paper back and forth while adjusting. Stop when paper catches slightly but still slides.: 调整时前后移动纸张。当纸张有轻微阻力但仍能滑动时停止。
   Move selector: 移动选择器
@@ -1624,6 +1636,7 @@ translations:
   No humidity sensor detected: '未检测到湿度传感器'
   No images found on USB drive: USB驱动器上未找到图片
   No jobs in queue: 队列中无任务
+  No macro configured — set one in Settings: ''
   No macro devices configured: 未配置宏设备
   No macros available: 无可用宏
   No matching prints: 没有匹配的打印
@@ -1656,6 +1669,7 @@ translations:
   No target printer configured: 未配置目标打印机
   No temperature sensors detected: '未检测到温度传感器'
   No timelapse videos found: 未找到延时视频
+  No tool selected: ''
   No vendors found: 未找到供应商
   No video player installed - showing the timelapse library: '未安装视频播放器 – 显示延时摄影库'
   ? "No webcam detected.\nA webcam is required for timelapse."
@@ -1683,6 +1697,7 @@ translations:
   Notes: 备注
   Notes (optional): 备注（可选）
   Nothing to remap: 没有可重新映射的内容
+  Nothing was changed. Temperature and material are kept, so a retry is one tap.: ''
   Nothing was changed. This is usually a dirty nozzle, or the build plate left on the bed.: ''
   Nothing was changed. Usually a dirty nozzle, or the build plate left on the bed.: ''
   Notification: 通知
@@ -1751,6 +1766,7 @@ translations:
   Output Device: 输出设备
   Output Mode: 输出模式
   Output Pin: 输出引脚
+  Outside the usual {:.2f}-{:.2f} for a {} extruder — worth measuring again before trusting it.: ''
   Overheating: 过热
   'Overlay Visits: ': '浮层访问次数: '
   Overlays Opened: 已打开浮层数
@@ -1814,6 +1830,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: 选取
   Pick Color: 选择颜色
+  Pick one in the row above — heat and filament both belong to a tool.: ''
   Pick up tool: 取出工具
   Picking up tool: 正在取用工具
   Pill: 胶囊
@@ -1876,6 +1893,8 @@ translations:
   Presets: 预设
   Press Abort to stop: 按中止以停止
   Press Scan to search: 按扫描搜索
+  Pressure Adv.: ''
+  Pressure Advance: ''
   'Pressure:': '压力:'
   Preview Sounds: 预览声音
   Previous: 上一步
@@ -1955,6 +1974,7 @@ translations:
   Printer is busy - {} stays in the queue: '打印机忙碌中 – {} 保留在队列中'
   Printer is not paired — pair it first: 打印机未配对 — 请先进行配对
   Printer name: 打印机名称
+  Printer not connected: ''
   Printer not ready: 打印机未就绪
   Printer ready: 打印机就绪
   Printer type mismatch: 打印机类型不匹配
@@ -2041,6 +2061,7 @@ translations:
   Raspberry Pi: Raspberry Pi
   Raspberry Pi (32-bit): Raspberry Pi (32-bit)
   Re-identify: 重新识别
+  Re-measure: ''
   Re-probe: 重新探测
   Re-read spool RFID tags and remaining length: '重新读取料盘 RFID 标签与剩余长度'
   Re-syncs Happy Hare's tracked state with the hardware.: 将 Happy Hare 跟踪的状态与硬件重新同步。
@@ -2088,6 +2109,7 @@ translations:
   Release filament: 松开耗材
   Release or grip the filament by hand: 手动松开或夹持耗材
   Release the filament: 松开耗材
+  Remaining: ''
   Remaining (g): 剩余 (g)
   Remaining Weight (g): 剩余重量（克）
   Remap Tool: 重映射工具
@@ -2203,6 +2225,7 @@ translations:
   Run a macro you choose, in one tap: 一键运行选定的宏
   Run brush cleaning sequence: '运行刷子清洁流程'
   Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves): 即使喷嘴处于冷态也执行耗材加载/卸载（适用于自行加热喷嘴的宏）
+  Run stopped: ''
   Run test sequence on all lanes: '在所有槽位运行测试流程'
   Run the HelixScreen installer with --update from a terminal on this printer. Scan for the command for your platform.: 在本打印机的终端中运行 HelixScreen 安装程序并加上 --update。扫码获取适用于你的平台的命令。
   Run {}?: 运行 {}？
@@ -2553,6 +2576,7 @@ translations:
   Tap the crosshair (point %1$d of 3) — touch %2$d of %3$d: 点击十字准星（第 %1$d
     个点，共 3 个）— 触摸 %2$d / %3$d
   Tap to assign: 点击分配
+  Target: ''
   Target Frequency: 目标频率
   Target Temperature: 目标温度
   Target Version: 目标版本
@@ -2612,13 +2636,17 @@ translations:
   The heater will cycle on and off several times.: 加热器将多次开关循环。
   ? The loaded spool is {}, but this file was sliced for {}. Filled filament runs at a lower flow rate and needs a hardened nozzle.
   : 当前装载的料盘是 {}，但此文件为 {} 切片。填充耗材需要以更低的流量运行，且需要硬化喷嘴。
-  : "电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"
   ? "The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."
+  : "电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"
+  The nozzle extrudes a few short test moves in a corner, away from the print area, and repeats until it agrees with itself.: ''
   The offsets are saved when setup finishes. Recalibrate anytime from the console.: ''
   ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
   : 打印已暂停。现在切换工具会移动工具头并更换喷嘴处的耗材。切换完成后请恢复打印。
+  The printer extrudes in a corner and repeats until the readings agree. You do not judge anything by eye.: ''
   The printer gave no reason.: ''
   The printer halted this print and cannot resume it. Restart from the beginning?: 打印机已停止此打印且无法恢复。从头重新开始？
+  ? The printer heats the nozzle, extrudes a few short test moves in a corner of the plate, and measures them itself. It repeats until the readings agree, then reports one number.
+  : ''
   The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: 打印机尚未归位。继续将对所有轴执行归位操作，移动工具头。请确保热床上没有障碍物。
   The printer lost power during a print. It can resume where it left off.: 打印机在打印过程中断电。可以从中断处继续。
   The printer lost power during a print. The resumed layer may not line up exactly.: 打印机在打印过程中断电。恢复后的层可能无法完全对准。
@@ -2687,8 +2715,8 @@ translations:
   This will reset all settings to defaults. This action cannot be undone.: 这将把所有设置重置为默认值。此操作无法撤销。
   This will restart Klipper firmware. Any active operations will be interrupted.: 将重启Klipper固件。所有正在进行的操作将被中断。
   This will restart Klipper.: 这将重启 Klipper。
-  : ''
   ? This writes the offsets to the printer's config and restarts its firmware, which takes a few seconds. Until then they apply only to this session.
+  : ''
   This will save the Z-offset and restart Klipper to write the configuration. The printer will briefly disconnect.: 这将保存 Z 偏移并重启 Klipper 以写入配置。打印机将短暂断开连接。
   Thorough: 全面
   Thumbnail Only: 仅缩略图
@@ -2763,6 +2791,7 @@ translations:
   Trigger: 触发器
   'Troubleshooting:': 故障排除：
   Try adjusting your search or filters: 尝试调整搜索或筛选条件
+  Try again: ''
   Tune: 调优
   Tuning tower enabled - start a print to test: 调优塔已启用 - 开始打印以测试
   Turbo: 极速
@@ -2774,9 +2803,11 @@ translations:
   Turn the extruder heater off after a load or unload finishes: 加载或卸载完成后关闭挤出机加热器
   Turn the picture to match how the screen is mounted. Applies after restart.: 旋转画面以匹配屏幕的安装方向。重启后生效。
   Turn the printer's lights on or off: 开启或关闭打印机灯光
+  Two to three minutes, nearly all of it heating. You judge nothing by eye.: ''
   Type: 类型
   Type to preview input field...: 输入以预览输入框...
   'Type:': '类型:'
+  Typical for a {} extruder ({:.2f}-{:.2f}).: ''
   T{} calibration was refused: ''
   T{} shares slot with T{}: T{} 与 T{} 共用槽位
   UI Scale: 界面缩放
@@ -2994,6 +3025,7 @@ translations:
   Z-offset saved - Klipper restarting...: Z 偏移已保存 - Klipper 重启中...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
+  attempt {}: ''
   bed: 热床
   by Preston Brown: by Preston Brown
   chamber heater: 腔体加热器
@@ -3024,8 +3056,10 @@ translations:
   locating the bore... {}s: ''
   locating the reference: ''
   locating the reference... {}s: ''
+  locked: ''
   mm before clog: 毫米后堵料
   needs: 需要
+  no tool: ''
   not detected: 未检测到
   nozzle: 喷嘴
   of: 的
@@ -3047,6 +3081,7 @@ translations:
   started: 已启动
   steppers: 步进电机
   tall: 高
+  target {}°: ''
   tool(s): 工具
   used: 已使用
   v%s available: v%s 可用
