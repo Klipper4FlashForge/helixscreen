@@ -16,8 +16,11 @@
 #include "ui_spoolman_overlay.h"
 
 #include "app_globals.h"
+#include "hardware_validator.h"
 #include "i_moonraker_api.h"
+#include "printer_state.h"
 #include "static_panel_registry.h"
+#include "theme_manager.h"
 
 #if HELIX_HAS_CAMERA
 // Defined in src/ui/panel_widgets/camera_widget.cpp; that directory is not on
@@ -113,6 +116,8 @@ lv_obj_t* HardwareSettingsOverlay::create(lv_obj_t* parent) {
 
     lv_obj_add_flag(overlay_root_, LV_OBJ_FLAG_HIDDEN);
 
+    bind_hardware_health_row(overlay_root_);
+
     spdlog::info("[{}] Overlay created", get_name());
     return overlay_root_;
 }
@@ -146,7 +151,37 @@ void HardwareSettingsOverlay::show(lv_obj_t* parent_screen) {
 
 void HardwareSettingsOverlay::on_activate() {
     OverlayBase::on_activate();
-    // All rows are action rows with no local state to initialize
+    // Every row is an action row; the only reactive one is bound once at create()
+}
+
+void bind_hardware_health_row(lv_obj_t* overlay_root) {
+    lv_obj_t* row =
+        overlay_root ? lv_obj_find_by_name(overlay_root, "row_hardware_health") : nullptr;
+    if (!row) {
+        spdlog::warn("[HardwareSettingsOverlay] row_hardware_health missing - health summary "
+                     "will not update");
+        return;
+    }
+
+    lv_obj_t* label = lv_obj_find_by_name(row, "label");
+    if (label) {
+        lv_label_bind_text(label, get_printer_state().get_hardware_issues_label_subject(), "%s");
+    }
+
+    // Tint the icon so criticality is legible without opening the overlay.
+    // Neither style matches at OK, leaving the icon on the variant="secondary"
+    // colour the XML gives it.
+    lv_obj_t* row_icon = lv_obj_find_by_name(row, "row_icon");
+    if (row_icon) {
+        lv_subject_t* level = get_printer_state().get_hardware_status_level_subject();
+        auto& theme = ThemeManager::instance();
+        lv_obj_bind_style(row_icon, theme.get_style(StyleRole::IconWarning), LV_PART_MAIN, level,
+                          static_cast<int>(HardwareStatusLevel::ATTENTION));
+        lv_obj_bind_style(row_icon, theme.get_style(StyleRole::IconDanger), LV_PART_MAIN, level,
+                          static_cast<int>(HardwareStatusLevel::CRITICAL));
+    }
+
+    spdlog::debug("[HardwareSettingsOverlay] Hardware health row bound to live status");
 }
 
 // ============================================================================

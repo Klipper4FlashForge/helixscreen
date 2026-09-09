@@ -2200,6 +2200,17 @@ class PrinterState {
     }
 
     /**
+     * @brief Get the headline badge level subject
+     *
+     * Integer subject: 0=ok, 1=attention, 2=critical. Bind appearance to this
+     * rather than to a raw HardwareIssueSeverity, so every surface agrees on
+     * which findings count as merely worth attention.
+     */
+    lv_subject_t* get_hardware_status_level_subject() {
+        return hardware_validation_state_.get_hardware_status_level_subject();
+    }
+
+    /**
      * @brief Get hardware validation version subject
      *
      * Integer subject incremented when validation changes.

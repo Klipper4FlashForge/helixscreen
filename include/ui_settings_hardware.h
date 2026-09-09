@@ -68,4 +68,15 @@ class HardwareSettingsOverlay : public OverlayBase {
  */
 HardwareSettingsOverlay& get_hardware_settings_overlay();
 
+/**
+ * @brief Bind the Hardware Health row to live validation state
+ *
+ * Points the row's label at the issue-count summary and its icon colour at
+ * hardware_status_level. The row lives inside settings_hardware_overlay, so
+ * only something holding that tree can reach the widgets by name.
+ *
+ * @param overlay_root A settings_hardware_overlay tree
+ */
+void bind_hardware_health_row(lv_obj_t* overlay_root);
+
 } // namespace helix::settings
