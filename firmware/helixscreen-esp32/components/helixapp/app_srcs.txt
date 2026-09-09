@@ -149,6 +149,7 @@ src/printer/hh_defaults.cpp
 src/printer/macro_executor.cpp
 src/printer/macro_modification_manager.cpp
 src/printer/macro_param_cache.cpp
+src/printer/pa_calibration.cpp
 src/printer/pause_cause.cpp
 src/printer/power_device_state.cpp
 src/printer/pre_print_option.cpp
@@ -487,6 +488,7 @@ src/ui/ui_text.cpp
 src/ui/ui_text_input.cpp
 src/ui/ui_theme_editor_overlay.cpp
 src/ui/ui_toast_manager.cpp
+src/ui/ui_tool_chip.cpp
 src/ui/ui_touch_calibration_overlay.cpp
 src/ui/ui_utils.cpp
 src/ui/ui_variant.cpp
