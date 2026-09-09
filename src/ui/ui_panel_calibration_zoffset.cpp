@@ -558,10 +558,12 @@ void ZOffsetCalibrationPanel::begin_probe_sequence() {
             },
             [this, tok](const MoonrakerError& err) {
                 // No bg-thread tok.expired() — tok.defer()/NOTIFY_* gate on the main thread (L081).
-                if (err.type == MoonrakerErrorType::TIMEOUT) {
-                    spdlog::warn("[ZOffsetCal] Move to position timed out (may still be running)");
-                    NOTIFY_WARNING(
-                        lv_tr("Calibration move may still be running — response timed out"));
+                if (err.type == MoonrakerErrorType::TIMEOUT ||
+                    err.type == MoonrakerErrorType::CONNECTION_LOST) {
+                    spdlog::warn("[ZOffsetCal] Move to position lost to the transport (may still "
+                                 "be running)");
+                    NOTIFY_WARNING(lv_tr("Calibration move may still be running — printer "
+                                         "connection was interrupted"));
                 } else {
                     spdlog::error("[ZOffsetCal] Failed to move to position: {}", err.message);
                     tok.defer(
@@ -621,10 +623,12 @@ void ZOffsetCalibrationPanel::begin_probe_sequence() {
             },
             [this, tok](const MoonrakerError& err) {
                 // No bg-thread tok.expired() — tok.defer()/NOTIFY_* gate on the main thread (L081).
-                if (err.type == MoonrakerErrorType::TIMEOUT) {
-                    spdlog::warn(
-                        "[ZOffsetCal] Calibration response timed out (may still be running)");
-                    NOTIFY_WARNING(lv_tr("Calibration may still be running — response timed out"));
+                if (err.type == MoonrakerErrorType::TIMEOUT ||
+                    err.type == MoonrakerErrorType::CONNECTION_LOST) {
+                    spdlog::warn("[ZOffsetCal] Calibration response lost to the transport (may "
+                                 "still be running)");
+                    NOTIFY_WARNING(lv_tr("Calibration may still be running — printer connection "
+                                         "was interrupted"));
                 } else {
                     spdlog::error("[ZOffsetCal] Failed to start calibration: {}", err.message);
                     tok.defer("ZOffsetCalibrationPanel::on_calibration_result(cal_fail)", [this]() {

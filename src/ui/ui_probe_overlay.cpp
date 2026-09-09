@@ -698,6 +698,18 @@ void ProbeOverlay::handle_probe_accuracy() {
             spdlog::info("[Probe] PROBE_ACCURACY command completed");
         },
         [api = api_, handler_name = probe_acc_handler_name_](const MoonrakerError& err) {
+            // A dropped socket or an RPC timeout is not a probe result: the
+            // printer may still be measuring, and its result lines arrive on
+            // the same stream the handler is registered on. Keep listening
+            // (prestonbrown/helixscreen#1543); a genuine rejection is still
+            // terminal.
+            if (err.type == MoonrakerErrorType::TIMEOUT ||
+                err.type == MoonrakerErrorType::CONNECTION_LOST) {
+                spdlog::warn("[Probe] PROBE_ACCURACY RPC lost to the transport ({}); still "
+                             "listening for results",
+                             err.type == MoonrakerErrorType::TIMEOUT ? "timeout" : "disconnect");
+                return;
+            }
             spdlog::error("[Probe] PROBE_ACCURACY failed: {}", err.user_message());
             api->unregister_method_callback("notify_gcode_response", handler_name);
             std::string msg = err.user_message();

@@ -1285,9 +1285,13 @@ void PrintPreparationManager::handle_pre_start_gcode_error(
     NavigateToStatusCallback on_navigate_to_status, PrintCompletionCallback on_completion) {
     // The RPC ceiling is not the printer's ceiling: execute_gcode blocks until
     // the macro finishes, and a long pre-start macro can outlive the request.
-    // A timeout while Klipper still reports idle_timeout "Printing" means the
-    // macro is still running — fail only once the printer itself stops.
-    if (error.type == MoonrakerErrorType::TIMEOUT && printer_state_ &&
+    // A timeout or dropped socket while Klipper still reports idle_timeout
+    // "Printing" means the macro is still running — fail only once the printer
+    // itself stops (prestonbrown/helixscreen#1543: the transport vanishing is
+    // not the printer's opinion of the macro).
+    if ((error.type == MoonrakerErrorType::TIMEOUT ||
+         error.type == MoonrakerErrorType::CONNECTION_LOST) &&
+        printer_state_ &&
         lv_subject_get_int(printer_state_->get_idle_timeout_printing_subject()) == 1) {
         begin_pre_start_completion_wait(error, filename, ops_to_disable, on_navigate_to_status,
                                         on_completion);

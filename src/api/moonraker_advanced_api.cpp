@@ -5,12 +5,15 @@
 
 #include "ui_error_reporting.h"
 #include "ui_notification.h"
+#include "ui_observer_guard.h"
+#include "ui_update_queue.h"
 
 #include "accel_sensor_manager.h"
 #include "app_globals.h"
 #include "bed_mesh_probe_parser.h"
 #include "json_utils.h"
 #include "moonraker_api.h"
+#include "operation_timeout_guard.h"
 #include "printer_state.h"
 #include "probe_preparation.h"
 #include "screws_tilt_parser.h"
@@ -297,6 +300,229 @@ void MoonrakerAdvancedAPI::get_available_objects(
 // ADVANCED PANEL STUB IMPLEMENTATIONS
 // ============================================================================
 // These methods are placeholders for future implementation.
+
+/**
+ * Shared lifecycle for the calibration collectors: notify_gcode_response
+ * registration and teardown, the completion gate, and the classification
+ * that decides whether an RPC error was the transport vanishing or the
+ * printer's opinion of the macro.
+ *
+ * A dropped WebSocket, a timeout that a slow calibration simply outlived —
+ * neither is Klipper telling us the macro failed, so a collector that treats
+ * them as terminal unregisters mid-run and the UI reports failure, re-arms
+ * Retry, or cools the heaters against a printer that is still executing
+ * (prestonbrown/helixscreen#1543). Collectors therefore absorb TIMEOUT and
+ * CONNECTION_LOST and keep listening for the result lines; anything carrying
+ * Klipper's own complaint is still a real failure and stays terminal.
+ */
+class CalibrationCollectorCore { // NAMESPACE_OK: sibling to the six collectors this file
+                                 // already declares at global scope
+  public:
+    CalibrationCollectorCore(IMoonrakerClient& client, const char* handler_prefix)
+        : client_(client), handler_name_(std::string(handler_prefix) + std::to_string(next_id())) {}
+
+    ~CalibrationCollectorCore() {
+        *alive_token_ = false;
+        unregister();
+    }
+
+    /// Register the forwarding handler. on_msg runs on the Websocket thread.
+    void start(const std::function<void(const json&)>& on_msg) {
+        client_.register_method_callback("notify_gcode_response", handler_name_, on_msg);
+        registered_.store(true);
+        spdlog::debug("[{}] Started (handler: {})", handler_name_, handler_name_);
+    }
+
+    void unregister() {
+        if (registered_.exchange(false)) {
+            client_.unregister_method_callback("notify_gcode_response", handler_name_);
+            spdlog::debug("[{}] Unregistered", handler_name_);
+        }
+    }
+
+    void mark_completed() {
+        completed_.store(true);
+        disarm_idle_fallback();
+    }
+
+    /// Mark completed; false when completion was already recorded, so the
+    /// complete-once guard each collector used to exchange on its own atomic
+    /// keeps its semantics.
+    [[nodiscard]] bool try_complete() {
+        const bool first = !completed_.exchange(true);
+        if (first)
+            disarm_idle_fallback();
+        return first;
+    }
+
+    [[nodiscard]] bool completed() const {
+        return completed_.load();
+    }
+
+    /// The owner's two terminal handlers for an absorbed transport error:
+    /// on_idle runs when the printer's busy->idle edge proves the macro
+    /// finished (the idle subject freezes while offline, so the edge can only
+    /// arrive after a reconnect); on_unrecovered runs when the backstop re-read
+    /// still shows the printer busy. Bind them in the collector constructor.
+    /// @param edge_immediate True when the busy->idle edge is a definitive
+    ///        completion signal by itself (screws tilt, bed mesh — their data
+    ///        is complete the moment the macro finishes). False for
+    ///        line-driven collectors: the result lines can trail the edge by a
+    ///        moment, so the edge starts a short grace window instead.
+    void set_idle_fallback(std::function<void()> on_idle,
+                           std::function<void(const std::string&)> on_unrecovered,
+                           bool edge_immediate = false) {
+        fallback_.on_idle = std::move(on_idle);
+        fallback_.on_unrecovered = std::move(on_unrecovered);
+        fallback_.edge_immediate = edge_immediate;
+    }
+
+    /// Arm the busy->idle follow-up after an absorbed transport error. Runs on
+    /// the main thread (observer attach and the backstop timer both require
+    /// it); the driver's error callback may fire on the WebSocket thread, so
+    /// the work is queued.
+    void arm_idle_fallback(PrinterState& state, uint32_t backstop_ms) {
+        auto alive = alive_token_;
+        helix::ui::queue_update(
+            // QUEUE_RAW_THIS_OK: alive-token bool checked first; it outlives the core.
+            "CalibrationCollectorCore::arm_idle_fallback", [this, alive, &state, backstop_ms]() {
+                if (!*alive) {
+                    return;
+                }
+                if (completed() || fallback_.armed) {
+                    return;
+                }
+                fallback_.armed = true;
+                lv_subject_t* idle_subject = state.get_idle_timeout_printing_subject();
+                if (idle_subject) {
+                    fallback_.observer = ObserverGuard(
+                        idle_subject,
+                        [](lv_observer_t* obs, lv_subject_t* subject) {
+                            auto* self = static_cast<CalibrationCollectorCore*>(
+                                lv_observer_get_user_data(obs));
+                            if (!self->fallback_.armed || lv_subject_get_int(subject) == 1) {
+                                return;
+                            }
+                            if (self->fallback_.edge_immediate) {
+                                auto on_idle = std::move(self->fallback_.on_idle);
+                                self->disarm_idle_fallback();
+                                if (on_idle)
+                                    on_idle();
+                                return;
+                            }
+                            // Line-driven: result lines can trail the edge. Give
+                            // them a grace window before concluding the results
+                            // were lost; the long ceiling backstop still covers
+                            // the still-busy case above this.
+                            auto* core = self;
+                            core->fallback_.grace.begin(kEdgeGraceMs, [core, subject]() {
+                                if (!core->fallback_.armed || core->completed() ||
+                                    lv_subject_get_int(subject) == 1) {
+                                    core->fallback_.grace.end();
+                                    return;
+                                }
+                                auto on_idle = std::move(core->fallback_.on_idle);
+                                core->disarm_idle_fallback();
+                                if (on_idle)
+                                    on_idle();
+                            });
+                        },
+                        this);
+                }
+                fallback_.backstop.begin(backstop_ms, [this, idle_subject]() {
+                    if (!fallback_.armed) {
+                        return;
+                    }
+                    const bool still_busy = idle_subject && lv_subject_get_int(idle_subject) == 1;
+                    auto on_unrecovered = std::move(fallback_.on_unrecovered);
+                    disarm_idle_fallback();
+                    if (!on_unrecovered)
+                        return;
+                    if (still_busy) {
+                        on_unrecovered("printer still busy after extended wait");
+                    } else {
+                        // Subject re-read says idle: the edge itself was missed,
+                        // not the completion. Same outcome as the observer path.
+                        auto on_idle = std::move(fallback_.on_idle);
+                        if (on_idle)
+                            on_idle();
+                    }
+                });
+            });
+    }
+
+    void disarm_idle_fallback() {
+        fallback_.armed = false;
+        fallback_.observer.reset();
+        fallback_.backstop.end();
+        fallback_.grace.end();
+    }
+
+    [[nodiscard]] bool registered() const {
+        return registered_.load();
+    }
+
+    [[nodiscard]] static bool transport_error(const MoonrakerError& err) {
+        return err.type == MoonrakerErrorType::TIMEOUT ||
+               err.type == MoonrakerErrorType::CONNECTION_LOST;
+    }
+
+  private:
+    static uint64_t next_id() {
+        static std::atomic<uint64_t> s_collector_id{0};
+        return ++s_collector_id;
+    }
+
+    IMoonrakerClient& client_;
+    /// False once the core is destroyed; queued main-thread work re-checks it
+    /// before touching members, so a terminal error racing the arm cannot read
+    /// freed storage.
+    std::shared_ptr<bool> alive_token_{std::make_shared<bool>(true)};
+    std::string handler_name_;
+    std::atomic<bool> registered_{false};
+    std::atomic<bool> completed_{false};
+
+    /// How long the line-driven collectors let result lines trail the
+    /// busy->idle edge before concluding they were lost to the outage.
+    static constexpr uint32_t kEdgeGraceMs = 3000;
+
+    struct IdleEdgeFallback {
+        bool armed = false;
+        bool edge_immediate = false;
+        ObserverGuard observer;
+        OperationTimeoutGuard backstop;
+        OperationTimeoutGuard grace;
+        std::function<void()> on_idle;
+        std::function<void(const std::string&)> on_unrecovered;
+    } fallback_;
+};
+
+/// The one RPC-error policy every calibration driver shares: absorb transport
+/// losses (keep the collector listening — the macro may still be running),
+/// terminate on the printer's own opinion. @p extra runs ahead of the absorb
+/// return for drivers that record stall diagnostics.
+template <typename Collector>
+void report_collector_rpc_error( // NAMESPACE_OK: anonymous-namespace helper beside the
+                                 // collectors it drives
+    const char* cmd, PrinterState& state, const std::shared_ptr<Collector>& collector,
+    const MoonrakerAdvancedAPI::ErrorCallback& on_error, const MoonrakerError& err,
+    uint32_t backstop_ms, const std::function<void()>& extra = nullptr) {
+    if (CalibrationCollectorCore::transport_error(err)) {
+        if (extra)
+            extra();
+        spdlog::warn("[MoonrakerAPI] {} RPC lost to the transport ({}); collector still "
+                     "listening - calibration may still be running",
+                     cmd, (err.type == MoonrakerErrorType::TIMEOUT ? "timeout" : "disconnect"));
+        collector->arm_idle_fallback(state, backstop_ms);
+        return;
+    }
+    spdlog::error("[MoonrakerAPI] Failed to send {}: {}", cmd, err.message);
+    collector->mark_completed();
+    collector->unregister();
+    if (on_error)
+        on_error(err);
+}
+
 // NOTE: start_bed_mesh_calibrate is implemented after BedMeshProgressCollector class below.
 
 /**
@@ -322,37 +548,33 @@ class PIDCalibrateCollector : public std::enable_shared_from_this<PIDCalibrateCo
     PIDCalibrateCollector(IMoonrakerClient& client, PIDCallback on_success,
                           MoonrakerAdvancedAPI::ErrorCallback on_error,
                           PIDProgressCallback on_progress = nullptr)
-        : client_(client), on_success_(std::move(on_success)), on_error_(std::move(on_error)),
-          on_progress_(std::move(on_progress)) {}
-
-    ~PIDCalibrateCollector() {
-        unregister();
-    }
+        : core_(client, "pid_calibrate_collector_"), on_success_(std::move(on_success)),
+          on_error_(std::move(on_error)), on_progress_(std::move(on_progress)) {}
 
     void start() {
-        static std::atomic<uint64_t> s_collector_id{0};
-        handler_name_ = "pid_calibrate_collector_" + std::to_string(++s_collector_id);
         auto self = shared_from_this();
-        client_.register_method_callback("notify_gcode_response", handler_name_,
-                                         [self](const json& msg) { self->on_gcode_response(msg); });
-        registered_.store(true);
-        spdlog::debug("[PIDCalibrateCollector] Started (handler: {})", handler_name_);
+        core_.start([self](const json& msg) { self->on_gcode_response(msg); });
+        core_.set_idle_fallback(
+            [self]() {
+                self->complete_error(
+                    "Connection to printer was lost during PID calibration - result unavailable");
+            },
+            [self](const std::string& why) { self->complete_error("PID_CALIBRATE " + why); });
     }
 
     void unregister() {
-        bool was = registered_.exchange(false);
-        if (was) {
-            client_.unregister_method_callback("notify_gcode_response", handler_name_);
-            spdlog::debug("[PIDCalibrateCollector] Unregistered");
-        }
+        core_.unregister();
     }
 
     void mark_completed() {
-        completed_.store(true);
+        core_.mark_completed();
+    }
+    void arm_idle_fallback(PrinterState& state, uint32_t backstop_ms) {
+        core_.arm_idle_fallback(state, backstop_ms);
     }
 
     void on_gcode_response(const json& msg) {
-        if (completed_.load())
+        if (core_.completed())
             return;
         if (!msg.contains("params") || !msg["params"].is_array() || msg["params"].empty())
             return;
@@ -409,7 +631,7 @@ class PIDCalibrateCollector : public std::enable_shared_from_this<PIDCalibrateCo
 
   private:
     void complete_success(float kp, float ki, float kd) {
-        if (completed_.exchange(true))
+        if (!core_.try_complete())
             return;
         spdlog::info("[PIDCalibrateCollector] PID result: Kp={:.3f} Ki={:.3f} Kd={:.3f}", kp, ki,
                      kd);
@@ -419,7 +641,7 @@ class PIDCalibrateCollector : public std::enable_shared_from_this<PIDCalibrateCo
     }
 
     void complete_error(const std::string& message) {
-        if (completed_.exchange(true))
+        if (!core_.try_complete())
             return;
         spdlog::error("[PIDCalibrateCollector] Error: {}", message);
         unregister();
@@ -429,13 +651,12 @@ class PIDCalibrateCollector : public std::enable_shared_from_this<PIDCalibrateCo
         }
     }
 
-    IMoonrakerClient& client_;
+    // Declared first so it tears down last: unregister() in the member dtor
+    // runs while the client still outlives this collector's callbacks.
+    CalibrationCollectorCore core_;
     PIDCallback on_success_;
     MoonrakerAdvancedAPI::ErrorCallback on_error_;
     PIDProgressCallback on_progress_;
-    std::string handler_name_;
-    std::atomic<bool> registered_{false};
-    std::atomic<bool> completed_{false};
 };
 
 /**
@@ -464,39 +685,35 @@ class MPCCalibrateCollector : public std::enable_shared_from_this<MPCCalibrateCo
     MPCCalibrateCollector(IMoonrakerClient& client, MPCCallback on_success,
                           MoonrakerAdvancedAPI::ErrorCallback on_error,
                           MPCProgressCB on_progress = nullptr, bool expect_fan_data = false)
-        : client_(client), on_success_(std::move(on_success)), on_error_(std::move(on_error)),
-          on_progress_(std::move(on_progress)) {
+        : core_(client, "mpc_calibrate_collector_"), on_success_(std::move(on_success)),
+          on_error_(std::move(on_error)), on_progress_(std::move(on_progress)) {
         expect_fan_data_ = expect_fan_data;
     }
 
-    ~MPCCalibrateCollector() {
-        unregister();
-    }
-
     void start() {
-        static std::atomic<uint64_t> s_collector_id{0};
-        handler_name_ = "mpc_calibrate_collector_" + std::to_string(++s_collector_id);
         auto self = shared_from_this();
-        client_.register_method_callback("notify_gcode_response", handler_name_,
-                                         [self](const json& msg) { self->on_gcode_response(msg); });
-        registered_.store(true);
-        spdlog::debug("[MPCCalibrateCollector] Started (handler: {})", handler_name_);
+        core_.start([self](const json& msg) { self->on_gcode_response(msg); });
+        core_.set_idle_fallback(
+            [self]() {
+                self->complete_error(
+                    "Connection to printer was lost during MPC calibration - result unavailable");
+            },
+            [self](const std::string& why) { self->complete_error("MPC_CALIBRATE " + why); });
     }
 
     void unregister() {
-        bool was = registered_.exchange(false);
-        if (was) {
-            client_.unregister_method_callback("notify_gcode_response", handler_name_);
-            spdlog::debug("[MPCCalibrateCollector] Unregistered");
-        }
+        core_.unregister();
     }
 
     void mark_completed() {
-        completed_.store(true);
+        core_.mark_completed();
+    }
+    void arm_idle_fallback(PrinterState& state, uint32_t backstop_ms) {
+        core_.arm_idle_fallback(state, backstop_ms);
     }
 
     void on_gcode_response(const json& msg) {
-        if (completed_.load())
+        if (core_.completed())
             return;
         if (!msg.contains("params") || !msg["params"].is_array() || msg["params"].empty())
             return;
@@ -633,7 +850,7 @@ class MPCCalibrateCollector : public std::enable_shared_from_this<MPCCalibrateCo
     }
 
     void complete_success() {
-        if (completed_.exchange(true))
+        if (!core_.try_complete())
             return;
         spdlog::info("[MPCCalibrateCollector] MPC result: bhc={:.4f} sr={:.6f} at={:.6f} fat={}",
                      result_.block_heat_capacity, result_.sensor_responsiveness,
@@ -644,7 +861,7 @@ class MPCCalibrateCollector : public std::enable_shared_from_this<MPCCalibrateCo
     }
 
     void complete_error(const std::string& message) {
-        if (completed_.exchange(true))
+        if (!core_.try_complete())
             return;
         spdlog::error("[MPCCalibrateCollector] Error: {}", message);
         unregister();
@@ -654,13 +871,10 @@ class MPCCalibrateCollector : public std::enable_shared_from_this<MPCCalibrateCo
         }
     }
 
-    IMoonrakerClient& client_;
+    CalibrationCollectorCore core_;
     MPCCallback on_success_;
     MoonrakerAdvancedAPI::ErrorCallback on_error_;
     MPCProgressCB on_progress_;
-    std::string handler_name_;
-    std::atomic<bool> registered_{false};
-    std::atomic<bool> completed_{false};
 
     // Result accumulation state
     bool expect_fan_data_ = false;
@@ -704,35 +918,20 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
     ///        go stale and start naming a macro the user never ran.
     ScrewsTiltCollector(IMoonrakerClient& client, ScrewTiltCallback on_success,
                         MoonrakerAdvancedAPI::ErrorCallback on_error, std::string command)
-        : client_(client), on_success_(std::move(on_success)), on_error_(std::move(on_error)),
-          command_(std::move(command)) {}
-
-    ~ScrewsTiltCollector() {
-        // Ensure we always unregister callback
-        unregister();
-    }
+        : core_(client, "screws_tilt_collector_"), on_success_(std::move(on_success)),
+          on_error_(std::move(on_error)), command_(std::move(command)) {}
 
     void start() {
-        // Register for gcode_response notifications
-        // Use atomic counter for unique handler names (safer than pointer address reuse)
-        static std::atomic<uint64_t> s_collector_id{0};
-        handler_name_ = "screws_tilt_collector_" + std::to_string(++s_collector_id);
-
         auto self = shared_from_this();
-        client_.register_method_callback("notify_gcode_response", handler_name_,
-                                         [self](const json& msg) { self->on_gcode_response(msg); });
-
-        registered_.store(true);
-        spdlog::debug("[ScrewsTiltCollector] Started collecting responses (handler: {})",
-                      handler_name_);
+        core_.start([self](const json& msg) { self->on_gcode_response(msg); });
+        core_.set_idle_fallback(
+            [self]() { self->on_command_finished(); },
+            [self](const std::string& why) { self->complete_error(self->command_ + " " + why); },
+            /*edge_immediate=*/true);
     }
 
     void unregister() {
-        bool was_registered = registered_.exchange(false);
-        if (was_registered) {
-            client_.unregister_method_callback("notify_gcode_response", handler_name_);
-            spdlog::debug("[ScrewsTiltCollector] Unregistered callback");
-        }
+        core_.unregister();
     }
 
     /**
@@ -741,7 +940,10 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
      * Used when the execute_gcode error path handles the error callback directly.
      */
     void mark_completed() {
-        completed_.store(true);
+        core_.mark_completed();
+    }
+    void arm_idle_fallback(PrinterState& state, uint32_t backstop_ms) {
+        core_.arm_idle_fallback(state, backstop_ms);
     }
 
     /**
@@ -752,7 +954,7 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
      * and all notify_gcode_response lines (including screw results) have been sent.
      */
     void on_command_finished() {
-        if (completed_.load()) {
+        if (core_.completed()) {
             return;
         }
 
@@ -768,7 +970,7 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
 
     void on_gcode_response(const json& msg) {
         // Check if already completed (prevent double-invocation)
-        if (completed_.load()) {
+        if (core_.completed()) {
             return;
         }
 
@@ -810,10 +1012,9 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
     }
 
     void complete_success() {
-        if (completed_) {
+        if (!core_.try_complete()) {
             return;
         }
-        completed_ = true;
 
         spdlog::info("[ScrewsTiltCollector] Complete with {} screws", results_.size());
         unregister();
@@ -824,10 +1025,9 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
     }
 
     void complete_error(const std::string& message) {
-        if (completed_) {
+        if (!core_.try_complete()) {
             return;
         }
-        completed_ = true;
 
         spdlog::error("[ScrewsTiltCollector] Error: {}", message);
         unregister();
@@ -838,13 +1038,10 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
         }
     }
 
-    IMoonrakerClient& client_;
+    CalibrationCollectorCore core_;
     ScrewTiltCallback on_success_;
     MoonrakerAdvancedAPI::ErrorCallback on_error_;
-    std::string handler_name_;
-    std::string command_;                 ///< Resolved macro name, NOT a literal
-    std::atomic<bool> registered_{false}; // Thread-safe: accessed from callback and destructor
-    std::atomic<bool> completed_{false};  // Thread-safe: prevents double-callback invocation
+    std::string command_; ///< Resolved macro name, NOT a literal
     std::vector<ScrewTiltResult> results_;
 };
 
@@ -901,38 +1098,31 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
     InputShaperCollector(IMoonrakerClient& client, char axis, ShaperProgressCallback on_progress,
                          InputShaperCallback on_success,
                          MoonrakerAdvancedAPI::ErrorCallback on_error)
-        : client_(client), axis_(axis), on_progress_(std::move(on_progress)),
-          on_success_(std::move(on_success)), on_error_(std::move(on_error)),
-          last_activity_ms_(steady_now_ms()) {}
-
-    ~InputShaperCollector() {
-        unregister();
-    }
+        : core_(client, "input_shaper_collector_"), axis_(axis),
+          on_progress_(std::move(on_progress)), on_success_(std::move(on_success)),
+          on_error_(std::move(on_error)), last_activity_ms_(steady_now_ms()) {}
 
     void start() {
-        static std::atomic<uint64_t> s_collector_id{0};
-        handler_name_ = "input_shaper_collector_" + std::to_string(++s_collector_id);
-
         auto self = shared_from_this();
-        client_.register_method_callback("notify_gcode_response", handler_name_,
-                                         [self](const json& msg) { self->on_gcode_response(msg); });
-
-        registered_.store(true);
-        spdlog::debug(
-            "[InputShaperCollector] Started collecting responses for axis {} (handler: {})", axis_,
-            handler_name_);
+        core_.start([self](const json& msg) { self->on_gcode_response(msg); });
+        spdlog::debug("[InputShaperCollector] Started collecting responses for axis {}", axis_);
+        core_.set_idle_fallback(
+            [self]() {
+                self->complete_error(
+                    "Connection to printer was lost during resonance test - result unavailable");
+            },
+            [self](const std::string& why) { self->complete_error("SHAPER_CALIBRATE " + why); });
     }
 
     void unregister() {
-        bool was_registered = registered_.exchange(false);
-        if (was_registered) {
-            client_.unregister_method_callback("notify_gcode_response", handler_name_);
-            spdlog::debug("[InputShaperCollector] Unregistered callback");
-        }
+        core_.unregister();
     }
 
     void mark_completed() {
-        completed_.store(true);
+        core_.mark_completed();
+    }
+    void arm_idle_fallback(PrinterState& state, uint32_t backstop_ms) {
+        core_.arm_idle_fallback(state, backstop_ms);
     }
 
     /**
@@ -980,7 +1170,7 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
         // "calibration data written to" line, so completing on the CSV line
         // cannot race the marker away. A fork emitting the marker after the
         // CSV line would lose it here.
-        if (completed_.load()) {
+        if (core_.completed()) {
             return;
         }
 
@@ -1304,7 +1494,7 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
     }
 
     void complete_success() {
-        if (completed_.exchange(true)) {
+        if (!core_.try_complete()) {
             return;
         }
 
@@ -1370,7 +1560,7 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
     }
 
     void complete_error(const std::string& message) {
-        if (completed_.exchange(true)) {
+        if (!core_.try_complete()) {
             return;
         }
 
@@ -1392,14 +1582,11 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
         float max_accel = 0.0f;
     };
 
-    IMoonrakerClient& client_;
+    CalibrationCollectorCore core_;
     char axis_;
     ShaperProgressCallback on_progress_;
     InputShaperCallback on_success_;
     MoonrakerAdvancedAPI::ErrorCallback on_error_;
-    std::string handler_name_;
-    std::atomic<bool> registered_{false};
-    std::atomic<bool> completed_{false};
 
     CollectorState collector_state_ = CollectorState::WAITING_FOR_OUTPUT;
     // Atomic because the configfile query answers on the RPC path while the
@@ -1440,39 +1627,34 @@ class NoiseCheckCollector : public std::enable_shared_from_this<NoiseCheckCollec
     NoiseCheckCollector(IMoonrakerClient& client,
                         MoonrakerAdvancedAPI::NoiseCheckCallback on_success,
                         MoonrakerAdvancedAPI::ErrorCallback on_error)
-        : client_(client), on_success_(std::move(on_success)), on_error_(std::move(on_error)) {}
-
-    ~NoiseCheckCollector() {
-        unregister();
-    }
+        : core_(client, "noise_check_collector_"), on_success_(std::move(on_success)),
+          on_error_(std::move(on_error)) {}
 
     void start() {
-        static std::atomic<uint64_t> s_collector_id{0};
-        handler_name_ = "noise_check_collector_" + std::to_string(++s_collector_id);
-
         auto self = shared_from_this();
-        client_.register_method_callback("notify_gcode_response", handler_name_,
-                                         [self](const json& msg) { self->on_gcode_response(msg); });
-
-        registered_.store(true);
-        spdlog::debug("[NoiseCheckCollector] Started collecting responses (handler: {})",
-                      handler_name_);
+        core_.start([self](const json& msg) { self->on_gcode_response(msg); });
+        spdlog::debug("[NoiseCheckCollector] Started collecting responses");
+        core_.set_idle_fallback(
+            [self]() {
+                self->complete_error(
+                    "Connection to printer was lost during noise measurement - result unavailable");
+            },
+            [self](const std::string& why) { self->complete_error("MEASURE_AXES_NOISE " + why); });
     }
 
     void unregister() {
-        bool was_registered = registered_.exchange(false);
-        if (was_registered) {
-            client_.unregister_method_callback("notify_gcode_response", handler_name_);
-            spdlog::debug("[NoiseCheckCollector] Unregistered callback");
-        }
+        core_.unregister();
     }
 
     void mark_completed() {
-        completed_.store(true);
+        core_.mark_completed();
+    }
+    void arm_idle_fallback(PrinterState& state, uint32_t backstop_ms) {
+        core_.arm_idle_fallback(state, backstop_ms);
     }
 
     void on_gcode_response(const json& msg) {
-        if (completed_.load()) {
+        if (core_.completed()) {
             return;
         }
 
@@ -1548,7 +1730,7 @@ class NoiseCheckCollector : public std::enable_shared_from_this<NoiseCheckCollec
     }
 
     void complete_success(float noise_level) {
-        if (completed_.exchange(true)) {
+        if (!core_.try_complete()) {
             return;
         }
 
@@ -1561,7 +1743,7 @@ class NoiseCheckCollector : public std::enable_shared_from_this<NoiseCheckCollec
     }
 
     void complete_error(const std::string& message) {
-        if (completed_.exchange(true)) {
+        if (!core_.try_complete()) {
             return;
         }
 
@@ -1574,12 +1756,9 @@ class NoiseCheckCollector : public std::enable_shared_from_this<NoiseCheckCollec
         }
     }
 
-    IMoonrakerClient& client_;
+    CalibrationCollectorCore core_;
     MoonrakerAdvancedAPI::NoiseCheckCallback on_success_;
     MoonrakerAdvancedAPI::ErrorCallback on_error_;
-    std::string handler_name_;
-    std::atomic<bool> registered_{false};
-    std::atomic<bool> completed_{false};
 };
 
 /**
@@ -1609,37 +1788,29 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
                              MoonrakerAdvancedAPI::SuccessCallback on_complete,
                              MoonrakerAdvancedAPI::ErrorCallback on_error, int expected_probes = 0,
                              int probe_samples = 1)
-        : client_(client), on_progress_(std::move(on_progress)),
+        : core_(client, "bed_mesh_collector_"), on_progress_(std::move(on_progress)),
           on_complete_(std::move(on_complete)), on_error_(std::move(on_error)),
           expected_probes_(expected_probes), point_counter_(probe_samples) {}
 
-    ~BedMeshProgressCollector() {
-        unregister();
-    }
-
     void start() {
-        static std::atomic<uint64_t> s_collector_id{0};
-        handler_name_ = "bed_mesh_collector_" + std::to_string(++s_collector_id);
-
         auto self = shared_from_this();
-        client_.register_method_callback("notify_gcode_response", handler_name_,
-                                         [self](const json& msg) { self->on_gcode_response(msg); });
-
-        registered_.store(true);
-        spdlog::debug("[BedMeshProgressCollector] Started collecting responses (handler: {})",
-                      handler_name_);
+        core_.start([self](const json& msg) { self->on_gcode_response(msg); });
+        spdlog::debug("[BedMeshProgressCollector] Started collecting responses");
+        core_.set_idle_fallback(
+            [self]() { self->on_command_finished(); },
+            [self](const std::string& why) { self->complete_error("BED_MESH_CALIBRATE " + why); },
+            /*edge_immediate=*/true);
     }
 
     void unregister() {
-        bool was_registered = registered_.exchange(false);
-        if (was_registered) {
-            client_.unregister_method_callback("notify_gcode_response", handler_name_);
-            spdlog::debug("[BedMeshProgressCollector] Unregistered callback");
-        }
+        core_.unregister();
     }
 
     void mark_completed() {
-        completed_.store(true);
+        core_.mark_completed();
+    }
+    void arm_idle_fallback(PrinterState& state, uint32_t backstop_ms) {
+        core_.arm_idle_fallback(state, backstop_ms);
     }
 
     /// Called when the JSON-RPC response returns successfully — the command
@@ -1651,7 +1822,7 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
     }
 
     void on_gcode_response(const json& msg) {
-        if (completed_.load()) {
+        if (core_.completed()) {
             return;
         }
 
@@ -1721,7 +1892,7 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
     }
 
     void complete_success() {
-        if (completed_.exchange(true)) {
+        if (!core_.try_complete()) {
             return; // Already completed
         }
 
@@ -1740,7 +1911,7 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
     }
 
     void complete_error(const std::string& message) {
-        if (completed_.exchange(true)) {
+        if (!core_.try_complete()) {
             return;
         }
 
@@ -1753,13 +1924,10 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
         }
     }
 
-    IMoonrakerClient& client_;
+    CalibrationCollectorCore core_;
     ProgressCallback on_progress_;
     MoonrakerAdvancedAPI::SuccessCallback on_complete_;
     MoonrakerAdvancedAPI::ErrorCallback on_error_;
-    std::string handler_name_;
-    std::atomic<bool> registered_{false};
-    std::atomic<bool> completed_{false};
 
     int current_probe_ = 0;
     int total_probes_ = 0;
@@ -1819,17 +1987,11 @@ void MoonrakerAdvancedAPI::start_bed_mesh_calibrate(const BedMeshCommand& comman
             spdlog::debug("[MoonrakerAPI] BED_MESH_CALIBRATE command finished");
             collector->on_command_finished();
         },
-        [collector, on_error](const MoonrakerError& err) {
-            if (err.type == MoonrakerErrorType::TIMEOUT) {
-                spdlog::warn("[MoonrakerAPI] BED_MESH_CALIBRATE response timed out "
-                             "(calibration may still be running)");
-            } else {
-                spdlog::error("[MoonrakerAPI] BED_MESH_CALIBRATE failed: {}", err.message);
-            }
-            collector->mark_completed();
-            if (on_error) {
-                on_error(err);
-            }
+        [collector, on_error, command, prep_timeout_ms](const MoonrakerError& err) {
+            report_collector_rpc_error(
+                "BED_MESH_CALIBRATE", get_printer_state(), collector, on_error, err,
+                command.self_prepares ? SELF_PREPARED_CALIBRATION_TIMEOUT_MS
+                                      : CALIBRATION_TIMEOUT_MS + prep_timeout_ms);
         },
         command.self_prepares ? SELF_PREPARED_CALIBRATION_TIMEOUT_MS
                               : CALIBRATION_TIMEOUT_MS + prep_timeout_ms);
@@ -1870,19 +2032,9 @@ void MoonrakerAdvancedAPI::calculate_screws_tilt(ScrewTiltCallback on_success,
             spdlog::debug("[Moonraker API] SCREWS_TILT_CALCULATE command finished");
             collector->on_command_finished();
         },
-        [collector, on_error](const MoonrakerError& err) {
-            if (err.type == MoonrakerErrorType::TIMEOUT) {
-                spdlog::warn("[Moonraker API] SCREWS_TILT_CALCULATE response timed out "
-                             "(probing may still be running)");
-            } else {
-                spdlog::error("[Moonraker API] Failed to send SCREWS_TILT_CALCULATE: {}",
-                              err.message);
-            }
-            collector->mark_completed();
-            collector->unregister();
-            if (on_error) {
-                on_error(err);
-            }
+        [collector, on_error, prep_timeout_ms](const MoonrakerError& err) {
+            report_collector_rpc_error("SCREWS_TILT_CALCULATE", get_printer_state(), collector,
+                                       on_error, err, CALIBRATION_TIMEOUT_MS + prep_timeout_ms);
         },
         CALIBRATION_TIMEOUT_MS + prep_timeout_ms);
 }
@@ -1966,18 +2118,10 @@ void MoonrakerAdvancedAPI::start_resonance_test(char axis, ShaperProgressCallbac
     api_.execute_gcode(
         cmd, []() { spdlog::debug("[Moonraker API] SHAPER_CALIBRATE command accepted"); },
         [collector, on_error](const MoonrakerError& err) {
-            if (err.type == MoonrakerErrorType::TIMEOUT) {
-                spdlog::warn("[Moonraker API] SHAPER_CALIBRATE response timed out "
-                             "(calibration may still be running)");
-                collector->log_stall_diagnostics("SHAPER_CALIBRATE timed out");
-            } else {
-                spdlog::error("[Moonraker API] Failed to send SHAPER_CALIBRATE: {}", err.message);
-            }
-            collector->mark_completed();
-            collector->unregister();
-            if (on_error) {
-                on_error(err);
-            }
+            report_collector_rpc_error(
+                "SHAPER_CALIBRATE", get_printer_state(), collector, on_error, err,
+                SHAPER_TIMEOUT_MS,
+                [collector]() { collector->log_stall_diagnostics("SHAPER_CALIBRATE RPC lost"); });
         },
         SHAPER_TIMEOUT_MS);
 }
@@ -2019,16 +2163,8 @@ void MoonrakerAdvancedAPI::measure_axes_noise(NoiseCheckCallback on_complete,
         "MEASURE_AXES_NOISE",
         []() { spdlog::debug("[Moonraker API] MEASURE_AXES_NOISE command accepted"); },
         [collector, on_error](const MoonrakerError& err) {
-            if (err.type == MoonrakerErrorType::TIMEOUT) {
-                spdlog::warn("[Moonraker API] MEASURE_AXES_NOISE response timed out");
-            } else {
-                spdlog::error("[Moonraker API] Failed to send MEASURE_AXES_NOISE: {}", err.message);
-            }
-            collector->mark_completed();
-            collector->unregister();
-            if (on_error) {
-                on_error(err);
-            }
+            report_collector_rpc_error("MEASURE_AXES_NOISE", get_printer_state(), collector,
+                                       on_error, err, SHAPER_TIMEOUT_MS);
         },
         SHAPER_TIMEOUT_MS);
 }
@@ -2443,20 +2579,14 @@ void MoonrakerAdvancedAPI::start_pid_calibrate(
         [collector, on_error](const MoonrakerError& err) {
             // The notify_gcode_response collector — not this RPC — is the authority for
             // PID_CALIBRATE completion. Slow-cooling beds can run longer than the RPC
-            // timeout (#988); on timeout we keep the collector registered so the eventual
-            // "PID parameters:" result line still completes the calibration. The UI panel
-            // owns the user-facing "taking longer than expected" backstop. A genuine RPC
-            // error (heater misconfigured, connection lost) is still terminal.
-            if (err.type == MoonrakerErrorType::TIMEOUT) {
-                spdlog::warn("[MoonrakerAPI] PID_CALIBRATE RPC timed out; collector still "
-                             "listening for result (calibration may still be running)");
-                return;
-            }
-            spdlog::error("[MoonrakerAPI] Failed to send PID_CALIBRATE: {}", err.message);
-            collector->mark_completed();
-            collector->unregister();
-            if (on_error)
-                on_error(err);
+            // timeout (#988), and a dropped socket is the transport vanishing, not the
+            // printer's opinion of the macro (#1543): on either, the collector keeps
+            // listening for the eventual "PID parameters:" result line, with the
+            // busy->idle follow-up as the terminal backstop. The UI panel owns the
+            // user-facing "taking longer than expected" backstop. A genuine RPC
+            // error (heater misconfigured) is still terminal.
+            report_collector_rpc_error("PID_CALIBRATE", get_printer_state(), collector, on_error,
+                                       err, PID_TIMEOUT_MS);
         },
         PID_TIMEOUT_MS, true);
 }
@@ -2483,19 +2613,13 @@ void MoonrakerAdvancedAPI::start_mpc_calibrate(
         [collector, on_error](const MoonrakerError& err) {
             // The notify_gcode_response collector — not this RPC — is the authority
             // for MPC_CALIBRATE completion. The calibration keeps running past the RPC
-            // ceiling (prestonbrown/helixscreen#1544), so on timeout we keep the
-            // collector registered for the eventual result block, exactly like
-            // PID_CALIBRATE (#988). A genuine RPC error is still terminal.
-            if (err.type == MoonrakerErrorType::TIMEOUT) {
-                spdlog::warn("[MoonrakerAPI] MPC_CALIBRATE RPC timed out; collector still "
-                             "listening for result (calibration may still be running)");
-                return;
-            }
-            spdlog::error("[MoonrakerAPI] Failed to send MPC_CALIBRATE: {}", err.message);
-            collector->mark_completed();
-            collector->unregister();
-            if (on_error)
-                on_error(err);
+            // ceiling (prestonbrown/helixscreen#1544), and a dropped socket is the
+            // transport vanishing, not the printer's opinion of the macro (#1543): on
+            // either, the collector keeps listening for the eventual result block, with
+            // the busy->idle follow-up as the terminal backstop. A genuine RPC error
+            // is still terminal.
+            report_collector_rpc_error("MPC_CALIBRATE", get_printer_state(), collector, on_error,
+                                       err, MPC_TIMEOUT_MS);
         },
         MPC_TIMEOUT_MS, true);
 }
