@@ -222,8 +222,8 @@ def test_long_message_scrolls_instead_of_growing_the_card(shutdown_app):
 # and the arithmetic deserves pinning rather than trusting.
 #
 # Reaching it: the AMS panel is not on the navbar. Go to the filament panel and
-# click the mini AMS status widget, which pushes the ams_panel overlay; the modal
-# is then raised by ams_action reaching ERROR (9).
+# click Manage Slots, which pushes the ams_panel overlay; the modal is then
+# raised by ams_action reaching ERROR (9).
 # ============================================================================
 
 _AMS_ACTION_ERROR = 9  # AmsAction::ERROR, ams_types.h
@@ -257,10 +257,15 @@ def ams_error_app(request, tmp_path):
         with app:
             app.navigate("filament")
             app.wait_idle()
-            app.click("ams_mini_status")
+            # This fork rebuilt the filament panel around the tool row, and the
+            # mini AMS status went with the card that used to carry it -- the
+            # route to the AMS panel is now the explicit Manage Slots button on
+            # that row. Either way what the fixture needs is the overlay open,
+            # which the assertion below still proves.
+            app.click("btn_manage_slots")
             app.wait_idle()
             assert "ams_panel" in app.current().get("overlays", []), (
-                "clicking the mini AMS status did not open the AMS panel")
+                "clicking Manage Slots did not open the AMS panel")
 
             # Racing the mock's next state push: set, freeze, confirm, retry.
             for _ in range(5):
