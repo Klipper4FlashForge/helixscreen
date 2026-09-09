@@ -539,6 +539,10 @@ class DisplayManager : public helix::ICalibrationSink {
     void set_touch_calibration_active(bool active) {
         m_touch_calibration_active = active;
     }
+    /// ICalibrationSink spelling of set_touch_calibration_active().
+    void set_capture_active(bool active) override {
+        set_touch_calibration_active(active);
+    }
     bool is_touch_calibration_active() const {
         return m_touch_calibration_active;
     }

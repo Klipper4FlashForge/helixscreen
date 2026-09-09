@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "touch_calibration_controller.h"
 #include "touch_calibration_layout.h"
 #include "touch_calibration_panel.h"
 #include "touch_calibration_session.h"
@@ -45,7 +46,8 @@
  * Wraps TouchCalibrationPanel for wizard integration. Only shown on fbdev
  * displays that need touchscreen calibration.
  */
-class WizardTouchCalibrationStep : public helix::wizard::Step {
+class WizardTouchCalibrationStep : public helix::wizard::Step,
+                                   public helix::ui::ITouchCalibrationView {
   public:
     // helix::wizard::Step interface
     helix::wizard::StepId id() const override {
@@ -139,7 +141,9 @@ class WizardTouchCalibrationStep : public helix::wizard::Step {
     lv_obj_t* crosshair_ = nullptr;           // Reparented to screen for absolute positioning
     lv_obj_t* test_area_container_ = nullptr; // Container for test area (shown in COMPLETE state)
     lv_obj_t* test_touch_area_ = nullptr;     // Touch area for testing calibration
-    std::unique_ptr<helix::TouchCalibrationPanel> panel_;
+    /// Panel, session, sink resolution, capture, retry and commit. Shared with the
+    /// Settings recalibration overlay so neither can drift from the other.
+    helix::ui::TouchCalibrationController controller_;
 
     // Subjects for UI state (instruction text uses wizard_subtitle instead)
     lv_subject_t current_step_; // 0, 1, 2, 3 (3 = verify)
@@ -148,24 +152,10 @@ class WizardTouchCalibrationStep : public helix::wizard::Step {
     bool subjects_initialized_ = false;
     bool calibration_failed_ = false; // True after failed attempt, cleared on first point capture
 
-    // Pending calibration data (saved only when user clicks 'Next')
-    bool has_pending_calibration_ = false;
-    helix::TouchCalibration pending_calibration_;
-    /// Range decomposition of pending_calibration_, held until 'Next' commits it.
-    /// The evdev range is deliberately NOT re-programmed before then: a back-out
-    /// reverts through session_.restore(), which only knows how to put the affine
-    /// back (#1259, #1276).
-    helix::TouchRangeFit pending_range_fit_;
-
-    // Backup/disable/restore of the pre-session calibration. Shared with the
-    // Settings recalibration overlay; guarantees the affine transform is
-    // re-enabled however the session ends (#943).
-    helix::TouchCalibrationSession session_;
-
-    // Calibration sink the session drives. Normally the live DisplayManager;
-    // overridable by unit tests (WizardTouchCalibrationTestAccess) so the retry
-    // revert path can be exercised without standing up a DisplayManager.
-    helix::ICalibrationSink* calibration_sink_override_ = nullptr;
+    /// The solved calibration is held rather than written until 'Next': the evdev
+    /// range is deliberately not re-programmed before then, because a back-out
+    /// reverts through the session, which only knows how to put the affine back
+    /// (#1259, #1276). The controller holds it; this step just decides when.
 
     // Next/Skip group lifted above the full-screen capture surface so it stays
     // clickable during calibration. Restore state owned here (shared helper in
@@ -179,9 +169,9 @@ class WizardTouchCalibrationStep : public helix::wizard::Step {
     static void on_screen_released_static(lv_event_t* e);
     static void on_test_area_touched_static(lv_event_t* e);
 
-    // Resolves the calibration sink the session drives (test-overridable, else
-    // the live DisplayManager singleton). May return nullptr if no display.
-    helix::ICalibrationSink* calibration_sink();
+    // helix::ui::ITouchCalibrationView - what the controller asks this step to draw
+    void on_progress() override;
+    void on_capture_feedback(helix::Point landed) override;
 
     // Instance method handlers
     void handle_accept_clicked();
