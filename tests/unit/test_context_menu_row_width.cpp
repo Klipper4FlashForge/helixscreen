@@ -59,7 +59,7 @@ class BareContextMenu : public helix::ui::ContextMenu {
 // the Filament group is hidden before the card is measured.
 //
 // The Material group goes with it. This fork splits the tool and material axes
-// on a tool changer (ec6883533), so ams_context_menu.xml carries three groups
+// on a tool changer, so ams_context_menu.xml carries three groups
 // where upstream has two, and leaving Material populated would leave TWO groups
 // standing -- at which point the heading SHOULD survive and the case below
 // would be asserting the opposite of what it is named for. Emptying it keeps
