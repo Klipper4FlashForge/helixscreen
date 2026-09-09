@@ -768,7 +768,6 @@ int Application::run(int argc, char** argv) {
         std::string printer_name =
             m_config->get<std::string>(m_config->df() + "printer_name", active_id);
         get_printer_state().set_active_printer_name(printer_name);
-        get_printer_state().set_multi_printer_enabled(printer_ids.size() > 1);
     }
 
     // Phase 9b: Initialize Moonraker (creates client + API)
@@ -4590,8 +4589,6 @@ void Application::handle_keyboard_shortcuts() {
                     test_data["moonraker_port"] = 7125;
                     m_config->add_printer("voron-24", test_data);
                     m_config->save();
-                    // Update subjects so the badge appears
-                    get_printer_state().set_multi_printer_enabled(true);
                 }
             },
             [this]() { return get_runtime_config()->is_test_mode() && m_config; });
@@ -5043,7 +5040,6 @@ void Application::init_printer_state() {
         std::string printer_name =
             m_config->get<std::string>(m_config->df() + "printer_name", active_id);
         get_printer_state().set_active_printer_name(printer_name);
-        get_printer_state().set_multi_printer_enabled(printer_ids.size() > 1);
     }
 
     // 3. Initialize Moonraker (creates client + API + history managers)

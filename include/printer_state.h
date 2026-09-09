@@ -2310,16 +2310,6 @@ class PrinterState {
     }
 
     /**
-     * @brief Get the multi-printer enabled subject
-     *
-     * Integer subject: 1 when multiple printers are configured, 0 otherwise.
-     * Use with bind_flag_if_eq in XML to show/hide multi-printer UI elements.
-     */
-    lv_subject_t* get_multi_printer_enabled_subject() {
-        return &multi_printer_enabled_;
-    }
-
-    /**
      * @brief Set the active printer display name
      *
      * Updates the string subject with the given name. Main-thread only.
@@ -2327,15 +2317,6 @@ class PrinterState {
      * @param name Human-readable printer name
      */
     void set_active_printer_name(const std::string& name);
-
-    /**
-     * @brief Set whether multiple printers are configured
-     *
-     * Updates the integer subject. Main-thread only.
-     *
-     * @param enabled true if more than one printer is configured
-     */
-    void set_multi_printer_enabled(bool enabled);
 
   private:
     /// RAII manager for automatic subject cleanup - deinits all subjects on destruction
@@ -2451,7 +2432,6 @@ class PrinterState {
     // Multi-printer subjects (owned directly by PrinterState)
     lv_subject_t active_printer_name_;
     char active_printer_name_buf_[128];
-    lv_subject_t multi_printer_enabled_;
 
     // JSON cache for complex data
     json json_state_;

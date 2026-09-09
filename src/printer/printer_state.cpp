@@ -187,7 +187,6 @@ void PrinterState::deinit_subjects() {
 
     // Deinit PrinterState's own subjects (multi-printer)
     lv_subject_deinit(&active_printer_name_);
-    lv_subject_deinit(&multi_printer_enabled_);
     subjects_.deinit_all();
 
     subjects_initialized_ = false;
@@ -301,7 +300,6 @@ void PrinterState::init_subjects(bool register_xml) {
 
     // Multi-printer subjects (owned directly by PrinterState)
     INIT_SUBJECT_STRING(active_printer_name, "", subjects_, register_xml);
-    INIT_SUBJECT_INT(multi_printer_enabled, 0, subjects_, register_xml);
 
     // Z-offset save visibility (1 = manual save needed, 0 = firmware auto-saves)
     INIT_SUBJECT_INT(z_offset_can_save, 1, subjects_, register_xml);
@@ -1389,9 +1387,4 @@ ZOffsetCalibrationStrategy PrinterState::get_z_offset_calibration_strategy() con
 void PrinterState::set_active_printer_name(const std::string& name) {
     lv_subject_copy_string(&active_printer_name_, name.c_str());
     spdlog::debug("[PrinterState] Active printer name set to: '{}'", name);
-}
-
-void PrinterState::set_multi_printer_enabled(bool enabled) {
-    lv_subject_set_int(&multi_printer_enabled_, enabled ? 1 : 0);
-    spdlog::debug("[PrinterState] Multi-printer enabled: {}", enabled);
 }

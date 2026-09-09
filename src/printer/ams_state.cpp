@@ -376,8 +376,6 @@ void AmsState::init_subjects(bool register_xml) {
     // Dryer modal editing subjects (raw int + formatted text)
     INIT_SUBJECT_INT(modal_target_temp, DEFAULT_DRYER_TEMP_C, subjects_, register_xml);
     INIT_SUBJECT_INT(modal_duration_min, DEFAULT_DRYER_DURATION_MIN, subjects_, register_xml);
-    INIT_SUBJECT_STRING(dryer_modal_temp_text, "55°C", subjects_, register_xml);
-    INIT_SUBJECT_STRING(dryer_modal_duration_text, "4h", subjects_, register_xml);
 
     // Dryer humidity and info bar visibility subjects
     INIT_SUBJECT_STRING(dryer_humidity_text, "---", subjects_, register_xml);
@@ -760,9 +758,6 @@ void AmsState::register_xml_subject_names() {
     // Dryer modal editing subjects
     helix::xml::register_subject_in_current_scope("modal_target_temp", &modal_target_temp_);
     helix::xml::register_subject_in_current_scope("modal_duration_min", &modal_duration_min_);
-    helix::xml::register_subject_in_current_scope("dryer_modal_temp_text", &dryer_modal_temp_text_);
-    helix::xml::register_subject_in_current_scope("dryer_modal_duration_text",
-                                                  &dryer_modal_duration_text_);
 
     // Dryer humidity and info bar visibility subjects
     helix::xml::register_subject_in_current_scope("dryer_humidity_text", &dryer_humidity_text_);
