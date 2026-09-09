@@ -52,25 +52,47 @@ bool supports_axis(const PrinterDiscovery& hw, Axis axis);
 /// ride on the `tool T*` objects the tool-changer subscription already requests.
 std::vector<std::string> required_status_objects(const PrinterDiscovery& hw);
 
+struct Provider; // one firmware's offset model; the table lives in tool_offsets.cpp
+
+/// Which offset model this printer uses, resolved ONCE from discovery so the
+/// status path - which has no PrinterDiscovery to hand - reads by direct key
+/// lookup instead of probing every frame's schema per tool and per axis.
+/// Opaque to callers: ToolState keeps what resolve_reader() returned and
+/// passes it to read_tool_offset_microns(). Default-constructed, or resolved
+/// on a printer without per-tool offsets, it reads nothing.
+struct OffsetReader {
+    const Provider* provider = nullptr;
+    /// Status key of the one object a firmware keeps every tool's offset on,
+    /// spelled as Klipper publishes it (the config-case section name); empty
+    /// for a model that reads off each `tool T<n>` object.
+    std::string store_object;
+};
+
+OffsetReader resolve_reader(const PrinterDiscovery& hw);
+
 /// One axis of one tool's offset, in microns, read out of a Moonraker status
-/// frame.
+/// frame by the model @p reader resolved.
 ///
 /// Takes the whole frame rather than one tool's payload because the firmwares
 /// do not agree on where the value sits: klipper-toolchanger publishes it on
 /// each `tool T<n>` object, while a MedusaHC-style machine keeps all four in a
-/// single macro's variables.
+/// single macro's variables. Only the resolved model's store is consulted, so
+/// on a MedusaHC the tool object's copy - not the authority there - is never
+/// read, whatever a delta frame happens to carry.
 ///
 /// nullopt means "no news", never "reset to zero" - Moonraker republishes only
 /// the fields that CHANGED, so a frame carrying other tool state and not this
-/// is routine. It is also the answer for an axis the owning firmware does not
-/// keep at all.
+/// is routine. It is also the answer for an axis the model does not keep, so
+/// a caller can loop kAllAxes blindly.
 ///
+/// @param reader      what resolve_reader() returned for this printer
 /// @param status      full Moonraker status frame
 /// @param axis        which offset
 /// @param tool_index  tool number, as used in T<n>
 /// @param tool_name   Klipper's name for the tool ("T0"), for the firmwares
 ///                    that key their status object off it
-std::optional<int> read_tool_offset_microns(const nlohmann::json& status, Axis axis, int tool_index,
+std::optional<int> read_tool_offset_microns(const OffsetReader& reader,
+                                            const nlohmann::json& status, Axis axis, int tool_index,
                                             const std::string& tool_name);
 
 /// Gcode that sets tool @p tool_index's @p axis offset to @p microns, effective

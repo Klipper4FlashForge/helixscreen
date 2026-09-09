@@ -134,15 +134,16 @@ TEST_CASE("tool offsets: the TOOL_OFFSET macro outranks klipper-toolchanger", "[
 
 TEST_CASE("tool offsets: a frame carrying both schemas reads the authoritative one",
           "[tool_offsets]") {
-    // Same trap on the read path, which has no PrinterDiscovery and resolves by
-    // schema. A MedusaHC publishes both, and they can legitimately disagree -
-    // klipper-toolchanger's copy is not what the machine prints with.
+    // Same trap on the read path. A MedusaHC publishes both, and they can
+    // legitimately disagree - klipper-toolchanger's copy is not what the
+    // machine prints with. The reader resolved from discovery knows which.
+    const to_::OffsetReader reader = to_::resolve_reader(tool_offset_macro_printer());
     json status = json{
         {"gcode_macro TOOL_OFFSET", json{{"t1_off_z", -0.20}}},
         {"tool T1", json{{"gcode_z_offset", -0.05}}},
     };
 
-    auto microns = to_::read_tool_offset_microns(status, Axis::Z, 1, "T1");
+    auto microns = to_::read_tool_offset_microns(reader, status, Axis::Z, 1, "T1");
     REQUIRE(microns.has_value());
     CHECK(*microns == -200);
 }
@@ -161,26 +162,52 @@ TEST_CASE("tool offsets: a TOOL_OFFSET macro alone is not a tool changer", "[too
 
 TEST_CASE("tool offsets: a delta frame does not fall through to the other store",
           "[tool_offsets]") {
-    // The by-schema read resolves in table order, which is right when both
-    // schemas are in ONE frame. Moonraker's notify_status_update carries only
-    // what changed, so a MedusaHC frame with just `tool T0` used to fall past
-    // the authoritative TOOL_OFFSET row and answer from klipper-toolchanger's
-    // copy — the store this module says is NOT the authority. That value then
-    // overwrote the real one and became the base for the next adjustment.
+    // Moonraker's notify_status_update carries only what changed. A MedusaHC
+    // frame with just `tool T0` used to be answered from klipper-toolchanger's
+    // copy - the store this module says is NOT the authority - and that value
+    // then overwrote the real one and became the base for the next adjustment.
+    // Reading by the resolved model, the tool object is never consulted on
+    // such a machine, whatever the frame carries.
     json delta = json{{"tool T0", json{{"gcode_z_offset", -0.05}}}};
 
-    // No TOOL_OFFSET object in this frame at all -> the macro provider is not
-    // the owner here, so answering from the tool object is correct.
-    CHECK(*to_::read_tool_offset_microns(delta, Axis::Z, 0, "T0") == -50);
+    const to_::OffsetReader medusa = to_::resolve_reader(tool_offset_macro_printer());
+    CHECK_FALSE(to_::read_tool_offset_microns(medusa, delta, Axis::Z, 0, "T0").has_value());
 
-    // But once the macro IS present and simply has nothing for this tool, the
-    // frame belongs to it and the tool object must not be consulted.
+    // The same frame on a stock klipper-toolchanger IS that store's news.
+    const to_::OffsetReader stock = to_::resolve_reader(toolchanger_printer());
+    CHECK(*to_::read_tool_offset_microns(stock, delta, Axis::Z, 0, "T0") == -50);
+
+    // And a frame where the macro simply has nothing for this tool.
     json macro_frame = json{
         {"gcode_macro TOOL_OFFSET", json{{"t1_off_z", -0.20}}},
         {"tool T0", json{{"gcode_z_offset", -0.05}}},
     };
-    CHECK_FALSE(to_::read_tool_offset_microns(macro_frame, Axis::Z, 0, "T0").has_value());
-    CHECK(*to_::read_tool_offset_microns(macro_frame, Axis::Z, 1, "T1") == -200);
+    CHECK_FALSE(to_::read_tool_offset_microns(medusa, macro_frame, Axis::Z, 0, "T0").has_value());
+    CHECK(*to_::read_tool_offset_microns(medusa, macro_frame, Axis::Z, 1, "T1") == -200);
+}
+
+TEST_CASE("tool offsets: an axis the model does not keep reads nothing", "[tool_offsets]") {
+    // The Provider contract lets a caller loop kAllAxes blindly. On the Z-only
+    // macro model an X read must be "no news" even though klipper-toolchanger's
+    // tool object in the same frame carries an X value; set_tool_offset_gcode()
+    // and save_tool_offset_gcode() already answer nothing there.
+    const to_::OffsetReader medusa = to_::resolve_reader(tool_offset_macro_printer());
+    json frame = json{
+        {"gcode_macro TOOL_OFFSET", json{{"t1_off_z", -0.20}}},
+        {"tool T1", json{{"gcode_x_offset", 0.12}, {"gcode_z_offset", -0.05}}},
+    };
+
+    CHECK_FALSE(to_::read_tool_offset_microns(medusa, frame, Axis::X, 1, "T1").has_value());
+    CHECK(*to_::read_tool_offset_microns(medusa, frame, Axis::Z, 1, "T1") == -200);
+}
+
+TEST_CASE("tool offsets: a printer without per-tool offsets reads nothing", "[tool_offsets]") {
+    const to_::OffsetReader none = to_::resolve_reader(plain_printer());
+    json frame = json{{"tool T0", json{{"gcode_z_offset", -0.05}}}};
+
+    CHECK_FALSE(to_::read_tool_offset_microns(none, frame, Axis::Z, 0, "T0").has_value());
+    CHECK_FALSE(
+        to_::read_tool_offset_microns(to_::OffsetReader{}, frame, Axis::Z, 0, "T0").has_value());
 }
 
 // ============================================================================
@@ -223,28 +250,29 @@ TEST_CASE("tool offsets: a mixed-case macro's writes use the config-case mux key
 }
 
 TEST_CASE("tool offsets: a mixed-case macro object is still read", "[tool_offsets]") {
-    // The read path has no PrinterDiscovery to resolve the casing through, so
-    // it scans. Two sections differing only in case would register the same
-    // command alias and Klipper would refuse to start, so the scan cannot be
-    // ambiguous.
+    // The reader carries the status key spelled as printer.cfg spells the
+    // section - the key Klipper actually publishes - so the read is a direct
+    // find with no case-folding scan of the frame.
+    const to_::OffsetReader reader = to_::resolve_reader(mixed_case_macro_printer());
+    CHECK(reader.store_object == "gcode_macro Tool_Offset");
     json status = json{{"gcode_macro Tool_Offset", json{{"t2_off_z", -0.15}}}};
 
-    auto microns = to_::read_tool_offset_microns(status, Axis::Z, 2, "T2");
+    auto microns = to_::read_tool_offset_microns(reader, status, Axis::Z, 2, "T2");
     REQUIRE(microns.has_value());
     CHECK(*microns == -150);
 }
 
 TEST_CASE("tool offsets: a mixed-case macro still owns its frame", "[tool_offsets]") {
-    // The fallthrough guard keys off the macro being PRESENT. Matching that
-    // case-sensitively would make a Tool_Offset frame look like it had no macro
-    // at all, and the tool object underneath would answer for it.
+    // A Tool_Offset machine is that model whatever the casing; the tool object
+    // underneath never answers for it.
+    const to_::OffsetReader reader = to_::resolve_reader(mixed_case_macro_printer());
     json frame = json{
         {"gcode_macro Tool_Offset", json{{"t1_off_z", -0.20}}},
         {"tool T0", json{{"gcode_z_offset", -0.05}}},
     };
 
-    CHECK_FALSE(to_::read_tool_offset_microns(frame, Axis::Z, 0, "T0").has_value());
-    CHECK(*to_::read_tool_offset_microns(frame, Axis::Z, 1, "T1") == -200);
+    CHECK_FALSE(to_::read_tool_offset_microns(reader, frame, Axis::Z, 0, "T0").has_value());
+    CHECK(*to_::read_tool_offset_microns(reader, frame, Axis::Z, 1, "T1") == -200);
 }
 
 // ============================================================================
@@ -252,40 +280,45 @@ TEST_CASE("tool offsets: a mixed-case macro still owns its frame", "[tool_offset
 // ============================================================================
 
 TEST_CASE("tool offsets: klipper-toolchanger reads off the tool's own object", "[tool_offsets]") {
+    const to_::OffsetReader reader = to_::resolve_reader(toolchanger_printer());
+    CHECK(reader.store_object.empty()); // one object per tool, nothing to resolve
     json status = json{{"tool T2", json{{"active", true}, {"gcode_z_offset", -0.15}}}};
 
-    auto microns = to_::read_tool_offset_microns(status, Axis::Z, 2, "T2");
+    auto microns = to_::read_tool_offset_microns(reader, status, Axis::Z, 2, "T2");
     REQUIRE(microns.has_value());
     CHECK(*microns == -150);
 }
 
 TEST_CASE("tool offsets: the TOOL_OFFSET macro reads off the tool index", "[tool_offsets]") {
     // All four tools live on one macro, keyed by number rather than by object.
+    const to_::OffsetReader reader = to_::resolve_reader(tool_offset_macro_printer());
     json status = json{{"gcode_macro TOOL_OFFSET",
                         json{{"t0_off_z", 0.10}, {"t1_off_z", -0.20}, {"t2_off_z", 0.0}}}};
 
-    CHECK(*to_::read_tool_offset_microns(status, Axis::Z, 0, "T0") == 100);
-    CHECK(*to_::read_tool_offset_microns(status, Axis::Z, 1, "T1") == -200);
-    CHECK(*to_::read_tool_offset_microns(status, Axis::Z, 2, "T2") == 0);
+    CHECK(*to_::read_tool_offset_microns(reader, status, Axis::Z, 0, "T0") == 100);
+    CHECK(*to_::read_tool_offset_microns(reader, status, Axis::Z, 1, "T1") == -200);
+    CHECK(*to_::read_tool_offset_microns(reader, status, Axis::Z, 2, "T2") == 0);
     // A tool the macro does not carry is unknown, not zero.
-    CHECK_FALSE(to_::read_tool_offset_microns(status, Axis::Z, 3, "T3").has_value());
+    CHECK_FALSE(to_::read_tool_offset_microns(reader, status, Axis::Z, 3, "T3").has_value());
 }
 
 TEST_CASE("tool offsets: a float that lands just short still rounds", "[tool_offsets]") {
     // The value round-trips through a float, so a nominal -0.150 arrives as
     // -0.1499999. Truncating would report -149 and the UI would drift by a
     // micron every time it echoed the value back.
+    const to_::OffsetReader reader = to_::resolve_reader(toolchanger_printer());
     json status = json{{"tool T0", json{{"gcode_z_offset", -0.1499999}}}};
 
-    CHECK(*to_::read_tool_offset_microns(status, Axis::Z, 0, "T0") == -150);
+    CHECK(*to_::read_tool_offset_microns(reader, status, Axis::Z, 0, "T0") == -150);
 }
 
 TEST_CASE("tool offsets: zero is a value, not an absence", "[tool_offsets]") {
     // A tool genuinely at 0.000 must read as 0, not as "nothing reported" -
     // that distinction is why the UI carries a separate validity subject.
+    const to_::OffsetReader reader = to_::resolve_reader(toolchanger_printer());
     json status = json{{"tool T0", json{{"gcode_z_offset", 0.0}}}};
 
-    auto microns = to_::read_tool_offset_microns(status, Axis::Z, 0, "T0");
+    auto microns = to_::read_tool_offset_microns(reader, status, Axis::Z, 0, "T0");
     REQUIRE(microns.has_value());
     CHECK(*microns == 0);
 }
@@ -293,21 +326,24 @@ TEST_CASE("tool offsets: zero is a value, not an absence", "[tool_offsets]") {
 TEST_CASE("tool offsets: a frame without the field is no news", "[tool_offsets]") {
     // Moonraker republishes only what CHANGED, so a frame that carries other
     // tool state and not this one must not be read as a reset to zero.
+    const to_::OffsetReader reader = to_::resolve_reader(toolchanger_printer());
     json status = json{{"tool T0", json{{"active", true}, {"mounted", true}}}};
 
-    CHECK_FALSE(to_::read_tool_offset_microns(status, Axis::Z, 0, "T0").has_value());
+    CHECK_FALSE(to_::read_tool_offset_microns(reader, status, Axis::Z, 0, "T0").has_value());
 }
 
 TEST_CASE("tool offsets: a malformed or empty frame is ignored", "[tool_offsets]") {
-    CHECK_FALSE(to_::read_tool_offset_microns(json{{"tool T0", json{{"gcode_z_offset", "oops"}}}},
-                                              Axis::Z, 0, "T0")
+    const to_::OffsetReader reader = to_::resolve_reader(toolchanger_printer());
+    CHECK_FALSE(to_::read_tool_offset_microns(
+                    reader, json{{"tool T0", json{{"gcode_z_offset", "oops"}}}}, Axis::Z, 0, "T0")
                     .has_value());
-    CHECK_FALSE(to_::read_tool_offset_microns(json::object(), Axis::Z, 0, "T0").has_value());
-    CHECK_FALSE(to_::read_tool_offset_microns(json::array(), Axis::Z, 0, "T0").has_value());
-    CHECK_FALSE(to_::read_tool_offset_microns(json(nullptr), Axis::Z, 0, "T0").has_value());
+    CHECK_FALSE(
+        to_::read_tool_offset_microns(reader, json::object(), Axis::Z, 0, "T0").has_value());
+    CHECK_FALSE(to_::read_tool_offset_microns(reader, json::array(), Axis::Z, 0, "T0").has_value());
+    CHECK_FALSE(to_::read_tool_offset_microns(reader, json(nullptr), Axis::Z, 0, "T0").has_value());
     // No name to key the object off.
-    CHECK_FALSE(to_::read_tool_offset_microns(json{{"tool T0", json{{"gcode_z_offset", -0.1}}}},
-                                              Axis::Z, 0, "")
+    CHECK_FALSE(to_::read_tool_offset_microns(
+                    reader, json{{"tool T0", json{{"gcode_z_offset", -0.1}}}}, Axis::Z, 0, "")
                     .has_value());
 }
 
@@ -452,13 +488,14 @@ TEST_CASE("tool offsets: the klipper-toolchanger X save persists the X parameter
 
 TEST_CASE("tool offsets: klipper-toolchanger reads X and Y off the tool's object",
           "[tool_offsets]") {
+    const to_::OffsetReader reader = to_::resolve_reader(toolchanger_printer());
     json status = json{
         {"tool T2",
          json{{"gcode_x_offset", 0.125}, {"gcode_y_offset", -0.05}, {"gcode_z_offset", -0.15}}}};
 
-    CHECK(*to_::read_tool_offset_microns(status, Axis::X, 2, "T2") == 125);
-    CHECK(*to_::read_tool_offset_microns(status, Axis::Y, 2, "T2") == -50);
-    CHECK(*to_::read_tool_offset_microns(status, Axis::Z, 2, "T2") == -150);
+    CHECK(*to_::read_tool_offset_microns(reader, status, Axis::X, 2, "T2") == 125);
+    CHECK(*to_::read_tool_offset_microns(reader, status, Axis::Y, 2, "T2") == -50);
+    CHECK(*to_::read_tool_offset_microns(reader, status, Axis::Z, 2, "T2") == -150);
 }
 
 TEST_CASE("tool offsets: an axis missing from a delta frame is no news for that axis",
@@ -466,11 +503,12 @@ TEST_CASE("tool offsets: an axis missing from a delta frame is no news for that 
     // Moonraker republishes only what CHANGED, per field: a frame carrying a
     // new X for a tool says nothing about its Y or Z, and reading either as
     // zero would yank a displayed value to 0 mid-adjustment.
+    const to_::OffsetReader reader = to_::resolve_reader(toolchanger_printer());
     json delta = json{{"tool T0", json{{"gcode_x_offset", 0.125}}}};
 
-    CHECK(*to_::read_tool_offset_microns(delta, Axis::X, 0, "T0") == 125);
-    CHECK_FALSE(to_::read_tool_offset_microns(delta, Axis::Y, 0, "T0").has_value());
-    CHECK_FALSE(to_::read_tool_offset_microns(delta, Axis::Z, 0, "T0").has_value());
+    CHECK(*to_::read_tool_offset_microns(reader, delta, Axis::X, 0, "T0") == 125);
+    CHECK_FALSE(to_::read_tool_offset_microns(reader, delta, Axis::Y, 0, "T0").has_value());
+    CHECK_FALSE(to_::read_tool_offset_microns(reader, delta, Axis::Z, 0, "T0").has_value());
 }
 
 TEST_CASE("tool offsets: the TOOL_OFFSET macro emits nothing for X and Y", "[tool_offsets]") {
@@ -489,18 +527,19 @@ TEST_CASE("tool offsets: the TOOL_OFFSET macro emits nothing for X and Y", "[too
 
 TEST_CASE("tool offsets: a TOOL_OFFSET frame never answers X or Y from the tool object",
           "[tool_offsets]") {
-    // The store_present guard is per frame, not per axis: once the macro owns
-    // the frame, klipper-toolchanger's copy is not consulted for ANY axis -
-    // otherwise X would read from the store this module says is not the
-    // authority, while Z reads from the macro.
+    // The model is per printer, not per axis: on a machine the macro owns,
+    // klipper-toolchanger's copy is not consulted for ANY axis - otherwise X
+    // would read from the store this module says is not the authority, while
+    // Z reads from the macro.
+    const to_::OffsetReader reader = to_::resolve_reader(tool_offset_macro_printer());
     json frame = json{
         {"gcode_macro TOOL_OFFSET", json{{"t0_off_z", -0.20}}},
         {"tool T0", json{{"gcode_x_offset", 0.125}, {"gcode_z_offset", -0.05}}},
     };
 
-    CHECK_FALSE(to_::read_tool_offset_microns(frame, Axis::X, 0, "T0").has_value());
-    CHECK_FALSE(to_::read_tool_offset_microns(frame, Axis::Y, 0, "T0").has_value());
-    CHECK(*to_::read_tool_offset_microns(frame, Axis::Z, 0, "T0") == -200);
+    CHECK_FALSE(to_::read_tool_offset_microns(reader, frame, Axis::X, 0, "T0").has_value());
+    CHECK_FALSE(to_::read_tool_offset_microns(reader, frame, Axis::Y, 0, "T0").has_value());
+    CHECK(*to_::read_tool_offset_microns(reader, frame, Axis::Z, 0, "T0") == -200);
 }
 
 TEST_CASE("tool offsets: a negative tool index emits nothing on any axis", "[tool_offsets]") {
@@ -514,10 +553,11 @@ TEST_CASE("tool offsets: a negative tool index emits nothing on any axis", "[too
 }
 
 TEST_CASE("tool offsets: a malformed X field is not a reading", "[tool_offsets]") {
-    CHECK_FALSE(to_::read_tool_offset_microns(json{{"tool T0", json{{"gcode_x_offset", "oops"}}}},
-                                              Axis::X, 0, "T0")
+    const to_::OffsetReader reader = to_::resolve_reader(toolchanger_printer());
+    CHECK_FALSE(to_::read_tool_offset_microns(
+                    reader, json{{"tool T0", json{{"gcode_x_offset", "oops"}}}}, Axis::X, 0, "T0")
                     .has_value());
-    CHECK_FALSE(to_::read_tool_offset_microns(json{{"tool T0", json{{"gcode_x_offset", nullptr}}}},
-                                              Axis::X, 0, "T0")
+    CHECK_FALSE(to_::read_tool_offset_microns(
+                    reader, json{{"tool T0", json{{"gcode_x_offset", nullptr}}}}, Axis::X, 0, "T0")
                     .has_value());
 }

@@ -4,15 +4,13 @@
 
 #include "printer_discovery.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdio>
 
 namespace helix::tool_offsets {
-namespace {
 
-/// One firmware's per-tool offset model.
+/// One firmware's per-tool offset model. The header declares it only as an
+/// opaque type: an OffsetReader points at one row of the table below.
 struct Provider {
     const char* name;
     /// Whether this printer uses this model.
@@ -25,18 +23,20 @@ struct Provider {
     /// config spells it.
     std::vector<std::string> (*status_objects)(const PrinterDiscovery& hw);
     /// Pull one axis of one tool's offset, in microns, out of a status frame.
-    std::optional<int> (*read)(const nlohmann::json& status, Axis axis, int tool_index,
-                               const std::string& tool_name);
+    /// @p store_object is OffsetReader::store_object - the exact status key of
+    /// a single-object store, resolved from the config-case section name once
+    /// at discovery, so no read has to scan the frame for it.
+    std::optional<int> (*read)(const nlohmann::json& status, const std::string& store_object,
+                               Axis axis, int tool_index, const std::string& tool_name);
     /// Runtime write - takes effect now, not persisted.
     std::string (*set_gcode)(const PrinterDiscovery& hw, Axis axis, int tool_index, int microns);
     /// Durable write. Self-sufficient and idempotent after set_gcode().
     std::string (*save_gcode)(const PrinterDiscovery& hw, Axis axis, int tool_index, int microns);
     /// Whether save_gcode() only stages the change, awaiting SAVE_CONFIG.
     bool persist_needs_save_config;
-    /// Whether this provider's store appears in the frame at all, regardless of
-    /// the tool asked for. Guards the by-schema fallthrough above.
-    bool (*store_present)(const nlohmann::json& status);
 };
+
+namespace {
 
 /// Render a double as a bare decimal literal - the form every firmware here
 /// parses as a number.
@@ -66,41 +66,6 @@ const nlohmann::json* status_object(const nlohmann::json& status, const std::str
         return nullptr;
     }
     return &(*it);
-}
-
-bool iequals(const std::string& a, const std::string& b) {
-    return a.size() == b.size() &&
-           std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
-               return std::toupper(x) == std::toupper(y);
-           });
-}
-
-/// Fetch the status object of a gcode_macro, whatever case printer.cfg spells
-/// it in.
-///
-/// Klipper keys the object on the config section VERBATIM, so
-/// `[gcode_macro Tool_Offset]` publishes "gcode_macro Tool_Offset" while the
-/// command it registers is the uppercased alias TOOL_OFFSET. Elsewhere we ask
-/// PrinterDiscovery::macro_config_name() for the real spelling, but the read
-/// path deliberately has no PrinterDiscovery (see read_tool_offset_microns), so it
-/// falls back to a scan.
-///
-/// The scan is unambiguous: two sections differing only in case would register
-/// the same command alias and Klipper refuses to start.
-const nlohmann::json* status_macro(const nlohmann::json& status, const std::string& macro) {
-    const std::string exact = "gcode_macro " + macro;
-    if (const nlohmann::json* hit = status_object(status, exact)) {
-        return hit;
-    }
-    if (!status.is_object()) {
-        return nullptr;
-    }
-    for (auto it = status.begin(); it != status.end(); ++it) {
-        if (it->is_object() && iequals(it.key(), exact)) {
-            return &(*it);
-        }
-    }
-    return nullptr;
 }
 
 // --- MedusaHC-style: a TOOL_OFFSET macro holding every tool's offset ---------
@@ -156,13 +121,16 @@ bool supports_axis_tool_offset_macro(Axis axis) {
     return axis == Axis::Z;
 }
 
-std::optional<int> read_tool_offset_macro(const nlohmann::json& status, Axis axis, int tool_index,
-                                          const std::string& /*tool_name*/) {
-    if (!supports_axis_tool_offset_macro(axis)) {
+std::optional<int> read_tool_offset_macro(const nlohmann::json& status,
+                                          const std::string& store_object, Axis axis,
+                                          int tool_index, const std::string& /*tool_name*/) {
+    if (!supports_axis_tool_offset_macro(axis) || tool_index < 0) {
         return std::nullopt;
     }
-    const nlohmann::json* macro = status_macro(status, "TOOL_OFFSET");
-    if (!macro || tool_index < 0) {
+    // store_object is "gcode_macro <section as printer.cfg spells it>", the
+    // key Klipper actually publishes - a direct find, whatever the casing.
+    const nlohmann::json* macro = status_object(status, store_object);
+    if (!macro) {
         return std::nullopt;
     }
     auto it = macro->find("t" + std::to_string(tool_index) + "_off_z");
@@ -226,10 +194,6 @@ std::string save_tool_offset_macro(const PrinterDiscovery& hw, Axis axis, int to
 // Older builds folded tool offsets into the user's gcode_move offset, where a
 // baby-step and a tool change fight each other; we do not detect or paper over
 // that.
-bool tool_offset_macro_present(const nlohmann::json& status) {
-    return status_macro(status, "TOOL_OFFSET") != nullptr;
-}
-
 bool detect_toolchanger(const PrinterDiscovery& hw) {
     return hw.has_tool_changer();
 }
@@ -244,8 +208,9 @@ const char* toolchanger_param(Axis axis) {
     return names[axis_index(axis)];
 }
 
-std::optional<int> read_toolchanger(const nlohmann::json& status, Axis axis, int /*tool_index*/,
-                                    const std::string& tool_name) {
+std::optional<int> read_toolchanger(const nlohmann::json& status,
+                                    const std::string& /*store_object*/, Axis axis,
+                                    int /*tool_index*/, const std::string& tool_name) {
     if (tool_name.empty()) {
         return std::nullopt;
     }
@@ -286,10 +251,9 @@ const std::vector<Provider>& providers() {
     static const std::vector<Provider> table = {
         {"TOOL_OFFSET macro", &detect_tool_offset_macro, &supports_axis_tool_offset_macro,
          &status_objects_tool_offset_macro, &read_tool_offset_macro, &set_tool_offset_macro,
-         &save_tool_offset_macro, false, &tool_offset_macro_present},
+         &save_tool_offset_macro, false},
         {"klipper-toolchanger", &detect_toolchanger, &supports_axis_toolchanger,
-         &status_objects_none, &read_toolchanger, &set_toolchanger, &save_toolchanger, true,
-         nullptr},
+         &status_objects_none, &read_toolchanger, &set_toolchanger, &save_toolchanger, true},
     };
     return table;
 }
@@ -321,32 +285,32 @@ std::vector<std::string> required_status_objects(const PrinterDiscovery& hw) {
     return {};
 }
 
-std::optional<int> read_tool_offset_microns(const nlohmann::json& status, Axis axis, int tool_index,
-                                            const std::string& tool_name) {
-    // Read by schema rather than by detected firmware, because this runs on the
-    // status path, which has no PrinterDiscovery to hand.
-    //
-    // Table order alone is NOT enough here. It resolves a frame carrying BOTH
-    // schemas — the query seed does — but Moonraker's delta frames carry only
-    // what changed, so a MedusaHC frame with just `tool T0` would fall past the
-    // authoritative TOOL_OFFSET row and read klipper-toolchanger's copy, the
-    // store this module's own table says is not the authority. That value would
-    // then overwrite the real one and become the base for the next adjustment.
-    //
-    // So a lower-priority row is only allowed to answer when no higher-priority
-    // row's store is present in the frame AT ALL — absent is "no news", not
-    // "ask someone else".
-    for (const auto& p : providers()) {
-        if (auto microns = p.read(status, axis, tool_index, tool_name)) {
-            return microns;
-        }
-        if (p.store_present && p.store_present(status)) {
-            // This provider owns the frame and simply has nothing for this
-            // tool. Falling through would answer from the wrong store.
-            return std::nullopt;
+OffsetReader resolve_reader(const PrinterDiscovery& hw) {
+    OffsetReader reader;
+    reader.provider = match(hw);
+    if (reader.provider) {
+        // A single-object store is exactly the extra subscription the row
+        // asks for, already spelled the way Klipper publishes it.
+        const auto objects = reader.provider->status_objects(hw);
+        if (!objects.empty()) {
+            reader.store_object = objects.front();
         }
     }
-    return std::nullopt;
+    return reader;
+}
+
+std::optional<int> read_tool_offset_microns(const OffsetReader& reader,
+                                            const nlohmann::json& status, Axis axis, int tool_index,
+                                            const std::string& tool_name) {
+    // By the resolved model, never by the frame's schema: a MedusaHC delta
+    // frame carrying only `tool T0` must not be answered from
+    // klipper-toolchanger's copy, and an axis the model does not keep is
+    // "no news" even when some other object in the frame has a value for it.
+    const Provider* p = reader.provider;
+    if (!p || !p->supports_axis(axis)) {
+        return std::nullopt;
+    }
+    return p->read(status, reader.store_object, axis, tool_index, tool_name);
 }
 
 std::string set_tool_offset_gcode(const PrinterDiscovery& hw, Axis axis, int tool_index,

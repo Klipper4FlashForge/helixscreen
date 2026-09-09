@@ -161,9 +161,10 @@ void ToolState::init_tools(const helix::PrinterDiscovery& hardware) {
     ams_topology_tool_to_slot_.clear();
     ams_topology_tool_name_prefix_ = "T";
 
-    // Which offsets this printer keeps per toolhead. Asked once, here, because
-    // this is the only place ToolState sees the hardware; the status path has
-    // no PrinterDiscovery to hand.
+    // Which offsets this printer keeps per toolhead, and the model that reads
+    // them. Asked once, here, because this is the only place ToolState sees
+    // the hardware; the status path has no PrinterDiscovery to hand.
+    offset_reader_ = helix::tool_offsets::resolve_reader(hardware);
     std::string axes;
     for (Axis axis : kAllAxes) {
         const bool supported = helix::tool_offsets::supports_axis(hardware, axis);
@@ -530,8 +531,8 @@ void ToolState::update_from_status(const nlohmann::json& status) {
                 if (lv_subject_get_int(get_per_tool_axis_supported_subject(axis)) != 1) {
                     continue;
                 }
-                auto microns =
-                    helix::tool_offsets::read_tool_offset_microns(status, axis, i, tools_[i].name);
+                auto microns = helix::tool_offsets::read_tool_offset_microns(
+                    offset_reader_, status, axis, i, tools_[i].name);
                 if (!microns) {
                     // No news. Moonraker republishes only what CHANGED, per
                     // field, so this is routine and must not be read as a

@@ -8,6 +8,7 @@
 #include "async_lifetime_guard.h"
 #include "axis.h"
 #include "subject_managed_panel.h"
+#include "tool_offsets.h"
 
 #include <array>
 #include <functional>
@@ -358,6 +359,10 @@ class ToolState {
     /// observers instead of protecting dead ones.
     SubjectLifetime subjects_lifetime_ = std::make_shared<bool>(true);
     bool subjects_initialized_ = false;
+
+    /// The offset model init_tools() resolved from the hardware, so the
+    /// status path - which has no PrinterDiscovery - reads by direct lookup.
+    helix::tool_offsets::OffsetReader offset_reader_;
 
     /// Expires the Moonraker-DB spool-assignment callbacks, which fire from the
     /// WebSocket thread long after the request was issued. Declared after
