@@ -320,7 +320,7 @@ constexpr GuardedFile kGuardedFiles[] = {
     // buttons, both of which reach the toolhead.
     {"ui_xml/controls_panel.xml", 11},
     {"ui_xml/header_bar.xml", 1},
-    {"ui_xml/micro/controls_panel.xml", 9},
+    {"ui_xml/micro/controls_panel.xml", 11},
     {"ui_xml/micro/header_bar.xml", 1},
     {"ui_xml/motion_panel.xml", 2},
 };
