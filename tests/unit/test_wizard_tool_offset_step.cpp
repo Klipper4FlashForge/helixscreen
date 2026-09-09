@@ -14,6 +14,7 @@
 #include "../../src/ui/wizard_step_registry.h"
 #include "../lvgl_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
+#include "../test_helpers/scoped_runtime_config.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "app_globals.h"
 #include "printer_discovery.h"
@@ -29,6 +30,11 @@ using helix::wizard::StepId;
 
 class WizardToolOffsetStepTestFixture : public LVGLTestFixture {
   public:
+    // Declared first so it is destroyed last: the global goes back after every
+    // other member has torn down. Without it this fixture left test_mode set
+    // for whatever ran next under the same filter.
+    ScopedRuntimeConfig scoped_config_;
+
     WizardToolOffsetStepTestFixture() {
         get_runtime_config()->test_mode = true;
         PrinterStateTestAccess::reset(state());
