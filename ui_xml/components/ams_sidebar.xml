@@ -4,17 +4,14 @@
 <component>
   <!--
     AMS Sidebar - Shared right-column component for AMS panels.
-
     Contains: current loaded card, status/progress display, action buttons.
     Used by both ams_panel.xml and ams_overview_panel.xml.
-
     Callbacks (registered by AmsOperationSidebar::register_callbacks_static()):
     - ams_sidebar_bypass_toggled: Bypass toggle switch
     - ams_sidebar_unload_clicked: Unload button
     - ams_sidebar_reset_clicked: Reset button
     - ams_sidebar_check_gates_clicked: Check slots button (Happy Hare only)
     - ams_sidebar_settings_clicked: Settings button
-
     C++ companion: AmsOperationSidebar (ui_ams_sidebar.h)
   -->
   <view name="ams_sidebar"
@@ -60,9 +57,8 @@
              Dims while a job owns the toolhead, same binding as
              panel_widget_bypass.xml; BypassToggleController still enforces that
              guard on every tap. -->
-        <ui_switch name="bypass_switch" size="small">
+        <ui_switch name="bypass_switch" size="small" moves_machine="true">
           <bind_state_if_eq subject="ams_bypass_active" state="checked" ref_value="1"/>
-          <bind_state_if_eq subject="job_holds_machine" state="disabled" ref_value="1"/>
           <event_cb trigger="value_changed" callback="ams_sidebar_bypass_toggled"/>
         </ui_switch>
       </lv_obj>

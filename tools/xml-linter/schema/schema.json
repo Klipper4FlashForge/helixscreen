@@ -159,6 +159,9 @@
         "hidden_if_empty": {
           "type": "string"
         },
+        "moves_machine": {
+          "type": "bool"
+        },
         "bind_checked": {
           "type": "string"
         }
