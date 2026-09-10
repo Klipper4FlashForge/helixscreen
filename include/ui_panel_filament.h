@@ -5,18 +5,14 @@
 
 #include "ui_ams_edit_overlay.h"
 #include "ui_filament_catalog_picker.h"
-#include "ui_heater_config.h"
+#include "ui_filament_control_overlay.h"
 #include "ui_observer_guard.h"
 #include "ui_panel_base.h"
 
 #include "active_material_provider.h"
-#include "async_lifetime_guard.h"
 #include "config.h"
-#include "filament_op_dispatch.h"
-#include "filament_op_execute.h"
 #include "macro_param_modal.h"
 #include "operation_timeout_guard.h"
-#include "standard_macros.h"
 #include "subject_managed_panel.h"
 #include "temperature_controller.h" // helix::SendOptions (by value in set_nozzle_target)
 #include "ui/temperature_observer_bundle.h"
@@ -31,84 +27,10 @@ class TemperatureService;
 namespace helix::filament_presets {
 // Pure validation for a preset reassignment: slot in [0,4), non-empty name, known material.
 bool validate_reassignment(int slot, const std::string& material);
-
-/**
- * @brief Persist a preset reassignment, but only if validate_reassignment() accepts it.
- *
- * The guard-then-persist chain, named. FilamentPanel::reassign_preset() is this
- * plus the UI refresh that follows a successful write; keeping the ORDER here
- * rather than at the call site is what stops a caller from persisting first and
- * validating after — the failure the guard exists for is a bad material reaching
- * MaterialSettingsManager, not a bad return value.
- *
- * @return true when the preset was written, false when validation rejected it
- *         and MaterialSettingsManager was left untouched.
- */
-bool reassign_preset_if_valid(int slot, const std::string& material);
-
-/**
- * @brief Restore all four preset slots to the default PLA/PETG/ABS/TPU materials.
- *
- * The persistence half of FilamentPanel::reset_presets_to_defaults(); the panel
- * adds the subject/temperature/highlight refresh on top of it.
- */
-void reset_to_defaults();
 } // namespace helix::filament_presets
 
 namespace helix::ui {
 struct FilamentPanelTestAccess; // test-only friend (tests/test_helpers/)
-
-/**
- * @brief What FilamentPanel does with a FilamentOpPlan, minus the dispatch itself.
- *
- * plan_load() / plan_unload() answer WHICH tier an op takes. This answers what
- * the panel does with that answer: which backend entry point and argument, which
- * toast the user sees, whether they are sent to the AMS slot picker, whether the
- * manual-pull watch is armed. Every field is a pure function of the plan, so the
- * whole post-plan branching is answerable in a binary with no panel, no display
- * and no printer -- and execute_load() / execute_unload() read the same struct,
- * so the copy the user reads cannot fork from the copy anything else believes.
- */
-struct FilamentPanelOutcome {
-    FilamentTier tier = FilamentTier::Refused;
-    AmsCall call = AmsCall::None;
-    int arg = -1;
-
-    /// The BACKEND-op arm ran: begin_operation_guard() + backend_op_active_ +
-    /// op_started(). Tier 1 only. The macro tier arms its guard inside
-    /// run_filament_macro(), after any param modal is answered, and the
-    /// raw-gcode tier arms operation_guard_ but never backend_op_active_ (which
-    /// is what gates ams_action_observer_ to backend ops) -- so neither is the
-    /// arm this describes. False on every refusal: a refused op must leave the
-    /// buttons live, which is the whole fix for bundle 9KRXZ62P.
-    bool guard_armed = false;
-
-    /// Send the user to the AMS panel to pick a slot. FilamentRefusal::SelectSlot
-    /// only -- AlreadyMounted has nothing left to pick, and BypassLoaded needs a
-    /// hand at the toolhead rather than a different lane.
-    bool navigate_to_ams = false;
-
-    /// arm_manual_pull_prompt() runs before dispatch -- nothing reels this spool
-    /// back down a lane. Unload only, and never on a refusal (nothing would ever
-    /// complete to disarm it).
-    bool arm_manual_pull = false;
-
-    /// The already-translated copy handed to NOTIFY_*; empty when this arm raises
-    /// no toast. Severity stays at the call site: the load refusals are INFO, the
-    /// unload refusal is a WARNING.
-    std::string toast;
-};
-
-/// FilamentPanel::execute_load() from the plan onward, minus the dispatch.
-[[nodiscard]] FilamentPanelOutcome panel_load_outcome(const FilamentOpPlan& plan);
-
-/// FilamentPanel::execute_unload() from the plan onward, minus the dispatch.
-///
-/// @param backend_present An AmsBackend exists -- the manual-pull question, not
-///                        a tier question (plan_unload already asked that one).
-/// @param target_slot     The slot the unload acts on: selected_op_slot().
-[[nodiscard]] FilamentPanelOutcome panel_unload_outcome(const FilamentOpPlan& plan,
-                                                        bool backend_present, int target_slot);
 } // namespace helix::ui
 
 /**
@@ -263,21 +185,6 @@ class FilamentPanel : public PanelBase {
     bool is_extrusion_allowed() const;
 
     /**
-     * @brief Must this panel heat the nozzle before dispatching @p plan?
-     *
-     * The temperature gate (is_extrusion_allowed()) answers whether extrusion is
-     * safe RIGHT NOW; this answers the narrower question the Load and Unload
-     * buttons actually ask, which also depends on whether the thing about to run
-     * heats the hotend for us. Extrude / Purge / Retract keep asking the gate
-     * directly: nothing downstream of those heats, so a cold nozzle there always
-     * means preheat.
-     *
-     * @param plan The plan about to be dispatched — see preheat_skip_reason().
-     * @param slot Which StandardMacros slot @p plan resolves against.
-     */
-    bool needs_ui_preheat(const helix::ui::FilamentOpPlan& plan, StandardMacroSlot slot) const;
-
-    /**
      * @brief Set temperature limits from Moonraker heater config
      *
      * @param min_temp Minimum allowed temperature
@@ -285,10 +192,6 @@ class FilamentPanel : public PanelBase {
      * @param min_extrude_temp Minimum extrusion temperature (default: 170°C)
      */
     void set_limits(int min_temp, int max_temp, int min_extrude_temp = 170);
-
-    /// Keypad ceiling for one heater, preferring the printer's configured
-    /// max_temp over the compiled-in fallback (prestonbrown/helixscreen#1355).
-    float keypad_max_for(helix::HeaterType type, int fallback_deg);
 
     /**
      * @brief Set TemperatureService for combined temperature graph
@@ -564,8 +467,8 @@ class FilamentPanel : public PanelBase {
     // two controls for one choice. -1 = nothing selected (every head docked),
     // which the row reaches by tapping the selected chip again — so the panel
     // needs no separate Dock control.
-    helix::ui::ModalGuard temperature_sheet_;
-    helix::ui::ModalGuard tool_dialog_;
+    FilamentControlOverlay temperature_sheet_{"filament_temperature_overlay"};
+    FilamentControlOverlay tool_dialog_{"filament_tool_overlay"};
     static void on_tool_dialog_open(lv_event_t* e);
     static void on_tool_dialog_close(lv_event_t* e);
     helix::HeaterType sheet_type_ = helix::HeaterType::Nozzle;
@@ -582,28 +485,11 @@ class FilamentPanel : public PanelBase {
 
     lv_subject_t selected_tool_subject_;
     ObserverGuard selected_tool_observer_;
-    /// Death signal for the subjects this panel owns, for observers OUTSIDE it.
-    ///
-    /// filament_selected_tool is published here and watched by every tool_chip
-    /// on the tool row. ~FilamentPanel() frees subjects_ but does not delete
-    /// those widgets - they belong to the screen and outlive the panel - so a
-    /// chip's guard must hold this token to learn the subject is gone. Without
-    /// it, the chip's LV_EVENT_DELETE calls lv_observer_remove() on a freed
-    /// subject (prestonbrown/helixscreen#705's mechanism).
-    SubjectLifetime subjects_lifetime_ = std::make_shared<bool>(true);
     [[nodiscard]] int selected_tool_index() const;
     /// Point the selection at the active tool. Preserves a still-valid choice
     /// unless @p force — the machine must not overwrite a deliberate pick.
     void seed_selected_tool(bool force = false);
 
-  public:
-    /// @see subjects_lifetime_ - hand this to observe_*() when watching a
-    /// subject this panel owns from a widget that can outlive it.
-    [[nodiscard]] SubjectLifetime get_subjects_lifetime() const {
-        return subjects_lifetime_;
-    }
-
-  private:
     void update_multi_filament_card_visibility();
     void apply_left_column_sizing(bool external_spool_mode);
     void handle_selected_tool_changed();
@@ -635,26 +521,6 @@ class FilamentPanel : public PanelBase {
     //
 
     void update_temp_display();
-
-    /// Which arm of update_status() last produced the status line.
-    ///
-    /// Two of the arms render a constant string. Re-running them costs a
-    /// lv_translation_get(), which is a linear scan of the whole translation
-    /// table, plus two imperative icon writes — and update_status() is driven by
-    /// the chamber temperature observer, so it fires several times a second for
-    /// as long as the app is running, panel on screen or not. Remembering the
-    /// arm lets those two return immediately. The interpolating arms still run
-    /// every time: their text carries live temperatures.
-    enum class StatusBranch : uint8_t {
-        None, ///< Nothing rendered yet, or the widget tree was rebuilt.
-        Ready,
-        NozzleHeating,
-        ChamberHeating,
-        ChamberAtTarget,
-        Cold,
-    };
-    StatusBranch last_status_branch_ = StatusBranch::None;
-
     void update_status();
     void update_status_icon(const char* icon_name, const char* color_token);
     void update_warning_text();
@@ -717,39 +583,6 @@ class FilamentPanel : public PanelBase {
     // Filament sensor warning helpers
     void show_load_warning();
     void show_unload_warning();
-    /// The Load / Unload plan for the current dropdown selection, against live
-    /// backend state. Computed rather than stashed: the preheat decision and the
-    /// dispatch are separated by a heat cycle the firmware can change state
-    /// during, so each asks fresh — the same reason
-    /// AmsOperationSidebar::check_pending_load() re-plans after its preheat.
-    [[nodiscard]] helix::ui::FilamentOpPlan current_load_plan() const;
-
-    /// An unload plan and the loaded answer it was built from, which the
-    /// dispatch needs as well — read together so both describe one instant.
-    struct UnloadContext {
-        helix::ui::FilamentOpPlan plan;
-        bool target_loaded = false;
-    };
-    [[nodiscard]] UnloadContext current_unload_context() const;
-    [[nodiscard]] helix::ui::FilamentOpPlan current_unload_plan() const;
-
-    /**
-     * @brief This panel's half of a shared dispatch.
-     *
-     * The guard, the on-button spinner and the heater restore are what make this
-     * panel's dispatch look different from every other surface's; the ladder
-     * underneath is the same one. @p op names which button the spinner drives.
-     *
-     * Every hook is safe to capture [this] in: FilamentPanel is an immortal
-     * singleton [L012], which is also why the surface needs no lifetime guard.
-     */
-    [[nodiscard]] helix::ui::FilamentOpSurface op_surface(FilamentOp op);
-
-    /// The load path from the toolhead-sensor check onward. Reached both
-    /// directly and from the home-confirmation callback, which is why it is not
-    /// inline in handle_load_button().
-    void continue_load_after_checks();
-
     void execute_load();
     void execute_unload();
     void execute_extrude();
@@ -804,6 +637,12 @@ class FilamentPanel : public PanelBase {
     // Keypad callback bridges (different signature - not LVGL events)
     static void custom_nozzle_keypad_cb(float value, void* user_data);
     static void custom_bed_keypad_cb(float value, void* user_data);
+
+    // Filament sensor warning dialog callbacks
+    static void on_load_warning_proceed(lv_event_t* e);
+    static void on_load_warning_cancel(lv_event_t* e);
+    static void on_unload_warning_proceed(lv_event_t* e);
+    static void on_unload_warning_cancel(lv_event_t* e);
 };
 
 // Global instance accessor (needed by main.cpp)

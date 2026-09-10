@@ -248,6 +248,7 @@ class OverlayBase : public ViewLifecycleBase {
      *
      * @param parent Parent widget to attach overlay to (usually screen)
      * @param component_name XML component name to create (e.g., "console_panel")
+     * @param attrs Optional XML property overrides (null-terminated key/value pairs)
      * @return Root object of overlay, or nullptr on failure
      *
      * @code
@@ -260,7 +261,8 @@ class OverlayBase : public ViewLifecycleBase {
      * }
      * @endcode
      */
-    lv_obj_t* create_overlay_from_xml(lv_obj_t* parent, const char* component_name);
+    lv_obj_t* create_overlay_from_xml(lv_obj_t* parent, const char* component_name,
+                                      const char** attrs = nullptr);
 
     //
     // === Protected State ===
