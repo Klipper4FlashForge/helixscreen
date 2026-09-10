@@ -145,6 +145,15 @@ static lv_theme_t* current_theme = nullptr;
 static bool use_dark_mode = true;
 static lv_display_t* theme_display = nullptr;
 
+// Repeat-guard state for theme_manager_init(): the display pointer, its
+// resolution and the mode of the last FULL rebuild, plus a count of rebuilds.
+// A repeat call for an unchanged target skips the whole registration pass,
+// which otherwise re-parses ui_xml/ from scratch on every fixture instance.
+static bool theme_fully_initialized = false;
+static int32_t theme_init_h_res = 0;
+static int32_t theme_init_v_res = 0;
+static int theme_full_init_count = 0;
+
 static helix::ThemeData active_theme;
 
 // Theme change notification subject (monotonically increasing generation counter)
@@ -754,13 +763,15 @@ static ThemePalette convert_to_theme_palette(const theme_palette_t* p,
 }
 
 /**
- * @brief Initialize the HelixScreen LVGL theme
+ * @brief Sync the mutable palette manager to active_theme
  *
- * Sets up ThemeManager, initializes extra widget styles, and registers
- * the helix_theme with LVGL.
+ * The legacy ThemeManager can be flipped in place (dark-mode toggle,
+ * palette previews, tests); the next theme_manager_init() call is the
+ * boundary that restores it to the canonical theme and mode. Pure
+ * in-memory conversion - no file or XML parsing - so both the full init
+ * and the repeat-skip path can afford it.
  */
-static lv_theme_t* theme_init_lvgl(lv_display_t* display, const theme_palette_t* palette,
-                                   bool is_dark, const lv_font_t* base_font) {
+static void resync_palette_manager(bool is_dark) {
     // Build palettes from active_theme for contrast calculations.
     // For single-mode themes, use the valid palette for both sides to avoid
     // parsing empty color strings from the unsupported mode.
@@ -779,8 +790,20 @@ static lv_theme_t* theme_init_lvgl(lv_display_t* display, const theme_palette_t*
     tm.set_palettes(light_pal, dark_pal);
     tm.init();
     tm.set_dark_mode(is_dark);
+}
+
+/**
+ * @brief Initialize the HelixScreen LVGL theme
+ *
+ * Sets up ThemeManager, initializes extra widget styles, and registers
+ * the helix_theme with LVGL.
+ */
+static lv_theme_t* theme_init_lvgl(lv_display_t* display, const theme_palette_t* palette,
+                                   bool is_dark, const lv_font_t* base_font) {
+    resync_palette_manager(is_dark);
 
     // Initialize widget-specific styles not in StyleRole enum
+    const auto& props = active_theme.properties;
     init_extra_styles(palette, resolve_border_radius(props));
 
     // Create LVGL default theme as base (we'll layer on top)
@@ -1814,8 +1837,34 @@ static helix::ThemeData theme_manager_load_active_theme() {
 
 void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
     auto tm_init_start = std::chrono::steady_clock::now();
+
+    // Repeat guard: the same display at the same size in the same mode, with
+    // the theme still initialized, needs nothing re-registered. theme_manager_
+    // apply_theme() owns mode changes and theme_manager_refresh_*() owns
+    // republishing, and theme_manager_deinit() clears theme_subject_initialized,
+    // so every path that actually changes the state re-runs.
+    const int32_t h_res = display ? lv_display_get_horizontal_resolution(display) : 0;
+    const int32_t v_res = display ? lv_display_get_vertical_resolution(display) : 0;
+    if (theme_fully_initialized && theme_display == display &&
+        use_dark_mode_param == use_dark_mode && h_res == theme_init_h_res &&
+        v_res == theme_init_v_res && theme_subject_initialized) {
+        // The registration pass can stay skipped, but the mutable palette
+        // manager still has to come back to the canonical theme: tests and
+        // theme-preview paths flip it in place, and the next init call is the
+        // boundary that restores it. A no-op flip is cheap (the setters
+        // early-return), so this costs nothing on a repeat that changed
+        // nothing.
+        resync_palette_manager(use_dark_mode_param);
+        spdlog::debug("[Theme] theme_manager_init: unchanged target ({}x{} {}), reusing", h_res,
+                      v_res, use_dark_mode_param);
+        return;
+    }
+
     theme_display = display;
     use_dark_mode = use_dark_mode_param;
+    theme_init_h_res = h_res;
+    theme_init_v_res = v_res;
+    theme_full_init_count++;
 
     // Initialize theme change notification subject
     if (!theme_subject_initialized) {
@@ -2016,6 +2065,12 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
                       std::chrono::steady_clock::now() - tm_init_start)
                       .count(),
                   helix::theme_tokens::enabled() ? "on" : "off");
+    theme_fully_initialized = true;
+}
+
+// NAMESPACE_OK: joins the global theme_manager_init/deinit family
+int theme_manager_full_init_count() {
+    return theme_full_init_count;
 }
 
 void theme_manager_deinit() {
