@@ -767,9 +767,9 @@ static ThemePalette convert_to_theme_palette(const theme_palette_t* p,
  *
  * The legacy ThemeManager can be flipped in place (dark-mode toggle,
  * palette previews, tests); the next theme_manager_init() call is the
- * boundary that restores it to the canonical theme and mode. Pure
- * in-memory conversion - no file or XML parsing - so both the full init
- * and the repeat-skip path can afford it.
+ * boundary that re-syncs it with active_theme. Pure in-memory
+ * conversion - no file or XML parsing - so both the full init and the
+ * repeat-skip path can afford it.
  */
 static void resync_palette_manager(bool is_dark) {
     // Build palettes from active_theme for contrast calculations.
@@ -1849,9 +1849,9 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
         use_dark_mode_param == use_dark_mode && h_res == theme_init_h_res &&
         v_res == theme_init_v_res && theme_subject_initialized) {
         // The registration pass can stay skipped, but the mutable palette
-        // manager still has to come back to the canonical theme: tests and
+        // manager still has to come back in line with active_theme: tests and
         // theme-preview paths flip it in place, and the next init call is the
-        // boundary that restores it. A no-op flip is cheap (the setters
+        // boundary that re-syncs it. A no-op flip is cheap (the setters
         // early-return), so this costs nothing on a repeat that changed
         // nothing.
         resync_palette_manager(use_dark_mode_param);
