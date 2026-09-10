@@ -4,6 +4,7 @@
 #include "filament_op_execute.h"
 
 #include "ui_error_reporting.h"
+#include "ui_update_queue.h"
 
 #include "ams_backend.h"
 #include "app_globals.h"
@@ -14,7 +15,6 @@
 #include "moonraker_api.h"
 #include "safety_settings_manager.h"
 #include "standard_macros.h"
-#include "ui_update_queue.h"
 
 #include <spdlog/spdlog.h>
 
@@ -190,9 +190,8 @@ void unwind_async(const FilamentOpSurface& surface, const FilamentOpPlan& plan) 
     }
     // Marshal first, then guard: token.defer() is main-thread only, so a guard
     // applied on the network thread would itself be the violation.
-    helix::ui::queue_update([s = surface, plan]() {
-        guarded(s, [s, plan]() { s.on_async_failed(plan); });
-    });
+    helix::ui::queue_update(
+        [s = surface, plan]() { guarded(s, [s, plan]() { s.on_async_failed(plan); }); });
 }
 
 /// Completion hook, marshalled to the main thread and then guarded.
@@ -205,10 +204,16 @@ void finished(const FilamentOpSurface& surface, const std::function<void()>& hoo
 
 /// The error copy a failed macro or fallback raises. A timed-out macro is not a
 /// failed one: the printer may still be running it, and telling the user it
-/// failed invites them to start a second copy on top.
+/// failed invites them to start a second copy on top. Neither is a dropped
+/// socket: the transport vanishing is not the printer's opinion of the macro
+/// (prestonbrown/helixscreen#1543).
 void report_op_error(const MoonrakerError& error, const char* what) {
     if (error.type == MoonrakerErrorType::TIMEOUT) {
         NOTIFY_WARNING(lv_tr("Macro may still be running — response timed out"));
+        return;
+    }
+    if (error.type == MoonrakerErrorType::CONNECTION_LOST) {
+        NOTIFY_WARNING(lv_tr("Connection to printer lost — operation may still be running"));
         return;
     }
     if (std::string(what) == "load") {
