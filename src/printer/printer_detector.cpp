@@ -315,7 +315,8 @@ PrinterDatabase g_database;
 // Helper Functions
 // ============================================================================
 
-namespace {
+namespace helix {
+// Declared in printer_discovery.h — shared with probe_preparation rules.
 // Case-insensitive substring search. A leading '^' pins the pattern to the
 // start of a name and a trailing '$' to its end, so "^box$" names exactly the
 // Klipper object "box" and not a "gcode_macro BOX_UNLOAD" that contains it.
@@ -347,6 +348,9 @@ bool has_pattern(const std::vector<std::string>& objects, const std::string& pat
         return obj_lower.find(core) != std::string::npos;
     });
 }
+} // namespace helix
+
+namespace {
 
 // Check if all patterns in array are present
 bool has_all_patterns(const std::vector<std::string>& objects, const json& patterns) {
