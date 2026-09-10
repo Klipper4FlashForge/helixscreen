@@ -323,10 +323,27 @@ class ThemeManager {
  * Creates and applies LVGL theme with light or dark mode.
  * Must be called before creating any widgets.
  *
+ * When called again with the same display (same pointer and resolution) and
+ * the same mode while nothing deinitialized the theme in between, this is a
+ * no-op: the registration pass re-reads and parses the whole ui_xml/ tree,
+ * which is exactly the cost the test suite paid once per fixture instance for
+ * a theme that never changed between them. The runtime dark-mode toggle goes
+ * through theme_manager_apply_theme(), and responsive republishing through
+ * theme_manager_refresh_*(), so a skipped repeat is always a true repeat.
+ *
  * @param display LVGL display instance
  * @param use_dark_mode true for dark theme, false for light theme
  */
 void theme_manager_init(lv_display_t* display, bool use_dark_mode);
+
+/**
+ * @brief How many times theme_manager_init() performed a full rebuild
+ *
+ * The no-op path above does not count. Exists so tests can pin the guard
+ * without timing anything.
+ */
+// NAMESPACE_OK: joins the global theme_manager_init/deinit family
+int theme_manager_full_init_count();
 
 /**
  * @brief Deinitialize theme subjects before lv_deinit()
