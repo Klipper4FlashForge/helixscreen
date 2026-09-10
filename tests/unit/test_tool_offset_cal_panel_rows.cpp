@@ -14,54 +14,20 @@
 #include "ui_update_queue.h"
 
 #include "../lvgl_ui_test_fixture.h"
-#include "../test_helpers/printer_state_test_access.h"
-#include "../test_helpers/scoped_env.h"
-#include "app_globals.h"
-#include "moonraker_api.h"
-#include "moonraker_client_mock.h"
-#include "printer_state.h"
+#include "../toolchanger_panel_fixture.h"
 #include "tool_state.h"
 
-#include <optional>
 #include <string>
 #include <vector>
 
 #include "../catch_amalgamated.hpp"
 
-using nlohmann::json;
 
 namespace {
 
-struct ToolCalRowsFixture : public LVGLUITestFixture {
-    helix::ScopedEnv ams_env{"HELIX_MOCK_AMS"};
-    std::optional<MoonrakerClientMock> client;
-    std::optional<MoonrakerAPI> api;
-
-    ToolCalRowsFixture() {
-        setenv("HELIX_MOCK_AMS", "toolchanger", 1);
-        client.emplace(MoonrakerClientMock::PrinterType::VORON_24, 100.0);
-
-        helix::PrinterState& ps = get_printer_state();
-        ps.set_klippy_state_sync(helix::KlippyState::READY);
-        helix::PrinterDiscovery hw;
-        hw.parse_objects(json::array({"gcode_move", "toolhead", "extruder", "toolchanger", "tool T0",
-                                      "tool T1", "tool T2", "tool T3",
-                                      "gcode_macro CALIBRATE_TOOL_OFFSETS"}));
-        ps.set_hardware(hw);
-
-        helix::ToolState& ts = helix::ToolState::instance();
-        ts.deinit_subjects();
-        ts.init_subjects(true);
-        ts.init_tools(hw);
-
-        api.emplace(*client, ps);
-        set_moonraker_api(&*api);
-    }
-    ~ToolCalRowsFixture() override {
-        helix::ui::UpdateQueue::instance().drain();
-        set_moonraker_api(nullptr);
-    }
-
+/// LVGLUITestFixture, not LVGLTestFixture: lv_xml_create must be able to build
+/// the panel's component tree.
+struct ToolCalRowsFixture : helix::test::ToolchangerPanelFixture<LVGLUITestFixture> {
     /// Every label under @p root, in tree order.
     static void collect_labels(lv_obj_t* root, std::vector<std::string>& out) {
         for (uint32_t i = 0; i < lv_obj_get_child_count(root); ++i) {

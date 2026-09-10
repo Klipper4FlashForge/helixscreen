@@ -15,19 +15,14 @@
 
 #include "../lvgl_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
-#include "../test_helpers/scoped_env.h"
-#include "../ui_test_utils.h"
+#include "../toolchanger_panel_fixture.h"
 #include "app_globals.h"
-#include "moonraker_api.h"
-#include "moonraker_client_mock.h"
 #include "moonraker_error.h"
 #include "printer_state.h"
 #include "tool_state.h"
 
 #include <algorithm>
-#include <cstdlib>
-#include <functional>
-#include <optional>
+#include <string>
 
 #include "../catch_amalgamated.hpp"
 
@@ -35,53 +30,8 @@ using nlohmann::json;
 
 namespace {
 
-struct ToolCalPanelFixture : public LVGLTestFixture {
-    /// The toolchanger persona is chosen by HELIX_MOCK_AMS when the mock is
-    /// constructed (see test_mock_tool_offset_calibration.cpp).
-    helix::ScopedEnv ams_env{"HELIX_MOCK_AMS"};
-    std::optional<MoonrakerClientMock> client;
-    std::optional<MoonrakerAPI> api;
-
-    ToolCalPanelFixture() {
-        setenv("HELIX_MOCK_AMS", "toolchanger", 1);
-        client.emplace(MoonrakerClientMock::PrinterType::VORON_24, 100.0);
-
-        // begin_run() asks the global PrinterState whether the printer supports
-        // the macro, and the API gates execute_gcode() on klippy being READY.
-        helix::PrinterState& ps = get_printer_state();
-        helix::PrinterStateTestAccess::reset(ps);
-        ps.init_subjects(false);
-        ps.set_klippy_state_sync(helix::KlippyState::READY);
-        helix::PrinterDiscovery hw;
-        hw.parse_objects(
-            json::array({"gcode_move", "toolhead", "extruder", "toolchanger", "tool T0", "tool T1",
-                         "tool T2", "tool T3", "gcode_macro CALIBRATE_TOOL_OFFSETS"}));
-        ps.set_hardware(hw);
-
-        helix::ToolState& ts = helix::ToolState::instance();
-        ts.deinit_subjects();
-        ts.init_subjects(false);
-        ts.init_tools(hw);
-
-        api.emplace(*client, ps);
-        set_moonraker_api(&*api);
-    }
-    ~ToolCalPanelFixture() override {
-        helix::ui::UpdateQueue::instance().drain();
-        set_moonraker_api(nullptr);
-    }
-
-    /// Pumps the mock's calibration timer (600 ms per tick), LVGL, and the
-    /// UpdateQueue the run's bg_cb callbacks land on.
-    bool pump_until(const std::function<bool()>& done, int max_ticks = 200) {
-        for (int i = 0; i < max_ticks && !done(); ++i) {
-            lv_tick_inc(100);
-            lv_timer_handler_safe();
-            helix::ui::UpdateQueue::instance().drain();
-        }
-        return done();
-    }
-};
+/// No widgets: these cases drive the run and its subjects directly.
+using ToolCalPanelFixture = helix::test::ToolchangerPanelFixture<LVGLTestFixture>;
 
 } // namespace
 
