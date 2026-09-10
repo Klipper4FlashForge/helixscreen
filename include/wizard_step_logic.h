@@ -132,6 +132,18 @@ std::vector<wizard::StepId> wizard_deferred_hardware_steps(const std::vector<Ste
 /// Count of non-skipped entries.
 int wizard_visible_count(const std::vector<StepSkip>&);
 
+/// Whether the step denominator is settled enough to display.
+///
+/// The skip vector is a function of live hardware state that only exists after
+/// the connection succeeds (AMS presence, filament sensors, and a preset the
+/// detection applies to a then-identified printer), so before that the visible
+/// count is a provisional estimate that can shrink or grow at the next step.
+/// An authoritative preset (seeded at install or applied mid-run) settles it
+/// from the first step; otherwise the Connection step is the boundary - up to
+/// and including it the total stays hidden, after it the total holds.
+bool wizard_total_is_settled(wizard::StepId current, const std::vector<StepSkip>& steps,
+                             bool has_preset);
+
 /// 1-based display number for `current`: 1 + number of visible entries strictly
 /// before it.
 int wizard_display_number(wizard::StepId current, const std::vector<StepSkip>&);

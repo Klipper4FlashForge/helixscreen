@@ -418,3 +418,50 @@ TEST_CASE("Preset authority: session flag is off until identify applies a preset
     helix::wizard_reset_preset_session_state();
     REQUIRE_FALSE(helix::wizard_preset_applied_this_session());
 }
+
+TEST_CASE("Total settles only after connection when no preset is authoritative",
+          "[1550][wizard][step_logic]") {
+    auto v = full_vec();
+
+    // Through the connection step the skip vector is still an estimate: AMS,
+    // filament sensors and a detection-applied preset only exist once the
+    // connection succeeds, so the denominator can shrink or grow mid-run.
+    REQUIRE_FALSE(helix::wizard_total_is_settled(StepId::TouchCalibration, v, false));
+    REQUIRE_FALSE(helix::wizard_total_is_settled(StepId::Language, v, false));
+    REQUIRE_FALSE(helix::wizard_total_is_settled(StepId::Wifi, v, false));
+    REQUIRE_FALSE(helix::wizard_total_is_settled(StepId::Connection, v, false));
+
+    // Everything after the connection runs against a live, fully discovered
+    // printer; the denominator cannot lurch from here.
+    REQUIRE(helix::wizard_total_is_settled(StepId::PrinterIdentify, v, false));
+    REQUIRE(helix::wizard_total_is_settled(StepId::HeaterSelect, v, false));
+    REQUIRE(helix::wizard_total_is_settled(StepId::Summary, v, false));
+    REQUIRE(helix::wizard_total_is_settled(StepId::Telemetry, v, false));
+}
+
+TEST_CASE("Total settles from the first step when a preset is authoritative",
+          "[1550][wizard][step_logic]") {
+    auto v = full_vec();
+    skip_step(v, StepId::Wifi);
+    skip_step(v, StepId::Connection);
+    skip_step(v, StepId::PrinterIdentify);
+    skip_step(v, StepId::HeaterSelect);
+
+    // The preset plan already collapsed everything it will collapse, so the
+    // denominator is stable even on the first step and on a skipped
+    // Connection.
+    REQUIRE(helix::wizard_total_is_settled(StepId::TouchCalibration, v, true));
+    REQUIRE(helix::wizard_total_is_settled(StepId::Language, v, true));
+    REQUIRE(helix::wizard_total_is_settled(StepId::Connection, v, true));
+    REQUIRE(helix::wizard_total_is_settled(StepId::Telemetry, v, true));
+}
+
+TEST_CASE("An unknown step never reports the total as settled without a preset",
+          "[1550][wizard][step_logic]") {
+    auto v = full_vec();
+    v.pop_back(); // drop Telemetry so a lookup misses
+    REQUIRE_FALSE(helix::wizard_total_is_settled(StepId::Telemetry, v, false));
+    // A preset short-circuits before any step lookup: the denominator is
+    // settled regardless of what the step is.
+    REQUIRE(helix::wizard_total_is_settled(StepId::Telemetry, v, true));
+}

@@ -62,6 +62,7 @@ static lv_subject_t total_steps;
 static lv_subject_t wizard_title;
 static lv_subject_t wizard_step_current;  // String for display, e.g., "1"
 static lv_subject_t wizard_step_total;    // String for display, e.g., "7"
+static lv_subject_t wizard_total_visible; // Int: 0 until the denominator is settled
 static lv_subject_t wizard_is_final_step; // Int: 0=not final, 1=final (for button visibility)
 static lv_subject_t wizard_back_visible;
 
@@ -280,6 +281,7 @@ void ui_wizard_init_subjects() {
                               "wizard_step_current", wizard_subjects_);
     UI_MANAGED_SUBJECT_STRING(wizard_step_total, wizard_step_total_buffer, "9", "wizard_step_total",
                               wizard_subjects_);
+    UI_MANAGED_SUBJECT_INT(wizard_total_visible, 1, "wizard_total_visible", wizard_subjects_);
     UI_MANAGED_SUBJECT_INT(wizard_is_final_step, 0, "wizard_is_final_step", wizard_subjects_);
     UI_MANAGED_SUBJECT_STRING(wizard_subtitle, wizard_subtitle_buffer, "", "wizard_subtitle",
                               wizard_subjects_);
@@ -523,6 +525,7 @@ void ui_wizard_navigate_to_step(helix::wizard::StepId step) {
     int display_total;
     bool at_first_visible;
     bool is_last_step;
+    bool total_visible = true;
     if (!g_step_subset.empty()) {
         int sub_idx = subset_index_of(step);
         if (sub_idx < 0) {
@@ -535,6 +538,11 @@ void ui_wizard_navigate_to_step(helix::wizard::StepId step) {
     } else {
         display_step = helix::wizard_display_number(step, skips);
         display_total = helix::wizard_visible_count(skips);
+        // The denominator is an estimate until the connection settles what
+        // exists on this printer (AMS, sensors, and a detection-applied
+        // preset all reshape the skip vector mid-run); show it only once it
+        // cannot lurch.
+        total_visible = helix::wizard_total_is_settled(step, skips, ctx.preset.skip_hardware);
         at_first_visible = !helix::wizard_prev(step, skips).has_value();
         is_last_step = helix::wizard_is_last(step, skips);
     }
@@ -542,6 +550,8 @@ void ui_wizard_navigate_to_step(helix::wizard::StepId step) {
     // Update current_step subject (internal step index for UI bindings)
     crash_handler::breadcrumb::note("wiz", "notify_current", static_cast<long>(step_idx));
     lv_subject_set_int(&current_step, step_idx);
+    crash_handler::breadcrumb::note("wiz", "notify_total_vis", static_cast<long>(step_idx));
+    lv_subject_set_int(&wizard_total_visible, total_visible ? 1 : 0);
 
     // Back button: visible when there is a previous non-skipped step, or when an
     // add-printer cancel callback is registered (shown as "Cancel" on step one).
