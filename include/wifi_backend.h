@@ -41,6 +41,7 @@ enum class WiFiResult {
     BACKEND_ERROR,          ///< Internal backend error
     NOT_INITIALIZED,        ///< Backend not started/initialized
     NOT_SUPPORTED,          ///< Capability absent on this backend (nothing failed)
+    TRANSPORT_IN_USE,       ///< Another transport owns the link and this one cannot join
     UNKNOWN_ERROR           ///< Unexpected error condition
 };
 

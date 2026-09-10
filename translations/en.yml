@@ -912,6 +912,7 @@ translations:
   Est. Duration: Est. Duration
   Estimating...: Estimating...
   Ethernet: Ethernet
+  Ethernet is connected. Disconnect it to join a Wi-Fi network.: Ethernet is connected. Disconnect it to join a Wi-Fi network.
   Events appear here after sessions and prints: Events appear here after sessions
     and prints
   Every extruder's temperature at once: Every extruder's temperature at once

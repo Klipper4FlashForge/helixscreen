@@ -926,6 +926,7 @@ translations:
   Est. Duration: Ожид. длительность
   Estimating...: Оценка...
   Ethernet: Ethernet
+  Ethernet is connected. Disconnect it to join a Wi-Fi network.: ''
   Events appear here after sessions and prints: События появятся здесь после сессий
     и печатей
   Every extruder's temperature at once: Температура всех экструдеров

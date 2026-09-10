@@ -952,6 +952,27 @@ WiFiError WifiBackendNetd::connect_network(const std::string& ssid, const std::s
                          "WiFi system not ready");
     }
 
+    // netd enforces single-transport: while a wired link holds the network it
+    // never brings the radio up for a Wi-Fi join, and unlike a busy daemon or
+    // a wrong password it emits NO terminal event for the attempt - the only
+    // answer would be the manager's 45 s watchdog. Refuse up front with the
+    // reason instead. A snapshot that has not caught up (empty mode) or a
+    // reachable-but-down daemon falls through to the normal path, where the
+    // watchdog remains the backstop.
+    {
+        helix::netd::NetdSnapshot current;
+        std::lock_guard<std::mutex> lock(snapshot_mutex_);
+        current = snapshot_;
+        if (connection_live() && current.mode == "ETHERNET" && current.connected_state()) {
+            spdlog::info("[WifiBackendNetd] Refusing Wi-Fi join: Ethernet holds the link "
+                         "(netd single-transport)");
+            return WiFiError(WiFiResult::TRANSPORT_IN_USE,
+                             "netd holds the link on ETHERNET; single-transport "
+                             "enforcement means a Wi-Fi join can never complete",
+                             "Ethernet is connected");
+        }
+    }
+
     // Credential-free reselect of the network the snapshot says we are ON:
     // nothing new is being asked, and the daemon ignores redundant joins, so
     // answering from the snapshot beats riding the manager's 45 s watchdog

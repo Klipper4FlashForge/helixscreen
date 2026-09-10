@@ -85,6 +85,13 @@ class WifiBackendMock : public WifiBackend {
         resolved_interface_ = std::move(iface);
     }
 
+    /// Test helper — makes connect_network() refuse with TRANSPORT_IN_USE,
+    /// mirroring the netd backend's single-transport refusal so manager-level
+    /// handling can be tested without a netd daemon.
+    void set_transport_in_use_for_test(bool in_use) {
+        transport_in_use_ = in_use;
+    }
+
   private:
     // ========================================================================
     // Internal State
@@ -96,6 +103,7 @@ class WifiBackendMock : public WifiBackend {
     std::string connected_ip_;
     int connected_signal_;
     bool radio_enabled_{true};
+    bool transport_in_use_{false};
     std::optional<helix::wifi::WifiInterface> resolved_interface_;
 
     // Event system
