@@ -15,6 +15,7 @@
 #include "subject_managed_panel.h"
 #include "temperature_controller.h" // helix::SendOptions (by value in set_nozzle_target)
 #include "ui/temperature_observer_bundle.h"
+#include "ui/ui_modal_guard.h"
 
 #include <array>
 #include <string>
@@ -443,9 +444,6 @@ class FilamentPanel : public PanelBase {
     std::optional<helix::ActiveMaterial> cached_active_material_;
 
     // Temperature labels for color updates (4-state heating color)
-    lv_obj_t* nozzle_current_label_ = nullptr;
-    lv_obj_t* bed_current_label_ = nullptr;
-    lv_obj_t* chamber_current_label_ = nullptr;
 
     // Warning dialogs for filament sensor integration
     lv_obj_t* load_warning_dialog_ = nullptr;
@@ -468,6 +466,22 @@ class FilamentPanel : public PanelBase {
     // two controls for one choice. -1 = nothing selected (every head docked),
     // which the row reaches by tapping the selected chip again — so the panel
     // needs no separate Dock control.
+    helix::ui::ModalGuard temperature_sheet_;
+    helix::ui::ModalGuard tool_dialog_;
+    static void on_tool_dialog_open(lv_event_t* e);
+    static void on_tool_dialog_close(lv_event_t* e);
+    helix::HeaterType sheet_type_ = helix::HeaterType::Nozzle;
+    std::string sheet_heater_;
+    int sheet_value_ = 0;
+    int sheet_max_ = 300;
+    lv_subject_t sheet_value_subject_, sheet_title_subject_, sheet_kind_subject_;
+    char sheet_value_buf_[32]{};
+    char sheet_title_buf_[96]{};
+    void show_temperature_sheet(helix::HeaterType type, int tool = -1, bool open_dialog = true);
+    void update_temperature_sheet();
+    static void on_tool_temperature(lv_event_t* e);
+    static void on_temperature_sheet_action(lv_event_t* e);
+
     lv_subject_t selected_tool_subject_;
     ObserverGuard selected_tool_observer_;
     [[nodiscard]] int selected_tool_index() const;

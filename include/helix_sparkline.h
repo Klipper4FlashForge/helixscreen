@@ -6,7 +6,9 @@
 
 #include "lvgl/lvgl.h"
 
+#include <functional>
 #include <string>
+#include <vector>
 
 namespace helix {
 namespace ui {
@@ -21,13 +23,28 @@ namespace ui {
 ///   <helix_sparkline source="host_cpu_pct" style_line_color="#accent" />
 class HelixSparkline {
   public:
+    /// The most recent minute of recorded heater temperatures, in Celsius.
+    static std::vector<float> temperature_history(const std::string& heater);
+
+    /// XML-facing global heater chart; chamber resolution also supports sensors.
+    static lv_obj_t* create_heater(lv_obj_t* parent, bool chamber);
+
+    using HistoryReader = std::function<std::vector<float>()>;
+
+    /// Create a sparkline over caller-provided history. The caller invalidates
+    /// the returned object when samples change. Reader runs on the UI thread.
+    static lv_obj_t* create(lv_obj_t* parent, HistoryReader reader);
+
+    /// Replace the data provider of an existing sparkline (main thread only).
+    static void set_history_reader(lv_obj_t* obj, HistoryReader reader);
+
     /// Create a sparkline bound to a PerformanceState ring buffer.
     /// `source` is the ring-buffer name (e.g. "host_cpu_pct").
     /// Returns the LVGL object (caller may set size/style on it).
     static lv_obj_t* create(lv_obj_t* parent, const std::string& source);
 
   private:
-    explicit HelixSparkline(const std::string& source);
+    explicit HelixSparkline(HistoryReader reader);
     ~HelixSparkline() = default;
     HelixSparkline(const HelixSparkline&) = delete;
     HelixSparkline& operator=(const HelixSparkline&) = delete;
@@ -37,7 +54,7 @@ class HelixSparkline {
     void invalidate_self();
 
     lv_obj_t* obj_ = nullptr;
-    std::string source_;
+    HistoryReader history_reader_;
     ObserverGuard tick_observer_; // dtor calls reset() automatically (L085)
 };
 

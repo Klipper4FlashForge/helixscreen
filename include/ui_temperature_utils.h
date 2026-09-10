@@ -203,9 +203,10 @@ char* format_temperature_pair(int current, int target, char* buffer, size_t buff
  * @param target Target temperature in degrees (0 = heater off)
  * @param buffer Output buffer
  * @param buffer_size Size of buffer (recommended: 16)
+ * @param compact Use "60°" / "—" for compact cards instead of "60°C" / "— °C"
  * @return Pointer to buffer for chaining convenience
  */
-char* format_target_or_off(int target, char* buffer, size_t buffer_size);
+char* format_target_or_off(int target, char* buffer, size_t buffer_size, bool compact = false);
 
 /**
  * @brief Format a temperature as a number with the compact-wide rule

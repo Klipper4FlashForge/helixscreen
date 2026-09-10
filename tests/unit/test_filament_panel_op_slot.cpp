@@ -308,9 +308,8 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
 // ============================================================================
 // Bug A guard: the dropdown must NOT issue a physical tool change on a
-// shared-extruder AMS (HUB / LINEAR). Selecting a tool is selection-only there;
-// the explicit Load button performs the swap. Only a true PARALLEL toolchanger
-// (each tool = its own toolhead) changes tool on select. active_tool = T0 in
+// any topology. Selecting a tool changes only the panel context;
+// explicit filament operations perform physical changes. active_tool = T0 in
 // identity_topo(), so selecting T1 clears the "already active" early-return and
 // reaches the topology gate.
 // ============================================================================
@@ -340,7 +339,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture,
-                 "Toolchanger (PARALLEL): dropdown selection changes tool to the selected index",
+                 "Toolchanger (PARALLEL): row selection does not physically change tools",
                  "[filament][op_slot][panel]") {
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
     h.mock->topology_ = PathTopology::PARALLEL;
@@ -348,8 +347,8 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     TA::handle_selected_tool_changed(*h.panel);
 
-    REQUIRE(h.mock->change_tool_calls == 1);
-    CHECK(h.mock->last_change_tool == 1);
+    CHECK(h.mock->change_tool_calls == 0);
+    CHECK(TA::selected_tool(*h.panel) == 1);
 }
 
 // ============================================================================

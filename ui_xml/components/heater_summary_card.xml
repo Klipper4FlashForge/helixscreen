@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Compact heater readout with a colored edge and live temperature history. -->
+<component>
+  <api>
+    <prop name="card_flow" type="string" default="column"/>
+    <prop name="stripe_width" type="string" default="100%"/>
+    <prop name="stripe_height" type="string" default="2"/>
+    <prop name="body_width" type="string" default="100%"/>
+    <prop name="body_height" type="string" default="0"/>
+    <prop name="hide_tool_readout" type="string" default="true"/>
+    <prop name="hide_heater_readout" type="string" default="false"/>
+    <prop name="tool_index" type="int" default="-1"/>
+    <prop name="temperature_subject" type="string" default="bed_temp"/>
+    <prop name="heater" type="string" default="bed"/>
+    <prop name="title" type="string" default="Bed"/>
+    <prop name="accent" type="color" default="#temp_gradient_warm"/>
+    <prop name="current_subject" type="string"/>
+    <prop name="target_subject" type="string"/>
+    <prop name="callback" type="string"/>
+  </api>
+  <styles>
+    <style name="tool_edge_active" bg_color="#temp_gradient_hot"/>
+    <style name="tool_edge_docked" bg_color="#border"/>
+    <style name="tool_temp_normal" text_color="#text"/>
+    <style name="tool_temp_hot" text_color="#temp_gradient_hot"/>
+  </styles>
+  <view extends="lv_obj"
+        width="0" height="100%" flex_grow="1" flex_flow="$card_flow" style_pad_all="0" style_pad_gap="0"
+        style_bg_color="#card_bg" style_bg_opa="255" style_border_width="1" style_border_color="#border"
+        style_radius="#border_radius" style_clip_corner="true" scrollable="false" clickable="true">
+    <event_cb trigger="clicked" callback="$callback"/>
+    <lv_obj name="heater_accent"
+            width="$stripe_width" height="$stripe_height" hidden="$hide_heater_readout" style_pad_all="0"
+            style_border_width="0" style_bg_color="$accent" style_bg_opa="255" scrollable="false" clickable="false"
+            event_bubble="true"/>
+    <lv_obj name="tool_accent"
+            width="$stripe_width" height="$stripe_height" hidden="$hide_tool_readout" style_bg_opa="255"
+            style_border_width="0" style_pad_all="0" scrollable="false" clickable="false" event_bubble="true">
+      <bind_style_if_eq name="tool_edge_active" subject="active_tool" ref_value="$tool_index"/>
+      <bind_style_if_not_eq name="tool_edge_docked" subject="active_tool" ref_value="$tool_index"/>
+    </lv_obj>
+    <lv_obj width="$body_width"
+            height="$body_height" flex_grow="1" flex_flow="row" style_pad_all="#space_sm" style_pad_gap="#space_sm"
+            style_flex_cross_place="center" style_flex_track_place="center" scrollable="false" clickable="false"
+            event_bubble="true">
+      <lv_obj width="0"
+              height="content" flex_grow="1" flex_flow="column" style_pad_all="0" style_pad_gap="#space_xxs"
+              scrollable="false" clickable="false" event_bubble="true">
+        <text_small text="$title"
+                    translation_tag="$title" text_transform="uppercase" style_text_font="#font_body_bold"
+                    style_text_color="#text_muted" clickable="false" event_bubble="true"/>
+        <lv_obj width="100%"
+                height="content" flex_flow="row" style_pad_all="0" style_pad_gap="#space_xxs"
+                style_flex_cross_place="end" scrollable="false" clickable="false" event_bubble="true">
+          <text_body name="${heater}_current_temp"
+                     hidden="$hide_tool_readout" bind_text="$current_subject" style_text_font="#font_xl"
+                     clickable="false" event_bubble="true">
+            <bind_style_if_le name="tool_temp_normal" subject="$temperature_subject" ref_value="500"/>
+            <bind_style_if_gt name="tool_temp_hot" subject="$temperature_subject" ref_value="500"/>
+          </text_body>
+          <text_body name="${heater}_accent_current_temp"
+                     hidden="$hide_heater_readout" bind_text="$current_subject" style_text_font="#font_xl"
+                     style_text_color="$accent" clickable="false" event_bubble="true"/>
+          <text_small text="/" style_text_color="#text_muted" clickable="false" event_bubble="true"/>
+          <text_small name="${heater}_target_temp"
+                      bind_text="$target_subject" style_text_color="#text_muted" clickable="false" event_bubble="true"/>
+        </lv_obj>
+      </lv_obj>
+      <helix_sparkline name="${heater}_temperature_chart"
+                       width="25%" height="40%" heater="$heater" style_line_color="$accent" clickable="false"
+                       event_bubble="true"/>
+    </lv_obj>
+  </view>
+</component>
