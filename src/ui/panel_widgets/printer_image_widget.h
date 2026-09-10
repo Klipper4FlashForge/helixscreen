@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "ui_observer_guard.h"
+
 #include "async_lifetime_guard.h"
 #include "panel_widget.h"
 
@@ -62,6 +64,12 @@ class PrinterImageWidget : public PanelWidget {
     /// another cache check, and without this a second job would redo work already
     /// running for the same source and size.
     bool cache_job_inflight_ = false;
+
+    /// Re-resolves the image when the printer type settles mid-session:
+    /// auto-detection finishes after the home panel is built on a fresh
+    /// install, so attach()'s one-shot resolve still shows the generic
+    /// silhouette unless a type change re-triggers it.
+    ObserverGuard printer_type_observer_;
 
     void schedule_image_refresh();
     void schedule_cache_check();

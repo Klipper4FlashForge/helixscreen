@@ -10,6 +10,7 @@
 #include "app_globals.h"
 #include "config.h"
 #include "http_executor.h"
+#include "observer_factory.h"
 #include "panel_widget_registry.h"
 #include "prerendered_images.h"
 #include "printer_detector.h"
@@ -114,10 +115,22 @@ void PrinterImageWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     // Load printer image and info from config
     reload_from_config();
 
+    // attach() runs on every rebuild of a recycled instance, so re-arming here
+    // keeps the observer alive across home-panel rebuilds.
+    printer_type_observer_ = helix::ui::observe_string<PrinterImageWidget>(
+        get_printer_state().get_printer_type_subject(), this,
+        [](PrinterImageWidget* w, const char* /*type*/) { w->schedule_image_refresh(); },
+        get_printer_state().get_subjects_lifetime());
+
     spdlog::debug("[PrinterImageWidget] Attached");
 }
 
 void PrinterImageWidget::detach() {
+    // Drop the type observer first: any handler it has queued on the
+    // UpdateQueue holds a weak alive token that this reset expires, so a
+    // deferred refresh can't land on a detached tree.
+    printer_type_observer_.reset();
+
     // Cancel any pending timers. detach() runs from the destructor, so cancelling
     // here makes the deferred timers lifetime-safe (main-thread work — no
     // AsyncLifetimeGuard needed).
