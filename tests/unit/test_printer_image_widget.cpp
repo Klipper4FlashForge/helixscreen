@@ -298,4 +298,10 @@ TEST_CASE_METHOD(XMLTestFixture,
     REQUIRE(recycled_src.find("voron") != std::string::npos);
 
     w.detach();
+
+    // Restore the config type: the fixture resets the singleton between
+    // cases, but a same-value leftover inside this case's lifetime would
+    // have made the mid-session transition above a no-op for the next
+    // SECTION leaf.
+    cfg->set<std::string>(cfg->df() + helix::wizard::PRINTER_TYPE, "");
 }

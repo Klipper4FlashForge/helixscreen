@@ -2325,6 +2325,11 @@ class PrinterState {
      * from the type at attach time — printer artwork, for one — re-resolve
      * by observing it, since auto-detection settles after the home panel
      * is built on a fresh install.
+     *
+     * The subject resets to "" on deinit_subjects()/re-init, and the
+     * setter's no-change early return means a soft restart repopulates it
+     * only on the next real type change. Treat it as a change signal and
+     * read the value from Config or get_printer_type().
      */
     lv_subject_t* get_printer_type_subject() {
         return &printer_type_subject_;
