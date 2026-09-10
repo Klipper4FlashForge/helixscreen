@@ -859,6 +859,7 @@ translations:
   Est. Duration: 予想時間
   Estimating...: 推定中...
   Ethernet: イーサネット
+  Ethernet is connected. Disconnect it to join a Wi-Fi network.: ''
   Events appear here after sessions and prints: セッションと印刷の後にイベントがここに表示されます
   Every extruder's temperature at once: 全エクストルーダーの温度を一覧表示
   Excellent Accuracy: 非常に高精度

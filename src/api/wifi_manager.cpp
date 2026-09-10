@@ -544,7 +544,15 @@ void WiFiManager::connect(const std::string& ssid, const std::string& password,
             connect_callback_ = nullptr;
         }
         if (cb) {
-            cb(false, result.user_msg.empty() ? result.technical_msg : result.user_msg);
+            if (result.result == WiFiResult::TRANSPORT_IN_USE) {
+                // The backend refuses a join it knows can never complete
+                // (netd single-transport: a wired link owns the network and
+                // the daemon never answers a Wi-Fi join). Translate here so
+                // the backends stay free of the translation layer.
+                cb(false, lv_tr("Ethernet is connected. Disconnect it to join a Wi-Fi network."));
+            } else {
+                cb(false, result.user_msg.empty() ? result.technical_msg : result.user_msg);
+            }
         }
         return; // the callback is already delivered — nothing left for the watchdog to guard
     }
