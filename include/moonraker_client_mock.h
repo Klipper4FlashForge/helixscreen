@@ -940,6 +940,12 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     /// free-function lambdas taking a MoonrakerClientMock*, not members.
     double tool_offset(int tool, helix::Axis axis) const;
 
+    /// What printer.cfg holds for a tool before anything in the session moves
+    /// it. Exposed so a test can assert a simulated write actually CHANGED the
+    /// axis: a value that happens to equal the seed leaves it clean, and every
+    /// assertion about saving that axis then passes without exercising it.
+    static double tool_offset_seed(int tool, helix::Axis axis);
+
     /// klipper-toolchanger's parameter (and status field) name for an axis:
     /// gcode_x_offset / gcode_y_offset / gcode_z_offset.
     static const char* tool_offset_param(helix::Axis axis);

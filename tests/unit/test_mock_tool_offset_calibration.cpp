@@ -107,7 +107,7 @@ TEST_CASE_METHOD(ToolCalFixture, "mock: every measured tool's offsets land live 
     // offset on all three axes, exactly as _SAVE_TOOL_OFFSET writes them.
     CHECK(client->tool_offset(0, helix::Axis::X) == Catch::Approx(0.0));
     CHECK(client->tool_offset(1, helix::Axis::X) == Catch::Approx(0.12));
-    CHECK(client->tool_offset(1, helix::Axis::Y) == Catch::Approx(-0.05));
+    CHECK(client->tool_offset(1, helix::Axis::Y) == Catch::Approx(-0.07));
     CHECK(client->tool_offset(1, helix::Axis::Z) == Catch::Approx(-0.03));
     CHECK(client->tool_offset(3, helix::Axis::X) == Catch::Approx(0.36));
 
@@ -120,11 +120,22 @@ TEST_CASE_METHOD(ToolCalFixture, "mock: every measured tool's offsets land live 
     CHECK(items["tool T2"].contains("gcode_z_offset"));
     CHECK_FALSE(items.contains("tool T0"));
 
+    // Every axis MOVED. A measured value that happens to equal the seed leaves
+    // that axis clean, so nothing stages it and no save-path assertion about it
+    // can fail - the shape this test exists to keep out of the simulator.
+    for (helix::Axis axis : helix::kAllAxes) {
+        CAPTURE(helix::axis_index(axis));
+        CHECK(client->tool_offset(2, axis) != Catch::Approx(client->tool_offset_seed(2, axis)));
+    }
+
     // And a restart without SAVE_CONFIG throws it all away, as on the printer.
     client->send_jsonrpc(
         "printer.gcode.script", json{{"script", "RESTART"}}, [](const json&) {},
         [](const MoonrakerError&) {});
-    CHECK(client->tool_offset(1, helix::Axis::X) == Catch::Approx(0.100));
+    for (helix::Axis axis : helix::kAllAxes) {
+        CAPTURE(helix::axis_index(axis));
+        CHECK(client->tool_offset(1, axis) == Catch::Approx(client->tool_offset_seed(1, axis)));
+    }
 }
 
 TEST_CASE_METHOD(ToolCalFixture, "mock: HELIX_MOCK_TOOL_CAL_FAIL fails the run on that tool",

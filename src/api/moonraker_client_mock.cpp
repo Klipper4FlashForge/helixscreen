@@ -5645,7 +5645,11 @@ bool MoonrakerClientMock::simulate_tool_offset_calibration(
             // Measuring. The probe prints a contact per sample; the numbers only
             // need to look like a nozzle near the sensor.
             const double sensor_x = 229.0, sensor_y = 2.5, sensor_z = 1.25;
-            const double dx = 0.12 * tool, dy = -0.05 * tool, dz = -0.03 * tool;
+            // Distinct from the per-tool seed on EVERY axis (see tool_offset()):
+            // a measured value equal to the seed leaves that axis clean after a
+            // run, so nothing stages it and the save path's handling of it is
+            // never exercised.
+            const double dx = 0.12 * tool, dy = -0.07 * tool, dz = -0.03 * tool;
             for (int sample = 0; sample < 3; ++sample) {
                 s->mock->dispatch_gcode_response(
                     fmt::format("Probe made contact at {:.6f},{:.6f},{:.6f}",
@@ -5705,6 +5709,15 @@ std::optional<helix::Axis> MoonrakerClientMock::tool_offset_axis(const std::stri
     return std::nullopt;
 }
 
+double MoonrakerClientMock::tool_offset_seed(int tool, helix::Axis axis) {
+    // Distinct per-tool AND per-axis. All-zero would make "every tool shows the
+    // same number" — the characteristic per-tool display bug — look correct,
+    // and equal X/Y/Z would hide an axis mix-up the same way. T0 is the
+    // reference tool and sits at zero on every axis.
+    static constexpr double seed_per_tool[] = {0.100, -0.050, -0.025};
+    return seed_per_tool[helix::axis_index(axis)] * tool;
+}
+
 double MoonrakerClientMock::tool_offset(int tool, helix::Axis axis) const {
     std::lock_guard<std::mutex> lock(tool_offsets_mutex_);
     auto tool_it = tool_offsets_.find(tool);
@@ -5714,12 +5727,7 @@ double MoonrakerClientMock::tool_offset(int tool, helix::Axis axis) const {
             return axis_it->second;
         }
     }
-    // Distinct per-tool AND per-axis seed. All-zero would make "every tool
-    // shows the same number" — the characteristic per-tool display bug — look
-    // correct, and equal X/Y/Z would hide an axis mix-up the same way. T0 is
-    // the reference tool and sits at zero on every axis.
-    static constexpr double seed_per_tool[] = {0.100, -0.050, -0.025};
-    return seed_per_tool[helix::axis_index(axis)] * tool;
+    return tool_offset_seed(tool, axis);
 }
 
 bool MoonrakerClientMock::save_config_pending() const {
