@@ -667,6 +667,7 @@ AmsError AmsBackendToolChanger::set_slot_info(int slot_index, const SlotInfo& in
             old_mapped_tool = slot.mapped_tool;
             slot.color_rgb = info.color_rgb;
             slot.color_name = info.color_name;
+            slot.multi_color_hexes = info.multi_color_hexes;
             slot.material = info.material;
             slot.brand = info.brand;
             // No override store on this backend, so this in-memory copy is the
@@ -678,6 +679,10 @@ AmsError AmsBackendToolChanger::set_slot_info(int slot_index, const SlotInfo& in
             slot.spool_name = info.spool_name;
             slot.remaining_weight_g = info.remaining_weight_g;
             slot.total_weight_g = info.total_weight_g;
+            slot.remaining_length_m = info.remaining_length_m;
+            slot.nozzle_temp_min = info.nozzle_temp_min;
+            slot.nozzle_temp_max = info.nozzle_temp_max;
+            slot.bed_temp = info.bed_temp;
 
             // Tool mapping change: persist via ASSIGN_TOOL outside the lock.
             // slot.mapped_tool stores "which G-code tool number activates this physical

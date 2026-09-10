@@ -20,6 +20,7 @@
 #include "ui_icon_codepoints.h"
 #include "ui_lock_screen.h"
 #include "ui_markdown.h"
+#include "ui_materials_overlay.h"
 #include "ui_notification_badge.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_home.h"
@@ -611,6 +612,8 @@ void register_xml_components() {
     register_xml("print_tune_panel.xml");
     register_xml("filament_temperature_overlay.xml");
     register_xml("filament_tool_overlay.xml");
+    helix::ui::get_materials_overlay().register_callbacks();
+    register_xml("materials_overlay.xml");
     register_xml("components/heater_summary_card.xml");
     register_xml("filament_panel.xml");
 

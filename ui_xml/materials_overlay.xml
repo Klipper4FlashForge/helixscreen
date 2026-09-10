@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+<!-- Copyright (C) 2025-2026 356C LLC -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<component>
+  <consts>
+    <px name="material_row_min_height_micro" value="58"/>
+    <px name="material_row_min_height_tiny" value="62"/>
+    <px name="material_row_min_height_small" value="68"/>
+    <px name="material_row_min_height_medium" value="74"/>
+    <px name="material_row_min_height_large" value="86"/>
+  </consts>
+  <view name="materials_overlay" extends="overlay_panel" title="Materials" title_tag="Materials">
+    <lv_obj name="overlay_content"
+            width="100%" flex_grow="1" flex_flow="column" style_pad_left="#space_lg"
+            style_pad_right="#space_lg" style_pad_top="#space_sm" style_pad_bottom="#space_md"
+            style_pad_gap="#space_sm" scrollable="false">
+      <lv_obj name="materials_list"
+              width="100%" flex_grow="1" flex_flow="column" style_pad_all="0" style_pad_gap="#space_xs"
+              scrollable="true" scrollbar_mode="active">
+        <repeat count="materials_row_count">
+          <lv_obj name="materials_row_${i}"
+                  width="100%" height="content" style_min_height="#material_row_min_height"
+                  style_bg_color="#card_bg" style_bg_opa="255" style_border_width="1"
+                  style_border_color="#border" style_radius="#border_radius" style_pad_all="#space_sm"
+                  style_pad_gap="#space_sm" flex_flow="row" style_flex_cross_place="center"
+                  scrollable="false" clickable="false">
+            <spool_canvas name="materials_spool_${i}" size="46" color="0x808080" fill_level="0.75"
+                          clickable="false" event_bubble="true"/>
+            <lv_obj width="0" height="content" flex_grow="1" flex_flow="column" style_pad_all="0"
+                    style_pad_gap="#space_xxs" scrollable="false" clickable="false" event_bubble="true">
+              <lv_obj width="100%" height="content" flex_flow="row" style_pad_all="0"
+                      style_pad_gap="#space_sm" style_flex_cross_place="center" scrollable="false"
+                      clickable="false" event_bubble="true">
+                <text_body bind_text="materials_position_${i}" style_text_font="#font_body_bold"
+                           clickable="false" event_bubble="true"/>
+                <text_body bind_text="materials_identity_${i}" flex_grow="1" long_mode="dots"
+                           clickable="false" event_bubble="true"/>
+              </lv_obj>
+              <lv_obj width="100%" height="content" flex_flow="row" style_pad_all="0" style_pad_gap="#space_sm"
+                      style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
+                <text_small bind_text="materials_detail_${i}" style_text_color="#text_muted" long_mode="dots"
+                            flex_grow="1" clickable="false" event_bubble="true"/>
+                <progress_bar width="112" height="8" bind_value="materials_fill_${i}" hidden="true"
+                              clickable="false" event_bubble="true">
+                  <bind_flag_if_eq subject="materials_has_capacity_${i}" flag="hidden" ref_value="0"/>
+                </progress_bar>
+                <text_small bind_text="materials_remaining_${i}" width="100" style_text_align="right"
+                            style_text_color="#text_muted" clickable="false" event_bubble="true"/>
+              </lv_obj>
+            </lv_obj>
+            <ui_button name="materials_unassign_${i}" width="96" height="#button_height" variant="ghost"
+                       text="Unassign" translation_tag="Unassign">
+              <bind_state_if_eq subject="materials_assigned_${i}" state="disabled" ref_value="0"/>
+              <event_cb trigger="clicked" callback="materials_unassign_cb"/>
+            </ui_button>
+            <ui_button name="materials_change_${i}" width="112" height="#button_height" variant="outline"
+                       bind_text="materials_action_${i}">
+              <event_cb trigger="clicked" callback="materials_change_cb"/>
+            </ui_button>
+          </lv_obj>
+        </repeat>
+      </lv_obj>
+      <lv_obj width="100%" height="content" flex_flow="row" style_pad_all="0" style_pad_gap="#space_sm"
+              scrollable="false">
+        <ui_button name="materials_library" height="#button_height_lg" flex_grow="1" variant="outline"
+                   icon="spoolman" text="Material Library" translation_tag="Material Library">
+          <bind_flag_if_eq subject="printer_has_spoolman" flag="hidden" ref_value="0"/>
+          <event_cb trigger="clicked" callback="materials_library_cb"/>
+        </ui_button>
+        <ui_button name="materials_device" height="#button_height_lg" flex_grow="1" variant="secondary"
+                   icon="cog" text="Device Controls" translation_tag="Device Controls">
+          <event_cb trigger="clicked" callback="materials_device_cb"/>
+        </ui_button>
+      </lv_obj>
+    </lv_obj>
+  </view>
+</component>

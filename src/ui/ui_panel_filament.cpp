@@ -10,6 +10,7 @@
 #include "ui_event_safety.h"
 #include "ui_icon.h"
 #include "ui_manual_pull_prompt.h"
+#include "ui_materials_overlay.h"
 #include "ui_nav_manager.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_ams.h"
@@ -1072,8 +1073,9 @@ void FilamentPanel::on_tool_dialog_open(lv_event_t* e) {
     lv_subject_set_int(&self.selected_tool_subject_, tool);
     self.handle_selected_tool_changed();
     self.show_temperature_sheet(helix::HeaterType::Nozzle, tool, false);
-    self.tool_dialog_.show(self.parent_screen_, std::string(lv_tr("Filament")) + " · " +
-                          helix::ToolState::instance().tools()[tool].name);
+    self.tool_dialog_.show(self.parent_screen_,
+                           std::string(lv_tr("Filament")) + " · " +
+                               helix::ToolState::instance().tools()[tool].name);
     self.update_all_temps();
 }
 
@@ -1142,8 +1144,7 @@ void FilamentPanel::on_temperature_sheet_action(lv_event_t* e) {
         self.update_temperature_sheet();
     } else if (name == "btn_primary" || name == "sheet_off") {
         if (auto* controller = get_temperature_controller()) {
-            controller->set_target(self.sheet_heater_,
-                                   name == "sheet_off" ? 0 : self.sheet_value_,
+            controller->set_target(self.sheet_heater_, name == "sheet_off" ? 0 : self.sheet_value_,
                                    {.toast = true});
         }
         if (name == "sheet_off") {
@@ -1572,9 +1573,10 @@ void FilamentPanel::handle_unload_button() {
 
 void FilamentPanel::handle_extrude_button() {
     // This manual dialog never auto-heats or queues movement from a cold tap.
-    if (tool_dialog_ && (!is_extrusion_allowed() || nozzle_target_ <= 0 ||
-                         nozzle_current_ < nozzle_target_ - HEAT_AT_TEMP_TOLERANCE_C ||
-                         selected_tool_index() != helix::ToolState::instance().active_tool_index())) {
+    if (tool_dialog_ &&
+        (!is_extrusion_allowed() || nozzle_target_ <= 0 ||
+         nozzle_current_ < nozzle_target_ - HEAT_AT_TEMP_TOLERANCE_C ||
+         selected_tool_index() != helix::ToolState::instance().active_tool_index())) {
         NOTIFY_INFO(lv_tr("Heat the nozzle to its target before moving filament."));
         return;
     }
@@ -1642,9 +1644,10 @@ void FilamentPanel::execute_extrude() {
 
 void FilamentPanel::handle_purge_button() {
     // This manual dialog never auto-heats or queues movement from a cold tap.
-    if (tool_dialog_ && (!is_extrusion_allowed() || nozzle_target_ <= 0 ||
-                         nozzle_current_ < nozzle_target_ - HEAT_AT_TEMP_TOLERANCE_C ||
-                         selected_tool_index() != helix::ToolState::instance().active_tool_index())) {
+    if (tool_dialog_ &&
+        (!is_extrusion_allowed() || nozzle_target_ <= 0 ||
+         nozzle_current_ < nozzle_target_ - HEAT_AT_TEMP_TOLERANCE_C ||
+         selected_tool_index() != helix::ToolState::instance().active_tool_index())) {
         NOTIFY_INFO(lv_tr("Heat the nozzle to its target before moving filament."));
         return;
     }
@@ -1772,9 +1775,10 @@ void FilamentPanel::execute_purge() {
 
 void FilamentPanel::handle_retract_button() {
     // This manual dialog never auto-heats or queues movement from a cold tap.
-    if (tool_dialog_ && (!is_extrusion_allowed() || nozzle_target_ <= 0 ||
-                         nozzle_current_ < nozzle_target_ - HEAT_AT_TEMP_TOLERANCE_C ||
-                         selected_tool_index() != helix::ToolState::instance().active_tool_index())) {
+    if (tool_dialog_ &&
+        (!is_extrusion_allowed() || nozzle_target_ <= 0 ||
+         nozzle_current_ < nozzle_target_ - HEAT_AT_TEMP_TOLERANCE_C ||
+         selected_tool_index() != helix::ToolState::instance().active_tool_index())) {
         NOTIFY_INFO(lv_tr("Heat the nozzle to its target before moving filament."));
         return;
     }
@@ -2249,8 +2253,8 @@ void FilamentPanel::on_manage_slots_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[FilamentPanel] on_manage_slots_clicked");
     LV_UNUSED(e);
 
-    spdlog::info("[FilamentPanel] Opening AMS panel overlay");
-    navigate_to_ams_panel();
+    spdlog::info("[FilamentPanel] Opening materials overlay");
+    helix::ui::get_materials_overlay().show(lv_display_get_screen_active(nullptr));
 
     LVGL_SAFE_EVENT_CB_END();
 }
