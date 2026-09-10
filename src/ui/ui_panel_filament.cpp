@@ -383,8 +383,8 @@ void FilamentPanel::init_subjects() {
 }
 
 void FilamentPanel::deinit_subjects() {
-    temperature_sheet_.hide();
-    tool_dialog_.hide();
+    temperature_sheet_.destroy();
+    tool_dialog_.destroy();
     // Cancel the op-state timer before the subjects it writes go away. The
     // operation guard owns a timer of its own whose handler writes the same
     // subjects, so it has to stop here too — deinit_subjects() runs from
@@ -1072,7 +1072,8 @@ void FilamentPanel::on_tool_dialog_open(lv_event_t* e) {
     lv_subject_set_int(&self.selected_tool_subject_, tool);
     self.handle_selected_tool_changed();
     self.show_temperature_sheet(helix::HeaterType::Nozzle, tool, false);
-    self.tool_dialog_ = Modal::show("filament_tool_dialog");
+    self.tool_dialog_.show(self.parent_screen_, std::string(lv_tr("Filament")) + " · " +
+                          helix::ToolState::instance().tools()[tool].name);
     self.update_all_temps();
 }
 
@@ -1120,7 +1121,7 @@ void FilamentPanel::show_temperature_sheet(helix::HeaterType type, int tool, boo
                                                                                : 2);
     update_temperature_sheet();
     if (open_dialog)
-        temperature_sheet_ = Modal::show("filament_temperature_sheet");
+        temperature_sheet_.show(parent_screen_, title);
 }
 
 void FilamentPanel::update_temperature_sheet() {
@@ -1136,9 +1137,7 @@ void FilamentPanel::on_temperature_sheet_action(lv_event_t* e) {
     if (!widget_name)
         return;
     const std::string name = widget_name;
-    if (name == "sheet_cancel") {
-        self.temperature_sheet_.hide();
-    } else if (name == "sheet_minus" || name == "sheet_plus") {
+    if (name == "sheet_minus" || name == "sheet_plus") {
         self.sheet_value_ += name == "sheet_plus" ? 5 : -5;
         self.update_temperature_sheet();
     } else if (name == "btn_primary" || name == "sheet_off") {

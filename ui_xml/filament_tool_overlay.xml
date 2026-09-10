@@ -1,27 +1,17 @@
 <?xml version="1.0"?>
 <component>
+  <api>
+    <prop name="title" type="string" default="Filament"/>
+  </api>
   <styles>
     <style name="extrude_length_btn_selected"
            bg_color="#primary" bg_opa="60" border_color="#primary" border_width="2" outline_width="1" outline_pad="-1"
            outline_color="#primary"/>
     <style name="extrude_length_btn_unselected" bg_color="#card_bg" bg_opa="0" border_color="#border" border_width="1"/>
   </styles>
-  <view name="filament_tool_dialog"
-        extends="ui_dialog" width="94%" height="90%" align="center" flex_flow="column" style_pad_all="#space_md"
-        style_pad_gap="#space_sm" style_bg_color="#screen_bg" style_border_width="1" style_border_color="#border"
-        style_shadow_opa="0">
-    <lv_obj width="100%"
-            height="#button_height" flex_flow="row" style_pad_all="0" style_pad_gap="#space_sm"
-            style_flex_cross_place="center" scrollable="false">
-      <text_heading text="Filament" translation_tag="Filament"/>
-      <text_body bind_text="filament_nozzle_label" flex_grow="1"/>
-      <ui_button name="tool_dialog_close"
-                 height="100%" text="Close" translation_tag="Close" variant="outline" style_bg_color="#card_bg">
-        <event_cb trigger="clicked" callback="on_filament_tool_dialog_close"/>
-      </ui_button>
-    </lv_obj>
-    <lv_obj name="tool_dialog_columns"
-            width="100%" height="0" flex_grow="1" flex_flow="row" style_pad_all="0" style_pad_gap="#space_sm"
+  <view name="filament_tool_overlay" extends="overlay_panel" title="$title" bg_color="#screen_bg">
+    <lv_obj name="overlay_content"
+            width="100%" height="0" flex_grow="1" flex_flow="row" style_pad_all="#space_md" style_pad_gap="#space_sm"
             scrollable="false">
       <lv_obj name="tool_temperature_controls"
               width="55%" height="100%" flex_flow="column" style_pad_all="#space_sm" style_pad_gap="#space_sm"
@@ -39,7 +29,7 @@
           <repeat count="2">
             <ui_button name="sheet_preset_${i}"
                        width="0" height="100%" flex_grow="1" variant="outline" layout="column"
-                       style_pad_all="#space_xxs">
+                       style_pad_all="#space_xxs" style_border_color="#border">
               <event_cb trigger="clicked" callback="on_filament_temperature_sheet_action"/>
               <text_body bind_text="preset_material_${i}_name"/>
               <text_small bind_text="preset_material_${i}_nozzle_temp"/>
@@ -52,7 +42,7 @@
           <repeat count="2">
             <ui_button name="sheet_preset_${i + 2}"
                        width="0" height="100%" flex_grow="1" variant="outline" layout="column"
-                       style_pad_all="#space_xxs">
+                       style_pad_all="#space_xxs" style_border_color="#border">
               <event_cb trigger="clicked" callback="on_filament_temperature_sheet_action"/>
               <text_body bind_text="preset_material_${i + 2}_name"/>
               <text_small bind_text="preset_material_${i + 2}_nozzle_temp"/>

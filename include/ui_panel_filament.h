@@ -5,6 +5,7 @@
 
 #include "ui_ams_edit_overlay.h"
 #include "ui_filament_catalog_picker.h"
+#include "ui_filament_control_overlay.h"
 #include "ui_observer_guard.h"
 #include "ui_panel_base.h"
 
@@ -466,8 +467,8 @@ class FilamentPanel : public PanelBase {
     // two controls for one choice. -1 = nothing selected (every head docked),
     // which the row reaches by tapping the selected chip again — so the panel
     // needs no separate Dock control.
-    helix::ui::ModalGuard temperature_sheet_;
-    helix::ui::ModalGuard tool_dialog_;
+    FilamentControlOverlay temperature_sheet_{"filament_temperature_overlay"};
+    FilamentControlOverlay tool_dialog_{"filament_tool_overlay"};
     static void on_tool_dialog_open(lv_event_t* e);
     static void on_tool_dialog_close(lv_event_t* e);
     helix::HeaterType sheet_type_ = helix::HeaterType::Nozzle;

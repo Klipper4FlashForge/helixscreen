@@ -84,7 +84,8 @@ void OverlayBase::destroy_overlay_ui(lv_obj_t*& cached_panel) {
     on_ui_destroyed();
 }
 
-lv_obj_t* OverlayBase::create_overlay_from_xml(lv_obj_t* parent, const char* component_name) {
+lv_obj_t* OverlayBase::create_overlay_from_xml(lv_obj_t* parent, const char* component_name,
+                                               const char** attrs) {
     if (!parent) {
         spdlog::error("[{}] Cannot create: null parent", get_name());
         return nullptr;
@@ -95,7 +96,7 @@ lv_obj_t* OverlayBase::create_overlay_from_xml(lv_obj_t* parent, const char* com
     parent_screen_ = parent;
     cleanup_called_ = false;
 
-    overlay_root_ = static_cast<lv_obj_t*>(lv_xml_create(parent, component_name, nullptr));
+    overlay_root_ = static_cast<lv_obj_t*>(lv_xml_create(parent, component_name, attrs));
     if (!overlay_root_) {
         spdlog::error("[{}] Failed to create from XML", get_name());
         return nullptr;
