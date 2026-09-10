@@ -2318,6 +2318,19 @@ class PrinterState {
     }
 
     /**
+     * @brief Get the printer type subject
+     *
+     * String subject updated on every change to the resolved printer type
+     * (detection, wizard, printer manager). Consumers that resolved state
+     * from the type at attach time — printer artwork, for one — re-resolve
+     * by observing it, since auto-detection settles after the home panel
+     * is built on a fresh install.
+     */
+    lv_subject_t* get_printer_type_subject() {
+        return &printer_type_subject_;
+    }
+
+    /**
      * @brief Set the active printer display name
      *
      * Updates the string subject with the given name. Main-thread only.
@@ -2440,6 +2453,9 @@ class PrinterState {
     // Multi-printer subjects (owned directly by PrinterState)
     lv_subject_t active_printer_name_;
     char active_printer_name_buf_[128];
+
+    lv_subject_t printer_type_subject_;
+    char printer_type_subject_buf_[128];
 
     // JSON cache for complex data
     json json_state_;

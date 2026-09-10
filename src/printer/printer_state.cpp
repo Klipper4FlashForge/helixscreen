@@ -301,6 +301,11 @@ void PrinterState::init_subjects(bool register_xml) {
     // Multi-printer subjects (owned directly by PrinterState)
     INIT_SUBJECT_STRING(active_printer_name, "", subjects_, register_xml);
 
+    // Resolved printer type. Not XML-registered: the name collides with the
+    // connection-transport int subject ("network"/"usb"/"bluetooth"), and no
+    // XML binds it — observers attach programmatically (printer artwork).
+    INIT_SUBJECT_STRING(printer_type_subject, "", subjects_, false);
+
     // Z-offset save visibility (1 = manual save needed, 0 = firmware auto-saves)
     INIT_SUBJECT_INT(z_offset_can_save, 1, subjects_, register_xml);
 
@@ -1259,6 +1264,10 @@ void PrinterState::set_printer_type_internal(const std::string& type) {
     printer_type_ = type;
     pre_print_option_set_ = new_options;
     z_offset_calibration_strategy_ = new_strategy;
+
+    if (subjects_initialized_) {
+        lv_subject_copy_string(&printer_type_subject_, type.c_str());
+    }
 
     // Synthesize runtime-dependent options (timelapse) on top of the DB load.
     apply_dynamic_options();

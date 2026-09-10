@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025-2026 356C LLC
 
+#include "ui_update_queue.h"
+
 #include "../test_fixtures.h"
+#include "app_globals.h"
+#include "config.h"
 #include "misc/lv_timer_private.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
 #include "prerendered_images.h"
 #include "src/ui/panel_widgets/printer_image_widget.h"
+#include "wizard_config_paths.h"
 
 #include <filesystem>
 #include <string>
@@ -196,4 +201,101 @@ TEST_CASE_METHOD(XMLTestFixture, "PrinterImageWidget generates its image cache o
 
     widget.detach();
     std::filesystem::remove(cache_path, ec);
+}
+
+// The printer-type subject publishes every change to the resolved type, and the
+// setter's early return (same type + same z-offset strategy) must not re-notify.
+// Consumers like PrinterImageWidget re-resolve on this subject, so a duplicate
+// notification is a wasted config read + layout, not just noise.
+TEST_CASE_METHOD(XMLTestFixture, "PrinterState type subject fires only when the type changes",
+                 "[1552][printer_state][panel_widget]") {
+    int fires = 0;
+    lv_observer_t* obs = lv_subject_add_observer(
+        state().get_printer_type_subject(),
+        [](lv_observer_t* o, lv_subject_t*) { ++*static_cast<int*>(lv_observer_get_user_data(o)); },
+        &fires);
+    REQUIRE(obs != nullptr);
+    REQUIRE(fires == 1); // observers run once on attach with the current value
+
+    state().set_printer_type_sync("Voron 2.4");
+    REQUIRE(fires == 2);
+    REQUIRE(std::string(lv_subject_get_string(state().get_printer_type_subject())) == "Voron 2.4");
+
+    // Same type: the early-return path must not re-notify.
+    state().set_printer_type_sync("Voron 2.4");
+    REQUIRE(fires == 2);
+
+    state().set_printer_type_sync("Creality K1C");
+    REQUIRE(fires == 3);
+    REQUIRE(std::string(lv_subject_get_string(state().get_printer_type_subject())) ==
+            "Creality K1C");
+
+    lv_observer_remove(obs);
+}
+
+// On a fresh install auto-detection settles AFTER the home panel is built, so
+// attach()'s one-shot resolve shows the generic silhouette and nothing re-runs
+// it for the rest of the session. The widget observes the printer-type subject
+// and re-resolves when the detected type lands.
+TEST_CASE_METHOD(XMLTestFixture,
+                 "PrinterImageWidget re-resolves its image when the type settles after attach",
+                 "[1552][panel_widget][printer_image][regression]") {
+    helix::init_widget_registrations();
+    helix::PanelWidgetManager::instance().init_widget_subjects();
+
+    // The widget observes the process-wide PrinterState, whose subjects this
+    // fixture does not initialize (its own per-instance state owns the XML
+    // scope). Without this the observer silently fails to attach and the
+    // detection below changes nothing.
+    get_printer_state().init_subjects(false);
+
+    auto build_tree = [&](lv_obj_t*& widget_obj, lv_obj_t*& img) {
+        lv_obj_t* container = lv_obj_create(test_screen());
+        lv_obj_set_size(container, 200, 200);
+        widget_obj = lv_obj_create(container);
+        img = lv_image_create(widget_obj);
+        lv_obj_set_name(img, "printer_image");
+        process_lvgl(2);
+    };
+
+    lv_obj_t* widget_obj = nullptr;
+    lv_obj_t* img = nullptr;
+    build_tree(widget_obj, img);
+
+    helix::PrinterImageWidget w;
+    w.attach(widget_obj, test_screen());
+    helix::ui::UpdateQueue::instance().drain();
+    process_async_calls();
+
+    const char* first_raw = static_cast<const char*>(lv_image_get_src(img));
+    REQUIRE(first_raw != nullptr);
+    const std::string first_src(first_raw);
+
+    // Detection settles: config gains the type and PrinterState publishes it.
+    Config* cfg = Config::get_instance();
+    REQUIRE(cfg != nullptr);
+    cfg->set<std::string>(cfg->df() + helix::wizard::PRINTER_TYPE, "Voron 2.4");
+    get_printer_state().set_printer_type_sync("Voron 2.4");
+
+    helix::ui::UpdateQueue::instance().drain();
+    process_async_calls();
+
+    const std::string after_src(static_cast<const char*>(lv_image_get_src(img)));
+    INFO("the widget must re-resolve once the detected type lands in config");
+    REQUIRE(after_src != first_src);
+    REQUIRE(after_src.find("voron") != std::string::npos);
+
+    // A rebuilt panel recycles the widget instance and attaches it to a new
+    // tree; the re-armed observer must re-resolve from attach()'s reload.
+    w.detach();
+    build_tree(widget_obj, img);
+    w.attach(widget_obj, test_screen());
+    helix::ui::UpdateQueue::instance().drain();
+    process_async_calls();
+
+    const std::string recycled_src(static_cast<const char*>(lv_image_get_src(img)));
+    INFO("a recycled instance must re-resolve the settled type from attach()");
+    REQUIRE(recycled_src.find("voron") != std::string::npos);
+
+    w.detach();
 }
