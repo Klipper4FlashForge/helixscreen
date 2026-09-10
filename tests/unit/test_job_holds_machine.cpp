@@ -245,6 +245,42 @@ TEST_CASE_METHOD(XMLTestFixture, "the bypass tile is disabled during a host-side
 }
 
 // ============================================================================
+// The guard arrives by construction
+//
+// The moves_machine attribute is what makes "did anyone forget one" answerable:
+// the engine installs the job_holds_machine -> disabled binding for the
+// element itself, so a machine-moving control is guarded the moment its XML
+// says it moves the machine. This test pins that construction, not a spelling.
+// ============================================================================
+
+TEST_CASE_METHOD(XMLTestFixture, "moves_machine installs the toolhead guard by construction",
+                 "[ui][xml][job_holds_machine]") {
+    const char* attrs[] = {"moves_machine", "true", nullptr};
+    lv_obj_t* control = static_cast<lv_obj_t*>(lv_xml_create(test_screen(), "lv_obj", attrs));
+    REQUIRE(control != nullptr);
+
+    REQUIRE_FALSE(lv_obj_has_state(control, LV_STATE_DISABLED));
+
+    // A host-side pre-print block: print_active stays 0 and only the
+    // lifecycle subject moves.
+    state().update_from_status(nlohmann::json{{"print_stats", {{"state", "standby"}}}});
+    state().set_print_start_state(helix::PrintStartPhase::BED_MESH, "", 0);
+    for (int pass = 0; pass < 8; ++pass) {
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    REQUIRE(lv_subject_get_int(state().get_print_active_subject()) == 0);
+    REQUIRE(lv_obj_has_state(control, LV_STATE_DISABLED));
+
+    // And it releases - a latched-disabled control is the failure mode.
+    state().set_print_start_state(helix::PrintStartPhase::IDLE, "", 0);
+    for (int pass = 0; pass < 8; ++pass) {
+        helix::ui::UpdateQueue::instance().drain();
+    }
+    REQUIRE_FALSE(lv_obj_has_state(control, LV_STATE_DISABLED));
+}
+
+// ============================================================================
 // The census
 //
 // The gate walks every .xml under ui_xml/ and asks one question per file: does
@@ -268,13 +304,7 @@ namespace {
 
 constexpr const char* kSubject = "job_holds_machine";
 constexpr const char* kDisabled = "state=\"disabled\"";
-
-/// The only two spellings that pin the direction. Matching the subject name
-/// alone would accept ref_value="0" - a control live while the toolhead is busy
-/// and dead when it is free, the exact inversion - and leave the census whole.
-constexpr const char* kGuardEqForm =
-    "<bind_state_if_eq subject=\"job_holds_machine\" state=\"disabled\" ref_value=\"1\"/>";
-constexpr const char* kGuardCompoundPrefix = "<bind_state_if cond=\"job_holds_machine eq 1 or ";
+constexpr const char* kGuardAttribute = "moves_machine=\"true\"";
 
 struct GuardedFile {
     const char* path;
@@ -612,28 +642,22 @@ size_t count_occurrences(const std::string& haystack, const std::string& needle)
 }
 
 struct GuardScan {
-    size_t recognized = 0;                 ///< guards in a direction-pinning form
+    size_t recognized = 0;                 ///< moves_machine="true" attributes
     size_t mentions = 0;                   ///< every occurrence of the subject name
-    std::vector<std::string> unrecognized; ///< binds naming the subject some other way
+    std::vector<std::string> unrecognized; ///< bindings naming the subject directly
 };
 
 GuardScan scan_guards(const std::string& xml) {
     GuardScan scan;
     scan.mentions = count_occurrences(xml, kSubject);
+    scan.recognized = count_occurrences(xml, kGuardAttribute);
 
-    // A control with a second reason to be disabled cannot carry two binds:
-    // each bind_state_* both sets and clears the state, so the later one undoes
-    // the earlier. Those fold the lifecycle guard into one compound cond=,
-    // which still pins the direction and still counts.
+    // The attribute is the ONLY way to carry the guard now: a hand-written
+    // bind naming the subject is the failure this gate exists to prevent
+    // (it rots: it can be forgotten, or its spelling can drift). The engine
+    // installs the binding for moves_machine by construction.
     for (const std::string& bind : state_binds(xml)) {
-        if (bind.find(kSubject) == std::string::npos) {
-            continue;
-        }
-        const bool compound =
-            bind.rfind(kGuardCompoundPrefix, 0) == 0 && bind.find(kDisabled) != std::string::npos;
-        if (bind == kGuardEqForm || compound) {
-            ++scan.recognized;
-        } else {
+        if (bind.find(kSubject) != std::string::npos) {
             scan.unrecognized.push_back(bind);
         }
     }
@@ -717,18 +741,21 @@ TEST_CASE("each guarded file carries exactly the toolhead guards its census row 
             for (const std::string& bind : scan.unrecognized) {
                 odd += "\n  " + bind;
             }
-            INFO(row.path << " names job_holds_machine in a bind this gate does not read as a "
-                             "guard:"
-                          << odd << "\nA guard is spelled either\n  " << kGuardEqForm << "\nor\n  "
-                          << kGuardCompoundPrefix << "...\" " << kDisabled << "/>");
+            INFO(row.path << " names job_holds_machine in a hand-written bind. The guard "
+                             "arrives by construction from the moves_machine attribute now; "
+                             "a direct bind is the failure mode this gate exists to prevent:"
+                          << odd
+                          << "\nCarry the guard as moves_machine=\"true\" on the "
+                             "control instead.");
             REQUIRE(scan.unrecognized.empty());
         }
         {
             INFO(row.path << " names job_holds_machine " << scan.mentions << " times and only "
                           << scan.recognized
-                          << " of those are binds, so the rest are prose. Say it in words that "
-                             "are not the subject name.");
-            REQUIRE(scan.recognized == scan.mentions);
+                          << " of those are covered by moves_machine guards, so the rest are "
+                             "prose that claims a guard without carrying one. Say it in words "
+                             "that are not the subject name.");
+            REQUIRE(scan.mentions <= scan.recognized);
         }
         INFO(row.path << " pins " << row.guards << " toolhead guards and carries "
                       << scan.recognized
