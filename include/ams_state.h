@@ -1161,6 +1161,29 @@ class AmsState {
     [[nodiscard]] lv_subject_t* get_slot_lane_state_subject(int slot_index);
 
     /**
+     * @brief Get per-slot error-flag subject
+     *
+     * 1 when the slot is BLOCKED or carries a SlotError, else 0 - the same
+     * derivation the lane-bar consumers compute from SlotInfo. XML name:
+     * ams_slot_<n>_has_error.
+     *
+     * @param slot_index Slot index (0 to MAX_SLOTS-1)
+     * @return Subject pointer or nullptr if out of range
+     */
+    [[nodiscard]] lv_subject_t* get_slot_has_error_subject(int slot_index);
+
+    /**
+     * @brief Get per-slot error-severity subject
+     *
+     * Holds SlotError::Severity as int; INFO when the slot carries no error.
+     * XML name: ams_slot_<n>_error_severity.
+     *
+     * @param slot_index Slot index (0 to MAX_SLOTS-1)
+     * @return Subject pointer or nullptr if out of range
+     */
+    [[nodiscard]] lv_subject_t* get_slot_error_severity_subject(int slot_index);
+
+    /**
      * @brief Get slot color subject for a specific backend and slot
      *
      * For backend_index 0, delegates to existing flat slot subjects.
@@ -1964,6 +1987,8 @@ class AmsState {
     lv_subject_t slot_toolhead_present_[MAX_SLOTS]; // int: 0/1 per-slot toolhead sensor
     lv_subject_t slot_active_loaded_[MAX_SLOTS];    // int: 0/1 firmware seated & loaded
     lv_subject_t slot_lane_states_[MAX_SLOTS];      // int: helix::ui::LaneState (classify_lane)
+    lv_subject_t slot_has_error_[MAX_SLOTS];        // int: 0/1 BLOCKED or carries a SlotError
+    lv_subject_t slot_error_severity_[MAX_SLOTS];   // int: SlotError::Severity (INFO when none)
 
     // Per-unit environment subjects (CFS temp/humidity)
     lv_subject_t unit_temp_[MAX_UNITS];     // int: tenths of C (270 = 27.0C), 0 = no data
