@@ -8,15 +8,15 @@
 <!-- What the macro measures against, and how it heats, is its own business -->
 <!-- - nothing here names a reference tool. -->
 <component>
-  <!-- The row for whichever tool the in-flight run is currently probing gets
-       an accent border, reusing the active_tool subject the toolchanger
-       already publishes for tool selection - no per-tool progress state of
-       its own to leak or wedge. -->
+  <!-- The mounted tool's row gets an accent border while a run is in
+       flight, reusing the active_tool subject the toolchanger already
+       publishes for tool selection - no per-tool progress state of its own to
+       leak or wedge. Mounted is not the same as being probed: the tool the
+       others are measured against is mounted without being probed. -->
   <styles>
-    <style name="tool_offset_row_idle" bg_color="#elevated_bg" bg_opa="255" border_color="#border"
-           border_width="1"/>
-    <style name="tool_offset_row_measuring" bg_color="#elevated_bg" bg_opa="255" border_color="#primary"
-           border_width="2"/>
+    <style name="tool_offset_row_idle" bg_color="#elevated_bg" bg_opa="255" border_color="#border" border_width="1"/>
+    <style name="tool_offset_row_measuring"
+           bg_color="#elevated_bg" bg_opa="255" border_color="#primary" border_width="2"/>
   </styles>
   <view name="calibration_tool_offset_panel"
         extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"

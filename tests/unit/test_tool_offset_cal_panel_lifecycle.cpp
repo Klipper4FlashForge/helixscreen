@@ -24,6 +24,7 @@
 #include "printer_state.h"
 #include "tool_state.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <optional>
@@ -114,18 +115,36 @@ TEST_CASE_METHOD(ToolCalPanelFixture, "tool offset panel: Stop drops the run's c
                  "[ui_integration][toolchanger][tool_offset_cal]") {
     // Stop is M112 + FIRMWARE_RESTART; the rpc then fails with the shutdown,
     // and that failure must not be reported as the run's own.
+    //
+    // A second run is what makes run_lifetime_.invalidate() load-bearing: with
+    // no run in flight, both completion handlers return on !run_active_ and the
+    // guard is never consulted. Start one, and the stopped run's still-pending
+    // rpc has a live run to land on.
     helix::ui::ToolOffsetCalibrationPanel panel;
     panel.init_subjects();
     panel.on_activate();
 
     panel.begin_run();
     REQUIRE(panel.is_calibration_active());
+    // Let the stopped run get most of the way through the mock's sim (2 ticks
+    // per tool plus a park, 600 ms each = 5.4 s for four tools) so its rpc
+    // answers well before the second run's does.
+    pump_until([] { return false; }, 40);
+    REQUIRE(panel.is_calibration_active());
+
     REQUIRE(panel.abort_in_progress_calibration());
     CHECK_FALSE(panel.is_calibration_active());
     CHECK(std::string(lv_subject_get_string(panel.get_status_subject())) == "Stopped");
 
-    pump_until([] { return false; }, 120);
-    CHECK(std::string(lv_subject_get_string(panel.get_status_subject())) == "Stopped");
+    panel.begin_run();
+    REQUIRE(panel.is_calibration_active());
+
+    // Past the stopped run's completion (5.4 s), short of the second run's
+    // (9.4 s): the callback that lands here belongs to the run Stop ended.
+    pump_until([] { return false; }, 30);
+    CHECK(panel.is_calibration_active());
+    CHECK(lv_subject_get_int(panel.get_active_subject()) == 1);
+    CHECK(std::string(lv_subject_get_string(panel.get_status_subject())) == "Calibrating...");
 
     panel.on_deactivate(DeactivateReason::NavigateAway);
     panel.cleanup();
@@ -306,6 +325,41 @@ TEST_CASE_METHOD(ToolCalPanelFixture,
         ps, helix::ZOffsetCalibrationStrategy::PROBE_CALIBRATE);
     REQUIRE(lv_subject_get_int(ps.get_gcode_z_offset_subject()) == 0);
 
+    // A dirty tool, so the save has real work to do: without one it sends
+    // nothing at all and "no babystep was applied" is true of an empty run.
+    helix::ToolState::instance().set_tool_offset_local(1, helix::Axis::X, -120);
+    REQUIRE_FALSE(helix::ToolState::instance().dirty_tool_indices().empty());
+
+    helix::ui::ToolOffsetCalibrationPanel panel;
+    panel.init_subjects();
+    panel.on_activate();
+    client->clear_gcode_script_history();
+    panel.send_save();
+    REQUIRE(pump_until([&] { return !client->gcode_script_history().empty(); }, 50));
+
+    const auto& hist = client->gcode_script_history();
+    CHECK(std::any_of(hist.begin(), hist.end(), [](const std::string& script) {
+        return script.find("gcode_x_offset") != std::string::npos;
+    }));
+    for (const auto& script : hist) {
+        CHECK(script.find("Z_OFFSET_APPLY") == std::string::npos);
+    }
+
+    panel.on_deactivate(DeactivateReason::NavigateAway);
+    panel.cleanup();
+}
+
+TEST_CASE_METHOD(ToolCalPanelFixture, "tool offset panel: Save with nothing dirty sends nothing",
+                 "[ui_integration][toolchanger][tool_offset_cal]") {
+    // A reconnect between the confirmation and the send re-seeds the baselines.
+    // Trusting what save_offsets() saw would send no gcode and still report a
+    // successful save.
+    helix::PrinterState& ps = get_printer_state();
+    helix::PrinterStateTestAccess::pin_z_offset_strategy(
+        ps, helix::ZOffsetCalibrationStrategy::PROBE_CALIBRATE);
+    REQUIRE(lv_subject_get_int(ps.get_gcode_z_offset_subject()) == 0);
+    REQUIRE(helix::ToolState::instance().dirty_tool_indices().empty());
+
     helix::ui::ToolOffsetCalibrationPanel panel;
     panel.init_subjects();
     panel.on_activate();
@@ -313,10 +367,10 @@ TEST_CASE_METHOD(ToolCalPanelFixture,
     panel.send_save();
     pump_until([] { return false; }, 20);
 
-    for (const auto& script : client->gcode_script_history()) {
-        CHECK(script.find("Z_OFFSET_APPLY") == std::string::npos);
-    }
+    CHECK(client->gcode_script_history().empty());
+    CHECK(std::string(lv_subject_get_string(panel.get_status_subject())) == "Ready to calibrate");
 
     panel.on_deactivate(DeactivateReason::NavigateAway);
     panel.cleanup();
 }
+

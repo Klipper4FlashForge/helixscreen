@@ -162,12 +162,9 @@ TEST_CASE("tool offsets: a TOOL_OFFSET macro alone is not a tool changer", "[too
 
 TEST_CASE("tool offsets: a delta frame does not fall through to the other store",
           "[tool_offsets]") {
-    // Moonraker's notify_status_update carries only what changed. A MedusaHC
-    // frame with just `tool T0` used to be answered from klipper-toolchanger's
-    // copy - the store this module says is NOT the authority - and that value
-    // then overwrote the real one and became the base for the next adjustment.
-    // Reading by the resolved model, the tool object is never consulted on
-    // such a machine, whatever the frame carries.
+    // Moonraker's notify_status_update carries only what changed. Reading by
+    // the resolved model, the tool object is never consulted on a MedusaHC
+    // machine, whatever the frame carries.
     json delta = json{{"tool T0", json{{"gcode_z_offset", -0.05}}}};
 
     const to_::OffsetReader medusa = to_::resolve_reader(tool_offset_macro_printer());

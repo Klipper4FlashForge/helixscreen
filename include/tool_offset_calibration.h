@@ -26,7 +26,6 @@
 // because the macro reports none.
 
 #include <string>
-#include <vector>
 
 namespace helix {
 class PrinterDiscovery;
