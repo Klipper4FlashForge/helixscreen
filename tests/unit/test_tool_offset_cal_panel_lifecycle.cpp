@@ -199,9 +199,19 @@ TEST_CASE_METHOD(ToolCalPanelFixture,
 TEST_CASE_METHOD(ToolCalPanelFixture, "tool offset panel: no tools is a refusal, not a run",
                  "[ui_integration][toolchanger][tool_offset_cal]") {
     // ToolState is empty between an AMS topology clear and the next
-    // init_tools(): nothing to calibrate, so no run may start.
-    helix::ToolState::instance().clear_ams_topology();
-    REQUIRE(helix::ToolState::instance().tools().empty());
+    // init_tools(). PrinterDiscovery still reports the macro - the two are
+    // filled from different places - so the panel is reachable with nothing to
+    // calibrate and nothing to show a result on.
+    helix::ToolState& ts = helix::ToolState::instance();
+    helix::ToolTopology topo;
+    topo.tool_count = 2;
+    topo.active_tool = 0;
+    topo.tool_to_slot = {0, 1};
+    ts.set_ams_topology(topo);
+    REQUIRE(ts.ams_topology_active());
+    ts.clear_ams_topology();
+    REQUIRE(ts.tools().empty());
+    REQUIRE(helix::ui::ToolOffsetCalibrationPanel::printer_supports_calibration());
 
     helix::ui::ToolOffsetCalibrationPanel panel;
     panel.init_subjects();
