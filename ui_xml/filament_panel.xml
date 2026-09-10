@@ -98,8 +98,9 @@
             <event_cb trigger="clicked" callback="on_filament_cooldown"/>
           </ui_button>
           <ui_button name="btn_manage_slots"
-                     width="100%" height="#button_height_lg" variant="outline" icon="cog" style_pad_all="0"
-                     text="Manage" translation_tag="Manage" style_bg_color="#card_bg" style_text_font="#font_body_bold">
+                     width="100%" height="#button_height_lg" variant="outline" icon="filament" style_pad_all="0"
+                     text="Materials" translation_tag="Materials" style_bg_color="#card_bg"
+                     style_text_font="#font_body_bold">
             <event_cb trigger="clicked" callback="filament_manage_slots_cb"/>
             <bind_flag_if_eq subject="ams_type" flag="hidden" ref_value="0"/>
           </ui_button>

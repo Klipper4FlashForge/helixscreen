@@ -3555,6 +3555,15 @@ AmsError AmsState::commit_slot_edit(int slot_index, const SlotInfo& original,
         return err;
     }
 
+    // Tool changers keep spool assignments in ToolState rather than firmware.
+    // Clear that durable source before sync_from_backend(); otherwise its
+    // reverse-sync arm immediately restores the spool name and weights that
+    // set_slot_info() just removed from the slot.
+    if (!backend->has_firmware_spool_persistence() && original.spoolman_id > 0 &&
+        info.spoolman_id == 0 && original.mapped_tool >= 0) {
+        ToolState::instance().clear_spool(original.mapped_tool);
+    }
+
     // S4 + S7
     sync_from_backend();
     return err;

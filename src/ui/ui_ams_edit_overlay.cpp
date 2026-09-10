@@ -1397,6 +1397,10 @@ void AmsEditOverlay::update_ui() {
     if (slot_index_ < 0) {
         snprintf(slot_indicator_buf_, sizeof(slot_indicator_buf_), "%s",
                  lv_tr("External Filament"));
+    } else if (AmsBackend* backend = AmsState::instance().get_backend();
+               backend && is_tool_changer(backend->get_type())) {
+        const int tool = working_info_.mapped_tool >= 0 ? working_info_.mapped_tool : slot_index_;
+        snprintf(slot_indicator_buf_, sizeof(slot_indicator_buf_), lv_tr("T%d Material"), tool);
     } else {
         snprintf(slot_indicator_buf_, sizeof(slot_indicator_buf_), lv_tr("Slot %d Filament"),
                  slot_index_ + 1);
@@ -1763,7 +1767,12 @@ void AmsEditOverlay::handle_back() {
     int view = lv_subject_get_int(&view_mode_subject_);
     switch (view) {
     case VIEW_SPOOL_PICKER:
-        switch_to_form();
+        if (opened_on_picker_) {
+            working_info_ = original_info_;
+            close_editor(false);
+        } else {
+            switch_to_form();
+        }
         break;
     case VIEW_SPOOL_EDIT:
         // Leave without applying (Save is the apply path)

@@ -776,12 +776,18 @@ bool ams_dispatch_backend_action(AmsContextMenu::MenuAction action, int slot,
         cleared.color_name.clear();
         cleared.multi_color_hexes.clear();
         cleared.brand.clear();
+        cleared.catalog_id.clear();
+        cleared.product_name.clear();
         // Drops spoolman_id AND the filament/vendor handles — leaving
         // those behind fed a later repoint comparison against a spool
         // this lane is no longer linked to.
         cleared.clear_spoolman_link();
         cleared.remaining_weight_g = -1;
         cleared.total_weight_g = -1;
+        cleared.remaining_length_m = 0;
+        cleared.nozzle_temp_min = 0;
+        cleared.nozzle_temp_max = 0;
+        cleared.bed_temp = 0;
         auto error = AmsState::instance().commit_slot_edit(slot, original, cleared);
         if (error.success()) {
 #if HELIX_HAS_CFS
