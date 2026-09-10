@@ -48,6 +48,7 @@
                             style_text_color="#text_muted" clickable="false" event_bubble="true"/>
               </lv_obj>
             </lv_obj>
+            <divider_vertical height="70%" opacity="160"/>
             <ui_button name="materials_unassign_${i}" width="96" height="#button_height" variant="ghost"
                        text="Unassign" translation_tag="Unassign">
               <bind_state_if_eq subject="materials_assigned_${i}" state="disabled" ref_value="0"/>
