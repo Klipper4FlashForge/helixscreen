@@ -431,17 +431,21 @@ void ToolOffsetCalibrationPanel::save_offsets() {
         spdlog::info("[ToolOffsetCal] Refused Save - a job holds the machine");
         return;
     }
-    if (helix::ToolState::instance().dirty_tool_indices().empty()) {
+    // One definition of "is there an offset worth saving", shared with the
+    // header and Controls saves rather than spelled out again here.
+    helix::PrinterState& ps = get_printer_state();
+    const helix::zoffset::SaveAvailability facts = helix::zoffset::current_save_availability();
+    if (!facts.tools_dirty) {
         return;
     }
     // Warn only when a restart is actually coming, as the header's save
     // decides it: a pending machine-wide babystep always ends in SAVE_CONFIG,
     // and so do staged tool parameters; a firmware that persists immediately
     // restarts nothing.
-    helix::PrinterState& ps = get_printer_state();
-    const bool global_dirty = lv_subject_get_int(ps.get_gcode_z_offset_subject()) != 0;
     const bool restart_expected =
-        global_dirty || helix::tool_offsets::persist_requires_save_config(ps.get_discovery());
+        facts.global_dirty ||
+        (facts.tools_dirty &&
+         helix::tool_offsets::persist_requires_save_config(ps.get_discovery()));
     if (!restart_expected) {
         send_save();
         return;
@@ -450,7 +454,7 @@ void ToolOffsetCalibrationPanel::save_offsets() {
         lv_tr("Save offsets?"),
         // The one restart also commits the babystep; say so in the words the
         // Controls and header saves use.
-        global_dirty
+        facts.global_dirty
             ? lv_tr("This will save the Z-offset and restart Klipper to write the configuration. "
                     "The printer will briefly disconnect.")
             : lv_tr("This writes the tool offsets to the printer's config and restarts Klipper, "
@@ -466,23 +470,35 @@ void ToolOffsetCalibrationPanel::send_save() {
         return;
     }
     helix::PrinterState& ps = get_printer_state();
-    lv_subject_copy_string(&status_, lv_tr("Saving offsets..."));
-    // The same path the header's save button takes, babystep included: the
+    // Read the facts here rather than trust what save_offsets() saw: a
+    // reconnect while the confirmation was up re-seeds the baselines, and a
+    // save with nothing left to write sends no gcode while still reporting
+    // success. The same three facts the header and Controls saves use - the
     // SAVE_CONFIG this ends in restarts Klipper, which resets homing_origin,
     // so a pending machine-wide babystep is either applied and committed in
-    // this same restart or silently lost by it - and its pending delta would
-    // then go on being shown in Controls for an adjustment that no longer
-    // existed. Computed as the header and Controls saves compute it.
-    const bool global_dirty = lv_subject_get_int(ps.get_gcode_z_offset_subject()) != 0;
+    // this same restart or silently lost by it, its pending delta still shown
+    // in Controls for an adjustment that no longer exists.
+    const helix::zoffset::SaveAvailability facts = helix::zoffset::current_save_availability();
+    if (!facts.global_dirty && !facts.tools_dirty) {
+        spdlog::info("[ToolOffsetCal] Nothing left to save");
+        return;
+    }
+    lv_subject_copy_string(&status_, lv_tr("Saving offsets..."));
     helix::zoffset::save_dirty_offsets(
-        api, save_watch_, ps.get_z_offset_calibration_strategy(), ps.get_discovery(), global_dirty,
+        api, save_watch_, ps.get_z_offset_calibration_strategy(), ps.get_discovery(),
+        facts.global_dirty,
         run_lifetime_.bg_cb("ToolOffsetCal::saved",
                             [this]() {
+                                last_error_.clear();
                                 lv_subject_copy_string(&status_, lv_tr("Offsets saved"));
                                 NOTIFY_SUCCESS("{}", lv_tr("Tool offsets saved"));
                             }),
         run_lifetime_.bg_cb("ToolOffsetCal::save_failed",
                             [this](const std::string& error) {
+                                // Held, not just shown: on_activate() rewrites
+                                // the status line, so a failure the user walked
+                                // away from would otherwise read "Ready".
+                                last_error_ = error;
                                 lv_subject_copy_string(&status_, error.c_str());
                                 NOTIFY_ERROR("{}", error);
                             }),

@@ -151,7 +151,9 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     /// A calibration rpc is in flight (or being waited out, see
     /// begin_idle_wait). Cleared by its completion, a failure, or Stop.
     bool run_active_ = false;
-    /// Text of the failure that ended the last run; empty when it succeeded.
+    /// Text of the failure that ended the last run or save; empty when it
+    /// succeeded. on_activate() shows it, so a failure survives leaving the
+    /// panel and coming back.
     std::string last_error_;
 
     char status_buffer_[160] = "";
