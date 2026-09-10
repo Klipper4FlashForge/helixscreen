@@ -5696,8 +5696,9 @@ void AmsBackendAfc::load_afc_configs() {
             spdlog::info("[AMS AFC] Config files loaded");
 
             // Detect tip method from AFC config.
-            // TODO: Replace with direct Moonraker status query once AFC exposes
-            // tool_cut/form_tip in get_status() (upstream AFC enhancement pending).
+            // MARKER(AFCProject/AFC-Klipper-Add-On#863): parse configs until
+            // upstream exposes tool_cut/form_tip in get_status(), then read
+            // the status field instead.
             update_tip_method_from_config();
 
             emit_event(EVENT_STATE_CHANGED);
