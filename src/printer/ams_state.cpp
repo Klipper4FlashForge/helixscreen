@@ -58,6 +58,16 @@ namespace {
 // Shutdown flag to prevent async callbacks from accessing destroyed singleton
 static std::atomic<bool> s_shutdown_flag{false};
 
+/// The error state a lane bar's status line draws from: the same derivation
+/// both current consumers (AMS overview mini bars, mini status) compute from
+/// SlotInfo. has_error covers a carried SlotError AND a BLOCKED lane;
+/// severity falls back to INFO when no error object is carried.
+void slot_error_state(const SlotInfo& slot, bool& has_error, int& severity) {
+    has_error = (slot.status == SlotStatus::BLOCKED || slot.error.has_value());
+    severity =
+        static_cast<int>(slot.error.has_value() ? slot.error->severity : SlotError::Severity::INFO);
+}
+
 struct AsyncSyncData {
     int backend_index;
     bool full_sync;
@@ -491,6 +501,23 @@ void AmsState::init_subjects(bool register_xml) {
             snprintf(name_buf, sizeof(name_buf), "ams_slot_%d_lane_state", i);
             lv_xml_register_subject(nullptr, name_buf, &slot_lane_states_[i]);
         }
+
+        // Per-slot error state, published so a lane bar can draw its own
+        // status line from subjects. has_error = BLOCKED or a carried
+        // SlotError; severity defaults to INFO when no error is carried.
+        lv_subject_init_int(&slot_has_error_[i], 0);
+        subjects_.register_subject(&slot_has_error_[i]);
+        if (register_xml) {
+            snprintf(name_buf, sizeof(name_buf), "ams_slot_%d_has_error", i);
+            lv_xml_register_subject(nullptr, name_buf, &slot_has_error_[i]);
+        }
+
+        lv_subject_init_int(&slot_error_severity_[i], static_cast<int>(SlotError::Severity::INFO));
+        subjects_.register_subject(&slot_error_severity_[i]);
+        if (register_xml) {
+            snprintf(name_buf, sizeof(name_buf), "ams_slot_%d_error_severity", i);
+            lv_xml_register_subject(nullptr, name_buf, &slot_error_severity_[i]);
+        }
     }
 
     // Per-unit environment subjects (CFS temperature/humidity)
@@ -805,6 +832,10 @@ void AmsState::register_xml_subject_names() {
         lv_xml_register_subject(nullptr, name_buf, &slot_active_loaded_[i]);
         snprintf(name_buf, sizeof(name_buf), "ams_slot_%d_lane_state", i);
         lv_xml_register_subject(nullptr, name_buf, &slot_lane_states_[i]);
+        snprintf(name_buf, sizeof(name_buf), "ams_slot_%d_has_error", i);
+        lv_xml_register_subject(nullptr, name_buf, &slot_has_error_[i]);
+        snprintf(name_buf, sizeof(name_buf), "ams_slot_%d_error_severity", i);
+        lv_xml_register_subject(nullptr, name_buf, &slot_error_severity_[i]);
     }
 
     // Per-unit environment subjects (CFS temperature/humidity)
@@ -1290,6 +1321,20 @@ lv_subject_t* AmsState::get_slot_lane_state_subject(int slot_index) {
         return nullptr;
     }
     return &slot_lane_states_[slot_index];
+}
+
+lv_subject_t* AmsState::get_slot_has_error_subject(int slot_index) {
+    if (slot_index < 0 || slot_index >= MAX_SLOTS) {
+        return nullptr;
+    }
+    return &slot_has_error_[slot_index];
+}
+
+lv_subject_t* AmsState::get_slot_error_severity_subject(int slot_index) {
+    if (slot_index < 0 || slot_index >= MAX_SLOTS) {
+        return nullptr;
+    }
+    return &slot_error_severity_[slot_index];
 }
 
 lv_subject_t* AmsState::get_slot_remaining_subject(int slot_index) {
@@ -1962,6 +2007,19 @@ void AmsState::sync_from_backend() {
                 any_slot_changed = true;
             }
 
+            // Error flag + severity for the lane's status line.
+            bool new_has_error = false;
+            int new_severity = static_cast<int>(SlotError::Severity::INFO);
+            slot_error_state(*slot, new_has_error, new_severity);
+            if (lv_subject_get_int(&slot_has_error_[i]) != (new_has_error ? 1 : 0)) {
+                lv_subject_set_int(&slot_has_error_[i], new_has_error ? 1 : 0);
+                any_slot_changed = true;
+            }
+            if (lv_subject_get_int(&slot_error_severity_[i]) != new_severity) {
+                lv_subject_set_int(&slot_error_severity_[i], new_severity);
+                any_slot_changed = true;
+            }
+
             // Fill percent (canonical display_fill_pct encoding). The ams_slot
             // widget observes this — so spool fill renders from state on every
             // panel, not just the ones that remember to push it imperatively.
@@ -2279,6 +2337,15 @@ void AmsState::sync_from_backend() {
             lv_subject_set_int(&slot_lane_states_[i], default_lane_state);
             any_slot_changed = true;
         }
+        if (lv_subject_get_int(&slot_has_error_[i]) != 0) {
+            lv_subject_set_int(&slot_has_error_[i], 0);
+            any_slot_changed = true;
+        }
+        int default_severity = static_cast<int>(SlotError::Severity::INFO);
+        if (lv_subject_get_int(&slot_error_severity_[i]) != default_severity) {
+            lv_subject_set_int(&slot_error_severity_[i], default_severity);
+            any_slot_changed = true;
+        }
         // Clear remaining filament for unused slots
         if (strcmp(lv_subject_get_string(&slot_remaining_[i]), "") != 0) {
             lv_subject_copy_string(&slot_remaining_[i], "");
@@ -2360,6 +2427,19 @@ void AmsState::update_slot(int slot_index) {
             helix::ui::classify_lane(slot.status, helix::ui::lane_has_identity(slot)));
         if (lv_subject_get_int(&slot_lane_states_[slot_index]) != new_lane_state) {
             lv_subject_set_int(&slot_lane_states_[slot_index], new_lane_state);
+            changed = true;
+        }
+
+        // Error flag + severity, same derivation as the full-sync loop.
+        bool new_has_error = false;
+        int new_severity = static_cast<int>(SlotError::Severity::INFO);
+        slot_error_state(slot, new_has_error, new_severity);
+        if (lv_subject_get_int(&slot_has_error_[slot_index]) != (new_has_error ? 1 : 0)) {
+            lv_subject_set_int(&slot_has_error_[slot_index], new_has_error ? 1 : 0);
+            changed = true;
+        }
+        if (lv_subject_get_int(&slot_error_severity_[slot_index]) != new_severity) {
+            lv_subject_set_int(&slot_error_severity_[slot_index], new_severity);
             changed = true;
         }
 

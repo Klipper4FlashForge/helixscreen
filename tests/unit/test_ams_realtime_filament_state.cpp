@@ -605,3 +605,100 @@ TEST_CASE_METHOD(LVGLTestFixture, "AMS clears filament_loaded after unload compl
     ams.clear_backends();
     ams.deinit_subjects();
 }
+
+// ============================================================================
+// Part 3 — per-slot error state subjects (ams_slot_<n>_has_error /
+// ams_slot_<n>_error_severity): the same derivation the lane-bar consumers
+// compute from SlotInfo, published so a lane bar can draw its own status line
+// from subjects instead of from a snapshot.
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture, "AmsState publishes per-slot error state and severity on sync",
+                 "[1527][ams][ams_state]") {
+    auto& ams = AmsState::instance();
+    ams.init_subjects(false);
+
+    auto backend = std::make_unique<AmsBackendMock>(4);
+    auto* backend_ptr = backend.get();
+    ams.set_backend(std::move(backend));
+
+    SECTION("accessors return non-null in range and null out of range") {
+        CHECK(ams.get_slot_has_error_subject(0) != nullptr);
+        CHECK(ams.get_slot_error_severity_subject(0) != nullptr);
+        CHECK(ams.get_slot_has_error_subject(-1) == nullptr);
+        CHECK(ams.get_slot_error_severity_subject(AmsState::MAX_SLOTS) == nullptr);
+    }
+
+    SECTION("a carried error publishes has_error=1 and its severity") {
+        backend_ptr->set_slot_error(0, SlotError{"lane jammed", SlotError::Severity::ERROR});
+        ams.sync_from_backend();
+        drain();
+
+        CHECK(lv_subject_get_int(ams.get_slot_has_error_subject(0)) == 1);
+        CHECK(lv_subject_get_int(ams.get_slot_error_severity_subject(0)) ==
+              static_cast<int>(SlotError::Severity::ERROR));
+        // Neighbor slots stay quiet.
+        CHECK(lv_subject_get_int(ams.get_slot_has_error_subject(1)) == 0);
+        CHECK(lv_subject_get_int(ams.get_slot_error_severity_subject(1)) ==
+              static_cast<int>(SlotError::Severity::INFO));
+    }
+
+    SECTION("clearing the error resets the flag and falls back to INFO") {
+        backend_ptr->set_slot_error(0, SlotError{"lane jammed", SlotError::Severity::WARNING});
+        ams.sync_from_backend();
+        drain();
+        REQUIRE(lv_subject_get_int(ams.get_slot_has_error_subject(0)) == 1);
+
+        backend_ptr->set_slot_error(0, std::nullopt);
+        ams.sync_from_backend();
+        drain();
+        CHECK(lv_subject_get_int(ams.get_slot_has_error_subject(0)) == 0);
+        CHECK(lv_subject_get_int(ams.get_slot_error_severity_subject(0)) ==
+              static_cast<int>(SlotError::Severity::INFO));
+    }
+
+    SECTION("a BLOCKED lane without an error object still publishes has_error=1") {
+        // force_slot_status, not set_slot_info: status is firmware-derived and
+        // set_slot_info deliberately ignores it, like every real backend.
+        backend_ptr->force_slot_status(0, SlotStatus::BLOCKED);
+        backend_ptr->set_slot_error(0, std::nullopt);
+        ams.sync_from_backend();
+        drain();
+
+        CHECK(lv_subject_get_int(ams.get_slot_has_error_subject(0)) == 1);
+        CHECK(lv_subject_get_int(ams.get_slot_error_severity_subject(0)) ==
+              static_cast<int>(SlotError::Severity::INFO));
+    }
+
+    SECTION("the single-slot fast path publishes the same state") {
+        backend_ptr->set_slot_error(0, SlotError{"gate jam", SlotError::Severity::WARNING});
+        ams.update_slot(0);
+        drain();
+
+        CHECK(lv_subject_get_int(ams.get_slot_has_error_subject(0)) == 1);
+        CHECK(lv_subject_get_int(ams.get_slot_error_severity_subject(0)) ==
+              static_cast<int>(SlotError::Severity::WARNING));
+    }
+
+    SECTION("slots beyond a shrinking backend reset to no-error") {
+        backend_ptr->set_slot_error(3, SlotError{"tail jam", SlotError::Severity::ERROR});
+        ams.sync_from_backend();
+        drain();
+        REQUIRE(lv_subject_get_int(ams.get_slot_has_error_subject(3)) == 1);
+
+        // Swap in a backend that reports only two slots: slot 3 must clear.
+        ams.set_backend(std::make_unique<AmsBackendMock>(2));
+        ams.sync_from_backend();
+        drain();
+
+        CHECK(lv_subject_get_int(ams.get_slot_has_error_subject(3)) == 0);
+        CHECK(lv_subject_get_int(ams.get_slot_error_severity_subject(3)) ==
+              static_cast<int>(SlotError::Severity::INFO));
+    }
+
+    SECTION("re-entry with register_xml publishes the XML names") {
+        ams.init_subjects(true);
+        CHECK(lv_xml_get_subject(nullptr, "ams_slot_0_has_error") != nullptr);
+        CHECK(lv_xml_get_subject(nullptr, "ams_slot_0_error_severity") != nullptr);
+    }
+}
