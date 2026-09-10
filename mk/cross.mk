@@ -262,6 +262,13 @@ else ifeq ($(PLATFORM_TARGET),ad5m)
     ENABLE_SCREENSAVER := no
     ENABLE_EVDEV := yes
     BUILD_SUBDIR := ad5m
+    # Mock backends are dev/test scaffolding. The Makefile defaults ENABLE_MOCKS
+    # to yes and no cross target has ever overridden it, so every shipped device
+    # binary has carried the full mock Moonraker client. mk/cross.mk is included
+    # before the Makefile's `?=`, so setting it here wins. The
+    # #ifdef HELIX_ENABLE_MOCKS guards at every consumer are already complete --
+    # the ESP32 port builds this way today.
+    ENABLE_MOCKS := no
     # Strip binary for size on memory-constrained device
     STRIP_BINARY := yes
     FONT_TIERS := medium large
@@ -297,6 +304,8 @@ else ifeq ($(PLATFORM_TARGET),ad5m-br)
     ENABLE_SCREENSAVER := no
     ENABLE_EVDEV := yes
     BUILD_SUBDIR := ad5m-br
+    # Matches the `ad5m` target's size treatment (see its ENABLE_MOCKS block).
+    ENABLE_MOCKS := no
     # No strip — buildroot strips target binaries itself
     STRIP_BINARY := no
     FONT_TIERS := medium large
@@ -826,6 +835,22 @@ SUBMODULE_CXXFLAGS += -DHELIX_MAX_FONT_TIER=$(HELIX_MAX_FONT_TIER)
 #            SUBMODULE_CXXFLAGS -- libhv throws, and its catch clauses want
 #            typeinfo for the thrown types.
 ifeq ($(PLATFORM_TARGET),cc1)
+    CFLAGS += -DNDEBUG
+    CXXFLAGS += -DNDEBUG -fno-rtti
+    SUBMODULE_CFLAGS += -DNDEBUG
+    SUBMODULE_CXXFLAGS += -DNDEBUG
+endif
+
+# AD5M sits in the same 110-128MB class as the CC1 and pays the same page-cache
+# competition with Klipper (see the block comment above).
+ifeq ($(PLATFORM_TARGET),ad5m)
+    CFLAGS += -DNDEBUG
+    CXXFLAGS += -DNDEBUG -fno-rtti
+    SUBMODULE_CFLAGS += -DNDEBUG
+    SUBMODULE_CXXFLAGS += -DNDEBUG
+endif
+
+ifeq ($(PLATFORM_TARGET),ad5m-br)
     CFLAGS += -DNDEBUG
     CXXFLAGS += -DNDEBUG -fno-rtti
     SUBMODULE_CFLAGS += -DNDEBUG

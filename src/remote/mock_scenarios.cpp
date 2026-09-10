@@ -3,6 +3,11 @@
 
 #include "mock_scenarios.h"
 
+// The scenario machinery drives the mock AMS backend, which is compiled out
+// of the size-constrained device builds (ENABLE_MOCKS=no); those builds get
+// an empty registry and find_scenario() always misses.
+#ifdef HELIX_ENABLE_MOCKS
+
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "http_executor.h"
@@ -400,3 +405,20 @@ const MockScenario* find_scenario(const std::string& name) {
 }
 
 } // namespace helix
+
+#else // !HELIX_ENABLE_MOCKS
+
+namespace helix {
+
+const std::vector<MockScenario>& get_mock_scenarios() {
+    static const std::vector<MockScenario> kEmpty;
+    return kEmpty;
+}
+
+const MockScenario* find_scenario(const std::string&) {
+    return nullptr;
+}
+
+} // namespace helix
+
+#endif // HELIX_ENABLE_MOCKS
