@@ -1507,3 +1507,25 @@ TEST_CASE_METHOD(NetdBackendFixture, "netd join proceeds when Ethernet holds no 
     caller.join();
     REQUIRE(result.success());
 }
+
+TEST_CASE_METHOD(NetdBackendFixture,
+                 "netd refuses only on a LIVE daemon: dead socket falls through to the watchdog",
+                 "[1542][netd][wifi]") {
+    register_standard_events();
+    REQUIRE(start_and_settle());
+
+    // The snapshot holds ETHERNET/CONNECTED, but then the daemon dies.
+    server_->push_line("MODE=ETHERNET");
+    server_->push_line("STATE=CONNECTED");
+    REQUIRE(drain_wire());
+    server_.reset();
+
+    // Liveness, not the snapshot alone, gates the refusal: with no daemon to
+    // answer, connect_network must NOT claim the transport is held. The
+    // dead-socket failure it returns instead is the pre-existing answer the
+    // manager already reports.
+    WiFiError result{WiFiResult::TRANSPORT_IN_USE};
+    std::thread caller([&] { result = backend_->connect_network("WifiNet", "pw"); });
+    caller.join();
+    REQUIRE(result.result != WiFiResult::TRANSPORT_IN_USE);
+}
