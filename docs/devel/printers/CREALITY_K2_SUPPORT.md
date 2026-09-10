@@ -758,13 +758,17 @@ HelixScreen auto-detects K2 printers using heuristics from `config/printer_datab
 
 | Heuristic | Confidence | Description |
 |-----------|------------|-------------|
+| Hostname `k2plus` / `k2pro` | 90 | Hostname contains "K2Plus" / "K2Pro" |
 | Hostname `k2` | 85 | Hostname contains "k2" |
-| `box` object | 90 | CFS module present (K2-specific) |
 | `motor_control` object | 75 | K2-specific motor control module |
-| `fan_feedback` object | 70 | K2-specific fan RPM feedback |
-| `load_ai` object | 65 | AI print monitoring (K2-specific) |
 | `chamber_temp` sensor | 70 | Chamber temperature sensor |
+| `heater_generic chamber_heater` | 70 | Active chamber heater |
+| `fan_feedback` object | 65 | Creality fan-tachometer module — a captured real K1C reports it too, so it corroborates rather than distinguishes |
+| `filament_rack` object | 65 | K2 filament rack module |
 | Hostname `creality` | 60 | Hostname contains "creality" |
+| `load_ai` object | 60 | AI print monitoring |
+| `box` object | 45 | CFS box object — every CFS-equipped Creality carries it, so it corroborates |
+| `build_volume_range` | 55 | Build volume within the K2 envelope |
 | CoreXY kinematics | 40 | CoreXY motion system |
 
 These identify the **printer**, not its firmware. A community Kalico port trips every one of them — `box`, `motor_control`, `fan_feedback` and the hostname are all still present — so model detection reports a stock K2 Plus. Anything that varies with firmware rather than hardware (the CFS box schema, the macro dialect) must therefore be detected from the payload or the macro list, never from `PrinterDetector`. See [Community Kalico port](#community-kalico-port).
