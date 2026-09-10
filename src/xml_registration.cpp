@@ -629,6 +629,9 @@ void register_xml_components() {
     register_xml("components/exclude_object_side_list.xml");
     register_xml("print_status_panel.xml");
     register_xml("print_tune_panel.xml");
+    register_xml("filament_temperature_sheet.xml");
+    register_xml("filament_tool_dialog.xml");
+    register_xml("components/heater_summary_card.xml");
     register_xml("filament_panel.xml");
 
     // NOTE: AMS panel (ams_panel.xml) is registered lazily in ui_panel_ams.cpp

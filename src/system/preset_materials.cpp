@@ -27,8 +27,12 @@ constexpr size_t TEMP_BUF_SIZE = 32;
 struct SubjectState {
     std::array<lv_subject_t, PRESET_COUNT> name_subjects{};
     std::array<lv_subject_t, PRESET_COUNT> temp_subjects{};
+    std::array<lv_subject_t, PRESET_COUNT> bed_temp_subjects{};
+    std::array<lv_subject_t, PRESET_COUNT> nozzle_temp_subjects{};
     std::array<std::array<char, LABEL_BUF_SIZE>, PRESET_COUNT> name_bufs{};
     std::array<std::array<char, TEMP_BUF_SIZE>, PRESET_COUNT> temp_bufs{};
+    std::array<std::array<char, TEMP_BUF_SIZE>, PRESET_COUNT> bed_temp_bufs{};
+    std::array<std::array<char, TEMP_BUF_SIZE>, PRESET_COUNT> nozzle_temp_bufs{};
     lv_subject_t count_subject{};
     bool ready = false;
 };
@@ -50,6 +54,8 @@ void deinit_subjects() {
     for (int i = 0; i < PRESET_COUNT; ++i) {
         lv_subject_deinit(&s.name_subjects[i]);
         lv_subject_deinit(&s.temp_subjects[i]);
+        lv_subject_deinit(&s.bed_temp_subjects[i]);
+        lv_subject_deinit(&s.nozzle_temp_subjects[i]);
     }
     lv_subject_deinit(&s.count_subject);
     s.ready = false;
@@ -118,7 +124,28 @@ void init_subjects() {
         "preset_material_0_temps", "preset_material_1_temps", "preset_material_2_temps",
         "preset_material_3_temps"};
 
+    static constexpr const char* BED_TEMP_SUBJECTS[PRESET_COUNT] = {
+        "preset_material_0_bed_temp", "preset_material_1_bed_temp", "preset_material_2_bed_temp",
+        "preset_material_3_bed_temp"};
+    static constexpr const char* NOZZLE_TEMP_SUBJECTS[PRESET_COUNT] = {
+        "preset_material_0_nozzle_temp", "preset_material_1_nozzle_temp",
+        "preset_material_2_nozzle_temp", "preset_material_3_nozzle_temp"};
+
     for (int i = 0; i < PRESET_COUNT; ++i) {
+        s.bed_temp_bufs[i][0] = '\0';
+        lv_subject_init_string(&s.bed_temp_subjects[i], s.bed_temp_bufs[i].data(), nullptr,
+                               s.bed_temp_bufs[i].size(), s.bed_temp_bufs[i].data());
+        lv_xml_register_subject(nullptr, BED_TEMP_SUBJECTS[i], &s.bed_temp_subjects[i]);
+        SubjectDebugRegistry::instance().register_subject(
+            &s.bed_temp_subjects[i], BED_TEMP_SUBJECTS[i], LV_SUBJECT_TYPE_STRING, __FILE__,
+            __LINE__);
+        s.nozzle_temp_bufs[i][0] = '\0';
+        lv_subject_init_string(&s.nozzle_temp_subjects[i], s.nozzle_temp_bufs[i].data(), nullptr,
+                               s.nozzle_temp_bufs[i].size(), s.nozzle_temp_bufs[i].data());
+        lv_xml_register_subject(nullptr, NOZZLE_TEMP_SUBJECTS[i], &s.nozzle_temp_subjects[i]);
+        SubjectDebugRegistry::instance().register_subject(
+            &s.nozzle_temp_subjects[i], NOZZLE_TEMP_SUBJECTS[i], LV_SUBJECT_TYPE_STRING, __FILE__,
+            __LINE__);
         s.name_bufs[i][0] = '\0';
         s.temp_bufs[i][0] = '\0';
 
@@ -158,6 +185,28 @@ void refresh_subjects() {
     for (int i = 0; i < PRESET_COUNT; ++i) {
         const std::string label = display_label(i);
         const std::string temps = temp_label(i);
+        const auto branded = MaterialSettingsManager::instance().get_preset_filament(i);
+        const auto material = filament::find_material(name(i));
+        if (branded && branded->is_branded()) {
+            std::snprintf(s.bed_temp_bufs[i].data(), s.bed_temp_bufs[i].size(), "%d°C",
+                          branded->bed);
+        } else if (material) {
+            std::snprintf(s.bed_temp_bufs[i].data(), s.bed_temp_bufs[i].size(), "%d°C",
+                          material->bed_temp);
+        } else {
+            std::snprintf(s.bed_temp_bufs[i].data(), s.bed_temp_bufs[i].size(), "---");
+        }
+        lv_subject_copy_string(&s.bed_temp_subjects[i], s.bed_temp_bufs[i].data());
+        if (branded && branded->is_branded()) {
+            std::snprintf(s.nozzle_temp_bufs[i].data(), s.nozzle_temp_bufs[i].size(), "%d°C",
+                          branded->nozzle);
+        } else if (material) {
+            std::snprintf(s.nozzle_temp_bufs[i].data(), s.nozzle_temp_bufs[i].size(), "%d°C",
+                          material->nozzle_recommended());
+        } else {
+            std::snprintf(s.nozzle_temp_bufs[i].data(), s.nozzle_temp_bufs[i].size(), "---");
+        }
+        lv_subject_copy_string(&s.nozzle_temp_subjects[i], s.nozzle_temp_bufs[i].data());
         std::snprintf(s.name_bufs[i].data(), s.name_bufs[i].size(), "%s", label.c_str());
         std::snprintf(s.temp_bufs[i].data(), s.temp_bufs[i].size(), "%s", temps.c_str());
         lv_subject_copy_string(&s.name_subjects[i], s.name_bufs[i].data());

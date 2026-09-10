@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "helix_sparkline.h"
 
+#include "app_globals.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "helix-xml/src/xml/lv_xml_parser.h"
 #include "helix-xml/src/xml/lv_xml_widget.h"
 #include "helix-xml/src/xml/parsers/lv_xml_obj_parser.h"
 #include "observer_factory.h"
 #include "performance_state.h"
+#include "printer_state.h"
+#include "temperature_history_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -18,8 +21,8 @@ namespace ui {
 
 // ---- HelixSparkline implementation ----
 
-lv_obj_t* HelixSparkline::create(lv_obj_t* parent, const std::string& source) {
-    auto* impl = new HelixSparkline(source);
+lv_obj_t* HelixSparkline::create(lv_obj_t* parent, HistoryReader reader) {
+    auto* impl = new HelixSparkline(std::move(reader));
     impl->obj_ = lv_obj_create(parent);
     lv_obj_set_user_data(impl->obj_, impl);
     lv_obj_remove_style_all(impl->obj_);
@@ -33,6 +36,20 @@ lv_obj_t* HelixSparkline::create(lv_obj_t* parent, const std::string& source) {
     lv_obj_add_event_cb(impl->obj_, on_draw, LV_EVENT_DRAW_MAIN_END, impl);
     lv_obj_add_event_cb(impl->obj_, on_delete, LV_EVENT_DELETE, impl);
 
+    return impl->obj_;
+}
+
+void HelixSparkline::set_history_reader(lv_obj_t* obj, HistoryReader reader) {
+    auto* impl = static_cast<HelixSparkline*>(lv_obj_get_user_data(obj));
+    impl->history_reader_ = std::move(reader);
+    impl->invalidate_self();
+}
+
+lv_obj_t* HelixSparkline::create(lv_obj_t* parent, const std::string& source) {
+    auto* obj = create(parent, [source]() {
+        return helix::perf::PerformanceState::instance().read_history(source);
+    });
+    auto* impl = static_cast<HelixSparkline*>(lv_obj_get_user_data(obj));
     // perf_history_tick is NOT a never-freed singleton: PerformanceState
     // destroys and recreates its subjects on reconnect / printer switch (and
     // between tests). Pass PerformanceState's subject lifetime so this observer
@@ -54,7 +71,40 @@ lv_obj_t* HelixSparkline::create(lv_obj_t* parent, const std::string& source) {
     return impl->obj_;
 }
 
-HelixSparkline::HelixSparkline(const std::string& source) : source_(source) {}
+std::vector<float> HelixSparkline::temperature_history(const std::string& heater) {
+    std::vector<float> values;
+    if (auto* history = get_temperature_history_manager()) {
+        const auto samples = history->get_samples(heater);
+        const size_t begin = samples.size() > 60 ? samples.size() - 60 : 0;
+        values.reserve(samples.size() - begin);
+        for (size_t i = begin; i < samples.size(); ++i) {
+            values.push_back(samples[i].temp_deci / 10.0f);
+        }
+    }
+    return values;
+}
+
+lv_obj_t* HelixSparkline::create_heater(lv_obj_t* parent, bool chamber) {
+    auto* obj = create(parent, [chamber]() {
+        if (!chamber)
+            return temperature_history("heater_bed");
+        // Resolve on each draw: discovery may finish after the panel is built.
+        const auto& state = get_printer_state().temperature_state();
+        return temperature_history(state.chamber_heater_name().empty()
+                                       ? state.chamber_sensor_name()
+                                       : state.chamber_heater_name());
+    });
+    auto* impl = static_cast<HelixSparkline*>(lv_obj_get_user_data(obj));
+    SubjectLifetime lifetime;
+    auto& state = get_printer_state();
+    auto* subject =
+        chamber ? state.get_chamber_temp_subject(lifetime) : state.get_bed_temp_subject(lifetime);
+    impl->tick_observer_ = observe_int_sync<HelixSparkline>(
+        subject, impl, [](HelixSparkline* self, int) { self->invalidate_self(); }, lifetime);
+    return obj;
+}
+
+HelixSparkline::HelixSparkline(HistoryReader reader) : history_reader_(std::move(reader)) {}
 
 void HelixSparkline::invalidate_self() {
     if (obj_) {
@@ -68,9 +118,13 @@ void HelixSparkline::on_draw(lv_event_t* e) {
     if (!self || !self->obj_)
         return;
 
-    auto hist = helix::perf::PerformanceState::instance().read_history(self->source_);
-    if (hist.size() < 2)
+    auto hist = self->history_reader_();
+    if (hist.empty())
         return;
+    // Unchanging subjects may have only one recorded value. Show that reading
+    // as a flat trace rather than an empty chart until the temperature changes.
+    if (hist.size() == 1)
+        hist.push_back(hist.front());
 
     lv_area_t area;
     lv_obj_get_coords(self->obj_, &area);
@@ -90,8 +144,11 @@ void HelixSparkline::on_draw(lv_event_t* e) {
         if (v > max_v)
             max_v = v;
     }
-    if (max_v - min_v < 1e-3f)
-        max_v = min_v + 1.0f;
+    if (max_v - min_v < 1.0f) {
+        const float middle = (min_v + max_v) / 2.0f;
+        min_v = middle - 0.5f;
+        max_v = middle + 0.5f;
+    }
 
     lv_layer_t* layer = lv_event_get_layer(e);
     if (!layer)
@@ -134,6 +191,14 @@ namespace {
 
 void* sparkline_xml_create(lv_xml_parser_state_t* state, const char** attrs) {
     lv_obj_t* parent = static_cast<lv_obj_t*>(lv_xml_state_get_parent(state));
+    const char* heater = attrs ? lv_xml_get_value_of(attrs, "heater") : nullptr;
+    if (heater && (strcmp(heater, "bed") == 0 || strcmp(heater, "chamber") == 0)) {
+        return HelixSparkline::create_heater(parent, strcmp(heater, "chamber") == 0);
+    }
+    if (heater && strcmp(heater, "tool") == 0) {
+        // The tool card supplies its resolved hotend and owns rebinding.
+        return HelixSparkline::create(parent, []() { return std::vector<float>{}; });
+    }
     const char* source = nullptr;
     for (int i = 0; attrs && attrs[i]; i += 2) {
         if (strcmp(attrs[i], "source") == 0) {

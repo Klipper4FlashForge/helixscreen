@@ -94,11 +94,11 @@ char* format_temperature_pair_f(float current, float target, char* buffer, size_
     return buffer;
 }
 
-char* format_target_or_off(int target, char* buffer, size_t buffer_size) {
+char* format_target_or_off(int target, char* buffer, size_t buffer_size, bool compact) {
     if (target == 0) {
-        snprintf(buffer, buffer_size, "— °C");
+        snprintf(buffer, buffer_size, "%s", compact ? "—" : "— °C");
     } else {
-        snprintf(buffer, buffer_size, "%d°C", target);
+        snprintf(buffer, buffer_size, compact ? "%d°" : "%d°C", target);
     }
     return buffer;
 }

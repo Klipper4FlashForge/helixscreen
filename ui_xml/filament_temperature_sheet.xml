@@ -1,0 +1,120 @@
+<?xml version="1.0"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<component>
+  <consts>
+    <string name="chamber_0" value="Off"/>
+    <string name="chamber_1" value="Warm"/>
+    <string name="chamber_2" value="ASA / ABS"/>
+    <string name="chamber_3" value="Max"/>
+    <string name="chamber_temp_0" value="—"/>
+    <string name="chamber_temp_1" value="40°C"/>
+    <string name="chamber_temp_2" value="50°C"/>
+    <string name="chamber_temp_3" value="60°C"/>
+  </consts>
+  <view name="filament_temperature_sheet"
+        extends="ui_dialog" width="94%" height="90%" align="center" flex_flow="column" style_pad_all="#space_md"
+        style_pad_gap="#space_sm" style_bg_color="#screen_bg" style_border_width="1" style_border_color="#border"
+        style_shadow_opa="0">
+    <lv_obj width="100%"
+            height="#button_height" flex_flow="row" style_pad_all="0" scrollable="false" style_flex_cross_place="center">
+      <text_heading bind_text="filament_sheet_title" flex_grow="1"/>
+    </lv_obj>
+    <lv_obj name="preheat_columns"
+            width="100%" height="0" flex_grow="1" flex_flow="row" style_pad_all="0" style_pad_gap="#space_sm"
+            scrollable="false">
+      <lv_obj name="preheat_presets"
+              width="44%" height="100%" flex_flow="column" style_pad_all="#space_sm" style_pad_gap="#space_sm"
+              scrollable="false" style_bg_opa="0" style_border_width="0">
+        <text_small width="100%"
+                    text="Presets" translation_tag="Presets" style_text_color="#text_muted"
+                    style_text_font="#font_body_bold"/>
+        <lv_obj width="100%"
+                height="0" flex_grow="1" style_min_height="#button_height_lg" flex_flow="row" style_pad_all="0"
+                style_pad_gap="#space_sm" scrollable="false">
+          <repeat count="2">
+            <ui_button name="sheet_preset_${i}"
+                       width="0" height="100%" flex_grow="1" variant="outline" layout="column" style_pad_all="#space_xs">
+              <event_cb trigger="clicked" callback="on_filament_temperature_sheet_action"/>
+              <text_body bind_text="preset_material_${i}_name">
+                <bind_flag_if_eq subject="filament_sheet_kind" flag="hidden" ref_value="2"/>
+              </text_body>
+              <text_small bind_text="preset_material_${i}_nozzle_temp">
+                <bind_flag_if_not_eq subject="filament_sheet_kind" flag="hidden" ref_value="0"/>
+              </text_small>
+              <text_small bind_text="preset_material_${i}_bed_temp">
+                <bind_flag_if_not_eq subject="filament_sheet_kind" flag="hidden" ref_value="1"/>
+              </text_small>
+              <text_body width="100%" text="#chamber_${i}" long_mode="wrap" style_text_align="center">
+                <bind_flag_if_not_eq subject="filament_sheet_kind" flag="hidden" ref_value="2"/>
+              </text_body>
+              <text_small text="#chamber_temp_${i}">
+                <bind_flag_if_not_eq subject="filament_sheet_kind" flag="hidden" ref_value="2"/>
+              </text_small>
+            </ui_button>
+          </repeat>
+        </lv_obj>
+        <lv_obj width="100%"
+                height="0" flex_grow="1" style_min_height="#button_height_lg" flex_flow="row" style_pad_all="0"
+                style_pad_gap="#space_sm" scrollable="false">
+          <repeat count="2">
+            <ui_button name="sheet_preset_${i + 2}"
+                       width="0" height="100%" flex_grow="1" variant="outline" layout="column" style_pad_all="#space_xs">
+              <event_cb trigger="clicked" callback="on_filament_temperature_sheet_action"/>
+              <text_body bind_text="preset_material_${i + 2}_name">
+                <bind_flag_if_eq subject="filament_sheet_kind" flag="hidden" ref_value="2"/>
+              </text_body>
+              <text_small bind_text="preset_material_${i + 2}_nozzle_temp">
+                <bind_flag_if_not_eq subject="filament_sheet_kind" flag="hidden" ref_value="0"/>
+              </text_small>
+              <text_small bind_text="preset_material_${i + 2}_bed_temp">
+                <bind_flag_if_not_eq subject="filament_sheet_kind" flag="hidden" ref_value="1"/>
+              </text_small>
+              <text_body width="100%" text="#chamber_${i + 2}" long_mode="wrap" style_text_align="center">
+                <bind_flag_if_not_eq subject="filament_sheet_kind" flag="hidden" ref_value="2"/>
+              </text_body>
+              <text_small text="#chamber_temp_${i + 2}">
+                <bind_flag_if_not_eq subject="filament_sheet_kind" flag="hidden" ref_value="2"/>
+              </text_small>
+            </ui_button>
+          </repeat>
+        </lv_obj>
+        <ui_button name="sheet_off"
+                   width="100%" height="#button_height_lg" text="Off" translation_tag="Off" variant="outline">
+          <event_cb trigger="clicked" callback="on_filament_temperature_sheet_action"/>
+        </ui_button>
+      </lv_obj>
+      <lv_obj name="preheat_divider"
+              width="1" height="100%" style_bg_color="#border" style_bg_opa="255" style_border_width="0"
+              style_pad_all="0" scrollable="false" clickable="false"/>
+      <lv_obj name="preheat_target"
+              width="0" height="100%" flex_grow="1" flex_flow="column" style_pad_all="#space_sm"
+              style_pad_gap="#space_sm" scrollable="false" style_bg_opa="0" style_border_width="0">
+        <text_small text="Target temperature" translation_tag="Target temperature" style_text_font="#font_body_bold"/>
+        <lv_obj width="100%"
+                height="0" flex_grow="1" flex_flow="row" style_flex_main_place="space_evenly"
+                style_flex_cross_place="center" style_flex_track_place="center" style_bg_color="#card_bg"
+                style_bg_opa="0" style_radius="0" style_pad_all="0" scrollable="false" style_border_width="0">
+          <ui_button name="sheet_minus" width="22%" height="#button_height_lg" text="-5" variant="outline">
+            <event_cb trigger="clicked" callback="on_filament_temperature_sheet_action"/>
+          </ui_button>
+          <text_heading bind_text="filament_sheet_value" style_text_font="#font_display"/>
+          <ui_button name="sheet_plus" width="22%" height="#button_height_lg" text="+5" variant="outline">
+            <event_cb trigger="clicked" callback="on_filament_temperature_sheet_action"/>
+          </ui_button>
+        </lv_obj>
+        <lv_obj width="100%"
+                height="#button_height_lg" flex_flow="row" style_pad_all="0" style_pad_gap="#space_sm"
+                scrollable="false">
+          <ui_button name="sheet_cancel"
+                     width="30%" height="100%" text="Cancel" translation_tag="Cancel" variant="outline">
+            <event_cb trigger="clicked" callback="on_filament_temperature_sheet_action"/>
+          </ui_button>
+          <ui_button name="btn_primary"
+                     width="0" height="100%" flex_grow="1" style_bg_color="#success" text="Heat" translation_tag="Heat">
+            <event_cb trigger="clicked" callback="on_filament_temperature_sheet_action"/>
+          </ui_button>
+        </lv_obj>
+      </lv_obj>
+    </lv_obj>
+  </view>
+</component>

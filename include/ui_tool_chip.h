@@ -1,90 +1,13 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
-
 #pragma once
-
-#include "ui_observer_guard.h" // SubjectLifetime
 
 #include "lvgl/lvgl.h"
 
-/**
- * @file ui_tool_chip.h
- * @brief One tool's card in the filament panel's tool row.
- *
- * A chip answers, for a single tool, the three things the filament panel is
- * about: which tool this is, what material is mounted on it, and how much of
- * that spool is left. Tapping one selects it — heat, preheat and every filament
- * verb on the panel act on the selected tool.
- *
- * ```
- *  +===========================+   border = amber while this tool's heater has a
- *  | * T0              PETG    |   target; thicker when it is the selected tool
- *  | [========-----]     480g  |   dot = material colour, filled when loaded
- *  +===========================+   bar = spool remaining
- * ```
- *
- * The border answers "which heads is the printer holding hot", from the target
- * rather than the current temperature — a toolchanger can hold several at
- * temperature at once, and the single nozzle reading on the left only ever
- * speaks for the active tool. It rides the border rather than another dot
- * because the chip already spends its dot on "which filament is loaded".
- *
- * A row of these replaces both the AMS pill row and the tool dropdown the panel
- * used to carry, which were two controls for one choice. Past four tools the
- * chips compress rather than scroll — the gram figure is what gives way, so an
- * eight-tool machine still shows every spool at a glance.
- *
- * The chip is drawn in C++ rather than composed in XML because its material dot
- * and spool bar take an arbitrary per-tool colour, which no `bind_style` pair
- * can express, and because the compact/wide choice is made from the chip's own
- * measured width.
- *
- * XML usage — `index` is the tool index the chip renders:
- * @code{.xml}
- * <lv_obj name="tool_row" flex_flow="row">
- *   <repeat count="tool_count">
- *     <tool_chip index="$i" flex_grow="1"/>
- *   </repeat>
- * </lv_obj>
- * @endcode
- *
- * Selection is published on the `filament_selected_tool` int subject, which the
- * panel owns; the chip both writes it on click and highlights from it.
- */
-
-/// Name of the int subject carrying the selected tool index (-1 = none).
-#define UI_TOOL_CHIP_SELECTED_SUBJECT "filament_selected_tool"
-
-/// Tool count past which chips drop the gram figure to stay legible.
-#define UI_TOOL_CHIP_COMPACT_ABOVE 4
-
-/**
- * @brief Register `<tool_chip>` with the XML engine.
- *
- * Call once during application startup, before any XML referencing it is parsed.
- */
+/// Per-tool heater card. Uses heater_summary_card.xml for appearance and
+/// instance-owned subjects for its live temperature/target. Clicking anywhere
+/// opens that tool's preheat dialog; no selection or physical change occurs.
+/// XML: <tool_chip index="$i"/> inside a tool_count repeat.
 void ui_tool_chip_register_widget();
-
-/**
- * @brief Tell chips how long UI_TOOL_CHIP_SELECTED_SUBJECT lives.
- *
- * The subject is resolved by name, so the chip cannot know which object
- * published it - and that object (FilamentPanel) frees it in its destructor
- * without deleting the chips, which belong to the screen. The publisher calls
- * this with its own token in init_subjects() and again, with a fresh one, once
- * the subject is gone; without it a chip's LV_EVENT_DELETE would call
- * lv_observer_remove() on freed memory (prestonbrown/helixscreen#705).
- *
- * A chip built while no lifetime is set simply does not observe the selection.
- */
-void ui_tool_chip_set_selection_lifetime(SubjectLifetime lifetime);
-
-/**
- * @brief True when @p obj is a tool_chip.
- */
 bool ui_tool_chip_is_valid(lv_obj_t* obj);
-
-/**
- * @brief Tool index this chip renders, or -1 if @p obj is not a chip.
- */
 int ui_tool_chip_get_index(lv_obj_t* obj);
