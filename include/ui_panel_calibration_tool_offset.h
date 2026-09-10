@@ -132,7 +132,7 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
         return "Tool Offset Calibration";
     }
     void on_activate() override;
-    void on_deactivate() override;
+    void on_deactivating(DeactivateReason reason) override;
     void cleanup() override;
 
     /// Push the overlay onto the navigation stack (create() must have run)

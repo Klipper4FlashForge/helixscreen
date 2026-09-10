@@ -283,7 +283,7 @@ void ToolOffsetCalibrationPanel::show_error(int step, const std::string& message
     helix::ui::modal_alert(title.c_str(), body.c_str(), ModalSeverity::Error, lv_tr("Close"));
 }
 
-void ToolOffsetCalibrationPanel::on_deactivate() {
+void ToolOffsetCalibrationPanel::on_deactivating(DeactivateReason) {
     // Backing out mid-calibration: the macro keeps running the printer
     // otherwise (it blocks the gcode queue) — same policy as the wizard step
     // and the PID panel.
@@ -293,7 +293,6 @@ void ToolOffsetCalibrationPanel::on_deactivate() {
     }
     elapsed_.cancel();
     unsubscribe_console();
-    OverlayBase::on_deactivate();
 }
 
 void ToolOffsetCalibrationPanel::cleanup() {
@@ -399,7 +398,7 @@ void ToolOffsetCalibrationPanel::on_cancel_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[ToolOffsetCal] on_cancel_clicked");
     // Between tools this is pure UI state, so Stop is clean: finish the tool
     // currently probing, then stop issuing commands. (Backing out of the
-    // overlay mid-probe still goes through the M112 abort in on_deactivate.)
+    // overlay mid-probe still goes through the M112 abort in on_deactivating.)
     get_global_tool_offset_cal_panel().request_stop();
     LVGL_SAFE_EVENT_CB_END();
 }

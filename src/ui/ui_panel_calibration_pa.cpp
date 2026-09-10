@@ -214,7 +214,7 @@ void PACalibrationPanel::on_activate() {
     spdlog::debug("[{}] on_activate (tool={}, temp={})", get_name(), selected_tool_, target_temp_);
 }
 
-void PACalibrationPanel::on_deactivate() {
+void PACalibrationPanel::on_deactivating(DeactivateReason) {
     active_tool_observer_.reset();
     // Leaving mid-run stops it: the machine is extruding, and a run nobody is
     // watching has no way to report anything.
@@ -222,7 +222,6 @@ void PACalibrationPanel::on_deactivate() {
         stop_run(/*user_requested=*/false);
     }
     stop_heat_tracking();
-    OverlayBase::on_deactivate();
 }
 
 void PACalibrationPanel::cleanup() {
