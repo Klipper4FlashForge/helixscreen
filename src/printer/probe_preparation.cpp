@@ -28,7 +28,8 @@ std::string to_upper(std::string s) {
  * because a rule firing on the wrong printer sends g-code to real hardware.
  */
 bool predicate_holds(const nlohmann::json& pred,
-                     const std::unordered_set<std::string>& macros_upper) {
+                     const std::unordered_set<std::string>& macros_upper,
+                     const std::vector<std::string>& objects) {
     if (!pred.is_object()) {
         return false;
     }
@@ -40,6 +41,14 @@ bool predicate_holds(const nlohmann::json& pred,
 
     if (type == "macro_match") {
         return macros_upper.count(to_upper(pattern)) > 0;
+    }
+
+    // Same semantics as the detection heuristic: substring, '^'/'$' anchors.
+    // Commands registered by register_mux_command (e.g. a load cell's tare)
+    // never appear as gcode_macro objects, so macro_match cannot see them;
+    // the module object that publishes them can.
+    if (type == "object_exists") {
+        return helix::has_pattern(objects, pattern);
     }
 
     spdlog::debug("[ProbePrep] Unknown predicate type '{}' — rule cannot match", type);
@@ -114,7 +123,8 @@ const char* operation_key(Operation op) {
 }
 
 Preparation resolve_from_rules(const nlohmann::json& rules,
-                               const std::unordered_set<std::string>& macros_upper, Operation op,
+                               const std::unordered_set<std::string>& macros_upper,
+                               const std::vector<std::string>& objects, Operation op,
                                const std::string& resolved_macro) {
     if (!rules.is_array()) {
         return {};
@@ -139,7 +149,7 @@ Preparation resolve_from_rules(const nlohmann::json& rules,
             continue;
         }
         const bool all_hold = std::all_of(when->begin(), when->end(), [&](const nlohmann::json& p) {
-            return predicate_holds(p, macros_upper);
+            return predicate_holds(p, macros_upper, objects);
         });
         if (!all_hold) {
             continue;
@@ -176,7 +186,8 @@ Preparation resolve_from_rules(const nlohmann::json& rules,
 }
 
 Preparation resolve(const PrinterDiscovery& hw, Operation op, const std::string& resolved_macro) {
-    return resolve_from_rules(database_rules(), hw.get_macros(), op, resolved_macro);
+    return resolve_from_rules(database_rules(), hw.get_macros(), hw.printer_objects(), op,
+                              resolved_macro);
 }
 
 uint32_t append_preparation(std::string& script, Operation op, const std::string& resolved_macro) {

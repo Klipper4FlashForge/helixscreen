@@ -14,10 +14,10 @@
  */
 
 #include "ams_types.h"
-#include "chamber_heater_backend.h"   // For chamber::match — heater candidate scoring
+#include "chamber_heater_backend.h"  // For chamber::match — heater candidate scoring
 #include "klipper_extruder_naming.h" // is_extruder_name: one hot end per numbered extruder
-#include "macro_patterns.h"           // Shared macro-name tables (nozzle clean, ...)
-#include "printer_detector.h"       // For BuildVolume struct
+#include "macro_patterns.h"          // Shared macro-name tables (nozzle clean, ...)
+#include "printer_detector.h"        // For BuildVolume struct
 
 #include <spdlog/spdlog.h>
 
@@ -631,9 +631,10 @@ class PrinterDiscovery {
         //
         // Never overwrites real tool objects - a klipper-toolchanger name is
         // arbitrary, and ASSIGN_TOOL can remap it.
-        const auto extruder_heater_count = std::count_if(
-            heaters_.begin(), heaters_.end(),
-            [](const std::string& heater) { return helix::is_extruder_name(heater); });
+        const auto extruder_heater_count =
+            std::count_if(heaters_.begin(), heaters_.end(), [](const std::string& heater) {
+                return helix::is_extruder_name(heater);
+            });
         if (tool_names_.empty() && extruder_heater_count > 1) {
             for (int i = 0; i < extruder_heater_count; ++i) {
                 tool_names_.push_back("T" + std::to_string(i));
@@ -1777,5 +1778,15 @@ namespace helix {
  */
 void init_subsystems_from_hardware(const PrinterDiscovery& hardware, IMoonrakerAPI* api,
                                    IMoonrakerClient* client);
+
+/**
+ * @brief Case-insensitive search of Klipper object names
+ *
+ * A leading '^' pins the pattern to the start of a name and a trailing '$'
+ * to its end, so "^box$" names exactly the object "box" and not a
+ * "gcode_macro BOX_UNLOAD" that contains it. Shared by detection heuristics
+ * (object_exists) and probe-preparation rules.
+ */
+[[nodiscard]] bool has_pattern(const std::vector<std::string>& objects, const std::string& pattern);
 
 } // namespace helix
