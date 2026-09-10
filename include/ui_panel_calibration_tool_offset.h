@@ -155,6 +155,9 @@ class ToolOffsetCalibrationPanel : public OverlayBase {
     /// succeeded. on_activate() shows it, so a failure survives leaving the
     /// panel and coming back.
     std::string last_error_;
+    /// True between create() and on_ui_destroyed(): the row pools back a
+    /// <repeat> that exists only while the widgets do.
+    bool ui_alive_ = false;
 
     char status_buffer_[160] = "";
     char hint_buffer_[320] = "";

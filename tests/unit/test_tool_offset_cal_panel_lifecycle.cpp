@@ -89,8 +89,6 @@ TEST_CASE_METHOD(ToolCalPanelFixture, "tool offset panel: a run finishes after B
     helix::ui::ToolOffsetCalibrationPanel panel;
     panel.init_subjects();
     panel.on_activate();
-    // One row per tool the printer has - no fixed cap, the pools grew to fit.
-    REQUIRE(lv_subject_get_int(panel.get_tool_count_subject()) == 4);
 
     panel.begin_run();
     REQUIRE(panel.is_calibration_active());
@@ -166,6 +164,46 @@ TEST_CASE_METHOD(ToolCalPanelFixture,
     CHECK(lv_subject_get_int(panel.get_active_subject()) == 0);
     CHECK(std::string(lv_subject_get_string(panel.get_status_subject())) ==
           "Calibration complete - save to keep the offsets");
+
+    panel.on_deactivate(DeactivateReason::NavigateAway);
+    panel.cleanup();
+}
+
+TEST_CASE_METHOD(ToolCalPanelFixture,
+                 "tool offset panel: a printer busy again by the idle edge keeps waiting",
+                 "[ui_integration][toolchanger][tool_offset_cal]") {
+    // observe_int_sync defers through the UpdateQueue, so the handler runs with
+    // the value the notification carried. A printer busy again by then is still
+    // working through the macro, and completing the run would re-enable Save
+    // under a queue it still blocks.
+    helix::PrinterState& ps = get_printer_state();
+    helix::ui::ToolOffsetCalibrationPanel panel;
+    panel.init_subjects();
+    panel.on_activate();
+    panel.begin_run();
+    REQUIRE(panel.is_calibration_active());
+
+    ps.update_from_status(json{{"idle_timeout", json{{"state", "Printing"}}}});
+    helix::ui::UpdateQueue::instance().drain();
+    panel.on_run_rpc_error(MoonrakerError::timeout("printer.gcode.script", 1));
+    helix::ui::UpdateQueue::instance().drain();
+    REQUIRE(panel.is_calibration_active());
+
+    // Idle then busy again, both before the deferred handler runs.
+    ps.update_from_status(json{{"idle_timeout", json{{"state", "Ready"}}}});
+    ps.update_from_status(json{{"idle_timeout", json{{"state", "Printing"}}}});
+    for (int pass = 0; pass < 4; ++pass) {
+        helix::ui::UpdateQueue::instance().drain();
+    }
+    CHECK(panel.is_calibration_active());
+    CHECK(lv_subject_get_int(panel.get_active_subject()) == 1);
+
+    // The next real idle edge still finishes it.
+    ps.update_from_status(json{{"idle_timeout", json{{"state", "Ready"}}}});
+    for (int pass = 0; pass < 4; ++pass) {
+        helix::ui::UpdateQueue::instance().drain();
+    }
+    CHECK_FALSE(panel.is_calibration_active());
 
     panel.on_deactivate(DeactivateReason::NavigateAway);
     panel.cleanup();

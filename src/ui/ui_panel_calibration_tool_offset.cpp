@@ -104,6 +104,7 @@ lv_obj_t* ToolOffsetCalibrationPanel::create(lv_obj_t* parent) {
     }
     // Build the rows now: a hot-reload rebuild while hidden does not re-run
     // on_activate(), and this is what the macros panel does in its create().
+    ui_alive_ = true;
     refresh_rows();
     return overlay_root_;
 }
@@ -111,6 +112,7 @@ lv_obj_t* ToolOffsetCalibrationPanel::create(lv_obj_t* parent) {
 void ToolOffsetCalibrationPanel::on_ui_destroyed() {
     // The rows are gone; reclaim their name-registered subjects while LVGL is
     // still live, as the macros panel does for its list.
+    ui_alive_ = false;
     row_x_.reclaim();
     row_y_.reclaim();
     row_z_.reclaim();
@@ -177,6 +179,14 @@ void ToolOffsetCalibrationPanel::cleanup() {
 
 void ToolOffsetCalibrationPanel::refresh_rows() {
     if (!subjects_initialized_) {
+        return;
+    }
+    if (!ui_alive_) {
+        // The panel object outlives its widgets, so an observer or a
+        // reactivation can land here with the pools reclaimed. Re-growing them
+        // for a <repeat> that no longer exists would register subjects nothing
+        // reads and leave a stale count for the next build.
+        spdlog::debug("[ToolOffsetCal] refresh_rows() skipped - overlay UI not alive");
         return;
     }
     const size_t count = helix::ToolState::instance().tools().size();
@@ -333,6 +343,14 @@ void ToolOffsetCalibrationPanel::begin_idle_wait() {
         ps.get_idle_timeout_printing_subject(), this,
         [](ToolOffsetCalibrationPanel* self, int busy) {
             if (!self->idle_wait_active_ || busy == 1) {
+                return;
+            }
+            // observe_int_sync defers through the UpdateQueue, so `busy` is the
+            // value at notification time. A printer busy again by the time this
+            // runs is still working through the macro, and completing the run
+            // here would re-enable Save under a queue it still blocks. Read the
+            // subject now, as the backstop does when it fires.
+            if (lv_subject_get_int(get_printer_state().get_idle_timeout_printing_subject()) == 1) {
                 return;
             }
             self->finish_idle_wait();
