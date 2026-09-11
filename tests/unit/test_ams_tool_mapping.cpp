@@ -190,20 +190,16 @@ TEST_CASE("Mock backend tool mapping - tool changer mode",
     backend.set_tool_changer_mode(true);
     REQUIRE(backend.start());
 
-    SECTION("tool changer reports not supported") {
+    SECTION("tool changer mirrors production ASSIGN_TOOL capability") {
         auto caps = backend.get_tool_mapping_capabilities();
 
-        CHECK(caps.supported == false);
-        CHECK(caps.editable == false);
-        CHECK(caps.description.empty());
+        CHECK(caps.supported);
+        CHECK(caps.editable);
+        CHECK_FALSE(caps.description.empty());
     }
 
-    SECTION("get_tool_mapping returns empty for tool changer") {
-        // Tool changers have fixed 1:1 mapping - tools ARE slots
-        // Implementation returns system_info_.tool_to_slot_map which is still populated,
-        // but the capabilities indicate mapping is not supported/editable
-        auto caps = backend.get_tool_mapping_capabilities();
-        CHECK_FALSE(caps.supported);
+    SECTION("tool changer publishes its identity mapping") {
+        CHECK(backend.get_tool_mapping() == std::vector<int>{0, 1, 2, 3});
     }
 
     backend.stop();

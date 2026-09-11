@@ -3313,9 +3313,12 @@ AmsError AmsBackendMock::apply_endless_spool_backup(int slot_index, int backup_s
 helix::printer::ToolMappingCapabilities AmsBackendMock::get_tool_mapping_capabilities() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Tool changers don't support tool mapping (tools ARE slots)
+    // Mirror AmsBackendToolChanger: the physical tools are slots, but
+    // ASSIGN_TOOL-style logical remapping is still a supported capability.
+    // AmsState also uses this capability to publish the backend's mounted tool
+    // into ToolState, which keeps simulator UI selection in sync.
     if (tool_changer_mode_) {
-        return {false, false, ""};
+        return {true, true, "Mock tool reassignment"};
     }
 
     // Snapmaker U1: mapping is SUPPORTED (1:1 lanes) but NOT editable from the
@@ -3346,9 +3349,10 @@ bool AmsBackendMock::requires_preprint_send() const {
 std::vector<int> AmsBackendMock::get_tool_mapping() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Tool changers don't support tool mapping (tools ARE slots)
+    // Identity is the toolchanger default. Returning the real map matches the
+    // production backend and lets AmsState build its ToolTopology.
     if (tool_changer_mode_) {
-        return {};
+        return slots_.build_system_info().tool_to_slot_map;
     }
 
     return slots_.build_system_info().tool_to_slot_map;

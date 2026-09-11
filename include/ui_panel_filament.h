@@ -471,6 +471,7 @@ class FilamentPanel : public PanelBase {
     FilamentControlOverlay tool_dialog_{"filament_tool_overlay"};
     static void on_tool_dialog_open(lv_event_t* e);
     static void on_tool_dialog_close(lv_event_t* e);
+    static void on_tool_pick(lv_event_t* e);
     helix::HeaterType sheet_type_ = helix::HeaterType::Nozzle;
     std::string sheet_heater_;
     int sheet_value_ = 0;

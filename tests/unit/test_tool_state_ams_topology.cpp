@@ -76,6 +76,20 @@ TEST_CASE_METHOD(ToolStateFixture,
     REQUIRE(ToolState::instance().tools()[0].name == "T0");
 }
 
+TEST_CASE_METHOD(ToolStateFixture, "toolchanger topology preserves an empty carriage",
+                 "[tool-state][ams][ams-topology][toolchanger][dock]") {
+    ToolTopology topo;
+    topo.tool_count = 4;
+    topo.active_tool = -1;
+    topo.allows_empty_carriage = true;
+    topo.tool_to_slot = {0, 1, 2, 3};
+
+    ToolState::instance().set_ams_topology(topo);
+
+    CHECK(ToolState::instance().active_tool_index() == -1);
+    CHECK(lv_subject_get_int(ToolState::instance().get_active_tool_subject()) == -1);
+}
+
 TEST_CASE_METHOD(ToolStateFixture, "[ToolState][ams-topology] clear_ams_topology releases override",
                  "[tool-state][ams][ams-topology]") {
     ToolTopology topo;

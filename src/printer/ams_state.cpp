@@ -83,6 +83,7 @@ std::optional<helix::ToolTopology> build_ams_topology(AmsBackend* backend, int b
     topo.tool_count = static_cast<int>(mapping.size());
     topo.tool_to_slot = std::move(mapping);
     topo.active_tool = backend->get_current_tool();
+    topo.allows_empty_carriage = is_tool_changer(backend->get_type());
     topo.tool_name_prefix = "T";
     topo.backend_index = backend_index;
     return topo;
