@@ -146,6 +146,22 @@ jobs:
         file build/creator5/bin/helix-screen | grep -q 'statically linked' \
           || { echo "::error::not statically linked"; exit 1; }
 
+    - name: Generate pre-rendered images
+      run: make venv-setup && make gen-all-images
+
+    - name: Package Creator 5 release
+      run: make release-creator5
+
+    - name: Upload the Creator 5 release package
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-creator5-${{ github.sha }}
+        path: |
+          releases/helixscreen-creator5-*.tar.gz
+          releases/helixscreen-creator5.zip
+        retention-days: 7
+        if-no-files-found: error
+
     - name: Upload the Creator 5 binary
       uses: actions/upload-artifact@v7
       with:
