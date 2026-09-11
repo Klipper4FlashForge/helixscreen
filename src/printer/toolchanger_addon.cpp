@@ -321,6 +321,12 @@ ToolCommands resolve_tool_commands(const PrinterDiscovery& hw) {
     if (hw.has_tool_changer()) {
         return {};
     }
+    // Some changer extras expose their swap as T<n> and advertise only a
+    // dedicated park macro. Treat that macro as the capability signal so the
+    // backend can dock the carriage without knowing the printer vendor.
+    if (hw.has_macro("TOOLCHANGE_PARK")) {
+        return ToolCommands{true, "TOOLCHANGE_PARK", "T", "TOOLCHANGE_PARK"};
+    }
     // Without it there is no SELECT_TOOL, and T<n> is what every multi-tool
     // machine answers to instead: Klipper maps it to ACTIVATE_EXTRUDER, and a
     // changer extra registers its own T<n> over that. So the table only has to

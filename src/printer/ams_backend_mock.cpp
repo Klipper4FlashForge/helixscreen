@@ -677,16 +677,25 @@ AmsError AmsBackendMock::unload_filament(int /*slot_index*/) {
             return AmsErrorHelper::busy(ams_action_to_string(system_info_.action));
         }
 
-        if (!system_info_.filament_loaded) {
+        if (tool_changer_mode_ && system_info_.current_tool < 0) {
+            return AmsErrorHelper::not_loaded();
+        }
+
+        if (!tool_changer_mode_ && !system_info_.filament_loaded) {
             return AmsError(AmsResult::WRONG_STATE, "No filament loaded", "No filament to unload",
                             "Load filament first");
         }
 
         // Start unloading
         system_info_.action = AmsAction::UNLOADING;
-        system_info_.operation_detail = "Unloading filament";
+        system_info_.operation_detail =
+            tool_changer_mode_ ? "Docking tool" : "Unloading filament";
         filament_segment_ = PathSegment::NOZZLE; // Start at nozzle (working backwards)
-        spdlog::info("[AmsBackendMock] Unloading filament");
+        if (tool_changer_mode_) {
+            spdlog::info("[AmsBackendMock] Executing tool dock command: TOOLCHANGE_PARK");
+        } else {
+            spdlog::info("[AmsBackendMock] Unloading filament");
+        }
     }
 
     emit_event(EVENT_STATE_CHANGED);
@@ -3121,6 +3130,9 @@ void AmsBackendMock::finalize_unload_state() {
     }
     system_info_.filament_loaded = false;
     system_info_.current_slot = -1;
+    if (tool_changer_mode_) {
+        system_info_.current_tool = -1;
+    }
     filament_segment_ = PathSegment::NONE;
     system_info_.action = AmsAction::IDLE;
     system_info_.operation_detail.clear();

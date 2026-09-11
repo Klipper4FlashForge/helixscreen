@@ -323,6 +323,7 @@ TEST_CASE("unload_filament works in mock toolchanger mode",
         CHECK(backend.get_current_action() == AmsAction::IDLE);
         CHECK_FALSE(backend.is_filament_loaded());
         CHECK(backend.get_current_slot() == -1);
+        CHECK(backend.get_current_tool() == -1);
     }
 
     SECTION("unload returns error when nothing is loaded") {

@@ -374,6 +374,18 @@ TEST_CASE("A printer with no changer module at all swaps with plain T<n>",
     CHECK(cmds.unselect.empty());
 }
 
+TEST_CASE("A changer with a park macro uses it to dock",
+          "[toolchanger][toolsource][commands]") {
+    PrinterDiscovery hw;
+    hw.parse_objects(json::array({"ff_toolchange", "gcode_macro T0", "gcode_macro T1",
+                                  "gcode_macro TOOLCHANGE_PARK", "extruder", "extruder1"}));
+
+    auto cmds = toolchanger_addon::resolve_tool_commands(hw);
+    REQUIRE(cmds.present);
+    CHECK(cmds.select_prefix == "T");
+    CHECK(cmds.unselect == "TOOLCHANGE_PARK");
+}
+
 // ============================================================================
 // Which -2 readings are faults
 // ============================================================================
