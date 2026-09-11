@@ -47,7 +47,8 @@
               <ui_button name="tool_gear_${i}"
                          width="#button_height_lg" height="100%" variant="outline"
                          style_bg_color="#card_bg">
-                <bind_state_if_not_eq subject="active_tool" state="disabled" ref_value="$i"/>
+                <bind_state_if cond="active_tool ne ${i} or print_lifecycle eq 1 or print_lifecycle eq 2"
+                               state="disabled"/>
                 <event_cb trigger="clicked" callback="on_filament_tool_dialog_open"/>
                 <icon name="tool_gear_${i}_icon" src="filament" size="lg" variant="text" align="center"
                       ignore_layout="true" style_transform_scale_x="213" style_transform_scale_y="213"
@@ -71,14 +72,17 @@
                                width="100%" height="0" heater="bed" title="Bed" accent="#temp_gradient_warm"
                                current_subject="filament_bed_current" target_subject="filament_bed_target"
                                callback="on_filament_bed_target_tap" flex_grow="1" card_flow="row" stripe_width="2"
-                               stripe_height="100%" body_width="0" body_height="100%"/>
+                               stripe_height="100%" body_width="0" body_height="100%">
+            <bind_state_if cond="print_lifecycle eq 1 or print_lifecycle eq 2" state="disabled"/>
+          </heater_summary_card>
           <heater_summary_card name="chamber_section"
                                width="100%" height="0" heater="chamber" title="Chamber" accent="#temp_gradient_cold"
                                current_subject="filament_chamber_current" target_subject="filament_chamber_target"
                                callback="on_filament_chamber_target_tap" flex_grow="1" card_flow="row" stripe_width="2"
                                stripe_height="100%" body_width="0" body_height="100%">
             <bind_flag_if_eq subject="printer_has_chamber" flag="hidden" ref_value="0"/>
-            <bind_state_if_eq subject="printer_has_chamber_heater" state="disabled" ref_value="0"/>
+            <bind_state_if cond="printer_has_chamber_heater eq 0 or print_lifecycle eq 1 or print_lifecycle eq 2"
+                           state="disabled"/>
           </heater_summary_card>
         </lv_obj>
         <ui_card name="spool_card"
