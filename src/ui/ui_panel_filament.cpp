@@ -11,6 +11,7 @@
 #include "ui_icon.h"
 #include "ui_manual_pull_prompt.h"
 #include "ui_materials_overlay.h"
+#include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_ams.h"
@@ -72,6 +73,18 @@ bool validate_reassignment(int slot, const std::string& material) {
     }
     return filament::find_material(material).has_value();
 }
+
+bool reassign_preset_if_valid(int slot, const std::string& material) {
+    if (!validate_reassignment(slot, material)) {
+        return false;
+    }
+    helix::MaterialSettingsManager::instance().set_preset_material(slot, material);
+    return true;
+}
+
+void reset_to_defaults() {
+    helix::MaterialSettingsManager::instance().reset_preset_materials();
+}
 } // namespace helix::filament_presets
 
 using helix::ui::observe_int_async;
@@ -86,6 +99,46 @@ using helix::ui::temperature::get_heating_state_color;
 using helix::ui::filament_load_fallback_gcode;
 using helix::ui::filament_unload_fallback_gcode;
 using helix::ui::get_filament_param_modal;
+
+namespace helix::ui {
+
+FilamentPanelOutcome panel_load_outcome(const FilamentOpPlan& plan) {
+    FilamentPanelOutcome out;
+    out.tier = plan.tier;
+    if (plan.tier == FilamentTier::AmsBackend) {
+        out.guard_armed = true;
+        out.call = plan.ams_call;
+        out.arg = plan.ams_arg;
+    } else if (plan.tier == FilamentTier::Refused) {
+        if (plan.refusal == FilamentRefusal::AlreadyMounted) {
+            out.toast = lv_tr("That tool is already loaded");
+        } else if (plan.refusal == FilamentRefusal::BypassLoaded) {
+            out.toast = lv_tr("Remove the bypass spool from the toolhead first");
+        } else {
+            out.toast = lv_tr("Select a filament slot to load");
+            out.navigate_to_ams = true;
+        }
+    }
+    return out;
+}
+
+FilamentPanelOutcome panel_unload_outcome(const FilamentOpPlan& plan, bool backend_present,
+                                          int target_slot) {
+    FilamentPanelOutcome out;
+    out.tier = plan.tier;
+    out.arm_manual_pull = plan.tier != FilamentTier::Refused &&
+                          unload_needs_manual_pull(backend_present, target_slot);
+    if (plan.tier == FilamentTier::AmsBackend) {
+        out.guard_armed = true;
+        out.call = plan.ams_call;
+        out.arg = plan.ams_arg;
+    } else if (plan.tier == FilamentTier::Refused) {
+        out.toast = lv_tr("No filament loaded to unload");
+    }
+    return out;
+}
+
+} // namespace helix::ui
 
 // ============================================================================
 // CONSTRUCTOR
@@ -640,8 +693,8 @@ void FilamentPanel::update_status_icon(const char* icon_name, const char* varian
         return;
 
     // Update icon imperatively using ui_icon API
-    ui_icon_set_source(status_icon_, icon_name);
-    ui_icon_set_variant(status_icon_, variant);
+    helix::ui::icon::set_source(status_icon_, icon_name);
+    helix::ui::icon::set_variant(status_icon_, variant);
 }
 
 void FilamentPanel::update_status() {
@@ -1117,9 +1170,10 @@ void FilamentPanel::show_temperature_sheet(helix::HeaterType type, int tool, boo
     if (!controller)
         return;
     sheet_type_ = type;
-    sheet_max_ = type == helix::HeaterType::Nozzle ? nozzle_max_temp_
-                 : type == helix::HeaterType::Bed  ? bed_max_temp_
-                                                   : chamber_max_temp_;
+    const int fallback_max = type == helix::HeaterType::Nozzle ? nozzle_max_temp_
+                             : type == helix::HeaterType::Bed  ? bed_max_temp_
+                                                               : chamber_max_temp_;
+    sheet_max_ = static_cast<int>(keypad_max_for(type, fallback_max));
     std::string title;
     if (type == helix::HeaterType::Nozzle) {
         const auto& tools = helix::ToolState::instance().tools();
@@ -2936,6 +2990,17 @@ void FilamentPanel::set_limits(int min_temp, int max_temp, int min_extrude_temp)
                   max_temp);
 }
 
+float FilamentPanel::keypad_max_for(helix::HeaterType type, int fallback_deg) {
+    if (auto* controller = get_temperature_controller()) {
+        controller->ensure_limits(type);
+        const float configured = controller->keypad_range(type).max;
+        if (configured > 0.0f) {
+            return configured;
+        }
+    }
+    return static_cast<float>(fallback_deg);
+}
+
 // ============================================================================
 // FILAMENT SENSOR WARNING HELPERS
 // ============================================================================
@@ -3263,12 +3328,20 @@ void FilamentPanel::show_load_warning() {
         load_warning_dialog_ = nullptr;
     }
 
-    load_warning_dialog_ = helix::ui::modal_show_confirmation(
+    helix::ui::ConfirmOptions options;
+    options.on_cancel = [this] { load_warning_dialog_ = nullptr; };
+    options.on_dismiss = [this] { load_warning_dialog_ = nullptr; };
+    options.owner_token = lifetime_.token();
+    load_warning_dialog_ = helix::ui::modal_confirm(
         lv_tr("Filament Detected"),
         lv_tr("The toolhead sensor indicates filament is already loaded. "
               "Proceed with load anyway?"),
-        ModalSeverity::Warning, lv_tr("Proceed"), on_load_warning_proceed, on_load_warning_cancel,
-        this);
+        ModalSeverity::Warning, lv_tr("Proceed"),
+        [this] {
+            load_warning_dialog_ = nullptr;
+            execute_load();
+        },
+        options);
 
     if (!load_warning_dialog_) {
         spdlog::error("[{}] Failed to create load warning dialog", get_name());
@@ -3285,12 +3358,20 @@ void FilamentPanel::show_unload_warning() {
         unload_warning_dialog_ = nullptr;
     }
 
-    unload_warning_dialog_ = helix::ui::modal_show_confirmation(
+    helix::ui::ConfirmOptions options;
+    options.on_cancel = [this] { unload_warning_dialog_ = nullptr; };
+    options.on_dismiss = [this] { unload_warning_dialog_ = nullptr; };
+    options.owner_token = lifetime_.token();
+    unload_warning_dialog_ = helix::ui::modal_confirm(
         lv_tr("No Filament Detected"),
         lv_tr("The toolhead sensor indicates no filament is present. "
               "Proceed with unload anyway?"),
-        ModalSeverity::Warning, lv_tr("Proceed"), on_unload_warning_proceed,
-        on_unload_warning_cancel, this);
+        ModalSeverity::Warning, lv_tr("Proceed"),
+        [this] {
+            unload_warning_dialog_ = nullptr;
+            execute_unload();
+        },
+        options);
 
     if (!unload_warning_dialog_) {
         spdlog::error("[{}] Failed to create unload warning dialog", get_name());

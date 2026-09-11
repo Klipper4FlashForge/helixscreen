@@ -3,7 +3,6 @@
 #include "ui_tool_change_action.h"
 
 #include "ui_error_reporting.h"
-#include "ui_event_safety.h"
 #include "ui_modal.h"
 
 #include "ams_state.h"
@@ -73,19 +72,12 @@ void request_tool_change(PrinterState& printer_state, int tool_index) {
     }
 
     if (printer_state.get_print_lifecycle() == PrintState::Paused) {
-        modal_show_confirmation(
+        modal_confirm(
             lv_tr("Change Tool While Paused"),
             lv_tr("The print is paused. Changing tools now moves the toolhead and swaps the "
                   "filament at the nozzle. Resume the print once the change finishes."),
-            ::ModalSeverity::Warning, lv_tr("Change Tool"),
-            [](lv_event_t* e) {
-                LVGL_SAFE_EVENT_CB_BEGIN("[Tool Change] confirm_tool_change");
-                const int idx =
-                    static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(e)));
-                dispatch_tool_change(idx);
-                LVGL_SAFE_EVENT_CB_END();
-            },
-            nullptr, reinterpret_cast<void*>(static_cast<intptr_t>(tool_index)));
+            ModalSeverity::Warning, lv_tr("Change Tool"),
+            [tool_index] { dispatch_tool_change(tool_index); });
         return;
     }
 

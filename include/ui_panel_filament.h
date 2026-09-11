@@ -11,6 +11,8 @@
 
 #include "active_material_provider.h"
 #include "config.h"
+#include "filament_op_dispatch.h"
+#include "filament_op_execute.h"
 #include "macro_param_modal.h"
 #include "operation_timeout_guard.h"
 #include "subject_managed_panel.h"
@@ -27,10 +29,26 @@ class TemperatureService;
 namespace helix::filament_presets {
 // Pure validation for a preset reassignment: slot in [0,4), non-empty name, known material.
 bool validate_reassignment(int slot, const std::string& material);
+bool reassign_preset_if_valid(int slot, const std::string& material);
+void reset_to_defaults();
 } // namespace helix::filament_presets
 
 namespace helix::ui {
 struct FilamentPanelTestAccess; // test-only friend (tests/test_helpers/)
+
+struct FilamentPanelOutcome {
+    FilamentTier tier = FilamentTier::Refused;
+    AmsCall call = AmsCall::None;
+    int arg = -1;
+    bool guard_armed = false;
+    bool navigate_to_ams = false;
+    bool arm_manual_pull = false;
+    std::string toast;
+};
+
+[[nodiscard]] FilamentPanelOutcome panel_load_outcome(const FilamentOpPlan& plan);
+[[nodiscard]] FilamentPanelOutcome panel_unload_outcome(const FilamentOpPlan& plan,
+                                                        bool backend_present, int target_slot);
 } // namespace helix::ui
 
 /**
@@ -192,6 +210,9 @@ class FilamentPanel : public PanelBase {
      * @param min_extrude_temp Minimum extrusion temperature (default: 170°C)
      */
     void set_limits(int min_temp, int max_temp, int min_extrude_temp = 170);
+
+    /// Return the printer-configured keypad ceiling for a heater when available.
+    float keypad_max_for(helix::HeaterType type, int fallback_deg);
 
     /**
      * @brief Set TemperatureService for combined temperature graph
