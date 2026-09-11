@@ -86,13 +86,24 @@ std::vector<float> HelixSparkline::temperature_history(const std::string& heater
 
 lv_obj_t* HelixSparkline::create_heater(lv_obj_t* parent, bool chamber) {
     auto* obj = create(parent, [chamber]() {
-        if (!chamber)
-            return temperature_history("heater_bed");
+        auto& printer_state = get_printer_state();
+        const auto& state = printer_state.temperature_state();
         // Resolve on each draw: discovery may finish after the panel is built.
-        const auto& state = get_printer_state().temperature_state();
-        return temperature_history(state.chamber_heater_name().empty()
-                                       ? state.chamber_sensor_name()
-                                       : state.chamber_heater_name());
+        const std::string heater = chamber ? (state.chamber_heater_name().empty()
+                                                   ? state.chamber_sensor_name()
+                                                   : state.chamber_heater_name())
+                                           : "heater_bed";
+        auto history = temperature_history(heater);
+        if (!history.empty())
+            return history;
+
+        // A newly discovered heater may not have reached its first history
+        // sampling interval yet. Seed the chart from the live subject so the
+        // card still shows a flat trace immediately after startup/reconnect.
+        SubjectLifetime lifetime;
+        lv_subject_t* current = chamber ? printer_state.get_chamber_temp_subject(lifetime)
+                                        : printer_state.get_bed_temp_subject(lifetime);
+        return std::vector<float>{lv_subject_get_int(current) / 10.0f};
     });
     auto* impl = static_cast<HelixSparkline*>(lv_obj_get_user_data(obj));
     SubjectLifetime lifetime;

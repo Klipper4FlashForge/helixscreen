@@ -20,8 +20,8 @@
         <repeat count="materials_row_count">
           <lv_obj name="materials_row_${i}"
                   width="100%" height="content" style_min_height="#material_row_min_height"
-                  style_bg_color="#card_bg" style_bg_opa="255" style_border_width="1"
-                  style_border_color="#border" style_radius="#border_radius" style_pad_all="#space_sm"
+                  style_bg_opa="0" style_border_width="1" style_border_side="bottom"
+                  style_border_color="#border" style_radius="0" style_pad_all="#space_sm"
                   style_pad_gap="#space_sm" flex_flow="row" style_flex_cross_place="center"
                   scrollable="false" clickable="false">
             <spool_canvas name="materials_spool_${i}" size="46" color="0x808080" fill_level="0.75"

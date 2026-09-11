@@ -8,6 +8,8 @@
     <prop name="stripe_height" type="string" default="2"/>
     <prop name="body_width" type="string" default="100%"/>
     <prop name="body_height" type="string" default="0"/>
+    <prop name="chart_width" type="string" default="25%"/>
+    <prop name="chart_height" type="string" default="40%"/>
     <prop name="hide_tool_readout" type="string" default="true"/>
     <prop name="hide_heater_readout" type="string" default="false"/>
     <prop name="tool_index" type="int" default="-1"/>
@@ -68,7 +70,7 @@
         </lv_obj>
       </lv_obj>
       <helix_sparkline name="${heater}_temperature_chart"
-                       width="25%" height="40%" heater="$heater" style_line_color="$accent" clickable="false"
+                       width="$chart_width" height="$chart_height" heater="$heater" style_line_color="$accent" clickable="false"
                        event_bubble="true"/>
     </lv_obj>
   </view>
