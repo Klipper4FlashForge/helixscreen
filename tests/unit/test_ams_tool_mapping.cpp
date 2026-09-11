@@ -164,6 +164,7 @@ TEST_CASE("Mock backend tool mapping - tool changer mode",
         CHECK(backend.get_remap_strategy() == AmsBackend::RemapStrategy::Native);
         CHECK(helix::printer::can_remap(backend));
         CHECK(backend.owns_tool_mapping_table());
+        CHECK(backend.get_tool_mapping() == std::vector<int>{0, 1, 2, 3});
     }
 
     backend.stop();

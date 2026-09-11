@@ -133,6 +133,7 @@ void ToolState::deinit_subjects() {
     // causes sync_from_backend() on a non-multiplexing backend to wipe tools_.
     ams_topology_active_ = false;
     ams_topology_tool_count_ = 0;
+    ams_topology_allows_empty_carriage_ = false;
     ams_topology_tool_to_slot_.clear();
     ams_topology_tool_name_prefix_ = "T";
 
@@ -282,11 +283,13 @@ void ToolState::set_ams_topology(const ToolTopology& topo) {
     }
 
     bool needs_rebuild = !ams_topology_active_ || ams_topology_tool_count_ != topo.tool_count ||
+                         ams_topology_allows_empty_carriage_ != topo.allows_empty_carriage ||
                          ams_topology_tool_to_slot_ != topo.tool_to_slot ||
                          ams_topology_tool_name_prefix_ != topo.tool_name_prefix;
 
     ams_topology_active_ = true;
     ams_topology_tool_count_ = topo.tool_count;
+    ams_topology_allows_empty_carriage_ = topo.allows_empty_carriage;
     ams_topology_tool_to_slot_ = topo.tool_to_slot;
     ams_topology_tool_name_prefix_ = topo.tool_name_prefix;
 
@@ -356,7 +359,8 @@ void ToolState::set_ams_topology(const ToolTopology& topo) {
     }
 
     int new_active = topo.active_tool;
-    if (new_active < 0 || new_active >= static_cast<int>(tools_.size())) {
+    if ((!topo.allows_empty_carriage && new_active < 0) || new_active < -1 ||
+        new_active >= static_cast<int>(tools_.size())) {
         new_active = 0; // Out-of-range falls back to T0 (matches init_tools convention)
     }
     if (new_active != active_tool_index_) {
@@ -374,6 +378,7 @@ void ToolState::clear_ams_topology() {
         return;
     ams_topology_active_ = false;
     ams_topology_tool_count_ = 0;
+    ams_topology_allows_empty_carriage_ = false;
     ams_topology_tool_to_slot_.clear();
     ams_topology_tool_name_prefix_ = "T";
     tools_.clear();

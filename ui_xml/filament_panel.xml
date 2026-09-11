@@ -26,11 +26,32 @@
               <tool_chip name="tool_chip_${i}"
                          width="0" height="100%" index="$i" flex_grow="1" style_min_height="#button_height_lg"/>
 
+              <ui_button name="tool_mount_${i}"
+                         width="#button_height_lg" height="100%" variant="outline" style_bg_color="#card_bg">
+                <bind_flag_if cond="ams_type ne 4 and ams_type ne 7" flag="hidden"/>
+                <bind_state_if cond="ams_action ne 0 or printer_connection_state ne 2 or print_lifecycle eq 1 or print_lifecycle eq 2"
+                               state="disabled"/>
+                <event_cb trigger="clicked" callback="on_filament_tool_pick"/>
+                <icon src="download" size="lg" variant="text" align="center" ignore_layout="true"
+                      style_transform_scale_x="213" style_transform_scale_y="213"
+                      clickable="false" event_bubble="true">
+                  <bind_flag_if_eq subject="active_tool" ref_value="$i" flag="hidden"/>
+                </icon>
+                <icon src="eject" size="lg" variant="primary" align="center" ignore_layout="true"
+                      style_transform_scale_x="213" style_transform_scale_y="213"
+                      clickable="false" event_bubble="true">
+                  <bind_flag_if_not_eq subject="active_tool" ref_value="$i" flag="hidden"/>
+                </icon>
+              </ui_button>
+
               <ui_button name="tool_gear_${i}"
-                         width="#button_height_lg" height="100%" icon="filament" variant="outline"
+                         width="#button_height_lg" height="100%" variant="outline"
                          style_bg_color="#card_bg">
                 <bind_state_if_not_eq subject="active_tool" state="disabled" ref_value="$i"/>
                 <event_cb trigger="clicked" callback="on_filament_tool_dialog_open"/>
+                <icon name="tool_gear_${i}_icon" src="filament" size="lg" variant="text" align="center"
+                      ignore_layout="true" style_transform_scale_x="213" style_transform_scale_y="213"
+                      clickable="false" event_bubble="true"/>
               </ui_button>
             </lv_obj>
           </repeat>

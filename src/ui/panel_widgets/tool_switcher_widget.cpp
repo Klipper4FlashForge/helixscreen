@@ -5,6 +5,7 @@
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
 #include "ui_modal.h"
+#include "ui_tool_change_action.h"
 #include "ui_utils.h"
 
 #include "ams_error.h"
@@ -674,25 +675,11 @@ void ToolSwitcherWidget::ToolPicker::on_created(lv_obj_t* backdrop) {
 // ============================================================================
 
 AmsError ToolSwitcherWidget::tool_change_refusal() const {
-    const auto lifecycle = printer_state_.get_print_lifecycle();
-    const bool paused = lifecycle == PrintState::Paused;
-
-    // No backend means a plain Tn / macro path with no firmware macro that could
-    // hide a home — the documented argument for passing false here.
-    AmsBackend* backend = AmsState::instance().get_backend();
-    const bool self_homes = backend && backend->filament_ops_self_home();
-
-    if (!helix::ui::print_blocks_filament_op(lifecycle, self_homes)) {
-        return AmsErrorHelper::success();
-    }
-    // Same copy the backend would have produced had the request reached it, so
-    // the pre-guard and the backend refusal never say two different things.
-    return AmsErrorHelper::print_active(paused, /*pause_allows_ops=*/!self_homes);
+    return helix::ui::tool_change_refusal(printer_state_);
 }
 
 bool ToolSwitcherWidget::can_dock() {
-    AmsBackend* backend = AmsState::instance().get_backend();
-    return backend && is_tool_changer(backend->get_type());
+    return helix::ui::can_dock_tool();
 }
 
 void ToolSwitcherWidget::refresh_print_gating() {
@@ -715,96 +702,11 @@ void ToolSwitcherWidget::refresh_print_gating() {
 }
 
 void ToolSwitcherWidget::dispatch_tool_change(int tool_index) {
-    if (tool_index == DOCK_INDEX) {
-        // Park the mounted tool. unload_filament(-1) is the backend's
-        // "unmount whatever is on the carriage" form (bare UNSELECT_TOOL on
-        // klipper-toolchanger); it refuses with not_loaded() when the carriage
-        // is already empty, which the already-active check upstream prevents.
-        spdlog::info("[ToolSwitcher] Requesting tool dock");
-        AmsBackend* backend = AmsState::instance().get_backend();
-        if (!backend) {
-            NOTIFY_ERROR(lv_tr("Tool change failed: {}"), "No tool changer backend");
-            return;
-        }
-        const AmsError result = backend->unload_filament(DOCK_INDEX);
-        if (!result) {
-            NOTIFY_ERROR(lv_tr("Tool change failed: {}"), result.display_text());
-        }
-        return;
-    }
-
-    spdlog::info("[ToolSwitcher] Requesting tool change to T{}", tool_index);
-
-    // A null api is NOT a reason to skip the call: the AMS backend performs the
-    // change without one, and request_tool_change() reports "No API connection"
-    // through on_error when there is no backend either. The previous
-    // `if (api)` guard turned that case into silence too.
-    ToolState::instance().request_tool_change(
-        tool_index, get_moonraker_api(),
-        /*on_success=*/nullptr, [](const std::string& error) {
-            NOTIFY_ERROR(lv_tr("Tool change failed: {}"), error);
-            // The pills and the compact label are rebuilt from ToolState's
-            // active-tool subject, so a refused change never moved the
-            // highlight in the first place. Resync anyway: a backend that got
-            // partway before failing leaves the subject as the only truth, and
-            // this costs one rebuild on an error path.
-            helix::ui::async_call(
-                [](void*) {
-                    if (s_active_instance) {
-                        s_active_instance->on_active_tool_changed(
-                            ToolState::instance().active_tool_index());
-                    }
-                },
-                nullptr);
-        });
+    helix::ui::dispatch_tool_change(tool_index);
 }
 
 void ToolSwitcherWidget::handle_tool_selected(int tool_index) {
-    auto& tool_state = ToolState::instance();
-
-    // Already on this tool (or already docked)
-    if (tool_index == tool_state.active_tool_index()) {
-        spdlog::debug("[ToolSwitcher] Tool T{} already active, ignoring", tool_index);
-        return;
-    }
-    if (tool_index == DOCK_INDEX && !can_dock()) {
-        spdlog::warn("[ToolSwitcher] Dock requested without a tool changer backend, ignoring");
-        return;
-    }
-
-    // The buttons are greyed by refresh_print_gating(), but a tap can still land
-    // in the window between a print starting and the observer firing — and the
-    // backend refuses PRINTING unconditionally, so offering the change behind a
-    // confirmation modal was offering a dead end. Refuse here with copy the user
-    // can act on, exactly as AmsOperationSidebar::handle_unload() does.
-    const AmsError refusal = tool_change_refusal();
-    if (!refusal.success()) {
-        spdlog::info("[ToolSwitcher] Tool change to T{} refused: {}", tool_index,
-                     refusal.technical_msg);
-        helix::ui::notify_ams_warning(refusal);
-        return;
-    }
-
-    // Reaching here while PAUSED means the backend permits filament ops on a
-    // paused job (everything except AD5X IFS) — pause-then-swap is the runout
-    // and colour-change recovery workflow, so the change is offered, with a
-    // confirmation because it moves the toolhead into a part still on the bed.
-    const auto lifecycle = printer_state_.get_print_lifecycle();
-    if (lifecycle == PrintState::Paused) {
-        spdlog::info("[ToolSwitcher] Print paused, showing confirmation for T{}", tool_index);
-
-        helix::ui::modal_confirm(
-            lv_tr("Change Tool While Paused"),
-            lv_tr("The print is paused. Changing tools now moves the toolhead and swaps the "
-                  "filament at the nozzle. Resume the print once the change finishes."),
-            ::ModalSeverity::Warning, lv_tr("Change Tool"),
-            // dispatch_tool_change() is static, so the capture is the tool index
-            // by value - nothing here touches the widget instance.
-            [tool_index] { dispatch_tool_change(tool_index); });
-        return;
-    }
-
-    dispatch_tool_change(tool_index);
+    helix::ui::request_tool_change(printer_state_, tool_index);
 }
 
 // ============================================================================

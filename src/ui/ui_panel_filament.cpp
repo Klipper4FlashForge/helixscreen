@@ -18,6 +18,7 @@
 #include "ui_spool_canvas.h"
 #include "ui_subject_registry.h"
 #include "ui_temperature_utils.h"
+#include "ui_tool_change_action.h"
 #include "ui_tool_chip.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
@@ -129,6 +130,7 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
         {"on_filament_tool_temperature", on_tool_temperature},
         {"on_filament_tool_dialog_open", on_tool_dialog_open},
         {"on_filament_tool_dialog_close", on_tool_dialog_close},
+        {"on_filament_tool_pick", on_tool_pick},
         {"on_filament_temperature_sheet_action", on_temperature_sheet_action},
         // Temperature tap targets
         {"on_filament_nozzle_temp_tap", on_nozzle_temp_tap_clicked},
@@ -1083,6 +1085,25 @@ void FilamentPanel::on_tool_dialog_close(lv_event_t*) {
     auto& self = get_global_filament_panel();
     self.tool_dialog_.hide();
     self.seed_selected_tool();
+}
+
+void FilamentPanel::on_tool_pick(lv_event_t* e) {
+    auto* obj = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    const char* name = lv_obj_get_name(obj);
+    if (!name || std::string(name).rfind("tool_mount_", 0) != 0)
+        return;
+    const int tool = std::atoi(name + 11);
+    if (!helix::ui::can_dock_tool()) {
+        spdlog::warn("[Filament Panel] Pick T{} requested without a tool changer backend", tool);
+        return;
+    }
+
+    if (tool == helix::ToolState::instance().active_tool_index()) {
+        helix::ui::request_tool_change(get_global_filament_panel().printer_state_,
+                                       helix::ui::DOCK_TOOL_INDEX);
+    } else {
+        helix::ui::request_tool_change(get_global_filament_panel().printer_state_, tool);
+    }
 }
 
 void FilamentPanel::on_tool_temperature(lv_event_t* e) {

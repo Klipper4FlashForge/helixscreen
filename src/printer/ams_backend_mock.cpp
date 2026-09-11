@@ -3447,9 +3447,10 @@ std::string AmsBackendMock::build_preprint_gcode(const std::set<int>& tools_used
 std::vector<int> AmsBackendMock::get_tool_mapping() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Tool changers don't support tool mapping (tools ARE slots)
+    // Identity is the toolchanger default. Returning the real map matches the
+    // production backend and lets AmsState build its ToolTopology.
     if (tool_changer_mode_) {
-        return {};
+        return slots_.build_system_info().tool_to_slot_map;
     }
 
     if (snapmaker_mode_) {

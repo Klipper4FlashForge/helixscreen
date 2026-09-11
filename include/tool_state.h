@@ -80,6 +80,7 @@ struct ToolInfo {
 struct ToolTopology {
     int tool_count = 0;
     int active_tool = -1;
+    bool allows_empty_carriage = false; ///< -1 is a real docked state on tool changers
     std::vector<int> tool_to_slot;
     std::string tool_name_prefix = "T"; ///< Generated names: "{prefix}{index}"
     int backend_index = 0;              ///< Source backend in AmsState::backends_
@@ -333,6 +334,7 @@ class ToolState {
     // lane->tool mapping rather than from PrinterDiscovery extruder enumeration.
     bool ams_topology_active_ = false;
     int ams_topology_tool_count_ = 0;
+    bool ams_topology_allows_empty_carriage_ = false;
     std::vector<int> ams_topology_tool_to_slot_;
     std::string ams_topology_tool_name_prefix_ = "T";
 
