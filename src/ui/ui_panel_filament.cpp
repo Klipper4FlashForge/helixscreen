@@ -180,10 +180,8 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
         {"on_filament_preset_petg_hold", on_preset_petg_hold},
         {"on_filament_preset_abs_hold", on_preset_abs_hold},
         {"on_filament_preset_tpu_hold", on_preset_tpu_hold},
-        {"on_filament_tool_temperature", on_tool_temperature},
-        {"on_filament_tool_dialog_open", on_tool_dialog_open},
         {"on_filament_tool_dialog_close", on_tool_dialog_close},
-        {"on_filament_tool_pick", on_tool_pick},
+        {"on_filament_tool_actions", on_tool_actions},
         {"on_filament_temperature_sheet_action", on_temperature_sheet_action},
         // Temperature tap targets
         {"on_filament_nozzle_temp_tap", on_nozzle_temp_tap_clicked},
@@ -394,6 +392,8 @@ void FilamentPanel::init_subjects() {
         // Tool the panel's verbs act on. Seeded to the active tool in setup();
         // the tool row writes it and highlights from it.
         UI_MANAGED_SUBJECT_INT(selected_tool_subject_, 0, "filament_selected_tool", subjects_);
+        UI_MANAGED_SUBJECT_INT(tool_menu_is_active_subject_, 0,
+                               "filament_tool_menu_is_active", subjects_);
         UI_MANAGED_SUBJECT_INT(has_tool_subject_, 1, "filament_has_tool", subjects_);
         UI_MANAGED_SUBJECT_INT(tool_is_active_subject_, 1, "filament_tool_is_active", subjects_);
 
@@ -1114,24 +1114,16 @@ void FilamentPanel::handle_chamber_temp_tap() {
     }
 }
 
-void FilamentPanel::on_tool_dialog_open(lv_event_t* e) {
-    auto* obj = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    const char* name = lv_obj_get_name(obj);
-    if (!name || std::string(name).rfind("tool_gear_", 0) != 0)
+void FilamentPanel::open_tool_dialog(int tool) {
+    if (tool < 0 || tool >= helix::ToolState::instance().tool_count())
         return;
-    const int tool = std::atoi(name + 10);
-    if (tool < 0 || tool >= helix::ToolState::instance().tool_count() ||
-        tool != helix::ToolState::instance().active_tool_index())
-        return;
-    auto& self = get_global_filament_panel();
-    self.tool_dialog_.hide();
-    lv_subject_set_int(&self.selected_tool_subject_, tool);
-    self.handle_selected_tool_changed();
-    self.show_temperature_sheet(helix::HeaterType::Nozzle, tool, false);
-    self.tool_dialog_.show(self.parent_screen_,
-                           std::string(lv_tr("Filament")) + " · " +
-                               helix::ToolState::instance().tools()[tool].name);
-    self.update_all_temps();
+    tool_dialog_.hide();
+    lv_subject_set_int(&selected_tool_subject_, tool);
+    handle_selected_tool_changed();
+    show_temperature_sheet(helix::HeaterType::Nozzle, tool, false);
+    tool_dialog_.show(parent_screen_, std::string(lv_tr("Filament")) + " · " +
+                                          helix::ToolState::instance().tools()[tool].name);
+    update_all_temps();
 }
 
 void FilamentPanel::on_tool_dialog_close(lv_event_t*) {
@@ -1140,29 +1132,32 @@ void FilamentPanel::on_tool_dialog_close(lv_event_t*) {
     self.seed_selected_tool();
 }
 
-void FilamentPanel::on_tool_pick(lv_event_t* e) {
-    auto* obj = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    const char* name = lv_obj_get_name(obj);
-    if (!name || std::string(name).rfind("tool_mount_", 0) != 0)
-        return;
-    const int tool = std::atoi(name + 11);
-    if (!helix::ui::can_dock_tool()) {
-        spdlog::warn("[Filament Panel] Pick T{} requested without a tool changer backend", tool);
+void FilamentPanel::on_tool_actions(lv_event_t* e) {
+    auto* anchor = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    auto* card = anchor;
+    while (card && !ui_tool_chip_is_valid(card)) {
+        card = lv_obj_get_parent(card);
+    }
+    if (!ui_tool_chip_is_valid(card)) {
         return;
     }
 
-    if (tool == helix::ToolState::instance().active_tool_index()) {
-        helix::ui::request_tool_change(get_global_filament_panel().printer_state_,
-                                       helix::ui::DOCK_TOOL_INDEX);
-    } else {
-        helix::ui::request_tool_change(get_global_filament_panel().printer_state_, tool);
-    }
-}
-
-void FilamentPanel::on_tool_temperature(lv_event_t* e) {
-    auto* chip = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    get_global_filament_panel().show_temperature_sheet(helix::HeaterType::Nozzle,
-                                                       ui_tool_chip_get_index(chip));
+    auto& self = get_global_filament_panel();
+    const int tool = ui_tool_chip_get_index(card);
+    const bool is_active = tool == helix::ToolState::instance().active_tool_index();
+    lv_subject_set_int(&self.tool_menu_is_active_subject_, is_active ? 1 : 0);
+    self.tool_action_menu_.set_action_callback([panel = &self](int action_id, int tool_index) {
+        if (action_id == helix::ui::ToolActionMenu::Dock) {
+            helix::ui::request_tool_change(panel->printer_state_, helix::ui::DOCK_TOOL_INDEX);
+        } else if (action_id == helix::ui::ToolActionMenu::Preheat) {
+            panel->open_tool_dialog(tool_index);
+        } else if (action_id == helix::ui::ToolActionMenu::Pick) {
+            helix::ui::request_tool_change(panel->printer_state_, tool_index);
+        }
+    });
+    auto* menu_anchor = lv_obj_find_by_name(card, "tool_actions");
+    self.tool_action_menu_.show_for_tool(self.parent_screen_, tool,
+                                         menu_anchor ? menu_anchor : card);
 }
 
 void FilamentPanel::show_temperature_sheet(helix::HeaterType type, int tool, bool open_dialog) {

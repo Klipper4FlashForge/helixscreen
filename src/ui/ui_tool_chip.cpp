@@ -25,9 +25,12 @@
 
 namespace {
 
+constexpr uint32_t TOOL_CARD_DATA_MAGIC = 0x544F4F4CU; // "TOOL"
+
 // This widget adapts per-tool data to the same XML card used by Bed and Chamber.
 // Its uniquely named subjects belong to this instance and are withdrawn on delete.
 struct ToolCardData {
+    uint32_t magic = TOOL_CARD_DATA_MAGIC;
     int index = -1;
     std::string heater;
     std::string current_name;
@@ -118,6 +121,16 @@ void* tool_card_create(lv_xml_parser_state_t* state, const char** attrs) {
         "0",
         "body_height",
         "100%",
+        "chart_width",
+        "42%",
+        "chart_height",
+        "50%",
+        "body_gap",
+        "#space_xs",
+        "body_pad_left",
+        "#space_md",
+        "action_size",
+        "#button_height",
         "hide_tool_readout",
         "false",
         "hide_heater_readout",
@@ -135,7 +148,11 @@ void* tool_card_create(lv_xml_parser_state_t* state, const char** attrs) {
         "target_subject",
         data->target_name.c_str(),
         "callback",
-        "on_filament_tool_temperature",
+        "on_filament_tool_actions",
+        "hide_action",
+        "false",
+        "action_callback",
+        "on_filament_tool_actions",
         nullptr,
     };
     auto* parent = static_cast<lv_obj_t*>(lv_xml_state_get_parent(state));
@@ -176,10 +193,11 @@ void ui_tool_chip_register_widget() {
 }
 
 bool ui_tool_chip_is_valid(lv_obj_t* obj) {
-    return obj && lv_obj_get_user_data(obj) != nullptr;
+    auto* data = obj ? static_cast<ToolCardData*>(lv_obj_get_user_data(obj)) : nullptr;
+    return data && data->magic == TOOL_CARD_DATA_MAGIC;
 }
 
 int ui_tool_chip_get_index(lv_obj_t* obj) {
     auto* data = obj ? static_cast<ToolCardData*>(lv_obj_get_user_data(obj)) : nullptr;
-    return data ? data->index : -1;
+    return data && data->magic == TOOL_CARD_DATA_MAGIC ? data->index : -1;
 }

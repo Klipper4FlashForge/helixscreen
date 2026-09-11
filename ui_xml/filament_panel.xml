@@ -2,10 +2,6 @@
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <component>
-  <styles>
-    <style name="tool_mount_active" border_color="#primary"/>
-    <style name="tool_mount_inactive" border_color="#border"/>
-  </styles>
   <view name="filament_panel"
         extends="lv_obj" width="100%" height="100%" style_border_width="0" style_pad_all="#space_md" scrollable="false"
         flex_flow="column" style_pad_gap="#space_sm" style_bg_color="#screen_bg">
@@ -16,7 +12,7 @@
             width="100%" height="0" flex_grow="1" style_pad_all="0" scrollable="false" flex_flow="row"
             style_flex_cross_place="start" style_pad_gap="#space_md">
       <lv_obj name="tool_row"
-              width="60%" height="100%" style_pad_all="0" scrollable="false" flex_flow="column"
+              width="0" height="100%" flex_grow="1" style_pad_all="0" scrollable="false" flex_flow="column"
               style_flex_main_place="start" style_flex_cross_place="center" style_pad_gap="#space_sm">
         <text_small width="100%" text="Tools" translation_tag="Tools" long_mode="wrap" style_text_color="#text_muted"/>
         <lv_obj name="tool_chips"
@@ -30,36 +26,6 @@
               <tool_chip name="tool_chip_${i}"
                          width="0" height="100%" index="$i" flex_grow="1" style_min_height="#button_height_lg"/>
 
-              <ui_button name="tool_mount_${i}"
-                         width="#button_height_lg" height="100%" variant="outline" style_bg_color="#card_bg">
-                <bind_style_if_eq name="tool_mount_active" subject="active_tool" ref_value="$i"/>
-                <bind_style_if_not_eq name="tool_mount_inactive" subject="active_tool" ref_value="$i"/>
-                <bind_flag_if cond="ams_type ne 4 and ams_type ne 7" flag="hidden"/>
-                <bind_state_if cond="ams_action ne 0 or printer_connection_state ne 2 or print_lifecycle eq 1 or print_lifecycle eq 2"
-                               state="disabled"/>
-                <event_cb trigger="clicked" callback="on_filament_tool_pick"/>
-                <icon src="download" size="lg" variant="text" align="center" ignore_layout="true"
-                      style_transform_scale_x="213" style_transform_scale_y="213"
-                      clickable="false" event_bubble="true">
-                  <bind_flag_if_eq subject="active_tool" ref_value="$i" flag="hidden"/>
-                </icon>
-                <icon src="eject" size="lg" variant="primary" align="center" ignore_layout="true"
-                      style_transform_scale_x="213" style_transform_scale_y="213"
-                      clickable="false" event_bubble="true">
-                  <bind_flag_if_not_eq subject="active_tool" ref_value="$i" flag="hidden"/>
-                </icon>
-              </ui_button>
-
-              <ui_button name="tool_gear_${i}"
-                         width="#button_height_lg" height="100%" variant="outline"
-                         style_bg_color="#card_bg">
-                <bind_state_if cond="active_tool ne ${i} or print_lifecycle eq 1 or print_lifecycle eq 2"
-                               state="disabled"/>
-                <event_cb trigger="clicked" callback="on_filament_tool_dialog_open"/>
-                <icon name="tool_gear_${i}_icon" src="filament" size="lg" variant="text" align="center"
-                      ignore_layout="true" style_transform_scale_x="213" style_transform_scale_y="213"
-                      clickable="false" event_bubble="true"/>
-              </ui_button>
             </lv_obj>
           </repeat>
         </lv_obj>

@@ -8,6 +8,7 @@
 #include "ui_filament_control_overlay.h"
 #include "ui_observer_guard.h"
 #include "ui_panel_base.h"
+#include "ui_tool_action_menu.h"
 
 #include "active_material_provider.h"
 #include "config.h"
@@ -490,9 +491,8 @@ class FilamentPanel : public PanelBase {
     // needs no separate Dock control.
     FilamentControlOverlay temperature_sheet_{"filament_temperature_overlay"};
     FilamentControlOverlay tool_dialog_{"filament_tool_overlay"};
-    static void on_tool_dialog_open(lv_event_t* e);
     static void on_tool_dialog_close(lv_event_t* e);
-    static void on_tool_pick(lv_event_t* e);
+    static void on_tool_actions(lv_event_t* e);
     helix::HeaterType sheet_type_ = helix::HeaterType::Nozzle;
     std::string sheet_heater_;
     int sheet_value_ = 0;
@@ -501,11 +501,13 @@ class FilamentPanel : public PanelBase {
     char sheet_value_buf_[32]{};
     char sheet_title_buf_[96]{};
     void show_temperature_sheet(helix::HeaterType type, int tool = -1, bool open_dialog = true);
+    void open_tool_dialog(int tool);
     void update_temperature_sheet();
-    static void on_tool_temperature(lv_event_t* e);
     static void on_temperature_sheet_action(lv_event_t* e);
 
     lv_subject_t selected_tool_subject_;
+    lv_subject_t tool_menu_is_active_subject_;
+    helix::ui::ToolActionMenu tool_action_menu_;
     ObserverGuard selected_tool_observer_;
     [[nodiscard]] int selected_tool_index() const;
     /// Point the selection at the active tool. Preserves a still-valid choice

@@ -10,6 +10,9 @@
     <prop name="body_height" type="string" default="0"/>
     <prop name="chart_width" type="string" default="25%"/>
     <prop name="chart_height" type="string" default="40%"/>
+    <prop name="body_gap" type="string" default="#space_sm"/>
+    <prop name="body_pad_left" type="string" default="#space_sm"/>
+    <prop name="action_size" type="string" default="#button_height_lg"/>
     <prop name="hide_tool_readout" type="string" default="true"/>
     <prop name="hide_heater_readout" type="string" default="false"/>
     <prop name="tool_index" type="int" default="-1"/>
@@ -20,6 +23,8 @@
     <prop name="current_subject" type="string"/>
     <prop name="target_subject" type="string"/>
     <prop name="callback" type="string"/>
+    <prop name="action_callback" type="string" default="context_menu_close_cb"/>
+    <prop name="hide_action" type="string" default="true"/>
   </api>
   <styles>
     <style name="tool_edge_active" bg_color="#temp_gradient_hot"/>
@@ -43,7 +48,8 @@
       <bind_style_if_not_eq name="tool_edge_docked" subject="active_tool" ref_value="$tool_index"/>
     </lv_obj>
     <lv_obj width="$body_width"
-            height="$body_height" flex_grow="1" flex_flow="row" style_pad_all="#space_sm" style_pad_gap="#space_sm"
+            height="$body_height" flex_grow="1" flex_flow="row" style_pad_all="#space_sm"
+            style_pad_left="$body_pad_left" style_pad_gap="$body_gap"
             style_flex_cross_place="center" style_flex_track_place="center" scrollable="false" clickable="false"
             event_bubble="true">
       <lv_obj width="0"
@@ -72,6 +78,13 @@
       <helix_sparkline name="${heater}_temperature_chart"
                        width="$chart_width" height="$chart_height" heater="$heater" style_line_color="$accent" clickable="false"
                        event_bubble="true"/>
+      <ui_button name="${heater}_actions"
+                 width="$action_size" height="$action_size"
+                 hidden="$hide_action" variant="ghost" style_pad_all="0">
+        <event_cb trigger="clicked" callback="$action_callback"/>
+        <icon src="dots_vertical" size="md" variant="secondary" align="center" ignore_layout="true"
+              clickable="false" event_bubble="true"/>
+      </ui_button>
     </lv_obj>
   </view>
 </component>

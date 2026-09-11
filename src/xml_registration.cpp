@@ -635,6 +635,7 @@ void register_xml_components() {
     helix::ui::get_materials_overlay().register_callbacks();
     register_xml("materials_overlay.xml");
     register_xml("components/heater_summary_card.xml");
+    register_xml("tool_action_menu.xml");
     register_xml("filament_panel.xml");
 
     // NOTE: AMS panel (ams_panel.xml) is registered lazily in ui_panel_ams.cpp

@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<component>
+  <view name="tool_action_menu" extends="context_menu_backdrop">
+    <ui_card name="context_menu"
+             width="220" height="content" flex_flow="column" style_pad_all="0" style_pad_gap="0"
+             style_border_width="1" style_border_color="#border" style_radius="#border_radius"
+             style_clip_corner="true" scrollable="false">
+      <ui_button name="tool_action_set_active"
+                 width="100%" height="#button_height_lg" variant="ghost" icon="target"
+                 text="Pick" translation_tag="Pick" style_flex_main_place="start">
+        <bind_state_if_eq subject="filament_tool_menu_is_active" ref_value="1" state="disabled"/>
+        <event_cb trigger="clicked" callback="tool_action_set_active_cb"/>
+      </ui_button>
+      <lv_obj width="100%" height="1" style_pad_all="0" style_bg_color="#border" scrollable="false"/>
+      <ui_button name="tool_action_unload"
+                 width="100%" height="#button_height_lg" variant="ghost" icon="eject"
+                 text="Dock" translation_tag="Dock" style_flex_main_place="start">
+        <bind_state_if_eq subject="filament_tool_menu_is_active" ref_value="0" state="disabled"/>
+        <event_cb trigger="clicked" callback="tool_action_unload_cb"/>
+      </ui_button>
+      <lv_obj width="100%" height="1" style_pad_all="0" style_bg_color="#border" scrollable="false"/>
+      <ui_button name="tool_action_preheat"
+                 width="100%" height="#button_height_lg" variant="ghost" icon="filament"
+                 text="Preheat" translation_tag="Preheat" style_flex_main_place="start">
+        <bind_state_if cond="print_lifecycle eq 1 or print_lifecycle eq 2"
+                       state="disabled"/>
+        <event_cb trigger="clicked" callback="tool_action_preheat_cb"/>
+      </ui_button>
+    </ui_card>
+  </view>
+</component>
